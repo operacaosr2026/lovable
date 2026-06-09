@@ -75,17 +75,29 @@ function CalendarPage() {
   });
   const members: { member_id: string; full_name?: string; email?: string }[] = wsData?.members ?? [];
 
-  // Reminder: check every minute if an event is starting now
+  // Reminder: fires 30 min before and exactly at start_time
   useEffect(() => {
     const check = () => {
-      const nowStr = new Date().toTimeString().slice(0, 5);
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
       (todayEvents as any[]).forEach((e: any) => {
-        const key = e.id + e.start_time;
-        if (e.start_time?.slice(0, 5) === nowStr && !alerted.current.has(key)) {
-          alerted.current.add(key);
+        if (!e.start_time) return;
+        const [h, m] = e.start_time.slice(0, 5).split(":").map(Number);
+        const eventMin = h * 60 + m;
+        const key30 = e.id + ":30:" + e.start_time;
+        const key0  = e.id + ":0:"  + e.start_time;
+        if (eventMin - nowMin === 30 && !alerted.current.has(key30)) {
+          alerted.current.add(key30);
+          toast(`⏰ ${e.title}`, {
+            description: `Começa em 30 minutos, às ${e.start_time.slice(0, 5)}`,
+            duration: 12_000,
+          });
+        }
+        if (eventMin === nowMin && !alerted.current.has(key0)) {
+          alerted.current.add(key0);
           toast(`🔔 ${e.title}`, {
             description: `Evento começando agora às ${e.start_time.slice(0, 5)}`,
-            duration: 10_000,
+            duration: 12_000,
           });
         }
       });
