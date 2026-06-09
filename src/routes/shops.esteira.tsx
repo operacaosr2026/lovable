@@ -106,55 +106,55 @@ function EsteiraPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto -mx-4 px-4 pb-4">
-          <div className="flex gap-3 min-w-max">
-            {cols.columns.map((col) => {
-              const stage = col.id;
-              const items = grouped[stage] ?? [];
-              const isCardOver = overStage === stage;
-              const isColOver = dnd.overKey === stage;
-              const isDragging = dnd.draggingKey === stage;
-              const headerProps = dnd.headerDragProps(col);
-              return (
+        <div className="space-y-3">
+          {cols.columns.map((col) => {
+            const stage = col.id;
+            const items = grouped[stage] ?? [];
+            const isCardOver = overStage === stage;
+            const isColOver = dnd.overKey === stage;
+            const isDragging = dnd.draggingKey === stage;
+            const headerProps = dnd.headerDragProps(col);
+            return (
+              <div
+                key={stage}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes("application/x-kanban-col")) return;
+                  e.preventDefault();
+                  setOverStage(stage);
+                }}
+                onDragLeave={() => setOverStage((s) => (s === stage ? null : s))}
+                onDrop={() => onDrop(stage)}
+                className={`rounded-2xl border bg-surface/40 transition-all ${isCardOver ? "border-primary/60 bg-primary/5" : isColOver ? "border-primary/60 ring-2 ring-primary/30" : "border-border"} ${isDragging ? "opacity-50" : ""}`}
+              >
                 <div
-                  key={stage}
-                  onDragOver={(e) => {
-                    if (e.dataTransfer.types.includes("application/x-kanban-col")) return;
-                    e.preventDefault();
-                    setOverStage(stage);
-                  }}
-                  onDragLeave={() => setOverStage((s) => (s === stage ? null : s))}
-                  onDrop={() => onDrop(stage)}
-                  className={`w-72 shrink-0 rounded-2xl border bg-surface/40 transition-all ${isCardOver ? "border-primary/60 bg-primary/5" : isColOver ? "border-primary/60 ring-2 ring-primary/30" : "border-border"} ${isDragging ? "opacity-50" : ""}`}
+                  {...headerProps}
+                  className="px-3 py-2.5 flex items-center justify-between border-b border-border select-none active:cursor-grabbing"
+                  title="Arraste para reordenar"
                 >
-                  <div
-                    {...headerProps}
-                    className="px-3 py-2.5 flex items-center justify-between border-b border-border select-none active:cursor-grabbing"
-                    title="Arraste para reordenar"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <GripVertical className="size-3.5 text-muted-foreground/60 shrink-0" />
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-semibold truncate" style={{ background: col.tint, color: col.accent }}>
-                        {col.label}
-                      </span>
-                      <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
-                    </div>
-                    <ColumnControls
-                      col={col}
-                      itemCount={items.length}
-                      onRename={(label) => cols.rename(col, label)}
-                      onRecolor={(c) => cols.recolor(col, c)}
-                      onDelete={() => cols.remove(col)}
-                    />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <GripVertical className="size-3.5 text-muted-foreground/60 shrink-0" />
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-semibold truncate" style={{ background: col.tint, color: col.accent }}>
+                      {col.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
                   </div>
+                  <ColumnControls
+                    col={col}
+                    itemCount={items.length}
+                    onRename={(label) => cols.rename(col, label)}
+                    onRecolor={(c) => cols.recolor(col, c)}
+                    onDelete={() => cols.remove(col)}
+                  />
+                </div>
 
-                  <div className="p-2 space-y-2 min-h-[120px]">
-                    {items.length === 0 ? (
-                      <div className="text-[11px] text-muted-foreground text-center py-6 italic">
-                        Arraste lojas para cá
-                      </div>
-                    ) : (
-                      items.map((s) => {
+                <div className="p-2 min-h-[64px]">
+                  {items.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground text-center py-4 italic">
+                      Arraste lojas para cá
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((s) => {
                         const c = getCountry(s.country);
                         return (
                           <div
@@ -168,7 +168,7 @@ function EsteiraPage() {
                               e.dataTransfer.setDragImage(el, e.clientX - rect.left, e.clientY - rect.top);
                             }}
                             onDragEnd={() => { setDragId(null); setOverStage(null); }}
-                            className={`group rounded-xl border border-border bg-background p-3 cursor-grab active:cursor-grabbing transition-all ${dragId === s.id ? "opacity-40 scale-[0.98]" : "hover:border-primary/40 hover:shadow-sm"}`}
+                            className={`group w-full sm:w-64 rounded-xl border border-border bg-background p-3 cursor-grab active:cursor-grabbing transition-all ${dragId === s.id ? "opacity-40 scale-[0.98]" : "hover:border-primary/40 hover:shadow-sm"}`}
                           >
                             <Link
                               to="/shops/$shopId"
@@ -206,14 +206,14 @@ function EsteiraPage() {
                             </Link>
                           </div>
                         );
-                      })
-                    )}
-                  </div>
+                      })}
+                    </div>
+                  )}
                 </div>
-              );
-            })}
-            <AddColumnButton onAdd={cols.add} />
-          </div>
+              </div>
+            );
+          })}
+          <AddColumnButton onAdd={cols.add} className="!w-full" />
         </div>
       )}
     </PageShell>
