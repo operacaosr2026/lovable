@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Sparkles, Store, Package, Workflow, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check,
+  Calendar, Search, LogOut, Sparkles, Store, Package, Workflow, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -258,6 +258,14 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar-hidden") === "1";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-hidden", sidebarHidden ? "1" : "0");
+  }, [sidebarHidden]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -340,13 +348,20 @@ export function AppLayout() {
     return (
       <>
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
-          <div className="size-9 rounded-xl gradient-primary grid place-items-center shadow-lg shadow-black/20">
+          <div className="size-9 rounded-xl gradient-primary grid place-items-center shadow-lg shadow-black/20 shrink-0">
             <Sparkles className="size-4 text-white" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <div className="text-sm font-bold leading-none text-white">SRX Growth</div>
             <div className="text-[11px] text-white/50 mt-1">Painel de controle</div>
           </div>
+          <button
+            onClick={() => setSidebarHidden(true)}
+            title="Esconder menu"
+            className="hidden md:grid size-7 rounded-md place-items-center text-white/40 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
         </div>
 
         <div className="px-3 mt-2">
@@ -447,9 +462,21 @@ export function AppLayout() {
     <div className="flex min-h-screen bg-background text-foreground">
       {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}
       {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
-      <aside className="hidden md:flex w-60 flex-col border-r border-border bg-[var(--sidebar-bg)] sticky top-0 h-screen">
-        {navContent()}
-      </aside>
+      {!sidebarHidden && (
+        <aside className="hidden md:flex w-60 flex-col border-r border-border bg-[var(--sidebar-bg)] sticky top-0 h-screen">
+          {navContent()}
+        </aside>
+      )}
+
+      {sidebarHidden && (
+        <button
+          onClick={() => setSidebarHidden(false)}
+          title="Mostrar menu"
+          className="hidden md:grid fixed left-3 top-3 z-30 size-9 place-items-center rounded-lg border border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-muted shadow-sm transition-colors"
+        >
+          <PanelLeftOpen className="size-4" />
+        </button>
+      )}
 
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 h-14 border-b border-border bg-background/95 backdrop-blur flex items-center justify-between px-4">
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
