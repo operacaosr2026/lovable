@@ -342,7 +342,7 @@ function ConnectStoreDialog({ open, onClose, onConnected }: { open: boolean; onC
               <li>Crie um app, abra a aba <strong>Configuration</strong> e cole esta URL em <strong>Allowed redirection URL(s)</strong>:</li>
             </ol>
             <code className="block bg-background rounded px-2 py-1 text-[11px] break-all">
-              https://lojas-one.vercel.app/api/shopify/callback
+              https://lojas-one.vercel.app/api/public/shopify/callback
             </code>
             <p>Em <strong>Admin API access scopes</strong>, marque:</p>
             <code className="block bg-background rounded px-2 py-1 text-[11px] break-all">read_orders,read_products</code>

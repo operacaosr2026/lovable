@@ -3,12 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
-import { ArrowLeft, LayoutDashboard, Package, KanbanSquare, Repeat, Store, MapPin, Wallet, ShoppingBag, BookOpen, Target, Plug, MessageCircle } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Package, KanbanSquare, Store, MapPin, Wallet, ShoppingBag, BookOpen, Target, Plug, MessageCircle } from "lucide-react";
 import { getShop } from "@/lib/shops.functions";
 import { ShopOverview } from "@/components/shops/ShopOverview";
 import { ProductPipeline } from "@/components/shops/ProductPipeline";
 import { ShopTaskKanban } from "@/components/shops/ShopTaskKanban";
-import { ShopRoutines } from "@/components/shops/ShopRoutines";
 import { ShopCashflow } from "@/components/shops/ShopCashflow";
 import { ShopWiki } from "@/components/shops/ShopWiki";
 import { ShopOrders } from "@/components/shops/ShopOrders";
@@ -20,7 +19,7 @@ export const Route = createFileRoute("/shops/$shopId")({
   component: ShopDetail,
 });
 
-type Tab = "overview" | "products" | "tasks" | "routines" | "cash" | "orders" | "wiki" | "goal" | "integrations" | "support";
+type Tab = "overview" | "products" | "tasks" | "cash" | "orders" | "wiki" | "goal" | "integrations" | "support";
 
 function ShopDetail() {
   const { shopId } = Route.useParams();
@@ -73,7 +72,6 @@ function ShopDetail() {
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
         <TabBtn active={tab === "overview"} onClick={() => setTab("overview")} icon={LayoutDashboard}>Visão geral</TabBtn>
         <TabBtn active={tab === "tasks"} onClick={() => setTab("tasks")} icon={KanbanSquare}>Tarefas</TabBtn>
-        <TabBtn active={tab === "routines"} onClick={() => setTab("routines")} icon={Repeat}>Rotinas</TabBtn>
         <TabBtn active={tab === "cash"} onClick={() => setTab("cash")} icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "orders"} onClick={() => setTab("orders")} icon={ShoppingBag}>Pedidos</TabBtn>
         <TabBtn active={tab === "support"} onClick={() => setTab("support")} icon={MessageCircle}>Atendimento</TabBtn>
@@ -88,7 +86,6 @@ function ShopDetail() {
       {tab === "orders" && <ShopOrders shopId={shopId} />}
       {tab === "support" && <ShopSupport shopId={shopId} />}
       {tab === "tasks" && <ShopTaskKanban shopId={shopId} />}
-      {tab === "routines" && <ShopRoutines shopId={shopId} />}
       {tab === "cash" && <ShopCashflow shopId={shopId} />}
       {tab === "goal" && <ShopProfitGoal shopId={shopId} />}
       {tab === "integrations" && <ShopIntegrations shopId={shopId} />}

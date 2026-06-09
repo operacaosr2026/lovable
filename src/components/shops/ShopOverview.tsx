@@ -93,7 +93,7 @@ export function ShopOverview({ shopId, onGoTab }: { shopId: string; onGoTab: (t:
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard icon={ListChecks} label="Tarefas pendentes" value={pending.length} accent="oklch(0.55 0.2 250)" onClick={() => onGoTab("tasks")} />
         <SummaryCard icon={AlertCircle} label="Vencidas" value={overdue.length} accent="oklch(0.6 0.18 25)" onClick={() => onGoTab("tasks")} danger={overdue.length > 0} />
-        <SummaryCard icon={Repeat} label="Rotinas hoje" value={`${routinesDoneToday}/${routinesToday.length}`} accent="oklch(0.55 0.16 285)" onClick={() => onGoTab("routines")} />
+        <SummaryCard icon={Repeat} label="Rotinas hoje" value={`${routinesDoneToday}/${routinesToday.length}`} accent="oklch(0.55 0.16 285)" onClick={() => onGoTab("tasks")} />
         <SummaryCard icon={Package} label="Produtos" value={allProducts.length} accent="oklch(0.55 0.13 155)" onClick={() => onGoTab("products")} />
       </div>
 
