@@ -106,7 +106,7 @@ function EsteiraPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 items-start">
           {cols.columns.map((col) => {
             const stage = col.id;
             const items = grouped[stage] ?? [];
@@ -147,67 +147,65 @@ function EsteiraPage() {
                   />
                 </div>
 
-                <div className="p-2 min-h-[64px]">
+                <div className="p-2 space-y-2 min-h-[64px]">
                   {items.length === 0 ? (
                     <div className="text-[11px] text-muted-foreground text-center py-4 italic">
                       Arraste lojas para cá
                     </div>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {items.map((s) => {
-                        const c = getCountry(s.country);
-                        return (
-                          <div
-                            key={s.id}
-                            draggable
-                            onDragStart={(e) => {
-                              setDragId(s.id);
-                              e.dataTransfer.effectAllowed = "move";
-                              const el = e.currentTarget as HTMLElement;
-                              const rect = el.getBoundingClientRect();
-                              e.dataTransfer.setDragImage(el, e.clientX - rect.left, e.clientY - rect.top);
-                            }}
-                            onDragEnd={() => { setDragId(null); setOverStage(null); }}
-                            className={`group w-full sm:w-64 rounded-xl border border-border bg-background p-3 cursor-grab active:cursor-grabbing transition-all ${dragId === s.id ? "opacity-40 scale-[0.98]" : "hover:border-primary/40 hover:shadow-sm"}`}
+                    items.map((s) => {
+                      const c = getCountry(s.country);
+                      return (
+                        <div
+                          key={s.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setDragId(s.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            const el = e.currentTarget as HTMLElement;
+                            const rect = el.getBoundingClientRect();
+                            e.dataTransfer.setDragImage(el, e.clientX - rect.left, e.clientY - rect.top);
+                          }}
+                          onDragEnd={() => { setDragId(null); setOverStage(null); }}
+                          className={`group rounded-xl border border-border bg-background p-3 cursor-grab active:cursor-grabbing transition-all ${dragId === s.id ? "opacity-40 scale-[0.98]" : "hover:border-primary/40 hover:shadow-sm"}`}
+                        >
+                          <Link
+                            to="/shops/$shopId"
+                            params={{ shopId: s.id }}
+                            draggable={false}
+                            onDragStart={(e) => e.preventDefault()}
+                            className="flex items-start gap-2.5 select-none"
                           >
-                            <Link
-                              to="/shops/$shopId"
-                              params={{ shopId: s.id }}
-                              draggable={false}
-                              onDragStart={(e) => e.preventDefault()}
-                              className="flex items-start gap-2.5 select-none"
-                            >
-                              {s.logo_url ? (
-                                <img src={s.logo_url} alt={s.name} draggable={false} className="size-9 rounded-lg object-cover shrink-0 border border-border pointer-events-none" />
-                              ) : (
-                                <div className="size-9 rounded-lg grid place-items-center shrink-0 bg-primary/10 text-primary">
-                                  <Store className="size-4" />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium leading-tight truncate flex items-center gap-1.5">
-                                  <span className="truncate">{s.name}</span>
-                                  {s.tag && (
-                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 truncate max-w-[100px]">
-                                      {s.tag}
-                                    </span>
-                                  )}
-                                </div>
-                                {c ? (
-                                  <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
-                                    <span className="text-sm leading-none">{c.flag}</span> {c.label}
-                                  </div>
-                                ) : s.country ? (
-                                  <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
-                                    <MapPin className="size-3" /> {s.country}
-                                  </div>
-                                ) : null}
+                            {s.logo_url ? (
+                              <img src={s.logo_url} alt={s.name} draggable={false} className="size-9 rounded-lg object-cover shrink-0 border border-border pointer-events-none" />
+                            ) : (
+                              <div className="size-9 rounded-lg grid place-items-center shrink-0 bg-primary/10 text-primary">
+                                <Store className="size-4" />
                               </div>
-                            </Link>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium leading-tight truncate flex items-center gap-1.5">
+                                <span className="truncate">{s.name}</span>
+                                {s.tag && (
+                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 truncate max-w-[100px]">
+                                    {s.tag}
+                                  </span>
+                                )}
+                              </div>
+                              {c ? (
+                                <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+                                  <span className="text-sm leading-none">{c.flag}</span> {c.label}
+                                </div>
+                              ) : s.country ? (
+                                <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+                                  <MapPin className="size-3" /> {s.country}
+                                </div>
+                              ) : null}
+                            </div>
+                          </Link>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
