@@ -15,6 +15,7 @@ import {
 } from "@/lib/dashboard.functions";
 import { saveGratitudeEntry } from "@/lib/gratitude.functions";
 import { listTasks, updateTask, getRoutineLogs } from "@/lib/tasks.functions";
+import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { redirect } from "@tanstack/react-router";
@@ -111,6 +112,7 @@ function Dashboard() {
   const [hidden, setHidden] = useState(false);
   const [gratitude, setGratitude] = useState("");
   const [newTask, setNewTask] = useState("");
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   // Sync gratitude
   const todayGratitude = data?.gratitude?.content ?? "";
@@ -188,7 +190,7 @@ function Dashboard() {
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
             {greeting}{firstName ? `, ${firstName}` : ""}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1.5 capitalize">{dateLabel} · seu resumo de hoje</p>
+          <p className="text-sm text-muted-foreground mt-1.5 capitalize">{dateLabel}</p>
         </div>
       </div>
 
@@ -238,7 +240,10 @@ function Dashboard() {
                     className={`size-5 rounded-full border-2 grid place-items-center transition-colors ${t.done ? "bg-success border-success" : "border-border group-hover:border-primary"}`}>
                     {t.done && <Check className="size-3 text-background" strokeWidth={3} />}
                   </button>
-                  <span className={`text-[15px] flex-1 ${t.done ? "line-through text-muted-foreground" : ""}`}>{t.title}</span>
+                  <button
+                    onClick={() => setOpenTaskId(t.id)}
+                    className={`text-[15px] flex-1 text-left hover:underline underline-offset-2 ${t.done ? "line-through text-muted-foreground" : ""}`}
+                  >{t.title}</button>
                   {t.scheduled_time && (
                     <span className="text-xs text-muted-foreground flex items-center gap-1 tabular-nums">
                       <CalIcon className="size-3" /> {t.scheduled_time}
@@ -356,6 +361,14 @@ function Dashboard() {
           </div>
         </section>
       </div>
+
+      <TaskDetailDialog
+        open={!!openTaskId}
+        onOpenChange={(o) => { if (!o) setOpenTaskId(null); }}
+        source="task"
+        id={openTaskId}
+        invalidateKeys={[["dashboard"], ["tasks"]]}
+      />
     </PageShell>
   );
 }
