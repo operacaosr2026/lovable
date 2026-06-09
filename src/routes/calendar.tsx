@@ -1,15 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader, PageShell } from "@/components/PageHeader";
-import { ChevronLeft, ChevronRight, Plus, X, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, X, Trash2, Users, Bell } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listCalendarEvents, createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from "@/lib/calendar.functions";
+import {
+  listCalendarEvents, listCalendarEventsToday,
+  createCalendarEvent, deleteCalendarEvent, updateCalendarEvent,
+} from "@/lib/calendar.functions";
+import { listWorkspace } from "@/lib/members.functions";
 import { requireAuth } from "@/lib/route-guards";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/calendar")({
   beforeLoad: requireAuth,
-  head: () => ({ meta: [{ title: "Calendário — Orbit" }] }),
+  head: () => ({ meta: [{ title: "Calendário — SRX Growth" }] }),
   component: CalendarPage,
 });
 
@@ -35,19 +40,22 @@ function CalendarPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [showForm, setShowForm] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [editEvent, setEditEvent] = useState<any | null>(null);
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("bg-primary");
   const [formDate, setFormDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const alerted = useRef<Set<string>>(new Set());
 
   const qc = useQueryClient();
   const listFn = useServerFn(listCalendarEvents);
+  const listTodayFn = useServerFn(listCalendarEventsToday);
   const createFn = useServerFn(createCalendarEvent);
   const deleteFn = useServerFn(deleteCalendarEvent);
   const updateFn = useServerFn(updateCalendarEvent);
+  const listWsFn = useServerFn(listWorkspace);
 
   const qKey = ["calendar", year, month];
   const { data: events = [], isLoading } = useQuery({
@@ -55,7 +63,42 @@ function CalendarPage() {
     queryFn: () => listFn({ data: { year, month } }),
   });
 
-  const inv = () => qc.invalidateQueries({ queryKey: qKey });
+  const { data: todayEvents = [] } = useQuery({
+    queryKey: ["calendar-today"],
+    queryFn: () => listTodayFn(),
+    refetchInterval: 60_000,
+  });
+
+  const { data: wsData } = useQuery({
+    queryKey: ["workspace"],
+    queryFn: () => listWsFn(),
+  });
+  const members: { member_id: string; full_name?: string; email?: string }[] = wsData?.members ?? [];
+
+  // Reminder: check every minute if an event is starting now
+  useEffect(() => {
+    const check = () => {
+      const nowStr = new Date().toTimeString().slice(0, 5);
+      (todayEvents as any[]).forEach((e: any) => {
+        const key = e.id + e.start_time;
+        if (e.start_time?.slice(0, 5) === nowStr && !alerted.current.has(key)) {
+          alerted.current.add(key);
+          toast(`🔔 ${e.title}`, {
+            description: `Evento começando agora às ${e.start_time.slice(0, 5)}`,
+            duration: 10_000,
+          });
+        }
+      });
+    };
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, [todayEvents]);
+
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: qKey });
+    qc.invalidateQueries({ queryKey: ["calendar-today"] });
+  };
   const mCreate = useMutation({ mutationFn: (d: any) => createFn({ data: d }), onSuccess: inv });
   const mDelete = useMutation({ mutationFn: (d: any) => deleteFn({ data: d }), onSuccess: inv });
   const mUpdate = useMutation({ mutationFn: (d: any) => updateFn({ data: d }), onSuccess: inv });
@@ -63,7 +106,6 @@ function CalendarPage() {
   const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1); } else setMonth(m => m + 1); };
 
-  // Calendar grid: always 6 weeks × 7 days
   const firstDow = new Date(year, month - 1, 1).getDay();
   const daysInMonth = new Date(year, month, 0).getDate();
   const cells = Array.from({ length: 42 }, (_, i) => {
@@ -72,7 +114,7 @@ function CalendarPage() {
   });
 
   const eventsByDay: Record<number, any[]> = {};
-  events.forEach((e: any) => {
+  (events as any[]).forEach((e: any) => {
     const day = parseInt(e.date.slice(8));
     if (!eventsByDay[day]) eventsByDay[day] = [];
     eventsByDay[day].push(e);
@@ -82,12 +124,8 @@ function CalendarPage() {
 
   const openCreate = (day: number) => {
     setEditEvent(null);
-    setSelectedDay(day);
     setFormDate(toDateStr(year, month, day));
-    setTitle("");
-    setColor("bg-primary");
-    setStartTime("");
-    setEndTime("");
+    setTitle(""); setColor("bg-primary"); setStartTime(""); setEndTime(""); setMemberIds([]);
     setShowForm(true);
   };
 
@@ -98,6 +136,7 @@ function CalendarPage() {
     setFormDate(e.date);
     setStartTime(e.start_time?.slice(0, 5) ?? "");
     setEndTime(e.end_time?.slice(0, 5) ?? "");
+    setMemberIds(e.member_ids ?? []);
     setShowForm(true);
   };
 
@@ -110,6 +149,7 @@ function CalendarPage() {
       date: formDate,
       start_time: startTime || null,
       end_time: endTime || null,
+      member_ids: memberIds,
     };
     if (editEvent) {
       mUpdate.mutate({ id: editEvent.id, patch });
@@ -117,6 +157,10 @@ function CalendarPage() {
       mCreate.mutate(patch);
     }
     setShowForm(false);
+  };
+
+  const toggleMember = (id: string) => {
+    setMemberIds(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
   };
 
   return (
@@ -140,14 +184,12 @@ function CalendarPage() {
       />
 
       <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        {/* Day headers */}
         <div className="grid grid-cols-7 border-b border-border">
           {DAYS.map((d) => (
             <div key={d} className="px-3 py-2.5 text-xs font-medium text-muted-foreground text-center">{d}</div>
           ))}
         </div>
 
-        {/* Grid */}
         {isLoading ? (
           <div className="grid place-items-center h-64">
             <div className="size-6 rounded-full border-2 border-border border-t-primary animate-spin" />
@@ -181,12 +223,15 @@ function CalendarPage() {
                           <div
                             key={e.id}
                             onClick={(ev) => { ev.stopPropagation(); openEdit(e); }}
-                            className={`text-[11px] px-1.5 py-0.5 rounded-md truncate cursor-pointer border-l-2 ${e.color} bg-muted hover:opacity-80 transition-opacity text-foreground`}
+                            className={`text-[11px] px-1.5 py-0.5 rounded-md truncate cursor-pointer border-l-2 ${e.color} bg-muted hover:opacity-80 transition-opacity text-foreground flex items-center gap-1`}
                           >
                             {e.start_time && (
-                              <span className="text-muted-foreground mr-1">{e.start_time.slice(0, 5)}</span>
+                              <span className="text-muted-foreground">{e.start_time.slice(0, 5)}</span>
                             )}
-                            {e.title}
+                            <span className="truncate flex-1">{e.title}</span>
+                            {(e.member_ids?.length > 0) && (
+                              <Users className="size-2.5 text-muted-foreground shrink-0" />
+                            )}
                           </div>
                         ))}
                         {dayEvents.length > 3 && (
@@ -205,14 +250,14 @@ function CalendarPage() {
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-md bg-background rounded-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md bg-background rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">{editEvent ? "Editar evento" : "Novo evento"}</h2>
               <div className="flex items-center gap-1">
                 {editEvent && (
                   <button
                     onClick={() => { mDelete.mutate({ id: editEvent.id }); setShowForm(false); }}
-                    className="size-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 grid place-items-center transition-colors"
+                    className="size-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 grid place-items-center"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -262,6 +307,37 @@ function CalendarPage() {
                   />
                 </div>
               </div>
+
+              {/* Member picker */}
+              {members.length > 0 && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5 block">
+                    <Users className="size-3.5" /> Convidar membros
+                  </label>
+                  <div className="space-y-1.5">
+                    {members.map((m) => {
+                      const selected = memberIds.includes(m.member_id);
+                      return (
+                        <label key={m.member_id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted hover:bg-muted/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleMember(m.member_id)}
+                            className="size-4 accent-primary"
+                          />
+                          <div className="size-7 rounded-full gradient-primary grid place-items-center text-white text-xs font-bold shrink-0">
+                            {(m.full_name || m.email || "?").slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="text-sm min-w-0">
+                            <div className="font-medium truncate">{m.full_name || m.email}</div>
+                            {m.full_name && <div className="text-xs text-muted-foreground truncate">{m.email}</div>}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs text-muted-foreground mb-2 block">Cor</label>

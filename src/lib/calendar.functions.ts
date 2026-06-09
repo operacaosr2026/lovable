@@ -10,13 +10,30 @@ export const listCalendarEvents = createServerFn({ method: "GET" })
     const from = `${data.year}-${String(data.month).padStart(2, "0")}-01`;
     const lastDay = new Date(data.year, data.month, 0).getDate();
     const to = `${data.year}-${String(data.month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    // Returns own events + events where user is a member
     const { data: events, error } = await supabase
       .from("calendar_events")
       .select("*")
-      .eq("user_id", userId)
+      .or(`user_id.eq.${userId},member_ids.cs.{${userId}}`)
       .gte("date", from)
       .lte("date", to)
       .order("date");
+    if (error) throw new Error(error.message);
+    return events ?? [];
+  });
+
+export const listCalendarEventsToday = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: events, error } = await supabase
+      .from("calendar_events")
+      .select("*")
+      .or(`user_id.eq.${userId},member_ids.cs.{${userId}}`)
+      .eq("date", today)
+      .not("start_time", "is", null)
+      .order("start_time");
     if (error) throw new Error(error.message);
     return events ?? [];
   });
@@ -30,6 +47,7 @@ export const createCalendarEvent = createServerFn({ method: "POST" })
       color: z.string().default("bg-primary"),
       start_time: z.string().nullable().optional(),
       end_time: z.string().nullable().optional(),
+      member_ids: z.array(z.string().uuid()).optional(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -40,6 +58,7 @@ export const createCalendarEvent = createServerFn({ method: "POST" })
       color: data.color,
       start_time: data.start_time ?? null,
       end_time: data.end_time ?? null,
+      member_ids: data.member_ids ?? [],
     });
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -69,6 +88,7 @@ export const updateCalendarEvent = createServerFn({ method: "POST" })
         color: z.string().optional(),
         start_time: z.string().nullable().optional(),
         end_time: z.string().nullable().optional(),
+        member_ids: z.array(z.string().uuid()).optional(),
       }),
     }).parse(d),
   )
