@@ -309,11 +309,15 @@ function CalendarPage() {
               </div>
 
               {/* Member picker */}
-              {members.length > 0 && (
-                <div>
-                  <label className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5 block">
-                    <Users className="size-3.5" /> Convidar membros
-                  </label>
+              <div>
+                <label className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5 block">
+                  <Users className="size-3.5" /> Convidar membros
+                </label>
+                {members.length === 0 ? (
+                  <div className="px-3 py-2.5 rounded-xl bg-muted text-xs text-muted-foreground">
+                    Nenhum membro no workspace
+                  </div>
+                ) : (
                   <div className="space-y-1.5">
                     {members.map((m) => {
                       const selected = memberIds.includes(m.member_id);
@@ -336,8 +340,8 @@ function CalendarPage() {
                       );
                     })}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               <div>
                 <label className="text-xs text-muted-foreground mb-2 block">Cor</label>
