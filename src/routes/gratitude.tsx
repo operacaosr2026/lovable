@@ -45,7 +45,7 @@ function GratitudePage() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [draft, setDraft] = useState("");
   const [saved, setSaved] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const qc = useQueryClient();
 
   const getFn = useServerFn(getGratitudeEntry);
@@ -196,7 +196,7 @@ function GratitudePage() {
             </h2>
             <div className="space-y-3">
               {history
-                .filter((e) => e.entry_date !== selectedDate || !isToday)
+                .filter((e) => e.date !== selectedDate || !isToday)
                 .map((entry) => (
                   <div
                     key={entry.id}

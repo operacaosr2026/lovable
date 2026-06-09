@@ -73,7 +73,7 @@ function CalendarPage() {
     queryKey: ["workspace"],
     queryFn: () => listWsFn(),
   });
-  const members: { member_id: string; full_name?: string; email?: string }[] = wsData?.members ?? [];
+  const members: { member_id: string; full_name?: string | null; email?: string | null }[] = wsData?.members ?? [];
 
   // Reminder: fires 30 min before and exactly at start_time
   useEffect(() => {
@@ -337,7 +337,7 @@ function CalendarPage() {
                           key={m.member_id}
                           type="button"
                           onClick={() => toggleMember(m.member_id)}
-                          title={m.full_name || m.email}
+                          title={m.full_name || m.email || undefined}
                           className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors ${
                             selected
                               ? "bg-primary/10 border-primary text-primary"
