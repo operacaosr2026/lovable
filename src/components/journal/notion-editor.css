@@ -1,0 +1,55 @@
+/* BlockNote integration with app theme */
+.notion-editor-wrapper {
+  width: 100%;
+}
+
+.notion-editor-wrapper .bn-container,
+.notion-editor-wrapper .bn-editor {
+  background: transparent !important;
+  font-family: inherit;
+}
+
+/* Remove default padding — parent already pads */
+.notion-editor-wrapper .bn-editor {
+  padding-inline: 0 !important;
+}
+
+/* Match app colors using design tokens */
+.notion-editor-wrapper [data-theme] {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-editor-text: #000;
+  --bn-colors-menu-background: hsl(var(--popover));
+  --bn-colors-menu-text: hsl(var(--popover-foreground));
+  --bn-colors-tooltip-background: hsl(var(--popover));
+  --bn-colors-tooltip-text: hsl(var(--popover-foreground));
+  --bn-colors-hovered-background: hsl(var(--muted));
+  --bn-colors-hovered-text: hsl(var(--foreground));
+  --bn-colors-selected-background: hsl(var(--primary) / 0.15);
+  --bn-colors-selected-text: #000;
+  --bn-colors-disabled-background: hsl(var(--muted));
+  --bn-colors-disabled-text: hsl(var(--muted-foreground));
+  --bn-colors-shadow: rgba(0, 0, 0, 0.3);
+  --bn-colors-border: hsl(var(--border));
+  --bn-colors-side-menu: hsl(var(--muted-foreground));
+  --bn-border-radius: 0.5rem;
+}
+
+/* Texto padrão do editor sempre preto */
+.notion-editor-wrapper .bn-editor,
+.notion-editor-wrapper .bn-editor [data-text-color="default"],
+.notion-editor-wrapper .bn-block-content {
+  color: #000 !important;
+}
+
+/* Cor de texto "Preto" (renomeada do slot "gray") — preto puro em qualquer tema */
+.notion-editor-wrapper [data-text-color="gray"] {
+  color: #000 !important;
+}
+.notion-editor-wrapper [data-background-color="gray"] {
+  background-color: #000 !important;
+}
+/* Swatch no menu de cores */
+.bn-color-picker-dropdown [data-test="text-color-gray"],
+.bn-color-picker-dropdown [data-test="background-color-gray"] {
+  color: #000 !important;
+}

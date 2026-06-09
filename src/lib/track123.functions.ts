@@ -1,0 +1,333 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
+
+const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2";
+
+const DEFAULT_EVENT_RULES: Array<{ key: string; label: string; target: "shipped" | "delivered" | "problem" | "ignore" }> = [
+  { key: "accepted_by_carrier", label: "Accepted by carrier", target: "shipped" },
+  { key: "shipment_picked_up", label: "Shipment picked up", target: "shipped" },
+  { key: "departed_from_sorting_center", label: "Departed from sorting center", target: "shipped" },
+  { key: "in_transit", label: "In transit", target: "ignore" },
+  { key: "arrived_at_destination", label: "Arrived at destination", target: "ignore" },
+  { key: "out_for_delivery", label: "Out for delivery", target: "ignore" },
+  { key: "delivered", label: "Delivered", target: "delivered" },
+  { key: "exception", label: "Exception", target: "problem" },
+  { key: "failed_attempt", label: "Failed delivery attempt", target: "problem" },
+  { key: "expired", label: "Expired", target: "problem" },
+  { key: "shipment_information_received", label: "Shipment information received", target: "ignore" },
+];
+
+function maskKey(s: string | null | undefined): string | null {
+  if (!s) return null;
+  if (s.length <= 8) return "•".repeat(s.length);
+  return s.slice(0, 4) + "•".repeat(Math.max(4, s.length - 8)) + s.slice(-4);
+}
+
+// ===== Integration config =====
+
+export const getTrack123Integration = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: row } = await supabaseAdmin.from("track123_integrations")
+      .select("*").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+
+    if (!row) {
+      return {
+        configured: false,
+        enabled: false,
+        api_key_masked: null,
+        token_masked: null,
+        webhook_secret: null,
+        webhook_url: null,
+        tracking_link_template: "https://chierie.com/apps/track123?nums=[CODE]",
+        last_sync_at: null,
+        last_sync_status: null,
+        last_sync_error: null,
+      };
+    }
+
+    const origin = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    return {
+      configured: Boolean(row.api_key),
+      enabled: row.enabled,
+      api_key_masked: maskKey(row.api_key),
+      token_masked: maskKey(row.token),
+      webhook_secret: row.webhook_secret,
+      webhook_url: `${origin}/api/public/hooks/track123/${data.shop_id}/${row.webhook_secret}`,
+      tracking_link_template: row.tracking_link_template,
+      last_sync_at: row.last_sync_at,
+      last_sync_status: row.last_sync_status,
+      last_sync_error: row.last_sync_error,
+    };
+  });
+
+export const upsertTrack123Integration = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string; api_key?: string; token?: string; tracking_link_template?: string; enabled?: boolean }) =>
+    z.object({
+      shop_id: z.string().uuid(),
+      api_key: z.string().min(1).max(500).optional(),
+      token: z.string().max(500).optional(),
+      tracking_link_template: z.string().min(1).max(500).optional(),
+      enabled: z.boolean().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const patch: { api_key?: string; token?: string; tracking_link_template?: string; enabled?: boolean } = {};
+    if (data.api_key !== undefined) patch.api_key = data.api_key;
+    if (data.token !== undefined) patch.token = data.token;
+    if (data.tracking_link_template !== undefined) patch.tracking_link_template = data.tracking_link_template;
+    if (data.enabled !== undefined) patch.enabled = data.enabled;
+
+    const { data: existing } = await supabaseAdmin.from("track123_integrations")
+      .select("id").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+
+    if (existing) {
+      const { error } = await supabaseAdmin.from("track123_integrations")
+        .update(patch).eq("id", existing.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabaseAdmin.from("track123_integrations")
+        .insert({ user_id: userId, shop_id: data.shop_id, enabled: true, ...patch });
+      if (error) throw new Error(error.message);
+      // seed default event rules
+      const rules = DEFAULT_EVENT_RULES.map((r, i) => ({
+        user_id: userId, shop_id: data.shop_id,
+        event_key: r.key, event_label: r.label, target_status: r.target, enabled: true, position: i,
+      }));
+      await supabase.from("track123_event_rules").insert(rules);
+    }
+    return { ok: true };
+  });
+
+export const testTrack123Connection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { data: row } = await supabaseAdmin.from("track123_integrations")
+      .select("api_key").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!row?.api_key) throw new Error("API Key não configurada");
+
+    try {
+      const r = await fetch(`${TRACK123_API_BASE}/courier/list`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Track123-Api-Secret": row.api_key },
+        body: JSON.stringify({}),
+      });
+      const ok = r.ok;
+      const text = await r.text();
+      await supabaseAdmin.from("track123_integrations")
+        .update({
+          last_sync_at: new Date().toISOString(),
+          last_sync_status: ok ? "ok" : "error",
+          last_sync_error: ok ? null : text.slice(0, 500),
+        })
+        .eq("user_id", userId).eq("shop_id", data.shop_id);
+      if (!ok) throw new Error(`Falha (${r.status}): ${text.slice(0, 200)}`);
+      return { ok: true };
+    } catch (e: any) {
+      await supabaseAdmin.from("track123_integrations")
+        .update({ last_sync_status: "error", last_sync_error: String(e?.message ?? e).slice(0, 500) })
+        .eq("user_id", userId).eq("shop_id", data.shop_id);
+      throw e;
+    }
+  });
+
+export const syncTrack123Tracking = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: integ } = await supabaseAdmin.from("track123_integrations")
+      .select("api_key").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!integ?.api_key) throw new Error("Integração não configurada");
+
+    // Get tracking numbers from existing tracking rows
+    const { data: trackings } = await supabase.from("shop_order_tracking")
+      .select("id,tracking_number").eq("shop_id", data.shop_id)
+      .not("tracking_number", "is", null).limit(200);
+
+    let updated = 0;
+    for (const t of trackings ?? []) {
+      if (!t.tracking_number) continue;
+      try {
+        const r = await fetch(`${TRACK123_API_BASE}/track/info`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Track123-Api-Secret": integ.api_key },
+          body: JSON.stringify({ trackNos: [t.tracking_number] }),
+        });
+        if (!r.ok) continue;
+        const j: any = await r.json();
+        const item = j?.data?.[0] ?? j?.data?.list?.[0];
+        if (!item) continue;
+        const events = item.events ?? item.trackInfo ?? [];
+        const last = events[0] ?? null;
+        await supabase.from("shop_order_tracking").update({
+          carrier: item.courierCode ?? item.carrierCode ?? null,
+          tracking_status: item.status ?? null,
+          last_event_at: last?.date ?? last?.eventTime ?? null,
+          last_event_label: last?.statusDescription ?? last?.context ?? null,
+          timeline: events,
+        }).eq("id", t.id);
+        updated++;
+      } catch {/* ignore individual failures */}
+    }
+
+    await supabaseAdmin.from("track123_integrations")
+      .update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null })
+      .eq("user_id", userId).eq("shop_id", data.shop_id);
+
+    return { updated };
+  });
+
+// ===== Event rules =====
+
+export const listTrack123EventRules = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: rows } = await context.supabase.from("track123_event_rules")
+      .select("*").eq("shop_id", data.shop_id).order("position", { ascending: true });
+    return rows ?? [];
+  });
+
+export const upsertTrack123EventRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string; id?: string; event_key: string; event_label: string; target_status: string; enabled: boolean }) =>
+    z.object({
+      shop_id: z.string().uuid(),
+      id: z.string().uuid().optional(),
+      event_key: z.string().min(1).max(120).regex(/^[a-z0-9_-]+$/),
+      event_label: z.string().min(1).max(200),
+      target_status: z.enum(["shipped", "delivered", "problem", "ignore"]),
+      enabled: z.boolean(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    if (data.id) {
+      const { error } = await supabase.from("track123_event_rules").update({
+        event_key: data.event_key, event_label: data.event_label,
+        target_status: data.target_status, enabled: data.enabled,
+      }).eq("id", data.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabase.from("track123_event_rules").insert({
+        user_id: userId, shop_id: data.shop_id,
+        event_key: data.event_key, event_label: data.event_label,
+        target_status: data.target_status, enabled: data.enabled,
+      });
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+export const deleteTrack123EventRule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.from("track123_event_rules").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ===== Order tracking lookup =====
+
+export const setOrderTracking = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { order_id: string; tracking_number: string }) =>
+    z.object({ order_id: z.string().uuid(), tracking_number: z.string().min(1).max(120) }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: order } = await supabase.from("shop_orders")
+      .select("id,shop_id").eq("id", data.order_id).maybeSingle();
+    if (!order) throw new Error("Pedido não encontrado");
+
+    const { data: existing } = await supabase.from("shop_order_tracking")
+      .select("id").eq("order_id", data.order_id).maybeSingle();
+    if (existing) {
+      const { error } = await supabase.from("shop_order_tracking")
+        .update({ tracking_number: data.tracking_number }).eq("id", existing.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabase.from("shop_order_tracking").insert({
+        user_id: userId, shop_id: order.shop_id, order_id: order.id,
+        tracking_number: data.tracking_number,
+      });
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+export const listOrdersTracking = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string; order_ids: string[] }) =>
+    z.object({ shop_id: z.string().uuid(), order_ids: z.array(z.string().uuid()).max(500) }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    if (!data.order_ids.length) return [];
+    const { data: rows } = await context.supabase.from("shop_order_tracking")
+      .select("*").eq("shop_id", data.shop_id).in("order_id", data.order_ids);
+    return rows ?? [];
+  });
+
+// ===== Metrics =====
+
+export const getTrack123Metrics = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const { data: orders } = await supabase.from("shop_orders")
+      .select("id,payment_status,paid_at,shipped_at,delivered_at,problem_at")
+      .eq("shop_id", data.shop_id);
+
+    const { data: trackings } = await supabase.from("shop_order_tracking")
+      .select("order_id,tracking_number,last_event_at")
+      .eq("shop_id", data.shop_id);
+
+    const trackingByOrder = new Map((trackings ?? []).map((t: any) => [t.order_id, t]));
+    const all = orders ?? [];
+
+    let shippedToday = 0, withoutTracking = 0, inTransit = 0, delivered = 0, problem = 0, stale = 0;
+    let leadSum = 0, leadCount = 0;
+
+    const TEN_DAYS_AGO = Date.now() - 10 * 86400_000;
+
+    for (const o of all) {
+      const t = trackingByOrder.get(o.id);
+      if (!t?.tracking_number) {
+        if (o.payment_status === "paid" || o.payment_status === "shipped") withoutTracking++;
+      } else {
+        if (t.last_event_at && new Date(t.last_event_at).getTime() < TEN_DAYS_AGO && o.payment_status === "shipped") stale++;
+      }
+      if (o.shipped_at === today) shippedToday++;
+      if (o.payment_status === "shipped" && !o.delivered_at) inTransit++;
+      if (o.delivered_at) delivered++;
+      if (o.problem_at) problem++;
+      if (o.paid_at && o.shipped_at) {
+        const diff = (new Date(o.shipped_at).getTime() - new Date(o.paid_at).getTime()) / 86400_000;
+        if (diff >= 0 && diff < 90) { leadSum += diff; leadCount++; }
+      }
+    }
+
+    return {
+      avg_time_to_ship: leadCount ? Number((leadSum / leadCount).toFixed(1)) : null,
+      shipped_today: shippedToday,
+      without_tracking: withoutTracking,
+      stale_tracking: stale,
+      in_transit: inTransit,
+      delivered,
+      problem,
+    };
+  });

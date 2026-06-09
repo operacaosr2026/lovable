@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const m = require\\('./node_modules/@tanstack/react-start/dist/esm/plugin/vite.js'\\); console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(npm install *)",
+      "Bash(vercel deploy *)",
+      "Bash(npm run *)",
+      "PowerShell(Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1; Set-Location \"c:\\\\Users\\\\Sergio Otone\\\\Documents\\\\GitHub\\\\lojas\"; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'npm run dev' -WorkingDirectory \"c:\\\\Users\\\\Sergio Otone\\\\Documents\\\\GitHub\\\\lojas\")",
+      "PowerShell(netstat -ano)"
+    ]
+  }
+}

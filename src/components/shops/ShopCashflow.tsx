@@ -1,0 +1,772 @@
+import { useMemo, useRef, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Plus, Upload, Trash2, ChevronLeft, ChevronRight, FileSpreadsheet, X, Wallet, TrendingUp, TrendingDown, AlertTriangle, Repeat, Tag, Pencil, Check } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
+  setOpeningBalance, importShopifyPayouts, deleteCashImport, setWeekendRule,
+  listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
+  resetShopCash,
+} from "@/lib/shop-cash.functions";
+
+type Recurrence = "none" | "daily" | "weekly" | "monthly";
+type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null };
+type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
+
+const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
+
+function dateKey(year: number, month: number, day: number) {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function dateKeyParts(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  return { year, month, day };
+}
+function dateFromKey(key: string) {
+  const { year, month, day } = dateKeyParts(key);
+  return new Date(Date.UTC(year, month - 1, day, 12));
+}
+function addDaysToKey(key: string, days: number) {
+  const d = dateFromKey(key);
+  d.setUTCDate(d.getUTCDate() + days);
+  return dateKey(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+function addMonthsToKey(key: string, months: number) {
+  const { year, month, day } = dateKeyParts(key);
+  const first = new Date(Date.UTC(year, month - 1 + months, 1, 12));
+  const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0, 12)).getUTCDate();
+  return dateKey(first.getUTCFullYear(), first.getUTCMonth() + 1, Math.min(day, lastDay));
+}
+function todayKeyBrazil() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BRAZIL_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return dateKey(get("year"), get("month"), get("day"));
+}
+function formatDateKey(key: string, options: Intl.DateTimeFormatOptions) {
+  return dateFromKey(key).toLocaleDateString("pt-BR", { ...options, timeZone: BRAZIL_TIME_ZONE });
+}
+function weekdayFromKey(key: string) {
+  return dateFromKey(key).getUTCDay();
+}
+// 0=Sun, 5=Fri, 6=Sat → shift to Monday. Returns same key if not weekend/friday.
+function shiftToMondayIfWeekend(key: string): string {
+  const wd = weekdayFromKey(key);
+  if (wd === 5) return addDaysToKey(key, 3); // Fri → Mon
+  if (wd === 6) return addDaysToKey(key, 2); // Sat → Mon
+  if (wd === 0) return addDaysToKey(key, 1); // Sun → Mon
+  return key;
+}
+function spreadsheetDateKey(raw: unknown): string | null {
+  if (raw instanceof Date) {
+    return dateKey(raw.getUTCFullYear(), raw.getUTCMonth() + 1, raw.getUTCDate());
+  }
+  if (typeof raw === "number") {
+    const parsed = XLSX.SSF.parse_date_code(raw);
+    return parsed ? dateKey(parsed.y, parsed.m, parsed.d) : null;
+  }
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const value = raw.trim();
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return value;
+  const br = value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  if (br) {
+    let yr = parseInt(br[3]); if (yr < 100) yr += 2000;
+    return dateKey(yr, parseInt(br[2]), parseInt(br[1]));
+  }
+  return null;
+}
+function parseCsvRows(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (quoted && text[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = !quoted;
+    } else if (ch === "," && !quoted) {
+      row.push(cell); cell = "";
+    } else if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += ch;
+  }
+  row.push(cell); rows.push(row);
+  const headers = rows.shift()?.map((h) => h.trim()) ?? [];
+  return rows.filter((r) => r.some((v) => v.trim())).map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i]?.trim() ?? ""])));
+}
+function cellValueForImport(cell: XLSX.CellObject | undefined) {
+  if (!cell) return "";
+  return cell.w?.trim() || cell.v;
+}
+function sheetRowsForImport(ws: XLSX.WorkSheet) {
+  const ref = ws["!ref"];
+  if (!ref) return [];
+  const range = XLSX.utils.decode_range(ref);
+  const headers: string[] = [];
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: range.s.r, c })] as XLSX.CellObject | undefined;
+    headers.push(String(cellValueForImport(cell)).trim());
+  }
+  const rows: Record<string, unknown>[] = [];
+  for (let r = range.s.r + 1; r <= range.e.r; r++) {
+    const row: Record<string, unknown> = {};
+    let hasValue = false;
+    headers.forEach((header, index) => {
+      if (!header) return;
+      const cell = ws[XLSX.utils.encode_cell({ r, c: range.s.c + index })] as XLSX.CellObject | undefined;
+      const value = cellValueForImport(cell);
+      if (value !== "" && value != null) hasValue = true;
+      row[header] = value;
+    });
+    if (hasValue) rows.push(row);
+  }
+  return rows;
+}
+function fmtMoney(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtMoneyCompact(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+const WEEKDAYS_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+export function ShopCashflow({ shopId }: { shopId: string }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listShopCash);
+  const createFn = useServerFn(createCashEntry);
+  const deleteFn = useServerFn(deleteCashEntry);
+  const updateFn = useServerFn(updateCashEntry);
+  const openingFn = useServerFn(setOpeningBalance);
+  const importFn = useServerFn(importShopifyPayouts);
+  const deleteImpFn = useServerFn(deleteCashImport);
+  const listCatsFn = useServerFn(listCashCategories);
+
+  const queryKey = ["shop-cash", shopId];
+  const catsKey = ["shop-cash-cats", shopId];
+  const { data, isLoading } = useQuery({ queryKey, queryFn: () => listFn({ data: { shop_id: shopId } }) });
+  const catsQuery = useQuery({ queryKey: catsKey, queryFn: () => listCatsFn({ data: { shop_id: shopId } }) });
+  const refresh = () => qc.invalidateQueries({ queryKey });
+  const refreshCats = () => qc.invalidateQueries({ queryKey: catsKey });
+
+  const allCats = (catsQuery.data ?? []) as { id: string; kind: "income" | "expense"; name: string }[];
+  const incomeCats = useMemo(() => allCats.filter(c => c.kind === "income").map(c => c.name), [allCats]);
+  const expenseCats = useMemo(() => allCats.filter(c => c.kind === "expense").map(c => c.name), [allCats]);
+
+  const [days, setDays] = useState(7);
+  const [startOffset, setStartOffset] = useState(0);
+  const [quickAdd, setQuickAdd] = useState<{ date: string; kind: "income" | "expense" } | null>(null);
+  const [importInfo, setImportInfo] = useState<{ rows: any[]; file: File; hash: string } | null>(null);
+  const [editing, setEditing] = useState<Entry | null>(null);
+  const [manageCats, setManageCats] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const entries = (data?.entries ?? []) as Entry[];
+  const opening = data?.opening_balance ?? 0;
+  const imports = data?.imports ?? [];
+  const weekendToMonday = Boolean(data?.weekend_payouts_to_monday);
+
+  const todayKey = useMemo(() => todayKeyBrazil(), []);
+
+  const dayList = useMemo(() => {
+    const arr: string[] = [];
+    for (let i = 0; i < days; i++) {
+      arr.push(addDaysToKey(todayKey, startOffset + i));
+    }
+    return arr;
+  }, [todayKey, startOffset, days]);
+
+  // Expand recurring entries up to a horizon (today + 60 days or end of view)
+  const horizon = useMemo(() => {
+    const last = dayList[dayList.length - 1] ?? todayKey;
+    const sixty = addDaysToKey(todayKey, 60);
+    return last > sixty ? last : sixty;
+  }, [todayKey, dayList]);
+
+  const expanded = useMemo<DayItem[]>(() => {
+    const applyShift = (item: DayItem): DayItem => {
+      if (!weekendToMonday) return item;
+      if (item.source !== "shopify_import") return item;
+      if (item.skip_weekend_rule) return item;
+      const wd = weekdayFromKey(item.date);
+      if (wd !== 0 && wd !== 5 && wd !== 6) return item;
+      const shifted = shiftToMondayIfWeekend(item.date);
+      return { ...item, date: shifted, originalDate: item.originalDate ?? item.date, shiftedFromWeekday: wd };
+    };
+    const out: DayItem[] = [];
+    for (const e of entries) {
+      const rec = (e.recurrence ?? "none") as Recurrence;
+      if (rec === "none") { out.push(applyShift(e)); continue; }
+      const stop = e.recurrence_until && e.recurrence_until < horizon ? e.recurrence_until : horizon;
+      let cur = e.date;
+      let i = 0;
+      while (cur <= stop && i < 400) {
+        out.push(applyShift({ ...e, date: cur, virtual: i > 0, originalDate: e.date }));
+        if (rec === "daily") cur = addDaysToKey(cur, 1);
+        else if (rec === "weekly") cur = addDaysToKey(cur, 7);
+        else if (rec === "monthly") cur = addMonthsToKey(cur, 1);
+        i++;
+      }
+    }
+    return out;
+  }, [entries, horizon, weekendToMonday]);
+
+  const saldoBeforeRange = useMemo(() => {
+    const first = dayList[0] ?? todayKey;
+    let s = opening;
+    for (const e of expanded) {
+      if (e.date < first) s += e.kind === "income" ? Number(e.amount) : -Number(e.amount);
+    }
+    return s;
+  }, [expanded, opening, dayList, todayKey]);
+
+  const byDay = useMemo(() => {
+    const m = new Map<string, DayItem[]>();
+    for (const e of expanded) {
+      const arr = m.get(e.date) ?? [];
+      arr.push(e); m.set(e.date, arr);
+    }
+    return m;
+  }, [expanded]);
+
+  const dayData = useMemo(() => {
+    let acc = saldoBeforeRange;
+    return dayList.map((key) => {
+      const items = byDay.get(key) ?? [];
+      const incomeItems = items.filter(e => e.kind === "income");
+      const expenseItems = items.filter(e => e.kind === "expense");
+      const income = incomeItems.reduce((a, e) => a + Number(e.amount), 0);
+      const expense = expenseItems.reduce((a, e) => a + Number(e.amount), 0);
+      acc = acc + income - expense;
+      return { key, incomeItems, expenseItems, income, expense, balance: acc };
+    });
+  }, [dayList, byDay, saldoBeforeRange]);
+
+  // Future indicators (next 30 days)
+  const future = useMemo(() => {
+    let acc = opening;
+    for (const e of expanded) {
+      if (e.date <= todayKey) acc += e.kind === "income" ? Number(e.amount) : -Number(e.amount);
+    }
+    const currentBalance = acc;
+    const days30: { date: string; balance: number; income: number }[] = [];
+    let s = currentBalance;
+    const map = new Map<string, { i: number; e: number }>();
+    for (const e of expanded) {
+      if (e.date <= todayKey) continue;
+      const m = map.get(e.date) ?? { i: 0, e: 0 };
+      if (e.kind === "income") m.i += Number(e.amount); else m.e += Number(e.amount);
+      map.set(e.date, m);
+    }
+    for (let i = 1; i <= 30; i++) {
+      const k = addDaysToKey(todayKey, i);
+      const m = map.get(k) ?? { i: 0, e: 0 };
+      s = s + m.i - m.e;
+      days30.push({ date: k, balance: s, income: m.i });
+    }
+    const tomorrow = days30[0]?.balance ?? currentBalance;
+    const min = days30.reduce((a, b) => b.balance < a.balance ? b : a, days30[0] ?? { date: "", balance: currentBalance, income: 0 });
+    const maxIncome = days30.reduce((a, b) => b.income > a.income ? b : a, days30[0] ?? { date: "", balance: 0, income: 0 });
+    return { current: currentBalance, tomorrow, min, maxIncome };
+  }, [expanded, opening, todayKey]);
+
+  const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: refresh });
+  const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
+  const updateMut = useMutation({ mutationFn: (v: any) => updateFn({ data: v }), onSuccess: refresh });
+  const openingMut = useMutation({ mutationFn: (v: number) => openingFn({ data: { shop_id: shopId, opening_balance: v } }), onSuccess: refresh });
+  const importMut = useMutation({ mutationFn: (v: any) => importFn({ data: v }), onSuccess: () => { refresh(); setImportInfo(null); } });
+  const deleteImpMut = useMutation({ mutationFn: (id: string) => deleteImpFn({ data: { id } }), onSuccess: refresh });
+  const weekendFn = useServerFn(setWeekendRule);
+  const weekendMut = useMutation({ mutationFn: (enabled: boolean) => weekendFn({ data: { shop_id: shopId, enabled } }), onSuccess: refresh });
+  const resetFn = useServerFn(resetShopCash);
+  const resetMut = useMutation({
+    mutationFn: () => resetFn({ data: { shop_id: shopId } }),
+    onSuccess: () => {
+      refresh();
+      qc.invalidateQueries({ queryKey: ["shop-orders", shopId] });
+    },
+  });
+
+  async function handleFile(f: File) {
+    const buf = await f.arrayBuffer();
+    const hashBuf = await crypto.subtle.digest("SHA-256", buf);
+    const hash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    const isCsv = f.name.toLowerCase().endsWith(".csv") || f.type.includes("csv");
+    const json = isCsv ? parseCsvRows(new TextDecoder().decode(buf)) : (() => {
+      const wb = XLSX.read(buf, { type: "array", cellDates: false, raw: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      return sheetRowsForImport(ws);
+    })();
+    // find columns
+    const rows: { date: string; amount: number }[] = [];
+    for (const r of json) {
+      const keys = Object.keys(r);
+      const dateKey = keys.find(k => /payout\s*date/i.test(k)) ?? keys.find(k => /^date$/i.test(k));
+      const netKey = keys.find(k => /^net$/i.test(k)) ?? keys.find(k => /amount/i.test(k));
+      if (!dateKey || !netKey) continue;
+      const dKey = spreadsheetDateKey(r[dateKey]);
+      const amt = typeof r[netKey] === "number" ? r[netKey] : parseFloat(String(r[netKey]).replace(/[^0-9.\-,]/g, "").replace(",", "."));
+      if (!dKey || isNaN(amt)) continue;
+      // Mantém a data original do Payout Date e importa apenas a partir do dia seguinte ao atual.
+      if (dKey <= todayKey) continue;
+      rows.push({ date: dKey, amount: amt });
+    }
+    if (rows.length === 0) {
+      alert("Nenhuma linha válida encontrada. Verifique se a planilha tem colunas 'Payout Date' e 'Net'.");
+      return;
+    }
+    setImportInfo({ rows, file: f, hash });
+  }
+
+  if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
+
+  return (
+    <div className="space-y-5">
+      {/* Indicators */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
+        <Indicator icon={TrendingUp} label="Saldo amanhã" value={fmtMoney(future.tomorrow)} negative={future.tomorrow < 0} />
+        <Indicator icon={AlertTriangle} label="Menor saldo (30d)" value={fmtMoney(future.min.balance)} sub={future.min.date && formatDateKey(future.min.date, { day: "2-digit", month: "short" })} negative={future.min.balance < 0} />
+        <Indicator icon={TrendingDown} label="Maior entrada (30d)" value={fmtMoney(future.maxIncome.income)} sub={future.maxIncome.date && formatDateKey(future.maxIncome.date, { day: "2-digit", month: "short" })} accent="oklch(0.55 0.13 155)" />
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex items-center rounded-lg border border-border bg-surface">
+          <button onClick={() => setStartOffset(o => o - days)} className="p-2 hover:bg-accent rounded-l-lg"><ChevronLeft className="size-4" /></button>
+          <button onClick={() => setStartOffset(0)} className="px-3 text-xs">Hoje</button>
+          <button onClick={() => setStartOffset(o => o + days)} className="p-2 hover:bg-accent rounded-r-lg"><ChevronRight className="size-4" /></button>
+        </div>
+        <div className="inline-flex rounded-lg border border-border overflow-hidden text-xs">
+          {[7, 14, 30].map(n => (
+            <button key={n} onClick={() => setDays(n)} className={`px-3 h-9 ${days === n ? "bg-primary text-primary-foreground" : "bg-surface hover:bg-accent"}`}>{n}d</button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Lançamentos do Shopify caindo na sexta, sábado ou domingo aparecerão na segunda-feira seguinte.">
+          <input
+            type="checkbox"
+            checked={weekendToMonday}
+            onChange={(e) => weekendMut.mutate(e.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          <span>Fim de semana → segunda</span>
+        </label>
+        <Button variant="outline" size="sm" onClick={() => setManageCats(true)}>
+          <Tag className="size-4" /> Categorias
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+          <Upload className="size-4" /> Importar Shopify
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          disabled={resetMut.isPending}
+          onClick={() => {
+            const ok = confirm(
+              "Resetar o caixa desta loja?\n\nIsto vai apagar TODOS os lançamentos, importações e lotes de pagamento, e voltar os pedidos pagos para Pendente. Esta ação não pode ser desfeita.",
+            );
+            if (!ok) return;
+            const confirm2 = prompt('Digite "RESETAR" para confirmar:');
+            if (confirm2 !== "RESETAR") return;
+            resetMut.mutate();
+          }}
+        >
+          <Trash2 className="size-4" /> {resetMut.isPending ? "Resetando..." : "Resetar caixa"}
+        </Button>
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+      </div>
+
+      {/* Day grid */}
+      <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+        <div className="min-w-max grid" style={{ gridTemplateColumns: `repeat(${days}, 200px)`, gridTemplateRows: "auto 118px 118px auto" }}>
+          {dayData.map((dd) => {
+            const weekday = weekdayFromKey(dd.key);
+            const isToday = dd.key === todayKey;
+            const isWeekend = weekday === 0 || weekday === 6;
+            return (
+              <div key={dd.key} className={`grid row-span-4 border-r border-border last:border-r-0 ${isWeekend ? "bg-background/40" : ""}`} style={{ gridTemplateRows: "subgrid" }}>
+                <div className={`px-3 py-3 border-b border-border ${isToday ? "bg-primary/10" : ""}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className={`text-base font-bold tracking-tight truncate ${isToday ? "text-primary" : "text-foreground"}`}>{WEEKDAYS_FULL[weekday]}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day: "2-digit", month: "long" })}</div>
+                    </div>
+                    {isToday && <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium shrink-0">hoje</span>}
+                  </div>
+                </div>
+                {/* Entradas */}
+                <div className="p-2 border-b border-border/60 overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-1.5 shrink-0">
+                    <span className="text-[10px] uppercase tracking-wider text-emerald-700/70 dark:text-emerald-400/70 font-medium">Entradas</span>
+                    <span className="text-[10px] tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">{dd.income > 0 ? `+${fmtMoney(dd.income)}` : "—"}</span>
+                  </div>
+                  <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
+                    {dd.incomeItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => setEditing(e)} />)}
+                    <button onClick={() => setQuickAdd({ date: dd.key, kind: "income" })} className="w-full text-[10px] py-1 rounded border border-dashed border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/5">
+                      + entrada
+                    </button>
+                  </div>
+                </div>
+                {/* Saídas */}
+                <div className="p-2 overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-1.5 shrink-0">
+                    <span className="text-[10px] uppercase tracking-wider text-rose-700/70 dark:text-rose-400/70 font-medium">Saídas</span>
+                    <span className="text-[10px] tabular-nums text-rose-700 dark:text-rose-400 font-semibold">{dd.expense > 0 ? `-${fmtMoney(dd.expense)}` : "—"}</span>
+                  </div>
+                  <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
+                    {dd.expenseItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => setEditing(e)} />)}
+                    <button onClick={() => setQuickAdd({ date: dd.key, kind: "expense" })} className="w-full text-[10px] py-1 rounded border border-dashed border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/5">
+                      + saída
+                    </button>
+                  </div>
+                </div>
+                <div className={`px-3 py-3 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Saldo do dia</div>
+                  <div className={`text-lg font-bold tabular-nums leading-tight mt-0.5 ${dd.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{fmtMoney(dd.balance)}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Imports list */}
+      {imports.length > 0 && (
+        <div className="rounded-2xl border border-border bg-surface p-4">
+          <div className="text-sm font-semibold mb-2 inline-flex items-center gap-2"><FileSpreadsheet className="size-4" /> Importações Shopify</div>
+          <div className="space-y-1">
+            {imports.map((imp: any) => (
+              <div key={imp.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate">{imp.file_name}</div>
+                  <div className="text-muted-foreground text-[10px]">{new Date(imp.created_at).toLocaleString("pt-BR")} · {imp.total_rows} linhas · {fmtMoney(Number(imp.total_amount))}</div>
+                </div>
+                <button onClick={() => { if (confirm("Excluir esta importação e todos os lançamentos vinculados?")) deleteImpMut.mutate(imp.id); }} className="text-muted-foreground hover:text-destructive p-1.5">
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Quick add */}
+      {quickAdd && (
+        <QuickAdd
+          shopId={shopId}
+          date={quickAdd.date}
+          kind={quickAdd.kind}
+          categories={quickAdd.kind === "income" ? incomeCats : expenseCats}
+          onClose={() => setQuickAdd(null)}
+          onSave={(v: any) => { createMut.mutate(v); setQuickAdd(null); }}
+        />
+      )}
+
+      {/* Edit */}
+      {editing && (
+        <EditEntry
+          entry={editing}
+          categories={editing.kind === "income" ? incomeCats : expenseCats}
+          onClose={() => setEditing(null)}
+          onSave={(patch) => { updateMut.mutate({ id: editing.id, patch }); setEditing(null); }}
+          onDelete={() => { deleteMut.mutate(editing.id); setEditing(null); }}
+        />
+      )}
+
+      {/* Manage categories */}
+      {manageCats && (
+        <ManageCategories
+          shopId={shopId}
+          categories={allCats}
+          onClose={() => setManageCats(false)}
+          onChange={() => { refreshCats(); refresh(); }}
+        />
+      )}
+
+      {/* Import preview */}
+      {importInfo && (
+        <Modal onClose={() => setImportInfo(null)} title="Confirmar importação">
+          <div className="text-sm space-y-2">
+            <div><span className="text-muted-foreground">Arquivo:</span> {importInfo.file.name}</div>
+            <div><span className="text-muted-foreground">Linhas válidas:</span> {importInfo.rows.length}</div>
+            <div><span className="text-muted-foreground">Total Net:</span> {fmtMoney(importInfo.rows.reduce((a, r) => a + r.amount, 0))}</div>
+            <div className="text-xs text-muted-foreground">Será criada uma entrada por dia, agrupando os valores Net por Payout Date.</div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setImportInfo(null)}>Cancelar</Button>
+            <Button onClick={() => importMut.mutate({ shop_id: shopId, file_name: importInfo.file.name, file_hash: importInfo.hash, rows: importInfo.rows })} disabled={importMut.isPending}>
+              {importMut.isPending ? "Importando..." : "Importar"}
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Indicator({ icon: Icon, label, value, sub, accent, negative }: any) {
+  return (
+    <div className={`rounded-2xl border p-4 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border bg-surface"}`}>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
+        <Icon className="size-3.5" style={{ color: accent }} /> {label}
+      </div>
+      <div className={`text-xl font-semibold tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
+      {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function Modal({ children, onClose, title }: any) {
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 grid place-items-center p-4" onClick={onClose}>
+      <div className="bg-background border border-border rounded-2xl p-5 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">{title}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) {
+  const isIncome = entry.kind === "income";
+  const shifted = typeof entry.shiftedFromWeekday === "number";
+  const fromLabel = shifted ? WEEKDAYS_FULL[entry.shiftedFromWeekday!] : null;
+  return (
+    <button
+      onClick={onClick}
+      className={`group w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${isIncome ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-700 dark:text-rose-400"}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate inline-flex items-center gap-1">
+          {entry.recurrence && entry.recurrence !== "none" && <Repeat className="size-3 opacity-70" />}
+          {entry.category ?? (isIncome ? "Entrada" : "Saída")}
+        </span>
+        <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(entry.amount))}</span>
+      </div>
+      {entry.description && <div className="truncate text-muted-foreground text-[10px] mt-0.5">{entry.description}</div>}
+      {shifted && (
+        <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">
+          <Repeat className="size-2.5" /> Transferido de {fromLabel?.toLowerCase()}
+        </div>
+      )}
+    </button>
+  );
+}
+
+const RECURRENCE_OPTIONS: { value: "none" | "daily" | "weekly" | "monthly"; label: string }[] = [
+  { value: "none", label: "Não repete" },
+  { value: "daily", label: "Diária" },
+  { value: "weekly", label: "Semanal" },
+  { value: "monthly", label: "Mensal" },
+];
+
+function QuickAdd({ shopId, date, kind, categories, onClose, onSave }: { shopId: string; date: string; kind: "income" | "expense"; categories: string[]; onClose: () => void; onSave: (v: any) => void }) {
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState<string>(categories[0] ?? "");
+  const [description, setDescription] = useState("");
+  const [d, setD] = useState(date);
+  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [until, setUntil] = useState("");
+  const cats = categories;
+
+  return (
+    <Modal onClose={onClose} title={kind === "income" ? "Nova entrada" : "Nova saída"}>
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-muted-foreground">Valor</label>
+          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Categoria</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+            {cats.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Descrição</label>
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-muted-foreground">Data</label>
+            <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground inline-flex items-center gap-1"><Repeat className="size-3" /> Recorrência</label>
+            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as any)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              {RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+        {recurrence !== "none" && (
+          <div>
+            <label className="text-xs text-muted-foreground">Repetir até (opcional)</label>
+            <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+          </div>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 mt-4">
+        <Button variant="outline" onClick={onClose}>Cancelar</Button>
+        <Button onClick={() => {
+          const v = parseFloat(amount);
+          if (isNaN(v) || v <= 0) return;
+          onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description || null, recurrence, recurrence_until: until || null });
+        }}>Salvar</Button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditEntry({ entry, categories, onClose, onSave, onDelete }: { entry: DayItem; categories: string[]; onClose: () => void; onSave: (p: any) => void; onDelete: () => void }) {
+  const [amount, setAmount] = useState(String(entry.amount));
+  const [category, setCategory] = useState(entry.category ?? "");
+  const [description, setDescription] = useState(entry.description ?? "");
+  const [d, setD] = useState(entry.originalDate ?? entry.date);
+  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">((entry.recurrence ?? "none") as any);
+  const [until, setUntil] = useState(entry.recurrence_until ?? "");
+  const [skipWeekend, setSkipWeekend] = useState<boolean>(Boolean(entry.skip_weekend_rule));
+  const cats = categories;
+  const isShopify = entry.source === "shopify_import";
+
+  return (
+    <Modal onClose={onClose} title={`Editar ${entry.kind === "income" ? "entrada" : "saída"}`}>
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-muted-foreground">Valor</label>
+          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Categoria</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+            <option value="">—</option>
+            {cats.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Descrição</label>
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-muted-foreground">Data {entry.virtual && <span className="text-[10px]">(início)</span>}</label>
+            <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground inline-flex items-center gap-1"><Repeat className="size-3" /> Recorrência</label>
+            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as any)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              {RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+        {recurrence !== "none" && (
+          <div>
+            <label className="text-xs text-muted-foreground">Repetir até (opcional)</label>
+            <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+          </div>
+        )}
+        {entry.virtual && (
+          <div className="text-[11px] text-muted-foreground">Esta é uma ocorrência recorrente. Editar afeta toda a série.</div>
+        )}
+        {entry.source !== "manual" && (
+          <div className="text-[11px] text-muted-foreground">Importado do Shopify · alterações são manuais.</div>
+        )}
+        {isShopify && (
+          <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
+            <input type="checkbox" checked={skipWeekend} onChange={(e) => setSkipWeekend(e.target.checked)} className="size-3.5 accent-primary" />
+            <span>Ignorar regra de fim de semana neste lançamento</span>
+          </label>
+        )}
+        {typeof entry.shiftedFromWeekday === "number" && (
+          <div className="text-[11px] text-amber-700 dark:text-amber-400">Originalmente previsto para {WEEKDAYS_FULL[entry.shiftedFromWeekday]}.</div>
+        )}
+      </div>
+      <div className="flex justify-between gap-2 mt-4">
+        <Button variant="ghost" size="sm" onClick={onDelete} className="text-destructive">
+          <Trash2 className="size-4" /> Excluir{entry.recurrence && entry.recurrence !== "none" ? " série" : ""}
+        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={() => {
+            const v = parseFloat(amount);
+            if (isNaN(v)) return;
+            onSave({ amount: v, category: category || null, description: description || null, date: d, recurrence, recurrence_until: until || null, skip_weekend_rule: skipWeekend });
+          }}>Salvar</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ManageCategories({ shopId, categories, onClose, onChange }: { shopId: string; categories: { id: string; kind: "income" | "expense"; name: string }[]; onClose: () => void; onChange: () => void }) {
+  const createFn = useServerFn(createCashCategory);
+  const renameFn = useServerFn(renameCashCategory);
+  const deleteFn = useServerFn(deleteCashCategory);
+  const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: onChange });
+  const renameMut = useMutation({ mutationFn: (v: any) => renameFn({ data: v }), onSuccess: onChange });
+  const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: onChange });
+
+  const income = categories.filter(c => c.kind === "income");
+  const expense = categories.filter(c => c.kind === "expense");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [newIncome, setNewIncome] = useState("");
+  const [newExpense, setNewExpense] = useState("");
+
+  function Section({ title, kind, items, newValue, setNewValue, accent }: { title: string; kind: "income" | "expense"; items: { id: string; name: string }[]; newValue: string; setNewValue: (v: string) => void; accent: string }) {
+    return (
+      <div>
+        <div className={`text-[10px] uppercase tracking-wider font-medium mb-2 ${accent}`}>{title}</div>
+        <ul className="space-y-1 mb-2">
+          {items.map(c => (
+            <li key={c.id} className="flex items-center gap-2 px-2 h-9 rounded-lg bg-muted group">
+              {editingId === c.id ? (
+                <>
+                  <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-7 text-sm" autoFocus
+                    onKeyDown={(e) => { if (e.key === "Enter" && editName.trim()) { renameMut.mutate({ id: c.id, name: editName.trim() }); setEditingId(null); } if (e.key === "Escape") setEditingId(null); }} />
+                  <button onClick={() => { if (editName.trim()) { renameMut.mutate({ id: c.id, name: editName.trim() }); setEditingId(null); } }} className="text-muted-foreground hover:text-primary p-1"><Check className="size-3.5" /></button>
+                  <button onClick={() => setEditingId(null)} className="text-muted-foreground hover:text-foreground p-1"><X className="size-3.5" /></button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm flex-1 truncate">{c.name}</span>
+                  <button onClick={() => { setEditingId(c.id); setEditName(c.name); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground p-1"><Pencil className="size-3.5" /></button>
+                  <button onClick={() => { if (confirm(`Excluir categoria "${c.name}"? Lançamentos existentes mantêm o nome como texto livre.`)) deleteMut.mutate(c.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1"><Trash2 className="size-3.5" /></button>
+                </>
+              )}
+            </li>
+          ))}
+          {items.length === 0 && <li className="text-xs text-muted-foreground px-2">Nenhuma categoria.</li>}
+        </ul>
+        <form onSubmit={(e) => { e.preventDefault(); const n = newValue.trim(); if (!n) return; createMut.mutate({ shop_id: shopId, kind, name: n }); setNewValue(""); }} className="flex items-center gap-2">
+          <Input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="Nova categoria" className="h-9 text-sm" />
+          <Button type="submit" size="sm" variant="outline"><Plus className="size-3.5" /></Button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} title="Gerenciar categorias">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <Section title="Entradas" kind="income" items={income} newValue={newIncome} setNewValue={setNewIncome} accent="text-emerald-700/80 dark:text-emerald-400/80" />
+        <Section title="Saídas" kind="expense" items={expense} newValue={newExpense} setNewValue={setNewExpense} accent="text-rose-700/80 dark:text-rose-400/80" />
+      </div>
+      <div className="flex justify-end mt-5">
+        <Button variant="outline" onClick={onClose}>Fechar</Button>
+      </div>
+    </Modal>
+  );
+}

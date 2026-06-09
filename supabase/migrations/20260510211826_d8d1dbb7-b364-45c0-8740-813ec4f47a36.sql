@@ -1,0 +1,2 @@
+ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS weekend_payouts_to_monday boolean NOT NULL DEFAULT false;
+ALTER TABLE public.shop_cash_entries ADD COLUMN IF NOT EXISTS skip_weekend_rule boolean NOT NULL DEFAULT false;

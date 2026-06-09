@@ -1,0 +1,1 @@
+DELETE FROM public.shop_order_payment_batches WHERE cash_entry_id IS NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS match_keywords text[] NOT NULL DEFAULT '{}';
