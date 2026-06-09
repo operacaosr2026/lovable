@@ -3,10 +3,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Store, MapPin, GripVertical } from "lucide-react";
+import { Store, MapPin, GripVertical, Plus } from "lucide-react";
 import { listShops, updateShop, PIPELINE_STAGES } from "@/lib/shops.functions";
 import { getCountry } from "./shops.index";
-import { useKanbanColumns, useColumnDnD, ColumnControls, AddColumnButton } from "@/components/kanban/useKanbanColumns";
+import { useKanbanColumns, useColumnDnD, ColumnControls } from "@/components/kanban/useKanbanColumns";
 
 export const Route = createFileRoute("/shops/esteira")({
   component: EsteiraPage,
@@ -80,6 +80,15 @@ function EsteiraPage() {
 
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
+  const [addingCol, setAddingCol] = useState(false);
+  const [newColLabel, setNewColLabel] = useState("");
+
+  const submitNewCol = () => {
+    const v = newColLabel.trim();
+    if (v) cols.add(v);
+    setNewColLabel("");
+    setAddingCol(false);
+  };
 
   const onDrop = (stage: string) => {
     if (!dragId) return;
@@ -96,6 +105,34 @@ function EsteiraPage() {
       <PageHeader
         title="Esteira de Lojas"
         subtitle={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"} no pipeline`}
+        actions={
+          <div className="relative">
+            <button
+              onClick={() => setAddingCol((v) => !v)}
+              className="h-9 px-3.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="size-4" /> Nova coluna
+            </button>
+            {addingCol && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => { setAddingCol(false); setNewColLabel(""); }} />
+                <div className="absolute right-0 top-11 z-40 w-56 rounded-xl bg-popover border border-border shadow-xl p-2">
+                  <input
+                    autoFocus
+                    value={newColLabel}
+                    onChange={(e) => setNewColLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitNewCol();
+                      if (e.key === "Escape") { setAddingCol(false); setNewColLabel(""); }
+                    }}
+                    placeholder="Nome da coluna..."
+                    className="w-full h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        }
       />
 
       {shops.length === 0 ? (
@@ -211,7 +248,6 @@ function EsteiraPage() {
               </div>
             );
           })}
-          <AddColumnButton onAdd={cols.add} className="!w-full" />
         </div>
       )}
     </PageShell>
