@@ -262,7 +262,7 @@ function CalendarPage() {
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-md bg-background rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md bg-background rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">{editEvent ? "Editar evento" : "Novo evento"}</h2>
               <div className="flex items-center gap-1">
@@ -280,75 +280,75 @@ function CalendarPage() {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3">
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Título do evento"
-                className="w-full h-11 px-4 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
+                className="w-full h-10 px-3.5 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
                 autoFocus
               />
 
-              <div>
-                <label className="text-xs text-muted-foreground mb-2 block">Data</label>
-                <input
-                  type="date"
-                  value={formDate}
-                  onChange={(e) => setFormDate(e.target.value)}
-                  className="w-full h-11 px-4 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-2 block">Início <span className="opacity-60">(opcional)</span></label>
+                  <label className="text-[11px] text-muted-foreground mb-1 block">Data</label>
+                  <input
+                    type="date"
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
+                    className="w-full h-10 px-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground mb-1 block">Início</label>
                   <input
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full h-11 px-4 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
+                    className="w-full h-10 px-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-2 block">Fim <span className="opacity-60">(opcional)</span></label>
+                  <label className="text-[11px] text-muted-foreground mb-1 block">Fim</label>
                   <input
                     type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full h-11 px-4 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
+                    className="w-full h-10 px-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary"
                   />
                 </div>
               </div>
 
               {/* Member picker */}
               <div>
-                <label className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5 block">
+                <label className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1.5 block">
                   <Users className="size-3.5" /> Convidar membros
                 </label>
                 {members.length === 0 ? (
-                  <div className="px-3 py-2.5 rounded-xl bg-muted text-xs text-muted-foreground">
+                  <div className="px-3 py-2 rounded-xl bg-muted text-xs text-muted-foreground">
                     Nenhum membro no workspace
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {members.map((m) => {
                       const selected = memberIds.includes(m.member_id);
                       return (
-                        <label key={m.member_id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted hover:bg-muted/80 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={() => toggleMember(m.member_id)}
-                            className="size-4 accent-primary"
-                          />
-                          <div className="size-7 rounded-full gradient-primary grid place-items-center text-white text-xs font-bold shrink-0">
+                        <button
+                          key={m.member_id}
+                          type="button"
+                          onClick={() => toggleMember(m.member_id)}
+                          title={m.full_name || m.email}
+                          className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors ${
+                            selected
+                              ? "bg-primary/10 border-primary text-primary"
+                              : "bg-muted border-border text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          <span className="size-6 rounded-full gradient-primary grid place-items-center text-white text-[10px] font-bold shrink-0">
                             {(m.full_name || m.email || "?").slice(0, 2).toUpperCase()}
-                          </div>
-                          <div className="text-sm min-w-0">
-                            <div className="font-medium truncate">{m.full_name || m.email}</div>
-                            {m.full_name && <div className="text-xs text-muted-foreground truncate">{m.email}</div>}
-                          </div>
-                        </label>
+                          </span>
+                          <span className="max-w-[100px] truncate">{m.full_name || m.email}</span>
+                        </button>
                       );
                     })}
                   </div>
@@ -356,7 +356,7 @@ function CalendarPage() {
               </div>
 
               <div>
-                <label className="text-xs text-muted-foreground mb-2 block">Cor</label>
+                <label className="text-[11px] text-muted-foreground mb-1.5 block">Cor</label>
                 <div className="flex gap-2 flex-wrap">
                   {COLORS.map((c) => (
                     <button
@@ -364,7 +364,7 @@ function CalendarPage() {
                       type="button"
                       onClick={() => setColor(c.value)}
                       title={c.label}
-                      className={`size-8 rounded-full ${c.value} transition-all ${color === c.value ? "ring-2 ring-offset-2 ring-foreground/30 scale-110" : "opacity-70 hover:opacity-100"}`}
+                      className={`size-7 rounded-full ${c.value} transition-all ${color === c.value ? "ring-2 ring-offset-2 ring-foreground/30 scale-110" : "opacity-70 hover:opacity-100"}`}
                     />
                   ))}
                 </div>
@@ -372,7 +372,7 @@ function CalendarPage() {
 
               <button
                 type="submit"
-                className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+                className="w-full h-10 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
               >
                 {editEvent ? "Salvar" : "Criar evento"}
               </button>
