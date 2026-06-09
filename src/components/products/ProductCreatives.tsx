@@ -62,7 +62,7 @@ export function ProductCreatives({ productId }: { productId: string }) {
   return (
     <div>
       <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
           {COLUMNS.map((col) => (
             <Column key={col.id} col={col} items={grouped[col.id] ?? []} onAdd={() => setAdding(col.id)} onCardClick={(c: any) => setEditing(c)} onDuplicate={(id: string) => duplicate.mutate(id)} onDelete={(id: string) => { if (confirm("Excluir criativo?")) remove.mutate(id); }} />
           ))}
@@ -88,7 +88,7 @@ export function ProductCreatives({ productId }: { productId: string }) {
 function Column({ col, items, onAdd, onCardClick, onDuplicate, onDelete }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   return (
-    <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 w-[280px] shrink-0">
+    <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0">
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border" style={{ background: col.tint }}>
         <span className="size-2 rounded-full" style={{ background: col.accent }} />
         <div className="text-sm font-semibold flex-1">{col.label}</div>
