@@ -120,7 +120,9 @@ function normalizeShopDomain(input: string) {
 function resolveAppOrigin(): string {
   const explicit = process.env.SHOPIFY_REDIRECT_ORIGIN;
   if (explicit) return explicit.replace(/\/+$/, "");
-  return process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  if (process.env.SITE_URL) return process.env.SITE_URL;
+  if (process.env.VERCEL_ENV === "production") return "https://lojas-one.vercel.app";
+  return process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
 }
 
 export const startShopifyOAuth = createServerFn({ method: "POST" })
