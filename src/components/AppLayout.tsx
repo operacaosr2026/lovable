@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Sparkles, Store, Package, Workflow, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
+  Calendar, Search, LogOut, Store, Package, Workflow, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -367,6 +367,7 @@ export function AppLayout() {
     return (
       <>
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
+          <img src="/favicon.png" alt="" className="size-9 rounded-lg shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold leading-none text-white">SRX Growth</div>
           </div>
@@ -498,9 +499,7 @@ export function AppLayout() {
           </SheetContent>
         </Sheet>
         <Link to="/" className="flex items-center gap-2">
-          <div className="size-7 rounded-lg bg-primary/15 grid place-items-center">
-            <Sparkles className="size-3.5 text-primary" />
-          </div>
+          <img src="/favicon.png" alt="" className="size-7 rounded-lg" />
           <span className="text-sm font-bold">SRX Growth</span>
         </Link>
         <button
