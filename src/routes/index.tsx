@@ -6,7 +6,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Sparkles, Plus, Check, Flame, Eye, EyeOff,
   Wallet, Calendar as CalIcon, ListChecks, Repeat, ChevronRight,
-  CheckCircle2, Circle, Clock,
+  CheckCircle2, Circle, Clock, Store,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/lib/dashboard.functions";
 import { saveGratitudeEntry } from "@/lib/gratitude.functions";
 import { listTasks, updateTask, getRoutineLogs } from "@/lib/tasks.functions";
+import { listShops } from "@/lib/shops.functions";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -71,6 +72,7 @@ function Dashboard() {
   const listTasksFn = useServerFn(listTasks);
   const updateTaskFn = useServerFn(updateTask);
   const getLogsFn = useServerFn(getRoutineLogs);
+  const listShopsFn = useServerFn(listShops);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
@@ -83,6 +85,10 @@ function Dashboard() {
   const { data: routineLogsData } = useQuery({
     queryKey: ["routine-logs"], queryFn: () => getLogsFn(), enabled: !!session,
   });
+  const { data: shopsData } = useQuery({
+    queryKey: ["shops"], queryFn: () => listShopsFn(), enabled: !!session,
+  });
+  const shops = (shopsData as any)?.shops ?? [];
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dashboard"] });
   const invalidateRoutines = () => {
@@ -304,6 +310,52 @@ function Dashboard() {
             )}
           </div>
         </section>
+
+        {/* Lojas */}
+        {shops.length > 0 && (
+          <section className="col-span-12 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
+            <SectionHead icon={Store} title="Lojas" count={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
+            <div className="divide-y divide-border">
+              {shops.map((s: any) => (
+                <Link
+                  key={s.id}
+                  to="/shops/$shopId"
+                  params={{ shopId: s.id }}
+                  className="flex items-center gap-4 px-5 py-3 hover:bg-surface-hover transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    {s.logo_url ? (
+                      <img src={s.logo_url} alt={s.name} className="size-8 rounded-lg object-cover border border-border shrink-0" />
+                    ) : (
+                      <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0">
+                        <Store className="size-3.5" />
+                      </div>
+                    )}
+                    <span className="text-sm font-medium truncate">{s.name}</span>
+                  </div>
+                  <div className="text-right w-28 shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
+                    <div className={`text-sm font-semibold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-foreground"}`}>
+                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
+                    </div>
+                  </div>
+                  <div className="text-right w-28 shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
+                    <div className={`text-sm font-semibold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+                    </div>
+                  </div>
+                  <div className="text-right w-24 shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno (30d)</div>
+                    <div className={`text-sm font-semibold tabular-nums ${(s.refundRate ?? 0) > 0.5 ? "text-rose-500" : "text-foreground"}`}>
+                      {s.refundRate != null ? `${s.refundRate.toFixed(1)}%` : "—"}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Gratidão */}
         <section className="col-span-12 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
