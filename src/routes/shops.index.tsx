@@ -143,12 +143,13 @@ function ShopsDashboard() {
         </div>
       ) : (
         <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-          <div className="grid grid-cols-[1fr_120px_100px_100px_100px_80px] gap-3 px-4 py-2.5 border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+          <div className="grid grid-cols-[1fr_120px_100px_100px_100px_100px_100px] gap-3 px-4 py-2.5 border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
             <span>Loja</span>
             <span className="text-center">Status</span>
             <span className="text-center">Produtos</span>
             <span className="text-center">Tarefas</span>
             <span className="text-center">Rotinas</span>
+            <span className="text-right">Lucro do mês</span>
             <span className="text-right">Saldo</span>
           </div>
           {filtered.map((s) => (
@@ -229,6 +230,12 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
             {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
           </span>
         </div>
+        <div className="mb-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Lucro do mês</span>
+          <span className={`text-base font-bold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
+            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+          </span>
+        </div>
         {s.refundRate != null && (
           <div className="mb-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 flex items-center justify-between">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Taxa de estorno (30d)</span>
@@ -271,7 +278,7 @@ function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDe
   const st = STATUS_META[s.status] ?? STATUS_META.ativa;
   const c = getCountry(s.country);
   return (
-    <div className="group relative grid grid-cols-[1fr_120px_100px_100px_100px_80px] gap-3 px-4 py-3 items-center border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
+    <div className="group relative grid grid-cols-[1fr_120px_100px_100px_100px_100px_100px] gap-3 px-4 py-3 items-center border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
       <Link to="/shops/$shopId" params={{ shopId: s.id }} className="flex items-center gap-3 min-w-0">
         {s.logo_url ? (
           <img src={s.logo_url} alt={s.name} className="size-9 rounded-lg object-cover shrink-0 border border-border" />
@@ -314,6 +321,11 @@ function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDe
       <div className="flex items-center justify-center gap-1 text-muted-foreground">
         <Repeat className="size-3" />
         <span className="text-xs tabular-nums font-semibold text-foreground">{s.routinesToday}</span>
+      </div>
+      <div className="text-right">
+        <span className={`text-sm font-bold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
+          {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+        </span>
       </div>
       <div className="text-right">
         <span className={`text-sm font-bold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-primary"}`}>

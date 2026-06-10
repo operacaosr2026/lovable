@@ -527,12 +527,12 @@ function WeekendDayCell({ dd, weekday, isToday, onEdit }: {
 
 function Indicator({ icon: Icon, label, value, sub, accent, negative, tooltip }: any) {
   const content = (
-    <div className={`rounded-2xl border p-4 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border bg-surface"} ${tooltip ? "cursor-default" : ""}`}>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
+    <div className={`rounded-2xl border p-3 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border bg-surface"} ${tooltip ? "cursor-default" : ""}`}>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
         <Icon className="size-3.5" style={{ color: accent }} /> {label}
       </div>
-      <div className={`text-xl font-semibold tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
-      {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+      <div className={`text-lg font-semibold tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground/70 leading-tight mt-0.5">{sub}</div>}
     </div>
   );
   if (!tooltip) return content;
