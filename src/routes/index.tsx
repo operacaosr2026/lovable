@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  Sparkles, Plus, Check, Flame, Eye, EyeOff,
-  Wallet, Calendar as CalIcon, ListChecks, Repeat, ChevronRight,
+  Sparkles, Plus, Check, Flame,
+  Calendar as CalIcon, ListChecks, Repeat, ChevronRight,
   CheckCircle2, Circle, Clock, Store,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
@@ -115,7 +115,6 @@ function Dashboard() {
     mutationFn: (d: any) => updateTaskFn({ data: d }), onSuccess: invalidateRoutines,
   });
 
-  const [hidden, setHidden] = useState(false);
   const [gratitude, setGratitude] = useState("");
   const [newTask, setNewTask] = useState("");
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
@@ -138,8 +137,6 @@ function Dashboard() {
   const firstName = (data?.profile?.full_name ?? session?.user?.user_metadata?.full_name ?? session?.user?.email?.split("@")[0] ?? "")
     .toString().split(" ")[0];
 
-  const totalBRL = data?.totalBRL ?? 0;
-  const accountsCount = data?.accountsCount ?? 0;
 
 
   // Habits progress (week)
@@ -201,39 +198,83 @@ function Dashboard() {
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        {/* Patrimônio */}
-        <section className="col-span-12 lg:col-span-7 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
-          <SectionHead icon={Wallet} title="Patrimônio total" tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
-          <div className="p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Consolidado em BRL</div>
-                <div className="mt-2 text-4xl md:text-5xl font-bold tracking-tight tabular-nums">
-                  {hidden ? "R$ ••••••" : `R$ ${totalBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-                </div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  {accountsCount > 0
-                    ? `${accountsCount} ${accountsCount === 1 ? "conta" : "contas"} ativas · USD convertido automaticamente`
-                    : "Nenhuma conta cadastrada ainda"}
-                </div>
-              </div>
-              <button onClick={() => setHidden((h) => !h)} className="size-9 rounded-full bg-muted hover:bg-surface-hover grid place-items-center text-muted-foreground">
-                {hidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
+      <div className="col-span-12 lg:col-span-6 flex flex-col gap-4">
+        {/* Lojas */}
+        {shops.length > 0 && (
+          <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
+            <SectionHead icon={Store} title="Lojas" count={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
+            <div className="divide-y divide-border">
+              {shops.map((s: any) => (
+                <Link
+                  key={s.id}
+                  to="/shops/$shopId"
+                  params={{ shopId: s.id }}
+                  className="flex items-center gap-4 px-5 py-3 hover:bg-surface-hover transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    {s.logo_url ? (
+                      <img src={s.logo_url} alt={s.name} className="size-8 rounded-lg object-cover border border-border shrink-0" />
+                    ) : (
+                      <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0">
+                        <Store className="size-3.5" />
+                      </div>
+                    )}
+                    <span className="text-sm font-medium truncate">{s.name}</span>
+                  </div>
+                  <div className="text-right w-28 shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
+                    <div className={`text-sm font-semibold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-foreground"}`}>
+                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
+                    </div>
+                  </div>
+                  <div className="text-right w-28 shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
+                    <div className={`text-sm font-semibold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+                    </div>
+                  </div>
+                  <div className="text-right w-24 shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno (30d)</div>
+                    <div className={`text-sm font-semibold tabular-nums ${(s.refundRate ?? 0) > 0.5 ? "text-rose-500" : "text-foreground"}`}>
+                      {s.refundRate != null ? `${s.refundRate.toFixed(1)}%` : "—"}
+                    </div>
+                  </div>
+                </Link>
+              ))}
             </div>
-            <div className="mt-6 pt-5 border-t border-border flex items-center justify-between gap-3">
-              <div className="text-xs text-muted-foreground">
-                Lançamentos, recorrências e fluxo de caixa em <span className="text-foreground font-medium">Financeiro</span>.
-              </div>
-              <Link to="/finance" className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5">
-                Abrir <ChevronRight className="size-3.5" />
+          </section>
+        )}
+
+        {/* Gratidão */}
+        <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+          <SectionHead icon={Sparkles} title="Gratidão" tint="--tint-amber" iconColor="oklch(0.55 0.16 65)" />
+          <div className="p-6 flex flex-col flex-1">
+            <textarea
+              value={gratitude}
+              onChange={(e) => setGratitude(e.target.value)}
+              placeholder="Pelo que você é grato hoje?"
+              className="flex-1 min-h-[100px] resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+              <Link to="/gratitude" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <span>Ver histórico</span>
+                <ChevronRight className="size-3" />
               </Link>
+              <button
+                disabled={!gratitude.trim() || mGratitude.isPending}
+                onClick={() => mGratitude.mutate({ content: gratitude.trim() })}
+                className="text-primary font-semibold hover:underline disabled:opacity-50"
+              >
+                {mGratitude.isPending ? "Salvando..." : data.gratitude ? "Atualizar" : "Salvar"}
+              </button>
             </div>
           </div>
         </section>
+      </div>
 
+      <div className="col-span-12 lg:col-span-6 flex flex-col gap-4">
         {/* Tarefas de hoje */}
-        <section className="col-span-12 lg:col-span-5 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+        <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={ListChecks} title="Tarefas de hoje"
             count={`${data.tasks.filter((t: any) => !t.done).length} pendentes`}
             tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
@@ -311,80 +352,8 @@ function Dashboard() {
           </div>
         </section>
 
-        {/* Lojas */}
-        {shops.length > 0 && (
-          <section className="col-span-12 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
-            <SectionHead icon={Store} title="Lojas" count={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
-            <div className="divide-y divide-border">
-              {shops.map((s: any) => (
-                <Link
-                  key={s.id}
-                  to="/shops/$shopId"
-                  params={{ shopId: s.id }}
-                  className="flex items-center gap-4 px-5 py-3 hover:bg-surface-hover transition-colors"
-                >
-                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                    {s.logo_url ? (
-                      <img src={s.logo_url} alt={s.name} className="size-8 rounded-lg object-cover border border-border shrink-0" />
-                    ) : (
-                      <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0">
-                        <Store className="size-3.5" />
-                      </div>
-                    )}
-                    <span className="text-sm font-medium truncate">{s.name}</span>
-                  </div>
-                  <div className="text-right w-28 shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
-                    <div className={`text-sm font-semibold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-foreground"}`}>
-                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
-                    </div>
-                  </div>
-                  <div className="text-right w-28 shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
-                    <div className={`text-sm font-semibold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
-                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
-                    </div>
-                  </div>
-                  <div className="text-right w-24 shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno (30d)</div>
-                    <div className={`text-sm font-semibold tabular-nums ${(s.refundRate ?? 0) > 0.5 ? "text-rose-500" : "text-foreground"}`}>
-                      {s.refundRate != null ? `${s.refundRate.toFixed(1)}%` : "—"}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Gratidão */}
-        <section className="col-span-12 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-          <SectionHead icon={Sparkles} title="Gratidão" tint="--tint-amber" iconColor="oklch(0.55 0.16 65)" />
-          <div className="p-6 flex flex-col flex-1">
-            <textarea
-              value={gratitude}
-              onChange={(e) => setGratitude(e.target.value)}
-              placeholder="Pelo que você é grato hoje?"
-              className="flex-1 min-h-[100px] resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
-            />
-            <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-              <Link to="/gratitude" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                <span>Ver histórico</span>
-                <ChevronRight className="size-3" />
-              </Link>
-              <button
-                disabled={!gratitude.trim() || mGratitude.isPending}
-                onClick={() => mGratitude.mutate({ content: gratitude.trim() })}
-                className="text-primary font-semibold hover:underline disabled:opacity-50"
-              >
-                {mGratitude.isPending ? "Salvando..." : data.gratitude ? "Atualizar" : "Salvar"}
-              </button>
-            </div>
-          </div>
-        </section>
-
         {/* Hábitos */}
-        <section className="col-span-12 rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
+        <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
           <SectionHead icon={Repeat} title="Hábitos" count={<span className="flex items-center gap-1 text-warning"><Flame className="size-3" /> semana</span> as any}
             tint="--tint-green" iconColor="oklch(0.5 0.13 155)" />
           <div className="p-6 space-y-5">
@@ -412,6 +381,7 @@ function Dashboard() {
             ))}
           </div>
         </section>
+      </div>
       </div>
 
       <TaskDetailDialog
