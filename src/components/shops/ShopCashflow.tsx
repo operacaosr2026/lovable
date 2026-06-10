@@ -1,19 +1,19 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Upload, Trash2, ChevronLeft, ChevronRight, FileSpreadsheet, X, Wallet, TrendingUp, TrendingDown, AlertTriangle, Repeat, Tag, Pencil, Check } from "lucide-react";
-import * as XLSX from "xlsx";
+import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Tag, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
-  setOpeningBalance, importShopifyPayouts, deleteCashImport, setWeekendRule,
+  setOpeningBalance, setWeekendRule,
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
   resetShopCash,
 } from "@/lib/shop-cash.functions";
+import { getShopifyPendingBalance } from "@/lib/shop-orders.functions";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
-type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null };
+type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
 const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
@@ -56,79 +56,12 @@ function formatDateKey(key: string, options: Intl.DateTimeFormatOptions) {
 function weekdayFromKey(key: string) {
   return dateFromKey(key).getUTCDay();
 }
-// 0=Sun, 5=Fri, 6=Sat → shift to Monday. Returns same key if not weekend/friday.
+// 0=Sun, 6=Sat → shift to Monday. Returns same key if not weekend.
 function shiftToMondayIfWeekend(key: string): string {
   const wd = weekdayFromKey(key);
-  if (wd === 5) return addDaysToKey(key, 3); // Fri → Mon
   if (wd === 6) return addDaysToKey(key, 2); // Sat → Mon
   if (wd === 0) return addDaysToKey(key, 1); // Sun → Mon
   return key;
-}
-function spreadsheetDateKey(raw: unknown): string | null {
-  if (raw instanceof Date) {
-    return dateKey(raw.getUTCFullYear(), raw.getUTCMonth() + 1, raw.getUTCDate());
-  }
-  if (typeof raw === "number") {
-    const parsed = XLSX.SSF.parse_date_code(raw);
-    return parsed ? dateKey(parsed.y, parsed.m, parsed.d) : null;
-  }
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const value = raw.trim();
-  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return value;
-  const br = value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
-  if (br) {
-    let yr = parseInt(br[3]); if (yr < 100) yr += 2000;
-    return dateKey(yr, parseInt(br[2]), parseInt(br[1]));
-  }
-  return null;
-}
-function parseCsvRows(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = "", quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') {
-      if (quoted && text[i + 1] === '"') { cell += '"'; i++; }
-      else quoted = !quoted;
-    } else if (ch === "," && !quoted) {
-      row.push(cell); cell = "";
-    } else if ((ch === "\n" || ch === "\r") && !quoted) {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); rows.push(row); row = []; cell = "";
-    } else cell += ch;
-  }
-  row.push(cell); rows.push(row);
-  const headers = rows.shift()?.map((h) => h.trim()) ?? [];
-  return rows.filter((r) => r.some((v) => v.trim())).map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i]?.trim() ?? ""])));
-}
-function cellValueForImport(cell: XLSX.CellObject | undefined) {
-  if (!cell) return "";
-  return cell.w?.trim() || cell.v;
-}
-function sheetRowsForImport(ws: XLSX.WorkSheet) {
-  const ref = ws["!ref"];
-  if (!ref) return [];
-  const range = XLSX.utils.decode_range(ref);
-  const headers: string[] = [];
-  for (let c = range.s.c; c <= range.e.c; c++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: range.s.r, c })] as XLSX.CellObject | undefined;
-    headers.push(String(cellValueForImport(cell)).trim());
-  }
-  const rows: Record<string, unknown>[] = [];
-  for (let r = range.s.r + 1; r <= range.e.r; r++) {
-    const row: Record<string, unknown> = {};
-    let hasValue = false;
-    headers.forEach((header, index) => {
-      if (!header) return;
-      const cell = ws[XLSX.utils.encode_cell({ r, c: range.s.c + index })] as XLSX.CellObject | undefined;
-      const value = cellValueForImport(cell);
-      if (value !== "" && value != null) hasValue = true;
-      row[header] = value;
-    });
-    if (hasValue) rows.push(row);
-  }
-  return rows;
 }
 function fmtMoney(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -145,14 +78,14 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const deleteFn = useServerFn(deleteCashEntry);
   const updateFn = useServerFn(updateCashEntry);
   const openingFn = useServerFn(setOpeningBalance);
-  const importFn = useServerFn(importShopifyPayouts);
-  const deleteImpFn = useServerFn(deleteCashImport);
   const listCatsFn = useServerFn(listCashCategories);
+  const pendingFn = useServerFn(getShopifyPendingBalance);
 
   const queryKey = ["shop-cash", shopId];
   const catsKey = ["shop-cash-cats", shopId];
   const { data, isLoading } = useQuery({ queryKey, queryFn: () => listFn({ data: { shop_id: shopId } }) });
   const catsQuery = useQuery({ queryKey: catsKey, queryFn: () => listCatsFn({ data: { shop_id: shopId } }) });
+  const pendingQuery = useQuery({ queryKey: ["shop-cash-pending", shopId], queryFn: () => pendingFn({ data: { shop_id: shopId } }) });
   const refresh = () => qc.invalidateQueries({ queryKey });
   const refreshCats = () => qc.invalidateQueries({ queryKey: catsKey });
 
@@ -160,28 +93,27 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const incomeCats = useMemo(() => allCats.filter(c => c.kind === "income").map(c => c.name), [allCats]);
   const expenseCats = useMemo(() => allCats.filter(c => c.kind === "expense").map(c => c.name), [allCats]);
 
-  const [days, setDays] = useState(7);
-  const [startOffset, setStartOffset] = useState(0);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [quickAdd, setQuickAdd] = useState<{ date: string; kind: "income" | "expense" } | null>(null);
-  const [importInfo, setImportInfo] = useState<{ rows: any[]; file: File; hash: string } | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
   const [manageCats, setManageCats] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const entries = (data?.entries ?? []) as Entry[];
   const opening = data?.opening_balance ?? 0;
-  const imports = data?.imports ?? [];
   const weekendToMonday = Boolean(data?.weekend_payouts_to_monday);
 
   const todayKey = useMemo(() => todayKeyBrazil(), []);
 
   const dayList = useMemo(() => {
+    const wd = weekdayFromKey(todayKey);
+    const mondayOffset = wd === 0 ? -6 : -(wd - 1);
+    const weekStart = addDaysToKey(todayKey, mondayOffset + weekOffset * 7);
     const arr: string[] = [];
-    for (let i = 0; i < days; i++) {
-      arr.push(addDaysToKey(todayKey, startOffset + i));
+    for (let i = 0; i < 7; i++) {
+      arr.push(addDaysToKey(weekStart, i));
     }
     return arr;
-  }, [todayKey, startOffset, days]);
+  }, [todayKey, weekOffset]);
 
   // Expand recurring entries up to a horizon (today + 60 days or end of view)
   const horizon = useMemo(() => {
@@ -192,11 +124,20 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
 
   const expanded = useMemo<DayItem[]>(() => {
     const applyShift = (item: DayItem): DayItem => {
+      const isShopifyEntry = item.source === "shopify_import" || item.source === "shopify_sync" || item.source === "shopify_pending";
+      const isOrderCost = item.source === "auto" && item.auto_kind === "order_cost";
+
+      // Custos de pedidos vencidos (não pagos) são transferidos para hoje.
+      if (isOrderCost && item.date < todayKey) {
+        const wd = weekdayFromKey(item.date);
+        return { ...item, date: todayKey, originalDate: item.originalDate ?? item.date, shiftedFromWeekday: wd };
+      }
+
       if (!weekendToMonday) return item;
-      if (item.source !== "shopify_import") return item;
+      if (!isShopifyEntry && !isOrderCost) return item;
       if (item.skip_weekend_rule) return item;
       const wd = weekdayFromKey(item.date);
-      if (wd !== 0 && wd !== 5 && wd !== 6) return item;
+      if (wd !== 0 && wd !== 6) return item;
       const shifted = shiftToMondayIfWeekend(item.date);
       return { ...item, date: shifted, originalDate: item.originalDate ?? item.date, shiftedFromWeekday: wd };
     };
@@ -215,8 +156,21 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         i++;
       }
     }
+    for (const p of (pendingQuery.data?.items ?? []) as { date: string; amount: number }[]) {
+      out.push(applyShift({
+        id: `pending-${p.date}`,
+        kind: "income",
+        amount: p.amount,
+        date: p.date,
+        category: "Depósito Shopify",
+        description: "Ainda não incluído em payout",
+        source: "shopify_pending",
+        import_id: null,
+        virtual: true,
+      }));
+    }
     return out;
-  }, [entries, horizon, weekendToMonday]);
+  }, [entries, horizon, weekendToMonday, pendingQuery.data]);
 
   const saldoBeforeRange = useMemo(() => {
     const first = dayList[0] ?? todayKey;
@@ -265,24 +219,22 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
       if (e.kind === "income") m.i += Number(e.amount); else m.e += Number(e.amount);
       map.set(e.date, m);
     }
+    let totalIncome = 0, totalExpense = 0;
     for (let i = 1; i <= 30; i++) {
       const k = addDaysToKey(todayKey, i);
       const m = map.get(k) ?? { i: 0, e: 0 };
       s = s + m.i - m.e;
       days30.push({ date: k, balance: s, income: m.i });
+      totalIncome += m.i; totalExpense += m.e;
     }
     const tomorrow = days30[0]?.balance ?? currentBalance;
-    const min = days30.reduce((a, b) => b.balance < a.balance ? b : a, days30[0] ?? { date: "", balance: currentBalance, income: 0 });
-    const maxIncome = days30.reduce((a, b) => b.income > a.income ? b : a, days30[0] ?? { date: "", balance: 0, income: 0 });
-    return { current: currentBalance, tomorrow, min, maxIncome };
+    return { current: currentBalance, tomorrow, totalIncome, totalExpense };
   }, [expanded, opening, todayKey]);
 
   const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: refresh });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
   const updateMut = useMutation({ mutationFn: (v: any) => updateFn({ data: v }), onSuccess: refresh });
   const openingMut = useMutation({ mutationFn: (v: number) => openingFn({ data: { shop_id: shopId, opening_balance: v } }), onSuccess: refresh });
-  const importMut = useMutation({ mutationFn: (v: any) => importFn({ data: v }), onSuccess: () => { refresh(); setImportInfo(null); } });
-  const deleteImpMut = useMutation({ mutationFn: (id: string) => deleteImpFn({ data: { id } }), onSuccess: refresh });
   const weekendFn = useServerFn(setWeekendRule);
   const weekendMut = useMutation({ mutationFn: (enabled: boolean) => weekendFn({ data: { shop_id: shopId, enabled } }), onSuccess: refresh });
   const resetFn = useServerFn(resetShopCash);
@@ -294,63 +246,30 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
     },
   });
 
-  async function handleFile(f: File) {
-    const buf = await f.arrayBuffer();
-    const hashBuf = await crypto.subtle.digest("SHA-256", buf);
-    const hash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
-    const isCsv = f.name.toLowerCase().endsWith(".csv") || f.type.includes("csv");
-    const json = isCsv ? parseCsvRows(new TextDecoder().decode(buf)) : (() => {
-      const wb = XLSX.read(buf, { type: "array", cellDates: false, raw: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      return sheetRowsForImport(ws);
-    })();
-    // find columns
-    const rows: { date: string; amount: number }[] = [];
-    for (const r of json) {
-      const keys = Object.keys(r);
-      const dateKey = keys.find(k => /payout\s*date/i.test(k)) ?? keys.find(k => /^date$/i.test(k));
-      const netKey = keys.find(k => /^net$/i.test(k)) ?? keys.find(k => /amount/i.test(k));
-      if (!dateKey || !netKey) continue;
-      const dKey = spreadsheetDateKey(r[dateKey]);
-      const amt = typeof r[netKey] === "number" ? r[netKey] : parseFloat(String(r[netKey]).replace(/[^0-9.\-,]/g, "").replace(",", "."));
-      if (!dKey || isNaN(amt)) continue;
-      // Mantém a data original do Payout Date e importa apenas a partir do dia seguinte ao atual.
-      if (dKey <= todayKey) continue;
-      rows.push({ date: dKey, amount: amt });
-    }
-    if (rows.length === 0) {
-      alert("Nenhuma linha válida encontrada. Verifique se a planilha tem colunas 'Payout Date' e 'Net'.");
-      return;
-    }
-    setImportInfo({ rows, file: f, hash });
-  }
-
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
   return (
     <div className="space-y-5">
       {/* Indicators */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
         <Indicator icon={TrendingUp} label="Saldo amanhã" value={fmtMoney(future.tomorrow)} negative={future.tomorrow < 0} />
-        <Indicator icon={AlertTriangle} label="Menor saldo (30d)" value={fmtMoney(future.min.balance)} sub={future.min.date && formatDateKey(future.min.date, { day: "2-digit", month: "short" })} negative={future.min.balance < 0} />
-        <Indicator icon={TrendingDown} label="Maior entrada (30d)" value={fmtMoney(future.maxIncome.income)} sub={future.maxIncome.date && formatDateKey(future.maxIncome.date, { day: "2-digit", month: "short" })} accent="oklch(0.55 0.13 155)" />
+        <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(future.totalIncome)} accent="oklch(0.55 0.13 155)" />
+        <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
+        {pendingQuery.data?.connected && (
+          <Indicator icon={TrendingUp} label="A receber (Shopify)" value={fmtMoney(pendingQuery.data.pending)} accent="oklch(0.6 0.13 230)" />
+        )}
       </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex items-center rounded-lg border border-border bg-surface">
-          <button onClick={() => setStartOffset(o => o - days)} className="p-2 hover:bg-accent rounded-l-lg"><ChevronLeft className="size-4" /></button>
-          <button onClick={() => setStartOffset(0)} className="px-3 text-xs">Hoje</button>
-          <button onClick={() => setStartOffset(o => o + days)} className="p-2 hover:bg-accent rounded-r-lg"><ChevronRight className="size-4" /></button>
-        </div>
-        <div className="inline-flex rounded-lg border border-border overflow-hidden text-xs">
-          {[7, 14, 30].map(n => (
-            <button key={n} onClick={() => setDays(n)} className={`px-3 h-9 ${days === n ? "bg-primary text-primary-foreground" : "bg-surface hover:bg-accent"}`}>{n}d</button>
-          ))}
+          <button onClick={() => setWeekOffset(o => o - 1)} className="p-2 hover:bg-accent rounded-l-lg"><ChevronLeft className="size-4" /></button>
+          <button onClick={() => setWeekOffset(0)} className="px-3 text-xs">Hoje</button>
+          <button onClick={() => setWeekOffset(o => o + 1)} className="p-2 hover:bg-accent rounded-r-lg"><ChevronRight className="size-4" /></button>
         </div>
         <div className="flex-1" />
-        <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Lançamentos do Shopify caindo na sexta, sábado ou domingo aparecerão na segunda-feira seguinte.">
+        <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Lançamentos caindo no sábado ou domingo aparecerão na segunda-feira seguinte.">
           <input
             type="checkbox"
             checked={weekendToMonday}
@@ -361,9 +280,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         </label>
         <Button variant="outline" size="sm" onClick={() => setManageCats(true)}>
           <Tag className="size-4" /> Categorias
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-          <Upload className="size-4" /> Importar Shopify
         </Button>
         <Button
           variant="outline"
@@ -382,12 +298,11 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         >
           <Trash2 className="size-4" /> {resetMut.isPending ? "Resetando..." : "Resetar caixa"}
         </Button>
-        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
       </div>
 
       {/* Day grid */}
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
-        <div className="min-w-max grid" style={{ gridTemplateColumns: `repeat(${days}, 200px)`, gridTemplateRows: "auto 118px 118px auto" }}>
+        <div className="min-w-max grid" style={{ gridTemplateColumns: `repeat(7, 200px)`, gridTemplateRows: "auto 118px 118px auto" }}>
           {dayData.map((dd) => {
             const weekday = weekdayFromKey(dd.key);
             const isToday = dd.key === todayKey;
@@ -439,26 +354,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         </div>
       </div>
 
-      {/* Imports list */}
-      {imports.length > 0 && (
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <div className="text-sm font-semibold mb-2 inline-flex items-center gap-2"><FileSpreadsheet className="size-4" /> Importações Shopify</div>
-          <div className="space-y-1">
-            {imports.map((imp: any) => (
-              <div key={imp.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0">
-                <div className="flex-1 min-w-0">
-                  <div className="truncate">{imp.file_name}</div>
-                  <div className="text-muted-foreground text-[10px]">{new Date(imp.created_at).toLocaleString("pt-BR")} · {imp.total_rows} linhas · {fmtMoney(Number(imp.total_amount))}</div>
-                </div>
-                <button onClick={() => { if (confirm("Excluir esta importação e todos os lançamentos vinculados?")) deleteImpMut.mutate(imp.id); }} className="text-muted-foreground hover:text-destructive p-1.5">
-                  <Trash2 className="size-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Quick add */}
       {quickAdd && (
         <QuickAdd
@@ -492,23 +387,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         />
       )}
 
-      {/* Import preview */}
-      {importInfo && (
-        <Modal onClose={() => setImportInfo(null)} title="Confirmar importação">
-          <div className="text-sm space-y-2">
-            <div><span className="text-muted-foreground">Arquivo:</span> {importInfo.file.name}</div>
-            <div><span className="text-muted-foreground">Linhas válidas:</span> {importInfo.rows.length}</div>
-            <div><span className="text-muted-foreground">Total Net:</span> {fmtMoney(importInfo.rows.reduce((a, r) => a + r.amount, 0))}</div>
-            <div className="text-xs text-muted-foreground">Será criada uma entrada por dia, agrupando os valores Net por Payout Date.</div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setImportInfo(null)}>Cancelar</Button>
-            <Button onClick={() => importMut.mutate({ shop_id: shopId, file_name: importInfo.file.name, file_hash: importInfo.hash, rows: importInfo.rows })} disabled={importMut.isPending}>
-              {importMut.isPending ? "Importando..." : "Importar"}
-            </Button>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
@@ -541,12 +419,14 @@ function Modal({ children, onClose, title }: any) {
 
 function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) {
   const isIncome = entry.kind === "income";
+  const isPending = entry.source === "shopify_pending";
   const shifted = typeof entry.shiftedFromWeekday === "number";
   const fromLabel = shifted ? WEEKDAYS_FULL[entry.shiftedFromWeekday!] : null;
   return (
     <button
       onClick={onClick}
-      className={`group w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${isIncome ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-700 dark:text-rose-400"}`}
+      disabled={isPending}
+      className={`group w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${isPending ? "border-dashed border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 cursor-default" : isIncome ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-700 dark:text-rose-400"}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate inline-flex items-center gap-1">
@@ -556,6 +436,11 @@ function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) 
         <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(entry.amount))}</span>
       </div>
       {entry.description && <div className="truncate text-muted-foreground text-[10px] mt-0.5">{entry.description}</div>}
+      {isPending && (
+        <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5">
+          Previsto
+        </div>
+      )}
       {shifted && (
         <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">
           <Repeat className="size-2.5" /> Transferido de {fromLabel?.toLowerCase()}
@@ -638,7 +523,7 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: { entry: Da
   const [until, setUntil] = useState(entry.recurrence_until ?? "");
   const [skipWeekend, setSkipWeekend] = useState<boolean>(Boolean(entry.skip_weekend_rule));
   const cats = categories;
-  const isShopify = entry.source === "shopify_import";
+  const isShopify = entry.source === "shopify_import" || entry.source === "shopify_sync";
 
   return (
     <Modal onClose={onClose} title={`Editar ${entry.kind === "income" ? "entrada" : "saída"}`}>

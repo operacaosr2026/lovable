@@ -42,30 +42,23 @@ function ShopDetail() {
 
   return (
     <PageShell>
-      <Link to="/shops" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
-        <ArrowLeft className="size-4" /> Lojas
-      </Link>
-
-      <div className="rounded-2xl border border-border bg-surface p-5 mb-5">
-        <div className="flex items-start gap-4">
+      <div className="flex items-center gap-3 mb-3">
+        <Link to="/shops" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground shrink-0">
+          <ArrowLeft className="size-4" /> Lojas
+        </Link>
+        <div className="flex items-center gap-2 min-w-0">
           {s.logo_url ? (
-            <img src={s.logo_url} alt={s.name} className="size-14 rounded-xl object-cover border border-border" />
+            <img src={s.logo_url} alt={s.name} className="size-7 rounded-lg object-cover border border-border shrink-0" />
           ) : (
-            <div className="size-14 rounded-xl bg-primary/10 text-primary grid place-items-center">
-              <Store className="size-7" />
+            <div className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
+              <Store className="size-3.5" />
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">{s.name}</h1>
-            <div className="flex items-center gap-2 flex-wrap mt-1.5 text-xs text-muted-foreground">
-              {s.country && <span className="inline-flex items-center gap-1"><MapPin className="size-3" /> {s.country}</span>}
-              <span className="inline-flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-primary" /> {s.status}
-              </span>
-              <span>· criada em {new Date(s.created_at).toLocaleDateString("pt-BR")}</span>
-            </div>
-            {s.description && <p className="text-sm text-muted-foreground mt-2">{s.description}</p>}
-          </div>
+          <h1 className="text-base font-semibold tracking-tight truncate">{s.name}</h1>
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+            <span className="size-1.5 rounded-full bg-primary" /> {s.status}
+          </span>
+          {s.country && <span className="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0"><MapPin className="size-3" /> {s.country}</span>}
         </div>
       </div>
 

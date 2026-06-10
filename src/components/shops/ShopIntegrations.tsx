@@ -55,7 +55,7 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
       const from = addDays(today, -30);
       const futureTo = addDays(today, PROCESSING_DELAY_DAYS + 1);
       await recomputeRangeFn({ data: { shop_id: shopId, from_processing: addDays(from, PROCESSING_DELAY_DAYS), to_processing: futureTo } });
-      const payouts = await syncPayoutsFn({ data: { shop_id: shopId, since_days: 60 } });
+      const payouts = await syncPayoutsFn({ data: { shop_id: shopId, since_days: 365 } });
       return { ...r, payouts: payouts.synced };
     },
     onSuccess: (r) => {

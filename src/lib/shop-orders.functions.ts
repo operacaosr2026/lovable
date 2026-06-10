@@ -61,6 +61,25 @@ async function fetchShopifyPayouts(domain: string, token: string, sinceISO: stri
   return out;
 }
 
+async function fetchShopifyBalanceTransactions(domain: string, token: string, maxPages: number) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?limit=250`;
+  for (let i = 0; i < maxPages && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.transactions ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
 async function ensureCostCategory(supabase: any, userId: string, shopId: string) {
   const { data } = await supabase.from("shop_cash_categories").select("id")
     .eq("user_id", userId).eq("shop_id", shopId).eq("kind", "expense").eq("name", COST_CATEGORY).maybeSingle();
@@ -404,6 +423,38 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     }
 
     return { synced: relevant.length };
+  });
+
+// Tempo médio entre o processamento de uma cobrança e o depósito do valor (observado: ~9 dias).
+const PENDING_PAYOUT_DELAY_DAYS = 9;
+
+export const getShopifyPendingBalance = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) return { connected: false, pending: 0, currency: null, items: [] };
+
+    const { domain, token } = await getShopifyCreds(context.supabase, context.userId, settings.shopify_store_id);
+    // Transações vêm ordenadas das mais recentes para as mais antigas; as ainda não
+    // incluídas em payout (payout_id null) ficam sempre entre as mais recentes.
+    const transactions = await fetchShopifyBalanceTransactions(domain, token, 10);
+    const pendingTx = transactions.filter((t: any) => t.payout_id == null);
+
+    const byDate = new Map<string, number>();
+    for (const t of pendingTx) {
+      const processedDate = String(t.processed_at ?? "").slice(0, 10);
+      if (!processedDate) continue;
+      const payoutDate = addDays(processedDate, PENDING_PAYOUT_DELAY_DAYS);
+      byDate.set(payoutDate, (byDate.get(payoutDate) ?? 0) + Number(t.net ?? 0));
+    }
+    const items = Array.from(byDate.entries())
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const pending = items.reduce((s, i) => s + i.amount, 0);
+    const currency = pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
+    return { connected: true, pending, currency, items };
   });
 
 // ---------- Recompute ----------
