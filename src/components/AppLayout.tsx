@@ -315,7 +315,7 @@ export function AppLayout() {
           {item.children ? (
             <button
               onClick={() => toggleGroup(item.to)}
-              className={`relative w-full flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm transition-all mb-0.5 ${
+              className={`relative w-full flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm text-left appearance-none border-0 bg-transparent transition-all mb-0.5 ${
                 active ? "bg-white/10 text-white font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
               }`}
             >
