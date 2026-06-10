@@ -13,6 +13,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSettingsProvider } from "@/lib/app-settings";
 import { useLocation, Navigate } from "@tanstack/react-router";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -124,6 +125,7 @@ function RootComponent() {
       <AuthProvider>
         <AppSettingsProvider>
           <AuthGate />
+          <Toaster />
         </AppSettingsProvider>
       </AuthProvider>
     </QueryClientProvider>
