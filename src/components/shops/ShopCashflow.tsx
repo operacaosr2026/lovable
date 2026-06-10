@@ -15,7 +15,7 @@ import {
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
   resetShopCash,
 } from "@/lib/shop-cash.functions";
-import { getShopifyPendingBalance } from "@/lib/shop-orders.functions";
+import { getShopifyPendingBalance, getMonthlyProfit } from "@/lib/shop-orders.functions";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
 type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null };
@@ -85,6 +85,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const openingFn = useServerFn(setOpeningBalance);
   const listCatsFn = useServerFn(listCashCategories);
   const pendingFn = useServerFn(getShopifyPendingBalance);
+  const monthlyProfitFn = useServerFn(getMonthlyProfit);
 
   const queryKey = ["shop-cash", shopId];
   const catsKey = ["shop-cash-cats", shopId];
@@ -110,6 +111,16 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const weekendToMonday = Boolean(data?.weekend_payouts_to_monday);
 
   const todayKey = useMemo(() => todayKeyBrazil(), []);
+
+  const { monthStart, monthEnd } = useMemo(() => {
+    const { year, month } = dateKeyParts(todayKey);
+    const lastDay = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
+    return { monthStart: dateKey(year, month, 1), monthEnd: dateKey(year, month, lastDay) };
+  }, [todayKey]);
+  const monthlyProfitQuery = useQuery({
+    queryKey: ["shop-cash-monthly-profit", shopId, monthStart, monthEnd],
+    queryFn: () => monthlyProfitFn({ data: { shop_id: shopId, month_start: monthStart, month_end: monthEnd } }),
+  });
 
   const dayList = useMemo(() => {
     const wd = weekdayFromKey(todayKey);
@@ -226,20 +237,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
     return { current: currentBalance, totalIncome, totalExpense };
   }, [expanded, opening, todayKey]);
 
-  // Profit for the current calendar month (income - expenses for all entries in the month)
-  const monthProfit = useMemo(() => {
-    const { year, month } = dateKeyParts(todayKey);
-    const monthStart = dateKey(year, month, 1);
-    const lastDay = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
-    const monthEnd = dateKey(year, month, lastDay);
-    let income = 0, expense = 0;
-    for (const e of expanded) {
-      if (e.source === "shopify_pending") continue;
-      if (e.date < monthStart || e.date > monthEnd) continue;
-      if (e.kind === "income") income += Number(e.amount); else expense += Number(e.amount);
-    }
-    return income - expense;
-  }, [expanded, todayKey]);
+  const monthProfit = monthlyProfitQuery.data?.profit ?? 0;
 
   const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: refresh });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
@@ -263,7 +261,14 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
       {/* Indicators */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
-        <Indicator icon={TrendingUp} label="Lucro do mês" value={fmtMoney(monthProfit)} accent="oklch(0.55 0.13 155)" negative={monthProfit < 0} />
+        <Indicator
+          icon={TrendingUp}
+          label="Lucro do mês"
+          value={fmtMoney(monthProfit)}
+          accent="oklch(0.55 0.13 155)"
+          negative={monthProfit < 0}
+          sub={monthlyProfitQuery.data ? `Vendas ${fmtMoney(monthlyProfitQuery.data.sales)} · Produto ${fmtMoney(monthlyProfitQuery.data.productCost)} · Ads ${fmtMoney(monthlyProfitQuery.data.adSpend)}` : undefined}
+        />
         <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(future.totalIncome)} accent="oklch(0.55 0.13 155)" />
         <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
         {pendingQuery.data?.connected && (

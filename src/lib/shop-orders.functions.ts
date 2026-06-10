@@ -457,6 +457,41 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     return { connected: true, pending, currency, items };
   });
 
+export const getMonthlyProfit = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    month_start: z.string(),
+    month_end: z.string(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { shop_id, month_start, month_end } = data;
+
+    const { data: orders, error: ordersErr } = await supabase
+      .from("shop_orders").select("revenue")
+      .eq("user_id", userId).eq("shop_id", shop_id)
+      .gte("order_date", month_start).lte("order_date", month_end);
+    if (ordersErr) throw new Error(ordersErr.message);
+    const sales = (orders ?? []).reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+
+    const { data: costRows, error: costErr } = await supabase
+      .from("shop_cash_entries").select("amount,auto_ref_date,date")
+      .eq("user_id", userId).eq("shop_id", shop_id).eq("kind", "expense").eq("category", COST_CATEGORY)
+      .or(`and(auto_ref_date.gte.${month_start},auto_ref_date.lte.${month_end}),and(auto_ref_date.is.null,date.gte.${month_start},date.lte.${month_end})`);
+    if (costErr) throw new Error(costErr.message);
+    const productCost = (costRows ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+
+    const { data: adRows, error: adErr } = await supabase
+      .from("shop_cash_entries").select("amount")
+      .eq("user_id", userId).eq("shop_id", shop_id).eq("kind", "expense").eq("category", "Facebook Ads")
+      .gte("date", month_start).lte("date", month_end);
+    if (adErr) throw new Error(adErr.message);
+    const adSpend = (adRows ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+
+    return { sales, productCost, adSpend, profit: sales - productCost - adSpend };
+  });
+
 // ---------- Recompute ----------
 async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any) {
   let settings = preloadedSettings;
