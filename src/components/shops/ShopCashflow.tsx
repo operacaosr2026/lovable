@@ -217,26 +217,29 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
       if (e.date <= todayKey) acc += e.kind === "income" ? Number(e.amount) : -Number(e.amount);
     }
     const currentBalance = acc;
-    const days30: { date: string; balance: number; income: number }[] = [];
-    let s = currentBalance;
-    const map = new Map<string, { i: number; e: number }>();
-    for (const e of expanded) {
-      if (e.date <= todayKey) continue;
-      const m = map.get(e.date) ?? { i: 0, e: 0 };
-      if (e.kind === "income") m.i += Number(e.amount); else m.e += Number(e.amount);
-      map.set(e.date, m);
-    }
+    const horizon30 = addDaysToKey(todayKey, 30);
     let totalIncome = 0, totalExpense = 0;
-    for (let i = 1; i <= 30; i++) {
-      const k = addDaysToKey(todayKey, i);
-      const m = map.get(k) ?? { i: 0, e: 0 };
-      s = s + m.i - m.e;
-      days30.push({ date: k, balance: s, income: m.i });
-      totalIncome += m.i; totalExpense += m.e;
+    for (const e of expanded) {
+      if (e.date <= todayKey || e.date > horizon30) continue;
+      if (e.kind === "income") totalIncome += Number(e.amount); else totalExpense += Number(e.amount);
     }
-    const tomorrow = days30[0]?.balance ?? currentBalance;
-    return { current: currentBalance, tomorrow, totalIncome, totalExpense };
+    return { current: currentBalance, totalIncome, totalExpense };
   }, [expanded, opening, todayKey]);
+
+  // Profit for the current calendar month (income - expenses for all entries in the month)
+  const monthProfit = useMemo(() => {
+    const { year, month } = dateKeyParts(todayKey);
+    const monthStart = dateKey(year, month, 1);
+    const lastDay = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
+    const monthEnd = dateKey(year, month, lastDay);
+    let income = 0, expense = 0;
+    for (const e of expanded) {
+      if (e.source === "shopify_pending") continue;
+      if (e.date < monthStart || e.date > monthEnd) continue;
+      if (e.kind === "income") income += Number(e.amount); else expense += Number(e.amount);
+    }
+    return income - expense;
+  }, [expanded, todayKey]);
 
   const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: refresh });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
@@ -260,7 +263,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
       {/* Indicators */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
-        <Indicator icon={TrendingUp} label="Saldo amanhã" value={fmtMoney(future.tomorrow)} negative={future.tomorrow < 0} />
+        <Indicator icon={TrendingUp} label="Lucro do mês" value={fmtMoney(monthProfit)} accent="oklch(0.55 0.13 155)" negative={monthProfit < 0} />
         <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(future.totalIncome)} accent="oklch(0.55 0.13 155)" />
         <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
         {pendingQuery.data?.connected && (
