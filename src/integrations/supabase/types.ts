@@ -683,6 +683,68 @@ export type Database = {
         }
         Relationships: []
       }
+      meta_ads_integrations: {
+        Row: {
+          access_token: string | null
+          account_name: string | null
+          ad_account_id: string | null
+          created_at: string
+          currency: string | null
+          enabled: boolean
+          id: string
+          journal_page_id: string | null
+          last_activities_sync_at: string | null
+          last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_status: string | null
+          shop_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          account_name?: string | null
+          ad_account_id?: string | null
+          created_at?: string
+          currency?: string | null
+          enabled?: boolean
+          id?: string
+          journal_page_id?: string | null
+          last_activities_sync_at?: string | null
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          shop_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          account_name?: string | null
+          ad_account_id?: string | null
+          created_at?: string
+          currency?: string | null
+          enabled?: boolean
+          id?: string
+          journal_page_id?: string | null
+          last_activities_sync_at?: string | null
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          shop_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_ads_integrations_journal_page_id_fkey"
+            columns: ["journal_page_id"]
+            isOneToOne: false
+            referencedRelation: "journal_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_creatives: {
         Row: {
           created_at: string

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-export const PRODUCT_STATUSES = ["ideia", "mineracao", "producao", "validacao", "escala", "pausado", "vencedor"] as const;
+export const PRODUCT_STATUSES = ["producao", "validacao", "escala", "pausado", "vencedor"] as const;
 
 const LinkItem = z.object({ label: z.string().max(80), url: z.string().max(500) });
 
@@ -14,7 +14,7 @@ const ProductInput = z.object({
   links: z.array(LinkItem).max(20).optional(),
   notes: z.string().max(4000).nullable().optional(),
   tags: z.array(z.string().min(1).max(40)).max(15).optional(),
-  status: z.enum(PRODUCT_STATUSES).default("ideia"),
+  status: z.enum(PRODUCT_STATUSES).default("producao"),
   product_date: z.string().nullable().optional(),
   product_id: z.string().uuid().nullable().optional(),
 });

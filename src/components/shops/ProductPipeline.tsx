@@ -15,9 +15,7 @@ import { listProducts } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 const COLUMNS: { id: typeof PRODUCT_STATUSES[number]; label: string; tint: string; accent: string }[] = [
-  { id: "ideia",      label: "Ideia",      tint: "oklch(0.97 0.012 250)", accent: "oklch(0.55 0.2 250)" },
-  { id: "mineracao",  label: "Mineração",  tint: "oklch(0.97 0.025 200)", accent: "oklch(0.5 0.15 200)" },
-  { id: "producao",   label: "Produção",   tint: "oklch(0.97 0.03 75)",   accent: "oklch(0.6 0.16 65)" },
+  { id: "producao",   label: "Teste",      tint: "oklch(0.97 0.03 75)",   accent: "oklch(0.6 0.16 65)" },
   { id: "validacao",  label: "Validação",  tint: "oklch(0.97 0.025 130)", accent: "oklch(0.5 0.15 130)" },
   { id: "escala",     label: "Escala",     tint: "oklch(0.96 0.04 155)",  accent: "oklch(0.5 0.13 155)" },
   { id: "pausado",    label: "Pausado",    tint: "oklch(0.95 0.005 250)", accent: "oklch(0.45 0.015 260)" },
@@ -127,6 +125,10 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
           />
         </div>
         <span className="text-xs text-muted-foreground">{products.length} produto(s)</span>
+        <div className="flex-1" />
+        <button onClick={() => setPickerStatus(COLUMNS[0].id)} className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors">
+          <Plus className="size-3.5" /> Adicionar produto
+        </button>
       </div>
 
       <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onDragEnd}>
@@ -136,7 +138,6 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
               key={col.id}
               col={col}
               items={grouped[col.id] ?? []}
-              onAdd={() => setPickerStatus(col.id)}
               onCardClick={(p: Product) => setEditing(p)}
               onDelete={(id: string) => remove.mutate(id)}
             />
@@ -178,7 +179,7 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
   );
 }
 
-function Column({ col, items, onAdd, onCardClick, onDelete }: any) {
+function Column({ col, items, onCardClick, onDelete }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 w-[260px] shrink-0">
@@ -186,17 +187,9 @@ function Column({ col, items, onAdd, onCardClick, onDelete }: any) {
         <span className="size-2 rounded-full" style={{ background: col.accent }} />
         <div className="text-sm font-semibold flex-1">{col.label}</div>
         <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
-        <button onClick={onAdd} className="size-6 rounded-md hover:bg-surface grid place-items-center text-muted-foreground">
-          <Plus className="size-3.5" />
-        </button>
       </div>
       <div ref={setNodeRef} className={`p-2 space-y-2 min-h-[120px] transition-colors ${isOver ? "bg-primary/5" : ""}`}>
         {items.map((p: Product) => <ProductCard key={p.id} p={p} onClick={() => onCardClick(p)} onDelete={() => onDelete(p.id)} />)}
-        {items.length === 0 && (
-          <button onClick={onAdd} className="w-full text-xs text-muted-foreground py-3 hover:text-foreground rounded-lg border border-dashed border-border">
-            + Adicionar
-          </button>
-        )}
       </div>
     </div>
   );

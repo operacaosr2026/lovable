@@ -134,6 +134,11 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
 
   const activeTask = tasks.find((t) => t.id === activeId) ?? null;
 
+  const handleAddTask = async () => {
+    const result: any = await create.mutateAsync({ title: "Nova tarefa", status: "todo" });
+    if (result?.task) setEditing(result.task);
+  };
+
   return (
     <>
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
@@ -141,13 +146,16 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
         <Chip active={filter === "today"} onClick={() => setFilter("today")}>Hoje · {counts.today}</Chip>
         <Chip active={filter === "overdue"} onClick={() => setFilter("overdue")} danger={counts.overdue > 0}>Vencidas · {counts.overdue}</Chip>
         <Chip active={filter === "upcoming"} onClick={() => setFilter("upcoming")}>Próximas · {counts.upcoming}</Chip>
+        <div className="flex-1" />
+        <button onClick={handleAddTask} className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors">
+          <Plus className="size-3.5" /> Adicionar tarefa
+        </button>
       </div>
 
       <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {COLUMNS.map((col) => (
             <Column key={col.id} col={col} tasks={grouped[col.id] ?? []}
-              onAdd={(title: string) => create.mutate({ title, status: col.id })}
               onCardClick={(t: Task) => setEditing(t)}
               onDelete={(id: string) => remove.mutate(id)}
             />
@@ -175,31 +183,17 @@ function Chip({ active, onClick, children, danger }: any) {
   );
 }
 
-function Column({ col, tasks, onAdd, onCardClick, onDelete }: any) {
+function Column({ col, tasks, onCardClick, onDelete }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
-  const [adding, setAdding] = useState(false);
-  const [val, setVal] = useState("");
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 flex-1 min-w-[280px]">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border" style={{ background: col.tint }}>
         <span className="size-2 rounded-full" style={{ background: col.accent }} />
         <div className="text-sm font-semibold flex-1">{col.label}</div>
         <span className="text-xs text-muted-foreground tabular-nums">{tasks.length}</span>
-        <button onClick={() => setAdding(true)} className="size-6 rounded-md hover:bg-surface grid place-items-center text-muted-foreground"><Plus className="size-3.5" /></button>
       </div>
       <div ref={setNodeRef} className={`p-2 space-y-2 min-h-[120px] transition-colors ${isOver ? "bg-primary/5" : ""}`}>
-        {adding && (
-          <form onSubmit={(e) => { e.preventDefault(); if (val.trim()) onAdd(val.trim()); setVal(""); setAdding(false); }}>
-            <input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
-              onBlur={() => { if (val.trim()) onAdd(val.trim()); setVal(""); setAdding(false); }}
-              onKeyDown={(e) => { if (e.key === "Escape") { setAdding(false); setVal(""); } }}
-              placeholder="Nova tarefa..." className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm outline-none" />
-          </form>
-        )}
         {tasks.map((t: Task) => <TaskCard key={t.id} t={t} onClick={() => onCardClick(t)} onDelete={() => onDelete(t.id)} />)}
-        {tasks.length === 0 && !adding && (
-          <button onClick={() => setAdding(true)} className="w-full text-xs text-muted-foreground py-3 hover:text-foreground rounded-lg border border-dashed border-border">+ Adicionar</button>
-        )}
       </div>
     </div>
   );

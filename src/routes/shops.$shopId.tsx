@@ -3,9 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
-import { ArrowLeft, LayoutDashboard, Package, KanbanSquare, Store, MapPin, Wallet, ShoppingBag, BookOpen, Target, Plug, MessageCircle } from "lucide-react";
+import { ArrowLeft, Package, KanbanSquare, Store, MapPin, Wallet, ShoppingBag, BookOpen, Target, Plug, MessageCircle } from "lucide-react";
 import { getShop } from "@/lib/shops.functions";
-import { ShopOverview } from "@/components/shops/ShopOverview";
 import { ProductPipeline } from "@/components/shops/ProductPipeline";
 import { ShopTaskKanban } from "@/components/shops/ShopTaskKanban";
 import { ShopCashflow } from "@/components/shops/ShopCashflow";
@@ -19,12 +18,12 @@ export const Route = createFileRoute("/shops/$shopId")({
   component: ShopDetail,
 });
 
-type Tab = "overview" | "products" | "tasks" | "cash" | "orders" | "wiki" | "goal" | "integrations" | "support";
+type Tab = "products" | "tasks" | "cash" | "orders" | "wiki" | "goal" | "integrations" | "support";
 
 function ShopDetail() {
   const { shopId } = Route.useParams();
   const get = useServerFn(getShop);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("tasks");
 
   const { data, isLoading } = useQuery({
     queryKey: ["shop", shopId],
@@ -63,18 +62,16 @@ function ShopDetail() {
       </div>
 
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
-        <TabBtn active={tab === "overview"} onClick={() => setTab("overview")} icon={LayoutDashboard}>Visão geral</TabBtn>
-        <TabBtn active={tab === "tasks"} onClick={() => setTab("tasks")} icon={KanbanSquare}>Tarefas</TabBtn>
+        <TabBtn active={tab === "goal"} onClick={() => setTab("goal")} icon={Target}>Metas</TabBtn>
         <TabBtn active={tab === "cash"} onClick={() => setTab("cash")} icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "orders"} onClick={() => setTab("orders")} icon={ShoppingBag}>Pedidos</TabBtn>
+        <TabBtn active={tab === "tasks"} onClick={() => setTab("tasks")} icon={KanbanSquare}>Tarefas</TabBtn>
         <TabBtn active={tab === "support"} onClick={() => setTab("support")} icon={MessageCircle}>Atendimento</TabBtn>
-        <TabBtn active={tab === "goal"} onClick={() => setTab("goal")} icon={Target}>Meta de Lucro</TabBtn>
         <TabBtn active={tab === "products"} onClick={() => setTab("products")} icon={Package}>Produtos</TabBtn>
+        <TabBtn active={tab === "wiki"} onClick={() => setTab("wiki")} icon={BookOpen}>Diário</TabBtn>
         <TabBtn active={tab === "integrations"} onClick={() => setTab("integrations")} icon={Plug}>Integrações</TabBtn>
-        <TabBtn active={tab === "wiki"} onClick={() => setTab("wiki")} icon={BookOpen}>Central da Loja</TabBtn>
       </div>
 
-      {tab === "overview" && <ShopOverview shopId={shopId} onGoTab={setTab} />}
       {tab === "products" && <ProductPipeline shopId={shopId} />}
       {tab === "orders" && <ShopOrders shopId={shopId} />}
       {tab === "support" && <ShopSupport shopId={shopId} />}

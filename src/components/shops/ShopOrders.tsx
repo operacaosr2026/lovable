@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package } from "lucide-react";
+import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package, Clock, Wallet, TrendingUp, MapPin, AlertTriangle, PackageX } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +134,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const kpis = useMemo(() => {
     let pendingAmount = 0, pendingCount = 0, paidCount = 0, paidAmount = 0, shippedCount = 0;
     let inTransit = 0, delivered = 0, problem = 0, withoutTracking = 0;
+    let totalRevenue = 0, totalOrders = 0;
     for (const g of groups) {
       for (const o of g.orders) {
         const items = Number(o.items_count ?? 0);
@@ -148,9 +149,11 @@ export function ShopOrders({ shopId }: { shopId: string }) {
         if (!t?.tracking_number && (o.payment_status === "paid" || o.payment_status === "shipped")) {
           withoutTracking += 1;
         }
+        totalRevenue += Number(o.revenue ?? 0);
+        totalOrders += 1;
       }
     }
-    return { pendingAmount, pendingCount, paidAmount, paidCount, shippedCount, inTransit, delivered, problem, withoutTracking };
+    return { pendingAmount, pendingCount, paidAmount, paidCount, shippedCount, inTransit, delivered, problem, withoutTracking, totalRevenue, totalOrders };
   }, [groups, unitCost, trackingByOrder]);
 
 
@@ -238,20 +241,20 @@ export function ShopOrders({ shopId }: { shopId: string }) {
       <div>
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Financeiro</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Kpi label="Pendente de pagamento" value={fmtMoney(kpis.pendingAmount)} sub={`${kpis.pendingCount} pedidos`} tone="amber" />
-          <Kpi label="Pago não enviado" value={fmtMoney(kpis.paidAmount)} sub={`${kpis.paidCount} pedidos`} tone="emerald" />
-          <Kpi label="Custo por item" value={fmtMoney(unitCost)} sub="padrão da loja" tone="muted" />
-          <Kpi label="Período" value={`${groups.length} dias`} sub={`${(orders.data ?? []).length} pedidos`} tone="muted" />
+          <Kpi icon={Clock} label="Pendente de pagamento" value={fmtMoney(kpis.pendingAmount)} sub={`${kpis.pendingCount} pedidos`} tone="amber" />
+          <Kpi icon={Wallet} label="Pago não enviado" value={fmtMoney(kpis.paidAmount)} sub={`${kpis.paidCount} pedidos`} tone="sky" />
+          <Kpi icon={DollarSign} label="Custo por item" value={fmtMoney(unitCost)} sub="padrão da loja" tone="muted" />
+          <Kpi icon={TrendingUp} label="Faturamento" value={fmtMoney(kpis.totalRevenue)} sub={`${kpis.totalOrders} pedidos`} tone="emerald" />
         </div>
       </div>
       <div>
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Logística</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Kpi label="Enviados" value={String(kpis.shippedCount)} sub="total no período" tone="sky" />
-          <Kpi label="Em trânsito" value={String(kpis.inTransit)} sub="aguardando entrega" tone="sky" />
-          <Kpi label="Entregues" value={String(kpis.delivered)} sub="finalizados" tone="emerald" />
-          <Kpi label="Com problema" value={String(kpis.problem)} sub="requer atenção" tone={kpis.problem > 0 ? "amber" : "muted"} />
-          <Kpi label="Sem tracking" value={String(kpis.withoutTracking)} sub="pagos/enviados" tone={kpis.withoutTracking > 0 ? "amber" : "muted"} />
+          <Kpi icon={Truck} label="Enviados" value={String(kpis.shippedCount)} sub="total no período" tone="sky" />
+          <Kpi icon={MapPin} label="Em trânsito" value={String(kpis.inTransit)} sub="aguardando entrega" tone="sky" />
+          <Kpi icon={CheckCircle2} label="Entregues" value={String(kpis.delivered)} sub="finalizados" tone="emerald" />
+          <Kpi icon={AlertTriangle} label="Com problema" value={String(kpis.problem)} sub="requer atenção" tone={kpis.problem > 0 ? "rose" : "muted"} />
+          <Kpi icon={PackageX} label="Sem tracking" value={String(kpis.withoutTracking)} sub="pagos/enviados" tone={kpis.withoutTracking > 0 ? "amber" : "muted"} />
         </div>
       </div>
 
@@ -545,18 +548,31 @@ function TrackingCell({ shopId, orderId, tracking, template, onChanged }: {
   );
 }
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: "amber" | "emerald" | "sky" | "muted" }) {
+function Kpi({ icon: Icon, label, value, sub, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub?: string; tone: "amber" | "emerald" | "sky" | "muted" | "rose" }) {
   const toneCls = {
     amber: "border-amber-500/20 bg-amber-500/5",
     emerald: "border-emerald-500/20 bg-emerald-500/5",
     sky: "border-sky-500/20 bg-sky-500/5",
+    rose: "border-rose-500/20 bg-rose-500/5",
     muted: "border-border bg-surface",
   }[tone];
+  const iconCls = {
+    amber: "bg-amber-500/10 text-amber-600",
+    emerald: "bg-emerald-500/10 text-emerald-600",
+    sky: "bg-sky-500/10 text-sky-600",
+    rose: "bg-rose-500/10 text-rose-600",
+    muted: "bg-muted text-muted-foreground",
+  }[tone];
   return (
-    <div className={cn("rounded-xl border p-3", toneCls)}>
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold tabular-nums mt-0.5">{value}</div>
-      {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
+    <div className={cn("rounded-xl border p-3.5", toneCls)}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className={cn("size-6 rounded-md grid place-items-center shrink-0", iconCls)}>
+          <Icon className="size-3.5" />
+        </div>
+        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium truncate">{label}</div>
+      </div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </div>
   );
 }

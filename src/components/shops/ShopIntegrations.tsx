@@ -11,11 +11,14 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   Loader2, RefreshCw, Plug, ShoppingBag, CheckCircle2, AlertCircle,
-  Store, BarChart3, CreditCard, Webhook, Key, Code2, Sparkles, Settings2,
+  Webhook, Sparkles, Settings2, Mail, Megaphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Track123IntegrationDialog } from "./Track123Integration";
 import { getTrack123Integration } from "@/lib/track123.functions";
+import { listInboxes, upsertInbox, testInboxConnection, deleteInbox } from "@/lib/support.functions";
+import { MetaAdsIntegrationDialog } from "./MetaAdsIntegration";
+import { getMetaAdsIntegration, syncMetaAdsSpend, syncMetaAdsActivities } from "@/lib/meta-ads.functions";
 
 const PROCESSING_DELAY_DAYS = 7;
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -48,6 +51,15 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
   });
   const track123Connected = Boolean(track123.data?.configured);
 
+  const getMetaAdsFn = useServerFn(getMetaAdsIntegration);
+  const syncMetaAdsFn = useServerFn(syncMetaAdsSpend);
+  const syncMetaAdsActivitiesFn = useServerFn(syncMetaAdsActivities);
+  const metaAds = useQuery({
+    queryKey: ["meta-ads-integration", shopId],
+    queryFn: () => getMetaAdsFn({ data: { shop_id: shopId } }),
+  });
+  const metaAdsConnected = Boolean(metaAds.data?.configured);
+
   const syncAll = useMutation({
     mutationFn: async () => {
       const r = await syncFn({ data: { shop_id: shopId, since_days: 30 } });
@@ -56,6 +68,10 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
       const futureTo = addDays(today, PROCESSING_DELAY_DAYS + 1);
       await recomputeRangeFn({ data: { shop_id: shopId, from_processing: addDays(from, PROCESSING_DELAY_DAYS), to_processing: futureTo } });
       const payouts = await syncPayoutsFn({ data: { shop_id: shopId, since_days: 365 } });
+      if (metaAdsConnected) {
+        await syncMetaAdsFn({ data: { shop_id: shopId } });
+        await syncMetaAdsActivitiesFn({ data: { shop_id: shopId } });
+      }
       return { ...r, payouts: payouts.synced };
     },
     onSuccess: (r) => {
@@ -64,9 +80,14 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
       qc.invalidateQueries({ queryKey: ["shop-profit-goal-stats", shopId] });
       qc.invalidateQueries({ queryKey: ["order-settings", shopId] });
+      qc.invalidateQueries({ queryKey: ["meta-ads-integration", shopId] });
+      qc.invalidateQueries({ queryKey: ["meta-ads-metrics", shopId] });
+      qc.invalidateQueries({ queryKey: ["shop-wiki", shopId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const [openMetaAds, setOpenMetaAds] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -121,19 +142,31 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
         </div>
       </IntegrationCard>
 
-      {/* Coming soon */}
-      <div>
-        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground mb-3">Em breve</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <SoonCard icon={Store} title="WooCommerce" subtitle="Pedidos e produtos via REST API" />
-          <SoonCard icon={BarChart3} title="Meta Ads" subtitle="Métricas de campanhas e CPA" />
-          <SoonCard icon={CreditCard} title="Stripe" subtitle="Pagamentos, payouts e taxas" />
-          <SoonCard icon={CreditCard} title="Appmax" subtitle="Checkout e antifraude" />
-          <SoonCard icon={Code2} title="APIs personalizadas" subtitle="Conecte qualquer endpoint REST" />
-          <SoonCard icon={Key} title="Tokens" subtitle="Gerencie chaves de acesso" />
-          <SoonCard icon={Webhook} title="Webhooks" subtitle="Receba eventos em tempo real" />
+      {/* Zoho Mail (Atendimento) */}
+      <ZohoMailIntegrationCard shopId={shopId} />
+
+      {/* Meta Ads */}
+      <IntegrationCard
+        icon={Megaphone}
+        title="Meta Ads"
+        subtitle="Gasto de campanhas sincronizado automaticamente no Caixa"
+        status={metaAdsConnected ? "connected" : "disconnected"}
+        statusLabel={metaAdsConnected ? (metaAds.data?.account_name || "Conectado") : "Não conectado"}
+      >
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setOpenMetaAds(true)}>
+            <Settings2 className="size-4" /> {metaAdsConnected ? "Configurar" : "Conectar"}
+          </Button>
         </div>
-      </div>
+      </IntegrationCard>
+
+      {openMetaAds && (
+        <MetaAdsIntegrationDialog
+          shopId={shopId}
+          open={openMetaAds}
+          onClose={() => setOpenMetaAds(false)}
+        />
+      )}
 
       {openSettings && settings.data && (
         <SettingsDialog
@@ -187,20 +220,152 @@ function IntegrationCard({ icon: Icon, title, subtitle, status, statusLabel, chi
   );
 }
 
-function SoonCard({ icon: Icon, title, subtitle }: any) {
+// ===== Zoho Mail (Atendimento) =====
+
+function ZohoMailIntegrationCard({ shopId }: { shopId: string }) {
+  const _listInboxes = useServerFn(listInboxes);
+  const inboxesQ = useQuery({ queryKey: ["support", "inboxes"], queryFn: () => _listInboxes() });
+  const [open, setOpen] = useState(false);
+
+  const inbox = (inboxesQ.data?.inboxes ?? []).find(
+    (i: any) => i.shop_id === shopId && (i.imap_host ?? "").toLowerCase().includes("zoho")
+  );
+  const connected = inbox?.connection_status === "connected";
+
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-surface/40 p-4 flex items-center gap-3 opacity-70">
-      <div className="size-9 rounded-lg bg-muted/50 grid place-items-center shrink-0">
-        <Icon className="size-4 text-muted-foreground" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-muted-foreground truncate">{subtitle}</div>
-      </div>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Em breve</span>
-    </div>
+    <>
+      <IntegrationCard
+        icon={Mail}
+        title="Zoho Mail (Atendimento)"
+        subtitle="Receba e responda emails de suporte direto pela aba Atendimento"
+        status={connected ? "connected" : "disconnected"}
+        statusLabel={inbox ? (connected ? inbox.email_address : (inbox.connection_status === "error" ? "Erro de conexão" : "Desconectado")) : "Não conectado"}
+      >
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Settings2 className="size-4" /> {inbox ? "Configurar" : "Conectar"}
+          </Button>
+        </div>
+      </IntegrationCard>
+      {open && <ZohoMailDialog shopId={shopId} inbox={inbox} onClose={() => setOpen(false)} />}
+    </>
   );
 }
+
+function ZohoMailDialog({ shopId, inbox, onClose }: { shopId: string; inbox: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const _upsert = useServerFn(upsertInbox);
+  const _test = useServerFn(testInboxConnection);
+  const _delete = useServerFn(deleteInbox);
+
+  const [email, setEmail] = useState(inbox?.email_address ?? "");
+  const [displayName, setDisplayName] = useState(inbox?.display_name ?? "");
+  const [password, setPassword] = useState("");
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const save = useMutation({
+    mutationFn: () => _upsert({ data: {
+      id: inbox?.id,
+      shop_id: shopId,
+      email_address: email.trim(),
+      display_name: displayName.trim() || null,
+      imap_host: "imap.zoho.com",
+      imap_port: 993,
+      imap_user: email.trim(),
+      imap_password: password || null,
+      imap_ssl: true,
+      smtp_host: "smtp.zoho.com",
+      smtp_port: 465,
+      smtp_user: email.trim(),
+      smtp_password: password || null,
+      smtp_ssl: true,
+    } }),
+    onSuccess: () => {
+      toast.success("Caixa Zoho salva");
+      qc.invalidateQueries({ queryKey: ["support"] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => _delete({ data: { id: inbox.id } }),
+    onSuccess: () => {
+      toast.success("Integração removida");
+      qc.invalidateQueries({ queryKey: ["support"] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleTest = async () => {
+    if (!inbox?.id) return;
+    setTesting(true); setTestMsg(null);
+    const r = await _test({ data: { id: inbox.id } });
+    setTestMsg(r.message);
+    qc.invalidateQueries({ queryKey: ["support"] });
+    setTesting(false);
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Zoho Mail · Atendimento</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1.5">
+            <p className="font-medium text-foreground">Como conectar:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Use o email de suporte cadastrado no Zoho Mail desta loja.</li>
+              <li>Em Zoho Mail, vá em Configurações → Segurança → Senhas de aplicativo e gere uma senha.</li>
+              <li>Cole essa senha de aplicativo abaixo (não use a senha normal da conta).</li>
+            </ol>
+            <p>Após conectar, os emails recebidos aparecem na aba <strong>Atendimento</strong> e podem ser respondidos por lá.</p>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Email de suporte</label>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="suporte@sualoja.com" />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Nome de exibição</label>
+            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Suporte Loja" />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">{inbox ? "Nova senha de aplicativo (deixe vazio para manter)" : "Senha de aplicativo"}</label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          {inbox && (
+            <div className="text-xs text-muted-foreground">
+              Status: {inbox.connection_status === "connected" ? "Conectado" : inbox.connection_status === "error" ? "Erro de conexão" : "Desconectado"}
+              {inbox.last_error && ` · ${inbox.last_error}`}
+            </div>
+          )}
+          {testMsg && <div className="text-xs px-3 py-2 rounded-md bg-emerald-500/10 text-emerald-700">{testMsg}</div>}
+        </div>
+        <DialogFooter className="sm:justify-between">
+          <div>
+            {inbox && (
+              <Button variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => { if (confirm("Remover esta integração?")) remove.mutate(); }}>
+                Remover
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {inbox && (
+              <Button variant="outline" onClick={handleTest} disabled={testing}>
+                {testing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Testar conexão
+              </Button>
+            )}
+            <Button onClick={() => save.mutate()} disabled={save.isPending || !email.trim() || (!inbox && !password.trim())}>
+              {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 // ===== Dialogs (moved from ShopOrders) =====
 
