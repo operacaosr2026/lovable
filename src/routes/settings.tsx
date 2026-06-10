@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { Settings as SettingsIcon, Users, Shield, SlidersHorizontal } from "lucide-react";
+import { Settings as SettingsIcon, Users, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/settings")({
@@ -7,14 +7,13 @@ export const Route = createFileRoute("/settings")({
     const { data } = await supabase.auth.getUser();
     if (!data.user) throw redirect({ to: "/login" });
     if (location.pathname === "/settings" || location.pathname === "/settings/") {
-      throw redirect({ to: "/settings/geral" });
+      throw redirect({ to: "/settings/members" });
     }
   },
   component: SettingsLayout,
 });
 
 const nav = [
-  { to: "/settings/geral", label: "Geral", icon: SlidersHorizontal, desc: "Identidade e preferências do aplicativo" },
   { to: "/settings/members", label: "Membros", icon: Users, desc: "Convites, permissões e acessos" },
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
 ];

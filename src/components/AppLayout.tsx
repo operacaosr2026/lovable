@@ -369,16 +369,6 @@ export function AppLayout() {
           </button>
         </div>
 
-        <div className="px-3 mt-2">
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="w-full flex items-center gap-2 px-3 h-9 rounded-lg bg-white/5 border border-white/10 text-xs text-white/60 hover:bg-white/10 transition-colors"
-          >
-            <Search className="size-3.5" />
-            Buscar
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-white/50">⌘K</span>
-          </button>
-        </div>
 
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-1">
           {navGroups.map((group, gi) => {
