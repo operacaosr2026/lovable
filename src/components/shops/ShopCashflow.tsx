@@ -9,6 +9,7 @@ import {
 import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import {
   listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
   setOpeningBalance, setWeekendRule,
@@ -259,22 +260,30 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   return (
     <div className="space-y-5">
       {/* Indicators */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
-        <Indicator
-          icon={TrendingUp}
-          label="Lucro do mês"
-          value={fmtMoney(monthProfit)}
-          accent="oklch(0.55 0.13 155)"
-          negative={monthProfit < 0}
-          sub={monthlyProfitQuery.data ? `Vendas ${fmtMoney(monthlyProfitQuery.data.sales)} · Produto ${fmtMoney(monthlyProfitQuery.data.productCost)} · Ads ${fmtMoney(monthlyProfitQuery.data.adSpend)}` : undefined}
-        />
-        <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(future.totalIncome)} accent="oklch(0.55 0.13 155)" />
-        <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
-        {pendingQuery.data?.connected && (
-          <Indicator icon={TrendingUp} label="A receber (Shopify)" value={fmtMoney(pendingQuery.data.pending)} accent="oklch(0.6 0.13 230)" />
-        )}
-      </div>
+      <TooltipProvider delayDuration={150}>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
+          <Indicator
+            icon={TrendingUp}
+            label="Lucro do mês"
+            value={fmtMoney(monthProfit)}
+            accent="oklch(0.55 0.13 155)"
+            negative={monthProfit < 0}
+            tooltip={monthlyProfitQuery.data ? (
+              <div className="space-y-0.5">
+                <div>Vendas: {fmtMoney(monthlyProfitQuery.data.sales)}</div>
+                <div>Produto: -{fmtMoney(monthlyProfitQuery.data.productCost)}</div>
+                <div>Ads: -{fmtMoney(monthlyProfitQuery.data.adSpend)}</div>
+              </div>
+            ) : undefined}
+          />
+          <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(future.totalIncome)} accent="oklch(0.55 0.13 155)" />
+          <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
+          {pendingQuery.data?.connected && (
+            <Indicator icon={TrendingUp} label="A receber (Shopify)" value={fmtMoney(pendingQuery.data.pending)} accent="oklch(0.6 0.13 230)" />
+          )}
+        </div>
+      </TooltipProvider>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -504,15 +513,22 @@ function WeekendDayCell({ dd, weekday, isToday, onEdit }: {
   );
 }
 
-function Indicator({ icon: Icon, label, value, sub, accent, negative }: any) {
-  return (
-    <div className={`rounded-2xl border p-4 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border bg-surface"}`}>
+function Indicator({ icon: Icon, label, value, sub, accent, negative, tooltip }: any) {
+  const content = (
+    <div className={`rounded-2xl border p-4 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border bg-surface"} ${tooltip ? "cursor-default" : ""}`}>
       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
         <Icon className="size-3.5" style={{ color: accent }} /> {label}
       </div>
       <div className={`text-xl font-semibold tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
       {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
     </div>
+  );
+  if (!tooltip) return content;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{content}</TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 
