@@ -200,7 +200,7 @@ function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Lojas */}
         {shops.length > 0 && (
-          <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+          <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
             <SectionHead icon={Store} title="Lojas" count={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
             <div className="divide-y divide-border flex-1 overflow-y-auto">
               {shops.map((s: any) => (
@@ -245,7 +245,7 @@ function Dashboard() {
         )}
 
         {/* Tarefas de hoje */}
-        <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+        <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={ListChecks} title="Tarefas de hoje"
             count={`${data.tasks.filter((t: any) => !t.done).length} pendentes`}
             tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
@@ -324,7 +324,7 @@ function Dashboard() {
         </section>
 
         {/* Gratidão */}
-        <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+        <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={Sparkles} title="Gratidão" tint="--tint-amber" iconColor="oklch(0.55 0.16 65)" />
           <div className="p-6 flex flex-col flex-1 overflow-y-auto">
             <textarea
@@ -350,7 +350,7 @@ function Dashboard() {
         </section>
 
         {/* Hábitos */}
-        <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+        <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={Repeat} title="Hábitos" count={<span className="flex items-center gap-1 text-warning"><Flame className="size-3" /> semana</span> as any}
             tint="--tint-green" iconColor="oklch(0.5 0.13 155)" />
           <div className="p-6 space-y-5 flex-1 overflow-y-auto">
