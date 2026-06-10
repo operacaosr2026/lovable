@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import {
+  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
+  useDroppable, useDraggable,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,6 +102,8 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const [quickAdd, setQuickAdd] = useState<{ date: string; kind: "income" | "expense" } | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
   const [manageCats, setManageCats] = useState(false);
+  const [activeDrag, setActiveDrag] = useState<DayItem | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const entries = (data?.entries ?? []) as Entry[];
   const opening = data?.opening_balance ?? 0;
@@ -304,15 +311,42 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
       </div>
 
       {/* Day grid */}
-      <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr)) 92px 92px", gridTemplateRows: "auto 170px 170px auto" }}>
-          {dayData.map((dd) => {
-            const weekday = weekdayFromKey(dd.key);
-            const isToday = dd.key === todayKey;
-            const isWeekend = weekday === 0 || weekday === 6;
-            if (isWeekend) {
+      <DndContext
+        sensors={sensors}
+        onDragStart={(e) => {
+          const drag = expanded.find((x) => x.id === e.active.id && !x.virtual);
+          if (drag) setActiveDrag(drag);
+        }}
+        onDragEnd={(e: DragEndEvent) => {
+          const drag = activeDrag;
+          setActiveDrag(null);
+          if (!e.over || !drag) return;
+          const overId = String(e.over.id);
+          if (!overId.startsWith("day-")) return;
+          const newDate = overId.slice(4);
+          if (newDate === drag.date) return;
+          updateMut.mutate({ id: drag.id, patch: { date: newDate } });
+        }}
+      >
+        <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+          <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr)) 92px 92px", gridTemplateRows: "auto 170px 170px auto" }}>
+            {dayData.map((dd) => {
+              const weekday = weekdayFromKey(dd.key);
+              const isToday = dd.key === todayKey;
+              const isWeekend = weekday === 0 || weekday === 6;
+              if (isWeekend) {
+                return (
+                  <WeekendDayCell
+                    key={dd.key}
+                    dd={dd}
+                    weekday={weekday}
+                    isToday={isToday}
+                    onEdit={setEditing}
+                  />
+                );
+              }
               return (
-                <WeekendDayCell
+                <WeekdayDayCell
                   key={dd.key}
                   dd={dd}
                   weekday={weekday}
@@ -320,53 +354,22 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
                   onEdit={setEditing}
                 />
               );
-            }
-            return (
-              <div key={dd.key} className="grid row-span-4 border-r border-border last:border-r-0" style={{ gridTemplateRows: "subgrid" }}>
-                <div className={`px-3 py-3 border-b border-border ${isToday ? "bg-primary/10" : ""}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className={`text-base font-bold tracking-tight truncate ${isToday ? "text-primary" : "text-foreground"}`}>{WEEKDAYS_FULL[weekday]}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day: "2-digit", month: "long" })}</div>
-                    </div>
-                    {isToday && <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium shrink-0">hoje</span>}
-                  </div>
-                </div>
-                {/* Entradas */}
-                <div className="p-2 border-b border-border/60 overflow-hidden flex flex-col">
-                  <div className="flex items-center justify-between mb-1.5 shrink-0">
-                    <span className="text-[10px] uppercase tracking-wider text-emerald-700/70 dark:text-emerald-400/70 font-medium">Entradas</span>
-                    <span className="text-[10px] tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">{dd.income > 0 ? `+${fmtMoney(dd.income)}` : "—"}</span>
-                  </div>
-                  <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
-                    {dd.incomeItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => setEditing(e)} />)}
-                    {dd.incomeItems.length === 0 && (
-                      <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
-                    )}
-                  </div>
-                </div>
-                {/* Saídas */}
-                <div className="p-2 overflow-hidden flex flex-col">
-                  <div className="flex items-center justify-between mb-1.5 shrink-0">
-                    <span className="text-[10px] uppercase tracking-wider text-rose-700/70 dark:text-rose-400/70 font-medium">Saídas</span>
-                    <span className="text-[10px] tabular-nums text-rose-700 dark:text-rose-400 font-semibold">{dd.expense > 0 ? `-${fmtMoney(dd.expense)}` : "—"}</span>
-                  </div>
-                  <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
-                    {dd.expenseItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => setEditing(e)} />)}
-                    {dd.expenseItems.length === 0 && (
-                      <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
-                    )}
-                  </div>
-                </div>
-                <div className={`px-3 py-3 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Saldo do dia</div>
-                  <div className={`text-lg font-bold tabular-nums leading-tight mt-0.5 ${dd.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{fmtMoney(dd.balance)}</div>
-                </div>
-              </div>
-            );
-          })}
+            })}
+          </div>
         </div>
-      </div>
+        <DragOverlay>
+          {activeDrag && (
+            <div className="rounded-md border bg-surface px-2 py-1.5 text-xs shadow-lg w-[180px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">{activeDrag.category ?? (activeDrag.kind === "income" ? "Entrada" : "Saída")}</span>
+                <span className={`font-semibold tabular-nums shrink-0 ${activeDrag.kind === "income" ? "text-emerald-600" : "text-rose-600"}`}>
+                  {activeDrag.kind === "income" ? "+" : "-"}{fmtMoney(Number(activeDrag.amount))}
+                </span>
+              </div>
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
 
       {/* Quick add */}
       {quickAdd && (
@@ -405,15 +408,76 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   );
 }
 
+function WeekdayDayCell({ dd, weekday, isToday, onEdit }: {
+  dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
+  weekday: number;
+  isToday: boolean;
+  onEdit: (e: DayItem) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day-${dd.key}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`grid row-span-4 border-r border-border last:border-r-0 transition-colors ${isOver ? "bg-primary/5 ring-2 ring-inset ring-primary/40" : ""}`}
+      style={{ gridTemplateRows: "subgrid" }}
+    >
+      <div className={`px-3 py-3 border-b border-border ${isToday ? "bg-primary/10" : ""}`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className={`text-base font-bold tracking-tight truncate ${isToday ? "text-primary" : "text-foreground"}`}>{WEEKDAYS_FULL[weekday]}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day: "2-digit", month: "long" })}</div>
+          </div>
+          {isToday && <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium shrink-0">hoje</span>}
+        </div>
+      </div>
+      {/* Entradas */}
+      <div className="p-2 border-b border-border/60 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-1.5 shrink-0">
+          <span className="text-[10px] uppercase tracking-wider text-emerald-700/70 dark:text-emerald-400/70 font-medium">Entradas</span>
+          <span className="text-[10px] tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">{dd.income > 0 ? `+${fmtMoney(dd.income)}` : "—"}</span>
+        </div>
+        <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
+          {dd.incomeItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
+          {dd.incomeItems.length === 0 && (
+            <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
+          )}
+        </div>
+      </div>
+      {/* Saídas */}
+      <div className="p-2 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-1.5 shrink-0">
+          <span className="text-[10px] uppercase tracking-wider text-rose-700/70 dark:text-rose-400/70 font-medium">Saídas</span>
+          <span className="text-[10px] tabular-nums text-rose-700 dark:text-rose-400 font-semibold">{dd.expense > 0 ? `-${fmtMoney(dd.expense)}` : "—"}</span>
+        </div>
+        <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
+          {dd.expenseItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
+          {dd.expenseItems.length === 0 && (
+            <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
+          )}
+        </div>
+      </div>
+      <div className={`px-3 py-3 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Saldo do dia</div>
+        <div className={`text-lg font-bold tabular-nums leading-tight mt-0.5 ${dd.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{fmtMoney(dd.balance)}</div>
+      </div>
+    </div>
+  );
+}
+
 function WeekendDayCell({ dd, weekday, isToday, onEdit }: {
   dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
   weekday: number;
   isToday: boolean;
   onEdit: (e: DayItem) => void;
 }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day-${dd.key}` });
   const items = [...dd.incomeItems, ...dd.expenseItems];
   return (
-    <div className="grid row-span-4 border-r border-border last:border-r-0 bg-background/40" style={{ gridTemplateRows: "subgrid" }}>
+    <div
+      ref={setNodeRef}
+      className={`grid row-span-4 border-r border-border last:border-r-0 bg-background/40 transition-colors ${isOver ? "bg-primary/5 ring-2 ring-inset ring-primary/40" : ""}`}
+      style={{ gridTemplateRows: "subgrid" }}
+    >
       <div className={`px-2 py-3 border-b border-border ${isToday ? "bg-primary/10" : ""}`}>
         <div className={`text-xs font-bold tracking-tight truncate ${isToday ? "text-primary" : "text-foreground"}`}>{WEEKDAYS_FULL[weekday].slice(0, 3)}</div>
         <div className="text-[10px] text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day: "2-digit", month: "2-digit" })}</div>
@@ -463,11 +527,16 @@ function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) 
   const isPending = entry.source === "shopify_pending";
   const shifted = typeof entry.shiftedFromWeekday === "number";
   const fromLabel = shifted ? WEEKDAYS_FULL[entry.shiftedFromWeekday!] : null;
+  const isDraggable = !isPending && !entry.virtual;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.id, disabled: !isDraggable });
   return (
     <button
+      ref={isDraggable ? setNodeRef : undefined}
+      {...(isDraggable ? listeners : {})}
+      {...(isDraggable ? attributes : {})}
       onClick={onClick}
       disabled={isPending}
-      className={`group w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${isPending ? "border-dashed border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 cursor-default" : isIncome ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-700 dark:text-rose-400"}`}
+      className={`group w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${isDragging ? "opacity-30" : ""} ${isPending ? "border-dashed border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 cursor-default" : isIncome ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-700 dark:text-rose-400"} ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate inline-flex items-center gap-1">
