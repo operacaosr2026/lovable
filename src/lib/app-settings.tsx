@@ -81,7 +81,7 @@ function applySettings(s: Partial<AppSettings>) {
       link.rel = "icon";
       document.head.appendChild(link);
     }
-    link.href = s.favicon_url || "/favicon.ico";
+    link.href = s.favicon_url || "/favicon.png";
   }
 }
 
