@@ -255,7 +255,7 @@ export function AppLayout() {
   const { user, signOut } = useAuth();
   const { role } = useMyAccess();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ pessoal: true, empresa: true, "/shops": true });
   const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(() => {
