@@ -197,13 +197,12 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
-      <div className="col-span-12 lg:col-span-6 flex flex-col gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Lojas */}
         {shops.length > 0 && (
-          <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
+          <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
             <SectionHead icon={Store} title="Lojas" count={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border flex-1 overflow-y-auto">
               {shops.map((s: any) => (
                 <Link
                   key={s.id}
@@ -245,40 +244,12 @@ function Dashboard() {
           </section>
         )}
 
-        {/* Gratidão */}
-        <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-          <SectionHead icon={Sparkles} title="Gratidão" tint="--tint-amber" iconColor="oklch(0.55 0.16 65)" />
-          <div className="p-6 flex flex-col flex-1">
-            <textarea
-              value={gratitude}
-              onChange={(e) => setGratitude(e.target.value)}
-              placeholder="Pelo que você é grato hoje?"
-              className="flex-1 min-h-[260px] resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
-            />
-            <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-              <Link to="/gratitude" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                <span>Ver histórico</span>
-                <ChevronRight className="size-3" />
-              </Link>
-              <button
-                disabled={!gratitude.trim() || mGratitude.isPending}
-                onClick={() => mGratitude.mutate({ content: gratitude.trim() })}
-                className="text-primary font-semibold hover:underline disabled:opacity-50"
-              >
-                {mGratitude.isPending ? "Salvando..." : data.gratitude ? "Atualizar" : "Salvar"}
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="col-span-12 lg:col-span-6 flex flex-col gap-4">
         {/* Tarefas de hoje */}
-        <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+        <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={ListChecks} title="Tarefas de hoje"
             count={`${data.tasks.filter((t: any) => !t.done).length} pendentes`}
             tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
-          <div className="p-3 flex-1 flex flex-col">
+          <div className="p-3 flex-1 flex flex-col overflow-y-auto">
             <ul className="flex-1">
               {data.tasks.filter((t: any) => !t.done).map((t: any) => (
                 <li key={t.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-surface-hover transition-colors group">
@@ -352,11 +323,37 @@ function Dashboard() {
           </div>
         </section>
 
+        {/* Gratidão */}
+        <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
+          <SectionHead icon={Sparkles} title="Gratidão" tint="--tint-amber" iconColor="oklch(0.55 0.16 65)" />
+          <div className="p-6 flex flex-col flex-1 overflow-y-auto">
+            <textarea
+              value={gratitude}
+              onChange={(e) => setGratitude(e.target.value)}
+              placeholder="Pelo que você é grato hoje?"
+              className="flex-1 resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+              <Link to="/gratitude" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <span>Ver histórico</span>
+                <ChevronRight className="size-3" />
+              </Link>
+              <button
+                disabled={!gratitude.trim() || mGratitude.isPending}
+                onClick={() => mGratitude.mutate({ content: gratitude.trim() })}
+                className="text-primary font-semibold hover:underline disabled:opacity-50"
+              >
+                {mGratitude.isPending ? "Salvando..." : data.gratitude ? "Atualizar" : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* Hábitos */}
-        <section className="rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow">
+        <section className="h-[400px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={Repeat} title="Hábitos" count={<span className="flex items-center gap-1 text-warning"><Flame className="size-3" /> semana</span> as any}
             tint="--tint-green" iconColor="oklch(0.5 0.13 155)" />
-          <div className="p-6 space-y-5">
+          <div className="p-6 space-y-5 flex-1 overflow-y-auto">
             {habitProgress.length === 0 && (
               <div className="text-sm text-muted-foreground">Nenhum hábito ainda. Adicione em /habits.</div>
             )}
@@ -381,7 +378,6 @@ function Dashboard() {
             ))}
           </div>
         </section>
-      </div>
       </div>
 
       <TaskDetailDialog
