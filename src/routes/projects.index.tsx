@@ -13,6 +13,7 @@ import {
   CATEGORIES, STATUSES, PRIORITIES,
 } from "@/lib/projects.functions";
 import { ProjectEditor } from "@/components/projects/ProjectEditor";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { CATEGORY_META, STATUS_META, PRIORITY_META } from "@/components/projects/meta";
 
 export const Route = createFileRoute("/projects/")({
@@ -34,6 +35,7 @@ function ProjectsDashboard() {
   const updateFn = useServerFn(updateProject);
   const deleteFn = useServerFn(deleteProject);
   const dupFn = useServerFn(duplicateProject);
+  const confirm = useConfirm();
 
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
@@ -151,7 +153,7 @@ function ProjectsDashboard() {
               onEdit={() => { setEditing(p); setEditorOpen(true); }}
               onDuplicate={() => duplicate.mutate(p.id)}
               onArchive={() => update.mutate({ id: p.id, patch: { archived: !p.archived } })}
-              onDelete={() => { if (confirm(`Excluir "${p.name}"? Essa ação remove o projeto e tudo dentro dele.`)) remove.mutate(p.id); }}
+              onDelete={() => { confirm(`Excluir "${p.name}"? Essa ação remove o projeto e tudo dentro dele.`).then((ok) => { if (ok) remove.mutate(p.id); }); }}
             />
           ))}
         </div>

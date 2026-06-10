@@ -6,6 +6,8 @@ import { PageShell, PageHeader } from "@/components/PageHeader";
 import { Plus, Search, Store, MapPin, ListChecks, Repeat, Package, X, Upload, LayoutGrid, List } from "lucide-react";
 import { listShops, createShop, updateShop, deleteShop, SHOP_STATUSES } from "@/lib/shops.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/shops/")({
   component: ShopsDashboard,
@@ -45,6 +47,7 @@ function ShopsDashboard() {
   const createFn = useServerFn(createShop);
   const updateFn = useServerFn(updateShop);
   const deleteFn = useServerFn(deleteShop);
+  const confirm = useConfirm();
 
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState<string>("all");
@@ -137,7 +140,7 @@ function ShopsDashboard() {
               key={s.id}
               s={s}
               onEdit={() => { setEditing(s); setEditorOpen(true); }}
-              onDelete={() => { if (confirm(`Excluir "${s.name}"? Isso remove a loja e tudo dentro dela.`)) remove.mutate(s.id); }}
+              onDelete={() => { confirm(`Excluir "${s.name}"? Isso remove a loja e tudo dentro dela.`).then((ok) => { if (ok) remove.mutate(s.id); }); }}
             />
           ))}
         </div>
@@ -157,7 +160,7 @@ function ShopsDashboard() {
               key={s.id}
               s={s}
               onEdit={() => { setEditing(s); setEditorOpen(true); }}
-              onDelete={() => { if (confirm(`Excluir "${s.name}"? Isso remove a loja e tudo dentro dela.`)) remove.mutate(s.id); }}
+              onDelete={() => { confirm(`Excluir "${s.name}"? Isso remove a loja e tudo dentro dela.`).then((ok) => { if (ok) remove.mutate(s.id); }); }}
             />
           ))}
         </div>
@@ -173,7 +176,7 @@ function ShopsDashboard() {
             setEditorOpen(false);
           }}
           onDelete={editing ? async () => {
-            if (confirm(`Excluir "${editing.name}"?`)) {
+            if (await confirm(`Excluir "${editing.name}"?`)) {
               await remove.mutateAsync(editing.id);
               setEditorOpen(false);
             }
@@ -364,6 +367,8 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
   const [logoUrl, setLogoUrl] = useState<string>(shop?.logo_url ?? "");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEscapeToClose(onClose);
 
   const onPickLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

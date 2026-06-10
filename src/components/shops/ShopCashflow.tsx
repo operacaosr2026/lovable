@@ -8,6 +8,8 @@ import {
 } from "@dnd-kit/core";
 import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -106,6 +108,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const [manageCats, setManageCats] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DayItem | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const confirm = useConfirm();
 
   const entries = (data?.entries ?? []) as Entry[];
   const opening = data?.opening_balance ?? 0;
@@ -325,13 +328,13 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           size="sm"
           className="text-destructive hover:text-destructive"
           disabled={resetMut.isPending}
-          onClick={() => {
-            const ok = confirm(
-              "Resetar o caixa desta loja?\n\nIsto vai apagar TODOS os lançamentos, importações e lotes de pagamento, e voltar os pedidos pagos para Pendente. Esta ação não pode ser desfeita.",
-            );
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Resetar o caixa desta loja?",
+              description: "Isto vai apagar TODOS os lançamentos, importações e lotes de pagamento, e voltar os pedidos pagos para Pendente. Esta ação não pode ser desfeita.",
+              confirmText: "Resetar",
+            });
             if (!ok) return;
-            const confirm2 = prompt('Digite "RESETAR" para confirmar:');
-            if (confirm2 !== "RESETAR") return;
             resetMut.mutate();
           }}
         >
@@ -545,6 +548,7 @@ function Indicator({ icon: Icon, label, value, sub, accent, negative, tooltip }:
 }
 
 function Modal({ children, onClose, title }: any) {
+  useEscapeToClose(onClose);
   return (
     <div className="fixed inset-0 z-50 bg-background/80 grid place-items-center p-4" onClick={onClose}>
       <div className="bg-background border border-border rounded-2xl p-5 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
@@ -747,6 +751,7 @@ function ManageCategories({ shopId, categories, onClose, onChange }: { shopId: s
   const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: onChange });
   const renameMut = useMutation({ mutationFn: (v: any) => renameFn({ data: v }), onSuccess: onChange });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: onChange });
+  const confirm = useConfirm();
 
   const income = categories.filter(c => c.kind === "income");
   const expense = categories.filter(c => c.kind === "expense");
@@ -774,7 +779,7 @@ function ManageCategories({ shopId, categories, onClose, onChange }: { shopId: s
                 <>
                   <span className="text-sm flex-1 truncate">{c.name}</span>
                   <button onClick={() => { setEditingId(c.id); setEditName(c.name); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground p-1"><Pencil className="size-3.5" /></button>
-                  <button onClick={() => { if (confirm(`Excluir categoria "${c.name}"? Lançamentos existentes mantêm o nome como texto livre.`)) deleteMut.mutate(c.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1"><Trash2 className="size-3.5" /></button>
+                  <button onClick={() => { confirm(`Excluir categoria "${c.name}"? Lançamentos existentes mantêm o nome como texto livre.`).then((ok) => { if (ok) deleteMut.mutate(c.id); }); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1"><Trash2 className="size-3.5" /></button>
                 </>
               )}
             </li>

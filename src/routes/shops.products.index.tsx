@@ -8,6 +8,8 @@ import {
   listProducts, createProduct, updateProduct, deleteProduct, PRODUCT_STATUSES,
 } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/shops/products/")({
   component: ProductsIndex,
@@ -27,6 +29,7 @@ function ProductsIndex() {
   const createFn = useServerFn(createProduct);
   const updateFn = useServerFn(updateProduct);
   const deleteFn = useServerFn(deleteProduct);
+  const confirm = useConfirm();
 
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState<string>("all");
@@ -120,7 +123,7 @@ function ProductsIndex() {
             setEditorOpen(false);
           }}
           onDelete={editing ? async () => {
-            if (confirm(`Excluir "${editing.name}"?`)) {
+            if (await confirm(`Excluir "${editing.name}"?`)) {
               await remove.mutateAsync(editing.id);
               setEditorOpen(false);
             }
@@ -179,6 +182,8 @@ function ProductEditor({ product, onClose, onSave, onDelete }: {
   const [imageUrl, setImageUrl] = useState<string>(product?.main_image_url ?? "");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEscapeToClose(onClose);
 
   const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

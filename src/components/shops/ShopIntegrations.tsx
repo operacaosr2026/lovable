@@ -14,6 +14,7 @@ import {
   Webhook, Sparkles, Settings2, Mail, Megaphone,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Track123IntegrationDialog } from "./Track123Integration";
 import { getTrack123Integration } from "@/lib/track123.functions";
 import { listInboxes, upsertInbox, testInboxConnection, deleteInbox } from "@/lib/support.functions";
@@ -263,6 +264,7 @@ function ZohoMailDialog({ shopId, inbox, onClose }: { shopId: string; inbox: any
   const [password, setPassword] = useState("");
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const confirm = useConfirm();
 
   const save = useMutation({
     mutationFn: () => _upsert({ data: {
@@ -345,7 +347,7 @@ function ZohoMailDialog({ shopId, inbox, onClose }: { shopId: string; inbox: any
         <DialogFooter className="sm:justify-between">
           <div>
             {inbox && (
-              <Button variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => { if (confirm("Remover esta integração?")) remove.mutate(); }}>
+              <Button variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => { confirm("Remover esta integração?").then((ok) => { if (ok) remove.mutate(); }); }}>
                 Remover
               </Button>
             )}

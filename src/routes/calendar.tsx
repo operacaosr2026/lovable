@@ -10,6 +10,7 @@ import {
 } from "@/lib/calendar.functions";
 import { listWorkspace } from "@/lib/members.functions";
 import { requireAuth } from "@/lib/route-guards";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/calendar")({
@@ -48,6 +49,8 @@ function CalendarPage() {
   const [endTime, setEndTime] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const alerted = useRef<Set<string>>(new Set());
+
+  useEscapeToClose(() => { if (showForm) setShowForm(false); });
 
   const qc = useQueryClient();
   const listFn = useServerFn(listCalendarEvents);

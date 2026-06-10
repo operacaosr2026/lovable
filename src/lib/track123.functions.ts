@@ -151,10 +151,30 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
 
     // Get tracking numbers from existing tracking rows
     const { data: trackings } = await supabase.from("shop_order_tracking")
-      .select("id,tracking_number").eq("shop_id", data.shop_id)
+      .select("id,order_id,tracking_number,timeline").eq("shop_id", data.shop_id)
       .not("tracking_number", "is", null).limit(200);
 
+    const { data: rules } = await supabase.from("track123_event_rules")
+      .select("event_key,event_label,target_status,enabled")
+      .eq("shop_id", data.shop_id).eq("enabled", true);
+
+    const ruleMap = new Map<string, string>();
+    for (const r of rules ?? []) {
+      ruleMap.set(r.event_key.toLowerCase(), r.target_status);
+      ruleMap.set(r.event_label.toLowerCase(), r.target_status);
+    }
+    function matchRule(text: string | null | undefined): string | null {
+      if (!text) return null;
+      const t = text.toLowerCase().trim();
+      if (ruleMap.has(t)) return ruleMap.get(t)!;
+      for (const [k, v] of ruleMap.entries()) {
+        if (t.includes(k) || k.includes(t)) return v;
+      }
+      return null;
+    }
+
     let updated = 0;
+    let lastError: string | null = null;
     for (const t of trackings ?? []) {
       if (!t.tracking_number) continue;
       try {
@@ -163,28 +183,71 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
           headers: { "Content-Type": "application/json", "Track123-Api-Secret": integ.api_key },
           body: JSON.stringify({ trackNos: [t.tracking_number] }),
         });
-        if (!r.ok) continue;
-        const j: any = await r.json();
+        const text = await r.text();
+        if (!r.ok) { lastError = `Falha (${r.status}): ${text.slice(0, 200)}`; continue; }
+        let j: any;
+        try { j = JSON.parse(text); } catch { lastError = `Resposta inválida: ${text.slice(0, 200)}`; continue; }
         const item = j?.data?.[0] ?? j?.data?.list?.[0];
-        if (!item) continue;
+        if (!item) { lastError = `Sem dados para ${t.tracking_number}: ${text.slice(0, 200)}`; continue; }
+
         const events = item.events ?? item.trackInfo ?? [];
         const last = events[0] ?? null;
-        await supabase.from("shop_order_tracking").update({
+        const lastLabel: string | null = last?.statusDescription ?? last?.context ?? null;
+        const lastAt: string | null = last?.date ?? last?.eventTime ?? null;
+
+        const update: any = {
           carrier: item.courierCode ?? item.carrierCode ?? null,
           tracking_status: item.status ?? null,
-          last_event_at: last?.date ?? last?.eventTime ?? null,
-          last_event_label: last?.statusDescription ?? last?.context ?? null,
-          timeline: events,
-        }).eq("id", t.id);
+          last_event_at: lastAt,
+          last_event_label: lastLabel,
+          timeline: events.length ? events : t.timeline,
+        };
+
+        const target = matchRule(lastLabel) ?? matchRule(item?.status);
+        const nowDate = new Date().toISOString().slice(0, 10);
+        const orderUpdate: { payment_status?: string; shipped_at?: string; delivered_at?: string; problem_at?: string } = {};
+        if (target === "shipped") {
+          update.shipped_at = new Date().toISOString();
+          orderUpdate.payment_status = "shipped";
+          orderUpdate.shipped_at = nowDate;
+        } else if (target === "delivered") {
+          update.delivered_at = new Date().toISOString();
+          orderUpdate.delivered_at = nowDate;
+          orderUpdate.payment_status = "shipped";
+        } else if (target === "problem") {
+          update.problem_at = new Date().toISOString();
+          orderUpdate.problem_at = nowDate;
+        }
+
+        await supabase.from("shop_order_tracking").update(update).eq("id", t.id);
+        if (Object.keys(orderUpdate).length) {
+          await supabase.from("shop_orders").update(orderUpdate).eq("id", t.order_id);
+        }
         updated++;
-      } catch {/* ignore individual failures */}
+      } catch (e: any) {
+        lastError = String(e?.message ?? e).slice(0, 500);
+      }
+    }
+
+    const total = trackings?.length ?? 0;
+    let status: string;
+    let errorMsg: string | null;
+    if (total === 0) {
+      status = "ok";
+      errorMsg = "Nenhum pedido com código de rastreio para sincronizar.";
+    } else if (updated === 0) {
+      status = "error";
+      errorMsg = lastError ?? "Falha ao sincronizar rastreios.";
+    } else {
+      status = "ok";
+      errorMsg = lastError ? `${updated}/${total} sincronizados. Último erro: ${lastError}` : null;
     }
 
     await supabaseAdmin.from("track123_integrations")
-      .update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null })
+      .update({ last_sync_at: new Date().toISOString(), last_sync_status: status, last_sync_error: errorMsg })
       .eq("user_id", userId).eq("shop_id", data.shop_id);
 
-    return { updated };
+    return { updated, total };
   });
 
 // ===== Event rules =====

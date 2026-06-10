@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Upload, Star, Trash2, ImageIcon } from "lucide-react";
 import { listProductImages, addProductImage, setMainImage, deleteProductImage } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export function ProductImages({ productId }: { productId: string }) {
   const qc = useQueryClient();
@@ -11,6 +12,7 @@ export function ProductImages({ productId }: { productId: string }) {
   const addFn = useServerFn(addProductImage);
   const setMainFn = useServerFn(setMainImage);
   const deleteFn = useServerFn(deleteProductImage);
+  const confirm = useConfirm();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -89,7 +91,7 @@ export function ProductImages({ productId }: { productId: string }) {
                     <Star className="size-3" /> Principal
                   </button>
                 )}
-                <button onClick={() => { if (confirm("Excluir imagem?")) remove.mutate(img.id); }} className="size-7 rounded-md bg-background/90 grid place-items-center text-destructive">
+                <button onClick={() => { confirm("Excluir imagem?").then((ok) => { if (ok) remove.mutate(img.id); }); }} className="size-7 rounded-md bg-background/90 grid place-items-center text-destructive">
                   <Trash2 className="size-3" />
                 </button>
               </div>

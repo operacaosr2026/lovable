@@ -14,6 +14,8 @@ import {
   type Section,
 } from "@/lib/members.functions";
 import { useMyAccess } from "@/hooks/useMyAccess";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Copy, Trash2, UserPlus, Shield, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -59,6 +61,7 @@ function MembersPage() {
 
   const [editing, setEditing] = useState<{ memberId: string; permissions: Permission[] } | null>(null);
   const [inviting, setInviting] = useState(false);
+  const confirm = useConfirm();
 
   if (isLoading) return <div className="p-8 text-sm text-muted-foreground">Carregando...</div>;
   if (role !== "admin") {
@@ -123,7 +126,7 @@ function MembersPage() {
               </button>
               <button
                 onClick={async () => {
-                  if (!confirm(`Remover ${m.email}?`)) return;
+                  if (!(await confirm(`Remover ${m.email}?`))) return;
                   await revokeMember({ data: { member_id: m.member_id } });
                   refresh();
                   toast.success("Membro removido");
@@ -271,6 +274,8 @@ function InviteDialog({ resources, onClose, onCreated }: { resources: any; onClo
   const [perms, setPerms] = useState<Permission[]>([]);
   const [busy, setBusy] = useState(false);
 
+  useEscapeToClose(onClose);
+
   const submit = async () => {
     if (!email) return;
     setBusy(true);
@@ -335,6 +340,8 @@ function PermissionsDialog({
 }) {
   const [perms, setPerms] = useState<Permission[]>(initial);
   const [busy, setBusy] = useState(false);
+
+  useEscapeToClose(onClose);
 
   const save = async () => {
     setBusy(true);

@@ -13,6 +13,8 @@ import {
   listProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask, reorderProjectTasks,
 } from "@/lib/project-tasks.functions";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const COLUMNS = [
   { id: "todo",  label: "A fazer",   tint: "oklch(0.97 0.012 250)", accent: "oklch(0.55 0.2 250)" },
@@ -84,6 +86,7 @@ export function ProjectKanban({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState<Task | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const confirm = useConfirm();
 
   const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
   const onDragEnd = (e: DragEndEvent) => {
@@ -110,7 +113,7 @@ export function ProjectKanban({ projectId }: { projectId: string }) {
               tasks={grouped[col.id] ?? []}
               onAdd={(title: string) => create.mutate({ title, status: col.id })}
               onCardClick={(t: Task) => setEditing(t)}
-              onDelete={(id: string) => remove.mutate(id)}
+              onDelete={(id: string) => { confirm("Excluir esta tarefa?").then((ok) => { if (ok) remove.mutate(id); }); }}
             />
           ))}
         </div>
@@ -245,6 +248,8 @@ function TaskEditor({ task, onClose, onSave, onDelete }: {
   const [freq, setFreq] = useState<Frequency | "">(task.recurrence_frequency ?? "");
   const [weekdays, setWeekdays] = useState<number[]>(task.recurrence_weekdays ?? []);
   const [recTime, setRecTime] = useState(task.recurrence_time ?? "");
+
+  useEscapeToClose(onClose);
 
   const save = async () => {
     let due_at: string | null = null;

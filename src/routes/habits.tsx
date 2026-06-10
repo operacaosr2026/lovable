@@ -7,6 +7,8 @@ import { Plus, Trash2, Pencil, Check, X, Flame } from "lucide-react";
 import { listHabitsWithLogs, updateHabit, deleteHabit, toggleHabitOnDate } from "@/lib/habits.functions";
 import { createHabit } from "@/lib/dashboard.functions";
 import { requireAuth } from "@/lib/route-guards";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/habits")({
   beforeLoad: requireAuth,
@@ -47,6 +49,7 @@ function HabitsPage() {
   const mUpdate = useMutation({ mutationFn: (d: any) => update({ data: d }), onSuccess: inv });
   const mDel = useMutation({ mutationFn: (d: any) => del({ data: d }), onSuccess: inv });
   const mToggle = useMutation({ mutationFn: (d: any) => toggle({ data: d }), onSuccess: inv });
+  const confirm = useConfirm();
 
   const today = dateOffset(0);
   const [tab, setTab] = useState<"hoje" | "historico">("hoje");
@@ -59,6 +62,8 @@ function HabitsPage() {
   const [editName, setEditName] = useState("");
   const [editGoal, setEditGoal] = useState(7);
   const [editAnnualGoal, setEditAnnualGoal] = useState("");
+
+  useEscapeToClose(() => { if (showForm) setShowForm(false); });
 
   if (isLoading || !data) return (
     <PageShell>
@@ -215,7 +220,7 @@ function HabitsPage() {
                   <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => { setEditingId(h.id); setEditName(h.name); setEditGoal(h.weekly_goal); setEditAnnualGoal(h.annual_goal ? String(h.annual_goal) : ""); }}
                       className="size-8 rounded-lg text-muted-foreground hover:bg-muted grid place-items-center"><Pencil className="size-3.5" /></button>
-                    <button onClick={() => { if (confirm(`Excluir "${h.name}"?`)) mDel.mutate({ id: h.id }); }}
+                    <button onClick={() => { confirm(`Excluir "${h.name}"?`).then((ok) => { if (ok) mDel.mutate({ id: h.id }); }); }}
                       className="size-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 grid place-items-center"><Trash2 className="size-3.5" /></button>
                   </div>
                 </div>
@@ -270,7 +275,7 @@ function HabitsPage() {
                   <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => { setEditingId(h.id); setEditName(h.name); setEditGoal(h.weekly_goal); setEditAnnualGoal(h.annual_goal ? String(h.annual_goal) : ""); }}
                       className="size-8 rounded-lg text-muted-foreground hover:bg-muted grid place-items-center"><Pencil className="size-3.5" /></button>
-                    <button onClick={() => { if (confirm(`Excluir "${h.name}"?`)) mDel.mutate({ id: h.id }); }}
+                    <button onClick={() => { confirm(`Excluir "${h.name}"?`).then((ok) => { if (ok) mDel.mutate({ id: h.id }); }); }}
                       className="size-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 grid place-items-center"><Trash2 className="size-3.5" /></button>
                   </div>
                 </div>

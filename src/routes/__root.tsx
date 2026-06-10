@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSettingsProvider } from "@/lib/app-settings";
 import { useLocation, Navigate } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 
 function NotFoundComponent() {
   return (
@@ -122,8 +123,10 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AppSettingsProvider>
-          <AuthGate />
-          <Toaster />
+          <ConfirmProvider>
+            <AuthGate />
+            <Toaster />
+          </ConfirmProvider>
         </AppSettingsProvider>
       </AuthProvider>
     </QueryClientProvider>

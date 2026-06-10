@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { Plus, Workflow, Copy, Trash2, Search, X, FileStack } from "lucide-react";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   listSopProcesses, createSopProcess, deleteSopProcess, duplicateSopProcess, updateSopProcess,
 } from "@/lib/sops.functions";
@@ -22,6 +24,7 @@ function SopList() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<any | null>(null);
   const [creating, setCreating] = useState(false);
+  const confirm = useConfirm();
 
   const { data } = useQuery({ queryKey: ["sop-processes"], queryFn: () => listFn() });
   const processes = ((data as any)?.processes ?? []) as any[];
@@ -127,7 +130,7 @@ function SopList() {
                     <Copy className="size-3" />
                   </button>
                   <button
-                    onClick={() => { if (confirm(`Excluir "${p.name}"?`)) remove.mutate(p.id); }}
+                    onClick={() => { confirm(`Excluir "${p.name}"?`).then((ok) => { if (ok) remove.mutate(p.id); }); }}
                     className="size-6 grid place-items-center rounded-md bg-background border border-border text-muted-foreground hover:text-destructive"
                     title="Excluir"
                   >
@@ -167,6 +170,8 @@ function ProcessEditor({ initial, onClose, onSave }: { initial?: any; onClose: (
   const [description, setDescription] = useState(initial?.description ?? "");
   const [color, setColor] = useState(initial?.color ?? COLORS[0]);
   const [isTemplate, setIsTemplate] = useState(!!initial?.is_template);
+
+  useEscapeToClose(onClose);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>

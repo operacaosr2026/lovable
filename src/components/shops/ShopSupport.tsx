@@ -6,6 +6,8 @@ import {
   Mail, Crown, Shield, Flame, AlertTriangle, ChevronDown, Check, Loader2,
   Clock, CheckCircle2, MoreHorizontal, FileText, Wifi, WifiOff, Edit2, RefreshCw, Package
 } from "lucide-react";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   listInboxes, upsertInbox, deleteInbox, testInboxConnection,
   listConversations, getConversation, sendMessage, updateConversation,
@@ -593,6 +595,7 @@ function TemplatePicker({ onPick }: { onPick: (body: string) => void }) {
 
 // --------- Settings modals ---------
 function ModalShell({ children, title, onClose, wide }: { children: any; title: string; onClose: () => void; wide?: boolean }) {
+  useEscapeToClose(onClose);
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
       <div className={`bg-background rounded-xl shadow-2xl w-full ${wide ? "max-w-3xl" : "max-w-xl"} max-h-[90vh] flex flex-col`} onClick={(e) => e.stopPropagation()}>
@@ -614,6 +617,7 @@ function InboxesModal({ onClose, shops, inboxes, lockedShopId }: { onClose: () =
   const [editing, setEditing] = useState<any | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const save = useMutation({
     mutationFn: (v: any) => _upsert({ data: v }),
@@ -675,7 +679,7 @@ function InboxesModal({ onClose, shops, inboxes, lockedShopId }: { onClose: () =
                 <button onClick={() => setEditing(i)} className="size-8 grid place-items-center rounded-md hover:bg-surface text-muted-foreground">
                   <Edit2 className="size-3.5" />
                 </button>
-                <button onClick={() => { if (confirm("Excluir esta caixa?")) remove.mutate(i.id); }} className="size-8 grid place-items-center rounded-md hover:bg-red-500/10 text-red-500">
+                <button onClick={() => { confirm("Excluir esta caixa?").then((ok) => { if (ok) remove.mutate(i.id); }); }} className="size-8 grid place-items-center rounded-md hover:bg-red-500/10 text-red-500">
                   <Trash2 className="size-3.5" />
                 </button>
               </div>

@@ -15,6 +15,7 @@ import {
   toggleJournalFavorite, moveJournalPage,
 } from "@/lib/journal.functions";
 import { NotionEditor } from "@/components/journal/NotionEditor";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type PageRow = {
   id: string; parent_id: string | null; title: string;
@@ -43,6 +44,7 @@ export function ShopWiki({ shopId }: { shopId: string }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [activeDrag, setActiveDrag] = useState<PageRow | null>(null);
   const [search, setSearch] = useState("");
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!selectedId && pages.length > 0) setSelectedId(pages[0].id);
@@ -190,7 +192,7 @@ export function ShopWiki({ shopId }: { shopId: string }) {
                         selectedId={selectedId}
                         onSelect={setSelectedId}
                         onCreateChild={(pid) => create.mutate(pid)}
-                        onDelete={(id) => { if (confirm("Excluir esta página e todas as subpáginas?")) remove.mutate(id); }}
+                        onDelete={(id) => { confirm("Excluir esta página e todas as subpáginas?").then((ok) => { if (ok) remove.mutate(id); }); }}
                         depth={0}
                       />
                     )}

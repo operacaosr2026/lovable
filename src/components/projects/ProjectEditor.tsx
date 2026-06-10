@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { CATEGORIES, STATUSES, PRIORITIES } from "@/lib/projects.functions";
 import { CATEGORY_META, STATUS_META, PRIORITY_META } from "./meta";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 
 type Project = {
   id?: string; name?: string | null; description?: string | null;
@@ -21,6 +22,8 @@ export function ProjectEditor({ project, onClose, onSave }: {
   const [priority, setPriority] = useState(project?.priority ?? "media");
   const [dueDate, setDueDate] = useState(project?.due_date ?? "");
   const [saving, setSaving] = useState(false);
+
+  useEscapeToClose(onClose);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

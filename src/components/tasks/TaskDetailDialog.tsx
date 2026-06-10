@@ -17,6 +17,7 @@ import {
 import { updateListTask } from "@/lib/workspace-tasks.functions";
 import { updateProjectTask } from "@/lib/project-tasks.functions";
 import { updateShopTask } from "@/lib/shop-tasks.functions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type ChecklistItem = { id: string; text: string; done: boolean };
 
@@ -75,6 +76,7 @@ export function TaskDetailDialog({
   const [savingFlag, setSavingFlag] = useState(false);
   const [uploading, setUploading] = useState(false);
   const initRef = useRef<string | null>(null);
+  const confirm = useConfirm();
 
   // Hydrate local state when task loads (only once per task open)
   useEffect(() => {
@@ -176,6 +178,7 @@ export function TaskDetailDialog({
   };
 
   const removeAttachment = async (attId: string) => {
+    if (!(await confirm("Remover este anexo?"))) return;
     await deleteAttFn({ data: { source, id: attId } });
     qc.invalidateQueries({ queryKey: ["task-detail", source, id] });
   };

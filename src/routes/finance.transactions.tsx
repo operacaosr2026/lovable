@@ -7,6 +7,7 @@ import {
   getFinanceDashboard,
 } from "@/lib/finance.functions";
 import { requireAuth } from "@/lib/route-guards";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { Plus, Trash2, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, X, Repeat, Pencil, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/finance/transactions")({
@@ -196,6 +197,8 @@ function EditTransactionModal({ tx, categories, onClose, onSubmit }: {
   const cats = categories.filter((c) => tx.kind === "transfer" || c.kind === tx.kind);
   const isTransfer = tx.kind === "transfer";
 
+  useEscapeToClose(onClose);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const n = parseFloat(amount.replace(",", "."));
@@ -268,6 +271,8 @@ function NewTransactionModal({
   const [newCatName, setNewCatName] = useState("");
 
   const cats = categories.filter((c) => c.kind === kind);
+
+  useEscapeToClose(onClose);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

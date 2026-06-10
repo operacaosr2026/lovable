@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { MoreHorizontal, Plus, Pencil, Trash2, X, Check, GripVertical } from "lucide-react";
@@ -300,6 +301,7 @@ export function ColumnControls({
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(col.label);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const confirm = useConfirm();
 
   const submitLabel = () => {
     const v = labelDraft.trim();
@@ -308,9 +310,9 @@ export function ColumnControls({
     setOpen(false);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (itemCount > 0) {
-      if (!confirm(`Esta coluna tem ${itemCount} item(s). Excluir mesmo assim? Os itens permanecerão no banco com o status atual.`)) return;
+      if (!(await confirm(`Esta coluna tem ${itemCount} item(s). Excluir mesmo assim? Os itens permanecerão no banco com o status atual.`))) return;
     }
     onDelete();
     setOpen(false);

@@ -7,6 +7,7 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import { Plus, Trash2, X, Search, Tag as TagIcon, Upload, Image as ImageIcon, Link2, Calendar as CalIcon } from "lucide-react";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import {
   listShopProducts, createShopProduct, updateShopProduct, deleteShopProduct, reorderShopProducts,
   PRODUCT_STATUSES,
@@ -197,6 +198,7 @@ function Column({ col, items, onCardClick, onDelete }: any) {
 
 function ProductPicker({ catalog, existingProductIds, onClose, onPick, onCreateBlank }: any) {
   const [q, setQ] = useState("");
+  useEscapeToClose(onClose);
   const filtered = catalog.filter((p: any) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.niche ?? "").toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
@@ -302,6 +304,8 @@ function ProductEditor({ product, onClose, onSave, onDelete }: any) {
   const [links, setLinks] = useState<{ label: string; url: string }[]>(product.links ?? []);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEscapeToClose(onClose);
 
   const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

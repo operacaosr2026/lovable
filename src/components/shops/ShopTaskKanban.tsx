@@ -15,6 +15,8 @@ import {
   TASK_PRIORITIES,
 } from "@/lib/shop-tasks.functions";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const COLUMNS = [
   { id: "todo",  label: "Para fazer", tint: "oklch(0.97 0.012 250)", accent: "oklch(0.55 0.2 250)" },
@@ -62,6 +64,7 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "today" | "overdue" | "upcoming">("all");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const confirm = useConfirm();
 
   const { data } = useQuery({ queryKey: ["shop-tasks", shopId], queryFn: () => list({ data: { shop_id: shopId } }) });
   const tasks = (data?.tasks ?? []) as Task[];
@@ -157,7 +160,7 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
           {COLUMNS.map((col) => (
             <Column key={col.id} col={col} tasks={grouped[col.id] ?? []}
               onCardClick={(t: Task) => setEditing(t)}
-              onDelete={(id: string) => remove.mutate(id)}
+              onDelete={(id: string) => { confirm("Excluir esta tarefa?").then((ok) => { if (ok) remove.mutate(id); }); }}
             />
           ))}
         </div>
@@ -247,6 +250,8 @@ function TaskEditor({ task, shopId, onClose, onSave, onDelete }: any) {
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist ?? []);
   const [newCheck, setNewCheck] = useState("");
   const [reminders, setReminders] = useState<number[]>(task.reminder_minutes ?? []);
+
+  useEscapeToClose(onClose);
 
   const commentsFn = useServerFn(listTaskComments);
   const addCommentFn = useServerFn(addTaskComment);

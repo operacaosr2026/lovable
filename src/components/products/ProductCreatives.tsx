@@ -8,6 +8,8 @@ import {
 import { Plus, Trash2, X, Upload, Film, ImageIcon, Copy } from "lucide-react";
 import { listCreatives, createCreative, updateCreative, deleteCreative, duplicateCreative, CREATIVE_STATUSES } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const COLUMNS: { id: typeof CREATIVE_STATUSES[number]; label: string; tint: string; accent: string }[] = [
   { id: "lancar",     label: "Para Lançar", tint: "oklch(0.97 0.012 250)", accent: "oklch(0.55 0.2 250)" },
@@ -28,6 +30,7 @@ export function ProductCreatives({ productId }: { productId: string }) {
   const [adding, setAdding] = useState<typeof CREATIVE_STATUSES[number] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const confirm = useConfirm();
 
   const { data } = useQuery({ queryKey: ["creatives", productId], queryFn: () => list({ data: { product_id: productId } }) });
   const items = (data?.creatives ?? []) as any[];
@@ -64,7 +67,7 @@ export function ProductCreatives({ productId }: { productId: string }) {
       <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
           {COLUMNS.map((col) => (
-            <Column key={col.id} col={col} items={grouped[col.id] ?? []} onAdd={() => setAdding(col.id)} onCardClick={(c: any) => setEditing(c)} onDuplicate={(id: string) => duplicate.mutate(id)} onDelete={(id: string) => { if (confirm("Excluir criativo?")) remove.mutate(id); }} />
+            <Column key={col.id} col={col} items={grouped[col.id] ?? []} onAdd={() => setAdding(col.id)} onCardClick={(c: any) => setEditing(c)} onDuplicate={(id: string) => duplicate.mutate(id)} onDelete={(id: string) => { confirm("Excluir criativo?").then((ok) => { if (ok) remove.mutate(id); }); }} />
           ))}
         </div>
         <DragOverlay>{active && <CreativeCard c={active} onClick={() => {}} onDuplicate={() => {}} onDelete={() => {}} />}</DragOverlay>
@@ -164,6 +167,8 @@ function CreativeEditor({ creative, status, productId, onClose, onCreate, onSave
   const [mediaKind, setMediaKind] = useState<"video" | "image" | null>(creative?.media_kind ?? null);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEscapeToClose(onClose);
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

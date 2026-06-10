@@ -4,12 +4,14 @@ import { useServerFn } from "@tanstack/react-start";
 import { Upload, Trash2, FileText, Link2, ExternalLink } from "lucide-react";
 import { listProductTemplates, addProductTemplate, deleteProductTemplate } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export function ProductTemplates({ productId }: { productId: string }) {
   const qc = useQueryClient();
   const list = useServerFn(listProductTemplates);
   const addFn = useServerFn(addProductTemplate);
   const deleteFn = useServerFn(deleteProductTemplate);
+  const confirm = useConfirm();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -107,7 +109,7 @@ export function ProductTemplates({ productId }: { productId: string }) {
                   <ExternalLink className="size-4" />
                 </a>
               )}
-              <button onClick={() => { if (confirm("Excluir template?")) remove.mutate(t.id); }} className="size-8 rounded-md grid place-items-center text-muted-foreground hover:text-destructive hover:bg-muted">
+              <button onClick={() => { confirm("Excluir template?").then((ok) => { if (ok) remove.mutate(t.id); }); }} className="size-8 rounded-md grid place-items-center text-muted-foreground hover:text-destructive hover:bg-muted">
                 <Trash2 className="size-4" />
               </button>
             </div>

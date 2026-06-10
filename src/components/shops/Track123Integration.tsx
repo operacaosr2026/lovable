@@ -70,7 +70,12 @@ export function Track123IntegrationDialog({
 
   const sync = useMutation({
     mutationFn: () => syncFn({ data: { shop_id: shopId } }),
-    onSuccess: (r) => { toast.success(`${r.updated} rastreios atualizados`); qc.invalidateQueries({ queryKey: ["track123-integration", shopId] }); },
+    onSuccess: (r) => {
+      if (r.total === 0) toast.warning("Nenhum pedido com código de rastreio para sincronizar");
+      else if (r.updated === 0) toast.error("Falha ao sincronizar rastreios. Veja o erro abaixo.");
+      else toast.success(`${r.updated}/${r.total} rastreios atualizados`);
+      qc.invalidateQueries({ queryKey: ["track123-integration", shopId] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 

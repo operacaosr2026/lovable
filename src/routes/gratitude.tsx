@@ -10,6 +10,7 @@ import {
 } from "@/lib/gratitude.functions";
 import { requireAuth } from "@/lib/route-guards";
 import { Heart, ChevronLeft, ChevronRight, Trash2, Loader2, Check } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/gratitude")({
@@ -47,6 +48,7 @@ function GratitudePage() {
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const qc = useQueryClient();
+  const confirm = useConfirm();
 
   const getFn = useServerFn(getGratitudeEntry);
   const saveFn = useServerFn(saveGratitudeEntry);
@@ -93,7 +95,7 @@ function GratitudePage() {
   };
 
   const onDelete = async (id: string, date: string) => {
-    if (!confirm("Remover esta entrada?")) return;
+    if (!(await confirm("Remover esta entrada?"))) return;
     await deleteFn({ data: { id } });
     qc.invalidateQueries({ queryKey: ["gratitude-history"] });
     qc.invalidateQueries({ queryKey: ["gratitude-entry", date] });

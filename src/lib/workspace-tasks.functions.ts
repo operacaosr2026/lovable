@@ -90,6 +90,40 @@ export const listListTasks = createServerFn({ method: "GET" })
     };
   });
 
+export const listAllTasks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const now = new Date();
+
+    const [{ data: lists }, { data: tasks }, { data: shopTasks }] = await Promise.all([
+      supabase.from("task_lists").select("id,shop_id,is_system").eq("user_id", userId),
+      supabase.from("tasks").select("*").eq("user_id", userId)
+        .order("position", { ascending: true }).order("created_at", { ascending: false }),
+      supabase.from("shop_tasks").select("*").eq("user_id", userId)
+        .order("position", { ascending: true }).order("created_at", { ascending: false }),
+    ]);
+
+    const personal = (lists ?? []).find((l: any) => l.is_system && !l.shop_id);
+    const shopToList = new Map<string, string>();
+    for (const l of lists ?? []) if (l.shop_id) shopToList.set(l.shop_id, l.id);
+
+    const all = [
+      ...(tasks ?? []).map((t: any) => ({
+        ...t, source: "task" as const,
+        list_id: t.list_id ?? personal?.id ?? null,
+        overdue: t.status !== "done" && t.due_at && new Date(t.due_at) < now,
+      })),
+      ...(shopTasks ?? []).map((t: any) => ({
+        ...t, source: "shop_task" as const,
+        list_id: shopToList.get(t.shop_id) ?? null,
+        overdue: t.status !== "done" && t.due_at && new Date(t.due_at) < now,
+      })),
+    ];
+
+    return { tasks: all };
+  });
+
 const CreateInput = z.object({
   list_id: z.string().uuid(),
   title: z.string().trim().min(1).max(200),

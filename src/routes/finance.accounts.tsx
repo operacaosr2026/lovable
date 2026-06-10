@@ -6,6 +6,7 @@ import { getFinanceDashboard, createAccount, updateAccount, deleteAccount } from
 import { requireAuth } from "@/lib/route-guards";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Trash2, Archive, Upload, Pencil, X } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/finance/accounts")({
   beforeLoad: requireAuth,
@@ -36,6 +37,7 @@ function AccountsPage() {
   const mCreate = useMutation({ mutationFn: (d: any) => create({ data: d }), onSuccess: inv });
   const mUpdate = useMutation({ mutationFn: (d: any) => update({ data: d }), onSuccess: inv });
   const mDel = useMutation({ mutationFn: (d: any) => del({ data: d }), onSuccess: inv });
+  const confirm = useConfirm();
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<EditState>(null);
@@ -194,7 +196,7 @@ function AccountsPage() {
                   className="opacity-0 group-hover:opacity-100 size-8 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted" title="Arquivar">
                   <Archive className="size-4" />
                 </button>
-                <button onClick={() => { if (confirm(`Excluir ${a.name}? Todos os lançamentos serão removidos.`)) mDel.mutate({ id: a.id }); }}
+                <button onClick={() => { confirm(`Excluir ${a.name}? Todos os lançamentos serão removidos.`).then((ok) => { if (ok) mDel.mutate({ id: a.id }); }); }}
                   className="opacity-0 group-hover:opacity-100 size-8 grid place-items-center rounded-lg text-muted-foreground hover:text-destructive">
                   <Trash2 className="size-4" />
                 </button>

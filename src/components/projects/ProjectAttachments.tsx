@@ -6,12 +6,14 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   listProjectAttachments, registerProjectAttachment, deleteProjectAttachment,
 } from "@/lib/project-attachments.functions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export function ProjectAttachments({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const list = useServerFn(listProjectAttachments);
   const registerFn = useServerFn(registerProjectAttachment);
   const deleteFn = useServerFn(deleteProjectAttachment);
+  const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -82,7 +84,7 @@ export function ProjectAttachments({ projectId }: { projectId: string }) {
                   <Download className="size-4" />
                 </a>
               )}
-              <button onClick={() => { if (confirm("Remover anexo?")) remove.mutate(f.id); }} className="size-8 rounded-md grid place-items-center text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100">
+              <button onClick={() => { confirm("Remover anexo?").then((ok) => { if (ok) remove.mutate(f.id); }); }} className="size-8 rounded-md grid place-items-center text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100">
                 <Trash2 className="size-4" />
               </button>
             </div>

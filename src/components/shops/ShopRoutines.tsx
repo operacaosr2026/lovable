@@ -6,6 +6,8 @@ import {
   listShopRoutines, createShopRoutine, updateShopRoutine, completeShopRoutine, deleteShopRoutine,
   ROUTINE_FREQUENCIES,
 } from "@/lib/shop-routines.functions";
+import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const FREQ_LABEL: Record<string, string> = { daily: "Diária", weekly: "Semanal", monthly: "Mensal", custom: "Personalizada" };
 const WEEKDAY_LABELS = ["D", "S", "T", "Q", "Q", "S", "S"];
@@ -20,6 +22,7 @@ export function ShopRoutines({ shopId }: { shopId: string }) {
 
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
+  const confirm = useConfirm();
 
   const { data } = useQuery({ queryKey: ["shop-routines", shopId], queryFn: () => list({ data: { shop_id: shopId } }) });
   const routines = (data?.routines ?? []) as any[];
@@ -109,7 +112,7 @@ export function ShopRoutines({ shopId }: { shopId: string }) {
                     <RoutineCard key={r.id} r={r}
                       onComplete={() => complete.mutate(r.id)}
                       onEdit={() => setEditing(r)}
-                      onDelete={() => { if (confirm(`Remover "${r.title}"?`)) remove.mutate(r.id); }}
+                      onDelete={() => { confirm(`Remover "${r.title}"?`).then((ok) => { if (ok) remove.mutate(r.id); }); }}
                     />
                   ))}
                 </div>
@@ -188,6 +191,8 @@ function RoutineEditor({ routine, onClose, onSave }: any) {
   const [reminders, setReminders] = useState<number[]>(routine?.reminder_minutes ?? []);
 
   const REMINDER_OPTS = [{ v: 15, l: "15min antes" }, { v: 60, l: "1h antes" }, { v: 1440, l: "1 dia antes" }];
+
+  useEscapeToClose(onClose);
 
   const save = () => {
     if (!title.trim()) return;

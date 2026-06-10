@@ -16,6 +16,7 @@ import {
 } from "@/lib/workspace-tasks.functions";
 import { useKanbanColumns, useColumnDnD, ColumnControls, AddColumnButton } from "@/components/kanban/useKanbanColumns";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/tasks/$listId")({
@@ -84,6 +85,7 @@ function ListPage() {
 
   const [activeDrag, setActiveDrag] = useState<{ id: string; source: "task" | "shop_task" } | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const confirm = useConfirm();
 
   const cols = useKanbanColumns({
     boardType: "task_list",
@@ -191,7 +193,7 @@ function ListPage() {
                       t={t}
                       onUpdate={mUpdate.mutateAsync}
                       onOpen={(task) => setOpenTask({ id: task.id, source: task.source })}
-                      onDelete={(task) => mDelete.mutate({ id: task.id, source: task.source })}
+                      onDelete={(task) => { confirm("Excluir esta tarefa?").then((ok) => { if (ok) mDelete.mutate({ id: task.id, source: task.source }); }); }}
                     />
                   ))}
                   {col.tasks.length === 0 && (
@@ -250,7 +252,7 @@ function ListPage() {
                   isColOver={isColOver}
                   isColDragging={isColDragging}
                   onCardClick={(t: any) => setOpenTask({ id: t.id, source: t.source })}
-                  onCardDelete={(t: any) => mDelete.mutate({ id: t.id, source: t.source })}
+                  onCardDelete={(t: any) => { confirm("Excluir esta tarefa?").then((ok) => { if (ok) mDelete.mutate({ id: t.id, source: t.source }); }); }}
                 />
               );
             })}

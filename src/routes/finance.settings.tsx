@@ -9,6 +9,7 @@ import {
 import { listCategoryRules, upsertCategoryRule, deleteCategoryRule, reapplyRulesToPending, resetAllTransactions, reconcileTransfers } from "@/lib/banking.functions";
 import { requireAuth } from "@/lib/route-guards";
 import { Plus, Trash2, Sparkles, AlertTriangle, ArrowLeftRight } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/finance/settings")({
   beforeLoad: requireAuth,
@@ -29,6 +30,8 @@ function SettingsPage() {
   const reapply = useServerFn(reapplyRulesToPending);
   const resetTx = useServerFn(resetAllTransactions);
   const reconcile = useServerFn(reconcileTransfers);
+
+  const confirm = useConfirm();
 
   const catQ = useQuery({ queryKey: ["finance", "cat"], queryFn: () => listCat() });
   const dashQ = useQuery({ queryKey: ["finance-dash"], queryFn: () => getDash() });
@@ -341,9 +344,9 @@ function SettingsPage() {
           </div>
           <button
             onClick={() => {
-              if (confirm("Tem certeza? Todos os lançamentos serão apagados permanentemente.")) {
-                mReset.mutate();
-              }
+              confirm("Tem certeza? Todos os lançamentos serão apagados permanentemente.").then((ok) => {
+                if (ok) mReset.mutate();
+              });
             }}
             disabled={mReset.isPending}
             className="h-9 px-3 rounded-lg bg-destructive text-destructive-foreground text-xs font-medium flex items-center gap-1.5 disabled:opacity-50 shrink-0"
