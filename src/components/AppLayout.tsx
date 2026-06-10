@@ -299,28 +299,39 @@ export function AppLayout() {
       const Icon = item.icon;
       const sectionOpen = !!item.children && !collapsed[item.to];
 
+      const itemContent = (
+        <>
+          {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
+          <Icon className="size-4 shrink-0" />
+          <span className="truncate flex-1">{item.label}</span>
+          {item.children && (
+            <ChevronDown className={`size-3 text-white/40 transition-transform shrink-0 ${sectionOpen ? "" : "-rotate-90"}`} />
+          )}
+        </>
+      );
+
       return (
         <div key={item.to}>
-          <Link
-            to={item.to}
-            onClick={onNavigate}
-            className={`relative flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm transition-all mb-0.5 ${
-              active ? "bg-white/10 text-white font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
-            <Icon className="size-4 shrink-0" />
-            <span className="truncate flex-1">{item.label}</span>
-            {item.children && (
-              <span
-                role="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleGroup(item.to); }}
-                className="size-5 -mr-1 grid place-items-center rounded hover:bg-white/10 shrink-0"
-              >
-                <ChevronDown className={`size-3 text-white/40 transition-transform ${sectionOpen ? "" : "-rotate-90"}`} />
-              </span>
-            )}
-          </Link>
+          {item.children ? (
+            <button
+              onClick={() => toggleGroup(item.to)}
+              className={`relative w-full flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm transition-all mb-0.5 ${
+                active ? "bg-white/10 text-white font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              {itemContent}
+            </button>
+          ) : (
+            <Link
+              to={item.to}
+              onClick={onNavigate}
+              className={`relative flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm transition-all mb-0.5 ${
+                active ? "bg-white/10 text-white font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              {itemContent}
+            </Link>
+          )}
           {sectionOpen && item.children && (
             <div className="ml-4 pl-3 border-l border-white/10 mb-0.5">
               {item.children.map((child) => {
