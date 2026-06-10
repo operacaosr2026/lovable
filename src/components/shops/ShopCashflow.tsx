@@ -269,6 +269,12 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           <button onClick={() => setWeekOffset(o => o + 1)} className="p-2 hover:bg-accent rounded-r-lg"><ChevronRight className="size-4" /></button>
         </div>
         <div className="flex-1" />
+        <Button variant="outline" size="sm" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "income" })}>
+          <Plus className="size-3.5" /> Entrada
+        </Button>
+        <Button variant="outline" size="sm" className="text-rose-700 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "expense" })}>
+          <Plus className="size-3.5" /> Saída
+        </Button>
         <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Lançamentos caindo no sábado ou domingo aparecerão na segunda-feira seguinte.">
           <input
             type="checkbox"
@@ -311,7 +317,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
                   dd={dd}
                   weekday={weekday}
                   isToday={isToday}
-                  onAdd={(kind) => setQuickAdd({ date: dd.key, kind })}
                   onEdit={setEditing}
                 />
               );
@@ -335,9 +340,9 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
                   </div>
                   <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
                     {dd.incomeItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => setEditing(e)} />)}
-                    <button onClick={() => setQuickAdd({ date: dd.key, kind: "income" })} className="w-full text-[10px] py-1 rounded border border-dashed border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/5">
-                      + entrada
-                    </button>
+                    {dd.incomeItems.length === 0 && (
+                      <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
+                    )}
                   </div>
                 </div>
                 {/* Saídas */}
@@ -348,9 +353,9 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
                   </div>
                   <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
                     {dd.expenseItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => setEditing(e)} />)}
-                    <button onClick={() => setQuickAdd({ date: dd.key, kind: "expense" })} className="w-full text-[10px] py-1 rounded border border-dashed border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/5">
-                      + saída
-                    </button>
+                    {dd.expenseItems.length === 0 && (
+                      <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
+                    )}
                   </div>
                 </div>
                 <div className={`px-3 py-3 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
@@ -400,11 +405,10 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   );
 }
 
-function WeekendDayCell({ dd, weekday, isToday, onAdd, onEdit }: {
+function WeekendDayCell({ dd, weekday, isToday, onEdit }: {
   dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
   weekday: number;
   isToday: boolean;
-  onAdd: (kind: "income" | "expense") => void;
   onEdit: (e: DayItem) => void;
 }) {
   const items = [...dd.incomeItems, ...dd.expenseItems];
@@ -416,14 +420,9 @@ function WeekendDayCell({ dd, weekday, isToday, onAdd, onEdit }: {
       </div>
       <div className="row-span-2 p-1.5 flex flex-col gap-1 overflow-y-auto">
         {items.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
-        <div className="flex gap-1 mt-auto">
-          <button onClick={() => onAdd("income")} title="Adicionar entrada" className="flex-1 grid place-items-center py-1.5 rounded border border-dashed border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/5">
-            <Plus className="size-3.5" />
-          </button>
-          <button onClick={() => onAdd("expense")} title="Adicionar saída" className="flex-1 grid place-items-center py-1.5 rounded border border-dashed border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/5">
-            <Plus className="size-3.5" />
-          </button>
-        </div>
+        {items.length === 0 && (
+          <div className="flex-1 grid place-items-center text-[10px] text-muted-foreground/60">—</div>
+        )}
       </div>
       <div className={`px-2 py-2 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
         <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Saldo</div>
