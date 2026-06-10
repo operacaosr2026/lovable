@@ -5,7 +5,6 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 
 const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2";
-const TRACK123_API_V21 = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
 const DEFAULT_EVENT_RULES: Array<{ key: string; label: string; target: "shipped" | "delivered" | "problem" | "ignore" }> = [
   { key: "accepted_by_carrier", label: "Accepted by carrier", target: "shipped" },
@@ -119,11 +118,14 @@ export const testTrack123Connection = createServerFn({ method: "POST" })
     try {
       const r = await fetch(`${TRACK123_API_BASE}/courier/list`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Track123-Api-Secret": row.api_key },
+        headers: { "Content-Type": "application/json", "accept": "application/json", "Track123-Api-Secret": row.api_key },
         body: JSON.stringify({}),
       });
-      const ok = r.ok;
       const text = await r.text();
+      let j: any = null;
+      try { j = JSON.parse(text); } catch {/* non-JSON response */}
+      // Track123 returns HTTP 200 even on auth failures, with an error "code" in the body.
+      const ok = r.ok && (!j?.code || j.code === "00000");
       await supabaseAdmin.from("track123_integrations")
         .update({
           last_sync_at: new Date().toISOString(),
@@ -180,12 +182,18 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
     let lastError: string | null = null;
     const byTrackNo = new Map<string, any>();
 
+    const track123Headers = {
+      "Content-Type": "application/json",
+      "accept": "application/json",
+      "Track123-Api-Secret": integ.api_key,
+    };
+
     if (numbers.length) {
       // Best-effort registration: numbers already registered just come back as "duplicate" rejects, which is fine.
       try {
-        await fetch(`${TRACK123_API_V21}/track/import`, {
+        await fetch(`${TRACK123_API_BASE}/track/import`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "Track123-Api-Secret": integ.api_key },
+          headers: track123Headers,
           body: JSON.stringify(numbers.map((n) => ({ trackNo: n }))),
         });
       } catch {/* ignore — querying below will surface real errors */}
@@ -193,10 +201,10 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
       for (let i = 0; i < numbers.length; i += 100) {
         const chunk = numbers.slice(i, i + 100);
         try {
-          const r = await fetch(`${TRACK123_API_V21}/track/query`, {
+          const r = await fetch(`${TRACK123_API_BASE}/track/query`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Track123-Api-Secret": integ.api_key },
-            body: JSON.stringify({ trackNoInfos: chunk.map((n) => ({ trackNo: n })), queryPageSize: 100 }),
+            headers: track123Headers,
+            body: JSON.stringify({ trackNos: chunk }),
           });
           const text = await r.text();
           if (!r.ok) { lastError = `Falha (${r.status}): ${text.slice(0, 200)}`; continue; }
