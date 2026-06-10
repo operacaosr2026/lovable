@@ -233,7 +233,7 @@ function Dashboard() {
             tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
           <div className="p-3 flex-1 flex flex-col">
             <ul className="flex-1">
-              {data.tasks.map((t: any) => (
+              {data.tasks.filter((t: any) => !t.done).map((t: any) => (
                 <li key={t.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-surface-hover transition-colors group">
                   <button
                     onClick={() => mToggleTask.mutate({ id: t.id, done: !t.done })}

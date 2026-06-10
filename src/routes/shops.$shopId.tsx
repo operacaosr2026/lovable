@@ -23,7 +23,7 @@ type Tab = "products" | "tasks" | "cash" | "orders" | "wiki" | "goal" | "integra
 function ShopDetail() {
   const { shopId } = Route.useParams();
   const get = useServerFn(getShop);
-  const [tab, setTab] = useState<Tab>("tasks");
+  const [tab, setTab] = useState<Tab>("cash");
 
   const { data, isLoading } = useQuery({
     queryKey: ["shop", shopId],

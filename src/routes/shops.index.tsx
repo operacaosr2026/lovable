@@ -229,6 +229,14 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
             {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
           </span>
         </div>
+        {s.refundRate != null && (
+          <div className="mb-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Taxa de estorno (30d)</span>
+            <span className={`text-base font-bold tabular-nums ${s.refundRate > 0.5 ? "text-rose-500" : "text-emerald-500"}`}>
+              {s.refundRate.toFixed(1)}%
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-2 text-center">
           <Stat icon={Package} label="Produtos" value={s.products} />
           <Stat icon={ListChecks} label="Tarefas" value={s.pendingTasks} />

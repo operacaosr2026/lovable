@@ -80,11 +80,16 @@ export const listWorkspace = createServerFn({ method: "GET" })
         profiles[p.id] = { full_name: p.full_name, avatar_url: p.avatar_url };
       }
       // emails via admin client (auth.users not readable via PostgREST)
-      for (const id of memberIds) {
+      const emailResults = await Promise.all(memberIds.map(async (id: string) => {
         try {
           const { data } = await supabaseAdmin.auth.admin.getUserById(id);
-          if (data?.user?.email) emails[id] = data.user.email;
-        } catch {}
+          return [id, data?.user?.email ?? null] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }));
+      for (const [id, email] of emailResults) {
+        if (email) emails[id] = email;
       }
     }
 

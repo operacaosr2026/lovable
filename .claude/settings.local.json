@@ -7,7 +7,9 @@
       "Bash(vercel deploy *)",
       "Bash(npm run *)",
       "PowerShell(Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1; Set-Location \"c:\\\\Users\\\\Sergio Otone\\\\Documents\\\\GitHub\\\\lojas\"; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'npm run dev' -WorkingDirectory \"c:\\\\Users\\\\Sergio Otone\\\\Documents\\\\GitHub\\\\lojas\")",
-      "PowerShell(netstat -ano)"
+      "PowerShell(netstat -ano)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

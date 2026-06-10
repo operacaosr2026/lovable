@@ -310,8 +310,8 @@ export function AppLayout() {
             }`}
           >
             {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
-            <Icon className="size-4" />
-            {item.label}
+            <Icon className="size-4 shrink-0" />
+            <span className="truncate">{item.label}</span>
           </Link>
           {sectionOpen && item.children && (
             <div className="ml-4 pl-3 border-l border-white/10 mb-0.5">
@@ -334,8 +334,8 @@ export function AppLayout() {
                       childActive ? "bg-white/10 text-white font-medium" : "text-white/55 hover:text-white hover:bg-white/5"
                     }`}
                   >
-                    <ChildIcon className="size-3.5" />
-                    {child.label}
+                    <ChildIcon className="size-3.5 shrink-0" />
+                    <span className="truncate">{child.label}</span>
                   </Link>
                 );
               })}
@@ -423,8 +423,8 @@ export function AppLayout() {
                     }`}
                   >
                     {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
-                    <Icon className="size-4" />
-                    {item.label}
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
                   </Link>
                 );
               })}
@@ -463,7 +463,7 @@ export function AppLayout() {
       {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}
       {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
       {!sidebarHidden && (
-        <aside className="hidden md:flex w-60 flex-col border-r border-border bg-[var(--sidebar-bg)] sticky top-0 h-screen">
+        <aside className="hidden md:flex w-52 flex-col border-r border-border bg-[var(--sidebar-bg)] sticky top-0 h-screen overflow-x-hidden">
           {navContent()}
         </aside>
       )}

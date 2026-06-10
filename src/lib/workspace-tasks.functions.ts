@@ -183,12 +183,13 @@ export const updateListTask = createServerFn({ method: "POST" })
       delete patch.recurrence_time;
     }
 
+    let nextDue: string | null = null;
     if (data.source === "task" && patch.status === "done") {
       const { data: existing } = await supabase
         .from("tasks").select("recurrence_frequency, recurrence_weekdays, recurrence_time, due_at")
         .eq("id", data.id).maybeSingle();
       if (existing?.recurrence_frequency) {
-        const nextDue = computeNextDueAt(
+        nextDue = computeNextDueAt(
           existing.due_at,
           existing.recurrence_frequency as any,
           existing.recurrence_weekdays ?? [],
@@ -217,7 +218,7 @@ export const updateListTask = createServerFn({ method: "POST" })
     const table = data.source === "task" ? "tasks" : "shop_tasks";
     const { error } = await supabase.from(table).update(patch).eq("id", data.id).eq("user_id", userId);
     if (error) throw new Error(error.message);
-    return { ok: true };
+    return { ok: true, recurrence_next_due_at: nextDue };
   });
 
 export const deleteListTask = createServerFn({ method: "POST" })

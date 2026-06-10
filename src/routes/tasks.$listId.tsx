@@ -16,6 +16,7 @@ import {
 } from "@/lib/workspace-tasks.functions";
 import { useKanbanColumns, useColumnDnD, ColumnControls, AddColumnButton } from "@/components/kanban/useKanbanColumns";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/tasks/$listId")({
   head: () => ({ meta: [{ title: "Lista — Tarefas" }] }),
@@ -28,7 +29,7 @@ const DEFAULT_COLUMNS = [
   { id: "done", label: "Concluído", tint: "oklch(0.97 0.025 155)", accent: "oklch(0.5 0.13 155)" },
 ];
 
-type View = "list" | "kanban" | "routines";
+type View = "list" | "kanban";
 
 function fmtDue(due: string | null) {
   if (!due) return null;
@@ -70,11 +71,17 @@ function ListPage() {
     qc.invalidateQueries({ queryKey: ["task-lists"] });
     qc.invalidateQueries({ queryKey: ["tasks-summary"] });
   };
-  const mCreate = useMutation({ mutationFn: (d: any) => createFn({ data: d }), onSuccess: invalidate });
-  const mUpdate = useMutation({ mutationFn: (d: any) => updateFn({ data: d }), onSuccess: invalidate });
-  const mDelete = useMutation({ mutationFn: (d: any) => deleteFn({ data: d }), onSuccess: invalidate });
+  const mCreate = useMutation({ mutationFn: (d: any) => createFn({ data: d }), onSuccess: invalidate, onError: (e: any) => toast.error(e.message) });
+  const mUpdate = useMutation({ mutationFn: (d: any) => updateFn({ data: d }), onSuccess: invalidate, onError: (e: any) => toast.error(e.message) });
+  const mDelete = useMutation({ mutationFn: (d: any) => deleteFn({ data: d }), onSuccess: invalidate, onError: (e: any) => toast.error(e.message) });
 
-  const [quickAdd, setQuickAdd] = useState<{ status: string; value: string } | null>(null);
+  const handleAddTask = async () => {
+    try {
+      const result: any = await mCreate.mutateAsync({ list_id: listId, title: "Nova tarefa", status: "todo" });
+      if (result?.task) setOpenTask({ id: result.task.id, source: result.source });
+    } catch {}
+  };
+
   const [activeDrag, setActiveDrag] = useState<{ id: string; source: "task" | "shop_task" } | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -99,7 +106,6 @@ function ListPage() {
     ...c,
     tasks: tasks.filter((t: any) => t.status === c.id),
   }));
-  const routines = tasks.filter((t: any) => t.recurrence_frequency);
 
   const isShop = !!list.shop_id;
 
@@ -116,12 +122,23 @@ function ListPage() {
         <GripVertical className="size-3.5 text-muted-foreground/40 shrink-0" />
         <button
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation();
-            mUpdate.mutate({
-              id: t.id, source: t.source,
-              patch: { status: t.status === "done" ? "todo" : "done" },
-            });
+            const completing = t.status !== "done";
+            try {
+              const result: any = await mUpdate.mutateAsync({
+                id: t.id, source: t.source,
+                patch: { status: completing ? "done" : "todo" },
+              });
+              if (completing) {
+                if (result?.recurrence_next_due_at) {
+                  const next = new Date(result.recurrence_next_due_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                  toast.success(`Tarefa concluída! Próxima ocorrência: ${next}`);
+                } else {
+                  toast.success("Tarefa concluída!");
+                }
+              }
+            } catch {}
           }}
           className={`size-4 rounded-full border-2 grid place-items-center shrink-0 ${
             t.status === "done" ? "bg-success border-success" : "border-border hover:border-primary"
@@ -166,35 +183,6 @@ function ListPage() {
     );
   };
 
-  const QuickAdd = ({ status }: { status: string }) => (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (quickAdd?.value.trim()) {
-          mCreate.mutate({ list_id: listId, title: quickAdd.value.trim(), status });
-        }
-        setQuickAdd(null);
-      }}
-      className="px-3 py-2"
-    >
-      <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-primary/40">
-        <Plus className="size-3.5 text-muted-foreground" />
-        <input
-          autoFocus
-          value={quickAdd?.value ?? ""}
-          onChange={(e) => setQuickAdd({ status, value: e.target.value })}
-          onBlur={() => {
-            if (quickAdd?.value.trim()) mCreate.mutate({ list_id: listId, title: quickAdd.value.trim(), status });
-            setQuickAdd(null);
-          }}
-          onKeyDown={(e) => { if (e.key === "Escape") setQuickAdd(null); }}
-          placeholder="Nova tarefa..."
-          className="flex-1 bg-transparent outline-none text-sm"
-        />
-      </div>
-    </form>
-  );
-
   return (
     <PageShell>
       <div className="flex items-start justify-between gap-4 mb-6">
@@ -217,23 +205,30 @@ function ListPage() {
           </div>
         </div>
 
-        <div className="inline-flex items-center rounded-lg bg-muted p-0.5 text-xs">
-          {([
-            ["list", ListIcon, "Lista"],
-            ["kanban", KanbanSquare, "Kanban"],
-            ["routines", Repeat, "Rotinas"],
-          ] as const).map(([id, Icon, lbl]) => (
-            <button
-              key={id}
-              onClick={() => setView(id as View)}
-              className={`h-8 px-3 rounded-md inline-flex items-center gap-1.5 transition-colors ${
-                view === id ? "bg-surface shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="size-3.5" />
-              {lbl}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center rounded-lg bg-muted p-0.5 text-xs">
+            {([
+              ["list", ListIcon, "Lista"],
+              ["kanban", KanbanSquare, "Kanban"],
+            ] as const).map(([id, Icon, lbl]) => (
+              <button
+                key={id}
+                onClick={() => setView(id as View)}
+                className={`h-8 px-3 rounded-md inline-flex items-center gap-1.5 transition-colors ${
+                  view === id ? "bg-surface shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="size-3.5" />
+                {lbl}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleAddTask}
+            className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+          >
+            <Plus className="size-3.5" /> Adicionar tarefa
+          </button>
         </div>
       </div>
 
@@ -262,24 +257,12 @@ function ListPage() {
                   <span className="size-2 rounded-full" style={{ background: col.accent }} />
                   <div className="text-sm font-semibold flex-1">{col.label}</div>
                   <span className="text-xs text-muted-foreground tabular-nums">{col.tasks.length}</span>
-                  <button
-                    onClick={() => setQuickAdd({ status: col.id, value: "" })}
-                    className="size-6 rounded-md hover:bg-surface grid place-items-center text-muted-foreground"
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
                 </div>
-                {quickAdd?.status === col.id && <QuickAdd status={col.id} />}
                 <ul className="divide-y divide-border min-h-[40px]">
                   {col.tasks.map((t: any) => <TaskRow key={t.id} t={t} />)}
-                  {col.tasks.length === 0 && quickAdd?.status !== col.id && (
-                    <li className="px-4 py-6 text-center">
-                      <button
-                        onClick={() => setQuickAdd({ status: col.id, value: "" })}
-                        className="text-xs text-muted-foreground hover:text-primary"
-                      >
-                        + adicionar (ou arraste tarefas aqui)
-                      </button>
+                  {col.tasks.length === 0 && (
+                    <li className="px-4 py-6 text-center text-xs text-muted-foreground">
+                      Arraste tarefas aqui
                     </li>
                   )}
                 </ul>
@@ -332,9 +315,6 @@ function ListPage() {
                   headerProps={headerProps}
                   isColOver={isColOver}
                   isColDragging={isColDragging}
-                  quickAdd={quickAdd}
-                  setQuickAdd={setQuickAdd}
-                  QuickAdd={QuickAdd}
                   onCardClick={(t: any) => setOpenTask({ id: t.id, source: t.source })}
                   onCardDelete={(t: any) => mDelete.mutate({ id: t.id, source: t.source })}
                 />
@@ -356,27 +336,6 @@ function ListPage() {
         </DndContext>
       )}
 
-      {view === "routines" && (
-        <section className="rounded-2xl border border-border bg-surface overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-            <Repeat className="size-4 text-primary" />
-            <div className="text-sm font-semibold flex-1">Rotinas desta lista</div>
-            <span className="text-xs text-muted-foreground tabular-nums">{routines.length}</span>
-          </div>
-          {routines.length === 0 ? (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              {isShop
-                ? "Lojas usam as rotinas internas da loja."
-                : "Crie uma tarefa com recorrência (Lista → editar tarefa) para vê-la aqui."}
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {routines.map((t: any) => <TaskRow key={t.id} t={t} />)}
-            </ul>
-          )}
-        </section>
-      )}
-
       <TaskDetailDialog
         open={!!openTask}
         onOpenChange={(o) => { if (!o) setOpenTask(null); }}
@@ -390,7 +349,7 @@ function ListPage() {
 
 function KanbanColumn({
   col, def, cols, headerProps, isColOver, isColDragging,
-  quickAdd, setQuickAdd, QuickAdd, onCardClick, onCardDelete,
+  onCardClick, onCardDelete,
 }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   return (
@@ -407,12 +366,6 @@ function KanbanColumn({
         <span className="size-2 rounded-full" style={{ background: col.accent }} />
         <div className="text-sm font-semibold flex-1 truncate">{col.label}</div>
         <span className="text-xs text-muted-foreground tabular-nums">{col.tasks.length}</span>
-        <button
-          onClick={(e) => { e.stopPropagation(); setQuickAdd({ status: col.id, value: "" }); }}
-          className="size-6 rounded-md hover:bg-surface grid place-items-center text-muted-foreground"
-        >
-          <Plus className="size-3.5" />
-        </button>
         <ColumnControls
           col={def}
           itemCount={col.tasks.length}
@@ -421,7 +374,6 @@ function KanbanColumn({
           onDelete={() => cols.remove(def)}
         />
       </div>
-      {quickAdd?.status === col.id && <QuickAdd status={col.id} />}
       <div
         ref={setNodeRef}
         className={`p-2 space-y-2 flex-1 min-h-[120px] transition-colors ${isOver ? "bg-primary/5" : ""}`}

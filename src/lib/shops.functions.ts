@@ -34,17 +34,20 @@ export const listShops = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
 
     const ids = (shops ?? []).map((s: any) => s.id);
-    const counters: Record<string, { products: number; pendingTasks: number; routinesToday: number; balance: number }> = {};
+    const counters: Record<string, { products: number; pendingTasks: number; routinesToday: number; balance: number; refundRate: number | null }> = {};
     if (ids.length) {
       const todayStr = new Date().toISOString().slice(0, 10);
-      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }] = await Promise.all([
+      const since30 = new Date(); since30.setUTCDate(since30.getUTCDate() - 30);
+      const since30Str = since30.toISOString().slice(0, 10);
+      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: orders }] = await Promise.all([
         supabase.from("shop_products").select("shop_id").in("shop_id", ids),
         supabase.from("shop_tasks").select("shop_id,status").in("shop_id", ids).neq("status", "done"),
         supabase.from("shop_routines").select("shop_id,due_at").in("shop_id", ids),
         supabase.from("shop_cash_entries").select("shop_id,kind,amount,date").in("shop_id", ids).lte("date", todayStr),
+        supabase.from("shop_orders").select("shop_id,financial_status:raw->>financial_status").in("shop_id", ids).gte("order_date", since30Str),
       ]);
       const today = new Date(); today.setHours(23, 59, 59, 999);
-      const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0 });
+      const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0, refundRate: null });
       for (const s of shops ?? []) init((s as any).id).balance = Number((s as any).opening_balance ?? 0);
       for (const p of prods ?? []) init((p as any).shop_id).products++;
       for (const t of tasks ?? []) init((t as any).shop_id).pendingTasks++;
@@ -57,11 +60,20 @@ export const listShops = createServerFn({ method: "GET" })
         const amt = Number((e as any).amount ?? 0);
         c.balance += (e as any).kind === "income" ? amt : -amt;
       }
+      const orderTotals: Record<string, { total: number; refunded: number }> = {};
+      for (const o of (orders ?? []) as any[]) {
+        const t = (orderTotals[o.shop_id] ??= { total: 0, refunded: 0 });
+        t.total++;
+        if (o.financial_status === "refunded" || o.financial_status === "partially_refunded") t.refunded++;
+      }
+      for (const [shopId, t] of Object.entries(orderTotals)) {
+        if (t.total > 0) init(shopId).refundRate = (t.refunded / t.total) * 100;
+      }
     }
     return {
       shops: (shops ?? []).map((s: any) => ({
         ...s,
-        ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0) }),
+        ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0), refundRate: null }),
       })),
     };
   });
