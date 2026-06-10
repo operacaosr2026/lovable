@@ -298,7 +298,7 @@ export function AppLayout() {
           ? path === "/shops" || (path.startsWith("/shops/") && !path.startsWith("/shops/products"))
           : path.startsWith(item.to);
       const Icon = item.icon;
-      const sectionOpen = item.children && (active || item.children.some((c) => path.startsWith(c.to)));
+      const sectionOpen = !!item.children && !collapsed[item.to];
 
       return (
         <div key={item.to}>
@@ -311,7 +311,16 @@ export function AppLayout() {
           >
             {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
             <Icon className="size-4 shrink-0" />
-            <span className="truncate">{item.label}</span>
+            <span className="truncate flex-1">{item.label}</span>
+            {item.children && (
+              <span
+                role="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleGroup(item.to); }}
+                className="size-5 -mr-1 grid place-items-center rounded hover:bg-white/10 shrink-0"
+              >
+                <ChevronDown className={`size-3 text-white/40 transition-transform ${sectionOpen ? "" : "-rotate-90"}`} />
+              </span>
+            )}
           </Link>
           {sectionOpen && item.children && (
             <div className="ml-4 pl-3 border-l border-white/10 mb-0.5">
