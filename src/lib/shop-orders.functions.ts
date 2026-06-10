@@ -42,6 +42,25 @@ async function fetchShopifyOrders(domain: string, token: string, sinceISO: strin
   return out;
 }
 
+async function fetchShopifyPayouts(domain: string, token: string, sinceISO: string) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/payouts.json?limit=250&date_min=${encodeURIComponent(sinceISO.slice(0, 10))}`;
+  for (let i = 0; i < 20 && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.payouts ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
 async function ensureCostCategory(supabase: any, userId: string, shopId: string) {
   const { data } = await supabase.from("shop_cash_categories").select("id")
     .eq("user_id", userId).eq("shop_id", shopId).eq("kind", "expense").eq("name", COST_CATEGORY).maybeSingle();
@@ -148,7 +167,7 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
       client_secret: data.client_secret,
     });
     if (error) throw new Error(error.message);
-    const scopes = "read_orders,read_products";
+    const scopes = "read_orders,read_products,read_shopify_payments_payouts";
     const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
     const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
       `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
@@ -316,6 +335,75 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
       await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settingsFull)));
     }
     return { synced: orders.length };
+  });
+
+// ---------- Shopify Payments payouts (entradas no caixa) ----------
+const PAYOUT_CATEGORY = "Depósito Shopify";
+const PAYOUT_STATUS_LABEL: Record<string, string> = {
+  paid: "depositado",
+  in_transit: "em trânsito",
+  scheduled: "agendado",
+};
+
+export const syncShopifyPayouts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    since_days: z.number().int().min(1).max(365).default(60),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
+
+    const { domain, token } = await getShopifyCreds(context.supabase, context.userId, settings.shopify_store_id);
+    const since = new Date(); since.setUTCDate(since.getUTCDate() - data.since_days);
+    const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
+    const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled"].includes(p.status));
+
+    // Migração única: remove lançamentos de "Depósito Shopify" feitos manualmente
+    // (importação de planilha) para que a sincronização automática vire a fonte da verdade.
+    await context.supabase.from("shop_cash_entries").delete()
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("category", PAYOUT_CATEGORY).is("shopify_payout_id", null);
+    await context.supabase.from("shop_cash_imports")
+      .delete().eq("user_id", context.userId).eq("shop_id", data.shop_id);
+
+    if (!relevant.length) return { synced: 0 };
+
+    const { data: existing } = await context.supabase.from("shop_cash_entries")
+      .select("id,shopify_payout_id")
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .in("shopify_payout_id", relevant.map((p: any) => String(p.id)));
+    const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
+
+    const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
+      user_id: context.userId,
+      shop_id: data.shop_id,
+      kind: "income" as const,
+      amount: Number(p.amount ?? 0),
+      date: p.date,
+      category: PAYOUT_CATEGORY,
+      description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
+      source: "shopify_sync",
+      shopify_payout_id: String(p.id),
+    }));
+    if (toInsert.length) {
+      const { error } = await context.supabase.from("shop_cash_entries").insert(toInsert);
+      if (error) throw new Error(error.message);
+    }
+
+    for (const p of relevant) {
+      const id = existingById.get(String(p.id));
+      if (!id) continue;
+      await context.supabase.from("shop_cash_entries").update({
+        amount: Number(p.amount ?? 0),
+        date: p.date,
+        description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
+      }).eq("id", id).eq("user_id", context.userId);
+    }
+
+    return { synced: relevant.length };
   });
 
 // ---------- Recompute ----------

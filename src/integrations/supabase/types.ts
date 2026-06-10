@@ -1275,6 +1275,7 @@ export type Database = {
           recurrence: string
           recurrence_until: string | null
           shop_id: string
+          shopify_payout_id: string | null
           skip_weekend_rule: boolean
           source: string
           updated_at: string
@@ -1295,6 +1296,7 @@ export type Database = {
           recurrence?: string
           recurrence_until?: string | null
           shop_id: string
+          shopify_payout_id?: string | null
           skip_weekend_rule?: boolean
           source?: string
           updated_at?: string
@@ -1315,6 +1317,7 @@ export type Database = {
           recurrence?: string
           recurrence_until?: string | null
           shop_id?: string
+          shopify_payout_id?: string | null
           skip_weekend_rule?: boolean
           source?: string
           updated_at?: string

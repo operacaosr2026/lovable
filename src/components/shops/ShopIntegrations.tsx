@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getOrderSettings, upsertOrderSettings, listShopifyStores, startShopifyOAuth,
-  syncShopifyOrders, recomputeRange,
+  syncShopifyOrders, syncShopifyPayouts, recomputeRange,
 } from "@/lib/shop-orders.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
   const getSettingsFn = useServerFn(getOrderSettings);
   const listStoresFn = useServerFn(listShopifyStores);
   const syncFn = useServerFn(syncShopifyOrders);
+  const syncPayoutsFn = useServerFn(syncShopifyPayouts);
   const recomputeRangeFn = useServerFn(recomputeRange);
 
   const settings = useQuery({ queryKey: ["order-settings", shopId], queryFn: () => getSettingsFn({ data: { shop_id: shopId } }) });
@@ -54,10 +55,11 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
       const from = addDays(today, -30);
       const futureTo = addDays(today, PROCESSING_DELAY_DAYS + 1);
       await recomputeRangeFn({ data: { shop_id: shopId, from_processing: addDays(from, PROCESSING_DELAY_DAYS), to_processing: futureTo } });
-      return r;
+      const payouts = await syncPayoutsFn({ data: { shop_id: shopId, since_days: 60 } });
+      return { ...r, payouts: payouts.synced };
     },
     onSuccess: (r) => {
-      toast.success(`Loja sincronizada · ${r.synced} pedidos atualizados`);
+      toast.success(`Loja sincronizada · ${r.synced} pedidos · ${r.payouts} depósitos`);
       qc.invalidateQueries({ queryKey: ["orders", shopId] });
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
       qc.invalidateQueries({ queryKey: ["shop-profit-goal-stats", shopId] });
@@ -345,8 +347,12 @@ function ConnectStoreDialog({ open, onClose, onConnected }: { open: boolean; onC
               https://lojas-one.vercel.app/api/public/shopify/callback
             </code>
             <p>Em <strong>Admin API access scopes</strong>, marque:</p>
-            <code className="block bg-background rounded px-2 py-1 text-[11px] break-all">read_orders,read_products</code>
+            <code className="block bg-background rounded px-2 py-1 text-[11px] break-all">read_orders,read_products,read_shopify_payments_payouts</code>
             <p>Salve, vá em <strong>API credentials</strong> e copie <strong>Client ID</strong> e <strong>Client secret</strong>.</p>
+            <p className="text-foreground">
+              Se a loja já estava conectada antes, refaça essa autorização para liberar a permissão de
+              payouts (depósitos do Shopify Payments) — sem ela, os depósitos não são sincronizados.
+            </p>
           </div>
           <div>
             <label className="text-sm font-medium mb-1.5 block">Nome</label>
