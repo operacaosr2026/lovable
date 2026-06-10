@@ -67,7 +67,6 @@ const navGroups: NavGroup[] = [
 ];
 
 const adminNav: NavItem[] = [
-  { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
 
@@ -399,33 +398,33 @@ export function AppLayout() {
               </div>
             );
           })}
-
-          {role === "admin" && (
-            <div className="pt-1">
-              <div className="px-3 text-[10px] uppercase tracking-wider text-white/40 mb-1.5 font-medium mt-3">
-                Administração
-              </div>
-              {adminNav.map((item) => {
-                const active = path.startsWith(item.to);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    onClick={onNavigate}
-                    className={`relative flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm transition-all mb-0.5 ${
-                      active ? "bg-white/10 text-white font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
-                    <Icon className="size-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
         </nav>
+
+        {role === "admin" && (
+          <div className="px-2 pt-1 pb-1 border-t border-white/10">
+            <div className="px-3 text-[10px] uppercase tracking-wider text-white/40 mb-1.5 font-medium mt-3">
+              Administração
+            </div>
+            {adminNav.map((item) => {
+              const active = path.startsWith(item.to);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={onNavigate}
+                  className={`relative flex items-center gap-2.5 px-3 h-10 md:h-9 rounded-lg text-sm transition-all mb-0.5 ${
+                    active ? "bg-white/10 text-white font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full gradient-primary" />}
+                  <Icon className="size-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
         <div className="p-3 border-t border-white/10">
           <div className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-white/5 transition-colors">
