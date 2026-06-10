@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Tag, Pencil, Check } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -278,9 +278,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           />
           <span>Fim de semana → segunda</span>
         </label>
-        <Button variant="outline" size="sm" onClick={() => setManageCats(true)}>
-          <Tag className="size-4" /> Categorias
-        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -301,14 +298,26 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
       </div>
 
       {/* Day grid */}
-      <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
-        <div className="min-w-max grid" style={{ gridTemplateColumns: `repeat(7, 200px)`, gridTemplateRows: "auto 118px 118px auto" }}>
+      <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+        <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr)) 92px 92px", gridTemplateRows: "auto 170px 170px auto" }}>
           {dayData.map((dd) => {
             const weekday = weekdayFromKey(dd.key);
             const isToday = dd.key === todayKey;
             const isWeekend = weekday === 0 || weekday === 6;
+            if (isWeekend) {
+              return (
+                <WeekendDayCell
+                  key={dd.key}
+                  dd={dd}
+                  weekday={weekday}
+                  isToday={isToday}
+                  onAdd={(kind) => setQuickAdd({ date: dd.key, kind })}
+                  onEdit={setEditing}
+                />
+              );
+            }
             return (
-              <div key={dd.key} className={`grid row-span-4 border-r border-border last:border-r-0 ${isWeekend ? "bg-background/40" : ""}`} style={{ gridTemplateRows: "subgrid" }}>
+              <div key={dd.key} className="grid row-span-4 border-r border-border last:border-r-0" style={{ gridTemplateRows: "subgrid" }}>
                 <div className={`px-3 py-3 border-b border-border ${isToday ? "bg-primary/10" : ""}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -387,6 +396,39 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         />
       )}
 
+    </div>
+  );
+}
+
+function WeekendDayCell({ dd, weekday, isToday, onAdd, onEdit }: {
+  dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
+  weekday: number;
+  isToday: boolean;
+  onAdd: (kind: "income" | "expense") => void;
+  onEdit: (e: DayItem) => void;
+}) {
+  const items = [...dd.incomeItems, ...dd.expenseItems];
+  return (
+    <div className="grid row-span-4 border-r border-border last:border-r-0 bg-background/40" style={{ gridTemplateRows: "subgrid" }}>
+      <div className={`px-2 py-3 border-b border-border ${isToday ? "bg-primary/10" : ""}`}>
+        <div className={`text-xs font-bold tracking-tight truncate ${isToday ? "text-primary" : "text-foreground"}`}>{WEEKDAYS_FULL[weekday].slice(0, 3)}</div>
+        <div className="text-[10px] text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day: "2-digit", month: "2-digit" })}</div>
+      </div>
+      <div className="row-span-2 p-1.5 flex flex-col gap-1 overflow-y-auto">
+        {items.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
+        <div className="flex gap-1 mt-auto">
+          <button onClick={() => onAdd("income")} title="Adicionar entrada" className="flex-1 grid place-items-center py-1.5 rounded border border-dashed border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/5">
+            <Plus className="size-3.5" />
+          </button>
+          <button onClick={() => onAdd("expense")} title="Adicionar saída" className="flex-1 grid place-items-center py-1.5 rounded border border-dashed border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/5">
+            <Plus className="size-3.5" />
+          </button>
+        </div>
+      </div>
+      <div className={`px-2 py-2 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
+        <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Saldo</div>
+        <div className={`text-xs font-bold tabular-nums leading-tight mt-0.5 ${dd.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>{fmtMoney(dd.balance)}</div>
+      </div>
     </div>
   );
 }
