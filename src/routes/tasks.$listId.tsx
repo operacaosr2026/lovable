@@ -109,80 +109,6 @@ function ListPage() {
 
   const isShop = !!list.shop_id;
 
-  const TaskRow = ({ t }: { t: any }) => {
-    const due = fmtDue(t.due_at);
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: t.id });
-    return (
-      <li
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
-        className={`group flex items-center gap-3 px-4 py-2.5 hover:bg-surface-hover select-none cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : ""}`}
-      >
-        <GripVertical className="size-3.5 text-muted-foreground/40 shrink-0" />
-        <button
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={async (e) => {
-            e.stopPropagation();
-            const completing = t.status !== "done";
-            try {
-              const result: any = await mUpdate.mutateAsync({
-                id: t.id, source: t.source,
-                patch: { status: completing ? "done" : "todo" },
-              });
-              if (completing) {
-                if (result?.recurrence_next_due_at) {
-                  const next = new Date(result.recurrence_next_due_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-                  toast.success(`Tarefa concluída! Próxima ocorrência: ${next}`);
-                } else {
-                  toast.success("Tarefa concluída!");
-                }
-              }
-            } catch {}
-          }}
-          className={`size-4 rounded-full border-2 grid place-items-center shrink-0 ${
-            t.status === "done" ? "bg-success border-success" : "border-border hover:border-primary"
-          }`}
-        />
-        <button
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); setOpenTask({ id: t.id, source: t.source }); }}
-          className={`text-sm flex-1 text-left truncate hover:text-primary ${t.status === "done" ? "line-through text-muted-foreground" : ""}`}
-        >
-          {t.title}
-        </button>
-        {due && (
-          <span className={`text-[11px] tabular-nums px-1.5 py-0.5 rounded-md ${
-            t.overdue ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"
-          }`}>
-            {t.overdue && <AlertCircle className="size-3 inline mr-0.5" />}
-            {due}
-          </span>
-        )}
-        {t.recurrence_frequency && <Repeat className="size-3 text-primary" />}
-        <button
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); mDelete.mutate({ id: t.id, source: t.source }); }}
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
-      </li>
-    );
-  };
-
-  const ListDroppableSection = ({ col, children }: { col: any; children: React.ReactNode }) => {
-    const { setNodeRef, isOver } = useDroppable({ id: `list-${col.id}` });
-    return (
-      <section
-        ref={setNodeRef}
-        className={`rounded-2xl border bg-surface overflow-hidden transition-colors ${isOver ? "border-primary/60 ring-2 ring-primary/30" : "border-border"}`}
-      >
-        {children}
-      </section>
-    );
-  };
-
   return (
     <PageShell>
       <div className="flex items-start justify-between gap-4 mb-6">
@@ -259,7 +185,15 @@ function ListPage() {
                   <span className="text-xs text-muted-foreground tabular-nums">{col.tasks.length}</span>
                 </div>
                 <ul className="divide-y divide-border min-h-[40px]">
-                  {col.tasks.map((t: any) => <TaskRow key={t.id} t={t} />)}
+                  {col.tasks.map((t: any) => (
+                    <TaskRow
+                      key={t.id}
+                      t={t}
+                      onUpdate={mUpdate.mutateAsync}
+                      onOpen={(task) => setOpenTask({ id: task.id, source: task.source })}
+                      onDelete={(task) => mDelete.mutate({ id: task.id, source: task.source })}
+                    />
+                  ))}
                   {col.tasks.length === 0 && (
                     <li className="px-4 py-6 text-center text-xs text-muted-foreground">
                       Arraste tarefas aqui
@@ -344,6 +278,85 @@ function ListPage() {
         invalidateKeys={[["list-tasks", listId], ["task-lists"], ["tasks-summary"]]}
       />
     </PageShell>
+  );
+}
+
+function ListDroppableSection({ col, children }: { col: any; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `list-${col.id}` });
+  return (
+    <section
+      ref={setNodeRef}
+      className={`rounded-2xl border bg-surface overflow-hidden transition-colors ${isOver ? "border-primary/60 ring-2 ring-primary/30" : "border-border"}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+function TaskRow({ t, onUpdate, onOpen, onDelete }: {
+  t: any;
+  onUpdate: (input: any) => Promise<any>;
+  onOpen: (t: any) => void;
+  onDelete: (t: any) => void;
+}) {
+  const due = fmtDue(t.due_at);
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: t.id });
+  return (
+    <li
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`group flex items-center gap-3 px-4 py-2.5 hover:bg-surface-hover select-none cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : ""}`}
+    >
+      <GripVertical className="size-3.5 text-muted-foreground/40 shrink-0" />
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={async (e) => {
+          e.stopPropagation();
+          const completing = t.status !== "done";
+          try {
+            const result: any = await onUpdate({
+              id: t.id, source: t.source,
+              patch: { status: completing ? "done" : "todo" },
+            });
+            if (completing) {
+              if (result?.recurrence_next_due_at) {
+                const next = new Date(result.recurrence_next_due_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                toast.success(`Tarefa concluída! Próxima ocorrência: ${next}`);
+              } else {
+                toast.success("Tarefa concluída!");
+              }
+            }
+          } catch {}
+        }}
+        className={`size-4 rounded-full border-2 grid place-items-center shrink-0 ${
+          t.status === "done" ? "bg-success border-success" : "border-border hover:border-primary"
+        }`}
+      />
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onOpen(t); }}
+        className={`text-sm flex-1 text-left truncate hover:text-primary ${t.status === "done" ? "line-through text-muted-foreground" : ""}`}
+      >
+        {t.title}
+      </button>
+      {due && (
+        <span className={`text-[11px] tabular-nums px-1.5 py-0.5 rounded-md ${
+          t.overdue ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"
+        }`}>
+          {t.overdue && <AlertCircle className="size-3 inline mr-0.5" />}
+          {due}
+        </span>
+      )}
+      {t.recurrence_frequency && <Repeat className="size-3 text-primary" />}
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onDelete(t); }}
+        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </li>
   );
 }
 
