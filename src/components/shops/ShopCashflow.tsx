@@ -113,14 +113,25 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
 
   const todayKey = useMemo(() => todayKeyBrazil(), []);
 
-  const { monthStart, monthEnd } = useMemo(() => {
+  const { monthStart, monthEnd, prevMonthStart, prevMonthEnd } = useMemo(() => {
     const { year, month } = dateKeyParts(todayKey);
     const lastDay = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
-    return { monthStart: dateKey(year, month, 1), monthEnd: dateKey(year, month, lastDay) };
+    const prevFirst = new Date(Date.UTC(year, month - 2, 1, 12));
+    const prevLastDay = new Date(Date.UTC(prevFirst.getUTCFullYear(), prevFirst.getUTCMonth() + 1, 0, 12)).getUTCDate();
+    return {
+      monthStart: dateKey(year, month, 1),
+      monthEnd: dateKey(year, month, lastDay),
+      prevMonthStart: dateKey(prevFirst.getUTCFullYear(), prevFirst.getUTCMonth() + 1, 1),
+      prevMonthEnd: dateKey(prevFirst.getUTCFullYear(), prevFirst.getUTCMonth() + 1, prevLastDay),
+    };
   }, [todayKey]);
   const monthlyProfitQuery = useQuery({
     queryKey: ["shop-cash-monthly-profit", shopId, monthStart, monthEnd],
     queryFn: () => monthlyProfitFn({ data: { shop_id: shopId, month_start: monthStart, month_end: monthEnd } }),
+  });
+  const prevMonthlyProfitQuery = useQuery({
+    queryKey: ["shop-cash-monthly-profit", shopId, prevMonthStart, prevMonthEnd],
+    queryFn: () => monthlyProfitFn({ data: { shop_id: shopId, month_start: prevMonthStart, month_end: prevMonthEnd } }),
   });
 
   const dayList = useMemo(() => {
@@ -269,6 +280,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
             value={fmtMoney(monthProfit)}
             accent="oklch(0.55 0.13 155)"
             negative={monthProfit < 0}
+            sub={prevMonthlyProfitQuery.data ? `Mês passado: ${fmtMoney(prevMonthlyProfitQuery.data.profit)}` : undefined}
             tooltip={monthlyProfitQuery.data ? (
               <div className="space-y-0.5">
                 <div>Vendas: {fmtMoney(monthlyProfitQuery.data.sales)}</div>
