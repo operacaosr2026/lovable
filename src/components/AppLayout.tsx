@@ -367,7 +367,7 @@ export function AppLayout() {
     return (
       <>
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
-          <img src="/favicon.png" alt="" className="size-9 rounded-lg shrink-0" />
+          <img src="/favicon.png" alt="" className="size-11 rounded-lg shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold leading-none text-white">SRX Growth</div>
           </div>
