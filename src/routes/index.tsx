@@ -253,7 +253,7 @@ function Dashboard() {
               value={gratitude}
               onChange={(e) => setGratitude(e.target.value)}
               placeholder="Pelo que você é grato hoje?"
-              className="flex-1 min-h-[100px] resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
+              className="flex-1 min-h-[260px] resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
             />
             <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
               <Link to="/gratitude" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
