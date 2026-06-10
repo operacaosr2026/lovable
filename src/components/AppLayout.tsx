@@ -59,9 +59,9 @@ const navGroups: NavGroup[] = [
           { to: "/shops", label: "Lojas", icon: Store },
           { to: "/shops/esteira", label: "Esteira de Lojas", icon: Workflow },
           { to: "/shops/products", label: "Produtos", icon: Package },
-          { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
         ],
       },
+      { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
     ],
   },
 ];
