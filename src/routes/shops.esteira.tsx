@@ -143,7 +143,7 @@ function EsteiraPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3 items-start">
+        <div className="grid gap-3 items-start" style={{ gridTemplateColumns: `repeat(${cols.columns.length}, minmax(0, 1fr))` }}>
           {cols.columns.map((col) => {
             const stage = col.id;
             const items = grouped[stage] ?? [];
