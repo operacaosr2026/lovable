@@ -19,7 +19,7 @@ export type AppSettings = {
 };
 
 const DEFAULTS: Omit<AppSettings, "user_id"> = {
-  app_name: "Adam App",
+  app_name: "SRX Growth",
   logo_url: null,
   favicon_url: null,
   primary_color: "oklch(0.58 0.22 295)",

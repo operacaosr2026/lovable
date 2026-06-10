@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/gratitude")({
   beforeLoad: requireAuth,
-  head: () => ({ meta: [{ title: "Gratidão — Orbit" }] }),
+  head: () => ({ meta: [{ title: "Gratidão — SRX Growth" }] }),
   component: GratitudePage,
 });
 

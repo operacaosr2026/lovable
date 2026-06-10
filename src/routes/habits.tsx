@@ -10,7 +10,7 @@ import { requireAuth } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/habits")({
   beforeLoad: requireAuth,
-  head: () => ({ meta: [{ title: "Hábitos — Orbit" }] }),
+  head: () => ({ meta: [{ title: "Hábitos — SRX Growth" }] }),
   component: HabitsPage,
 });
 

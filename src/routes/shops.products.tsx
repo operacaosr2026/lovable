@@ -5,7 +5,7 @@ export const Route = createFileRoute("/shops/products")({
   beforeLoad: requireAuth,
   head: () => ({
     meta: [
-      { title: "Produtos — Orbit" },
+      { title: "Produtos — SRX Growth" },
       { name: "description", content: "Central operacional dos seus produtos: imagens, criativos, templates e precificação." },
     ],
   }),

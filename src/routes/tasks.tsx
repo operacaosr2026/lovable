@@ -3,6 +3,6 @@ import { requireAuth } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/tasks")({
   beforeLoad: requireAuth,
-  head: () => ({ meta: [{ title: "Tarefas — Orbit" }] }),
+  head: () => ({ meta: [{ title: "Tarefas — SRX Growth" }] }),
   component: () => <Outlet />,
 });

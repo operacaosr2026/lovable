@@ -5,7 +5,7 @@ import { LayoutDashboard, ArrowLeftRight, Wallet, Settings, Upload } from "lucid
 
 export const Route = createFileRoute("/finance")({
   beforeLoad: requireAuth,
-  head: () => ({ meta: [{ title: "Financeiro — Orbit" }] }),
+  head: () => ({ meta: [{ title: "Financeiro — SRX Growth" }] }),
   component: FinanceLayout,
 });
 

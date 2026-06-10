@@ -66,7 +66,7 @@ function InvitePage() {
           <div className="size-10 rounded-2xl gradient-primary grid place-items-center text-primary-foreground">
             <Sparkles className="size-5" />
           </div>
-          <div className="text-xl font-bold tracking-tight">Orbit</div>
+          <div className="text-xl font-bold tracking-tight">SRX Growth</div>
         </div>
         <div className="rounded-3xl bg-surface border border-border p-7 soft-shadow">
           <h1 className="text-xl font-bold tracking-tight text-center">Você foi convidado{invite.ownerName ? ` por ${invite.ownerName}` : ""}</h1>

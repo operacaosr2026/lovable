@@ -357,12 +357,8 @@ export function AppLayout() {
     return (
       <>
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
-          <div className="size-9 rounded-xl gradient-primary grid place-items-center shadow-lg shadow-black/20 shrink-0">
-            <Sparkles className="size-4 text-white" />
-          </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold leading-none text-white">SRX Growth</div>
-            <div className="text-[11px] text-white/50 mt-1">Painel de controle</div>
           </div>
           <button
             onClick={() => setSidebarHidden(true)}

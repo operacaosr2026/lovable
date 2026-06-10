@@ -12,7 +12,7 @@ export const Route = createFileRoute("/shops/esteira")({
   component: EsteiraPage,
   head: () => ({
     meta: [
-      { title: "Esteira de Lojas — Orbit" },
+      { title: "Esteira de Lojas — SRX Growth" },
       { name: "description", content: "Pipeline kanban das suas lojas." },
     ],
   }),
