@@ -121,6 +121,10 @@ export function Track123IntegrationDialog({
                 placeholder={d?.api_key_masked ?? "Cole sua API Key"}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
+                autoComplete="off"
+                name="track123-api-key"
+                data-1p-ignore
+                data-lpignore="true"
               />
             </Field>
             <Field label="Token (opcional)" hint="Algumas integrações usam token adicional">
@@ -129,6 +133,10 @@ export function Track123IntegrationDialog({
                 placeholder={d?.token_masked ?? "Cole o token (opcional)"}
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
+                autoComplete="new-password"
+                name="track123-token"
+                data-1p-ignore
+                data-lpignore="true"
               />
             </Field>
 

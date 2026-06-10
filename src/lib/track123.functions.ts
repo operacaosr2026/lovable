@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 
 const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2";
+const TRACK123_API_V21 = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
 const DEFAULT_EVENT_RULES: Array<{ key: string; label: string; target: "shipped" | "delivered" | "problem" | "ignore" }> = [
   { key: "accepted_by_carrier", label: "Accepted by carrier", target: "shipped" },
@@ -173,60 +174,90 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
       return null;
     }
 
+    const numbers = (trackings ?? []).map((t) => t.tracking_number).filter((n): n is string => !!n);
+
     let updated = 0;
     let lastError: string | null = null;
-    for (const t of trackings ?? []) {
-      if (!t.tracking_number) continue;
+    const byTrackNo = new Map<string, any>();
+
+    if (numbers.length) {
+      // Best-effort registration: numbers already registered just come back as "duplicate" rejects, which is fine.
       try {
-        const r = await fetch(`${TRACK123_API_BASE}/track/info`, {
+        await fetch(`${TRACK123_API_V21}/track/import`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Track123-Api-Secret": integ.api_key },
-          body: JSON.stringify({ trackNos: [t.tracking_number] }),
+          body: JSON.stringify(numbers.map((n) => ({ trackNo: n }))),
         });
-        const text = await r.text();
-        if (!r.ok) { lastError = `Falha (${r.status}): ${text.slice(0, 200)}`; continue; }
-        let j: any;
-        try { j = JSON.parse(text); } catch { lastError = `Resposta inválida: ${text.slice(0, 200)}`; continue; }
-        const item = j?.data?.[0] ?? j?.data?.list?.[0];
-        if (!item) { lastError = `Sem dados para ${t.tracking_number}: ${text.slice(0, 200)}`; continue; }
+      } catch {/* ignore — querying below will surface real errors */}
 
-        const events = item.events ?? item.trackInfo ?? [];
-        const last = events[0] ?? null;
-        const lastLabel: string | null = last?.statusDescription ?? last?.context ?? null;
-        const lastAt: string | null = last?.date ?? last?.eventTime ?? null;
+      for (let i = 0; i < numbers.length; i += 100) {
+        const chunk = numbers.slice(i, i + 100);
+        try {
+          const r = await fetch(`${TRACK123_API_V21}/track/query`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Track123-Api-Secret": integ.api_key },
+            body: JSON.stringify({ trackNoInfos: chunk.map((n) => ({ trackNo: n })), queryPageSize: 100 }),
+          });
+          const text = await r.text();
+          if (!r.ok) { lastError = `Falha (${r.status}): ${text.slice(0, 200)}`; continue; }
+          let j: any;
+          try { j = JSON.parse(text); } catch { lastError = `Resposta inválida: ${text.slice(0, 200)}`; continue; }
+          if (j?.code && j.code !== "00000" && !j?.data) { lastError = `${j.code}: ${j.msg ?? text.slice(0, 200)}`; continue; }
 
-        const update: any = {
-          carrier: item.courierCode ?? item.carrierCode ?? null,
-          tracking_status: item.status ?? null,
-          last_event_at: lastAt,
-          last_event_label: lastLabel,
-          timeline: events.length ? events : t.timeline,
-        };
-
-        const target = matchRule(lastLabel) ?? matchRule(item?.status);
-        const nowDate = new Date().toISOString().slice(0, 10);
-        const orderUpdate: { payment_status?: string; shipped_at?: string; delivered_at?: string; problem_at?: string } = {};
-        if (target === "shipped") {
-          update.shipped_at = new Date().toISOString();
-          orderUpdate.payment_status = "shipped";
-          orderUpdate.shipped_at = nowDate;
-        } else if (target === "delivered") {
-          update.delivered_at = new Date().toISOString();
-          orderUpdate.delivered_at = nowDate;
-          orderUpdate.payment_status = "shipped";
-        } else if (target === "problem") {
-          update.problem_at = new Date().toISOString();
-          orderUpdate.problem_at = nowDate;
+          const content = j?.data?.accepted?.content ?? j?.data?.list ?? j?.data?.content ?? [];
+          for (const item of content) {
+            if (item?.trackNo) byTrackNo.set(item.trackNo, item);
+          }
+          const rejected = j?.data?.rejected?.content ?? [];
+          for (const rej of rejected) {
+            lastError = `${rej.trackNo ?? "?"}: ${rej.msg ?? rej.message ?? "rejeitado"}`.slice(0, 200);
+          }
+        } catch (e: any) {
+          lastError = String(e?.message ?? e).slice(0, 500);
         }
-
-        await supabase.from("shop_order_tracking").update(update).eq("id", t.id);
-        if (Object.keys(orderUpdate).length) {
-          await supabase.from("shop_orders").update(orderUpdate).eq("id", t.order_id);
-        }
-        updated++;
-      } catch (e: any) {
-        lastError = String(e?.message ?? e).slice(0, 500);
       }
+    }
+
+    for (const t of trackings ?? []) {
+      if (!t.tracking_number) continue;
+      const item = byTrackNo.get(t.tracking_number);
+      if (!item) { lastError = lastError ?? `Sem dados para ${t.tracking_number}`; continue; }
+
+      const logistics = item.localLogisticsInfo ?? item;
+      const events = logistics.trackingDetails ?? [];
+      const last = events[0] ?? null;
+      const lastLabel: string | null = last?.eventDetail ?? null;
+      const lastAt: string | null = last?.eventTime ?? last?.eventTimeZeroUTC ?? null;
+
+      const update: any = {
+        carrier: logistics.courierCode ?? null,
+        tracking_status: item.transitStatus ?? null,
+        last_event_at: lastAt,
+        last_event_label: lastLabel,
+        timeline: events.length ? events : t.timeline,
+      };
+
+      const target = matchRule(lastLabel) ?? matchRule(item.transitStatus) ?? matchRule(item.transitSubStatus);
+      const nowDate = new Date().toISOString().slice(0, 10);
+      const orderUpdate: { payment_status?: string; shipped_at?: string; delivered_at?: string; problem_at?: string } = {};
+      if (target === "shipped") {
+        update.shipped_at = new Date().toISOString();
+        orderUpdate.payment_status = "shipped";
+        orderUpdate.shipped_at = nowDate;
+      } else if (target === "delivered") {
+        update.delivered_at = new Date().toISOString();
+        orderUpdate.delivered_at = nowDate;
+        orderUpdate.payment_status = "shipped";
+      } else if (target === "problem") {
+        update.problem_at = new Date().toISOString();
+        orderUpdate.problem_at = nowDate;
+      }
+
+      await supabase.from("shop_order_tracking").update(update).eq("id", t.id);
+      if (Object.keys(orderUpdate).length) {
+        await supabase.from("shop_orders").update(orderUpdate).eq("id", t.order_id);
+      }
+      updated++;
     }
 
     const total = trackings?.length ?? 0;
