@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Loader2, Copy, ExternalLink, CheckCircle2, AlertCircle, Plus, Trash2,
+  Loader2, CheckCircle2, AlertCircle, Plus, Trash2,
   Truck, Package, AlertTriangle, Clock, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -89,8 +89,6 @@ export function Track123IntegrationDialog({
     onError: (e: any) => toast.error(e.message),
   });
 
-  const copy = (text: string) => { navigator.clipboard.writeText(text); toast.success("Copiado"); };
-
   const d = integ.data;
   const isConnected = Boolean(d?.configured);
 
@@ -104,7 +102,7 @@ export function Track123IntegrationDialog({
             </div>
             <div className="flex-1">
               <DialogTitle className="text-lg">Track123</DialogTitle>
-              <div className="text-xs text-muted-foreground">Rastreamento logístico automatizado por webhook</div>
+              <div className="text-xs text-muted-foreground">Rastreamento logístico sincronizado automaticamente a cada 12h</div>
             </div>
             <Badge variant="outline" className={cn(
               "text-[11px]",
@@ -148,15 +146,6 @@ export function Track123IntegrationDialog({
                 data-1p-ignore
                 data-lpignore="true"
               />
-            </Field>
-
-            <Field label="Webhook URL" hint="Cadastre essa URL no painel do Track123 → Webhooks">
-              <div className="flex gap-2">
-                <Input readOnly value={d?.webhook_url ?? ""} className="font-mono text-xs" />
-                <Button size="icon" variant="outline" onClick={() => d?.webhook_url && copy(d.webhook_url)} disabled={!d?.webhook_url}>
-                  <Copy className="size-4" />
-                </Button>
-              </div>
             </Field>
 
             <Field label="Link de rastreio" hint="URL da página de rastreio desta loja, com [CODE] no lugar do código de rastreio. Ex: https://minhaloja.com/apps/track123?nums=[CODE]">
@@ -224,24 +213,10 @@ export function Track123IntegrationDialog({
               Entre no painel Track123, vá em <strong>Settings → API</strong> e copie sua <strong>API Secret</strong>.
               Cole no campo <em>API Key</em> da aba Conexão e salve as credenciais.
             </Step>
-            <Step n={2} title="Cadastrar Webhook URL">
-              <div className="mt-1">
-                No painel Track123 → <strong>Settings → Webhooks → Add webhook</strong>, cole exatamente esta URL e selecione todos os eventos de tracking:
-              </div>
-              <div className="mt-2 flex gap-2">
-                <Input readOnly value={d?.webhook_url ?? "Salve as credenciais primeiro para gerar a URL"} className="font-mono text-[11px]" />
-                <Button size="icon" variant="outline" onClick={() => d?.webhook_url && copy(d.webhook_url)} disabled={!d?.webhook_url}>
-                  <Copy className="size-4" />
-                </Button>
-              </div>
-              <div className="mt-1.5 text-[11px] text-muted-foreground">
-                O último segmento da URL é o seu secret — não compartilhe esse link publicamente.
-              </div>
+            <Step n={2} title="Testar">
+              Volte aqui e clique em <strong>Testar conexão</strong>. A sincronização roda automaticamente a cada 12h, ou clique em <strong>Sincronizar tracking</strong> a qualquer momento.
             </Step>
-            <Step n={3} title="Testar">
-              Volte aqui e clique em <strong>Testar conexão</strong>. Se OK, os eventos passarão a chegar automaticamente.
-            </Step>
-            <Step n={4} title="Mapeamento de eventos">
+            <Step n={3} title="Mapeamento de eventos">
               Na aba <strong>Mapeamento</strong>, escolha quais eventos do Track123 disparam mudanças de status (Enviado, Entregue, Problema).
               Comece com os defaults e ajuste depois com base nos eventos reais que você receber.
             </Step>
