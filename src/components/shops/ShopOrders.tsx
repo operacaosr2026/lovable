@@ -180,12 +180,15 @@ export function ShopOrders({ shopId }: { shopId: string }) {
     };
     for (const g of groups) {
       for (const o of g.orders) {
+        const t = trackingByOrder.get(o.id);
+        if (!t?.tracking_number) {
+          if (!o.problem_at && !o.delivered_at) logistics.no_tracking.push({ order: o, tracking: t });
+          continue;
+        }
         if (o.payment_status === "paid" || o.payment_status === "shipped") {
-          const t = trackingByOrder.get(o.id);
           let bucket: LogisticsKey;
           if (o.problem_at) bucket = "problem";
           else if (o.delivered_at) bucket = "delivered";
-          else if (!t?.tracking_number) bucket = "no_tracking";
           else if (!t.last_event_at && !t.tracking_status) {
             const ageDays = (Date.now() - new Date(t.created_at).getTime()) / 86400_000;
             bucket = ageDays > 10 ? "problem" : "no_info";
