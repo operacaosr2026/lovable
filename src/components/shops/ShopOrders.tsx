@@ -349,11 +349,6 @@ export function ShopOrders({ shopId }: { shopId: string }) {
               <CheckCircle2 className="size-4" /> Marcar como pago ({selectedSummary.pendingIds.length})
             </Button>
           )}
-          {selectedSummary.paidIds.length > 0 && (
-            <Button size="sm" onClick={() => setShipOpen(true)}>
-              <Truck className="size-4" /> Marcar como enviado ({selectedSummary.paidIds.length})
-            </Button>
-          )}
         </div>
       )}
 
@@ -505,14 +500,6 @@ export function ShopOrders({ shopId }: { shopId: string }) {
         summary={selectedSummary}
         loading={pay.isPending}
         onConfirm={(date) => pay.mutate(date)}
-      />
-
-      <ShipDialog
-        open={shipOpen}
-        onClose={() => setShipOpen(false)}
-        ids={selectedSummary.paidIds}
-        loading={ship.isPending}
-        onConfirm={(date) => ship.mutate({ ids: selectedSummary.paidIds, date })}
       />
 
       <BatchesDialog
@@ -711,32 +698,6 @@ function PayDialog({ open, onClose, summary, loading, onConfirm }: {
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={() => onConfirm(date)} disabled={loading || summary.count === 0}>
             {loading && <Loader2 className="size-4 animate-spin" />} Confirmar pagamento
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ShipDialog({ open, onClose, ids, loading, onConfirm }: {
-  open: boolean; onClose: () => void; ids: string[]; loading: boolean; onConfirm: (date: string) => void;
-}) {
-  const [date, setDate] = useState(isoDate(new Date()));
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Marcar como enviado</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">{ids.length} pedidos pagos. Não gera movimentação financeira.</p>
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">Data do envio</label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={() => onConfirm(date)} disabled={loading || ids.length === 0}>
-            {loading && <Loader2 className="size-4 animate-spin" />} Confirmar envio
           </Button>
         </DialogFooter>
       </DialogContent>
