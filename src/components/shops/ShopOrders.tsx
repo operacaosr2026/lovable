@@ -309,7 +309,6 @@ export function ShopOrders({ shopId }: { shopId: string }) {
                 icon={c.icon}
                 label={c.label}
                 value={String(items.length)}
-                sub={c.sub}
                 tone={tone}
                 onClick={() => setLogisticsView(c.key)}
               />
