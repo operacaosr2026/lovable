@@ -40,6 +40,16 @@ function customerName(o: any): string | null {
 
 type FilterKey = "all" | "pending" | "paid" | "shipped" | "partial";
 
+type LogisticsKey = "no_tracking" | "no_info" | "in_transit" | "delivered" | "problem";
+
+const LOGISTICS_CATEGORIES: { key: LogisticsKey; label: string; sub: string; icon: React.ComponentType<{ className?: string }>; tone: "amber" | "emerald" | "sky" | "muted" | "rose" }[] = [
+  { key: "no_tracking", label: "Sem tracking", sub: "sem código de rastreio", icon: PackageX, tone: "amber" },
+  { key: "no_info", label: "Sem informação", sub: "aguardando atualização", icon: Clock, tone: "muted" },
+  { key: "in_transit", label: "Em trânsito", sub: "movimentando", icon: MapPin, tone: "sky" },
+  { key: "delivered", label: "Entregues", sub: "finalizados", icon: CheckCircle2, tone: "emerald" },
+  { key: "problem", label: "Problemas", sub: "requer atenção", icon: AlertTriangle, tone: "rose" },
+];
+
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pendente",
   paid: "Pago",
@@ -63,6 +73,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const [payOpen, setPayOpen] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
   const [batchesOpen, setBatchesOpen] = useState(false);
+  const [logisticsView, setLogisticsView] = useState<LogisticsKey | null>(null);
 
   const getSettingsFn = useServerFn(getOrderSettings);
   const listOrdersFn = useServerFn(listOrders);
@@ -130,28 +141,33 @@ export function ShopOrders({ shopId }: { shopId: string }) {
 
   // KPIs
   const kpis = useMemo(() => {
-    let pendingAmount = 0, pendingCount = 0, paidCount = 0, paidAmount = 0, shippedCount = 0;
-    let inTransit = 0, delivered = 0, problem = 0, withoutTracking = 0;
+    let pendingAmount = 0, pendingCount = 0, paidCount = 0, paidAmount = 0;
     let totalRevenue = 0, totalOrders = 0;
+    const logistics: Record<LogisticsKey, { order: any; tracking: any }[]> = {
+      no_tracking: [], no_info: [], in_transit: [], delivered: [], problem: [],
+    };
     for (const g of groups) {
       for (const o of g.orders) {
         const items = Number(o.items_count ?? 0);
         const cost = items * unitCost;
         if (o.payment_status === "pending") { pendingAmount += cost; pendingCount += 1; }
         else if (o.payment_status === "paid") { paidAmount += cost; paidCount += 1; }
-        else if (o.payment_status === "shipped") { shippedCount += 1; }
-        if (o.delivered_at) delivered += 1;
-        else if (o.payment_status === "shipped") inTransit += 1;
-        if (o.problem_at) problem += 1;
-        const t = trackingByOrder.get(o.id);
-        if (!t?.tracking_number && (o.payment_status === "paid" || o.payment_status === "shipped")) {
-          withoutTracking += 1;
-        }
         totalRevenue += Number(o.revenue ?? 0);
         totalOrders += 1;
+
+        if (o.payment_status === "paid" || o.payment_status === "shipped") {
+          const t = trackingByOrder.get(o.id);
+          let bucket: LogisticsKey;
+          if (o.problem_at) bucket = "problem";
+          else if (o.delivered_at) bucket = "delivered";
+          else if (!t?.tracking_number) bucket = "no_tracking";
+          else if (!t.last_event_at && !t.tracking_status) bucket = "no_info";
+          else bucket = "in_transit";
+          logistics[bucket].push({ order: o, tracking: t });
+        }
       }
     }
-    return { pendingAmount, pendingCount, paidAmount, paidCount, shippedCount, inTransit, delivered, problem, withoutTracking, totalRevenue, totalOrders };
+    return { pendingAmount, pendingCount, paidAmount, paidCount, totalRevenue, totalOrders, logistics };
   }, [groups, unitCost, trackingByOrder]);
 
 
@@ -248,11 +264,21 @@ export function ShopOrders({ shopId }: { shopId: string }) {
       <div>
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Logística</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Kpi icon={Truck} label="Enviados" value={String(kpis.shippedCount)} sub="total no período" tone="sky" />
-          <Kpi icon={MapPin} label="Em trânsito" value={String(kpis.inTransit)} sub="aguardando entrega" tone="sky" />
-          <Kpi icon={CheckCircle2} label="Entregues" value={String(kpis.delivered)} sub="finalizados" tone="emerald" />
-          <Kpi icon={AlertTriangle} label="Com problema" value={String(kpis.problem)} sub="requer atenção" tone={kpis.problem > 0 ? "rose" : "muted"} />
-          <Kpi icon={PackageX} label="Sem tracking" value={String(kpis.withoutTracking)} sub="pagos/enviados" tone={kpis.withoutTracking > 0 ? "amber" : "muted"} />
+          {LOGISTICS_CATEGORIES.map((c) => {
+            const items = kpis.logistics[c.key];
+            const tone = (c.key === "no_tracking" || c.key === "problem") && items.length === 0 ? "muted" : c.tone;
+            return (
+              <Kpi
+                key={c.key}
+                icon={c.icon}
+                label={c.label}
+                value={String(items.length)}
+                sub={c.sub}
+                tone={tone}
+                onClick={() => setLogisticsView(c.key)}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -489,6 +515,14 @@ export function ShopOrders({ shopId }: { shopId: string }) {
           qc.invalidateQueries({ queryKey: ["shop-cash"] });
         }}
       />
+
+      <LogisticsOrdersDialog
+        open={logisticsView !== null}
+        onClose={() => setLogisticsView(null)}
+        title={LOGISTICS_CATEGORIES.find((c) => c.key === logisticsView)?.label ?? ""}
+        items={logisticsView ? kpis.logistics[logisticsView] : []}
+        template={trackingTemplate}
+      />
     </div>
   );
 }
@@ -546,7 +580,7 @@ function TrackingCell({ shopId, orderId, tracking, template, onChanged }: {
   );
 }
 
-function Kpi({ icon: Icon, label, value, sub, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub?: string; tone: "amber" | "emerald" | "sky" | "muted" | "rose" }) {
+function Kpi({ icon: Icon, label, value, sub, tone, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub?: string; tone: "amber" | "emerald" | "sky" | "muted" | "rose"; onClick?: () => void }) {
   const toneCls = {
     amber: "border-amber-500/20 bg-amber-500/5",
     emerald: "border-emerald-500/20 bg-emerald-500/5",
@@ -561,8 +595,12 @@ function Kpi({ icon: Icon, label, value, sub, tone }: { icon: React.ComponentTyp
     rose: "bg-rose-500/10 text-rose-600",
     muted: "bg-muted text-muted-foreground",
   }[tone];
+  const Comp = onClick ? "button" : "div";
   return (
-    <div className={cn("rounded-xl border p-3.5", toneCls)}>
+    <Comp
+      className={cn("rounded-xl border p-3.5 text-left", toneCls, onClick && "cursor-pointer hover:brightness-95 transition-[filter]")}
+      onClick={onClick}
+    >
       <div className="flex items-center gap-2 mb-2">
         <div className={cn("size-6 rounded-md grid place-items-center shrink-0", iconCls)}>
           <Icon className="size-3.5" />
@@ -571,7 +609,60 @@ function Kpi({ icon: Icon, label, value, sub, tone }: { icon: React.ComponentTyp
       </div>
       <div className="text-lg font-semibold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
-    </div>
+    </Comp>
+  );
+}
+
+function LogisticsOrdersDialog({ open, onClose, title, items, template }: {
+  open: boolean; onClose: () => void; title: string; items: { order: any; tracking: any }[]; template: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="space-y-1.5">
+          {items.length === 0 && (
+            <div className="p-6 text-center text-sm text-muted-foreground">Nenhum pedido nesta categoria.</div>
+          )}
+          {items.map(({ order, tracking }) => {
+            const code = tracking?.tracking_number as string | undefined;
+            const url = code && template ? template.replace("[CODE]", encodeURIComponent(code)) : null;
+            return (
+              <div key={order.id} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+                <div className="font-mono text-xs text-muted-foreground w-20 shrink-0">
+                  {order.order_number ?? `#${(order.external_id ?? "").slice(-6)}`}
+                </div>
+                <div className="flex-1 min-w-0 truncate">
+                  {customerName(order) ?? <span className="text-muted-foreground">—</span>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {code ? (
+                    <>
+                      <span className="font-mono text-[11px]">{code}</span>
+                      <Button size="icon" variant="ghost" className="size-6" onClick={() => { navigator.clipboard.writeText(code); toast.success("Copiado"); }}>
+                        <Copy className="size-3" />
+                      </Button>
+                      {url && (
+                        <a href={url} target="_blank" rel="noreferrer" className="size-6 grid place-items-center hover:bg-muted rounded">
+                          <ExternalLink className="size-3" />
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">sem código</span>
+                  )}
+                </div>
+                {tracking?.last_event_label && (
+                  <div className="text-[11px] text-muted-foreground shrink-0 max-w-[160px] truncate" title={tracking.last_event_label}>
+                    {tracking.last_event_label}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
