@@ -47,11 +47,14 @@ const EVENT_LABEL_TRANSLATIONS: [RegExp, string][] = [
   [/^processed (at|through) (a |the )?facility/i, "Processado em uma unidade"],
   [/^shipment is on its way$/i, "Pedido a caminho"],
   [/^arriving (on time|early)/i, "Chegada prevista no prazo"],
+  [/^clearance processing completed at destination$/i, "Processo aduaneiro concluído"],
 ];
 
 function translateEventLabel(label: string): string {
+  // Strip a leading "US, " / "BR, " country-code prefix before matching.
+  const text = label.trim().replace(/^[A-Z]{2},\s*/, "");
   for (const [re, pt] of EVENT_LABEL_TRANSLATIONS) {
-    if (re.test(label.trim())) return pt;
+    if (re.test(text)) return pt;
   }
   return label;
 }
