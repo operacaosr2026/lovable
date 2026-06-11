@@ -309,12 +309,6 @@ export function ShopOrders({ shopId }: { shopId: string }) {
           {sync.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           Sincronizar pedidos
         </Button>
-        <Button onClick={() => recompute.mutate()} disabled={recompute.isPending} size="sm" variant="outline">
-          Recalcular custos
-        </Button>
-        <Button onClick={() => setBatchesOpen(true)} size="sm" variant="outline">
-          Lotes
-        </Button>
         <div className="flex-1" />
         <Button onClick={() => setOpenCost(true)} size="sm" variant="outline">
           <DollarSign className="size-4" /> Custo: {fmtMoney(unitCost)}
