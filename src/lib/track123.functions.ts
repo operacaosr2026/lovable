@@ -4,13 +4,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 
-const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2";
+const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
 const DEFAULT_EVENT_RULES: Array<{ key: string; label: string; target: "shipped" | "delivered" | "problem" | "ignore" }> = [
   { key: "accepted_by_carrier", label: "Accepted by carrier", target: "shipped" },
   { key: "shipment_picked_up", label: "Shipment picked up", target: "shipped" },
   { key: "departed_from_sorting_center", label: "Departed from sorting center", target: "shipped" },
-  { key: "in_transit", label: "In transit", target: "ignore" },
+  { key: "in_transit", label: "In transit", target: "shipped" },
   { key: "arrived_at_destination", label: "Arrived at destination", target: "ignore" },
   { key: "out_for_delivery", label: "Out for delivery", target: "ignore" },
   { key: "delivered", label: "Delivered", target: "delivered" },
@@ -117,9 +117,8 @@ export const testTrack123Connection = createServerFn({ method: "POST" })
 
     try {
       const r = await fetch(`${TRACK123_API_BASE}/courier/list`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "accept": "application/json", "Track123-Api-Secret": row.api_key },
-        body: JSON.stringify({}),
+        method: "GET",
+        headers: { "accept": "application/json", "Track123-Api-Secret": row.api_key },
       });
       const text = await r.text();
       let j: any = null;
@@ -143,23 +142,15 @@ export const testTrack123Connection = createServerFn({ method: "POST" })
     }
   });
 
-export const syncTrack123Tracking = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { data: integ } = await supabaseAdmin.from("track123_integrations")
-      .select("api_key").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!integ?.api_key) throw new Error("Integração não configurada");
-
+export async function runTrack123Sync(shopId: string, apiKey: string, supabase: typeof supabaseAdmin) {
     // Get tracking numbers from existing tracking rows
     const { data: trackings } = await supabase.from("shop_order_tracking")
-      .select("id,order_id,tracking_number,timeline").eq("shop_id", data.shop_id)
-      .not("tracking_number", "is", null).limit(200);
+      .select("id,order_id,tracking_number,timeline").eq("shop_id", shopId)
+      .not("tracking_number", "is", null).limit(50);
 
     const { data: rules } = await supabase.from("track123_event_rules")
       .select("event_key,event_label,target_status,enabled")
-      .eq("shop_id", data.shop_id).eq("enabled", true);
+      .eq("shop_id", shopId).eq("enabled", true);
 
     const ruleMap = new Map<string, string>();
     for (const r of rules ?? []) {
@@ -185,18 +176,30 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
     const track123Headers = {
       "Content-Type": "application/json",
       "accept": "application/json",
-      "Track123-Api-Secret": integ.api_key,
+      "Track123-Api-Secret": apiKey,
     };
 
+    let importError: string | null = null;
     if (numbers.length) {
       // Best-effort registration: numbers already registered just come back as "duplicate" rejects, which is fine.
-      try {
-        await fetch(`${TRACK123_API_BASE}/track/import`, {
-          method: "POST",
-          headers: track123Headers,
-          body: JSON.stringify(numbers.map((n) => ({ trackNo: n }))),
-        });
-      } catch {/* ignore — querying below will surface real errors */}
+      // Small batches so a low remaining credit balance only blocks the numbers that don't fit.
+      for (let i = 0; i < numbers.length; i += 25) {
+        const chunk = numbers.slice(i, i + 25);
+        try {
+          const r = await fetch(`${TRACK123_API_BASE}/track/import`, {
+            method: "POST",
+            headers: track123Headers,
+            body: JSON.stringify(chunk.map((n) => ({ trackNo: n }))),
+          });
+          const text = await r.text();
+          let j: any;
+          try { j = JSON.parse(text); } catch { continue; }
+          if (j?.code && j.code !== "00000") {
+            importError = `Registro (${j.code}): ${j.msg ?? text.slice(0, 200)}`;
+            if (j.code === "101107") break; // out of credit — further chunks will fail too
+          }
+        } catch {/* ignore — querying below will surface real errors */}
+      }
 
       for (let i = 0; i < numbers.length; i += 100) {
         const chunk = numbers.slice(i, i + 100);
@@ -204,7 +207,7 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
           const r = await fetch(`${TRACK123_API_BASE}/track/query`, {
             method: "POST",
             headers: track123Headers,
-            body: JSON.stringify({ trackNos: chunk }),
+            body: JSON.stringify({ trackNoInfos: chunk.map((trackNo) => ({ trackNo })), queryPageSize: 100 }),
           });
           const text = await r.text();
           if (!r.ok) { lastError = `Falha (${r.status}): ${text.slice(0, 200)}`; continue; }
@@ -216,9 +219,10 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
           for (const item of content) {
             if (item?.trackNo) byTrackNo.set(item.trackNo, item);
           }
-          const rejected = j?.data?.rejected?.content ?? [];
+          const rejected = j?.data?.rejected?.content ?? j?.data?.rejected ?? [];
           for (const rej of rejected) {
-            lastError = `${rej.trackNo ?? "?"}: ${rej.msg ?? rej.message ?? "rejeitado"}`.slice(0, 200);
+            const reason = rej.error?.msg ?? rej.msg ?? rej.message ?? "rejeitado";
+            lastError = `${rej.trackNo ?? "?"}: ${reason}`.slice(0, 200);
           }
         } catch (e: any) {
           lastError = String(e?.message ?? e).slice(0, 500);
@@ -276,17 +280,31 @@ export const syncTrack123Tracking = createServerFn({ method: "POST" })
       errorMsg = "Nenhum pedido com código de rastreio para sincronizar.";
     } else if (updated === 0) {
       status = "error";
-      errorMsg = lastError ?? "Falha ao sincronizar rastreios.";
+      errorMsg = importError ?? lastError ?? "Falha ao sincronizar rastreios.";
     } else {
       status = "ok";
-      errorMsg = lastError ? `${updated}/${total} sincronizados. Último erro: ${lastError}` : null;
+      const err = importError ?? lastError;
+      errorMsg = err ? `${updated}/${total} sincronizados. Último erro: ${err}` : null;
     }
 
     await supabaseAdmin.from("track123_integrations")
       .update({ last_sync_at: new Date().toISOString(), last_sync_status: status, last_sync_error: errorMsg })
-      .eq("user_id", userId).eq("shop_id", data.shop_id);
+      .eq("shop_id", shopId);
 
-    return { updated, total };
+    return { updated, total, status, errorMsg };
+}
+
+export const syncTrack123Tracking = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: integ } = await supabaseAdmin.from("track123_integrations")
+      .select("api_key").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!integ?.api_key) throw new Error("Integração não configurada");
+
+    const result = await runTrack123Sync(data.shop_id, integ.api_key, supabase);
+    return { updated: result.updated, total: result.total };
   });
 
 // ===== Event rules =====
@@ -371,13 +389,13 @@ export const setOrderTracking = createServerFn({ method: "POST" })
 
 export const listOrdersTracking = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shop_id: string; order_ids: string[] }) =>
-    z.object({ shop_id: z.string().uuid(), order_ids: z.array(z.string().uuid()).max(500) }).parse(d)
+  .inputValidator((d: { shop_id: string }) =>
+    z.object({ shop_id: z.string().uuid() }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    if (!data.order_ids.length) return [];
-    const { data: rows } = await context.supabase.from("shop_order_tracking")
-      .select("*").eq("shop_id", data.shop_id).in("order_id", data.order_ids);
+    const { data: rows, error } = await context.supabase.from("shop_order_tracking")
+      .select("*").eq("shop_id", data.shop_id);
+    if (error) throw new Error(error.message);
     return rows ?? [];
   });
 

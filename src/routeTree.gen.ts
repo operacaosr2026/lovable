@@ -46,6 +46,7 @@ import { Route as ShopsSopsProcessIdRouteImport } from './routes/shops.sops.$pro
 import { Route as ShopsProductsProductIdRouteImport } from './routes/shops.products.$productId'
 import { Route as ApiPublicShopifyCallbackRouteImport } from './routes/api/public/shopify/callback'
 import { Route as ApiPublicHooksTaskNotificationsRouteImport } from './routes/api/public/hooks/task-notifications'
+import { Route as ApiPublicHooksSyncTrack123RouteImport } from './routes/api/public/hooks/sync-track123'
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from './routes/api/public/hooks/sync-shop-orders'
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from './routes/api/public/hooks/track123.$shopId.$secret'
 import { Route as ApiPublicHooksMailPollStatusInboxIdRouteImport } from './routes/api/public/hooks/mail.poll-status.$inboxId'
@@ -238,6 +239,12 @@ const ApiPublicHooksTaskNotificationsRoute =
     path: '/api/public/hooks/task-notifications',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksSyncTrack123Route =
+  ApiPublicHooksSyncTrack123RouteImport.update({
+    id: '/api/public/hooks/sync-track123',
+    path: '/api/public/hooks/sync-track123',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksSyncShopOrdersRoute =
   ApiPublicHooksSyncShopOrdersRouteImport.update({
     id: '/api/public/hooks/sync-shop-orders',
@@ -300,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/shops/products/': typeof ShopsProductsIndexRoute
   '/shops/sops/': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
+  '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
   '/api/public/hooks/task-notifications': typeof ApiPublicHooksTaskNotificationsRoute
   '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
   '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
@@ -336,6 +344,7 @@ export interface FileRoutesByTo {
   '/shops/products': typeof ShopsProductsIndexRoute
   '/shops/sops': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
+  '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
   '/api/public/hooks/task-notifications': typeof ApiPublicHooksTaskNotificationsRoute
   '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
   '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
@@ -380,6 +389,7 @@ export interface FileRoutesById {
   '/shops/products/': typeof ShopsProductsIndexRoute
   '/shops/sops/': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
+  '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
   '/api/public/hooks/task-notifications': typeof ApiPublicHooksTaskNotificationsRoute
   '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
   '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
@@ -425,6 +435,7 @@ export interface FileRouteTypes {
     | '/shops/products/'
     | '/shops/sops/'
     | '/api/public/hooks/sync-shop-orders'
+    | '/api/public/hooks/sync-track123'
     | '/api/public/hooks/task-notifications'
     | '/api/public/shopify/callback'
     | '/api/public/hooks/mail/inbound/$inboxId'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/shops/products'
     | '/shops/sops'
     | '/api/public/hooks/sync-shop-orders'
+    | '/api/public/hooks/sync-track123'
     | '/api/public/hooks/task-notifications'
     | '/api/public/shopify/callback'
     | '/api/public/hooks/mail/inbound/$inboxId'
@@ -504,6 +516,7 @@ export interface FileRouteTypes {
     | '/shops/products/'
     | '/shops/sops/'
     | '/api/public/hooks/sync-shop-orders'
+    | '/api/public/hooks/sync-track123'
     | '/api/public/hooks/task-notifications'
     | '/api/public/shopify/callback'
     | '/api/public/hooks/mail/inbound/$inboxId'
@@ -525,6 +538,7 @@ export interface RootRouteChildren {
   WhiteboardRoute: typeof WhiteboardRouteWithChildren
   InviteTokenRoute: typeof InviteTokenRoute
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute
+  ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route
   ApiPublicHooksTaskNotificationsRoute: typeof ApiPublicHooksTaskNotificationsRoute
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute
   ApiPublicHooksMailInboundInboxIdRoute: typeof ApiPublicHooksMailInboundInboxIdRoute
@@ -793,6 +807,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksTaskNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/sync-track123': {
+      id: '/api/public/hooks/sync-track123'
+      path: '/api/public/hooks/sync-track123'
+      fullPath: '/api/public/hooks/sync-track123'
+      preLoaderRoute: typeof ApiPublicHooksSyncTrack123RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/sync-shop-orders': {
       id: '/api/public/hooks/sync-shop-orders'
       path: '/api/public/hooks/sync-shop-orders'
@@ -949,6 +970,7 @@ const rootRouteChildren: RootRouteChildren = {
   WhiteboardRoute: WhiteboardRouteWithChildren,
   InviteTokenRoute: InviteTokenRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
+  ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
   ApiPublicHooksTaskNotificationsRoute: ApiPublicHooksTaskNotificationsRoute,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
   ApiPublicHooksMailInboundInboxIdRoute: ApiPublicHooksMailInboundInboxIdRoute,

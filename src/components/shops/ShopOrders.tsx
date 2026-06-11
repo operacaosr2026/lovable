@@ -77,11 +77,9 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const listTrackingFn = useServerFn(listOrdersTracking);
   const getTrack123Fn = useServerFn(getTrack123Integration);
   const track123 = useQuery({ queryKey: ["track123-integration", shopId], queryFn: () => getTrack123Fn({ data: { shop_id: shopId } }) });
-  const orderIds = useMemo(() => (orders.data ?? []).map((o: any) => o.id), [orders.data]);
   const trackings = useQuery({
-    enabled: orderIds.length > 0,
-    queryKey: ["order-trackings", shopId, orderIds],
-    queryFn: () => listTrackingFn({ data: { shop_id: shopId, order_ids: orderIds } }),
+    queryKey: ["order-trackings", shopId],
+    queryFn: () => listTrackingFn({ data: { shop_id: shopId } }),
   });
   const trackingByOrder = useMemo(() => {
     const m = new Map<string, any>();
