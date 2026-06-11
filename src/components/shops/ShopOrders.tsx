@@ -25,6 +25,37 @@ function addDays(date: string, days: number) {
 }
 function localDate(date: string) { return new Date(date + "T00:00:00"); }
 function fmtMoney(n: number) { return n.toLocaleString("en-US", { style: "currency", currency: "USD" }); }
+const EVENT_LABEL_TRANSLATIONS: [RegExp, string][] = [
+  [/^order received$/i, "Pedido recebido"],
+  [/^shipment information received$/i, "Informações de envio recebidas"],
+  [/^accepted by carrier$/i, "Aceito pela transportadora"],
+  [/^shipment picked up$/i, "Coletado pela transportadora"],
+  [/^departed from sorting center$/i, "Saiu do centro de triagem"],
+  [/^arrived at sorting center$/i, "Chegou ao centro de triagem"],
+  [/^arrived at destination$/i, "Chegou ao destino"],
+  [/^in transit$/i, "Em trânsito"],
+  [/^out for delivery$/i, "Saiu para entrega"],
+  [/^delivered$/i, "Entregue"],
+  [/^failed delivery attempt$/i, "Tentativa de entrega falhou"],
+  [/^expired$/i, "Expirado"],
+  [/^exception$/i, "Exceção"],
+  [/^started the customs clearance/i, "Iniciou o desembaraço aduaneiro"],
+  [/^customs clearance (has been )?completed/i, "Desembaraço aduaneiro concluído"],
+  [/^held by customs/i, "Retido na alfândega"],
+  [/^arrived at the destination country/i, "Chegou ao país de destino"],
+  [/^arrived at (a |the )?(local )?facility/i, "Chegou a uma unidade local"],
+  [/^processed (at|through) (a |the )?facility/i, "Processado em uma unidade"],
+  [/^shipment is on its way$/i, "Pedido a caminho"],
+  [/^arriving (on time|early)/i, "Chegada prevista no prazo"],
+];
+
+function translateEventLabel(label: string): string {
+  for (const [re, pt] of EVENT_LABEL_TRANSLATIONS) {
+    if (re.test(label.trim())) return pt;
+  }
+  return label;
+}
+
 function customerName(o: any): string | null {
   const r = o?.raw ?? {};
   const c = r.customer ?? {};
@@ -654,7 +685,7 @@ function LogisticsOrdersDialog({ open, onClose, title, items, template }: {
                 </div>
                 {tracking?.last_event_label && (
                   <div className="text-[11px] text-muted-foreground shrink-0 max-w-[160px] truncate" title={tracking.last_event_label}>
-                    {tracking.last_event_label}
+                    {translateEventLabel(tracking.last_event_label)}
                   </div>
                 )}
               </div>
