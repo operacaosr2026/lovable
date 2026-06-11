@@ -185,16 +185,14 @@ export function ShopOrders({ shopId }: { shopId: string }) {
           if (!o.problem_at && !o.delivered_at) logistics.no_tracking.push({ order: o, tracking: t });
           continue;
         }
-        if (o.payment_status === "paid" || o.payment_status === "shipped") {
-          let bucket: LogisticsKey;
-          if (o.problem_at) bucket = "problem";
-          else if (o.delivered_at) bucket = "delivered";
-          else if (!t.last_event_at && !t.tracking_status) {
-            const ageDays = (Date.now() - new Date(t.created_at).getTime()) / 86400_000;
-            bucket = ageDays > 10 ? "problem" : "no_info";
-          } else bucket = "in_transit";
-          logistics[bucket].push({ order: o, tracking: t });
-        }
+        let bucket: LogisticsKey;
+        if (o.problem_at) bucket = "problem";
+        else if (o.delivered_at) bucket = "delivered";
+        else if (!t.last_event_at && !t.tracking_status) {
+          const ageDays = (Date.now() - new Date(t.created_at).getTime()) / 86400_000;
+          bucket = ageDays > 10 ? "problem" : "no_info";
+        } else bucket = "in_transit";
+        logistics[bucket].push({ order: o, tracking: t });
       }
     }
     return { logistics };
