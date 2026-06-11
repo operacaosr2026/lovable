@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package, Clock, Wallet, TrendingUp, MapPin, AlertTriangle, PackageX } from "lucide-react";
+import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package, Clock, MapPin, AlertTriangle, PackageX } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -76,9 +76,9 @@ type FilterKey = "all" | "pending" | "paid" | "shipped" | "partial";
 
 type LogisticsKey = "no_tracking" | "no_info" | "in_transit" | "delivered" | "problem";
 
-const LOGISTICS_CATEGORIES: { key: LogisticsKey; label: string; sub: string; icon: React.ComponentType<{ className?: string }>; tone: "amber" | "emerald" | "sky" | "muted" | "rose" }[] = [
+const LOGISTICS_CATEGORIES: { key: LogisticsKey; label: string; sub: string; icon: React.ComponentType<{ className?: string }>; tone: KpiTone }[] = [
   { key: "no_tracking", label: "Sem tracking", sub: "sem código de rastreio", icon: PackageX, tone: "amber" },
-  { key: "no_info", label: "Sem informação", sub: "aguardando atualização", icon: Clock, tone: "muted" },
+  { key: "no_info", label: "Sem informação", sub: "aguardando atualização", icon: Clock, tone: "violet" },
   { key: "in_transit", label: "Em trânsito", sub: "movimentando", icon: MapPin, tone: "sky" },
   { key: "delivered", label: "Entregues", sub: "finalizados", icon: CheckCircle2, tone: "emerald" },
   { key: "problem", label: "Problemas", sub: "requer atenção", icon: AlertTriangle, tone: "rose" },
@@ -175,20 +175,11 @@ export function ShopOrders({ shopId }: { shopId: string }) {
 
   // KPIs
   const kpis = useMemo(() => {
-    let pendingAmount = 0, pendingCount = 0, paidCount = 0, paidAmount = 0;
-    let totalRevenue = 0, totalOrders = 0;
     const logistics: Record<LogisticsKey, { order: any; tracking: any }[]> = {
       no_tracking: [], no_info: [], in_transit: [], delivered: [], problem: [],
     };
     for (const g of groups) {
       for (const o of g.orders) {
-        const items = Number(o.items_count ?? 0);
-        const cost = items * unitCost;
-        if (o.payment_status === "pending") { pendingAmount += cost; pendingCount += 1; }
-        else if (o.payment_status === "paid") { paidAmount += cost; paidCount += 1; }
-        totalRevenue += Number(o.revenue ?? 0);
-        totalOrders += 1;
-
         if (o.payment_status === "paid" || o.payment_status === "shipped") {
           const t = trackingByOrder.get(o.id);
           let bucket: LogisticsKey;
@@ -203,8 +194,8 @@ export function ShopOrders({ shopId }: { shopId: string }) {
         }
       }
     }
-    return { pendingAmount, pendingCount, paidAmount, paidCount, totalRevenue, totalOrders, logistics };
-  }, [groups, unitCost, trackingByOrder]);
+    return { logistics };
+  }, [groups, trackingByOrder]);
 
 
   // Filtered groups
@@ -289,27 +280,17 @@ export function ShopOrders({ shopId }: { shopId: string }) {
     <div className="space-y-5">
       {/* Dashboard operacional */}
       <div>
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Financeiro</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Kpi icon={Clock} label="Pendente de pagamento" value={fmtMoney(kpis.pendingAmount)} sub={`${kpis.pendingCount} pedidos`} tone="amber" />
-          <Kpi icon={Wallet} label="Pago não enviado" value={fmtMoney(kpis.paidAmount)} sub={`${kpis.paidCount} pedidos`} tone="sky" />
-          <Kpi icon={DollarSign} label="Custo por item" value={fmtMoney(unitCost)} sub="padrão da loja" tone="muted" />
-          <Kpi icon={TrendingUp} label="Faturamento" value={fmtMoney(kpis.totalRevenue)} sub={`${kpis.totalOrders} pedidos`} tone="emerald" />
-        </div>
-      </div>
-      <div>
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Logística</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {LOGISTICS_CATEGORIES.map((c) => {
             const items = kpis.logistics[c.key];
-            const tone = (c.key === "no_tracking" || c.key === "problem") && items.length === 0 ? "muted" : c.tone;
             return (
               <Kpi
                 key={c.key}
                 icon={c.icon}
                 label={c.label}
                 value={String(items.length)}
-                tone={tone}
+                tone={c.tone}
                 onClick={() => setLogisticsView(c.key)}
               />
             );
@@ -615,12 +596,15 @@ function TrackingCell({ shopId, orderId, tracking, template, onChanged }: {
   );
 }
 
-function Kpi({ icon: Icon, label, value, sub, tone, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub?: string; tone: "amber" | "emerald" | "sky" | "muted" | "rose"; onClick?: () => void }) {
+type KpiTone = "amber" | "emerald" | "sky" | "muted" | "rose" | "violet";
+
+function Kpi({ icon: Icon, label, value, sub, tone, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub?: string; tone: KpiTone; onClick?: () => void }) {
   const toneCls = {
     amber: "border-amber-500/20 bg-amber-500/5",
     emerald: "border-emerald-500/20 bg-emerald-500/5",
     sky: "border-sky-500/20 bg-sky-500/5",
     rose: "border-rose-500/20 bg-rose-500/5",
+    violet: "border-violet-500/20 bg-violet-500/5",
     muted: "border-border bg-surface",
   }[tone];
   const iconCls = {
@@ -628,6 +612,7 @@ function Kpi({ icon: Icon, label, value, sub, tone, onClick }: { icon: React.Com
     emerald: "bg-emerald-500/10 text-emerald-600",
     sky: "bg-sky-500/10 text-sky-600",
     rose: "bg-rose-500/10 text-rose-600",
+    violet: "bg-violet-500/10 text-violet-600",
     muted: "bg-muted text-muted-foreground",
   }[tone];
   const Comp = onClick ? "button" : "div";
