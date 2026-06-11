@@ -326,9 +326,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
         {([
           ["all", "Todos"],
           ["pending", "Pendentes"],
-          ["partial", "Parciais"],
           ["paid", "Pagos"],
-          ["shipped", "Enviados"],
         ] as const).map(([k, label]) => (
           <button
             key={k}
