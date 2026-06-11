@@ -88,7 +88,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
     for (const t of trackings.data ?? []) m.set(t.order_id, t);
     return m;
   }, [trackings.data]);
-  const trackingTemplate = track123.data?.tracking_link_template ?? "https://chierie.com/apps/track123?nums=[CODE]";
+  const trackingTemplate = track123.data?.tracking_link_template ?? "";
 
   const sync = useMutation({
     mutationFn: () => syncFn({ data: { shop_id: shopId, since_days: 30 } }),

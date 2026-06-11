@@ -47,6 +47,7 @@ export function Track123IntegrationDialog({
 
   const [apiKey, setApiKey] = useState("");
   const [token, setToken] = useState("");
+  const [linkTemplate, setLinkTemplate] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: () => upsertFn({ data: {
@@ -57,6 +58,15 @@ export function Track123IntegrationDialog({
     onSuccess: () => {
       toast.success("Integração salva");
       setApiKey(""); setToken("");
+      qc.invalidateQueries({ queryKey: ["track123-integration", shopId] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const saveLinkTemplate = useMutation({
+    mutationFn: (tracking_link_template: string) => upsertFn({ data: { shop_id: shopId, tracking_link_template } }),
+    onSuccess: () => {
+      toast.success("Link de rastreio salvo");
       qc.invalidateQueries({ queryKey: ["track123-integration", shopId] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -145,6 +155,25 @@ export function Track123IntegrationDialog({
                 <Input readOnly value={d?.webhook_url ?? ""} className="font-mono text-xs" />
                 <Button size="icon" variant="outline" onClick={() => d?.webhook_url && copy(d.webhook_url)} disabled={!d?.webhook_url}>
                   <Copy className="size-4" />
+                </Button>
+              </div>
+            </Field>
+
+            <Field label="Link de rastreio" hint="URL da página de rastreio desta loja, com [CODE] no lugar do código de rastreio. Ex: https://minhaloja.com/apps/track123?nums=[CODE]">
+              <div className="flex gap-2">
+                <Input
+                  value={linkTemplate ?? d?.tracking_link_template ?? ""}
+                  onChange={(e) => setLinkTemplate(e.target.value)}
+                  placeholder="https://minhaloja.com/apps/track123?nums=[CODE]"
+                  className="font-mono text-xs"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => saveLinkTemplate.mutate((linkTemplate ?? d?.tracking_link_template ?? "").trim())}
+                  disabled={saveLinkTemplate.isPending || linkTemplate === null}
+                >
+                  {saveLinkTemplate.isPending && <Loader2 className="size-4 animate-spin" />}
+                  Salvar
                 </Button>
               </div>
             </Field>

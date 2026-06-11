@@ -449,10 +449,25 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
       const payoutDate = addDays(processedDate, PENDING_PAYOUT_DELAY_DAYS);
       byDate.set(payoutDate, (byDate.get(payoutDate) ?? 0) + Number(t.net ?? 0));
     }
+
     const items = Array.from(byDate.entries())
       .map(([date, amount]) => ({ date, amount }))
       .sort((a, b) => a.date.localeCompare(b.date));
-    const pending = items.reduce((s, i) => s + i.amount, 0);
+    const pendingFromTx = items.reduce((s, i) => s + i.amount, 0);
+
+    // Payouts já criados pela Shopify mas ainda não depositados (agendados/em trânsito)
+    // representam dinheiro a receber que não aparece mais em balance/transactions com
+    // payout_id null. Eles já entram no caixa como lançamentos sincronizados (shopify_sync),
+    // então somamos só ao total "a receber", sem duplicá-los nos itens de projeção.
+    const since = new Date(); since.setUTCDate(since.getUTCDate() - 14);
+    const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
+    let scheduledTotal = 0;
+    for (const p of payouts) {
+      if (p.id == null || (p.status !== "scheduled" && p.status !== "in_transit")) continue;
+      scheduledTotal += Number(p.amount ?? 0);
+    }
+
+    const pending = pendingFromTx + scheduledTotal;
     const currency = pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
     return { connected: true, pending, currency, items };
   });

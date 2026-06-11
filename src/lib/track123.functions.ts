@@ -44,7 +44,7 @@ export const getTrack123Integration = createServerFn({ method: "POST" })
         token_masked: null,
         webhook_secret: null,
         webhook_url: null,
-        tracking_link_template: "https://chierie.com/apps/track123?nums=[CODE]",
+        tracking_link_template: null,
         last_sync_at: null,
         last_sync_status: null,
         last_sync_error: null,
