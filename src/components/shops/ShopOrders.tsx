@@ -195,8 +195,10 @@ export function ShopOrders({ shopId }: { shopId: string }) {
           if (o.problem_at) bucket = "problem";
           else if (o.delivered_at) bucket = "delivered";
           else if (!t?.tracking_number) bucket = "no_tracking";
-          else if (!t.last_event_at && !t.tracking_status) bucket = "no_info";
-          else bucket = "in_transit";
+          else if (!t.last_event_at && !t.tracking_status) {
+            const ageDays = (Date.now() - new Date(t.created_at).getTime()) / 86400_000;
+            bucket = ageDays > 10 ? "problem" : "no_info";
+          } else bucket = "in_transit";
           logistics[bucket].push({ order: o, tracking: t });
         }
       }
