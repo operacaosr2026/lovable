@@ -87,12 +87,12 @@ const LOGISTICS_CATEGORIES: { key: LogisticsKey; label: string; sub: string; ico
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pendente",
   paid: "Pago",
-  shipped: "Enviado",
+  shipped: "Pago",
 };
 const STATUS_TONE: Record<string, string> = {
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   paid: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-  shipped: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+  shipped: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   partial: "bg-violet-500/10 text-violet-600 border-violet-500/20",
 };
 
