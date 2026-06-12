@@ -149,6 +149,7 @@ export function TaskDetailDialog({
         for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
         setDirty(false);
         toast.success("Tarefa criada");
+        onOpenChange(false);
         return;
       }
 
@@ -170,6 +171,7 @@ export function TaskDetailDialog({
       qc.invalidateQueries({ queryKey: ["task-detail", effectiveSource, effectiveId] });
       setDirty(false);
       toast.success("Tarefa salva");
+      onOpenChange(false);
     } catch (e: any) {
       toast.error("Erro ao salvar", { description: e.message });
     } finally {

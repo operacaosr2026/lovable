@@ -10,7 +10,8 @@
       "PowerShell(netstat -ano)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "mcp__claude_ai_Supabase__execute_sql"
     ]
   }
 }
