@@ -6,6 +6,7 @@ import {
   listOrders, syncShopifyOrders, recomputeRange,
   updateUnitCost, listCostHistory,
   markOrdersPaid, markOrdersShipped, listPaymentBatches, undoOrderPayment,
+  syncOrderPaymentTasks,
 } from "@/lib/shop-orders.functions";
 import { listOrdersTracking, setOrderTracking, getTrack123Integration } from "@/lib/track123.functions";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,17 @@ export function ShopOrders({ shopId }: { shopId: string }) {
 
   const settings = useQuery({ queryKey: ["order-settings", shopId], queryFn: () => getSettingsFn({ data: { shop_id: shopId } }) });
   const orders = useQuery({ queryKey: ["orders", shopId, from, to], queryFn: () => listOrdersFn({ data: { shop_id: shopId, from, to } }) });
+
+  const syncPaymentTasksFn = useServerFn(syncOrderPaymentTasks);
+  useQuery({
+    queryKey: ["sync-payment-tasks", shopId],
+    queryFn: async () => {
+      const r = await syncPaymentTasksFn({ data: { shop_id: shopId } });
+      if (r.created > 0) qc.invalidateQueries({ queryKey: ["shop-tasks", shopId] });
+      return r;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const listTrackingFn = useServerFn(listOrdersTracking);
   const getTrack123Fn = useServerFn(getTrack123Integration);

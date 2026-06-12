@@ -15,6 +15,7 @@ import {
 } from "@/lib/dashboard.functions";
 import { saveGratitudeEntry } from "@/lib/gratitude.functions";
 import { listTasks, updateTask, getRoutineLogs } from "@/lib/tasks.functions";
+import { updateShopTask } from "@/lib/shop-tasks.functions";
 import { listShops } from "@/lib/shops.functions";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useAuth } from "@/lib/auth";
@@ -67,6 +68,7 @@ function Dashboard() {
   const getDashboardFn = useServerFn(getDashboard);
   const createTaskFn = useServerFn(createTask);
   const toggleTaskFn = useServerFn(toggleTask);
+  const updateShopTaskFn = useServerFn(updateShopTask);
   const saveGratitudeFn = useServerFn(saveGratitudeEntry);
   const toggleHabitFn = useServerFn(toggleHabitToday);
   const listTasksFn = useServerFn(listTasks);
@@ -98,6 +100,10 @@ function Dashboard() {
 
   const mCreateTask = useMutation({ mutationFn: (d: any) => createTaskFn({ data: d }), onSuccess: invalidate });
   const mToggleTask = useMutation({ mutationFn: (d: any) => toggleTaskFn({ data: d }), onSuccess: invalidate });
+  const mToggleShopTask = useMutation({
+    mutationFn: (d: { id: string; done: boolean }) => updateShopTaskFn({ data: { id: d.id, patch: { status: d.done ? "done" : "todo" } } }),
+    onSuccess: invalidate,
+  });
   const mGratitude = useMutation({
     mutationFn: (d: { content: string }) => {
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -117,7 +123,7 @@ function Dashboard() {
 
   const [gratitude, setGratitude] = useState("");
   const [newTask, setNewTask] = useState("");
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<{ id: string; source: "task" | "shop_task" } | null>(null);
 
   // Sync gratitude
   const todayGratitude = data?.gratitude?.content ?? "";
@@ -247,7 +253,7 @@ function Dashboard() {
         {/* Tarefas de hoje */}
         <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={ListChecks} title="Tarefas de hoje"
-            count={`${data.tasks.filter((t: any) => !t.done).length} pendentes`}
+            count={`${data.tasks.filter((t: any) => !t.done).length + (data.shopTasksToday?.length ?? 0)} pendentes`}
             tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
           <div className="p-3 flex-1 flex flex-col overflow-y-auto">
             <ul className="flex-1">
@@ -259,12 +265,29 @@ function Dashboard() {
                     {t.done && <Check className="size-3 text-background" strokeWidth={3} />}
                   </button>
                   <button
-                    onClick={() => setOpenTaskId(t.id)}
+                    onClick={() => setOpenTask({ id: t.id, source: "task" })}
                     className={`text-[15px] flex-1 text-left hover:underline underline-offset-2 ${t.done ? "line-through text-muted-foreground" : ""}`}
                   >{t.title}</button>
                   {t.scheduled_time && (
                     <span className="text-xs text-muted-foreground flex items-center gap-1 tabular-nums">
                       <CalIcon className="size-3" /> {t.scheduled_time}
+                    </span>
+                  )}
+                </li>
+              ))}
+              {(data.shopTasksToday ?? []).map((t: any) => (
+                <li key={t.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-surface-hover transition-colors group">
+                  <button
+                    onClick={() => mToggleShopTask.mutate({ id: t.id, done: true })}
+                    className="size-5 rounded-full border-2 grid place-items-center transition-colors border-border group-hover:border-primary">
+                  </button>
+                  <button
+                    onClick={() => setOpenTask({ id: t.id, source: "shop_task" })}
+                    className="text-[15px] flex-1 text-left hover:underline underline-offset-2"
+                  >{t.title}</button>
+                  {t.shop_name && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Store className="size-3" /> {t.shop_name}
                     </span>
                   )}
                 </li>
@@ -381,11 +404,11 @@ function Dashboard() {
       </div>
 
       <TaskDetailDialog
-        open={!!openTaskId}
-        onOpenChange={(o) => { if (!o) setOpenTaskId(null); }}
-        source="task"
-        id={openTaskId}
-        invalidateKeys={[["dashboard"], ["tasks"]]}
+        open={!!openTask}
+        onOpenChange={(o) => { if (!o) setOpenTask(null); }}
+        source={openTask?.source ?? "task"}
+        id={openTask?.id ?? null}
+        invalidateKeys={[["dashboard"], ["tasks"], ["shop-tasks"]]}
       />
     </PageShell>
   );

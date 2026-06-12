@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, PenTool, Star } from "lucide-react";
-import { listWhiteboards, createWhiteboard } from "@/lib/whiteboards.functions";
+import { Plus, PenTool, Star, Trash2 } from "lucide-react";
+import { listWhiteboards, createWhiteboard, deleteWhiteboard } from "@/lib/whiteboards.functions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/whiteboard/")({
   component: WhiteboardDashboard,
@@ -13,6 +14,8 @@ function WhiteboardDashboard() {
   const navigate = useNavigate();
   const listFn = useServerFn(listWhiteboards);
   const createFn = useServerFn(createWhiteboard);
+  const deleteFn = useServerFn(deleteWhiteboard);
+  const confirm = useConfirm();
 
   const { data } = useQuery({ queryKey: ["whiteboards"], queryFn: () => listFn() });
   const boards: any[] = (data as any)?.boards ?? [];
@@ -24,6 +27,18 @@ function WhiteboardDashboard() {
       navigate({ to: "/whiteboard/$boardId", params: { boardId: res.board.id } });
     },
   });
+
+  const mDelete = useMutation({
+    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["whiteboards"] }),
+  });
+
+  const handleDelete = async (e: React.MouseEvent, board: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!(await confirm(`Excluir o quadro "${board.name}"? Essa ação não pode ser desfeita.`))) return;
+    mDelete.mutate(board.id);
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto h-full overflow-y-auto">
@@ -71,7 +86,16 @@ function WhiteboardDashboard() {
               <div className="absolute inset-0 p-4 flex flex-col justify-between">
                 <div className="flex items-start justify-between">
                   <span className="size-3 rounded-full" style={{ background: b.color }} />
-                  {b.is_favorite && <Star className="size-4 text-amber-400" fill="currentColor" />}
+                  <div className="flex items-center gap-1">
+                    {b.is_favorite && <Star className="size-4 text-amber-400" fill="currentColor" />}
+                    <button
+                      onClick={(e) => handleDelete(e, b)}
+                      title="Excluir quadro"
+                      className="opacity-0 group-hover:opacity-100 size-7 grid place-items-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-surface transition-all"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <div className="font-semibold truncate">{b.name}</div>

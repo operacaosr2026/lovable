@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-export const COST_CATEGORY = "Custo de pedidos";
+export const COST_CATEGORY = "Fornecedor";
 const PROCESSING_DELAY_DAYS = 7;
 
 // ---------- Helpers ----------
@@ -78,6 +78,21 @@ async function fetchShopifyBalanceTransactions(domain: string, token: string, ma
     url = m ? m[1] : "";
   }
   return out;
+}
+
+async function fetchShopifyPaymentsBalance(domain: string, token: string) {
+  const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance.json`;
+  const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+  if (!res.ok) {
+    // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
+    if (res.status === 404 || res.status === 403) return null;
+    throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+  }
+  const json: any = await res.json();
+  const balances: any[] = json.balance ?? [];
+  if (balances.length === 0) return null;
+  const total = balances.reduce((s, b) => s + Number(b.amount ?? 0), 0);
+  return { amount: total, currency: balances[0]?.currency ?? null };
 }
 
 async function ensureCostCategory(supabase: any, userId: string, shopId: string) {
@@ -261,6 +276,61 @@ export const listOrders = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
+export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: pending, error } = await context.supabase.from("shop_orders")
+      .select("order_date,items_count")
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("payment_status", "pending");
+    if (error) throw new Error(error.message);
+    if (!pending || pending.length === 0) return { created: 0 };
+
+    const byDate = new Map<string, number>();
+    for (const o of pending) {
+      byDate.set(o.order_date as string, (byDate.get(o.order_date as string) ?? 0) + Number(o.items_count ?? 0));
+    }
+    if (byDate.size === 0) return { created: 0 };
+
+    const { data: existing } = await context.supabase.from("shop_tasks")
+      .select("source_ref")
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("source", "order_payment")
+      .in("source_ref", Array.from(byDate.keys()));
+    const existingRefs = new Set((existing ?? []).map((r: any) => r.source_ref));
+
+    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
+      .eq("user_id", context.userId).eq("shop_id", data.shop_id).maybeSingle();
+    const defaultCost = Number(settings?.default_unit_cost ?? 0);
+
+    let created = 0;
+    for (const [date, items] of byDate.entries()) {
+      if (existingRefs.has(date)) continue;
+      const cost = await unitCostFor(context.supabase, context.userId, data.shop_id, date, defaultCost);
+      const total = items * cost;
+      const dueAt = `${addDays(date, PROCESSING_DELAY_DAYS)}T12:00:00.000Z`;
+      const dateLabel = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+      const { data: top } = await context.supabase.from("shop_tasks").select("position")
+        .eq("user_id", context.userId).eq("shop_id", data.shop_id).eq("status", "todo")
+        .order("position", { ascending: true }).limit(1).maybeSingle();
+      const position = (top?.position ?? 0) - 1;
+      const { error: insErr } = await context.supabase.from("shop_tasks").insert({
+        user_id: context.userId, shop_id: data.shop_id,
+        title: `Pagar fornecedor · pedidos de ${dateLabel}`,
+        description: `${items} itens · ${total.toLocaleString("en-US", { style: "currency", currency: "USD" })}`,
+        status: "todo",
+        priority: "alta",
+        due_at: dueAt,
+        position,
+        source: "order_payment",
+        source_ref: date,
+      });
+      if (!insErr) created++;
+    }
+    return { created };
+  });
+
 export const syncShopifyOrders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({
@@ -434,9 +504,10 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.userId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!settings?.shopify_store_id) return { connected: false, pending: 0, currency: null, items: [] };
+    if (!settings?.shopify_store_id) return { connected: false, pending: 0, balance: null, currency: null, items: [] };
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.userId, settings.shopify_store_id);
+    const paymentsBalance = await fetchShopifyPaymentsBalance(domain, token);
     // Transações vêm ordenadas das mais recentes para as mais antigas; as ainda não
     // incluídas em payout (payout_id null) ficam sempre entre as mais recentes.
     const transactions = await fetchShopifyBalanceTransactions(domain, token, 10);
@@ -468,8 +539,9 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     }
 
     const pending = pendingFromTx + scheduledTotal;
-    const currency = pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
-    return { connected: true, pending, currency, items };
+    const currency = paymentsBalance?.currency ?? pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
+    const balance = paymentsBalance?.amount ?? pending;
+    return { connected: true, pending, balance, currency, items };
   });
 
 export const getMonthlyProfit = createServerFn({ method: "GET" })
@@ -484,18 +556,25 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const { shop_id, month_start, month_end } = data;
 
     const { data: orders, error: ordersErr } = await supabase
-      .from("shop_orders").select("revenue")
+      .from("shop_orders").select("revenue,order_date,items_count")
       .eq("user_id", userId).eq("shop_id", shop_id)
       .gte("order_date", month_start).lte("order_date", month_end);
     if (ordersErr) throw new Error(ordersErr.message);
     const sales = (orders ?? []).reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
 
-    const { data: costRows, error: costErr } = await supabase
-      .from("shop_cash_entries").select("amount,auto_ref_date,date")
-      .eq("user_id", userId).eq("shop_id", shop_id).eq("kind", "expense").eq("category", COST_CATEGORY)
-      .or(`and(auto_ref_date.gte.${month_start},auto_ref_date.lte.${month_end}),and(auto_ref_date.is.null,date.gte.${month_start},date.lte.${month_end})`);
-    if (costErr) throw new Error(costErr.message);
-    const productCost = (costRows ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const { data: settings } = await supabase.from("shop_order_settings").select("default_unit_cost")
+      .eq("user_id", userId).eq("shop_id", shop_id).maybeSingle();
+    const defaultCost = Number(settings?.default_unit_cost ?? 0);
+
+    const orderDates = Array.from(new Set((orders ?? []).map((o: any) => o.order_date as string)));
+    const costByDate = new Map<string, number>();
+    for (const d of orderDates) {
+      costByDate.set(d, await unitCostFor(supabase, userId, shop_id, d, defaultCost));
+    }
+    const productCost = (orders ?? []).reduce((s: number, o: any) => {
+      const items = Number(o.items_count ?? 0);
+      return s + items * (costByDate.get(o.order_date as string) ?? defaultCost);
+    }, 0);
 
     const { data: adRows, error: adErr } = await supabase
       .from("shop_cash_entries").select("amount")
@@ -797,6 +876,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       category: COST_CATEGORY,
       description: `${desc} · ${totalItems} itens · ${orders.length} pedidos`,
       source: "auto",
+      reconciled: true,
     }).select("id").single();
     if (cErr) {
       // Cleanup orphan batch
@@ -821,6 +901,12 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     for (const d of dates) {
       await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
     }
+
+    // Complete any auto-generated payment tasks for these order dates
+    await context.supabase.from("shop_tasks").update({
+      status: "done", done_at: new Date().toISOString(),
+    }).eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("source", "order_payment").in("source_ref", dates).neq("status", "done");
 
     return { batch_id: batch.id, batch_number: batchNumber, total_amount: totalAmount, total_items: totalItems, total_orders: orders.length };
   });
@@ -877,6 +963,13 @@ export const undoOrderPayment = createServerFn({ method: "POST" })
     for (const d of (batch.order_dates as string[]) ?? []) {
       await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
     }
+
+    // Reopen auto-generated payment tasks for these order dates
+    await context.supabase.from("shop_tasks").update({
+      status: "todo", done_at: null,
+    }).eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("source", "order_payment").in("source_ref", (batch.order_dates as string[]) ?? []);
+
     return { ok: true };
   });
 

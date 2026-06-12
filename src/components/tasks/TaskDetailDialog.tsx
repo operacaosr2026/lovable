@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Calendar as CalIcon, CheckSquare, Paperclip, Trash2, Upload, X, Loader2, Plus,
-  FileText, ImageIcon, Download, GripVertical,
+  FileText, ImageIcon, Download, GripVertical, Save,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -14,9 +14,9 @@ import {
   getTaskDetail, registerTaskAttachment, deleteTaskAttachment,
   TASK_ATTACHMENT_BUCKET, type TaskSource,
 } from "@/lib/task-details.functions";
-import { updateListTask } from "@/lib/workspace-tasks.functions";
-import { updateProjectTask } from "@/lib/project-tasks.functions";
-import { updateShopTask } from "@/lib/shop-tasks.functions";
+import { updateListTask, deleteListTask, createListTask } from "@/lib/workspace-tasks.functions";
+import { updateProjectTask, deleteProjectTask } from "@/lib/project-tasks.functions";
+import { updateShopTask, deleteShopTask } from "@/lib/shop-tasks.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type ChecklistItem = { id: string; text: string; done: boolean };
@@ -30,6 +30,8 @@ type Props = {
   projectId?: string | null;
   /** Optional cache keys to invalidate after saves */
   invalidateKeys?: (string | undefined)[][];
+  /** When set and `id` is null, the dialog opens in "create" mode: nothing is persisted until Salvar is clicked. */
+  createListId?: string | null;
 };
 
 function fmtDateTimeLocal(iso: string | null | undefined) {
@@ -48,21 +50,33 @@ function humanSize(bytes: number | null | undefined) {
 }
 
 export function TaskDetailDialog({
-  open, onOpenChange, source, id, projectId, invalidateKeys = [],
+  open, onOpenChange, source, id, projectId, invalidateKeys = [], createListId = null,
 }: Props) {
   const qc = useQueryClient();
 
   const getDetailFn = useServerFn(getTaskDetail);
+  const createFn = useServerFn(createListTask);
   const updListFn = useServerFn(updateListTask);
   const updProjectFn = useServerFn(updateProjectTask);
   const updShopFn = useServerFn(updateShopTask);
+  const delListFn = useServerFn(deleteListTask);
+  const delProjectFn = useServerFn(deleteProjectTask);
+  const delShopFn = useServerFn(deleteShopTask);
   const registerFn = useServerFn(registerTaskAttachment);
   const deleteAttFn = useServerFn(deleteTaskAttachment);
 
+  // While creating a new task, nothing exists in the DB yet — localId/localSource
+  // take over once Salvar is pressed for the first time.
+  const [localId, setLocalId] = useState<string | null>(null);
+  const [localSource, setLocalSource] = useState<TaskSource>("task");
+  const effectiveId = id ?? localId;
+  const effectiveSource = id ? source : localSource;
+  const isNew = !effectiveId;
+
   const detailQ = useQuery({
-    queryKey: ["task-detail", source, id],
-    queryFn: () => getDetailFn({ data: { source, id: id! } }),
-    enabled: !!id && open,
+    queryKey: ["task-detail", effectiveSource, effectiveId],
+    queryFn: () => getDetailFn({ data: { source: effectiveSource, id: effectiveId! } }),
+    enabled: !!effectiveId && open,
     staleTime: 5_000,
   });
 
@@ -73,7 +87,10 @@ export function TaskDetailDialog({
   const [description, setDescription] = useState("");
   const [dueAt, setDueAt] = useState<string>("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [status, setStatus] = useState<string>("todo");
+  const [dirty, setDirty] = useState(false);
   const [savingFlag, setSavingFlag] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const initRef = useRef<string | null>(null);
   const confirm = useConfirm();
@@ -87,23 +104,72 @@ export function TaskDetailDialog({
     setDescription(task.description ?? "");
     setDueAt(fmtDateTimeLocal(task.due_at));
     setChecklist(Array.isArray(task.checklist) ? task.checklist : []);
+    setStatus(task.status ?? "todo");
+    setDirty(false);
   }, [task]);
 
-  useEffect(() => { if (!open) initRef.current = null; }, [open]);
+  // Reset everything when the dialog closes, or set up a blank draft when it opens for creation
+  useEffect(() => {
+    if (open) {
+      if (!id && !localId) {
+        setTitle("");
+        setDescription("");
+        setDueAt("");
+        setChecklist([]);
+        setStatus("todo");
+        setDirty(false);
+      }
+      return;
+    }
+    initRef.current = null;
+    setLocalId(null);
+    setLocalSource("task");
+  }, [open, id]);
 
-  const callUpdate = async (patch: Record<string, any>) => {
-    if (!id) return;
+  const handleSave = async () => {
     setSavingFlag(true);
     try {
-      if (source === "project_task") {
-        await updProjectFn({ data: { id, patch } });
-      } else if (source === "shop_task") {
-        await updShopFn({ data: { id, patch } });
+      if (isNew) {
+        if (!createListId) return;
+        const result: any = await createFn({ data: {
+          list_id: createListId,
+          title: title.trim() || "Nova tarefa",
+          status,
+          due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        } });
+        const newId = result?.task?.id;
+        const newSource: TaskSource = result?.source ?? "task";
+        if (newId && (description.trim() || checklist.length > 0)) {
+          const patch = { description, checklist };
+          if (newSource === "shop_task") await updShopFn({ data: { id: newId, patch } });
+          else await updListFn({ data: { id: newId, source: "task", patch } });
+        }
+        setLocalId(newId);
+        setLocalSource(newSource);
+        for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
+        setDirty(false);
+        toast.success("Tarefa criada");
+        return;
+      }
+
+      const patch: Record<string, any> = {
+        title,
+        description,
+        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        checklist,
+        status,
+      };
+      if (effectiveSource === "project_task") {
+        await updProjectFn({ data: { id: effectiveId, patch } });
+      } else if (effectiveSource === "shop_task") {
+        await updShopFn({ data: { id: effectiveId, patch } });
       } else {
-        await updListFn({ data: { id, source: "task", patch } });
+        await updListFn({ data: { id: effectiveId, source: "task", patch } });
       }
       for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
-      qc.invalidateQueries({ queryKey: ["task-detail", source, id] });
+      qc.invalidateQueries({ queryKey: ["task-detail", effectiveSource, effectiveId] });
+      setDirty(false);
+      toast.success("Tarefa salva");
     } catch (e: any) {
       toast.error("Erro ao salvar", { description: e.message });
     } finally {
@@ -111,35 +177,54 @@ export function TaskDetailDialog({
     }
   };
 
-  // Debounced auto-save for title/description
-  const debounceRef = useRef<Record<string, any>>({});
-  const debounceSave = (field: string, value: any, delay = 600) => {
-    clearTimeout(debounceRef.current[field]);
-    debounceRef.current[field] = setTimeout(() => callUpdate({ [field]: value }), delay);
+  const handleDelete = async () => {
+    if (!effectiveId) return;
+    if (!(await confirm("Excluir esta tarefa?"))) return;
+    setDeleting(true);
+    try {
+      if (effectiveSource === "project_task") {
+        await delProjectFn({ data: { id: effectiveId } });
+      } else if (effectiveSource === "shop_task") {
+        await delShopFn({ data: { id: effectiveId } });
+      } else {
+        await delListFn({ data: { id: effectiveId, source: "task" } });
+      }
+      for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
+      onOpenChange(false);
+      toast.success("Tarefa excluída");
+    } catch (e: any) {
+      toast.error("Erro ao excluir", { description: e.message });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleDone = () => {
+    setStatus((s) => (s === "done" ? "todo" : "done"));
+    setDirty(true);
   };
 
   const saveDueAt = (val: string) => {
     setDueAt(val);
-    const iso = val ? new Date(val).toISOString() : null;
-    callUpdate({ due_at: iso });
+    setDirty(true);
   };
 
-  const saveChecklist = (next: ChecklistItem[]) => {
+  const updateChecklist = (next: ChecklistItem[]) => {
     setChecklist(next);
-    callUpdate({ checklist: next });
+    setDirty(true);
   };
 
   const addChecklistItem = () => {
     const item: ChecklistItem = { id: crypto.randomUUID(), text: "", done: false };
-    saveChecklist([...checklist, item]);
+    updateChecklist([...checklist, item]);
   };
 
   const updateChecklistItem = (id: string, patch: Partial<ChecklistItem>) => {
-    saveChecklist(checklist.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    updateChecklist(checklist.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   };
 
   const removeChecklistItem = (id: string) => {
-    saveChecklist(checklist.filter((c) => c.id !== id));
+    updateChecklist(checklist.filter((c) => c.id !== id));
   };
 
   const handleUpload = async (files: FileList | null) => {
@@ -193,28 +278,39 @@ export function TaskDetailDialog({
         {/* Header */}
         <div className="px-6 pt-5 pb-4 border-b border-border flex items-center gap-3">
           <button
-            onClick={() => {
-              const nextStatus = task?.status === "done" ? "todo" : "done";
-              callUpdate({ status: nextStatus });
-            }}
-            disabled={!task}
+            onClick={toggleDone}
             className={`size-5 rounded-full border-2 grid place-items-center shrink-0 transition-colors ${
-              task?.status === "done" ? "bg-success border-success" : "border-border hover:border-primary"
+              status === "done" ? "bg-success border-success" : "border-border hover:border-primary"
             }`}
           >
-            {task?.status === "done" && <CheckSquare className="size-3 text-white" />}
+            {status === "done" && <CheckSquare className="size-3 text-white" />}
           </button>
           <input
             value={title}
-            onChange={(e) => { setTitle(e.target.value); debounceSave("title", e.target.value); }}
-            onBlur={() => callUpdate({ title })}
+            onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
             placeholder="Sem título"
             className="flex-1 bg-transparent outline-none text-lg font-semibold tracking-tight"
           />
-          {savingFlag && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          <button
+            onClick={handleDelete}
+            disabled={isNew || deleting}
+            title="Excluir tarefa"
+            className="flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            Excluir
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={savingFlag || (!isNew && !dirty)}
+            className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-lg border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {savingFlag ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+            Salvar
+          </button>
         </div>
 
-        {detailQ.isLoading || !task ? (
+        {effectiveId && (detailQ.isLoading || !task) ? (
           <div className="grid place-items-center h-64">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
@@ -246,8 +342,7 @@ export function TaskDetailDialog({
               </div>
               <textarea
                 value={description}
-                onChange={(e) => { setDescription(e.target.value); debounceSave("description", e.target.value, 800); }}
-                onBlur={() => callUpdate({ description })}
+                onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
                 placeholder="Adicione uma descrição detalhada..."
                 rows={5}
                 className="w-full bg-transparent outline-none text-sm leading-relaxed resize-y border border-transparent hover:border-border focus:border-primary rounded-lg p-2 -mx-2 transition-colors"
@@ -318,18 +413,25 @@ export function TaskDetailDialog({
                     <span className="tabular-nums text-muted-foreground">({attachments.length})</span>
                   )}
                 </div>
-                <label className="text-xs text-primary hover:underline inline-flex items-center gap-1 cursor-pointer">
-                  {uploading ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
-                  enviar
-                  <input
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => { handleUpload(e.target.files); e.target.value = ""; }}
-                  />
-                </label>
+                {!isNew && (
+                  <label className="text-xs text-primary hover:underline inline-flex items-center gap-1 cursor-pointer">
+                    {uploading ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
+                    enviar
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => { handleUpload(e.target.files); e.target.value = ""; }}
+                    />
+                  </label>
+                )}
               </div>
 
+              {isNew ? (
+                <div className="text-xs text-muted-foreground italic px-2 py-1">
+                  Salve a tarefa para adicionar anexos.
+                </div>
+              ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {attachments.map((a) => (
                   <div key={a.id} className="group relative rounded-lg border border-border bg-surface overflow-hidden">
@@ -383,6 +485,7 @@ export function TaskDetailDialog({
                   </label>
                 )}
               </div>
+              )}
             </section>
           </div>
         )}

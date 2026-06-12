@@ -19,9 +19,12 @@ export const getDashboard = createServerFn({ method: "GET" })
     weekStart.setDate(today.getDate() - today.getDay());
     const weekStartStr = weekStart.toISOString().slice(0, 10);
 
+    const todayEnd = `${todayStr}T23:59:59.999Z`;
+    const todayStart = `${todayStr}T00:00:00.000Z`;
+
     const [
       profile, stores, revenues, tasks, habits, habitLogs, gratitude,
-      accounts, fxRow,
+      accounts, fxRow, shopTasksToday,
     ] = await Promise.all([
       supabase.from("profiles").select("full_name, avatar_url").eq("id", userId).maybeSingle(),
       supabase.from("stores").select("*").eq("user_id", userId).order("position"),
@@ -32,7 +35,17 @@ export const getDashboard = createServerFn({ method: "GET" })
       supabase.from("gratitude_entries").select("*").eq("date", todayStr).maybeSingle(),
       supabase.from("accounts").select("*").eq("user_id", userId).eq("archived", false),
       supabase.from("fx_rates").select("*").eq("user_id", userId).maybeSingle(),
+      supabase.from("shop_tasks").select("id,shop_id,title,status,due_at")
+        .eq("user_id", userId).neq("status", "done")
+        .gte("due_at", todayStart).lte("due_at", todayEnd),
     ]);
+
+    const shopIds = Array.from(new Set((shopTasksToday.data ?? []).map((t: any) => t.shop_id)));
+    const shopNames = new Map<string, string>();
+    if (shopIds.length > 0) {
+      const { data: shopRows } = await supabase.from("shops").select("id,name").in("id", shopIds);
+      for (const s of shopRows ?? []) shopNames.set(s.id, s.name);
+    }
 
     // Compute total net worth in BRL
     const fx = fxRow.data?.usd_to_brl ? Number(fxRow.data.usd_to_brl) : 5.0;
@@ -64,6 +77,14 @@ export const getDashboard = createServerFn({ method: "GET" })
       stores: stores.data ?? [],
       revenues: revenues.data ?? [],
       tasks: tasks.data ?? [],
+      shopTasksToday: (shopTasksToday.data ?? []).map((t: any) => ({
+        id: t.id,
+        title: t.title,
+        done: t.status === "done",
+        shop_id: t.shop_id,
+        shop_name: shopNames.get(t.shop_id) ?? null,
+        source: "shop_task" as const,
+      })),
       habits: habits.data ?? [],
       habitLogs: habitLogs.data ?? [],
       gratitude: gratitude.data,

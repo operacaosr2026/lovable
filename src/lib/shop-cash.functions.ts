@@ -4,15 +4,16 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const CASH_KINDS = ["income", "expense"] as const;
 export const EXPENSE_CATEGORIES = [
-  "Custo de pedidos",
+  "Fornecedor",
   "Facebook Ads",
-  "TikTok Ads",
-  "Fornecedores",
   "Ferramentas",
-  "Taxas",
+  "Retirada Rodrigo",
+  "Retirada Sergio",
+  "Lucro Rodrigo",
+  "Lucro Sergio",
   "Outros",
 ] as const;
-export const INCOME_CATEGORIES = ["Depósito Shopify", "Outros recebimentos"] as const;
+export const INCOME_CATEGORIES = ["Depósito Shopify", "Aporte Rodrigo", "Aporte Sergio", "Outros recebimentos"] as const;
 
 const ImportRow = z.object({ date: z.string(), amount: z.number() });
 const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
@@ -184,6 +185,7 @@ export const updateCashEntry = createServerFn({ method: "POST" })
         recurrence: z.enum(RECURRENCES).optional(),
         recurrence_until: z.string().nullable().optional(),
         skip_weekend_rule: z.boolean().optional(),
+        reconciled: z.boolean().optional(),
       }),
     }).parse(d),
   )

@@ -84,6 +84,14 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
   const grouped = useMemo(() => {
     const g: Record<string, Task[]> = { todo: [], doing: [], done: [] };
     for (const t of filtered) g[t.status]?.push(t);
+    for (const k of Object.keys(g)) {
+      g[k].sort((a, b) => {
+        const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity;
+        const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity;
+        if (ad !== bd) return ad - bd;
+        return (a.position ?? 0) - (b.position ?? 0);
+      });
+    }
     return g;
   }, [filtered]);
 

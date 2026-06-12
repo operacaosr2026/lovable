@@ -21,7 +21,7 @@ import {
 import { getShopifyPendingBalance, getMonthlyProfit } from "@/lib/shop-orders.functions";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
-type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null };
+type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
 const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
@@ -240,7 +240,8 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const future = useMemo(() => {
     let acc = opening;
     for (const e of expanded) {
-      if (e.date <= todayKey) acc += e.kind === "income" ? Number(e.amount) : -Number(e.amount);
+      if (e.virtual) continue;
+      if (e.reconciled) acc += e.kind === "income" ? Number(e.amount) : -Number(e.amount);
     }
     const currentBalance = acc;
     const horizon30 = addDaysToKey(todayKey, 30);
@@ -253,6 +254,22 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   }, [expanded, opening, todayKey]);
 
   const monthProfit = monthlyProfitQuery.data?.profit ?? 0;
+
+  const adjustments = useMemo(() => {
+    let aporteRodrigo = 0, retiradaRodrigo = 0, aporteSergio = 0, retiradaSergio = 0;
+    for (const e of entries) {
+      const amount = Number(e.amount);
+      if (e.kind === "income" && e.category === "Aporte Rodrigo") aporteRodrigo += amount;
+      else if (e.kind === "expense" && e.category === "Retirada Rodrigo") retiradaRodrigo += amount;
+      else if (e.kind === "income" && e.category === "Aporte Sergio") aporteSergio += amount;
+      else if (e.kind === "expense" && e.category === "Retirada Sergio") retiradaSergio += amount;
+    }
+    return {
+      aporteRodrigo, retiradaRodrigo, aporteSergio, retiradaSergio,
+      rodrigo: aporteRodrigo - retiradaRodrigo,
+      sergio: aporteSergio - retiradaSergio,
+    };
+  }, [entries]);
 
   const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: refresh });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
@@ -271,6 +288,13 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
 
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
+  const receivable = pendingQuery.data?.connected
+    ? (pendingQuery.data.balance ?? pendingQuery.data.pending)
+    : future.totalIncome;
+  const forecastBalance = future.current + receivable - future.totalExpense
+    - adjustments.aporteRodrigo - adjustments.aporteSergio
+    + adjustments.retiradaRodrigo + adjustments.retiradaSergio;
+
   return (
     <div className="space-y-5">
       {/* Indicators */}
@@ -279,7 +303,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future.current)} accent="oklch(0.55 0.15 250)" />
           <Indicator
             icon={TrendingUp}
-            label="Lucro do mês"
+            label="Lucro Bruto do mês"
             value={fmtMoney(monthProfit)}
             accent="oklch(0.55 0.13 155)"
             negative={monthProfit < 0}
@@ -292,11 +316,25 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
               </div>
             ) : undefined}
           />
-          <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(future.totalIncome)} accent="oklch(0.55 0.13 155)" />
           <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
-          {pendingQuery.data?.connected && (
-            <Indicator icon={TrendingUp} label="A receber (Shopify)" value={fmtMoney(pendingQuery.data.pending)} accent="oklch(0.6 0.13 230)" />
+          {pendingQuery.data?.connected ? (
+            <Indicator icon={TrendingUp} label="A receber (Shopify)" value={fmtMoney(receivable)} accent="oklch(0.6 0.13 230)" />
+          ) : (
+            <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(receivable)} accent="oklch(0.55 0.13 155)" />
           )}
+          <Indicator
+            icon={Wallet}
+            label="Saldo previsto"
+            value={fmtMoney(forecastBalance)}
+            accent="oklch(0.55 0.15 250)"
+            negative={forecastBalance < 0}
+            tooltip={
+              <div className="space-y-0.5">
+                <div>Ajuste Rodrigo: {fmtMoney(adjustments.rodrigo)}</div>
+                <div>Ajuste Sergio: {fmtMoney(adjustments.sergio)}</div>
+              </div>
+            }
+          />
         </div>
       </TooltipProvider>
 
@@ -373,7 +411,9 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
                     dd={dd}
                     weekday={weekday}
                     isToday={isToday}
+                    todayKey={todayKey}
                     onEdit={setEditing}
+                    onToggleReconciled={(e) => updateMut.mutate({ id: e.id, patch: { reconciled: !e.reconciled } })}
                   />
                 );
               }
@@ -383,7 +423,9 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
                   dd={dd}
                   weekday={weekday}
                   isToday={isToday}
+                  todayKey={todayKey}
                   onEdit={setEditing}
+                  onToggleReconciled={(e) => updateMut.mutate({ id: e.id, patch: { reconciled: !e.reconciled } })}
                 />
               );
             })}
@@ -440,11 +482,13 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   );
 }
 
-function WeekdayDayCell({ dd, weekday, isToday, onEdit }: {
+function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled }: {
   dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
   weekday: number;
   isToday: boolean;
+  todayKey: string;
   onEdit: (e: DayItem) => void;
+  onToggleReconciled: (e: DayItem) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dd.key}` });
   return (
@@ -469,7 +513,7 @@ function WeekdayDayCell({ dd, weekday, isToday, onEdit }: {
           <span className="text-[10px] tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">{dd.income > 0 ? `+${fmtMoney(dd.income)}` : "—"}</span>
         </div>
         <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
-          {dd.incomeItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
+          {dd.incomeItems.map((e) => <EntryChip key={e.id + e.date} entry={e} todayKey={todayKey} onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled} />)}
           {dd.incomeItems.length === 0 && (
             <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
           )}
@@ -482,7 +526,7 @@ function WeekdayDayCell({ dd, weekday, isToday, onEdit }: {
           <span className="text-[10px] tabular-nums text-rose-700 dark:text-rose-400 font-semibold">{dd.expense > 0 ? `-${fmtMoney(dd.expense)}` : "—"}</span>
         </div>
         <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
-          {dd.expenseItems.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
+          {dd.expenseItems.map((e) => <EntryChip key={e.id + e.date} entry={e} todayKey={todayKey} onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled} />)}
           {dd.expenseItems.length === 0 && (
             <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>
           )}
@@ -496,11 +540,13 @@ function WeekdayDayCell({ dd, weekday, isToday, onEdit }: {
   );
 }
 
-function WeekendDayCell({ dd, weekday, isToday, onEdit }: {
+function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled }: {
   dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
   weekday: number;
   isToday: boolean;
+  todayKey: string;
   onEdit: (e: DayItem) => void;
+  onToggleReconciled: (e: DayItem) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dd.key}` });
   const items = [...dd.incomeItems, ...dd.expenseItems];
@@ -515,7 +561,7 @@ function WeekendDayCell({ dd, weekday, isToday, onEdit }: {
         <div className="text-[10px] text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day: "2-digit", month: "2-digit" })}</div>
       </div>
       <div className="row-span-2 p-1.5 flex flex-col gap-1 overflow-y-auto">
-        {items.map((e) => <EntryChip key={e.id + e.date} entry={e} onClick={() => onEdit(e)} />)}
+        {items.map((e) => <EntryChip key={e.id + e.date} entry={e} todayKey={todayKey} onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled} />)}
         {items.length === 0 && (
           <div className="flex-1 grid place-items-center text-[10px] text-muted-foreground/60">—</div>
         )}
@@ -562,12 +608,13 @@ function Modal({ children, onClose, title }: any) {
   );
 }
 
-function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) {
+function EntryChip({ entry, todayKey, onClick, onToggleReconciled }: { entry: DayItem; todayKey: string; onClick: () => void; onToggleReconciled: (e: DayItem) => void }) {
   const isIncome = entry.kind === "income";
   const isPending = entry.source === "shopify_pending";
   const shifted = typeof entry.shiftedFromWeekday === "number";
   const fromLabel = shifted ? WEEKDAYS_FULL[entry.shiftedFromWeekday!] : null;
   const isDraggable = !isPending && !entry.virtual;
+  const canReconcile = !isPending && !entry.virtual && entry.date <= todayKey;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.id, disabled: !isDraggable });
   return (
     <button
@@ -579,9 +626,19 @@ function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) 
       className={`group w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${isDragging ? "opacity-30" : ""} ${isPending ? "border-dashed border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 cursor-default" : isIncome ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-700 dark:text-rose-400"} ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate inline-flex items-center gap-1">
-          {entry.recurrence && entry.recurrence !== "none" && <Repeat className="size-3 opacity-70" />}
-          {entry.category ?? (isIncome ? "Entrada" : "Saída")}
+        <span className="truncate inline-flex items-center gap-1 min-w-0">
+          {canReconcile && !entry.reconciled && (
+            <span
+              role="checkbox"
+              aria-checked={false}
+              title="Marcar como conciliado"
+              onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); onToggleReconciled(entry); }}
+              onPointerDown={(ev) => ev.stopPropagation()}
+              className="shrink-0 size-3.5 rounded-sm border border-current/40 hover:border-current transition-colors"
+            />
+          )}
+          {entry.recurrence && entry.recurrence !== "none" && <Repeat className="size-3 opacity-70 shrink-0" />}
+          <span className="truncate">{entry.category ?? (isIncome ? "Entrada" : "Saída")}</span>
         </span>
         <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(entry.amount))}</span>
       </div>
@@ -589,6 +646,11 @@ function EntryChip({ entry, onClick }: { entry: DayItem; onClick: () => void }) 
       {isPending && (
         <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5">
           Previsto
+        </div>
+      )}
+      {canReconcile && !entry.reconciled && (
+        <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">
+          Falta conciliação
         </div>
       )}
       {shifted && (
@@ -672,8 +734,10 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: { entry: Da
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">((entry.recurrence ?? "none") as any);
   const [until, setUntil] = useState(entry.recurrence_until ?? "");
   const [skipWeekend, setSkipWeekend] = useState<boolean>(Boolean(entry.skip_weekend_rule));
+  const [reconciled, setReconciled] = useState<boolean>(Boolean(entry.reconciled));
   const cats = categories;
   const isShopify = entry.source === "shopify_import" || entry.source === "shopify_sync";
+  const canReconcile = !entry.virtual && entry.source !== "shopify_pending";
 
   return (
     <Modal onClose={onClose} title={`Editar ${entry.kind === "income" ? "entrada" : "saída"}`}>
@@ -726,6 +790,12 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: { entry: Da
         {typeof entry.shiftedFromWeekday === "number" && (
           <div className="text-[11px] text-amber-700 dark:text-amber-400">Originalmente previsto para {WEEKDAYS_FULL[entry.shiftedFromWeekday]}.</div>
         )}
+        {canReconcile && (
+          <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
+            <input type="checkbox" checked={reconciled} onChange={(e) => setReconciled(e.target.checked)} className="size-3.5 accent-primary" />
+            <span>Conciliado · incluído no saldo atual</span>
+          </label>
+        )}
       </div>
       <div className="flex justify-between gap-2 mt-4">
         <Button variant="ghost" size="sm" onClick={onDelete} className="text-destructive">
@@ -736,7 +806,7 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: { entry: Da
           <Button onClick={() => {
             const v = parseFloat(amount);
             if (isNaN(v)) return;
-            onSave({ amount: v, category: category || null, description: description || null, date: d, recurrence, recurrence_until: until || null, skip_weekend_rule: skipWeekend });
+            onSave({ amount: v, category: category || null, description: description || null, date: d, recurrence, recurrence_until: until || null, skip_weekend_rule: skipWeekend, ...(canReconcile ? { reconciled } : {}) });
           }}>Salvar</Button>
         </div>
       </div>

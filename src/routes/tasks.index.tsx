@@ -8,10 +8,10 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import { PageShell } from "@/components/PageHeader";
-import { Calendar as CalIcon, AlertCircle, Clock, Repeat, GripVertical, Trash2 } from "lucide-react";
+import { Calendar as CalIcon, AlertCircle, Clock, Repeat, GripVertical, Trash2, Plus } from "lucide-react";
 import { getTasksSummary, listTaskLists } from "@/lib/task-lists.functions";
-import { listAllTasks, updateListTask, deleteListTask } from "@/lib/workspace-tasks.functions";
-import { useKanbanColumns, useColumnDnD, ColumnControls, AddColumnButton } from "@/components/kanban/useKanbanColumns";
+import { listAllTasks, createListTask, updateListTask, deleteListTask } from "@/lib/workspace-tasks.functions";
+import { useKanbanColumns, useColumnDnD, ColumnControls } from "@/components/kanban/useKanbanColumns";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
@@ -75,7 +75,7 @@ function TasksDashboard() {
   const { data: listsData } = useQuery({ queryKey: ["task-lists"], queryFn: () => listsFn() });
   const { data: tasksData } = useQuery({ queryKey: ["all-tasks"], queryFn: () => tasksFn() });
 
-  const [openTask, setOpenTask] = useState<{ id: string; source: "task" | "shop_task" } | null>(null);
+  const [openTask, setOpenTask] = useState<{ id: string | null; source: "task" | "shop_task"; createListId?: string } | null>(null);
   const [activeDrag, setActiveDrag] = useState<{ id: string; source: "task" | "shop_task" } | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const confirm = useConfirm();
@@ -98,6 +98,13 @@ function TasksDashboard() {
   const mUpdate = useMutation({ mutationFn: (d: any) => updateFn({ data: d }), onSuccess: invalidate, onError: (e: any) => toast.error(e.message) });
   const mDelete = useMutation({ mutationFn: (d: any) => deleteFn({ data: d }), onSuccess: invalidate, onError: (e: any) => toast.error(e.message) });
 
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+
+  const handleAddTask = (listId: string) => {
+    setAddMenuOpen(false);
+    setOpenTask({ id: null, source: "task", createListId: listId });
+  };
+
   const cols = useKanbanColumns({
     boardType: "tasks_dashboard",
     boardId: "all",
@@ -112,9 +119,38 @@ function TasksDashboard() {
 
   return (
     <PageShell>
-      <div className="mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Tarefas</h1>
-        <p className="text-sm text-muted-foreground mt-1.5">Visão geral do seu workspace</p>
+      <div className="flex items-start justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Tarefas</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">Visão geral do seu workspace</p>
+        </div>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setAddMenuOpen((v) => !v)}
+            disabled={lists.length === 0}
+            className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50"
+          >
+            <Plus className="size-3.5" /> Adicionar tarefa
+          </button>
+          {addMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setAddMenuOpen(false)} />
+              <div className="absolute right-0 top-10 z-40 w-56 rounded-xl bg-popover border border-border shadow-xl p-1.5">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground px-2 py-1.5">Categoria</div>
+                {lists.map((l: any) => (
+                  <button
+                    key={l.id}
+                    onClick={() => handleAddTask(l.id)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm hover:bg-muted transition-colors text-left"
+                  >
+                    <span className="size-2 rounded-full shrink-0" style={{ background: l.color }} />
+                    <span className="truncate">{l.name}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
@@ -161,7 +197,6 @@ function TasksDashboard() {
               />
             );
           })}
-          <AddColumnButton onAdd={cols.add} />
         </div>
         <DragOverlay>
           {activeDrag && (() => {
@@ -181,6 +216,7 @@ function TasksDashboard() {
         onOpenChange={(o) => { if (!o) setOpenTask(null); }}
         source={openTask?.source ?? "task"}
         id={openTask?.id ?? null}
+        createListId={openTask?.createListId ?? null}
         invalidateKeys={[["all-tasks"], ["task-lists"], ["tasks-summary"]]}
       />
     </PageShell>
