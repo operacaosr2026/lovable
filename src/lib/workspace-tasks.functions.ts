@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
 
 const STATUSES = ["todo", "doing", "done"] as const;
 const FREQUENCIES = ["daily", "weekly", "monthly", "custom"] as const;
@@ -36,26 +36,28 @@ function computeNextDueAt(
   return next.toISOString();
 }
 
-async function resolveList(supabase: any, userId: string, listId: string) {
+async function resolveList(supabase: any, userId: string, ownerId: string, listId: string) {
   const { data, error } = await supabase
-    .from("task_lists").select("*").eq("id", listId).eq("user_id", userId).maybeSingle();
+    .from("task_lists").select("*").eq("id", listId)
+    .in("user_id", userId === ownerId ? [userId] : [userId, ownerId])
+    .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Lista não encontrada");
   return data;
 }
 
 export const listListTasks = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ list_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
-    const list = await resolveList(supabase, userId, data.list_id);
+    const { supabase, userId, ownerId } = context;
+    const list = await resolveList(supabase, userId, ownerId, data.list_id);
     const now = new Date();
 
     if (list.shop_id) {
       const { data: rows, error } = await supabase
         .from("shop_tasks").select("*")
-        .eq("user_id", userId).eq("shop_id", list.shop_id)
+        .eq("user_id", ownerId).eq("shop_id", list.shop_id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: false });
       if (error) throw new Error(error.message);
@@ -91,22 +93,27 @@ export const listListTasks = createServerFn({ method: "GET" })
   });
 
 export const listAllTasks = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+    const { supabase, userId, ownerId } = context;
     const now = new Date();
+    const shopFilter = getSectionResourceFilter(context, "shops");
 
-    const [{ data: lists }, { data: tasks }, { data: shopTasks }] = await Promise.all([
+    let shopTasksQuery = supabase.from("shop_tasks").select("*").eq("user_id", ownerId)
+      .order("position", { ascending: true }).order("created_at", { ascending: false });
+    if (Array.isArray(shopFilter)) shopTasksQuery = shopTasksQuery.in("shop_id", shopFilter);
+
+    const [{ data: personalLists }, { data: shopLists }, { data: tasks }, { data: shopTasks }] = await Promise.all([
       supabase.from("task_lists").select("id,shop_id,is_system").eq("user_id", userId),
+      supabase.from("task_lists").select("id,shop_id").eq("user_id", ownerId).not("shop_id", "is", null),
       supabase.from("tasks").select("*").eq("user_id", userId)
         .order("position", { ascending: true }).order("created_at", { ascending: false }),
-      supabase.from("shop_tasks").select("*").eq("user_id", userId)
-        .order("position", { ascending: true }).order("created_at", { ascending: false }),
+      shopFilter === "none" ? Promise.resolve({ data: [] as any[] }) : shopTasksQuery,
     ]);
 
-    const personal = (lists ?? []).find((l: any) => l.is_system && !l.shop_id);
+    const personal = (personalLists ?? []).find((l: any) => l.is_system && !l.shop_id);
     const shopToList = new Map<string, string>();
-    for (const l of lists ?? []) if (l.shop_id) shopToList.set(l.shop_id, l.id);
+    for (const l of [...(personalLists ?? []), ...(shopLists ?? [])]) if (l.shop_id) shopToList.set(l.shop_id, l.id);
 
     const all = [
       ...(tasks ?? []).map((t: any) => ({
@@ -136,20 +143,20 @@ const CreateInput = z.object({
 });
 
 export const createListTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => CreateInput.parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
-    const list = await resolveList(supabase, userId, data.list_id);
+    const { supabase, userId, ownerId } = context;
+    const list = await resolveList(supabase, userId, ownerId, data.list_id);
 
     if (list.shop_id) {
       const { data: top } = await supabase
         .from("shop_tasks").select("position")
-        .eq("user_id", userId).eq("shop_id", list.shop_id).eq("status", data.status)
+        .eq("user_id", ownerId).eq("shop_id", list.shop_id).eq("status", data.status)
         .order("position", { ascending: true }).limit(1).maybeSingle();
       const position = (top?.position ?? 0) - 1;
       const { data: row, error } = await supabase.from("shop_tasks").insert({
-        user_id: userId,
+        user_id: ownerId,
         shop_id: list.shop_id,
         title: data.title,
         status: data.status,
@@ -204,10 +211,10 @@ const UpdateInput = z.object({
 });
 
 export const updateListTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => UpdateInput.parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, userId, ownerId } = context;
     const patch: any = { ...data.patch };
     // tags only valid for tasks table
     if (data.source === "shop_task") delete patch.tags;
@@ -250,20 +257,22 @@ export const updateListTask = createServerFn({ method: "POST" })
     }
 
     const table = data.source === "task" ? "tasks" : "shop_tasks";
-    const { error } = await supabase.from(table).update(patch).eq("id", data.id).eq("user_id", userId);
+    const ownerScopeId = data.source === "task" ? userId : ownerId;
+    const { error } = await supabase.from(table).update(patch).eq("id", data.id).eq("user_id", ownerScopeId);
     if (error) throw new Error(error.message);
     return { ok: true, recurrence_next_due_at: nextDue };
   });
 
 export const deleteListTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) =>
     z.object({ id: z.string().uuid(), source: z.enum(["task", "shop_task"]) }).parse(d),
   )
   .handler(async ({ context, data }) => {
     const table = data.source === "task" ? "tasks" : "shop_tasks";
+    const ownerScopeId = data.source === "task" ? context.userId : context.ownerId;
     const { error } = await context.supabase.from(table).delete()
-      .eq("id", data.id).eq("user_id", context.userId);
+      .eq("id", data.id).eq("user_id", ownerScopeId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

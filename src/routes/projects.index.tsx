@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -191,6 +192,8 @@ function ProjectCard({ p, onEdit, onDuplicate, onArchive, onDelete }: {
   onEdit: () => void; onDuplicate: () => void; onArchive: () => void; onDelete: () => void;
 }) {
   const [menu, setMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const cat = CATEGORY_META[p.category as keyof typeof CATEGORY_META] ?? CATEGORY_META.outros;
   const st = STATUS_META[p.status as keyof typeof STATUS_META] ?? STATUS_META.planejando;
   const prio = PRIORITY_META[p.priority as keyof typeof PRIORITY_META] ?? PRIORITY_META.media;
@@ -249,16 +252,27 @@ function ProjectCard({ p, onEdit, onDuplicate, onArchive, onDelete }: {
 
       <div className="absolute top-3 right-3">
         <button
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(v => !v); }}
+          ref={menuBtnRef}
+          onClick={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            if (!menu) {
+              const r = menuBtnRef.current?.getBoundingClientRect();
+              if (r) setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+            }
+            setMenu(v => !v);
+          }}
           className="size-7 rounded-md grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted bg-surface/80 backdrop-blur-sm sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
           aria-label="Menu"
         >
           <MoreVertical className="size-4" />
         </button>
-        {menu && (
+        {menu && menuPos && createPortal(
           <>
-            <div className="fixed inset-0 z-10" onClick={(e) => { e.preventDefault(); setMenu(false); }} />
-            <div className="absolute right-0 top-8 z-20 w-44 rounded-xl border border-border bg-popover shadow-lg p-1 text-sm">
+            <div className="fixed inset-0 z-40" onClick={(e) => { e.preventDefault(); setMenu(false); }} />
+            <div
+              className="fixed z-50 w-44 rounded-xl border border-border bg-popover shadow-lg p-1 text-sm"
+              style={{ top: menuPos.top, right: menuPos.right }}
+            >
               <MenuItem icon={Pencil} onClick={() => { setMenu(false); onEdit(); }}>Editar</MenuItem>
               <MenuItem icon={Copy} onClick={() => { setMenu(false); onDuplicate(); }}>Duplicar</MenuItem>
               <MenuItem icon={p.archived ? ArchiveRestore : Archive} onClick={() => { setMenu(false); onArchive(); }}>
@@ -267,7 +281,8 @@ function ProjectCard({ p, onEdit, onDuplicate, onArchive, onDelete }: {
               <div className="h-px bg-border my-1" />
               <MenuItem icon={Trash2} danger onClick={() => { setMenu(false); onDelete(); }}>Excluir</MenuItem>
             </div>
-          </>
+          </>,
+          document.body,
         )}
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
 
 const ListInput = z.object({
   name: z.string().trim().min(1).max(80),
@@ -9,14 +10,18 @@ const ListInput = z.object({
 });
 
 export const listTaskLists = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+    const { supabase, userId, ownerId } = context;
+    const shopFilter = getSectionResourceFilter(context, "shops");
+
+    let shopTasksQuery = supabase.from("shop_tasks").select("id,shop_id,status").eq("user_id", ownerId);
+    if (Array.isArray(shopFilter)) shopTasksQuery = shopTasksQuery.in("shop_id", shopFilter);
 
     const [{ data: lists }, { data: tasks }, { data: shopTasks }] = await Promise.all([
       supabase.from("task_lists").select("*").eq("user_id", userId).order("position").order("created_at"),
       supabase.from("tasks").select("id,list_id,status").eq("user_id", userId),
-      supabase.from("shop_tasks").select("id,shop_id,status").eq("user_id", userId),
+      shopFilter === "none" ? Promise.resolve({ data: [] as any[] }) : shopTasksQuery,
     ]);
 
     const counts = new Map<string, { open: number; total: number }>();
@@ -134,22 +139,26 @@ function ymd(d: Date) {
 }
 
 export const getTasksSummary = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+    const { supabase, userId, ownerId } = context;
     const now = new Date();
     const start = new Date(now); start.setHours(0, 0, 0, 0);
     const endToday = new Date(now); endToday.setHours(23, 59, 59, 999);
     const end7 = new Date(start); end7.setDate(end7.getDate() + 7);
     const end30 = new Date(start); end30.setDate(end30.getDate() + 30);
+    const shopFilter = getSectionResourceFilter(context, "shops");
+
+    let shopTasksQuery = supabase.from("shop_tasks")
+      .select("id,title,due_at,status,shop_id")
+      .eq("user_id", ownerId).neq("status", "done").not("due_at", "is", null);
+    if (Array.isArray(shopFilter)) shopTasksQuery = shopTasksQuery.in("shop_id", shopFilter);
 
     const [{ data: tasks }, { data: shopTasks }] = await Promise.all([
       supabase.from("tasks")
         .select("id,title,due_at,status,list_id")
         .eq("user_id", userId).neq("status", "done").not("due_at", "is", null),
-      supabase.from("shop_tasks")
-        .select("id,title,due_at,status,shop_id")
-        .eq("user_id", userId).neq("status", "done").not("due_at", "is", null),
+      shopFilter === "none" ? Promise.resolve({ data: [] as any[] }) : shopTasksQuery,
     ]);
 
     type Item = {
