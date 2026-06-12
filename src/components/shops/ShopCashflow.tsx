@@ -398,8 +398,8 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           updateMut.mutate({ id: drag.id, patch: { date: newDate } });
         }}
       >
-        <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-          <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr)) 92px 92px", gridTemplateRows: "auto 170px 170px auto" }}>
+        <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
+          <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(130px, 1fr)) 92px 92px", gridTemplateRows: "auto 170px 170px auto", minWidth: 860 }}>
             {dayData.map((dd) => {
               const weekday = weekdayFromKey(dd.key);
               const isToday = dd.key === todayKey;

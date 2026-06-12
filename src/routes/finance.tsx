@@ -27,7 +27,7 @@ function FinanceLayout() {
           <h1 className="text-2xl font-semibold tracking-tight">Financeiro</h1>
           <p className="text-sm text-muted-foreground mt-1">Controle pessoal — rápido e limpo</p>
         </div>
-        <nav className="flex items-center gap-1 bg-muted rounded-xl p-1">
+        <nav className="flex items-center gap-1 bg-muted rounded-xl p-1 max-w-full overflow-x-auto scrollbar-thin">
           {tabs.map((t) => {
             const active = t.exact ? path === "/finance" : path === t.to.replace(/\/+$/, "");
             const Icon = t.icon;
@@ -35,7 +35,7 @@ function FinanceLayout() {
               <Link
                 key={t.to}
                 to={t.to}
-                className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium transition-colors ${
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                   active ? "bg-surface shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                 }`}
               >

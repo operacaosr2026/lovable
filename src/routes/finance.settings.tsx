@@ -104,7 +104,7 @@ function SettingsPage() {
           className="mt-3 flex items-center gap-2"
         >
           <input value={fxInput} onChange={(e) => setFxInput(e.target.value)} placeholder="ex: 5,1234"
-            className="flex-1 h-10 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
+            className="flex-1 min-w-0 h-10 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
           <button type="submit" className="h-10 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium">Atualizar</button>
         </form>
         <p className="text-[11px] text-muted-foreground mt-2">Aplicada apenas na visualização do patrimônio total.</p>
@@ -128,7 +128,7 @@ function SettingsPage() {
             <span className="text-xs text-muted-foreground w-16 shrink-0">Mensal</span>
             <input value={monthlyGoal} onChange={(e) => setMonthlyGoal(e.target.value)}
               placeholder={dashQ.data?.monthlyGoal ? `Atual: ${Number(dashQ.data.monthlyGoal.target_amount_brl).toLocaleString("pt-BR")}` : "ex: 50000"}
-              className="flex-1 h-9 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
+              className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
             <button type="submit" className="h-9 px-3 rounded-lg bg-muted text-xs font-medium">Salvar</button>
           </form>
           <form
@@ -145,7 +145,7 @@ function SettingsPage() {
             <span className="text-xs text-muted-foreground w-16 shrink-0">Anual</span>
             <input value={yearlyGoal} onChange={(e) => setYearlyGoal(e.target.value)}
               placeholder={dashQ.data?.yearlyGoal ? `Atual: ${Number(dashQ.data.yearlyGoal.target_amount_brl).toLocaleString("pt-BR")}` : "ex: 600000"}
-              className="flex-1 h-9 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
+              className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
             <button type="submit" className="h-9 px-3 rounded-lg bg-muted text-xs font-medium">Salvar</button>
           </form>
         </div>
@@ -169,7 +169,7 @@ function SettingsPage() {
             <option value="income">Entrada</option>
           </select>
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nome da categoria"
-            className="flex-1 h-9 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
+            className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-muted border border-border text-sm outline-none focus:border-primary" />
           <button type="submit" className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1">
             <Plus className="size-3.5" /> Adicionar
           </button>

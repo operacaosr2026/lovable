@@ -143,7 +143,8 @@ function EsteiraPage() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-3 items-start" style={{ gridTemplateColumns: `repeat(${cols.columns.length}, minmax(0, 1fr))` }}>
+        <div className="overflow-x-auto">
+        <div className="grid gap-3 items-start" style={{ gridTemplateColumns: `repeat(${cols.columns.length}, minmax(240px, 1fr))` }}>
           {cols.columns.map((col) => {
             const stage = col.id;
             const items = grouped[stage] ?? [];
@@ -248,6 +249,7 @@ function EsteiraPage() {
               </div>
             );
           })}
+        </div>
         </div>
       )}
     </PageShell>

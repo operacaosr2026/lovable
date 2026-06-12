@@ -214,9 +214,9 @@ function Dashboard() {
                   key={s.id}
                   to="/shops/$shopId"
                   params={{ shopId: s.id }}
-                  className="flex items-center gap-4 px-5 py-3 hover:bg-surface-hover transition-colors"
+                  className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 hover:bg-surface-hover transition-colors"
                 >
-                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0 basis-full sm:basis-auto">
                     {s.logo_url ? (
                       <img src={s.logo_url} alt={s.name} className="size-8 rounded-lg object-cover border border-border shrink-0" />
                     ) : (
@@ -226,22 +226,24 @@ function Dashboard() {
                     )}
                     <span className="text-sm font-medium truncate">{s.name}</span>
                   </div>
-                  <div className="text-right w-28 shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
-                    <div className={`text-sm font-semibold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-foreground"}`}>
-                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
+                  <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:gap-4 shrink-0">
+                    <div className="text-right sm:w-28 sm:shrink-0">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
+                      <div className={`text-sm font-semibold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-foreground"}`}>
+                        {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right w-28 shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
-                    <div className={`text-sm font-semibold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
-                      {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+                    <div className="text-right sm:w-28 sm:shrink-0">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
+                      <div className={`text-sm font-semibold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                        {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right w-24 shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno (30d)</div>
-                    <div className={`text-sm font-semibold tabular-nums ${(s.refundRate ?? 0) > 0.5 ? "text-rose-500" : "text-foreground"}`}>
-                      {s.refundRate != null ? `${s.refundRate.toFixed(1)}%` : "—"}
+                    <div className="text-right sm:w-24 sm:shrink-0">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno (30d)</div>
+                      <div className={`text-sm font-semibold tabular-nums ${(s.refundRate ?? 0) > 0.5 ? "text-rose-500" : "text-foreground"}`}>
+                        {s.refundRate != null ? `${s.refundRate.toFixed(1)}%` : "—"}
+                      </div>
                     </div>
                   </div>
                 </Link>

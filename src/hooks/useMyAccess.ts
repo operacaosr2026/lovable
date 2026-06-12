@@ -12,7 +12,11 @@ export function useMyAccess() {
     enabled: !!user,
     staleTime: 60_000,
   });
-  const role = q.data?.role ?? "admin";
+  // While the access query is loading, default to "member" with no extra
+  // permissions so role-gated nav items don't briefly appear and then
+  // disappear/shift once the real role resolves (was causing taps on
+  // "Configurações" or "Empresa" links to miss after a layout shift).
+  const role = q.data?.role ?? "member";
   const permissions = q.data?.permissions ?? [];
 
   const sectionsAllowed = new Set(permissions.map((p) => p.section));
