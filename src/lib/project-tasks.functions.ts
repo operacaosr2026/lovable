@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 const STATUSES = ["todo", "doing", "done"] as const;
 const FREQUENCIES = ["daily", "weekly", "monthly", "custom"] as const;
@@ -52,14 +53,14 @@ const TaskInput = z.object({
 });
 
 export const listProjectTasks = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: tasks, error } = await supabase
       .from("project_tasks")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", ownerId)
       .eq("project_id", data.project_id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
@@ -74,17 +75,17 @@ export const listProjectTasks = createServerFn({ method: "GET" })
   });
 
 export const createProjectTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => TaskInput.parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: top } = await supabase
       .from("project_tasks").select("position")
-      .eq("user_id", userId).eq("project_id", data.project_id).eq("status", data.status)
+      .eq("user_id", ownerId).eq("project_id", data.project_id).eq("status", data.status)
       .order("position", { ascending: true }).limit(1).maybeSingle();
     const position = (top?.position ?? 0) - 1;
     const { data: row, error } = await supabase.from("project_tasks").insert({
-      user_id: userId,
+      user_id: ownerId,
       project_id: data.project_id,
       parent_task_id: data.parent_task_id ?? null,
       title: data.title,

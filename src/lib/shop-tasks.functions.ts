@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const TASK_STATUSES = ["todo", "doing", "done"] as const;
 export const TASK_PRIORITIES = ["baixa", "media", "alta"] as const;
@@ -21,12 +22,12 @@ const TaskInput = z.object({
 });
 
 export const listShopTasks = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: tasks, error } = await context.supabase
       .from("shop_tasks").select("*")
-      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -40,16 +41,16 @@ export const listShopTasks = createServerFn({ method: "GET" })
   });
 
 export const createShopTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => TaskInput.parse(d))
   .handler(async ({ context, data }) => {
     const { data: top } = await context.supabase
       .from("shop_tasks").select("position")
-      .eq("user_id", context.userId).eq("shop_id", data.shop_id).eq("status", data.status)
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).eq("status", data.status)
       .order("position", { ascending: true }).limit(1).maybeSingle();
     const position = (top?.position ?? 0) - 1;
     const { data: row, error } = await context.supabase.from("shop_tasks").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       parent_task_id: data.parent_task_id ?? null,
       title: data.title,

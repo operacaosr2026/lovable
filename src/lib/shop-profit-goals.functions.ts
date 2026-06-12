@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 const upsertSchema = z.object({
   shop_id: z.string().uuid(),
@@ -33,14 +34,14 @@ export const getShopProfitGoal = createServerFn({ method: "GET" })
   });
 
 export const upsertShopProfitGoal = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((input) => upsertSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row, error } = await supabase
       .from("shop_profit_goals")
       .upsert(
-        { ...data, user_id: userId },
+        { ...data, user_id: ownerId },
         { onConflict: "shop_id" }
       )
       .select()
@@ -50,15 +51,15 @@ export const upsertShopProfitGoal = createServerFn({ method: "POST" })
   });
 
 export const getProfitGoalLiveStats = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((data: { shop_id: string; start_date: string; end_date: string }) => data)
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
 
     const { data: settings } = await supabase
       .from("shop_order_settings")
       .select("shopify_store_id")
-      .eq("user_id", userId)
+      .eq("user_id", ownerId)
       .eq("shop_id", data.shop_id)
       .maybeSingle();
 
@@ -67,7 +68,7 @@ export const getProfitGoalLiveStats = createServerFn({ method: "GET" })
       const { data: st } = await supabase
         .from("shopify_stores")
         .select("id,name,last_sync_at")
-        .eq("user_id", userId)
+        .eq("user_id", ownerId)
         .eq("id", settings.shopify_store_id)
         .maybeSingle();
       if (st) storeInfo = st as any;
@@ -76,7 +77,7 @@ export const getProfitGoalLiveStats = createServerFn({ method: "GET" })
     const { data: rows, error } = await supabase
       .from("shop_orders")
       .select("items_count,revenue,currency")
-      .eq("user_id", userId)
+      .eq("user_id", ownerId)
       .eq("shop_id", data.shop_id)
       .gte("order_date", data.start_date)
       .lte("order_date", data.end_date);

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -18,10 +19,10 @@ const ProductInput = z.object({
 
 // ---------- products ----------
 export const listProducts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     const { data: rows, error } = await context.supabase
-      .from("products").select("*").eq("user_id", context.userId)
+      .from("products").select("*").eq("user_id", context.ownerId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
 
@@ -60,11 +61,11 @@ export const getProduct = createServerFn({ method: "GET" })
   });
 
 export const createProduct = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => ProductInput.parse(d))
   .handler(async ({ context, data }) => {
     const { data: row, error } = await context.supabase.from("products").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       name: data.name,
       niche: data.niche ?? null,
       supplier: data.supplier ?? null,
@@ -76,7 +77,7 @@ export const createProduct = createServerFn({ method: "POST" })
     }).select().single();
     if (error) throw new Error(error.message);
     // create empty pricing row
-    await context.supabase.from("product_pricing").insert({ product_id: row.id, user_id: context.userId });
+    await context.supabase.from("product_pricing").insert({ product_id: row.id, user_id: context.ownerId });
     return { product: row };
   });
 
@@ -113,12 +114,12 @@ const PricingInput = z.object({
 });
 
 export const upsertPricing = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => PricingInput.parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("product_pricing").upsert({
       product_id: data.product_id,
-      user_id: context.userId,
+      user_id: context.ownerId,
       iof_pct: data.iof_pct,
       payments_pct: data.payments_pct,
       dom_pagamentos_pct: data.dom_pagamentos_pct,
@@ -144,7 +145,7 @@ export const listProductImages = createServerFn({ method: "GET" })
   });
 
 export const addProductImage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     product_id: z.string().uuid(),
     file_path: z.string().min(1).max(500),
@@ -167,7 +168,7 @@ export const addProductImage = createServerFn({ method: "POST" })
       await context.supabase.from("product_images").update({ is_main: false }).eq("product_id", data.product_id);
     }
     const { data: row, error } = await context.supabase.from("product_images").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       product_id: data.product_id,
       file_path: data.file_path,
       file_url: data.file_url ?? null,
@@ -232,7 +233,7 @@ export const listProductTemplates = createServerFn({ method: "GET" })
   });
 
 export const addProductTemplate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     product_id: z.string().uuid(),
     kind: z.enum(["zip", "html", "json", "link", "file"]).default("file"),
@@ -246,7 +247,7 @@ export const addProductTemplate = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: row, error } = await context.supabase.from("product_templates").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       product_id: data.product_id,
       kind: data.kind,
       file_path: data.file_path ?? null,
@@ -298,7 +299,7 @@ export const listCreatives = createServerFn({ method: "GET" })
   });
 
 export const createCreative = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => CreativeInput.parse(d))
   .handler(async ({ context, data }) => {
     const { data: top } = await context.supabase
@@ -307,7 +308,7 @@ export const createCreative = createServerFn({ method: "POST" })
       .order("position", { ascending: true }).limit(1).maybeSingle();
     const position = (top?.position ?? 0) - 1;
     const { data: row, error } = await context.supabase.from("product_creatives").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       product_id: data.product_id,
       name: data.name ?? "",
       title: data.title,
@@ -325,7 +326,7 @@ export const createCreative = createServerFn({ method: "POST" })
   });
 
 export const duplicateCreative = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: src, error: e1 } = await context.supabase
@@ -338,7 +339,7 @@ export const duplicateCreative = createServerFn({ method: "POST" })
       .order("position", { ascending: true }).limit(1).maybeSingle();
     const position = (top?.position ?? 0) - 1;
     const { data: row, error } = await context.supabase.from("product_creatives").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       product_id: src.product_id,
       name: src.name ? `${src.name} (cópia)` : (src.title ? `${src.title} (cópia)` : ""),
       title: src.title,

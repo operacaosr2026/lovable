@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const META_GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
@@ -25,12 +26,12 @@ function addDays(date: string, days: number) {
 // ===== Integration config =====
 
 export const getMetaAdsIntegration = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { ownerId } = context;
     const { data: row } = await supabaseAdmin.from("meta_ads_integrations")
-      .select("*").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("*").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
 
     if (!row) {
       return {
@@ -62,7 +63,7 @@ export const getMetaAdsIntegration = createServerFn({ method: "POST" })
   });
 
 export const upsertMetaAdsIntegration = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string; access_token?: string; ad_account_id?: string; enabled?: boolean }) =>
     z.object({
       shop_id: z.string().uuid(),
@@ -72,14 +73,14 @@ export const upsertMetaAdsIntegration = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { ownerId } = context;
     const patch: { access_token?: string; ad_account_id?: string; enabled?: boolean } = {};
     if (data.access_token !== undefined) patch.access_token = data.access_token;
     if (data.ad_account_id !== undefined) patch.ad_account_id = normalizeAdAccountId(data.ad_account_id);
     if (data.enabled !== undefined) patch.enabled = data.enabled;
 
     const { data: existing } = await supabaseAdmin.from("meta_ads_integrations")
-      .select("id").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("id").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
 
     if (existing) {
       const { error } = await supabaseAdmin.from("meta_ads_integrations")
@@ -87,19 +88,19 @@ export const upsertMetaAdsIntegration = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     } else {
       const { error } = await supabaseAdmin.from("meta_ads_integrations")
-        .insert({ user_id: userId, shop_id: data.shop_id, enabled: true, ...patch });
+        .insert({ user_id: ownerId, shop_id: data.shop_id, enabled: true, ...patch });
       if (error) throw new Error(error.message);
     }
     return { ok: true };
   });
 
 export const testMetaAdsConnection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { ownerId } = context;
     const { data: row } = await supabaseAdmin.from("meta_ads_integrations")
-      .select("access_token,ad_account_id").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("access_token,ad_account_id").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!row?.access_token || !row.ad_account_id) throw new Error("Token de acesso e ID da conta de anúncios são obrigatórios");
 
     try {
@@ -110,7 +111,7 @@ export const testMetaAdsConnection = createServerFn({ method: "POST" })
         const msg = json?.error?.message || `Falha (${r.status})`;
         await supabaseAdmin.from("meta_ads_integrations")
           .update({ last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: String(msg).slice(0, 500) })
-          .eq("user_id", userId).eq("shop_id", data.shop_id);
+          .eq("user_id", ownerId).eq("shop_id", data.shop_id);
         throw new Error(msg);
       }
       await supabaseAdmin.from("meta_ads_integrations")
@@ -121,25 +122,25 @@ export const testMetaAdsConnection = createServerFn({ method: "POST" })
           last_sync_status: "ok",
           last_sync_error: null,
         })
-        .eq("user_id", userId).eq("shop_id", data.shop_id);
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
       return { ok: true, name: json.name, currency: json.currency };
     } catch (e: any) {
       await supabaseAdmin.from("meta_ads_integrations")
         .update({ last_sync_status: "error", last_sync_error: String(e?.message ?? e).slice(0, 500) })
-        .eq("user_id", userId).eq("shop_id", data.shop_id);
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
       throw e;
     }
   });
 
 export const syncMetaAdsSpend = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string; since_days?: number }) =>
     z.object({ shop_id: z.string().uuid(), since_days: z.number().int().min(1).max(365).optional() }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { ownerId } = context;
     const { data: integ } = await supabaseAdmin.from("meta_ads_integrations")
-      .select("access_token,ad_account_id").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("access_token,ad_account_id").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!integ?.access_token || !integ.ad_account_id) throw new Error("Integração não configurada");
 
     const sinceDays = data.since_days ?? 30;
@@ -155,7 +156,7 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
         const msg = json?.error?.message || `Falha (${r.status})`;
         await supabaseAdmin.from("meta_ads_integrations")
           .update({ last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: String(msg).slice(0, 500) })
-          .eq("user_id", userId).eq("shop_id", data.shop_id);
+          .eq("user_id", ownerId).eq("shop_id", data.shop_id);
         throw new Error(msg);
       }
 
@@ -163,7 +164,7 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
         .map((d) => ({ date: d.date_start as string, spend: Number(d.spend ?? 0) }))
         .filter((d) => d.spend > 0)
         .map((d) => ({
-          user_id: userId,
+          user_id: ownerId,
           shop_id: data.shop_id,
           kind: "expense",
           amount: d.spend,
@@ -185,13 +186,13 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
 
       await supabaseAdmin.from("meta_ads_integrations")
         .update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null })
-        .eq("user_id", userId).eq("shop_id", data.shop_id);
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
 
       return { synced: rows.length, totalSpend };
     } catch (e: any) {
       await supabaseAdmin.from("meta_ads_integrations")
         .update({ last_sync_status: "error", last_sync_error: String(e?.message ?? e).slice(0, 500) })
-        .eq("user_id", userId).eq("shop_id", data.shop_id);
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
       throw e;
     }
   });
@@ -228,13 +229,13 @@ function formatActivity(a: any): string {
 }
 
 export const syncMetaAdsActivities = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { ownerId } = context;
     const { data: integ } = await supabaseAdmin.from("meta_ads_integrations")
       .select("access_token,ad_account_id,journal_page_id,last_activities_sync_at")
-      .eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!integ?.access_token || !integ.ad_account_id) throw new Error("Integração não configurada");
 
     const since = integ.last_activities_sync_at
@@ -262,11 +263,11 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
 
     if (!pageId) {
       const { data: siblings } = await supabaseAdmin.from("journal_pages")
-        .select("position").eq("user_id", userId).eq("shop_id", data.shop_id)
+        .select("position").eq("user_id", ownerId).eq("shop_id", data.shop_id)
         .is("parent_id", null).order("position", { ascending: false }).limit(1);
       const nextPos = (siblings?.[0]?.position ?? -1) + 1;
       const { data: newPage, error } = await supabaseAdmin.from("journal_pages").insert({
-        user_id: userId,
+        user_id: ownerId,
         shop_id: data.shop_id,
         parent_id: null,
         title: ACTIVITIES_PAGE_TITLE,
@@ -303,7 +304,7 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
 
     await supabaseAdmin.from("meta_ads_integrations")
       .update({ journal_page_id: pageId, last_activities_sync_at: new Date().toISOString() })
-      .eq("user_id", userId).eq("shop_id", data.shop_id);
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id);
 
     return { synced: activities.length, journal_page_id: pageId };
   });

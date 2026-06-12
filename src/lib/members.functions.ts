@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { resolveWorkspaceAccess } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const SECTIONS = [
@@ -25,34 +26,7 @@ const PermissionSchema = z.object({
 export const getMyAccess = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data: roleRow } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
-    const role = (roleRow?.role as "admin" | "member") ?? "admin";
-
-    let ownerId: string | null = null;
-    const permissions: { section: string; resource_id: string | null }[] = [];
-
-    if (role === "member") {
-      const { data: link } = await supabase
-        .from("workspace_members")
-        .select("owner_id")
-        .eq("member_id", userId)
-        .maybeSingle();
-      ownerId = link?.owner_id ?? null;
-
-      const { data: perms } = await supabase
-        .from("member_permissions")
-        .select("section,resource_id")
-        .eq("member_id", userId);
-      for (const p of (perms ?? []) as any[]) {
-        permissions.push({ section: p.section, resource_id: p.resource_id });
-      }
-    }
-
+    const { role, ownerId, permissions } = await resolveWorkspaceAccess(context.supabase, context.userId);
     return { role, ownerId, permissions };
   });
 

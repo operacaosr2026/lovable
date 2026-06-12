@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const CATEGORIES = ["pessoal", "trabalho", "evento", "construcao", "financeiro", "estudos", "outros"] as const;
 export const STATUSES = ["planejando", "em_andamento", "pausado", "finalizado"] as const;
@@ -17,11 +18,11 @@ const ProjectInput = z.object({
 });
 
 export const listProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ includeArchived: z.boolean().optional() }).parse(d ?? {}))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
-    let q = supabase.from("projects").select("*").eq("user_id", userId);
+    const { supabase, ownerId } = context;
+    let q = supabase.from("projects").select("*").eq("user_id", ownerId);
     if (!data.includeArchived) q = q.eq("archived", false);
     const { data: projects, error } = await q.order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -59,12 +60,12 @@ export const getProject = createServerFn({ method: "GET" })
   });
 
 export const createProject = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => ProjectInput.parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row, error } = await supabase.from("projects").insert({
-      user_id: userId,
+      user_id: ownerId,
       name: data.name,
       description: data.description ?? null,
       category: data.category,
@@ -101,14 +102,14 @@ export const deleteProject = createServerFn({ method: "POST" })
   });
 
 export const duplicateProject = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: src } = await supabase.from("projects").select("*").eq("id", data.id).maybeSingle();
     if (!src) throw new Error("Projeto não encontrado");
     const { data: copy, error } = await supabase.from("projects").insert({
-      user_id: userId,
+      user_id: ownerId,
       name: `${src.name} (cópia)`,
       description: src.description,
       category: src.category,
@@ -122,7 +123,7 @@ export const duplicateProject = createServerFn({ method: "POST" })
     const { data: tasks } = await supabase.from("project_tasks").select("*").eq("project_id", data.id).is("parent_task_id", null);
     if (tasks?.length) {
       const rows = tasks.map((t: any) => ({
-        user_id: userId,
+        user_id: ownerId,
         project_id: copy.id,
         title: t.title,
         description: t.description,

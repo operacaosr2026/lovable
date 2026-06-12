@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
 import { COST_CATEGORY } from "@/lib/shop-orders.functions";
 
 export const SHOP_STATUSES = ["ativa", "pausada", "arquivada"] as const;
@@ -26,12 +27,15 @@ const ShopInput = z.object({
 });
 
 export const listShops = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data: shops, error } = await supabase
-      .from("shops").select("*").eq("user_id", userId)
-      .order("created_at", { ascending: false });
+    const { supabase, ownerId } = context;
+    const filter = getSectionResourceFilter(context, "shops");
+    if (filter === "none") return { shops: [] };
+
+    let query = supabase.from("shops").select("*").eq("user_id", ownerId);
+    if (Array.isArray(filter)) query = query.in("id", filter);
+    const { data: shops, error } = await query.order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
 
     const ids = (shops ?? []).map((s: any) => s.id);
@@ -103,11 +107,11 @@ export const getShop = createServerFn({ method: "GET" })
   });
 
 export const createShop = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => ShopInput.parse(d))
   .handler(async ({ context, data }) => {
     const { data: row, error } = await context.supabase.from("shops").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       name: data.name,
       description: data.description ?? null,
       status: data.status,

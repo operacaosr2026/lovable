@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runTrack123Sync } from "@/lib/track123-sync.server";
 
@@ -30,12 +31,12 @@ function maskKey(s: string | null | undefined): string | null {
 // ===== Integration config =====
 
 export const getTrack123Integration = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row } = await supabaseAdmin.from("track123_integrations")
-      .select("*").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("*").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
 
     if (!row) {
       return {
@@ -68,7 +69,7 @@ export const getTrack123Integration = createServerFn({ method: "POST" })
   });
 
 export const upsertTrack123Integration = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string; api_key?: string; token?: string; tracking_link_template?: string; enabled?: boolean }) =>
     z.object({
       shop_id: z.string().uuid(),
@@ -79,7 +80,7 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const patch: { api_key?: string; token?: string; tracking_link_template?: string; enabled?: boolean } = {};
     if (data.api_key !== undefined) patch.api_key = data.api_key;
     if (data.token !== undefined) patch.token = data.token;
@@ -87,7 +88,7 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
     if (data.enabled !== undefined) patch.enabled = data.enabled;
 
     const { data: existing } = await supabaseAdmin.from("track123_integrations")
-      .select("id").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("id").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
 
     if (existing) {
       const { error } = await supabaseAdmin.from("track123_integrations")
@@ -95,11 +96,11 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     } else {
       const { error } = await supabaseAdmin.from("track123_integrations")
-        .insert({ user_id: userId, shop_id: data.shop_id, enabled: true, ...patch });
+        .insert({ user_id: ownerId, shop_id: data.shop_id, enabled: true, ...patch });
       if (error) throw new Error(error.message);
       // seed default event rules
       const rules = DEFAULT_EVENT_RULES.map((r, i) => ({
-        user_id: userId, shop_id: data.shop_id,
+        user_id: ownerId, shop_id: data.shop_id,
         event_key: r.key, event_label: r.label, target_status: r.target, enabled: true, position: i,
       }));
       await supabase.from("track123_event_rules").insert(rules);
@@ -108,12 +109,12 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
   });
 
 export const testTrack123Connection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { ownerId } = context;
     const { data: row } = await supabaseAdmin.from("track123_integrations")
-      .select("api_key").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("api_key").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!row?.api_key) throw new Error("API Key não configurada");
 
     try {
@@ -132,24 +133,24 @@ export const testTrack123Connection = createServerFn({ method: "POST" })
           last_sync_status: ok ? "ok" : "error",
           last_sync_error: ok ? null : text.slice(0, 500),
         })
-        .eq("user_id", userId).eq("shop_id", data.shop_id);
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
       if (!ok) throw new Error(`Falha (${r.status}): ${text.slice(0, 200)}`);
       return { ok: true };
     } catch (e: any) {
       await supabaseAdmin.from("track123_integrations")
         .update({ last_sync_status: "error", last_sync_error: String(e?.message ?? e).slice(0, 500) })
-        .eq("user_id", userId).eq("shop_id", data.shop_id);
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
       throw e;
     }
   });
 
 export const syncTrack123Tracking = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: integ } = await supabaseAdmin.from("track123_integrations")
-      .select("api_key").eq("user_id", userId).eq("shop_id", data.shop_id).maybeSingle();
+      .select("api_key").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!integ?.api_key) throw new Error("Integração não configurada");
 
     const result = await runTrack123Sync(data.shop_id, integ.api_key, supabase);
@@ -168,7 +169,7 @@ export const listTrack123EventRules = createServerFn({ method: "POST" })
   });
 
 export const upsertTrack123EventRule = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string; id?: string; event_key: string; event_label: string; target_status: string; enabled: boolean }) =>
     z.object({
       shop_id: z.string().uuid(),
@@ -180,7 +181,7 @@ export const upsertTrack123EventRule = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     if (data.id) {
       const { error } = await supabase.from("track123_event_rules").update({
         event_key: data.event_key, event_label: data.event_label,
@@ -189,7 +190,7 @@ export const upsertTrack123EventRule = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     } else {
       const { error } = await supabase.from("track123_event_rules").insert({
-        user_id: userId, shop_id: data.shop_id,
+        user_id: ownerId, shop_id: data.shop_id,
         event_key: data.event_key, event_label: data.event_label,
         target_status: data.target_status, enabled: data.enabled,
       });
@@ -210,12 +211,12 @@ export const deleteTrack123EventRule = createServerFn({ method: "POST" })
 // ===== Order tracking lookup =====
 
 export const setOrderTracking = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d: { order_id: string; tracking_number: string }) =>
     z.object({ order_id: z.string().uuid(), tracking_number: z.string().min(1).max(120) }).parse(d)
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: order } = await supabase.from("shop_orders")
       .select("id,shop_id").eq("id", data.order_id).maybeSingle();
     if (!order) throw new Error("Pedido não encontrado");
@@ -228,7 +229,7 @@ export const setOrderTracking = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     } else {
       const { error } = await supabase.from("shop_order_tracking").insert({
-        user_id: userId, shop_id: order.shop_id, order_id: order.id,
+        user_id: ownerId, shop_id: order.shop_id, order_id: order.id,
         tracking_number: data.tracking_number,
       });
       if (error) throw new Error(error.message);

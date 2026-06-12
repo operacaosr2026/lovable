@@ -1,15 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const listProjectAttachments = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: rows, error } = await supabase
       .from("project_attachments").select("*")
-      .eq("user_id", userId).eq("project_id", data.project_id)
+      .eq("user_id", ownerId).eq("project_id", data.project_id)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
 
@@ -23,7 +24,7 @@ export const listProjectAttachments = createServerFn({ method: "GET" })
   });
 
 export const registerProjectAttachment = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) =>
     z.object({
       project_id: z.string().uuid(),
@@ -34,9 +35,9 @@ export const registerProjectAttachment = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row, error } = await supabase.from("project_attachments").insert({
-      user_id: userId,
+      user_id: ownerId,
       project_id: data.project_id,
       file_name: data.file_name,
       file_path: data.file_path,

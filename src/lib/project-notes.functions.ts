@@ -1,22 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const listProjectNotes = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: notes, error } = await supabase
       .from("project_notes").select("*")
-      .eq("user_id", userId).eq("project_id", data.project_id)
+      .eq("user_id", ownerId).eq("project_id", data.project_id)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return { notes: notes ?? [] };
   });
 
 export const createProjectNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) =>
     z.object({
       project_id: z.string().uuid(),
@@ -24,9 +25,9 @@ export const createProjectNote = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row, error } = await supabase.from("project_notes").insert({
-      user_id: userId,
+      user_id: ownerId,
       project_id: data.project_id,
       content: data.content,
     }).select().single();

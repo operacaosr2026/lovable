@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
+import type { Section } from "@/lib/members.functions";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ type NavItem = {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
+  section?: Section;
   children?: { to: string; label: string; icon: typeof LayoutDashboard }[];
 };
 
@@ -50,18 +52,19 @@ const navGroups: NavGroup[] = [
     label: "Empresa",
     collapsible: true,
     items: [
-      { to: "/projects", label: "Projetos", icon: FolderKanban },
+      { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
       {
         to: "/shops",
         label: "Ecommerce",
         icon: Store,
+        section: "shops",
         children: [
           { to: "/shops", label: "Lojas", icon: Store },
           { to: "/shops/esteira", label: "Esteira de Lojas", icon: Workflow },
           { to: "/shops/products", label: "Produtos", icon: Package },
         ],
       },
-      { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
+      { to: "/shops/sops", label: "SOPs & Processos", icon: Network, section: "sops" },
     ],
   },
 ];
@@ -252,7 +255,15 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 export function AppLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { user, signOut } = useAuth();
-  const { role } = useMyAccess();
+  const { role, canAccessSection } = useMyAccess();
+
+  const visibleNavGroups = navGroups
+    .map((group) =>
+      group.key === "empresa"
+        ? { ...group, items: group.items.filter((item) => !item.section || canAccessSection(item.section)) }
+        : group
+    )
+    .filter((group) => group.items.length > 0);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ pessoal: true, empresa: true, "/shops": true });
   const [searchOpen, setSearchOpen] = useState(false);
@@ -382,7 +393,7 @@ export function AppLayout() {
 
 
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-1">
-          {navGroups.map((group, gi) => {
+          {visibleNavGroups.map((group, gi) => {
             const isCollapsed = group.collapsible && !!collapsed[group.key];
 
             return (

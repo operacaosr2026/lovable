@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const ROUTINE_FREQUENCIES = ["daily", "weekly", "monthly", "custom"] as const;
 
@@ -46,12 +47,12 @@ const RoutineInput = z.object({
 });
 
 export const listShopRoutines = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: routines, error } = await context.supabase
       .from("shop_routines").select("*")
-      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
@@ -88,12 +89,12 @@ export const listShopRoutines = createServerFn({ method: "GET" })
   });
 
 export const createShopRoutine = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => RoutineInput.parse(d))
   .handler(async ({ context, data }) => {
     const due_at = computeNextDueAt(null, data.frequency, data.weekdays ?? [], data.time ?? null);
     const { data: row, error } = await context.supabase.from("shop_routines").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       title: data.title,
       description: data.description ?? null,

@@ -41,7 +41,9 @@ const SECTION_LABELS: Record<Section, string> = {
   calendar: "Calendário",
 };
 
-const VISIBLE_SECTIONS = SECTIONS.filter((s) => s !== "journal");
+const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
+  s === "shops" || s === "projects" || s === "sops"
+);
 
 const RESOURCE_BY_SECTION: Partial<Record<Section, "shops" | "projects" | "tasks" | "sops">> = {
   shops: "shops",

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 // ---------- Processes ----------
 export const listSopProcesses = createServerFn({ method: "GET" })
@@ -47,10 +48,10 @@ export const getSopProcess = createServerFn({ method: "GET" })
   });
 
 export const createSopProcess = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((i: { name?: string; description?: string; color?: string; icon?: string; is_template?: boolean }) => i)
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: maxRow } = await supabase
       .from("sop_processes")
       .select("position")
@@ -61,7 +62,7 @@ export const createSopProcess = createServerFn({ method: "POST" })
     const { data: row, error } = await supabase
       .from("sop_processes")
       .insert({
-        user_id: userId,
+        user_id: ownerId,
         name: data.name ?? "Novo processo",
         description: data.description ?? null,
         color: data.color ?? "oklch(0.6 0.22 285)",
@@ -96,16 +97,16 @@ export const deleteSopProcess = createServerFn({ method: "POST" })
   });
 
 export const duplicateSopProcess = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((i: { id: string }) => i)
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: src } = await supabase.from("sop_processes").select("*").eq("id", data.id).single();
     if (!src) throw new Error("Processo não encontrado");
     const { data: newProc, error: pe } = await supabase
       .from("sop_processes")
       .insert({
-        user_id: userId,
+        user_id: ownerId,
         name: `${src.name} (cópia)`,
         description: src.description,
         color: src.color,
@@ -121,7 +122,7 @@ export const duplicateSopProcess = createServerFn({ method: "POST" })
     if (steps && steps.length) {
       // Insert steps without parent first to get new ids, then we'll patch parent
       const rows = steps.map((s: any) => ({
-        user_id: userId,
+        user_id: ownerId,
         process_id: newProc.id,
         title: s.title,
         description: s.description,
@@ -157,7 +158,7 @@ export const duplicateSopProcess = createServerFn({ method: "POST" })
       const rows = edges
         .filter((e: any) => idMap[e.source_id] && idMap[e.target_id])
         .map((e: any) => ({
-          user_id: userId,
+          user_id: ownerId,
           process_id: newProc.id,
           source_id: idMap[e.source_id],
           target_id: idMap[e.target_id],
@@ -169,14 +170,14 @@ export const duplicateSopProcess = createServerFn({ method: "POST" })
 
 // ---------- Steps ----------
 export const createSopStep = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((i: { process_id: string; title?: string; x?: number; y?: number; parent_id?: string | null }) => i)
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row, error } = await supabase
       .from("sop_steps")
       .insert({
-        user_id: userId,
+        user_id: ownerId,
         process_id: data.process_id,
         title: data.title ?? "Nova etapa",
         x: data.x ?? 200,
@@ -214,13 +215,13 @@ export const deleteSopStep = createServerFn({ method: "POST" })
 
 // ---------- Edges ----------
 export const createSopEdge = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((i: { process_id: string; source_id: string; target_id: string }) => i)
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase, ownerId } = context;
     const { data: row, error } = await supabase
       .from("sop_edges")
-      .insert({ ...data, user_id: userId })
+      .insert({ ...data, user_id: ownerId })
       .select("*")
       .single();
     if (error) throw new Error(error.message);

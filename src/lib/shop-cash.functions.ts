@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const CASH_KINDS = ["income", "expense"] as const;
 export const EXPENSE_CATEGORIES = [
@@ -19,18 +19,18 @@ const ImportRow = z.object({ date: z.string(), amount: z.number() });
 const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
 
 export const listShopCash = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const [entries, imports, shop] = await Promise.all([
       context.supabase.from("shop_cash_entries").select("*")
-        .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .order("date", { ascending: true }),
       context.supabase.from("shop_cash_imports").select("*")
-        .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .order("created_at", { ascending: false }),
       context.supabase.from("shops").select("opening_balance, weekend_payouts_to_monday")
-        .eq("user_id", context.userId).eq("id", data.shop_id).maybeSingle(),
+        .eq("user_id", context.ownerId).eq("id", data.shop_id).maybeSingle(),
     ]);
     if (entries.error) throw new Error(entries.error.message);
     if (imports.error) throw new Error(imports.error.message);
@@ -43,13 +43,13 @@ export const listShopCash = createServerFn({ method: "GET" })
   });
 
 export const listCashCategories = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: rows, error } = await context.supabase
       .from("shop_cash_categories")
       .select("*")
-      .eq("user_id", context.userId)
+      .eq("user_id", context.ownerId)
       .eq("shop_id", data.shop_id)
       .order("kind", { ascending: true })
       .order("position", { ascending: true })
@@ -60,10 +60,10 @@ export const listCashCategories = createServerFn({ method: "GET" })
     if (!rows || rows.length === 0) {
       const seed = [
         ...INCOME_CATEGORIES.map((name, i) => ({
-          user_id: context.userId, shop_id: data.shop_id, kind: "income" as const, name, position: i,
+          user_id: context.ownerId, shop_id: data.shop_id, kind: "income" as const, name, position: i,
         })),
         ...EXPENSE_CATEGORIES.map((name, i) => ({
-          user_id: context.userId, shop_id: data.shop_id, kind: "expense" as const, name, position: i,
+          user_id: context.ownerId, shop_id: data.shop_id, kind: "expense" as const, name, position: i,
         })),
       ];
       const { data: ins, error: insErr } = await context.supabase
@@ -75,7 +75,7 @@ export const listCashCategories = createServerFn({ method: "GET" })
   });
 
 export const createCashCategory = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     shop_id: z.string().uuid(),
     kind: z.enum(CASH_KINDS),
@@ -83,7 +83,7 @@ export const createCashCategory = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: row, error } = await context.supabase.from("shop_cash_categories").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       kind: data.kind,
       name: data.name,
@@ -93,7 +93,7 @@ export const createCashCategory = createServerFn({ method: "POST" })
   });
 
 export const renameCashCategory = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     id: z.string().uuid(),
     name: z.string().trim().min(1).max(80),
@@ -102,16 +102,16 @@ export const renameCashCategory = createServerFn({ method: "POST" })
     // get old
     const { data: old, error: getErr } = await context.supabase
       .from("shop_cash_categories").select("*")
-      .eq("user_id", context.userId).eq("id", data.id).single();
+      .eq("user_id", context.ownerId).eq("id", data.id).single();
     if (getErr) throw new Error(getErr.message);
     const { error } = await context.supabase.from("shop_cash_categories")
-      .update({ name: data.name }).eq("user_id", context.userId).eq("id", data.id);
+      .update({ name: data.name }).eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     // cascade rename on entries
     if (old?.name && old.name !== data.name) {
       await context.supabase.from("shop_cash_entries")
         .update({ category: data.name })
-        .eq("user_id", context.userId)
+        .eq("user_id", context.ownerId)
         .eq("shop_id", old.shop_id)
         .eq("kind", old.kind)
         .eq("category", old.name);
@@ -120,28 +120,28 @@ export const renameCashCategory = createServerFn({ method: "POST" })
   });
 
 export const deleteCashCategory = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shop_cash_categories")
-      .delete().eq("user_id", context.userId).eq("id", data.id);
+      .delete().eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const setWeekendRule = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid(), enabled: z.boolean() }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shops")
       .update({ weekend_payouts_to_monday: data.enabled })
-      .eq("user_id", context.userId).eq("id", data.shop_id);
+      .eq("user_id", context.ownerId).eq("id", data.shop_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const createCashEntry = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) =>
     z.object({
       shop_id: z.string().uuid(),
@@ -156,7 +156,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { data: row, error } = await context.supabase.from("shop_cash_entries").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       kind: data.kind,
       amount: data.amount,
@@ -172,7 +172,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
   });
 
 export const updateCashEntry = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) =>
     z.object({
       id: z.string().uuid(),
@@ -191,34 +191,34 @@ export const updateCashEntry = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shop_cash_entries")
-      .update(data.patch).eq("user_id", context.userId).eq("id", data.id);
+      .update(data.patch).eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const deleteCashEntry = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shop_cash_entries")
-      .delete().eq("user_id", context.userId).eq("id", data.id);
+      .delete().eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const setOpeningBalance = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid(), opening_balance: z.number() }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shops")
       .update({ opening_balance: data.opening_balance })
-      .eq("user_id", context.userId).eq("id", data.shop_id);
+      .eq("user_id", context.ownerId).eq("id", data.shop_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const importShopifyPayouts = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) =>
     z.object({
       shop_id: z.string().uuid(),
@@ -231,7 +231,7 @@ export const importShopifyPayouts = createServerFn({ method: "POST" })
     // duplicate check
     if (data.file_hash) {
       const { data: existing } = await context.supabase.from("shop_cash_imports")
-        .select("id").eq("user_id", context.userId).eq("shop_id", data.shop_id)
+        .select("id").eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .eq("file_hash", data.file_hash).maybeSingle();
       if (existing) return { duplicate: true, import_id: existing.id };
     }
@@ -244,7 +244,7 @@ export const importShopifyPayouts = createServerFn({ method: "POST" })
     const total = Array.from(byDate.values()).reduce((a, b) => a + b, 0);
 
     const { data: imp, error: impErr } = await context.supabase.from("shop_cash_imports").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       file_name: data.file_name,
       file_hash: data.file_hash ?? null,
@@ -254,7 +254,7 @@ export const importShopifyPayouts = createServerFn({ method: "POST" })
     if (impErr) throw new Error(impErr.message);
 
     const inserts = Array.from(byDate.entries()).map(([date, amount]) => ({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       kind: "income" as const,
       amount,
@@ -271,21 +271,21 @@ export const importShopifyPayouts = createServerFn({ method: "POST" })
   });
 
 export const deleteCashImport = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shop_cash_imports")
-      .delete().eq("user_id", context.userId).eq("id", data.id);
+      .delete().eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const resetShopCash = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const sb = context.supabase;
-    const uid = context.userId;
+    const uid = context.ownerId;
     // Reset orders tied to payment batches back to pending
     await sb.from("shop_orders")
       .update({ payment_status: "pending", paid_at: null, payment_batch_id: null, shipped_at: null })

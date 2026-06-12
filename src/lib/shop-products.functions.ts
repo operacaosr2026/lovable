@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 
 export const PRODUCT_STATUSES = ["producao", "validacao", "escala", "pausado", "vencedor"] as const;
 
@@ -20,12 +21,12 @@ const ProductInput = z.object({
 });
 
 export const listShopProducts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: rows, error } = await context.supabase
       .from("shop_products").select("*")
-      .eq("user_id", context.userId).eq("shop_id", data.shop_id)
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .order("position", { ascending: true })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -47,16 +48,16 @@ export const listShopProducts = createServerFn({ method: "GET" })
   });
 
 export const createShopProduct = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .inputValidator((d) => ProductInput.parse(d))
   .handler(async ({ context, data }) => {
     const { data: top } = await context.supabase
       .from("shop_products").select("position")
-      .eq("user_id", context.userId).eq("shop_id", data.shop_id).eq("status", data.status)
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).eq("status", data.status)
       .order("position", { ascending: true }).limit(1).maybeSingle();
     const position = (top?.position ?? 0) - 1;
     const { data: row, error } = await context.supabase.from("shop_products").insert({
-      user_id: context.userId,
+      user_id: context.ownerId,
       shop_id: data.shop_id,
       name: data.name,
       image_url: data.image_url ?? null,
