@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { runTrack123Sync } from "@/lib/track123.functions";
+import { runTrack123Sync } from "@/lib/track123-sync.server";
 
 export const Route = createFileRoute("/api/public/hooks/sync-track123")({
   server: {
