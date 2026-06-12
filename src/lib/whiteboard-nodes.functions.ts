@@ -1,8 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { sanitizeRichText } from "@/lib/sanitize-html";
 
 const NODE_KINDS = ["note", "text", "image", "link", "checklist", "card", "mindmap", "task_ref"] as const;
+
+function sanitizeNodeData(data: any): any {
+  if (data && typeof data === "object" && typeof data.titleHtml === "string") {
+    return { ...data, titleHtml: sanitizeRichText(data.titleHtml) };
+  }
+  return data;
+}
 
 export const listBoardContent = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -51,7 +59,7 @@ export const createNode = createServerFn({ method: "POST" })
         x: data.x, y: data.y,
         width: data.width ?? null,
         height: data.height ?? null,
-        data: data.data ?? {},
+        data: sanitizeNodeData(data.data ?? {}),
         parent_id: data.parent_id ?? null,
         task_id: data.task_id ?? null,
       }).select().single();
@@ -73,8 +81,10 @@ export const updateNode = createServerFn({ method: "POST" })
     }),
   }).parse(d))
   .handler(async ({ context, data }) => {
+    const patch = { ...data.patch };
+    if (patch.data !== undefined) patch.data = sanitizeNodeData(patch.data);
     const { error } = await context.supabase
-      .from("whiteboard_nodes").update(data.patch).eq("id", data.id);
+      .from("whiteboard_nodes").update(patch).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

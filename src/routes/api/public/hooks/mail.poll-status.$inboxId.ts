@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { timingSafeEqualString } from "@/lib/cron-auth";
 
 const Payload = z.object({
   status: z.enum(["ok", "error"]),
@@ -19,12 +20,15 @@ export const Route = createFileRoute("/api/public/hooks/mail/poll-status/$inboxI
           .from("support_inboxes")
           .select("id,webhook_secret").eq("id", params.inboxId).maybeSingle();
         if (!inbox) return new Response("Not found", { status: 404 });
-        if (!provided || provided !== (inbox as any).webhook_secret) {
+        if (!provided || !(inbox as any).webhook_secret || !timingSafeEqualString(provided, (inbox as any).webhook_secret)) {
           return new Response("Unauthorized", { status: 401 });
         }
         let body: any;
         try { body = Payload.parse(await request.json()); }
-        catch (e: any) { return new Response(`Invalid: ${e.message}`, { status: 400 }); }
+        catch (e: any) {
+          console.error("mail.poll-status invalid payload", params.inboxId, e);
+          return new Response("Invalid payload", { status: 400 });
+        }
 
         const upd: any = {
           last_poll_at: new Date().toISOString(),

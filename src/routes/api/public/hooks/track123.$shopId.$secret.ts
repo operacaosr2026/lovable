@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { timingSafeEqualString } from "@/lib/cron-auth";
 
 /**
  * Track123 webhook receiver (secret in path).
@@ -32,7 +33,7 @@ export const Route = createFileRoute("/api/public/hooks/track123/$shopId/$secret
           .eq("shop_id", shopId)
           .maybeSingle();
 
-        if (!integ || integ.webhook_secret !== secret) {
+        if (!integ || !integ.webhook_secret || !timingSafeEqualString(integ.webhook_secret, secret)) {
           return new Response("Invalid secret", { status: 401 });
         }
 

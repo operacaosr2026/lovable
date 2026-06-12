@@ -83,8 +83,8 @@ function InvitePage() {
             />
             <input
               type="password"
-              placeholder="Crie uma senha (mín. 6 caracteres)"
-              minLength={6}
+              placeholder="Crie uma senha (mín. 8 caracteres)"
+              minLength={8}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}

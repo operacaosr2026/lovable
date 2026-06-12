@@ -18,6 +18,7 @@ const INLINE_TEXT_COLORS = ["#0f172a", "#dc2626", "#ea580c", "#ca8a04", "#16a34a
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
+import { sanitizeRichText } from "@/lib/sanitize-html";
 import { getWhiteboard, updateWhiteboard } from "@/lib/whiteboards.functions";
 import {
   listBoardContent, createNode, updateNode, deleteNode,
@@ -267,7 +268,7 @@ function MindCardNode({ id, data, selected }: any) {
   useEffect(() => {
     if (editing && editorRef.current) {
       const el = editorRef.current;
-      el.innerHTML = data.titleHtml || escapeHtml(data.title || "");
+      el.innerHTML = data.titleHtml ? sanitizeRichText(data.titleHtml) : escapeHtml(data.title || "");
       el.focus();
       const sel = window.getSelection();
       const range = document.createRange();
@@ -327,7 +328,7 @@ function MindCardNode({ id, data, selected }: any) {
     textAlign: align,
   };
 
-  const displayHtml = data.titleHtml || (data.title ? escapeHtml(data.title) : "");
+  const displayHtml = data.titleHtml ? sanitizeRichText(data.titleHtml) : (data.title ? escapeHtml(data.title) : "");
 
   return (
     <div

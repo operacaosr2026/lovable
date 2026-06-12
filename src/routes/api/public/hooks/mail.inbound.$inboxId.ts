@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { timingSafeEqualString } from "@/lib/cron-auth";
 
 // Worker POSTs each parsed email here.
 // Auth: ?secret=<inbox.webhook_secret> OR header x-inbox-secret.
@@ -39,13 +40,16 @@ export const Route = createFileRoute("/api/public/hooks/mail/inbound/$inboxId")(
           .select("id,user_id,shop_id,email_address,webhook_secret")
           .eq("id", inboxId).maybeSingle();
         if (ierr || !inbox) return new Response("Inbox not found", { status: 404 });
-        if (!provided || provided !== (inbox as any).webhook_secret) {
+        if (!provided || !(inbox as any).webhook_secret || !timingSafeEqualString(provided, (inbox as any).webhook_secret)) {
           return new Response("Unauthorized", { status: 401 });
         }
 
         let body: any;
         try { body = Payload.parse(await request.json()); }
-        catch (e: any) { return new Response(`Invalid payload: ${e.message}`, { status: 400 }); }
+        catch (e: any) {
+          console.error("mail.inbound invalid payload", inboxId, e);
+          return new Response("Invalid payload", { status: 400 });
+        }
 
         const sentAt = body.sent_at ?? new Date().toISOString();
         const fromEmail = body.from_email.toLowerCase();
@@ -57,7 +61,10 @@ export const Route = createFileRoute("/api/public/hooks/mail/inbound/$inboxId")(
           const ins = await supabaseAdmin.from("support_customers").insert({
             user_id: inbox.user_id, email: fromEmail, name: body.from_name ?? null,
           }).select("id").single();
-          if (ins.error) return new Response(ins.error.message, { status: 500 });
+          if (ins.error) {
+            console.error("mail.inbound customer insert failed", inboxId, ins.error);
+            return new Response("Internal error", { status: 500 });
+          }
           customer = ins.data;
         }
 
@@ -90,7 +97,10 @@ export const Route = createFileRoute("/api/public/hooks/mail/inbound/$inboxId")(
             first_customer_message_at: sentAt,
             unread_count: 1,
           }).select("*").single();
-          if (ins.error) return new Response(ins.error.message, { status: 500 });
+          if (ins.error) {
+            console.error("mail.inbound conversation insert failed", inboxId, ins.error);
+            return new Response("Internal error", { status: 500 });
+          }
           conv = ins.data;
         }
 
@@ -115,7 +125,8 @@ export const Route = createFileRoute("/api/public/hooks/mail/inbound/$inboxId")(
           status: "delivered",
         });
         if (merr && !/duplicate key/i.test(merr.message)) {
-          return new Response(merr.message, { status: 500 });
+          console.error("mail.inbound message insert failed", inboxId, merr);
+          return new Response("Internal error", { status: 500 });
         }
 
         // 4) Bump conversation

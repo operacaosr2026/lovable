@@ -1,16 +1,31 @@
 /**
+ * Constant-time string comparison (length-leak aside). Use for any
+ * secret/token comparison to avoid timing attacks.
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
  * Authentication for public cron/webhook endpoints under /api/public/hooks/*.
  *
- * pg_cron calls these endpoints with an `apikey` header containing the
- * Supabase anon/publishable key. We compare against the server-side
- * SUPABASE_PUBLISHABLE_KEY to ensure the caller is not an anonymous
- * actor on the internet.
+ * Prefer a dedicated CRON_API_KEY (not exposed to the browser). Falls back
+ * to SUPABASE_PUBLISHABLE_KEY for backwards compatibility with existing
+ * pg_cron jobs, but that key is also the client-side anon key
+ * (VITE_SUPABASE_PUBLISHABLE_KEY) and therefore not a real secret.
+ * Set CRON_API_KEY in the server environment and update pg_cron job
+ * definitions to send it as the `apikey`/`x-api-key` header.
  */
 export function verifyCronApiKey(request: Request): Response | null {
-  const expected = process.env.SUPABASE_PUBLISHABLE_KEY;
+  const expected = process.env.CRON_API_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!expected) {
     return new Response(
-      JSON.stringify({ error: "Server missing SUPABASE_PUBLISHABLE_KEY" }),
+      JSON.stringify({ error: "Server missing CRON_API_KEY" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -20,18 +35,7 @@ export function verifyCronApiKey(request: Request): Response | null {
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     "";
 
-  // constant-time-ish compare
-  if (provided.length !== expected.length) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) {
-    diff |= expected.charCodeAt(i) ^ provided.charCodeAt(i);
-  }
-  if (diff !== 0) {
+  if (!provided || !timingSafeEqualString(provided, expected)) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

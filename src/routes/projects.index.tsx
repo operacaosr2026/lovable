@@ -250,7 +250,7 @@ function ProjectCard({ p, onEdit, onDuplicate, onArchive, onDelete }: {
       <div className="absolute top-3 right-3">
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(v => !v); }}
-          className="size-7 rounded-md grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+          className="size-7 rounded-md grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted bg-surface/80 backdrop-blur-sm sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
           aria-label="Menu"
         >
           <MoreVertical className="size-4" />
