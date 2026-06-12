@@ -1,13 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
 
 /* ==================== READ ==================== */
 
 export const getDashboard = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+    const { supabase, userId, ownerId } = context;
+    const shopFilter = getSectionResourceFilter(context, "shops");
 
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
@@ -35,9 +37,15 @@ export const getDashboard = createServerFn({ method: "GET" })
       supabase.from("gratitude_entries").select("*").eq("date", todayStr).maybeSingle(),
       supabase.from("accounts").select("*").eq("user_id", userId).eq("archived", false),
       supabase.from("fx_rates").select("*").eq("user_id", userId).maybeSingle(),
-      supabase.from("shop_tasks").select("id,shop_id,title,status,due_at")
-        .eq("user_id", userId).neq("status", "done")
-        .gte("due_at", todayStart).lte("due_at", todayEnd),
+      shopFilter === "none"
+        ? Promise.resolve({ data: [] as any[] })
+        : (() => {
+            let q = supabase.from("shop_tasks").select("id,shop_id,title,status,due_at")
+              .eq("user_id", ownerId).neq("status", "done")
+              .gte("due_at", todayStart).lte("due_at", todayEnd);
+            if (Array.isArray(shopFilter)) q = q.in("shop_id", shopFilter);
+            return q;
+          })(),
     ]);
 
     const shopIds = Array.from(new Set((shopTasksToday.data ?? []).map((t: any) => t.shop_id)));
