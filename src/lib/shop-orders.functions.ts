@@ -80,6 +80,33 @@ async function fetchShopifyBalanceTransactions(domain: string, token: string, ma
   return out;
 }
 
+async function fetchShopifyDisputes(domain: string, token: string, sinceISO: string) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250&initiated_at_min=${encodeURIComponent(sinceISO)}`;
+  for (let i = 0; i < 20 && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.disputes ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
+async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: string) {
+  const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any&created_at_min=${encodeURIComponent(sinceISO)}`;
+  const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+  if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+  const json: any = await res.json();
+  return Number(json.count ?? 0);
+}
+
 async function fetchShopifyPaymentsBalance(domain: string, token: string) {
   const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance.json`;
   const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
@@ -527,7 +554,48 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     const pending = pendingFromTx + scheduledTotal;
     const currency = paymentsBalance?.currency ?? pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
     const balance = paymentsBalance?.amount ?? pending;
-    return { connected: true, pending, balance, currency };
+
+    // Estimativa de disponibilização: a Shopify não expõe essa data pela API,
+    // então usamos processado + 10 dias (D+10) por transação, somando as que
+    // caem no mesmo dia estimado.
+    const byDate = new Map<string, number>();
+    for (const t of pendingTx) {
+      const d = new Date(t.processed_at);
+      d.setUTCDate(d.getUTCDate() + 10);
+      const key = d.toISOString().slice(0, 10);
+      byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
+    }
+    const items = Array.from(byDate.entries()).map(([date, amount]) => ({
+      id: `shopify-pending-${date}`,
+      date,
+      amount,
+      currency,
+    }));
+
+    return { connected: true, pending, balance, currency, items };
+  });
+
+// Taxa de chargeback (estorno via banco/cartão) dos últimos 30 dias, igual ao
+// relatório "Taxa de estorno" da Shopify (chargebacks / pedidos no período).
+export const getShopifyChargebackRate = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) return { connected: false, rate: null };
+
+    const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
+    const since = new Date(); since.setUTCDate(since.getUTCDate() - 30);
+    const sinceISO = since.toISOString();
+
+    const [disputes, totalOrders] = await Promise.all([
+      fetchShopifyDisputes(domain, token, sinceISO),
+      fetchShopifyOrdersCount(domain, token, sinceISO),
+    ]);
+    const chargebacks = disputes.filter((d: any) => d.type === "chargeback").length;
+    const rate = totalOrders > 0 ? (chargebacks / totalOrders) * 100 : 0;
+    return { connected: true, rate, chargebacks, totalOrders };
   });
 
 export const getMonthlyProfit = createServerFn({ method: "GET" })

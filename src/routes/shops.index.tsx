@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { Plus, Search, Store, MapPin, ListChecks, Repeat, Package, X, Upload, LayoutGrid, List } from "lucide-react";
 import { listShops, createShop, updateShop, deleteShop, SHOP_STATUSES } from "@/lib/shops.functions";
+import { getShopifyChargebackRate } from "@/lib/shop-orders.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -189,6 +190,12 @@ function ShopsDashboard() {
 
 function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelete: () => void }) {
   const st = STATUS_META[s.status] ?? STATUS_META.ativa;
+  const chargebackFn = useServerFn(getShopifyChargebackRate);
+  const { data: chargeback } = useQuery({
+    queryKey: ["shop-chargeback-rate", s.id],
+    queryFn: () => chargebackFn({ data: { shop_id: s.id } }),
+    staleTime: 5 * 60_000,
+  });
   return (
     <div className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
       <Link to="/shops/$shopId" params={{ shopId: s.id }} className="block p-5">
@@ -239,11 +246,11 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
             {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
           </span>
         </div>
-        {s.refundRate != null && (
+        {chargeback?.connected && chargeback.rate != null && (
           <div className="mb-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Taxa de estorno (30d)</span>
-            <span className={`text-base font-bold tabular-nums ${s.refundRate > 0.5 ? "text-rose-500" : "text-emerald-500"}`}>
-              {s.refundRate.toFixed(1)}%
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Estorno</span>
+            <span className={`text-base font-bold tabular-nums ${chargeback.rate > 0.5 ? "text-rose-500" : "text-emerald-500"}`}>
+              {chargeback.rate.toFixed(2)}%
             </span>
           </div>
         )}

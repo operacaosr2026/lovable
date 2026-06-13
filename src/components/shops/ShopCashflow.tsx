@@ -72,10 +72,10 @@ function shiftToMondayIfWeekend(key: string): string {
   return key;
 }
 function fmtMoney(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
 }
 function fmtMoneyCompact(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0, useGrouping: false });
 }
 const WEEKDAYS_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
@@ -103,6 +103,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const expenseCats = useMemo(() => allCats.filter(c => c.kind === "expense").map(c => c.name), [allCats]);
 
   const [weekOffset, setWeekOffset] = useState(0);
+  const [showPending, setShowPending] = useState(false);
   const [quickAdd, setQuickAdd] = useState<{ date: string; kind: "income" | "expense" } | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
   const [manageCats, setManageCats] = useState(false);
@@ -189,8 +190,22 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         i++;
       }
     }
+    if (showPending) {
+      for (const p of pendingQuery.data?.items ?? []) {
+        out.push(applyShift({
+          id: p.id,
+          kind: "income",
+          amount: p.amount,
+          date: p.date,
+          category: "Depósitos pendentes (Shopify)",
+          description: null,
+          source: "shopify_pending",
+          import_id: null,
+        }));
+      }
+    }
     return out;
-  }, [entries, horizon, weekendToMonday]);
+  }, [entries, horizon, weekendToMonday, showPending, pendingQuery.data?.items]);
 
   const saldoBeforeRange = useMemo(() => {
     const first = dayList[0] ?? todayKey;
@@ -346,7 +361,16 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
             onChange={(e) => weekendMut.mutate(e.target.checked)}
             className="size-3.5 accent-primary"
           />
-          <span>Fim de semana → segunda</span>
+          <span>Fds → segunda</span>
+        </label>
+        <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Mostra uma estimativa (processado + 10 dias) dos valores pendentes de repasse pela Shopify.">
+          <input
+            type="checkbox"
+            checked={showPending}
+            onChange={(e) => setShowPending(e.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          <span>Mostrar pendentes</span>
         </label>
         <Button
           variant="outline"

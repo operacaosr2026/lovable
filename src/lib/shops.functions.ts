@@ -39,21 +39,18 @@ export const listShops = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
 
     const ids = (shops ?? []).map((s: any) => s.id);
-    const counters: Record<string, { products: number; pendingTasks: number; routinesToday: number; balance: number; refundRate: number | null; monthProfit: number }> = {};
+    const counters: Record<string, { products: number; pendingTasks: number; routinesToday: number; balance: number; monthProfit: number }> = {};
     if (ids.length) {
       const now = new Date();
       const todayStr = now.toISOString().slice(0, 10);
-      const since30 = new Date(); since30.setUTCDate(since30.getUTCDate() - 30);
-      const since30Str = since30.toISOString().slice(0, 10);
       const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
       const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
       const monthEnd = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: orders }, { data: monthOrders }, { data: costRows }, { data: adRows }] = await Promise.all([
+      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: monthOrders }, { data: costRows }, { data: adRows }] = await Promise.all([
         supabase.from("shop_products").select("shop_id").in("shop_id", ids),
         supabase.from("shop_tasks").select("shop_id,status").in("shop_id", ids).neq("status", "done"),
         supabase.from("shop_routines").select("shop_id,due_at").in("shop_id", ids),
         supabase.from("shop_cash_entries").select("shop_id,kind,amount,date").in("shop_id", ids).lte("date", todayStr),
-        supabase.from("shop_orders").select("shop_id,financial_status:raw->>financial_status").in("shop_id", ids).gte("order_date", since30Str),
         supabase.from("shop_orders").select("shop_id,revenue").in("shop_id", ids).gte("order_date", monthStart).lte("order_date", monthEnd),
         supabase.from("shop_cash_entries").select("shop_id,amount,auto_ref_date,date").in("shop_id", ids).eq("kind", "expense").eq("category", COST_CATEGORY)
           .or(`and(auto_ref_date.gte.${monthStart},auto_ref_date.lte.${monthEnd}),and(auto_ref_date.is.null,date.gte.${monthStart},date.lte.${monthEnd})`),
@@ -61,7 +58,7 @@ export const listShops = createServerFn({ method: "GET" })
           .gte("date", monthStart).lte("date", monthEnd),
       ]);
       const today = new Date(); today.setHours(23, 59, 59, 999);
-      const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0, refundRate: null, monthProfit: 0 });
+      const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0, monthProfit: 0 });
       for (const s of shops ?? []) init((s as any).id).balance = Number((s as any).opening_balance ?? 0);
       for (const p of prods ?? []) init((p as any).shop_id).products++;
       for (const t of tasks ?? []) init((t as any).shop_id).pendingTasks++;
@@ -74,15 +71,6 @@ export const listShops = createServerFn({ method: "GET" })
         const amt = Number((e as any).amount ?? 0);
         c.balance += (e as any).kind === "income" ? amt : -amt;
       }
-      const orderTotals: Record<string, { total: number; refunded: number }> = {};
-      for (const o of (orders ?? []) as any[]) {
-        const t = (orderTotals[o.shop_id] ??= { total: 0, refunded: 0 });
-        t.total++;
-        if (o.financial_status === "refunded" || o.financial_status === "partially_refunded") t.refunded++;
-      }
-      for (const [shopId, t] of Object.entries(orderTotals)) {
-        if (t.total > 0) init(shopId).refundRate = (t.refunded / t.total) * 100;
-      }
       for (const o of (monthOrders ?? []) as any[]) init(o.shop_id).monthProfit += Number(o.revenue ?? 0);
       for (const r of (costRows ?? []) as any[]) init(r.shop_id).monthProfit -= Number(r.amount ?? 0);
       for (const r of (adRows ?? []) as any[]) init(r.shop_id).monthProfit -= Number(r.amount ?? 0);
@@ -90,7 +78,7 @@ export const listShops = createServerFn({ method: "GET" })
     return {
       shops: (shops ?? []).map((s: any) => ({
         ...s,
-        ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0), refundRate: null, monthProfit: 0 }),
+        ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0), monthProfit: 0 }),
       })),
     };
   });
