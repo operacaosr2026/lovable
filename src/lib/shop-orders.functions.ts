@@ -432,6 +432,7 @@ const PAYOUT_STATUS_LABEL: Record<string, string> = {
   paid: "depositado",
   in_transit: "em trânsito",
   scheduled: "agendado",
+  pending: "previsto",
 };
 
 export const syncShopifyPayouts = createServerFn({ method: "POST" })
@@ -448,7 +449,7 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const since = new Date(); since.setUTCDate(since.getUTCDate() - data.since_days);
     const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
-    const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled"].includes(p.status));
+    const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
 
     // Migração única: remove lançamentos de "Depósito Shopify" feitos manualmente
     // (importação de planilha) para que a sincronização automática vire a fonte da verdade.
@@ -495,53 +496,38 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     return { synced: relevant.length };
   });
 
-// Tempo médio entre o processamento de uma cobrança e o depósito do valor (observado: ~9 dias).
-const PENDING_PAYOUT_DELAY_DAYS = 9;
-
 export const getShopifyPendingBalance = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!settings?.shopify_store_id) return { connected: false, pending: 0, balance: null, currency: null, items: [] };
+    if (!settings?.shopify_store_id) return { connected: false, pending: 0, balance: null, currency: null };
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const paymentsBalance = await fetchShopifyPaymentsBalance(domain, token);
     // Transações vêm ordenadas das mais recentes para as mais antigas; as ainda não
-    // incluídas em payout (payout_id null) ficam sempre entre as mais recentes.
+    // incluídas em payout (payout_status "pending") ficam sempre entre as mais recentes.
     const transactions = await fetchShopifyBalanceTransactions(domain, token, 10);
-    const pendingTx = transactions.filter((t: any) => t.payout_id == null);
+    const pendingTx = transactions.filter((t: any) => t.payout_status === "pending");
+    const pendingFromTx = pendingTx.reduce((s, t: any) => s + Number(t.net ?? 0), 0);
 
-    const byDate = new Map<string, number>();
-    for (const t of pendingTx) {
-      const processedDate = String(t.processed_at ?? "").slice(0, 10);
-      if (!processedDate) continue;
-      const payoutDate = addDays(processedDate, PENDING_PAYOUT_DELAY_DAYS);
-      byDate.set(payoutDate, (byDate.get(payoutDate) ?? 0) + Number(t.net ?? 0));
-    }
-
-    const items = Array.from(byDate.entries())
-      .map(([date, amount]) => ({ date, amount }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const pendingFromTx = items.reduce((s, i) => s + i.amount, 0);
-
-    // Payouts já criados pela Shopify mas ainda não depositados (agendados/em trânsito)
+    // Payouts já criados pela Shopify mas ainda não depositados (agendados/em trânsito/previstos)
     // representam dinheiro a receber que não aparece mais em balance/transactions com
     // payout_id null. Eles já entram no caixa como lançamentos sincronizados (shopify_sync),
-    // então somamos só ao total "a receber", sem duplicá-los nos itens de projeção.
+    // então somamos só ao total "a receber".
     const since = new Date(); since.setUTCDate(since.getUTCDate() - 14);
     const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
     let scheduledTotal = 0;
     for (const p of payouts) {
-      if (p.id == null || (p.status !== "scheduled" && p.status !== "in_transit")) continue;
+      if (p.id == null || !["scheduled", "in_transit", "pending"].includes(p.status)) continue;
       scheduledTotal += Number(p.amount ?? 0);
     }
 
     const pending = pendingFromTx + scheduledTotal;
     const currency = paymentsBalance?.currency ?? pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
     const balance = paymentsBalance?.amount ?? pending;
-    return { connected: true, pending, balance, currency, items };
+    return { connected: true, pending, balance, currency };
   });
 
 export const getMonthlyProfit = createServerFn({ method: "GET" })

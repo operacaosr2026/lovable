@@ -189,21 +189,8 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
         i++;
       }
     }
-    for (const p of (pendingQuery.data?.items ?? []) as { date: string; amount: number }[]) {
-      out.push(applyShift({
-        id: `pending-${p.date}`,
-        kind: "income",
-        amount: p.amount,
-        date: p.date,
-        category: "Depósito Shopify",
-        description: "Ainda não incluído em payout",
-        source: "shopify_pending",
-        import_id: null,
-        virtual: true,
-      }));
-    }
     return out;
-  }, [entries, horizon, weekendToMonday, pendingQuery.data]);
+  }, [entries, horizon, weekendToMonday]);
 
   const saldoBeforeRange = useMemo(() => {
     const first = dayList[0] ?? todayKey;
