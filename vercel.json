@@ -4,7 +4,8 @@
   "framework": null,
   "functions": {
     "api/ssr.js": {
-      "includeFiles": "dist/server/**"
+      "includeFiles": "dist/server/**",
+      "maxDuration": 60
     }
   },
   "rewrites": [

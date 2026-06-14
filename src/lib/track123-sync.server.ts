@@ -6,7 +6,7 @@ export async function runTrack123Sync(shopId: string, apiKey: string, supabase: 
     // Get tracking numbers from existing tracking rows
     const { data: trackings } = await supabase.from("shop_order_tracking")
       .select("id,order_id,tracking_number,timeline").eq("shop_id", shopId)
-      .not("tracking_number", "is", null).limit(50);
+      .not("tracking_number", "is", null).limit(1000);
 
     const { data: rules } = await supabase.from("track123_event_rules")
       .select("event_key,event_label,target_status,enabled")
