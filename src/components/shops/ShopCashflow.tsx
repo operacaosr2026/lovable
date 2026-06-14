@@ -21,7 +21,11 @@ import {
 import { getShopifyPendingBalance, getMonthlyProfit } from "@/lib/shop-orders.functions";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
-type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null };
+type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null; shopify_payout_status?: string | null };
+
+// Payouts do Shopify com esses status ainda não estão confirmados:
+// só aparecem no fluxo de caixa quando "Mostrar pendentes" estiver marcado.
+const UNCONFIRMED_PAYOUT_STATUSES = new Set(["pending"]);
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
 const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
@@ -177,6 +181,7 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
     };
     const out: DayItem[] = [];
     for (const e of entries) {
+      if (e.source === "shopify_sync" && UNCONFIRMED_PAYOUT_STATUSES.has(e.shopify_payout_status ?? "") && !showPending) continue;
       const rec = (e.recurrence ?? "none") as Recurrence;
       if (rec === "none") { out.push(applyShift(e)); continue; }
       const stop = e.recurrence_until && e.recurrence_until < horizon ? e.recurrence_until : horizon;
