@@ -504,7 +504,6 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
       source: "shopify_sync",
       shopify_payout_id: String(p.id),
-      shopify_payout_status: p.status,
     }));
     if (toInsert.length) {
       const { error } = await context.supabase.from("shop_cash_entries").insert(toInsert);
@@ -518,7 +517,6 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
         amount: Number(p.amount ?? 0),
         date: p.date,
         description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
-        shopify_payout_status: p.status,
       }).eq("id", id).eq("user_id", context.ownerId);
     }
 
