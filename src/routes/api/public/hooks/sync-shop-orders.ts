@@ -63,9 +63,7 @@ async function fetchPayouts(domain: string, token: string, sinceISO: string) {
 }
 
 async function syncPayoutsForShop(shopId: string, userId: string, domain: string, token: string) {
-  const since = new Date();
-  since.setUTCFullYear(since.getUTCFullYear() - 1);
-  const payouts = await fetchPayouts(domain, token, since.toISOString());
+  const payouts = await fetchPayouts(domain, token, "2026-06-15T00:00:00Z");
   const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
   if (!relevant.length) return 0;
 
