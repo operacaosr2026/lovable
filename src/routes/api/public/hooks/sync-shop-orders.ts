@@ -36,6 +36,70 @@ async function unitCostFor(shopId: string, userId: string, date: string, fallbac
   return Number(fallback ?? 0);
 }
 
+const PAYOUT_CATEGORY = "Depósito Shopify";
+const PAYOUT_STATUS_LABEL: Record<string, string> = {
+  paid: "depositado",
+  in_transit: "em trânsito",
+  scheduled: "agendado",
+  pending: "previsto",
+};
+
+async function fetchPayouts(domain: string, token: string, sinceISO: string) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/payouts.json?limit=250&date_min=${encodeURIComponent(sinceISO.slice(0, 10))}`;
+  for (let i = 0; i < 20 && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify payouts ${res.status}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.payouts ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
+async function syncPayoutsForShop(shopId: string, userId: string, domain: string, token: string) {
+  const since = new Date();
+  since.setUTCFullYear(since.getUTCFullYear() - 1);
+  const payouts = await fetchPayouts(domain, token, since.toISOString());
+  const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
+  if (!relevant.length) return 0;
+
+  const { data: existing } = await supabaseAdmin.from("shop_cash_entries")
+    .select("id,shopify_payout_id")
+    .eq("user_id", userId).eq("shop_id", shopId)
+    .in("shopify_payout_id", relevant.map((p: any) => String(p.id)));
+  const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
+
+  const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
+    user_id: userId, shop_id: shopId,
+    kind: "income" as const,
+    amount: Number(p.amount ?? 0),
+    date: p.date,
+    category: PAYOUT_CATEGORY,
+    description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
+    source: "shopify_sync",
+    shopify_payout_id: String(p.id),
+  }));
+  if (toInsert.length) await supabaseAdmin.from("shop_cash_entries").insert(toInsert);
+
+  for (const p of relevant) {
+    const id = existingById.get(String(p.id));
+    if (!id) continue;
+    await supabaseAdmin.from("shop_cash_entries").update({
+      amount: Number(p.amount ?? 0),
+      date: p.date,
+      description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
+    }).eq("id", id);
+  }
+
+  return relevant.length;
+}
+
 async function processShop(s: any, today: string) {
   // sync last 30 days
   if (s.shopify_store_id) {
@@ -56,6 +120,7 @@ async function processShop(s: any, today: string) {
           }));
           await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
         }
+        await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await supabaseAdmin.from("shopify_stores").update({
           last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
         }).eq("id", s.shopify_store_id);

@@ -22,7 +22,7 @@ export function timingSafeEqualString(a: string, b: string): boolean {
  * definitions to send it as the `apikey`/`x-api-key` header.
  */
 export function verifyCronApiKey(request: Request): Response | null {
-  const expected = process.env.CRON_API_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+  const expected = process.env.CRON_API_KEY || process.env.CRON_SECRET || process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!expected) {
     return new Response(
       JSON.stringify({ error: "Server missing CRON_API_KEY" }),
