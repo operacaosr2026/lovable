@@ -51,7 +51,7 @@ function ShopsDashboard() {
   const confirm = useConfirm();
 
   const [search, setSearch] = useState("");
-  const [fStatus, setFStatus] = useState<string>("all");
+  const [fStatus, setFStatus] = useState<string>("ativa");
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);

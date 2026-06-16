@@ -139,7 +139,7 @@ function Dashboard() {
   const { data: shopsData } = useQuery({
     queryKey: ["shops"], queryFn: () => listShopsFn(), enabled: !!session,
   });
-  const shops = (shopsData as any)?.shops ?? [];
+  const shops = ((shopsData as any)?.shops ?? []).filter((s: any) => s.status === "ativa");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dashboard"] });
   const invalidateRoutines = () => {
