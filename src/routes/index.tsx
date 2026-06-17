@@ -77,13 +77,9 @@ function ShopRow({ s }: { s: any }) {
       className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 hover:bg-surface-hover transition-colors"
     >
       <div className="flex items-center gap-2.5 flex-1 min-w-0 basis-full sm:basis-auto">
-        {s.logo_url ? (
-          <img src={s.logo_url} alt={s.name} className="size-8 rounded-lg object-cover border border-border shrink-0" />
-        ) : (
-          <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0">
-            <Store className="size-3.5" />
-          </div>
-        )}
+        <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0 text-xs font-semibold">
+          {s.name?.[0]?.toUpperCase() ?? <Store className="size-3.5" />}
+        </div>
         <span className="text-sm font-medium truncate">{s.name}</span>
       </div>
       <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:gap-4 shrink-0">

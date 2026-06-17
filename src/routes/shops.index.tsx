@@ -3,9 +3,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, Search, Store, MapPin, ListChecks, Repeat, Package, X, Upload, LayoutGrid, List } from "lucide-react";
+import { Plus, Search, Store, MapPin, ListChecks, Package, X, Upload, LayoutGrid, List } from "lucide-react";
 import { listShops, createShop, updateShop, deleteShop, SHOP_STATUSES } from "@/lib/shops.functions";
-import { getShopifyChargebackRate } from "@/lib/shop-orders.functions";
+import { getShopifyChargebackRate, getShopifyPayoutLag } from "@/lib/shop-orders.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -196,17 +196,19 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
     queryFn: () => chargebackFn({ data: { shop_id: s.id } }),
     staleTime: 5 * 60_000,
   });
+  const payoutLagFn = useServerFn(getShopifyPayoutLag);
+  const { data: payoutLag } = useQuery({
+    queryKey: ["shop-payout-lag", s.id],
+    queryFn: () => payoutLagFn({ data: { shop_id: s.id } }),
+    staleTime: 5 * 60_000,
+  });
   return (
     <div className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
       <Link to="/shops/$shopId" params={{ shopId: s.id }} className="block p-5">
         <div className="flex items-start gap-3 mb-3">
-          {s.logo_url ? (
-            <img src={s.logo_url} alt={s.name} className="size-12 rounded-xl object-cover shrink-0 border border-border" />
-          ) : (
-            <div className="size-12 rounded-xl grid place-items-center shrink-0 bg-primary/10 text-primary">
-              <Store className="size-6" />
-            </div>
-          )}
+          <div className="size-12 rounded-xl grid place-items-center shrink-0 bg-primary/10 text-primary text-base font-semibold">
+            {s.name?.[0]?.toUpperCase() ?? <Store className="size-6" />}
+          </div>
           <div className="flex-1 min-w-0">
             <div className="text-base font-semibold leading-tight truncate flex items-center gap-1.5">
               <span className="truncate">{s.name}</span>
@@ -254,11 +256,14 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
             </span>
           </div>
         )}
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <Stat icon={Package} label="Produtos" value={s.products} />
-          <Stat icon={ListChecks} label="Tarefas" value={s.pendingTasks} />
-          <Stat icon={Repeat} label="Rotinas hoje" value={s.routinesToday} />
-        </div>
+        {payoutLag?.connected && payoutLag.avgDays != null && (
+          <div className="mb-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Tempo médio de repasse</span>
+            <span className="text-base font-bold tabular-nums text-foreground">
+              D+{Math.round(payoutLag.avgDays)}
+            </span>
+          </div>
+        )}
       </Link>
       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
@@ -268,18 +273,6 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
           editar
         </button>
       </div>
-    </div>
-  );
-}
-
-function Stat({ icon: Icon, label, value }: any) {
-  return (
-    <div className="rounded-lg bg-background border border-border py-2">
-      <div className="flex items-center justify-center gap-1 text-muted-foreground">
-        <Icon className="size-3" />
-        <span className="text-xs tabular-nums font-semibold text-foreground">{value}</span>
-      </div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
     </div>
   );
 }
@@ -296,13 +289,9 @@ function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDe
   return (
     <div className="group relative grid grid-cols-[1fr_120px_100px_100px_100px_100px_100px] gap-3 px-4 py-3 items-center border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
       <Link to="/shops/$shopId" params={{ shopId: s.id }} className="flex items-center gap-3 min-w-0">
-        {s.logo_url ? (
-          <img src={s.logo_url} alt={s.name} className="size-9 rounded-lg object-cover shrink-0 border border-border" />
-        ) : (
-          <div className="size-9 rounded-lg grid place-items-center shrink-0 bg-primary/10 text-primary">
-            <Store className="size-4" />
-          </div>
-        )}
+        <div className="size-9 rounded-lg grid place-items-center shrink-0 bg-primary/10 text-primary text-sm font-semibold">
+          {s.name?.[0]?.toUpperCase() ?? <Store className="size-4" />}
+        </div>
         <div className="min-w-0">
           <div className="text-sm font-medium truncate flex items-center gap-1.5">
             <span className="truncate">{s.name}</span>

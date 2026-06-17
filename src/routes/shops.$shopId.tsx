@@ -46,13 +46,9 @@ function ShopDetail() {
           <ArrowLeft className="size-4" /> Lojas
         </Link>
         <div className="flex items-center gap-2 min-w-0">
-          {s.logo_url ? (
-            <img src={s.logo_url} alt={s.name} className="size-7 rounded-lg object-cover border border-border shrink-0" />
-          ) : (
-            <div className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
-              <Store className="size-3.5" />
-            </div>
-          )}
+          <div className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0 text-xs font-semibold">
+            {s.name?.[0]?.toUpperCase() ?? <Store className="size-3.5" />}
+          </div>
           <h1 className="text-base font-semibold tracking-tight truncate">{s.name}</h1>
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
             <span className="size-1.5 rounded-full bg-primary" /> {s.status}

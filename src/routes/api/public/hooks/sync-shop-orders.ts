@@ -62,6 +62,55 @@ async function fetchPayouts(domain: string, token: string, sinceISO: string) {
   return out;
 }
 
+async function fetchBalanceTransactions(domain: string, token: string, maxPages: number) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?limit=250`;
+  for (let i = 0; i < maxPages && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify balance transactions ${res.status}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.transactions ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
+// Tempo médio de repasse: para cada venda já incluída em um payout, mede os dias
+// entre o processamento da venda e a data do depósito. Calculado 1x/dia aqui (e não
+// na hora, pelo front) porque chamar a API de balanço da Shopify é lento.
+async function updatePayoutLag(shopId: string, userId: string, domain: string, token: string) {
+  const transactions = await fetchBalanceTransactions(domain, token, 10);
+  const charges = transactions.filter((t: any) => t.type === "charge" && t.payout_id != null);
+  if (!charges.length) {
+    await supabaseAdmin.from("shop_order_settings")
+      .update({ payout_lag_avg_days: null, payout_lag_sample_size: 0 })
+      .eq("user_id", userId).eq("shop_id", shopId);
+    return;
+  }
+
+  const since = new Date(); since.setUTCDate(since.getUTCDate() - 90);
+  const payouts = await fetchPayouts(domain, token, since.toISOString());
+  const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
+
+  const days: number[] = [];
+  for (const t of charges) {
+    const payoutDate = payoutDateById.get(String(t.payout_id));
+    if (!payoutDate) continue;
+    const diff = (new Date(`${payoutDate}T00:00:00Z`).getTime() - new Date(t.processed_at).getTime()) / 86400_000;
+    if (diff >= 0) days.push(diff);
+  }
+
+  await supabaseAdmin.from("shop_order_settings").update({
+    payout_lag_avg_days: days.length ? days.reduce((s, d) => s + d, 0) / days.length : null,
+    payout_lag_sample_size: days.length,
+  }).eq("user_id", userId).eq("shop_id", shopId);
+}
+
 async function syncPayoutsForShop(shopId: string, userId: string, domain: string, token: string) {
   const payouts = await fetchPayouts(domain, token, "2026-06-15T00:00:00Z");
   const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
@@ -121,6 +170,7 @@ async function processShop(s: any, today: string) {
           await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
         }
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+        await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await supabaseAdmin.from("shopify_stores").update({
           last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
         }).eq("id", s.shopify_store_id);

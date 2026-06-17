@@ -606,6 +606,24 @@ export const getShopifyChargebackRate = createServerFn({ method: "GET" })
     return { connected: true, rate, chargebacks, totalOrders };
   });
 
+// Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
+// e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
+// a cada carregamento de tela.
+export const getShopifyPayoutLag = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: settings } = await context.supabase.from("shop_order_settings")
+      .select("shopify_store_id,payout_lag_avg_days,payout_lag_sample_size")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) return { connected: false, avgDays: null, sampleSize: 0 };
+    return {
+      connected: true,
+      avgDays: settings.payout_lag_avg_days != null ? Number(settings.payout_lag_avg_days) : null,
+      sampleSize: settings.payout_lag_sample_size ?? 0,
+    };
+  });
+
 export const getMonthlyProfit = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({

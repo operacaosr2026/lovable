@@ -6,7 +6,8 @@ import {
   useDroppable, useDraggable,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Plus, Trash2, ChevronLeft, ChevronRight, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronDown, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -16,9 +17,8 @@ import {
   listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
   setOpeningBalance, setWeekendRule,
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
-  resetShopCash,
 } from "@/lib/shop-cash.functions";
-import { getShopifyPendingBalance, getMonthlyProfit } from "@/lib/shop-orders.functions";
+import { getShopifyPendingBalance, getMonthlyProfit, getShopifyPayoutLag } from "@/lib/shop-orders.functions";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
 type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null };
@@ -89,6 +89,12 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const listCatsFn = useServerFn(listCashCategories);
   const pendingFn = useServerFn(getShopifyPendingBalance);
   const monthlyProfitFn = useServerFn(getMonthlyProfit);
+  const payoutLagFn = useServerFn(getShopifyPayoutLag);
+  const { data: payoutLag } = useQuery({
+    queryKey: ["shop-payout-lag", shopId],
+    queryFn: () => payoutLagFn({ data: { shop_id: shopId } }),
+    staleTime: 5 * 60_000,
+  });
 
   const queryKey = ["shop-cash", shopId];
   const catsKey = ["shop-cash-cats", shopId];
@@ -109,7 +115,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const [manageCats, setManageCats] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DayItem | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const confirm = useConfirm();
 
   const entries = (data?.entries ?? []) as Entry[];
   const opening = data?.opening_balance ?? 0;
@@ -279,15 +284,6 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const openingMut = useMutation({ mutationFn: (v: number) => openingFn({ data: { shop_id: shopId, opening_balance: v } }), onSuccess: refresh });
   const weekendFn = useServerFn(setWeekendRule);
   const weekendMut = useMutation({ mutationFn: (enabled: boolean) => weekendFn({ data: { shop_id: shopId, enabled } }), onSuccess: refresh });
-  const resetFn = useServerFn(resetShopCash);
-  const resetMut = useMutation({
-    mutationFn: () => resetFn({ data: { shop_id: shopId } }),
-    onSuccess: () => {
-      refresh();
-      qc.invalidateQueries({ queryKey: ["shop-orders", shopId] });
-    },
-  });
-
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
   const receivable = pendingQuery.data?.connected
@@ -348,47 +344,45 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           <button onClick={() => setWeekOffset(o => o + 1)} className="p-2 hover:bg-accent rounded-r-lg"><ChevronRight className="size-4" /></button>
         </div>
         <div className="flex-1" />
+        {payoutLag?.connected && payoutLag.avgDays != null && (
+          <span className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400" title="Tempo médio de repasse da Shopify Payments">
+            D+{Math.round(payoutLag.avgDays)}
+          </span>
+        )}
+        <div className="flex-1" />
         <Button variant="outline" size="sm" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "income" })}>
           <Plus className="size-3.5" /> Entrada
         </Button>
         <Button variant="outline" size="sm" className="text-rose-700 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "expense" })}>
           <Plus className="size-3.5" /> Saída
         </Button>
-        <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Lançamentos caindo no sábado ou domingo aparecerão na segunda-feira seguinte.">
-          <input
-            type="checkbox"
-            checked={weekendToMonday}
-            onChange={(e) => weekendMut.mutate(e.target.checked)}
-            className="size-3.5 accent-primary"
-          />
-          <span>Fds → segunda</span>
-        </label>
-        <label className="inline-flex items-center gap-2 text-xs px-3 h-9 rounded-lg border border-border bg-surface cursor-pointer hover:bg-accent select-none" title="Mostra uma estimativa (processado + 10 dias) dos valores pendentes de repasse pela Shopify.">
-          <input
-            type="checkbox"
-            checked={showPending}
-            onChange={(e) => setShowPending(e.target.checked)}
-            className="size-3.5 accent-primary"
-          />
-          <span>Mostrar pendentes</span>
-        </label>
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          disabled={resetMut.isPending}
-          onClick={async () => {
-            const ok = await confirm({
-              title: "Resetar o caixa desta loja?",
-              description: "Isto vai apagar TODOS os lançamentos, importações e lotes de pagamento, e voltar os pedidos pagos para Pendente. Esta ação não pode ser desfeita.",
-              confirmText: "Resetar",
-            });
-            if (!ok) return;
-            resetMut.mutate();
-          }}
-        >
-          <Trash2 className="size-4" /> {resetMut.isPending ? "Resetando..." : "Resetar caixa"}
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">
+              Opções <ChevronDown className="size-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-2 space-y-1">
+            <label className="flex items-center gap-2 text-xs px-2 py-2 rounded-md cursor-pointer hover:bg-accent select-none" title="Lançamentos caindo no sábado ou domingo aparecerão na segunda-feira seguinte.">
+              <input
+                type="checkbox"
+                checked={weekendToMonday}
+                onChange={(e) => weekendMut.mutate(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              <span>Fds → segunda</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs px-2 py-2 rounded-md cursor-pointer hover:bg-accent select-none" title="Mostra uma estimativa (processado + 10 dias) dos valores pendentes de repasse pela Shopify.">
+              <input
+                type="checkbox"
+                checked={showPending}
+                onChange={(e) => setShowPending(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              <span>Mostrar pendentes</span>
+            </label>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Day grid */}

@@ -214,13 +214,9 @@ function EsteiraPage() {
                             onDragStart={(e) => e.preventDefault()}
                             className="flex items-start gap-2.5 select-none"
                           >
-                            {s.logo_url ? (
-                              <img src={s.logo_url} alt={s.name} draggable={false} className="size-9 rounded-lg object-cover shrink-0 border border-border pointer-events-none" />
-                            ) : (
-                              <div className="size-9 rounded-lg grid place-items-center shrink-0 bg-primary/10 text-primary">
-                                <Store className="size-4" />
-                              </div>
-                            )}
+                            <div className="size-9 rounded-lg grid place-items-center shrink-0 bg-primary/10 text-primary text-sm font-semibold">
+                              {s.name?.[0]?.toUpperCase() ?? <Store className="size-4" />}
+                            </div>
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium leading-tight truncate flex items-center gap-1.5">
                                 <span className="truncate">{s.name}</span>

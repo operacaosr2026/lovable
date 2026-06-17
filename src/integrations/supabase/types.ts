@@ -1528,6 +1528,8 @@ export type Database = {
           created_at: string
           default_unit_cost: number
           linked_product_id: string | null
+          payout_lag_avg_days: number | null
+          payout_lag_sample_size: number | null
           processing_delay_days: number
           shop_id: string
           shopify_store_id: string | null
@@ -1540,6 +1542,8 @@ export type Database = {
           created_at?: string
           default_unit_cost?: number
           linked_product_id?: string | null
+          payout_lag_avg_days?: number | null
+          payout_lag_sample_size?: number | null
           processing_delay_days?: number
           shop_id: string
           shopify_store_id?: string | null
@@ -1552,6 +1556,8 @@ export type Database = {
           created_at?: string
           default_unit_cost?: number
           linked_product_id?: string | null
+          payout_lag_avg_days?: number | null
+          payout_lag_sample_size?: number | null
           processing_delay_days?: number
           shop_id?: string
           shopify_store_id?: string | null
