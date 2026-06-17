@@ -203,6 +203,45 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_events: {
+        Row: {
+          all_day: boolean | null
+          color: string
+          created_at: string | null
+          date: string
+          end_time: string | null
+          id: string
+          member_ids: string[]
+          start_time: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          all_day?: boolean | null
+          color?: string
+          created_at?: string | null
+          date: string
+          end_time?: string | null
+          id?: string
+          member_ids?: string[]
+          start_time?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          all_day?: boolean | null
+          color?: string
+          created_at?: string | null
+          date?: string
+          end_time?: string | null
+          id?: string
+          member_ids?: string[]
+          start_time?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           color: string
@@ -386,6 +425,7 @@ export type Database = {
       }
       habits: {
         Row: {
+          annual_goal: number | null
           created_at: string
           id: string
           name: string
@@ -394,6 +434,7 @@ export type Database = {
           weekly_goal: number
         }
         Insert: {
+          annual_goal?: number | null
           created_at?: string
           id?: string
           name: string
@@ -402,6 +443,7 @@ export type Database = {
           weekly_goal?: number
         }
         Update: {
+          annual_goal?: number | null
           created_at?: string
           id?: string
           name?: string
@@ -1334,6 +1376,7 @@ export type Database = {
           import_id: string | null
           kind: string
           mercury_transaction_id: string | null
+          reconciled: boolean
           recurrence: string
           recurrence_until: string | null
           shop_id: string
@@ -1355,6 +1398,7 @@ export type Database = {
           import_id?: string | null
           kind: string
           mercury_transaction_id?: string | null
+          reconciled?: boolean
           recurrence?: string
           recurrence_until?: string | null
           shop_id: string
@@ -1376,6 +1420,7 @@ export type Database = {
           import_id?: string | null
           kind?: string
           mercury_transaction_id?: string | null
+          reconciled?: boolean
           recurrence?: string
           recurrence_until?: string | null
           shop_id?: string
@@ -2015,6 +2060,8 @@ export type Database = {
           priority: string
           reminder_minutes: number[]
           shop_id: string
+          source: string | null
+          source_ref: string | null
           status: string
           title: string
           updated_at: string
@@ -2033,6 +2080,8 @@ export type Database = {
           priority?: string
           reminder_minutes?: number[]
           shop_id: string
+          source?: string | null
+          source_ref?: string | null
           status?: string
           title: string
           updated_at?: string
@@ -2051,6 +2100,8 @@ export type Database = {
           priority?: string
           reminder_minutes?: number[]
           shop_id?: string
+          source?: string | null
+          source_ref?: string | null
           status?: string
           title?: string
           updated_at?: string
@@ -3193,7 +3244,7 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "tasks_list_id_fkey"
+            foreignKeyName: "tasks_list_id_fk"
             columns: ["list_id"]
             isOneToOne: false
             referencedRelation: "task_lists"
