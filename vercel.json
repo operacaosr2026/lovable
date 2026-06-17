@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/public/hooks/sync-shop-orders",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 6 * * *"
     }
   ],
   "outputDirectory": "dist/client",
