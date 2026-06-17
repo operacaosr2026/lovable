@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Store, Package, Workflow, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
+  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -60,7 +60,6 @@ const navGroups: NavGroup[] = [
         section: "shops",
         children: [
           { to: "/shops", label: "Lojas", icon: Store },
-          { to: "/shops/esteira", label: "Esteira de Lojas", icon: Workflow },
           { to: "/shops/products", label: "Produtos", icon: Package },
         ],
       },
@@ -83,7 +82,6 @@ const ALL_PAGES = [
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/shops", label: "Ecommerce / Lojas", icon: Store },
-  { to: "/shops/esteira", label: "Esteira de Lojas", icon: Workflow },
   { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
   { to: "/settings/members", label: "Membros", icon: Users },
@@ -351,7 +349,6 @@ export function AppLayout() {
                     ? path === "/shops" ||
                       (path.startsWith("/shops/") &&
                         !path.startsWith("/shops/products") &&
-                        !path.startsWith("/shops/esteira") &&
                         !path.startsWith("/shops/sops"))
                     : path.startsWith(child.to);
                 const ChildIcon = child.icon;

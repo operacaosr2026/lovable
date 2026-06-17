@@ -5,15 +5,6 @@ import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/su
 import { COST_CATEGORY } from "@/lib/shop-orders.functions";
 
 export const SHOP_STATUSES = ["ativa", "pausada", "arquivada"] as const;
-export const PIPELINE_STAGES = [
-  "para_criar",
-  "criando",
-  "prontas",
-  "aquecimento",
-  "validacao_produto",
-  "escalando",
-  "congelada",
-] as const;
 
 const ShopInput = z.object({
   name: z.string().trim().min(1).max(120),

@@ -369,7 +369,7 @@ function KanbanColumn({
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   return (
     <div
-      className={`flex flex-col rounded-2xl border bg-surface min-w-[280px] flex-1 transition-all ${isColOver ? "border-primary/60 ring-2 ring-primary/30" : "border-border"} ${isColDragging ? "opacity-50" : ""}`}
+      className={`flex flex-col rounded-2xl border bg-surface min-w-[280px] flex-1 transition-all overflow-hidden ${isColOver ? "border-primary/60 ring-2 ring-primary/30" : "border-border"} ${isColDragging ? "opacity-50" : ""}`}
     >
       <div
         {...headerProps}

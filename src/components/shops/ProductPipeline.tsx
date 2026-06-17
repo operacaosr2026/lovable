@@ -183,7 +183,7 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
 function Column({ col, items, onCardClick, onDelete }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   return (
-    <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 w-[260px] shrink-0">
+    <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 w-[260px] shrink-0 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border" style={{ background: col.tint }}>
         <span className="size-2 rounded-full" style={{ background: col.accent }} />
         <div className="text-sm font-semibold flex-1">{col.label}</div>

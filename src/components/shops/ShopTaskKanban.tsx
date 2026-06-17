@@ -197,7 +197,7 @@ function Chip({ active, onClick, children, danger }: any) {
 function Column({ col, tasks, onCardClick, onDelete }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   return (
-    <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 flex-1 min-w-[280px]">
+    <div className="flex flex-col rounded-2xl border border-border bg-surface min-h-0 flex-1 min-w-[280px] overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border" style={{ background: col.tint }}>
         <span className="size-2 rounded-full" style={{ background: col.accent }} />
         <div className="text-sm font-semibold flex-1">{col.label}</div>
