@@ -99,14 +99,16 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
 }
 
 async function processShop(s: any, today: string) {
-  // sync last 30 days
+  const cutoff: string | null = s.cashflow_start_date ?? null;
+  const sinceDate = cutoff ?? addDays(today, -30);
+
+  // sync orders from the configured cashflow cutoff date (fallback: last 30 days)
   if (s.shopify_store_id) {
     const { data: store } = await supabaseAdmin.from("shopify_stores").select("*")
       .eq("id", s.shopify_store_id).maybeSingle();
     if (store?.access_token && store?.shop_domain) {
-      const since = new Date(); since.setUTCDate(since.getUTCDate() - 30);
       try {
-        const orders = await fetchOrders(store.shop_domain, store.access_token, since.toISOString());
+        const orders = await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`);
         if (orders.length) {
           const rows = orders.map((o: any) => ({
             user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
@@ -136,6 +138,11 @@ async function processShop(s: any, today: string) {
     .eq("user_id", s.user_id).eq("shop_id", s.shop_id)
     .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate).maybeSingle();
   if (existing && existing.source === "manual_override") return;
+
+  if (cutoff && orderDate < cutoff) {
+    if (existing) await supabaseAdmin.from("shop_cash_entries").delete().eq("id", existing.id);
+    return;
+  }
 
   const { data: orders } = await supabaseAdmin.from("shop_orders").select("items_count")
     .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("order_date", orderDate);

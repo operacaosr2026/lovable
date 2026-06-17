@@ -11,6 +11,11 @@ function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d);
 }
+function daysBetween(from: string, to: string) {
+  const a = new Date(from + "T00:00:00Z").getTime();
+  const b = new Date(to + "T00:00:00Z").getTime();
+  return Math.round((b - a) / 86400_000);
+}
 
 // access_token is no longer readable by the user role (column SELECT was revoked).
 // Use the admin client and scope strictly by user_id to keep authorization correct.
@@ -362,7 +367,8 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     shop_id: z.string().uuid(),
-    since_days: z.number().int().min(1).max(90).default(30),
+    since_days: z.number().int().min(1).max(90).optional(),
+    since_date: z.string().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
@@ -370,8 +376,10 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
-    const since = new Date(); since.setUTCDate(since.getUTCDate() - data.since_days);
-    const orders = await fetchShopifyOrders(domain, token, since.toISOString());
+    const todayForSince = isoDate(new Date());
+    const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
+    const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
+    const orders = await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`);
 
     if (orders.length) {
       const rows = orders.map((o: any) => {
@@ -441,7 +449,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     const today = isoDate(new Date());
     const { data: settingsFull } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    const fromProc = addDays(today, -data.since_days + PROCESSING_DELAY_DAYS);
+    const fromProc = addDays(today, -sinceDays + PROCESSING_DELAY_DAYS);
     const toProc = addDays(today, PROCESSING_DELAY_DAYS);
     const days: string[] = [];
     let cur = fromProc;
@@ -1025,6 +1033,37 @@ export const undoOrderPayment = createServerFn({ method: "POST" })
       .eq("source", "order_payment").in("source_ref", (batch.order_dates as string[]) ?? []);
 
     return { ok: true };
+  });
+
+export const deleteOrders = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    order_ids: z.array(z.string().uuid()).min(1).max(2000),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: orders, error } = await context.supabase.from("shop_orders")
+      .select("id,order_date,payment_status")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .in("id", data.order_ids).neq("payment_status", "shipped");
+    if (error) throw new Error(error.message);
+    if (!orders || orders.length === 0) throw new Error("Nenhum pedido elegível para exclusão (pedidos enviados não podem ser excluídos)");
+
+    const ids = orders.map((o) => o.id);
+    await context.supabase.from("shop_order_tracking").delete()
+      .eq("user_id", context.ownerId).in("order_id", ids);
+    const { error: delErr } = await context.supabase.from("shop_orders").delete()
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).in("id", ids);
+    if (delErr) throw new Error(delErr.message);
+
+    const dates = Array.from(new Set(orders.map((o) => o.order_date as string)));
+    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    for (const d of dates) {
+      await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
+    }
+
+    return { deleted: ids.length };
   });
 
 export const listPaymentBatches = createServerFn({ method: "GET" })

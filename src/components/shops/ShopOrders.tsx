@@ -6,7 +6,7 @@ import {
   listOrders, syncShopifyOrders, recomputeRange,
   updateUnitCost, listCostHistory,
   markOrdersPaid, markOrdersShipped, listPaymentBatches, undoOrderPayment,
-  syncOrderPaymentTasks,
+  syncOrderPaymentTasks, deleteOrders,
 } from "@/lib/shop-orders.functions";
 import { listOrdersTracking, setOrderTracking, getTrack123Integration } from "@/lib/track123.functions";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package, Clock, MapPin, AlertTriangle, PackageX } from "lucide-react";
+import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package, Clock, MapPin, AlertTriangle, PackageX, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +107,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [batchesOpen, setBatchesOpen] = useState(false);
   const [logisticsView, setLogisticsView] = useState<LogisticsKey | null>(null);
 
@@ -116,6 +117,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const recomputeRangeFn = useServerFn(recomputeRange);
   const payFn = useServerFn(markOrdersPaid);
   const shipFn = useServerFn(markOrdersShipped);
+  const deleteOrdersFn = useServerFn(deleteOrders);
 
   const settings = useQuery({ queryKey: ["order-settings", shopId], queryFn: () => getSettingsFn({ data: { shop_id: shopId } }) });
   const orders = useQuery({ queryKey: ["orders", shopId, from, to], queryFn: () => listOrdersFn({ data: { shop_id: shopId, from, to } }) });
@@ -146,7 +148,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const trackingTemplate = track123.data?.tracking_link_template ?? "";
 
   const sync = useMutation({
-    mutationFn: () => syncFn({ data: { shop_id: shopId, since_days: 30 } }),
+    mutationFn: () => syncFn({ data: { shop_id: shopId, since_date: from } }),
     onSuccess: (r) => {
       toast.success(`${r.synced} pedidos sincronizados`);
       qc.invalidateQueries({ queryKey: ["orders", shopId] });
@@ -287,6 +289,18 @@ export function ShopOrders({ shopId }: { shopId: string }) {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const deleteSelected = useMutation({
+    mutationFn: () => deleteOrdersFn({ data: { shop_id: shopId, order_ids: Array.from(selectedOrders) } }),
+    onSuccess: (r) => {
+      toast.success(`${r.deleted} pedidos excluídos`);
+      setSelectedOrders(new Set());
+      setDeleteOpen(false);
+      qc.invalidateQueries({ queryKey: ["orders", shopId] });
+      qc.invalidateQueries({ queryKey: ["shop-cash"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const hasSelection = selectedOrders.size > 0;
 
   return (
@@ -361,6 +375,9 @@ export function ShopOrders({ shopId }: { shopId: string }) {
               <CheckCircle2 className="size-4" /> Marcar como pago ({selectedSummary.pendingIds.length})
             </Button>
           )}
+          <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="size-4" /> Excluir ({selectedSummary.count})
+          </Button>
         </div>
       )}
 
@@ -513,6 +530,22 @@ export function ShopOrders({ shopId }: { shopId: string }) {
         loading={pay.isPending}
         onConfirm={(date) => pay.mutate(date)}
       />
+
+      <Dialog open={deleteOpen} onOpenChange={(v) => !v && setDeleteOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Excluir pedidos</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que deseja excluir <strong>{selectedSummary.count}</strong> pedidos selecionados?
+            Pedidos já enviados não serão excluídos. Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => deleteSelected.mutate()} disabled={deleteSelected.isPending}>
+              {deleteSelected.isPending && <Loader2 className="size-4 animate-spin" />} Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <BatchesDialog
         shopId={shopId}

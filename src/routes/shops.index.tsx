@@ -102,7 +102,7 @@ function ShopsDashboard() {
           onChange={(e) => setFStatus(e.target.value)}
           className="h-9 px-2 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
         >
-          <option value="all">Status</option>
+          <option value="all">Todos</option>
           {SHOP_STATUSES.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
         </select>
         <div className="flex items-center rounded-lg border border-border bg-surface overflow-hidden">
@@ -152,7 +152,7 @@ function ShopsDashboard() {
             <span className="text-center">Status</span>
             <span className="text-center">Produtos</span>
             <span className="text-center">Tarefas</span>
-            <span className="text-center">Rotinas</span>
+            <span className="text-center">Estorno</span>
             <span className="text-right">Lucro do mês</span>
             <span className="text-right">Saldo</span>
           </div>
@@ -287,6 +287,12 @@ function Stat({ icon: Icon, label, value }: any) {
 function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelete: () => void }) {
   const st = STATUS_META[s.status] ?? STATUS_META.ativa;
   const c = getCountry(s.country);
+  const chargebackFn = useServerFn(getShopifyChargebackRate);
+  const { data: chargeback } = useQuery({
+    queryKey: ["shop-chargeback-rate", s.id],
+    queryFn: () => chargebackFn({ data: { shop_id: s.id } }),
+    staleTime: 5 * 60_000,
+  });
   return (
     <div className="group relative grid grid-cols-[1fr_120px_100px_100px_100px_100px_100px] gap-3 px-4 py-3 items-center border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
       <Link to="/shops/$shopId" params={{ shopId: s.id }} className="flex items-center gap-3 min-w-0">
@@ -329,8 +335,13 @@ function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDe
         <span className="text-xs tabular-nums font-semibold text-foreground">{s.pendingTasks}</span>
       </div>
       <div className="flex items-center justify-center gap-1 text-muted-foreground">
-        <Repeat className="size-3" />
-        <span className="text-xs tabular-nums font-semibold text-foreground">{s.routinesToday}</span>
+        {chargeback?.connected && chargeback.rate != null ? (
+          <span className={`text-xs tabular-nums font-semibold ${chargeback.rate > 0.5 ? "text-rose-500" : "text-emerald-500"}`}>
+            {chargeback.rate.toFixed(2)}%
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
       </div>
       <div className="text-right">
         <span className={`text-sm font-bold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>

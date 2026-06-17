@@ -63,11 +63,12 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
 
   const syncAll = useMutation({
     mutationFn: async () => {
-      const r = await syncFn({ data: { shop_id: shopId, since_days: 30 } });
       const today = isoDate(new Date());
-      const from = addDays(today, -30);
+      const cutoff = settings.data?.cashflow_start_date as string | null | undefined;
+      const sinceDate = cutoff && cutoff > addDays(today, -30) ? cutoff : addDays(today, -30);
+      const r = await syncFn({ data: { shop_id: shopId, since_date: sinceDate } });
       const futureTo = addDays(today, PROCESSING_DELAY_DAYS + 1);
-      await recomputeRangeFn({ data: { shop_id: shopId, from_processing: addDays(from, PROCESSING_DELAY_DAYS), to_processing: futureTo } });
+      await recomputeRangeFn({ data: { shop_id: shopId, from_processing: addDays(sinceDate, PROCESSING_DELAY_DAYS), to_processing: futureTo } });
       const payouts = await syncPayoutsFn({ data: { shop_id: shopId, since_days: 365 } });
       if (metaAdsConnected) {
         await syncMetaAdsFn({ data: { shop_id: shopId } });
