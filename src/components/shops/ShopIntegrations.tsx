@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -19,7 +19,7 @@ import { Track123IntegrationDialog } from "./Track123Integration";
 import { getTrack123Integration } from "@/lib/track123.functions";
 import { listInboxes, upsertInbox, testInboxConnection, deleteInbox } from "@/lib/support.functions";
 import { MetaAdsIntegrationDialog } from "./MetaAdsIntegration";
-import { getMetaAdsIntegration, syncMetaAdsSpend, syncMetaAdsActivities } from "@/lib/meta-ads.functions";
+import { getMetaAdsIntegration, getMetaToken, syncMetaAdsSpend, syncMetaAdsActivities } from "@/lib/meta-ads.functions";
 
 const PROCESSING_DELAY_DAYS = 7;
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -27,7 +27,7 @@ function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d);
 }
 
-export function ShopIntegrations({ shopId }: { shopId: string }) {
+export function ShopIntegrations({ shopId, metaConnected }: { shopId: string; metaConnected?: true }) {
   const qc = useQueryClient();
   const getSettingsFn = useServerFn(getOrderSettings);
   const listStoresFn = useServerFn(listShopifyStores);
@@ -89,7 +89,21 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const getMetaTokenFn = useServerFn(getMetaToken);
+  const metaToken = useQuery({
+    queryKey: ["meta-token", shopId],
+    queryFn: () => getMetaTokenFn({ data: { shop_id: shopId } }),
+  });
+  const metaOAuthConnected = Boolean(metaToken.data?.connected);
+
   const [openMetaAds, setOpenMetaAds] = useState(false);
+
+  useEffect(() => {
+    if (metaConnected) {
+      toast.success("Facebook autenticado! Selecione a conta de anúncios.");
+      setOpenMetaAds(true);
+    }
+  }, [metaConnected]);
 
   return (
     <div className="space-y-6">
@@ -152,8 +166,8 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
         icon={Megaphone}
         title="Meta Ads"
         subtitle="Gasto de campanhas sincronizado automaticamente no Caixa"
-        status={metaAdsConnected ? "connected" : "disconnected"}
-        statusLabel={metaAdsConnected ? (metaAds.data?.account_name || "Conectado") : "Não conectado"}
+        status={(metaOAuthConnected || metaAdsConnected) ? "connected" : "disconnected"}
+        statusLabel={(metaOAuthConnected || metaAdsConnected) ? (metaToken.data?.fb_user_name || metaAds.data?.account_name || "Conectado") : "Não conectado"}
       >
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => setOpenMetaAds(true)}>

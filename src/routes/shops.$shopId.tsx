@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
-import { ArrowLeft, Package, KanbanSquare, Store, MapPin, Wallet, ShoppingBag, BookOpen, Target, Plug, MessageCircle } from "lucide-react";
+import { ArrowLeft, Package, KanbanSquare, Store, MapPin, Wallet, ShoppingBag, BookOpen, Target, Plug, MessageCircle, LayoutDashboard } from "lucide-react";
 import { getShop } from "@/lib/shops.functions";
 import { ProductPipeline } from "@/components/shops/ProductPipeline";
 import { ShopTaskKanban } from "@/components/shops/ShopTaskKanban";
@@ -13,17 +12,28 @@ import { ShopOrders } from "@/components/shops/ShopOrders";
 import { ShopProfitGoal } from "@/components/shops/ShopProfitGoal";
 import { ShopIntegrations } from "@/components/shops/ShopIntegrations";
 import { ShopSupport } from "@/components/shops/ShopSupport";
+import { ShopDashboard } from "@/components/shops/ShopDashboard";
+
+type Tab = "dashboard" | "products" | "tasks" | "cash" | "orders" | "wiki" | "goal" | "integrations" | "support";
+
+const VALID_TABS: Tab[] = ["dashboard", "products", "tasks", "cash", "orders", "wiki", "goal", "integrations", "support"];
 
 export const Route = createFileRoute("/shops/$shopId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (VALID_TABS.includes(search.tab as Tab) ? search.tab : "dashboard") as Tab,
+    meta_connected: search.meta_connected === "1" ? true : undefined as true | undefined,
+  }),
   component: ShopDetail,
 });
 
-type Tab = "products" | "tasks" | "cash" | "orders" | "wiki" | "goal" | "integrations" | "support";
-
 function ShopDetail() {
   const { shopId } = Route.useParams();
+  const { tab, meta_connected } = Route.useSearch();
+  const navigate = useNavigate({ from: "/shops/$shopId" });
   const get = useServerFn(getShop);
-  const [tab, setTab] = useState<Tab>("cash");
+
+  const setTab = (t: Tab) =>
+    navigate({ search: (prev) => ({ ...prev, tab: t }), replace: true });
 
   const { data, isLoading } = useQuery({
     queryKey: ["shop", shopId],
@@ -58,6 +68,7 @@ function ShopDetail() {
       </div>
 
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
+        <TabBtn active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={LayoutDashboard}>Dashboard</TabBtn>
         <TabBtn active={tab === "goal"} onClick={() => setTab("goal")} icon={Target}>Metas</TabBtn>
         <TabBtn active={tab === "cash"} onClick={() => setTab("cash")} icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "orders"} onClick={() => setTab("orders")} icon={ShoppingBag}>Pedidos</TabBtn>
@@ -68,13 +79,14 @@ function ShopDetail() {
         <TabBtn active={tab === "integrations"} onClick={() => setTab("integrations")} icon={Plug}>Integrações</TabBtn>
       </div>
 
+      {tab === "dashboard" && <ShopDashboard shopId={shopId} shopName={s.name} />}
       {tab === "products" && <ProductPipeline shopId={shopId} />}
       {tab === "orders" && <ShopOrders shopId={shopId} />}
       {tab === "support" && <ShopSupport shopId={shopId} />}
       {tab === "tasks" && <ShopTaskKanban shopId={shopId} />}
       {tab === "cash" && <ShopCashflow shopId={shopId} />}
       {tab === "goal" && <ShopProfitGoal shopId={shopId} />}
-      {tab === "integrations" && <ShopIntegrations shopId={shopId} />}
+      {tab === "integrations" && <ShopIntegrations shopId={shopId} metaConnected={meta_connected} />}
       {tab === "wiki" && <ShopWiki shopId={shopId} />}
     </PageShell>
   );
