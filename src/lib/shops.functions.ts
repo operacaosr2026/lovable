@@ -37,7 +37,7 @@ export const listShops = createServerFn({ method: "GET" })
       const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
       const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
       const monthEnd = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: monthOrders }, { data: costRows }, { data: adRows }] = await Promise.all([
+      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: monthOrders }, { data: costRows }, { data: adRows }, { data: groupStores }] = await Promise.all([
         supabase.from("shop_products").select("shop_id").in("shop_id", ids),
         supabase.from("shop_tasks").select("shop_id,status").in("shop_id", ids).neq("status", "done"),
         supabase.from("shop_routines").select("shop_id,due_at").in("shop_id", ids),
@@ -47,8 +47,13 @@ export const listShops = createServerFn({ method: "GET" })
           .or(`and(auto_ref_date.gte.${monthStart},auto_ref_date.lte.${monthEnd}),and(auto_ref_date.is.null,date.gte.${monthStart},date.lte.${monthEnd})`),
         supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Facebook Ads")
           .gte("date", monthStart).lte("date", monthEnd),
+        supabase.from("shop_group_stores").select("shop_id,role,connection:shopify_connections(name,shop_domain)").in("shop_id", ids),
       ]);
       const today = new Date(); today.setHours(23, 59, 59, 999);
+      const storesByShop: Record<string, { name: string; domain: string; role: string }[]> = {};
+      for (const gs of (groupStores ?? []) as any[]) {
+        (storesByShop[gs.shop_id] ??= []).push({ name: gs.connection?.name ?? gs.connection?.shop_domain ?? "", domain: gs.connection?.shop_domain ?? "", role: gs.role });
+      }
       const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0, monthProfit: 0 });
       for (const s of shops ?? []) init((s as any).id).balance = Number((s as any).opening_balance ?? 0);
       for (const p of prods ?? []) init((p as any).shop_id).products++;
@@ -70,6 +75,7 @@ export const listShops = createServerFn({ method: "GET" })
       shops: (shops ?? []).map((s: any) => ({
         ...s,
         ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0), monthProfit: 0 }),
+        stores: storesByShop[s.id] ?? [],
       })),
     };
   });

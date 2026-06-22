@@ -1,11 +1,13 @@
-import { useMemo, useRef, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, Search, Store, MapPin, ListChecks, Package, X, Upload, LayoutGrid, List } from "lucide-react";
+import { Plus, Search, Store, MapPin, ListChecks, Package, X, Upload, LayoutGrid, List, Crown } from "lucide-react";
 import { listShops, createShop, updateShop, deleteShop, SHOP_STATUSES } from "@/lib/shops.functions";
 import { getShopifyChargebackRate, getShopifyPayoutLag } from "@/lib/shop-orders.functions";
+import { setGroupStores, getGroupStores } from "@/lib/shopify-connections.functions";
+import { GroupStoresPicker, type GroupStoreDraft } from "@/components/shops/GroupStoresPicker";
 import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -67,6 +69,9 @@ function ShopsDashboard() {
     });
   }, [shops, fStatus, search]);
 
+  const setStoresFn  = useServerFn(setGroupStores);
+  const getStoresFn  = useServerFn(getGroupStores);
+
   const refresh = () => qc.invalidateQueries({ queryKey: ["shops"] });
   const create = useMutation({ mutationFn: (input: any) => createFn({ data: input }), onSuccess: refresh });
   const update = useMutation({ mutationFn: ({ id, patch }: any) => updateFn({ data: { id, patch } }), onSuccess: refresh });
@@ -75,14 +80,14 @@ function ShopsDashboard() {
   return (
     <PageShell>
       <PageHeader
-        title="Lojas"
-        subtitle={`${filtered.length} ${filtered.length === 1 ? "loja" : "lojas"}`}
+        title="Grupos"
+        subtitle={`${filtered.length} ${filtered.length === 1 ? "grupo" : "grupos"}`}
         actions={
           <button
             onClick={() => { setEditing(null); setEditorOpen(true); }}
             className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
           >
-            <Plus className="size-4" /> Nova loja
+            <Plus className="size-4" /> Novo grupo
           </button>
         }
       />
@@ -131,7 +136,7 @@ function ShopsDashboard() {
             onClick={() => { setEditing(null); setEditorOpen(true); }}
             className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
           >
-            <Plus className="size-4" /> Criar primeira loja
+            <Plus className="size-4" /> Criar primeiro grupo
           </button>
         </div>
       ) : viewMode === "cards" ? (
@@ -171,9 +176,14 @@ function ShopsDashboard() {
         <ShopEditor
           shop={editing}
           onClose={() => setEditorOpen(false)}
-          onSave={async (patch) => {
-            if (editing) await update.mutateAsync({ id: editing.id, patch });
-            else await create.mutateAsync(patch);
+          onSave={async (patch, stores) => {
+            if (editing) {
+              await update.mutateAsync({ id: editing.id, patch });
+              await setStoresFn({ data: { shop_id: editing.id, stores } });
+            } else {
+              const result = await create.mutateAsync(patch);
+              await setStoresFn({ data: { shop_id: result.shop.id, stores } });
+            }
             setEditorOpen(false);
           }}
           onDelete={editing ? async () => {
@@ -231,6 +241,22 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
             {st.label}
           </span>
         </div>
+
+        {/* Lojas vinculadas */}
+        {(s.stores ?? []).length > 0 ? (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {(s.stores as any[]).map((st: any, i: number) => (
+              <span key={i} className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">
+                {st.role === "matrix" && <Crown className="size-2.5 text-warning" />}
+                {st.name || st.domain}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="mb-3">
+            <span className="text-[10px] text-muted-foreground italic">Nenhuma loja vinculada</span>
+          </div>
+        )}
 
         {s.description && (
           <p className="text-xs text-muted-foreground line-clamp-2 mb-3 min-h-[2rem]">{s.description}</p>
@@ -363,7 +389,7 @@ function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDe
 function ShopEditor({ shop, onClose, onSave, onDelete }: {
   shop: any;
   onClose: () => void;
-  onSave: (patch: any) => void | Promise<void>;
+  onSave: (patch: any, stores: GroupStoreDraft[]) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
 }) {
   const [name, setName] = useState(shop?.name ?? "");
@@ -373,7 +399,20 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
   const [status, setStatus] = useState<string>(shop?.status ?? "ativa");
   const [logoUrl, setLogoUrl] = useState<string>(shop?.logo_url ?? "");
   const [uploading, setUploading] = useState(false);
+  const [stores, setStores] = useState<GroupStoreDraft[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const getStoresFn = useServerFn(getGroupStores);
+  const { data: existingStoresData } = useQuery({
+    queryKey: ["group-stores", shop?.id],
+    queryFn: () => getStoresFn({ data: { shop_id: shop!.id } }),
+    enabled: !!shop?.id,
+  });
+  useEffect(() => {
+    if (existingStoresData) {
+      setStores(existingStoresData.stores.map(s => ({ connection_id: s.connection_id, role: s.role as "matrix" | "sub" })));
+    }
+  }, [existingStoresData]);
 
   useEscapeToClose(onClose);
 
@@ -399,19 +438,19 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
   };
 
   const save = () => onSave({
-    name: name.trim() || (shop?.name ?? "Nova loja"),
+    name: name.trim() || (shop?.name ?? "Novo grupo"),
     description: description.trim() || null,
     country: country.trim() || null,
     tag: tag.trim() || null,
     status,
     logo_url: logoUrl || null,
-  });
+  }, stores);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl bg-popover border border-border shadow-xl">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <div className="text-base font-semibold">{shop ? "Editar loja" : "Nova loja"}</div>
+          <div className="text-base font-semibold">{shop ? "Editar grupo" : "Novo grupo"}</div>
           <button onClick={onClose} className="size-7 rounded-md grid place-items-center hover:bg-muted text-muted-foreground">
             <X className="size-4" />
           </button>
@@ -439,7 +478,7 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Nome da loja"
+            placeholder="Nome do grupo"
             className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50"
           />
           <textarea
@@ -474,6 +513,11 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
             placeholder="Tag (ex: principal, teste...)"
             className="w-full px-3 h-9 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50"
           />
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Lojas vinculadas</label>
+            <GroupStoresPicker value={stores} onChange={setStores} />
+          </div>
         </div>
 
         <div className="flex justify-between items-center px-5 py-3 border-t border-border">

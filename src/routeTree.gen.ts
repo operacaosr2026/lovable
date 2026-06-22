@@ -29,6 +29,7 @@ import { Route as FinanceIndexRouteImport } from './routes/finance.index'
 import { Route as WhiteboardBoardIdRouteImport } from './routes/whiteboard.$boardId'
 import { Route as TasksListIdRouteImport } from './routes/tasks.$listId'
 import { Route as ShopsProductsRouteImport } from './routes/shops.products'
+import { Route as ShopsConnectionsRouteImport } from './routes/shops.connections'
 import { Route as ShopsShopIdRouteImport } from './routes/shops.$shopId'
 import { Route as SettingsSegurancaRouteImport } from './routes/settings.seguranca'
 import { Route as SettingsMembersRouteImport } from './routes/settings.members'
@@ -149,6 +150,11 @@ const TasksListIdRoute = TasksListIdRouteImport.update({
 const ShopsProductsRoute = ShopsProductsRouteImport.update({
   id: '/products',
   path: '/products',
+  getParentRoute: () => ShopsRoute,
+} as any)
+const ShopsConnectionsRoute = ShopsConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
   getParentRoute: () => ShopsRoute,
 } as any)
 const ShopsShopIdRoute = ShopsShopIdRouteImport.update({
@@ -286,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/$shopId': typeof ShopsShopIdRoute
+  '/shops/connections': typeof ShopsConnectionsRoute
   '/shops/products': typeof ShopsProductsRouteWithChildren
   '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
@@ -323,6 +330,7 @@ export interface FileRoutesByTo {
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/$shopId': typeof ShopsShopIdRoute
+  '/shops/connections': typeof ShopsConnectionsRoute
   '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
   '/finance': typeof FinanceIndexRoute
@@ -366,6 +374,7 @@ export interface FileRoutesById {
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/$shopId': typeof ShopsShopIdRoute
+  '/shops/connections': typeof ShopsConnectionsRoute
   '/shops/products': typeof ShopsProductsRouteWithChildren
   '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
@@ -411,6 +420,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/$shopId'
+    | '/shops/connections'
     | '/shops/products'
     | '/tasks/$listId'
     | '/whiteboard/$boardId'
@@ -448,6 +458,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/$shopId'
+    | '/shops/connections'
     | '/tasks/$listId'
     | '/whiteboard/$boardId'
     | '/finance'
@@ -490,6 +501,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/$shopId'
+    | '/shops/connections'
     | '/shops/products'
     | '/tasks/$listId'
     | '/whiteboard/$boardId'
@@ -674,6 +686,13 @@ declare module '@tanstack/react-router' {
       path: '/products'
       fullPath: '/shops/products'
       preLoaderRoute: typeof ShopsProductsRouteImport
+      parentRoute: typeof ShopsRoute
+    }
+    '/shops/connections': {
+      id: '/shops/connections'
+      path: '/connections'
+      fullPath: '/shops/connections'
+      preLoaderRoute: typeof ShopsConnectionsRouteImport
       parentRoute: typeof ShopsRoute
     }
     '/shops/$shopId': {
@@ -893,6 +912,7 @@ const ShopsProductsRouteWithChildren = ShopsProductsRoute._addFileChildren(
 
 interface ShopsRouteChildren {
   ShopsShopIdRoute: typeof ShopsShopIdRoute
+  ShopsConnectionsRoute: typeof ShopsConnectionsRoute
   ShopsProductsRoute: typeof ShopsProductsRouteWithChildren
   ShopsIndexRoute: typeof ShopsIndexRoute
   ShopsSopsProcessIdRoute: typeof ShopsSopsProcessIdRoute
@@ -901,6 +921,7 @@ interface ShopsRouteChildren {
 
 const ShopsRouteChildren: ShopsRouteChildren = {
   ShopsShopIdRoute: ShopsShopIdRoute,
+  ShopsConnectionsRoute: ShopsConnectionsRoute,
   ShopsProductsRoute: ShopsProductsRouteWithChildren,
   ShopsIndexRoute: ShopsIndexRoute,
   ShopsSopsProcessIdRoute: ShopsSopsProcessIdRoute,

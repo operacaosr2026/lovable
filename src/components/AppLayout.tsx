@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
+  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Database, Layers,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -59,7 +59,8 @@ const navGroups: NavGroup[] = [
         icon: Store,
         section: "shops",
         children: [
-          { to: "/shops", label: "Lojas", icon: Store },
+          { to: "/shops", label: "Grupos", icon: Layers },
+          { to: "/shops/connections", label: "Banco de Lojas", icon: Database },
           { to: "/shops/products", label: "Produtos", icon: Package },
         ],
       },
@@ -81,7 +82,8 @@ const ALL_PAGES = [
   { to: "/finance", label: "Financeiro", icon: Wallet },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },
-  { to: "/shops", label: "Ecommerce / Lojas", icon: Store },
+  { to: "/shops", label: "Grupos", icon: Layers },
+  { to: "/shops/connections", label: "Banco de Lojas", icon: Database },
   { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
   { to: "/settings/members", label: "Membros", icon: Users },
@@ -346,10 +348,7 @@ export function AppLayout() {
               {item.children.map((child) => {
                 const childActive =
                   child.to === "/shops"
-                    ? path === "/shops" ||
-                      (path.startsWith("/shops/") &&
-                        !path.startsWith("/shops/products") &&
-                        !path.startsWith("/shops/sops"))
+                    ? path === "/shops"
                     : path.startsWith(child.to);
                 const ChildIcon = child.icon;
                 return (
