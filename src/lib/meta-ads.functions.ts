@@ -4,6 +4,174 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+const META_APP_ID    = process.env["META_APP_ID"]!;
+const SUPABASE_URL   = process.env["SUPABASE_URL"]!;
+const CALLBACK_URI   = `${SUPABASE_URL}/functions/v1/meta-oauth-callback`;
+
+// ===== OAuth flow =====
+
+export const createMetaOAuthUrl = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    const { data: stateRow, error } = await supabaseAdmin
+      .from("meta_oauth_states")
+      .insert({ user_id: ownerId, shop_id: data.shop_id })
+      .select("id")
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    const params = new URLSearchParams({
+      client_id:     META_APP_ID,
+      redirect_uri:  CALLBACK_URI,
+      state:         stateRow.id,
+      scope:         "ads_read,ads_management,business_management",
+      response_type: "code",
+    });
+
+    return { url: `https://www.facebook.com/v19.0/dialog/oauth?${params}` };
+  });
+
+export const getMetaToken = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+    const { data: row } = await supabaseAdmin
+      .from("shop_meta_tokens")
+      .select("fb_user_name, fb_user_id, selected_ad_account_id, ad_accounts, token_expires_at, updated_at, selected_campaign_ids")
+      .eq("user_id", ownerId)
+      .eq("shop_id", data.shop_id)
+      .maybeSingle();
+
+    if (!row) return { connected: false };
+
+    return {
+      connected:              true,
+      fb_user_name:           row.fb_user_name,
+      fb_user_id:             row.fb_user_id,
+      selected_ad_account_id: row.selected_ad_account_id,
+      ad_accounts:            row.ad_accounts ?? [],
+      token_expires_at:       row.token_expires_at,
+      updated_at:             row.updated_at,
+      selected_campaign_ids:  (row.selected_campaign_ids ?? []) as string[],
+    };
+  });
+
+export const selectMetaAdAccount = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string; ad_account_id: string }) =>
+    z.object({ shop_id: z.string().uuid(), ad_account_id: z.string().min(1) }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    // Fetch full token row to get access_token for sync functions
+    const { data: tokenRow } = await supabaseAdmin
+      .from("shop_meta_tokens")
+      .select("access_token")
+      .eq("user_id", ownerId)
+      .eq("shop_id", data.shop_id)
+      .maybeSingle();
+
+    if (!tokenRow) throw new Error("Conta Meta não conectada");
+
+    const adAccountId = data.ad_account_id.startsWith("act_")
+      ? data.ad_account_id
+      : `act_${data.ad_account_id}`;
+
+    // Save selection to OAuth token table
+    await supabaseAdmin
+      .from("shop_meta_tokens")
+      .update({ selected_ad_account_id: adAccountId, updated_at: new Date().toISOString() })
+      .eq("user_id", ownerId)
+      .eq("shop_id", data.shop_id);
+
+    // Also sync to meta_ads_integrations so existing sync functions work
+    const { data: existing } = await supabaseAdmin
+      .from("meta_ads_integrations")
+      .select("id")
+      .eq("user_id", ownerId)
+      .eq("shop_id", data.shop_id)
+      .maybeSingle();
+
+    if (existing) {
+      await supabaseAdmin
+        .from("meta_ads_integrations")
+        .update({ access_token: tokenRow.access_token, ad_account_id: adAccountId, enabled: true })
+        .eq("id", existing.id);
+    } else {
+      await supabaseAdmin
+        .from("meta_ads_integrations")
+        .insert({ user_id: ownerId, shop_id: data.shop_id, access_token: tokenRow.access_token, ad_account_id: adAccountId, enabled: true });
+    }
+
+    return { ok: true };
+  });
+
+export const getMetaCampaigns = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+    const { data: row } = await supabaseAdmin
+      .from("shop_meta_tokens")
+      .select("access_token, selected_ad_account_id, selected_campaign_ids")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+
+    if (!row?.access_token || !row.selected_ad_account_id)
+      throw new Error("Conta de anúncios não selecionada");
+
+    const res = await fetch(
+      `https://graph.facebook.com/v19.0/${row.selected_ad_account_id}/campaigns` +
+      `?fields=id,name,status,objective&limit=100&access_token=${row.access_token}`
+    );
+    const json = await res.json();
+    if (json.error) throw new Error(json.error.message);
+
+    return {
+      campaigns: (json.data ?? []) as { id: string; name: string; status: string; objective: string }[],
+      selected_ids: (row.selected_campaign_ids ?? []) as string[],
+    };
+  });
+
+export const saveMetaCampaigns = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string; campaign_ids: string[] }) =>
+    z.object({ shop_id: z.string().uuid(), campaign_ids: z.array(z.string()) }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    const { data: row } = await supabaseAdmin
+      .from("shop_meta_tokens")
+      .select("access_token")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!row) throw new Error("Conta Meta não conectada");
+
+    await supabaseAdmin
+      .from("shop_meta_tokens")
+      .update({ selected_campaign_ids: data.campaign_ids, updated_at: new Date().toISOString() })
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id);
+
+    return { ok: true };
+  });
+
+export const disconnectMeta = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+    await Promise.all([
+      supabaseAdmin.from("shop_meta_tokens").delete().eq("user_id", ownerId).eq("shop_id", data.shop_id),
+      supabaseAdmin.from("meta_ads_integrations").delete().eq("user_id", ownerId).eq("shop_id", data.shop_id),
+    ]);
+    return { ok: true };
+  });
+
 const META_GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
 const SPEND_CATEGORY = "Facebook Ads";
 
@@ -147,9 +315,19 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
     const today = isoDate(new Date());
     const since = addDays(today, -sinceDays);
 
+    // Check if specific campaigns are selected for this shop
+    const { data: tokenRow } = await supabaseAdmin
+      .from("shop_meta_tokens")
+      .select("selected_campaign_ids")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    const campaignIds: string[] = tokenRow?.selected_campaign_ids ?? [];
+
     try {
       const timeRange = encodeURIComponent(JSON.stringify({ since, until: today }));
-      const url = `${META_GRAPH_API_BASE}/${integ.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}&access_token=${encodeURIComponent(integ.access_token)}`;
+      const filtering = campaignIds.length > 0
+        ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }]))}`
+        : "";
+      const url = `${META_GRAPH_API_BASE}/${integ.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&access_token=${encodeURIComponent(integ.access_token)}`;
       const r = await fetch(url);
       const json: any = await r.json();
       if (!r.ok || json.error) {
@@ -176,9 +354,17 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
           auto_ref_date: d.date,
         }));
 
+      // Delete existing entries for the period first (partial index prevents ON CONFLICT upsert)
+      await supabaseAdmin.from("shop_cash_entries")
+        .delete()
+        .eq("user_id", ownerId)
+        .eq("shop_id", data.shop_id)
+        .eq("auto_kind", "meta_ads_spend")
+        .gte("auto_ref_date", since)
+        .lte("auto_ref_date", today);
+
       if (rows.length) {
-        const { error } = await supabaseAdmin.from("shop_cash_entries")
-          .upsert(rows, { onConflict: "shop_id,auto_kind,auto_ref_date" });
+        const { error } = await supabaseAdmin.from("shop_cash_entries").insert(rows);
         if (error) throw new Error(error.message);
       }
 

@@ -5,7 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/settings")({
   beforeLoad: async ({ location }) => {
     const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/login" });
+    if (!data.user) {
+      const here = location.href ?? location.pathname;
+      const safeRedirect = here && !here.startsWith("/login") ? here : undefined;
+      throw redirect({ to: "/login", search: safeRedirect ? { redirect: safeRedirect } : {} });
+    }
     if (location.pathname === "/settings" || location.pathname === "/settings/") {
       throw redirect({ to: "/settings/members" });
     }

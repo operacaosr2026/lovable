@@ -27,12 +27,6 @@ export const Route = createFileRoute("/")({
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
     if (!data.session) {
-      if (typeof window !== "undefined") {
-        try {
-          const here = window.location.pathname + window.location.search + window.location.hash;
-          if (here && !here.startsWith("/login")) sessionStorage.setItem("redirectAfterLogin", here);
-        } catch {}
-      }
       throw redirect({ to: "/login" });
     }
   },

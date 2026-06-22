@@ -147,21 +147,14 @@ function AuthGate() {
   }
 
   if (!user && !isLogin) {
-    try {
-      const here = location.pathname + location.search + (location.hash ?? "");
-      if (here && !here.startsWith("/login")) sessionStorage.setItem("redirectAfterLogin", here);
-    } catch {}
-    return <Navigate to="/login" />;
+    const here = location.pathname + location.search;
+    const safeRedirect = here && !here.startsWith("/login") ? here : undefined;
+    return <Navigate to="/login" search={safeRedirect ? { redirect: safeRedirect } : {}} />;
   }
   if (user && isLogin) {
-    let dest = "/";
-    try {
-      const stored = sessionStorage.getItem("redirectAfterLogin");
-      if (stored && !stored.startsWith("/login")) {
-        dest = stored;
-        sessionStorage.removeItem("redirectAfterLogin");
-      }
-    } catch {}
+    const params = new URLSearchParams(typeof location.search === "string" ? location.search : "");
+    const stored = params.get("redirect");
+    const dest = stored && !stored.startsWith("/login") ? stored : "/";
     return <Navigate to={dest} />;
   }
   if (isLogin) return <Outlet />;

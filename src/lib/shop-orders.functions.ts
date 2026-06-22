@@ -531,6 +531,173 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     return { synced: relevant.length };
   });
 
+// ---------- Shopify Payments — taxas e chargebacks ----------
+
+const FEES_CATEGORY      = "Taxas Shopify";
+const CHARGEBACK_CATEGORY = "Chargeback";
+const REFUND_CATEGORY    = "Reembolso";
+const FEES_SOURCE         = "shopify_fees_sync";
+
+async function ensureCategory(supabase: any, ownerId: string, shopId: string, kind: "expense" | "income", name: string) {
+  const { data } = await supabase.from("shop_cash_categories").select("id")
+    .eq("user_id", ownerId).eq("shop_id", shopId).eq("kind", kind).eq("name", name).maybeSingle();
+  if (!data) {
+    await supabase.from("shop_cash_categories").insert({
+      user_id: ownerId, shop_id: shopId, kind, name, position: 999,
+    });
+  }
+}
+
+export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    pages: z.number().int().min(1).max(20).default(8),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, ownerId } = context;
+    const { data: settings } = await supabase.from("shop_order_settings").select("*")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
+
+    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+
+    // Fetch balance transactions (fees per charge)
+    const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
+
+    // Only process transactions with a non-zero fee (charges, refunds, adjustments)
+    const feeTxs = txs.filter((t: any) => Number(t.fee ?? 0) > 0);
+
+    // Load existing external IDs to avoid duplicates
+    const extIds = feeTxs.map((t: any) => `shopify_fee_${t.id}`);
+    const { data: existing } = await supabase.from("shop_cash_entries")
+      .select("mercury_transaction_id")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id)
+      .in("mercury_transaction_id", extIds);
+    const existingSet = new Set((existing ?? []).map((r: any) => r.mercury_transaction_id));
+
+    const toInsert = feeTxs
+      .filter((t: any) => !existingSet.has(`shopify_fee_${t.id}`))
+      .map((t: any) => ({
+        user_id: ownerId,
+        shop_id: data.shop_id,
+        kind: "expense" as const,
+        amount: Math.abs(Number(t.fee)),
+        date: (t.processed_at as string).slice(0, 10),
+        category: FEES_CATEGORY,
+        description: `Taxa Shopify Payments · ${t.type ?? "charge"} #${t.source_id ?? t.id}`,
+        source: FEES_SOURCE,
+        mercury_transaction_id: `shopify_fee_${t.id}`,
+      }));
+
+    if (toInsert.length) {
+      await ensureCategory(supabase, ownerId, data.shop_id, "expense", FEES_CATEGORY);
+      const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
+      if (error) throw new Error(error.message);
+    }
+
+    return { synced: toInsert.length, total_found: feeTxs.length };
+  });
+
+export const syncShopifyChargebacks = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    since_days: z.number().int().min(1).max(365).default(90),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, ownerId } = context;
+    const { data: settings } = await supabase.from("shop_order_settings").select("*")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
+
+    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - data.since_days);
+    const disputes = await fetchShopifyDisputes(domain, token, since.toISOString());
+
+    if (!disputes.length) return { synced: 0 };
+
+    const extIds = disputes.map((d: any) => `shopify_dispute_${d.id}`);
+    const { data: existing } = await supabase.from("shop_cash_entries")
+      .select("mercury_transaction_id")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id)
+      .in("mercury_transaction_id", extIds);
+    const existingSet = new Set((existing ?? []).map((r: any) => r.mercury_transaction_id));
+
+    const toInsert = disputes
+      .filter((d: any) => !existingSet.has(`shopify_dispute_${d.id}`))
+      .map((d: any) => ({
+        user_id: ownerId,
+        shop_id: data.shop_id,
+        kind: "expense" as const,
+        amount: Math.abs(Number(d.amount ?? 0)),
+        date: (d.initiated_at as string).slice(0, 10),
+        category: CHARGEBACK_CATEGORY,
+        description: `Chargeback · ${d.reason ?? "dispute"} · ${d.status ?? ""}`,
+        source: FEES_SOURCE,
+        mercury_transaction_id: `shopify_dispute_${d.id}`,
+      }));
+
+    if (toInsert.length) {
+      await ensureCategory(supabase, ownerId, data.shop_id, "expense", CHARGEBACK_CATEGORY);
+      const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
+      if (error) throw new Error(error.message);
+    }
+
+    return { synced: toInsert.length };
+  });
+
+export const syncShopifyRefunds = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    pages: z.number().int().min(1).max(20).default(5),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, ownerId } = context;
+    const { data: settings } = await supabase.from("shop_order_settings").select("*")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
+
+    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+
+    const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
+    const refundTxs = txs.filter((t: any) => t.type === "refund" && Math.abs(Number(t.amount ?? 0)) > 0);
+
+    if (!refundTxs.length) return { synced: 0 };
+
+    const extIds = refundTxs.map((t: any) => `shopify_refund_${t.id}`);
+    const { data: existing } = await supabase.from("shop_cash_entries")
+      .select("mercury_transaction_id")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id)
+      .in("mercury_transaction_id", extIds);
+    const existingSet = new Set((existing ?? []).map((r: any) => r.mercury_transaction_id));
+
+    const toInsert = refundTxs
+      .filter((t: any) => !existingSet.has(`shopify_refund_${t.id}`))
+      .map((t: any) => ({
+        user_id: ownerId,
+        shop_id: data.shop_id,
+        kind: "expense" as const,
+        amount: Math.abs(Number(t.amount ?? 0)),
+        date: (t.processed_at as string).slice(0, 10),
+        category: REFUND_CATEGORY,
+        description: `Reembolso Shopify · pedido #${t.source_id ?? t.id}`,
+        source: FEES_SOURCE,
+        mercury_transaction_id: `shopify_refund_${t.id}`,
+      }));
+
+    if (toInsert.length) {
+      await ensureCategory(supabase, ownerId, data.shop_id, "expense", REFUND_CATEGORY);
+      const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
+      if (error) throw new Error(error.message);
+    }
+
+    return { synced: toInsert.length };
+  });
+
 export const getShopifyPendingBalance = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
@@ -1093,4 +1260,145 @@ export const listPaymentBatches = createServerFn({ method: "GET" })
       .order("batch_number", { ascending: false }).limit(data.limit);
     if (error) throw new Error(error.message);
     return rows ?? [];
+  });
+
+// ---------- Dashboard Metrics ----------
+
+export const getShopDashboardMetrics = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    from: z.string(),
+    to: z.string(),
+    prev_from: z.string(),
+    prev_to: z.string(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, ownerId } = context;
+    const { shop_id, from, to, prev_from, prev_to } = data;
+
+    const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, chargebackRes, prevChargebackRes, refundRes, prevRefundRes, adsRes, prevAdsRes] = await Promise.all([
+      supabase.from("shop_orders").select("revenue,items_count,order_date")
+        .eq("user_id", ownerId).eq("shop_id", shop_id)
+        .gte("order_date", from).lte("order_date", to),
+      supabase.from("shop_orders").select("revenue,items_count")
+        .eq("user_id", ownerId).eq("shop_id", shop_id)
+        .gte("order_date", prev_from).lte("order_date", prev_to),
+      supabase.from("shop_order_settings").select("default_unit_cost")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).maybeSingle(),
+      supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
+        .eq("shop_id", shop_id).maybeSingle(),
+      // Taxas Shopify Payments no período
+      supabase.from("shop_cash_entries").select("amount,date")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Taxas Shopify")
+        .gte("date", from).lte("date", to),
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Taxas Shopify")
+        .gte("date", prev_from).lte("date", prev_to),
+      // Chargebacks no período
+      supabase.from("shop_cash_entries").select("amount,date")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Chargeback")
+        .gte("date", from).lte("date", to),
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Chargeback")
+        .gte("date", prev_from).lte("date", prev_to),
+      // Reembolsos no período
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Reembolso")
+        .gte("date", from).lte("date", to),
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Reembolso")
+        .gte("date", prev_from).lte("date", prev_to),
+      // Gastos de anúncios Meta Ads
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Facebook Ads")
+        .gte("date", from).lte("date", to),
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Facebook Ads")
+        .gte("date", prev_from).lte("date", prev_to),
+    ]);
+
+    const orders = ordersRes.data ?? [];
+    const prevOrders = prevOrdersRes.data ?? [];
+    const unitCost = Number(settingsRes.data?.default_unit_cost ?? 0);
+
+    // Taxas, chargebacks, reembolsos e anúncios
+    const taxas          = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const prevTaxas      = (prevFeesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const chargeback     = (chargebackRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const prevChargeback = (prevChargebackRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const reembolso      = (refundRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const prevReembolso  = (prevRefundRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const anuncios       = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const prevAnuncios   = (prevAdsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+
+    // Current period
+    const faturamentoBruto = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const faturamento = faturamentoBruto - chargeback - reembolso; // receita líquida real
+    const pedidos = orders.length;
+    const unidades = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
+    const custoProduto = unidades * unitCost;
+    const lucro = faturamento - custoProduto - taxas - anuncios;
+    const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
+    const ticketMedio = pedidos > 0 ? faturamento / pedidos : 0;
+    const cpa  = anuncios > 0 && pedidos > 0 ? anuncios / pedidos : 0;
+    const roas = anuncios > 0 ? faturamento / anuncios : 0;
+    const roi  = anuncios > 0 ? ((faturamento - custoProduto - taxas - anuncios) / anuncios) * 100 : 0;
+
+    // Previous period (for deltas)
+    const prevFaturamentoBruto = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const prevFaturamento = prevFaturamentoBruto - prevChargeback - prevReembolso;
+    const prevPedidos = prevOrders.length;
+    const prevUnidades = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
+    const prevCusto = prevUnidades * unitCost;
+    const prevLucro = prevFaturamento - prevCusto - prevTaxas - prevAnuncios;
+    const prevMargem = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
+    const prevTicket = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
+    const prevCpa  = prevAnuncios > 0 && prevPedidos > 0 ? prevAnuncios / prevPedidos : 0;
+    const prevRoas = prevAnuncios > 0 ? prevFaturamento / prevAnuncios : 0;
+
+    function delta(curr: number, prev: number) {
+      if (prev === 0) return 0;
+      return Math.round(((curr - prev) / prev) * 100 * 10) / 10;
+    }
+
+    // Daily chart data grouped by order_date
+    const byDate = new Map<string, { faturamento: number; lucro: number; custo: number }>();
+    for (const o of orders) {
+      const d = o.order_date as string;
+      const prev = byDate.get(d) ?? { faturamento: 0, lucro: 0, custo: 0 };
+      const rev = Number(o.revenue ?? 0);
+      const cost = Number(o.items_count ?? 0) * unitCost;
+      byDate.set(d, { faturamento: prev.faturamento + rev, custo: prev.custo + cost, lucro: prev.lucro + (rev - cost) });
+    }
+    const chartData = Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => ({
+        date: date.slice(5).replace("-", "/"), // MM/DD → DD/MM display
+        faturamento: Math.round(v.faturamento * 100) / 100,
+        lucro: Math.round(v.lucro * 100) / 100,
+        custo: Math.round(v.custo * 100) / 100,
+      }));
+
+    return {
+      unitCost,
+      metrics: {
+        faturamento,       faturamentoDelta:  delta(faturamento, prevFaturamento),
+        lucro,             lucroDelta:        delta(lucro, prevLucro),
+        custoProduto,      custoProdutoDelta: delta(custoProduto, prevCusto),
+        taxas,             taxasDelta:        delta(taxas, prevTaxas),
+        chargeback,        chargebackDelta:   delta(chargeback, prevChargeback),
+        reembolso,         reembolsoDelta:    delta(reembolso, prevReembolso),
+        anuncios,          anunciosDelta:     delta(anuncios, prevAnuncios),
+        cpa,               cpaDelta:          delta(cpa, prevCpa),
+        roas,              roasDelta:         delta(roas, prevRoas),
+        roi,
+        margem,            margemDelta:       delta(margem, prevMargem),
+        pedidos,           pedidosDelta:      delta(pedidos, prevPedidos),
+        unidades,          unidadesDelta:     delta(unidades, prevUnidades),
+        ticketMedio,       ticketMedioDelta:  delta(ticketMedio, prevTicket),
+      },
+      chartData,
+      goal: goalRes.data ?? null,
+    };
   });

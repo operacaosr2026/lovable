@@ -4,6 +4,9 @@ import { useAuth } from "@/lib/auth";
 import { Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined as string | undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Entrar — SRX Growth" },
@@ -16,6 +19,7 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const { user, loading, signInWithPassword } = useAuth();
   const navigate = useNavigate();
+  const { redirect: redirectTo } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -23,17 +27,10 @@ function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      let dest = "/";
-      try {
-        const stored = sessionStorage.getItem("redirectAfterLogin");
-        if (stored && !stored.startsWith("/login")) {
-          dest = stored;
-          sessionStorage.removeItem("redirectAfterLogin");
-        }
-      } catch {}
+      const dest = redirectTo && !redirectTo.startsWith("/login") ? redirectTo : "/";
       navigate({ to: dest });
     }
-  }, [loading, user, navigate]);
+  }, [loading, user, navigate, redirectTo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,4 +92,3 @@ function LoginPage() {
     </div>
   );
 }
-
