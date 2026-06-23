@@ -82,6 +82,21 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
         } else {
           await supabaseAdmin.from("shopify_stores").insert({ user_id: st.user_id, ...payload });
         }
+
+        // Sync to shopify_connections (banco de lojas)
+        const connPayload = {
+          name: st.name, shop_domain: shop, access_token: accessToken,
+          last_sync_status: "ok", last_sync_error: null,
+          updated_at: new Date().toISOString(),
+        };
+        const { data: existingConn } = await supabaseAdmin.from("shopify_connections")
+          .select("id").eq("user_id", st.user_id).eq("shop_domain", shop).maybeSingle();
+        if (existingConn) {
+          await supabaseAdmin.from("shopify_connections").update(connPayload).eq("id", existingConn.id);
+        } else {
+          await supabaseAdmin.from("shopify_connections").insert({ user_id: st.user_id, ...connPayload });
+        }
+
         await supabaseAdmin.from("shopify_oauth_states").delete().eq("state", state);
 
         return htmlMessage("Loja conectada!", "Você já pode fechar esta janela.", true);

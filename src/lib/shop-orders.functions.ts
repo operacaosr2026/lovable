@@ -20,16 +20,45 @@ function daysBetween(from: string, to: string) {
 // access_token is no longer readable by the user role (column SELECT was revoked).
 // Use the admin client and scope strictly by user_id to keep authorization correct.
 async function getShopifyCreds(_supabase: any, ownerId: string, shopify_store_id: string) {
-  const { data, error } = await supabaseAdmin
+  // Read from shopify_connections first (new banco de lojas), fall back to shopify_stores
+  const { data } = await supabaseAdmin
+    .from("shopify_connections")
+    .select("shop_domain,access_token")
+    .eq("user_id", ownerId)
+    .eq("id", shopify_store_id)
+    .maybeSingle();
+  if (data?.access_token) return { domain: data.shop_domain as string, token: data.access_token as string };
+
+  const { data: legacy, error } = await supabaseAdmin
     .from("shopify_stores")
     .select("shop_domain,access_token")
     .eq("user_id", ownerId)
     .eq("id", shopify_store_id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("Loja Shopify não encontrada");
-  if (!data.access_token) throw new Error("Loja Shopify sem access_token");
-  return { domain: data.shop_domain as string, token: data.access_token as string };
+  if (!legacy) throw new Error("Loja Shopify não encontrada");
+  if (!legacy.access_token) throw new Error("Loja Shopify sem access_token");
+  return { domain: legacy.shop_domain as string, token: legacy.access_token as string };
+}
+
+// Returns all connections for a group ordered by role (matrix first), with credentials
+async function getGroupConnections(shopId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("shop_group_stores")
+    .select(`
+      connection_id, role, position,
+      conn:shopify_connections!inner(id, name, shop_domain, access_token)
+    `)
+    .eq("shop_id", shopId)
+    .order("position");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r: any) => ({
+    connection_id: r.connection_id as string,
+    role: r.role as "matrix" | "sub",
+    name: r.conn.name as string,
+    domain: r.conn.shop_domain as string,
+    token: r.conn.access_token as string,
+  }));
 }
 
 async function fetchShopifyOrders(domain: string, token: string, sinceISO: string) {
@@ -300,7 +329,8 @@ export const listOrders = createServerFn({ method: "GET" })
     to: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: rows, error } = await context.supabase.from("shop_orders").select("*")
+    const { data: rows, error } = await context.supabase.from("shop_orders")
+      .select("*, connection:shopify_connections(id,name,shop_domain)")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .gte("order_date", data.from).lte("order_date", data.to)
       .order("created_at_shopify", { ascending: false });
@@ -371,81 +401,88 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     since_date: z.string().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
+    const connections = await getGroupConnections(data.shop_id);
 
-    const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
+    // Fallback: group has no connections configured yet — try legacy shopify_store_id
+    if (connections.length === 0) {
+      const { data: settings } = await context.supabase.from("shop_order_settings").select("shopify_store_id")
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+      if (!settings?.shopify_store_id) throw new Error("Nenhuma loja vinculada a este grupo. Adicione lojas no Banco de Lojas.");
+      const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
+      connections.push({ connection_id: settings.shopify_store_id, role: "matrix", name: domain, domain, token });
+    }
+
     const todayForSince = isoDate(new Date());
     const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
     const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
-    const orders = await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`);
+    const sinceISO = `${sinceDateStr}T00:00:00.000Z`;
 
-    if (orders.length) {
-      const rows = orders.map((o: any) => {
-        const items = (o.line_items ?? []).reduce((s: number, li: any) => s + Number(li.quantity ?? 0), 0);
-        return {
-          user_id: context.ownerId,
-          shop_id: data.shop_id,
-          source: "shopify",
-          external_id: String(o.id),
-          order_number: o.name ?? null,
-          created_at_shopify: o.created_at,
-          order_date: (o.created_at as string).slice(0, 10),
-          items_count: items,
-          revenue: Number(o.total_price ?? 0),
-          currency: o.currency ?? null,
-          raw: o,
-        };
-      });
-      const { error } = await context.supabase.from("shop_orders")
-        .upsert(rows, { onConflict: "shop_id,source,external_id" });
-      if (error) throw new Error(error.message);
+    let totalSynced = 0;
 
-      // Auto-pull tracking from Shopify fulfillments
-      const { data: dbOrders } = await context.supabase.from("shop_orders")
-        .select("id,external_id")
-        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-        .eq("source", "shopify")
-        .in("external_id", orders.map((o: any) => String(o.id)));
-      const orderIdByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r.id]));
+    for (const conn of connections) {
+      const orders = await fetchShopifyOrders(conn.domain, conn.token, sinceISO);
 
-      const trackingRows: any[] = [];
-      for (const o of orders) {
-        const orderId = orderIdByExt.get(String(o.id));
-        if (!orderId) continue;
-        const fulfillments = (o.fulfillments ?? []) as any[];
-        // pick latest fulfillment with a tracking number
-        const fWithTrack = [...fulfillments]
-          .reverse()
-          .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
-        if (!fWithTrack) continue;
-        const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
-        if (!trackingNumber) continue;
-        trackingRows.push({
-          user_id: context.ownerId,
-          shop_id: data.shop_id,
-          order_id: orderId,
-          tracking_number: String(trackingNumber),
-          carrier: fWithTrack.tracking_company ?? null,
+      if (orders.length) {
+        const rows = orders.map((o: any) => {
+          const items = (o.line_items ?? []).reduce((s: number, li: any) => s + Number(li.quantity ?? 0), 0);
+          return {
+            user_id:           context.ownerId,
+            shop_id:           data.shop_id,
+            connection_id:     conn.connection_id,
+            source:            "shopify",
+            external_id:       String(o.id),
+            order_number:      o.name ?? null,
+            created_at_shopify: o.created_at,
+            order_date:        (o.created_at as string).slice(0, 10),
+            items_count:       items,
+            revenue:           Number(o.total_price ?? 0),
+            currency:          o.currency ?? null,
+            raw:               o,
+          };
         });
+        const { error } = await context.supabase.from("shop_orders")
+          .upsert(rows, { onConflict: "shop_id,source,external_id" });
+        if (error) throw new Error(`Erro ao salvar pedidos de ${conn.name}: ${error.message}`);
+        totalSynced += orders.length;
+
+        // Auto-pull tracking from fulfillments
+        const { data: dbOrders } = await context.supabase.from("shop_orders")
+          .select("id,external_id")
+          .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+          .eq("source", "shopify")
+          .in("external_id", orders.map((o: any) => String(o.id)));
+        const orderIdByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r.id]));
+
+        const trackingRows: any[] = [];
+        for (const o of orders) {
+          const orderId = orderIdByExt.get(String(o.id));
+          if (!orderId) continue;
+          const fWithTrack = [...(o.fulfillments ?? []) as any[]]
+            .reverse()
+            .find((f: any) => f.tracking_number || f.tracking_numbers?.length);
+          if (!fWithTrack) continue;
+          const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
+          if (!trackingNumber) continue;
+          trackingRows.push({
+            user_id: context.ownerId,
+            shop_id: data.shop_id,
+            order_id: orderId,
+            tracking_number: String(trackingNumber),
+            carrier: fWithTrack.tracking_company ?? null,
+          });
+        }
+        if (trackingRows.length) {
+          await context.supabase.from("shop_order_tracking")
+            .upsert(trackingRows, { onConflict: "order_id" });
+        }
       }
-      if (trackingRows.length) {
-        await context.supabase.from("shop_order_tracking")
-          .upsert(trackingRows, { onConflict: "order_id" });
-      }
+
+      // Mark sync status on the connection
+      await supabaseAdmin.from("shopify_connections").update({
+        last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
+      }).eq("id", conn.connection_id);
     }
 
-
-    // Mark sync
-    await context.supabase.from("shopify_stores").update({
-      last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
-    }).eq("id", settings.shopify_store_id).eq("user_id", context.ownerId);
-
-    // Recompute processing entries that depend on the synced orders.
-    // Orders from order_date D project to processing_date D+7. Sync covers
-    // the last `since_days`, so processing dates from (today - since_days + delay)
-    // up to (today + delay) may have changed.
     const today = isoDate(new Date());
     const { data: settingsFull } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
@@ -458,7 +495,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     for (let i = 0; i < days.length; i += CHUNK) {
       await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settingsFull)));
     }
-    return { synced: orders.length };
+    return { synced: totalSynced };
   });
 
 // ---------- Shopify Payments payouts (entradas no caixa) ----------

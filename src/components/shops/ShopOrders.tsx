@@ -475,7 +475,14 @@ export function ShopOrders({ shopId }: { shopId: string }) {
                         <div className="font-mono text-muted-foreground">{o.order_number ?? `#${(o.external_id ?? "").slice(-6)}`}</div>
                         <div className="min-w-0">
                           <div className="truncate text-foreground">{customerName(o) ?? <span className="text-muted-foreground">—</span>}</div>
-                          <div className="text-muted-foreground text-[11px]">{o.items_count} {o.items_count === 1 ? "item" : "itens"}</div>
+                          <div className="text-muted-foreground text-[11px] flex items-center gap-1.5 flex-wrap">
+                            <span>{o.items_count} {o.items_count === 1 ? "item" : "itens"}</span>
+                            {o.connection?.name && (
+                              <span className="text-[10px] px-1.5 py-px rounded-md bg-muted border border-border/60 font-medium text-muted-foreground">
+                                {o.connection.name}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <TrackingCell
                           shopId={shopId}
