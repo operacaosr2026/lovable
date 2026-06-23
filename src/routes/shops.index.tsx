@@ -52,6 +52,7 @@ function ShopsDashboard() {
   const deleteFn = useServerFn(deleteShop);
   const confirm = useConfirm();
 
+  const [activeTab, setActiveTab] = useState<"lojas" | "grupos">("lojas");
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState<string>("ativa");
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
@@ -69,6 +70,9 @@ function ShopsDashboard() {
     });
   }, [shops, fStatus, search]);
 
+  const grupos = useMemo(() => filtered.filter((s) => (s.stores ?? []).length > 0), [filtered]);
+  const lojas  = useMemo(() => filtered, [filtered]);
+
   const setStoresFn  = useServerFn(setGroupStores);
   const getStoresFn  = useServerFn(getGroupStores);
 
@@ -77,20 +81,40 @@ function ShopsDashboard() {
   const update = useMutation({ mutationFn: ({ id, patch }: any) => updateFn({ data: { id, patch } }), onSuccess: refresh });
   const remove = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
 
+  const tabItems = activeTab === "lojas" ? lojas : grupos;
+  const isLojas  = activeTab === "lojas";
+
   return (
     <PageShell>
       <PageHeader
-        title="Grupos"
-        subtitle={`${filtered.length} ${filtered.length === 1 ? "grupo" : "grupos"}`}
+        title="Grupos e Lojas"
+        subtitle={`${tabItems.length} ${activeTab === "lojas" ? (tabItems.length === 1 ? "loja" : "lojas") : (tabItems.length === 1 ? "grupo" : "grupos")}`}
         actions={
           <button
             onClick={() => { setEditing(null); setEditorOpen(true); }}
             className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
           >
-            <Plus className="size-4" /> Novo grupo
+            <Plus className="size-4" /> {isLojas ? "Nova loja" : "Novo grupo"}
           </button>
         }
       />
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-muted rounded-xl p-1 w-fit mb-4">
+        {(["lojas", "grupos"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 h-8 rounded-lg text-sm font-medium transition-colors capitalize ${
+              activeTab === tab
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab === "lojas" ? "Lojas" : "Grupos"}
+          </button>
+        ))}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-5">
         <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-[220px]">
@@ -128,23 +152,26 @@ function ShopsDashboard() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {tabItems.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-12 text-center">
           <Store className="size-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Nenhuma loja por aqui ainda.</p>
+          <p className="text-sm text-muted-foreground">
+            {isLojas ? "Nenhuma loja cadastrada ainda." : "Nenhum grupo com lojas vinculadas."}
+          </p>
           <button
             onClick={() => { setEditing(null); setEditorOpen(true); }}
             className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
           >
-            <Plus className="size-4" /> Criar primeiro grupo
+            <Plus className="size-4" /> {isLojas ? "Criar primeira loja" : "Criar primeiro grupo"}
           </button>
         </div>
       ) : viewMode === "cards" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((s) => (
+          {tabItems.map((s) => (
             <ShopCard
               key={s.id}
               s={s}
+              hideGroupInfo={isLojas}
               onEdit={() => { setEditing(s); setEditorOpen(true); }}
               onDelete={() => { confirm(`Excluir "${s.name}"? Isso remove a loja e tudo dentro dela.`).then((ok) => { if (ok) remove.mutate(s.id); }); }}
             />
@@ -161,7 +188,7 @@ function ShopsDashboard() {
             <span className="text-right">Lucro do mês</span>
             <span className="text-right">Saldo</span>
           </div>
-          {filtered.map((s) => (
+          {tabItems.map((s) => (
             <ShopListRow
               key={s.id}
               s={s}
@@ -198,7 +225,7 @@ function ShopsDashboard() {
   );
 }
 
-function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelete: () => void }) {
+function ShopCard({ s, onEdit, onDelete, hideGroupInfo }: { s: any; onEdit: () => void; onDelete: () => void; hideGroupInfo?: boolean }) {
   const st = STATUS_META[s.status] ?? STATUS_META.ativa;
   const chargebackFn = useServerFn(getShopifyChargebackRate);
   const { data: chargeback } = useQuery({
@@ -242,20 +269,22 @@ function ShopCard({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDelet
           </span>
         </div>
 
-        {/* Lojas vinculadas */}
-        {(s.stores ?? []).length > 0 ? (
-          <div className="flex flex-wrap gap-1 mb-3">
-            {(s.stores as any[]).map((st: any, i: number) => (
-              <span key={i} className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">
-                {st.role === "matrix" && <Crown className="size-2.5 text-warning" />}
-                {st.name || st.domain}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="mb-3">
-            <span className="text-[10px] text-muted-foreground italic">Nenhuma loja vinculada</span>
-          </div>
+        {/* Lojas vinculadas — só na aba Grupos */}
+        {!hideGroupInfo && (
+          (s.stores ?? []).length > 0 ? (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {(s.stores as any[]).map((st: any, i: number) => (
+                <span key={i} className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">
+                  {st.role === "matrix" && <Crown className="size-2.5 text-warning" />}
+                  {st.name || st.domain}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mb-3">
+              <span className="text-[10px] text-muted-foreground italic">Nenhuma loja vinculada</span>
+            </div>
+          )
         )}
 
         {s.description && (

@@ -59,7 +59,7 @@ const navGroups: NavGroup[] = [
         icon: Store,
         section: "shops",
         children: [
-          { to: "/shops", label: "Grupos", icon: Layers },
+          { to: "/shops", label: "Grupos e Lojas", icon: Layers },
           { to: "/shops/connections", label: "Banco de Lojas", icon: Database },
           { to: "/shops/products", label: "Produtos", icon: Package },
         ],
@@ -82,7 +82,7 @@ const ALL_PAGES = [
   { to: "/finance", label: "Financeiro", icon: Wallet },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },
-  { to: "/shops", label: "Grupos", icon: Layers },
+  { to: "/shops", label: "Grupos e Lojas", icon: Layers },
   { to: "/shops/connections", label: "Banco de Lojas", icon: Database },
   { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
