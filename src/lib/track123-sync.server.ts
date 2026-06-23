@@ -3,7 +3,43 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
 export async function runTrack123Sync(shopId: string, apiKey: string, supabase: typeof supabaseAdmin) {
-    // Get tracking numbers from existing tracking rows
+    // Backfill tracking numbers from shop_orders.raw (Shopify fulfillments).
+    // Covers orders that were synced before the tracking table existed, or whose
+    // fulfillments were added in Shopify after the last Shopify sync ran.
+    // Deduplication: skip orders that already have a tracking_number; upsert handles DB conflicts.
+    const { data: existingTracking } = await supabase
+      .from("shop_order_tracking").select("order_id,tracking_number").eq("shop_id", shopId);
+    const ordersWithTracking = new Set(
+      (existingTracking ?? []).filter((t: any) => !!t.tracking_number).map((t: any) => t.order_id)
+    );
+
+    const { data: shopOrders } = await supabase
+      .from("shop_orders").select("id,user_id,raw")
+      .eq("shop_id", shopId).not("raw", "is", null);
+
+    const backfillRows: any[] = [];
+    for (const order of shopOrders ?? []) {
+      if (ordersWithTracking.has(order.id)) continue;
+      const raw = order.raw as any;
+      const fWithTrack = [...(raw?.fulfillments ?? [])].reverse()
+        .find((f: any) => f.tracking_number || f.tracking_numbers?.length);
+      if (!fWithTrack) continue;
+      const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
+      if (!trackingNumber) continue;
+      backfillRows.push({
+        user_id: order.user_id,
+        shop_id: shopId,
+        order_id: order.id,
+        tracking_number: String(trackingNumber),
+        carrier: fWithTrack.tracking_company ?? null,
+      });
+    }
+    if (backfillRows.length) {
+      await supabase.from("shop_order_tracking")
+        .upsert(backfillRows, { onConflict: "order_id" });
+    }
+
+    // Get tracking numbers from existing tracking rows (now includes backfilled ones)
     const { data: trackings } = await supabase.from("shop_order_tracking")
       .select("id,order_id,tracking_number,timeline").eq("shop_id", shopId)
       .not("tracking_number", "is", null).limit(1000);
