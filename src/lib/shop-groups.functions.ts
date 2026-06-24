@@ -19,7 +19,7 @@ export const listGroups = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data: groups, error } = await context.supabase
       .from("shop_groups")
-      .select("*, shop_group_stores(id, role, shopify_store_id, shopify_stores(id, name, shop_domain))")
+      .select("*, shop_group_stores(id, role, shopify_store_id)")
       .eq("user_id", context.ownerId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);

@@ -40,7 +40,9 @@ function GruposIndex() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
 
+  const listStoresFn = useServerFn(listShopifyStores);
   const { data } = useQuery({ queryKey: ["shop-groups"], queryFn: () => listFn() });
+  const { data: shopifyStores = [] } = useQuery({ queryKey: ["shopify-stores"], queryFn: () => listStoresFn() });
   const groups = (data?.groups ?? []) as any[];
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["shop-groups"] });
@@ -90,6 +92,7 @@ function GruposIndex() {
             <GroupCard
               key={g.id}
               group={g}
+              shopifyStores={shopifyStores as any[]}
               onEdit={() => { setEditing(g); setEditorOpen(true); }}
               onDelete={() =>
                 confirm(`Excluir grupo "${g.name}"?`).then((ok) => {
@@ -122,12 +125,16 @@ function GruposIndex() {
   );
 }
 
-function GroupCard({ group, onEdit, onDelete }: { group: any; onEdit: () => void; onDelete: () => void }) {
+function GroupCard({ group, shopifyStores, onEdit, onDelete }: { group: any; shopifyStores: any[]; onEdit: () => void; onDelete: () => void }) {
   const st = STATUS_META[group.status] ?? STATUS_META.ativo;
   const stores: any[] = group.shop_group_stores ?? [];
   const matriz = stores.find((s) => s.role === "matriz");
   const sublojas = stores.filter((s) => s.role === "subloja");
   const country = COUNTRIES.find((c) => c.code === group.country);
+  const storeName = (id: string) => {
+    const s = shopifyStores.find((st) => st.id === id);
+    return s?.name || s?.shop_domain || id;
+  };
 
   return (
     <div className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
@@ -170,7 +177,7 @@ function GroupCard({ group, onEdit, onDelete }: { group: any; onEdit: () => void
               <Store className="size-3.5 text-primary shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Matriz</div>
-                <div className="text-xs font-medium truncate">{matriz.shopify_stores?.name || matriz.shopify_stores?.shop_domain}</div>
+                <div className="text-xs font-medium truncate">{storeName(matriz.shopify_store_id)}</div>
               </div>
             </div>
           ) : (
@@ -188,7 +195,7 @@ function GroupCard({ group, onEdit, onDelete }: { group: any; onEdit: () => void
                 {sublojas.map((s: any) => (
                   <div key={s.id} className="text-xs truncate flex items-center gap-1.5">
                     <Store className="size-3 text-muted-foreground shrink-0" />
-                    {s.shopify_stores?.name || s.shopify_stores?.shop_domain}
+                    {storeName(s.shopify_store_id)}
                   </div>
                 ))}
               </div>
