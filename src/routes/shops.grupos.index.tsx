@@ -39,6 +39,7 @@ function GruposIndex() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const listStoresFn = useServerFn(listShopifyStores);
   const { data } = useQuery({ queryKey: ["shop-groups"], queryFn: () => listFn() });
@@ -107,11 +108,20 @@ function GruposIndex() {
       {editorOpen && (
         <GroupEditor
           group={editing}
-          onClose={() => setEditorOpen(false)}
+          saveError={saveError}
+          onClose={() => { setEditorOpen(false); setSaveError(null); }}
           onSave={async (payload) => {
-            if (editing) await update.mutateAsync({ id: editing.id, ...payload });
-            else await create.mutateAsync(payload);
-            setEditorOpen(false);
+            setSaveError(null);
+            try {
+              if (editing) {
+                await update.mutateAsync({ id: editing.id, patch: payload.group, stores: payload.stores });
+              } else {
+                await create.mutateAsync(payload);
+              }
+              setEditorOpen(false);
+            } catch (err: any) {
+              setSaveError(err?.message ?? "Erro ao salvar grupo");
+            }
           }}
           onDelete={editing ? async () => {
             if (await confirm(`Excluir "${editing.name}"?`)) {
@@ -224,8 +234,9 @@ function GroupCard({ group, shopifyStores, onEdit, onDelete }: { group: any; sho
 
 type StoreEntry = { shopify_store_id: string; role: "matriz" | "subloja" };
 
-function GroupEditor({ group, onClose, onSave, onDelete }: {
+function GroupEditor({ group, saveError, onClose, onSave, onDelete }: {
   group: any;
+  saveError?: string | null;
   onClose: () => void;
   onSave: (payload: any) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
@@ -452,6 +463,11 @@ function GroupEditor({ group, onClose, onSave, onDelete }: {
           </div>
         </div>
 
+        {saveError && (
+          <div className="px-5 py-2 text-xs text-destructive bg-destructive/5 border-t border-destructive/20">
+            {saveError}
+          </div>
+        )}
         <div className="flex justify-between items-center px-5 py-3 border-t border-border shrink-0">
           {onDelete ? (
             <button onClick={onDelete} className="text-sm text-destructive hover:underline">Excluir</button>

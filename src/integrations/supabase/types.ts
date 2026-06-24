@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       accounts: {
@@ -787,6 +812,30 @@ export type Database = {
           },
         ]
       }
+      meta_oauth_states: {
+        Row: {
+          created_at: string | null
+          expires_at: string
+          id: string
+          shop_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          shop_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          shop_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       product_creatives: {
         Row: {
           created_at: string
@@ -1473,6 +1522,129 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_group_stores: {
+        Row: {
+          created_at: string | null
+          group_id: string
+          id: string
+          role: string
+          shopify_store_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          group_id: string
+          id?: string
+          role?: string
+          shopify_store_id: string
+        }
+        Update: {
+          created_at?: string | null
+          group_id?: string
+          id?: string
+          role?: string
+          shopify_store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_group_stores_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "shop_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shop_group_stores_shopify_store_id_fkey"
+            columns: ["shopify_store_id"]
+            isOneToOne: false
+            referencedRelation: "shopify_stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shop_groups: {
+        Row: {
+          country: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          status: string
+          tag: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          status?: string
+          tag?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          country?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          status?: string
+          tag?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      shop_meta_tokens: {
+        Row: {
+          access_token: string
+          ad_accounts: Json | null
+          created_at: string | null
+          fb_user_id: string | null
+          fb_user_name: string | null
+          id: string
+          selected_ad_account_id: string | null
+          selected_campaign_ids: Json | null
+          shop_id: string
+          token_expires_at: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          ad_accounts?: Json | null
+          created_at?: string | null
+          fb_user_id?: string | null
+          fb_user_name?: string | null
+          id?: string
+          selected_ad_account_id?: string | null
+          selected_campaign_ids?: Json | null
+          shop_id: string
+          token_expires_at?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          ad_accounts?: Json | null
+          created_at?: string | null
+          fb_user_id?: string | null
+          fb_user_name?: string | null
+          id?: string
+          selected_ad_account_id?: string | null
+          selected_campaign_ids?: Json | null
+          shop_id?: string
+          token_expires_at?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       shop_order_payment_batches: {
         Row: {
           batch_number: number
@@ -1622,6 +1794,7 @@ export type Database = {
       }
       shop_orders: {
         Row: {
+          connection_id: string | null
           created_at: string
           created_at_shopify: string
           currency: string | null
@@ -1644,6 +1817,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          connection_id?: string | null
           created_at?: string
           created_at_shopify: string
           currency?: string | null
@@ -1666,6 +1840,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          connection_id?: string | null
           created_at?: string
           created_at_shopify?: string
           currency?: string | null
@@ -1687,7 +1862,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "shop_orders_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "shopify_connections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       shop_product_attachments: {
         Row: {
@@ -2129,6 +2312,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      shopify_connections: {
+        Row: {
+          access_token: string
+          created_at: string
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_status: string
+          name: string
+          shop_domain: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string
+          name: string
+          shop_domain: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string
+          name?: string
+          shop_domain?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       shopify_oauth_states: {
         Row: {
@@ -3817,6 +4039,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["admin", "member"],
