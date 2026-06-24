@@ -18,7 +18,7 @@ const GroupInput = z.object({
 export const listGroups = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { data: groups, error } = await context.supabase
+    const { data: groups, error } = await supabaseAdmin
       .from("shop_groups")
       .select("*, shop_group_stores(id, role, shopify_store_id)")
       .eq("user_id", context.ownerId)
