@@ -97,7 +97,10 @@ const STATUS_TONE: Record<string, string> = {
   partial: "bg-violet-500/10 text-violet-600 border-violet-500/20",
 };
 
-export function ShopOrders({ shopId }: { shopId: string }) {
+export function ShopOrders({ shopIds }: { shopIds: string[] }) {
+  const shopId = shopIds[0];
+  const isConsolidated = shopIds.length > 1;
+  const cacheKey = shopIds.slice().sort().join(",");
   const qc = useQueryClient();
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return isoDate(d); });
   const [to, setTo] = useState(() => isoDate(new Date()));
@@ -119,25 +122,26 @@ export function ShopOrders({ shopId }: { shopId: string }) {
   const shipFn = useServerFn(markOrdersShipped);
   const deleteOrdersFn = useServerFn(deleteOrders);
 
-  const settings = useQuery({ queryKey: ["order-settings", shopId], queryFn: () => getSettingsFn({ data: { shop_id: shopId } }) });
-  const orders = useQuery({ queryKey: ["orders", shopId, from, to], queryFn: () => listOrdersFn({ data: { shop_id: shopId, from, to } }) });
+  const settings = useQuery({ queryKey: ["order-settings", cacheKey], queryFn: () => getSettingsFn({ data: { shop_id: shopId } }) });
+  const orders = useQuery({ queryKey: ["orders", cacheKey, from, to], queryFn: () => listOrdersFn({ data: { shop_ids: shopIds, from, to } }) });
 
   const syncPaymentTasksFn = useServerFn(syncOrderPaymentTasks);
   useQuery({
-    queryKey: ["sync-payment-tasks", shopId],
+    queryKey: ["sync-payment-tasks", cacheKey],
     queryFn: async () => {
       const r = await syncPaymentTasksFn({ data: { shop_id: shopId } });
-      if (r.created > 0) qc.invalidateQueries({ queryKey: ["shop-tasks", shopId] });
+      if (r.created > 0) qc.invalidateQueries({ queryKey: ["shop-tasks", cacheKey] });
       return r;
     },
     staleTime: 5 * 60 * 1000,
+    enabled: !isConsolidated,
   });
 
   const listTrackingFn = useServerFn(listOrdersTracking);
   const getTrack123Fn = useServerFn(getTrack123Integration);
-  const track123 = useQuery({ queryKey: ["track123-integration", shopId], queryFn: () => getTrack123Fn({ data: { shop_id: shopId } }) });
+  const track123 = useQuery({ queryKey: ["track123-integration", cacheKey], queryFn: () => getTrack123Fn({ data: { shop_id: shopId } }) });
   const trackings = useQuery({
-    queryKey: ["order-trackings", shopId],
+    queryKey: ["order-trackings", cacheKey],
     queryFn: () => listTrackingFn({ data: { shop_id: shopId } }),
   });
   const trackingByOrder = useMemo(() => {
@@ -151,7 +155,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
     mutationFn: () => syncFn({ data: { shop_id: shopId, since_date: from } }),
     onSuccess: (r) => {
       toast.success(`${r.synced} pedidos sincronizados`);
-      qc.invalidateQueries({ queryKey: ["orders", shopId] });
+      qc.invalidateQueries({ queryKey: ["orders", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -272,9 +276,9 @@ export function ShopOrders({ shopId }: { shopId: string }) {
       toast.success(`Lote #${r.batch_number} criado · ${fmtMoney(Number(r.total_amount))}`);
       setSelectedOrders(new Set());
       setPayOpen(false);
-      qc.invalidateQueries({ queryKey: ["orders", shopId] });
+      qc.invalidateQueries({ queryKey: ["orders", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
-      qc.invalidateQueries({ queryKey: ["batches", shopId] });
+      qc.invalidateQueries({ queryKey: ["batches", cacheKey] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -284,7 +288,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
     onSuccess: () => {
       toast.success("Pedidos marcados como enviados");
       setShipOpen(false);
-      qc.invalidateQueries({ queryKey: ["orders", shopId] });
+      qc.invalidateQueries({ queryKey: ["orders", cacheKey] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -295,7 +299,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
       toast.success(`${r.deleted} pedidos excluídos`);
       setSelectedOrders(new Set());
       setDeleteOpen(false);
-      qc.invalidateQueries({ queryKey: ["orders", shopId] });
+      qc.invalidateQueries({ queryKey: ["orders", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -482,7 +486,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
                           orderId={o.id}
                           tracking={t}
                           template={trackingTemplate}
-                          onChanged={() => qc.invalidateQueries({ queryKey: ["order-trackings", shopId] })}
+                          onChanged={() => qc.invalidateQueries({ queryKey: ["order-trackings", cacheKey] })}
                         />
                         <div className="text-muted-foreground tabular-nums">
                           {o.paid_at ? `Pago ${localDate(o.paid_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}` : "—"}
@@ -517,7 +521,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
           onClose={() => setOpenCost(false)}
           currentCost={unitCost}
           onSaved={() => {
-            qc.invalidateQueries({ queryKey: ["order-settings", shopId] });
+            qc.invalidateQueries({ queryKey: ["order-settings", cacheKey] });
             qc.invalidateQueries({ queryKey: ["shop-cash"] });
           }}
         />
@@ -552,7 +556,7 @@ export function ShopOrders({ shopId }: { shopId: string }) {
         open={batchesOpen}
         onClose={() => setBatchesOpen(false)}
         onUndone={() => {
-          qc.invalidateQueries({ queryKey: ["orders", shopId] });
+          qc.invalidateQueries({ queryKey: ["orders", cacheKey] });
           qc.invalidateQueries({ queryKey: ["shop-cash"] });
         }}
       />

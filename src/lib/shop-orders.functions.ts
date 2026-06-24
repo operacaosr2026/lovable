@@ -295,13 +295,13 @@ export const connectShopifyStore = createServerFn({ method: "POST" })
 export const listOrders = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
+    shop_ids: z.array(z.string().uuid()).min(1),
     from: z.string(),
     to: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: rows, error } = await context.supabase.from("shop_orders").select("*")
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
       .gte("order_date", data.from).lte("order_date", data.to)
       .order("created_at_shopify", { ascending: false });
     if (error) throw new Error(error.message);
@@ -794,38 +794,34 @@ export const getShopifyPayoutLag = createServerFn({ method: "GET" })
 export const getMonthlyProfit = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
+    shop_ids: z.array(z.string().uuid()).min(1),
     month_start: z.string(),
     month_end: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { supabase, ownerId } = context;
-    const { shop_id, month_start, month_end } = data;
+    const { shop_ids, month_start, month_end } = data;
 
     const { data: orders, error: ordersErr } = await supabase
-      .from("shop_orders").select("revenue,order_date,items_count")
-      .eq("user_id", ownerId).eq("shop_id", shop_id)
+      .from("shop_orders").select("revenue,order_date,items_count,shop_id")
+      .eq("user_id", ownerId).in("shop_id", shop_ids)
       .gte("order_date", month_start).lte("order_date", month_end);
     if (ordersErr) throw new Error(ordersErr.message);
     const sales = (orders ?? []).reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
 
-    const { data: settings } = await supabase.from("shop_order_settings").select("default_unit_cost")
-      .eq("user_id", ownerId).eq("shop_id", shop_id).maybeSingle();
-    const defaultCost = Number(settings?.default_unit_cost ?? 0);
+    const { data: settingsRows } = await supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
+      .eq("user_id", ownerId).in("shop_id", shop_ids);
+    const costByShop = new Map((settingsRows ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
+    const avgCost = costByShop.size ? Array.from(costByShop.values()).reduce((a, b) => a + b, 0) / costByShop.size : 0;
 
-    const orderDates = Array.from(new Set((orders ?? []).map((o: any) => o.order_date as string)));
-    const costByDate = new Map<string, number>();
-    for (const d of orderDates) {
-      costByDate.set(d, await unitCostFor(supabase, ownerId, shop_id, d, defaultCost));
-    }
     const productCost = (orders ?? []).reduce((s: number, o: any) => {
       const items = Number(o.items_count ?? 0);
-      return s + items * (costByDate.get(o.order_date as string) ?? defaultCost);
+      return s + items * (costByShop.get(o.shop_id) ?? avgCost);
     }, 0);
 
     const { data: adRows, error: adErr } = await supabase
       .from("shop_cash_entries").select("amount")
-      .eq("user_id", ownerId).eq("shop_id", shop_id).eq("kind", "expense").eq("category", "Facebook Ads")
+      .eq("user_id", ownerId).in("shop_id", shop_ids).eq("kind", "expense").eq("category", "Facebook Ads")
       .gte("date", month_start).lte("date", month_end);
     if (adErr) throw new Error(adErr.message);
     const adSpend = (adRows ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
@@ -1267,7 +1263,7 @@ export const listPaymentBatches = createServerFn({ method: "GET" })
 export const getShopDashboardMetrics = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
+    shop_ids: z.array(z.string().uuid()).min(1),
     from: z.string(),
     to: z.string(),
     prev_from: z.string(),
@@ -1275,52 +1271,54 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { supabase, ownerId } = context;
-    const { shop_id, from, to, prev_from, prev_to } = data;
+    const { shop_ids, from, to, prev_from, prev_to } = data;
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, chargebackRes, prevChargebackRes, refundRes, prevRefundRes, adsRes, prevAdsRes] = await Promise.all([
-      supabase.from("shop_orders").select("revenue,items_count,order_date")
-        .eq("user_id", ownerId).eq("shop_id", shop_id)
+      supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id")
+        .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to),
-      supabase.from("shop_orders").select("revenue,items_count")
-        .eq("user_id", ownerId).eq("shop_id", shop_id)
+      supabase.from("shop_orders").select("revenue,items_count,shop_id")
+        .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", prev_from).lte("order_date", prev_to),
-      supabase.from("shop_order_settings").select("default_unit_cost")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).maybeSingle(),
+      supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
+        .eq("user_id", ownerId).in("shop_id", shop_ids),
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
-        .eq("shop_id", shop_id).maybeSingle(),
+        .in("shop_id", shop_ids),
       // Taxas Shopify Payments no período
       supabase.from("shop_cash_entries").select("amount,date")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Taxas Shopify")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Taxas Shopify")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", prev_from).lte("date", prev_to),
       // Chargebacks no período
       supabase.from("shop_cash_entries").select("amount,date")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Chargeback")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Chargeback")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Chargeback")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Chargeback")
         .gte("date", prev_from).lte("date", prev_to),
       // Reembolsos no período
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Reembolso")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Reembolso")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Reembolso")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Reembolso")
         .gte("date", prev_from).lte("date", prev_to),
       // Gastos de anúncios Meta Ads
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Facebook Ads")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).eq("shop_id", shop_id).eq("category", "Facebook Ads")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .gte("date", prev_from).lte("date", prev_to),
     ]);
 
     const orders = ordersRes.data ?? [];
     const prevOrders = prevOrdersRes.data ?? [];
-    const unitCost = Number(settingsRes.data?.default_unit_cost ?? 0);
+    const costByShop = new Map((settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
+    const avgCost = costByShop.size ? Array.from(costByShop.values()).reduce((a, b) => a + b, 0) / costByShop.size : 0;
+    const unitCost = avgCost;
 
     // Taxas, chargebacks, reembolsos e anúncios
     const taxas          = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
@@ -1332,12 +1330,14 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const anuncios       = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
     const prevAnuncios   = (prevAdsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
 
+    function orderCost(o: any) { return Number(o.items_count ?? 0) * (costByShop.get((o as any).shop_id) ?? avgCost); }
+
     // Current period
     const faturamentoBruto = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
     const faturamento = faturamentoBruto - chargeback - reembolso; // receita líquida real
     const pedidos = orders.length;
     const unidades = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
-    const custoProduto = unidades * unitCost;
+    const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0);
     const lucro = faturamento - custoProduto - taxas - anuncios;
     const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
     const ticketMedio = pedidos > 0 ? faturamento / pedidos : 0;
@@ -1350,7 +1350,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const prevFaturamento = prevFaturamentoBruto - prevChargeback - prevReembolso;
     const prevPedidos = prevOrders.length;
     const prevUnidades = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
-    const prevCusto = prevUnidades * unitCost;
+    const prevCusto = prevOrders.reduce((s, o) => s + orderCost(o), 0);
     const prevLucro = prevFaturamento - prevCusto - prevTaxas - prevAnuncios;
     const prevMargem = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
     const prevTicket = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
@@ -1368,7 +1368,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       const d = o.order_date as string;
       const prev = byDate.get(d) ?? { faturamento: 0, lucro: 0, custo: 0 };
       const rev = Number(o.revenue ?? 0);
-      const cost = Number(o.items_count ?? 0) * unitCost;
+      const cost = orderCost(o);
       byDate.set(d, { faturamento: prev.faturamento + rev, custo: prev.custo + cost, lucro: prev.lucro + (rev - cost) });
     }
     const chartData = Array.from(byDate.entries())
@@ -1379,6 +1379,13 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         lucro: Math.round(v.lucro * 100) / 100,
         custo: Math.round(v.custo * 100) / 100,
       }));
+
+    const goalsData = goalRes.data ?? [];
+    const aggregatedGoal = goalsData.length === 0 ? null : {
+      target_profit: goalsData.reduce((s: number, g: any) => s + Number(g.target_profit ?? 0), 0),
+      total_revenue: goalsData.reduce((s: number, g: any) => s + Number(g.total_revenue ?? 0), 0),
+      currency: goalsData[0]?.currency ?? null,
+    };
 
     return {
       unitCost,
@@ -1399,6 +1406,6 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         ticketMedio,       ticketMedioDelta:  delta(ticketMedio, prevTicket),
       },
       chartData,
-      goal: goalRes.data ?? null,
+      goal: aggregatedGoal,
     };
   });

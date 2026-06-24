@@ -5,7 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const listJournalPages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({ shop_id: z.string().uuid().nullable().optional() }).optional().parse(d) ?? {},
+    z.object({ shop_ids: z.array(z.string().uuid()).nullable().optional() }).optional().parse(d) ?? {},
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
@@ -13,8 +13,8 @@ export const listJournalPages = createServerFn({ method: "GET" })
       .from("journal_pages")
       .select("id,parent_id,title,icon,position,updated_at,is_favorite,last_opened_at,shop_id")
       .eq("user_id", userId);
-    const shopId = (data as any)?.shop_id;
-    q = shopId ? q.eq("shop_id", shopId) : q.is("shop_id", null);
+    const shopIds = (data as any)?.shop_ids;
+    q = shopIds && shopIds.length > 0 ? q.in("shop_id", shopIds) : q.is("shop_id", null);
     const { data: rows, error } = await q
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });

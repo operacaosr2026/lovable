@@ -79,7 +79,10 @@ function fmtMoneyCompact(n: number) {
 }
 const WEEKDAYS_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
-export function ShopCashflow({ shopId }: { shopId: string }) {
+export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
+  const shopId = shopIds[0];
+  const isConsolidated = shopIds.length > 1;
+  const cacheKey = shopIds.slice().sort().join(",");
   const qc = useQueryClient();
   const listFn = useServerFn(listShopCash);
   const createFn = useServerFn(createCashEntry);
@@ -91,16 +94,17 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
   const monthlyProfitFn = useServerFn(getMonthlyProfit);
   const payoutLagFn = useServerFn(getShopifyPayoutLag);
   const { data: payoutLag } = useQuery({
-    queryKey: ["shop-payout-lag", shopId],
+    queryKey: ["shop-payout-lag", cacheKey],
     queryFn: () => payoutLagFn({ data: { shop_id: shopId } }),
     staleTime: 5 * 60_000,
+    enabled: !isConsolidated,
   });
 
-  const queryKey = ["shop-cash", shopId];
-  const catsKey = ["shop-cash-cats", shopId];
-  const { data, isLoading } = useQuery({ queryKey, queryFn: () => listFn({ data: { shop_id: shopId } }) });
+  const queryKey = ["shop-cash", cacheKey];
+  const catsKey = ["shop-cash-cats", cacheKey];
+  const { data, isLoading } = useQuery({ queryKey, queryFn: () => listFn({ data: { shop_ids: shopIds } }) });
   const catsQuery = useQuery({ queryKey: catsKey, queryFn: () => listCatsFn({ data: { shop_id: shopId } }) });
-  const pendingQuery = useQuery({ queryKey: ["shop-cash-pending", shopId], queryFn: () => pendingFn({ data: { shop_id: shopId } }) });
+  const pendingQuery = useQuery({ queryKey: ["shop-cash-pending", cacheKey], queryFn: () => pendingFn({ data: { shop_id: shopId } }), enabled: !isConsolidated });
   const refresh = () => qc.invalidateQueries({ queryKey });
   const refreshCats = () => qc.invalidateQueries({ queryKey: catsKey });
 
@@ -135,12 +139,12 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
     };
   }, [todayKey]);
   const monthlyProfitQuery = useQuery({
-    queryKey: ["shop-cash-monthly-profit", shopId, monthStart, monthEnd],
-    queryFn: () => monthlyProfitFn({ data: { shop_id: shopId, month_start: monthStart, month_end: monthEnd } }),
+    queryKey: ["shop-cash-monthly-profit", cacheKey, monthStart, monthEnd],
+    queryFn: () => monthlyProfitFn({ data: { shop_ids: shopIds, month_start: monthStart, month_end: monthEnd } }),
   });
   const prevMonthlyProfitQuery = useQuery({
-    queryKey: ["shop-cash-monthly-profit", shopId, prevMonthStart, prevMonthEnd],
-    queryFn: () => monthlyProfitFn({ data: { shop_id: shopId, month_start: prevMonthStart, month_end: prevMonthEnd } }),
+    queryKey: ["shop-cash-monthly-profit", cacheKey, prevMonthStart, prevMonthEnd],
+    queryFn: () => monthlyProfitFn({ data: { shop_ids: shopIds, month_start: prevMonthStart, month_end: prevMonthEnd } }),
   });
 
   const dayList = useMemo(() => {
@@ -350,12 +354,16 @@ export function ShopCashflow({ shopId }: { shopId: string }) {
           </span>
         )}
         <div className="flex-1" />
-        <Button variant="outline" size="sm" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "income" })}>
-          <Plus className="size-3.5" /> Entrada
-        </Button>
-        <Button variant="outline" size="sm" className="text-rose-700 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "expense" })}>
-          <Plus className="size-3.5" /> Saída
-        </Button>
+        {!isConsolidated && (
+          <>
+            <Button variant="outline" size="sm" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "income" })}>
+              <Plus className="size-3.5" /> Entrada
+            </Button>
+            <Button variant="outline" size="sm" className="text-rose-700 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "expense" })}>
+              <Plus className="size-3.5" /> Saída
+            </Button>
+          </>
+        )}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm">

@@ -23,11 +23,11 @@ const TaskInput = z.object({
 
 export const listShopTasks = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: tasks, error } = await context.supabase
       .from("shop_tasks").select("*")
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
       .order("position", { ascending: true })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);

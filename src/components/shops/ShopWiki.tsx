@@ -23,7 +23,7 @@ type PageRow = {
   is_favorite?: boolean; last_opened_at?: string | null;
 };
 
-export function ShopWiki({ shopId }: { shopId: string }) {
+export function ShopWiki({ shopIds }: { shopIds: string[] }) {
   const qc = useQueryClient();
   const list = useServerFn(listJournalPages);
   const getOne = useServerFn(getJournalPage);
@@ -32,11 +32,13 @@ export function ShopWiki({ shopId }: { shopId: string }) {
   const deleteFn = useServerFn(deleteJournalPage);
   const favFn = useServerFn(toggleJournalFavorite);
   const moveFn = useServerFn(moveJournalPage);
+  const isConsolidated = shopIds.length > 1;
+  const cacheKey = shopIds.slice().sort().join(",");
 
-  const queryKey = ["shop-wiki", shopId];
+  const queryKey = ["shop-wiki", cacheKey];
   const { data, isLoading } = useQuery({
     queryKey,
-    queryFn: () => list({ data: { shop_id: shopId } }),
+    queryFn: () => list({ data: { shop_ids: shopIds } }),
   });
 
   const pages: PageRow[] = (data?.pages ?? []) as PageRow[];
@@ -86,7 +88,7 @@ export function ShopWiki({ shopId }: { shopId: string }) {
   const inv = () => qc.invalidateQueries({ queryKey });
   const create = useMutation({
     mutationFn: (parent_id: string | null) =>
-      createFn({ data: { parent_id, shop_id: shopId } }),
+      createFn({ data: { parent_id, shop_id: shopIds[0] } }),
     onSuccess: ({ page }: any) => {
       inv();
       if (page.parent_id) setExpanded((e) => ({ ...e, [page.parent_id!]: true }));
@@ -132,13 +134,15 @@ export function ShopWiki({ shopId }: { shopId: string }) {
             <div className="flex items-center gap-2 text-sm font-semibold">
               <BookOpen className="size-4 text-primary" /> Central da Loja
             </div>
-            <button
-              onClick={() => create.mutate(null)}
-              title="Nova página"
-              className="size-7 rounded-md hover:bg-muted grid place-items-center text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="size-4" />
-            </button>
+            {!isConsolidated && (
+              <button
+                onClick={() => create.mutate(null)}
+                title="Nova página"
+                className="size-7 rounded-md hover:bg-muted grid place-items-center text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="size-4" />
+              </button>
+            )}
           </div>
 
           <div className="relative px-1">

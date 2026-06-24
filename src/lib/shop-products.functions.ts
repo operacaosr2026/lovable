@@ -22,11 +22,11 @@ const ProductInput = z.object({
 
 export const listShopProducts = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: rows, error } = await context.supabase
       .from("shop_products").select("*")
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
       .order("position", { ascending: true })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);

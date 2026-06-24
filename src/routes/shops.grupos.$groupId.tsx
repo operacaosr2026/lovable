@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
-  ArrowLeft, Users, MapPin, Store,
+  ArrowLeft, Users, MapPin, Store, Layers,
   LayoutDashboard, Target, Wallet, ShoppingBag,
   KanbanSquare, MessageCircle, Package, BookOpen, Plug,
 } from "lucide-react";
@@ -48,9 +48,11 @@ function GroupDetail() {
   const group = data?.group as any;
   const shops = (data?.shops ?? []) as any[];
 
-  const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
-  const activeShopId = selectedShopId ?? shops[0]?.id ?? null;
-  const activeShop = shops.find((s) => s.id === activeShopId) ?? shops[0] ?? null;
+  const [selectedShopId, setSelectedShopId] = useState<string | "consolidado">("consolidado");
+  const isConsolidado = selectedShopId === "consolidado";
+  const allShopIds = shops.map((s: any) => s.id);
+  const activeShopId = isConsolidado ? null : selectedShopId;
+  const activeShop = isConsolidado ? null : (shops.find((s: any) => s.id === activeShopId) ?? null);
 
   const setTab = (t: Tab) =>
     navigate({ search: (prev: any) => ({ ...prev, tab: t }), replace: true });
@@ -102,6 +104,18 @@ function GroupDetail() {
         </div>
       ) : (
         <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+          {/* Consolidated button */}
+          <button
+            onClick={() => setSelectedShopId("consolidado")}
+            className={`flex items-center gap-2 px-3 h-9 rounded-xl border text-sm whitespace-nowrap transition-colors shrink-0 ${
+              isConsolidado
+                ? "bg-primary text-primary-foreground border-primary font-medium"
+                : "bg-surface border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
+            }`}
+          >
+            <Layers className="size-3.5 shrink-0" />
+            Consolidado
+          </button>
           {shops.map((s: any) => {
             const active = s.id === activeShopId;
             return (
@@ -141,21 +155,40 @@ function GroupDetail() {
       </div>
 
       {/* Content */}
-      {!activeShop ? (
-        <div className="text-sm text-muted-foreground">Selecione uma loja para ver os dados.</div>
-      ) : (
+      {allShopIds.length === 0 ? null : isConsolidado ? (
         <>
-          {tab === "dashboard"    && <ShopDashboard shopId={activeShop.id} shopName={activeShop.name} />}
-          {tab === "goal"         && <ShopProfitGoal shopId={activeShop.id} />}
-          {tab === "cash"         && <ShopCashflow shopId={activeShop.id} />}
-          {tab === "orders"       && <ShopOrders shopId={activeShop.id} />}
-          {tab === "tasks"        && <ShopTaskKanban shopId={activeShop.id} />}
-          {tab === "support"      && <ShopSupport shopId={activeShop.id} />}
-          {tab === "products"     && <ProductPipeline shopId={activeShop.id} />}
-          {tab === "wiki"         && <ShopWiki shopId={activeShop.id} />}
+          {tab === "dashboard"    && <ShopDashboard shopIds={allShopIds} shopName={group.name} />}
+          {tab === "goal"         && <ShopProfitGoal shopIds={allShopIds} />}
+          {tab === "cash"         && <ShopCashflow shopIds={allShopIds} />}
+          {tab === "orders"       && <ShopOrders shopIds={allShopIds} />}
+          {tab === "tasks"        && <ShopTaskKanban shopIds={allShopIds} />}
+          {tab === "support"      && <ShopSupport shopIds={allShopIds} />}
+          {tab === "products"     && <ProductPipeline shopIds={allShopIds} />}
+          {tab === "wiki"         && <ShopWiki shopIds={allShopIds} />}
+          {tab === "integrations" && (
+            <div className="flex flex-col gap-6">
+              {shops.map((s: any) => (
+                <div key={s.id}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{s.name}</p>
+                  <ShopIntegrations shopId={s.id} metaConnected={meta_connected} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : activeShop ? (
+        <>
+          {tab === "dashboard"    && <ShopDashboard shopIds={[activeShop.id]} shopName={activeShop.name} />}
+          {tab === "goal"         && <ShopProfitGoal shopIds={[activeShop.id]} />}
+          {tab === "cash"         && <ShopCashflow shopIds={[activeShop.id]} />}
+          {tab === "orders"       && <ShopOrders shopIds={[activeShop.id]} />}
+          {tab === "tasks"        && <ShopTaskKanban shopIds={[activeShop.id]} />}
+          {tab === "support"      && <ShopSupport shopIds={[activeShop.id]} />}
+          {tab === "products"     && <ProductPipeline shopIds={[activeShop.id]} />}
+          {tab === "wiki"         && <ShopWiki shopIds={[activeShop.id]} />}
           {tab === "integrations" && <ShopIntegrations shopId={activeShop.id} metaConnected={meta_connected} />}
         </>
-      )}
+      ) : null}
     </PageShell>
   );
 }

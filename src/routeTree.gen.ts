@@ -47,6 +47,7 @@ import { Route as ShopsGruposIndexRouteImport } from './routes/shops.grupos.inde
 import { Route as ShopsBancoDeLojasIndexRouteImport } from './routes/shops.banco-de-lojas.index'
 import { Route as ShopsSopsProcessIdRouteImport } from './routes/shops.sops.$processId'
 import { Route as ShopsProductsProductIdRouteImport } from './routes/shops.products.$productId'
+import { Route as ShopsGruposGroupIdRouteImport } from './routes/shops.grupos.$groupId'
 import { Route as ApiPublicShopifyCallbackRouteImport } from './routes/api/public/shopify/callback'
 import { Route as ApiPublicHooksTaskNotificationsRouteImport } from './routes/api/public/hooks/task-notifications'
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from './routes/api/public/hooks/sync-track123'
@@ -245,6 +246,11 @@ const ShopsProductsProductIdRoute = ShopsProductsProductIdRouteImport.update({
   path: '/$productId',
   getParentRoute: () => ShopsProductsRoute,
 } as any)
+const ShopsGruposGroupIdRoute = ShopsGruposGroupIdRouteImport.update({
+  id: '/$groupId',
+  path: '/$groupId',
+  getParentRoute: () => ShopsGruposRoute,
+} as any)
 const ApiPublicShopifyCallbackRoute =
   ApiPublicShopifyCallbackRouteImport.update({
     id: '/api/public/shopify/callback',
@@ -321,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/shops/': typeof ShopsIndexRoute
   '/tasks/': typeof TasksIndexRoute
   '/whiteboard/': typeof WhiteboardIndexRoute
+  '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
@@ -359,6 +366,7 @@ export interface FileRoutesByTo {
   '/shops': typeof ShopsIndexRoute
   '/tasks': typeof TasksIndexRoute
   '/whiteboard': typeof WhiteboardIndexRoute
+  '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasIndexRoute
@@ -407,6 +415,7 @@ export interface FileRoutesById {
   '/shops/': typeof ShopsIndexRoute
   '/tasks/': typeof TasksIndexRoute
   '/whiteboard/': typeof WhiteboardIndexRoute
+  '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
@@ -456,6 +465,7 @@ export interface FileRouteTypes {
     | '/shops/'
     | '/tasks/'
     | '/whiteboard/'
+    | '/shops/grupos/$groupId'
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas/'
@@ -494,6 +504,7 @@ export interface FileRouteTypes {
     | '/shops'
     | '/tasks'
     | '/whiteboard'
+    | '/shops/grupos/$groupId'
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas'
@@ -541,6 +552,7 @@ export interface FileRouteTypes {
     | '/shops/'
     | '/tasks/'
     | '/whiteboard/'
+    | '/shops/grupos/$groupId'
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas/'
@@ -846,6 +858,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShopsProductsProductIdRouteImport
       parentRoute: typeof ShopsProductsRoute
     }
+    '/shops/grupos/$groupId': {
+      id: '/shops/grupos/$groupId'
+      path: '/$groupId'
+      fullPath: '/shops/grupos/$groupId'
+      preLoaderRoute: typeof ShopsGruposGroupIdRouteImport
+      parentRoute: typeof ShopsGruposRoute
+    }
     '/api/public/shopify/callback': {
       id: '/api/public/shopify/callback'
       path: '/api/public/shopify/callback'
@@ -961,10 +980,12 @@ const ShopsBancoDeLojasRouteWithChildren =
   ShopsBancoDeLojasRoute._addFileChildren(ShopsBancoDeLojasRouteChildren)
 
 interface ShopsGruposRouteChildren {
+  ShopsGruposGroupIdRoute: typeof ShopsGruposGroupIdRoute
   ShopsGruposIndexRoute: typeof ShopsGruposIndexRoute
 }
 
 const ShopsGruposRouteChildren: ShopsGruposRouteChildren = {
+  ShopsGruposGroupIdRoute: ShopsGruposGroupIdRoute,
   ShopsGruposIndexRoute: ShopsGruposIndexRoute,
 }
 

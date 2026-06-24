@@ -29,13 +29,15 @@ type Product = {
   status: typeof PRODUCT_STATUSES[number]; product_date: string | null; position: number;
 };
 
-export function ProductPipeline({ shopId }: { shopId: string }) {
+export function ProductPipeline({ shopIds }: { shopIds: string[] }) {
   const qc = useQueryClient();
   const list = useServerFn(listShopProducts);
   const createFn = useServerFn(createShopProduct);
   const updateFn = useServerFn(updateShopProduct);
   const deleteFn = useServerFn(deleteShopProduct);
   const reorderFn = useServerFn(reorderShopProducts);
+  const isConsolidated = shopIds.length > 1;
+  const cacheKey = shopIds.slice().sort().join(",");
 
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
@@ -46,7 +48,7 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
   const listProductsFn = useServerFn(listProducts);
   const productsCatalog = useQuery({ queryKey: ["products-catalog"], queryFn: () => listProductsFn() });
 
-  const { data } = useQuery({ queryKey: ["shop-products", shopId], queryFn: () => list({ data: { shop_id: shopId } }) });
+  const { data } = useQuery({ queryKey: ["shop-products", cacheKey], queryFn: () => list({ data: { shop_ids: shopIds } }) });
   const products = (data?.products ?? []) as unknown as Product[];
 
   const grouped = useMemo(() => {
@@ -59,9 +61,9 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
     return g;
   }, [products, search]);
 
-  const queryKey = ["shop-products", shopId];
+  const queryKey = ["shop-products", cacheKey];
   const refresh = () => qc.invalidateQueries({ queryKey });
-  const create = useMutation({ mutationFn: (input: any) => createFn({ data: { shop_id: shopId, ...input } }), onSuccess: refresh });
+  const create = useMutation({ mutationFn: (input: any) => createFn({ data: { shop_id: shopIds[0], ...input } }), onSuccess: refresh });
   const update = useMutation({
     mutationFn: ({ id, patch }: any) => updateFn({ data: { id, patch } }),
     onMutate: async ({ id, patch }: any) => {
@@ -127,9 +129,11 @@ export function ProductPipeline({ shopId }: { shopId: string }) {
         </div>
         <span className="text-xs text-muted-foreground">{products.length} produto(s)</span>
         <div className="flex-1" />
-        <button onClick={() => setPickerStatus(COLUMNS[0].id)} className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors">
-          <Plus className="size-3.5" /> Adicionar produto
-        </button>
+        {!isConsolidated && (
+          <button onClick={() => setPickerStatus(COLUMNS[0].id)} className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors">
+            <Plus className="size-3.5" /> Adicionar produto
+          </button>
+        )}
       </div>
 
       <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onDragEnd}>

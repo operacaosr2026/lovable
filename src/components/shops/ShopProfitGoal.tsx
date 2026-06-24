@@ -48,7 +48,10 @@ const empty = (shopId: string): Goal => ({
   currency: "USD",
 });
 
-export function ShopProfitGoal({ shopId }: { shopId: string }) {
+export function ShopProfitGoal({ shopIds }: { shopIds: string[] }) {
+  const shopId = shopIds[0];
+  const isConsolidated = shopIds.length > 1;
+  const cacheKey = shopIds.slice().sort().join(",");
   const get = useServerFn(getShopProfitGoal);
   const getStats = useServerFn(getProfitGoalLiveStats);
   const upsert = useServerFn(upsertShopProfitGoal);
@@ -57,25 +60,25 @@ export function ShopProfitGoal({ shopId }: { shopId: string }) {
   const [scaleBudget, setScaleBudget] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["shop-profit-goal", shopId],
-    queryFn: () => get({ data: { shop_id: shopId } }),
+    queryKey: ["shop-profit-goal", cacheKey],
+    queryFn: () => get({ data: { shop_ids: shopIds } }),
   });
   const storedGoal = (data?.goal as Goal | null) ?? null;
 
   const stats = useQuery({
-    queryKey: ["shop-profit-goal-stats", shopId, storedGoal?.start_date, storedGoal?.end_date],
+    queryKey: ["shop-profit-goal-stats", cacheKey, storedGoal?.start_date, storedGoal?.end_date],
     queryFn: () => getStats({ data: {
-      shop_id: shopId,
+      shop_ids: shopIds,
       start_date: storedGoal!.start_date,
       end_date: storedGoal!.end_date,
     } }),
     enabled: Boolean(storedGoal?.start_date && storedGoal?.end_date),
   });
 
-  // Live goal: override sales/revenue with Shopify-synced values when connected.
+  // Live goal: override sales/revenue with live-synced values.
   const goal: Goal | null = useMemo(() => {
     if (!storedGoal) return null;
-    if (!stats.data?.connected) return storedGoal;
+    if (!stats.data) return storedGoal;
     return {
       ...storedGoal,
       total_sales: stats.data.sales || storedGoal.total_sales,
@@ -86,8 +89,8 @@ export function ShopProfitGoal({ shopId }: { shopId: string }) {
   const mut = useMutation({
     mutationFn: (g: Goal) => upsert({ data: g }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["shop-profit-goal", shopId] });
-      qc.invalidateQueries({ queryKey: ["shop-profit-goal-stats", shopId] });
+      qc.invalidateQueries({ queryKey: ["shop-profit-goal", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["shop-profit-goal-stats", cacheKey] });
       setOpen(false);
       toast.success("Meta salva");
     },
@@ -102,7 +105,7 @@ export function ShopProfitGoal({ shopId }: { shopId: string }) {
     return (
       <>
         <EmptyState onConfigure={() => setOpen(true)} />
-        <ConfigDialog open={open} onOpenChange={setOpen} initial={goal ?? empty(shopId)} onSave={(g) => mut.mutate(g)} saving={mut.isPending} />
+        {!isConsolidated && <ConfigDialog open={open} onOpenChange={setOpen} initial={goal ?? empty(shopId)} onSave={(g) => mut.mutate(g)} saving={mut.isPending} />}
       </>
     );
   }
@@ -111,13 +114,14 @@ export function ShopProfitGoal({ shopId }: { shopId: string }) {
     <>
       <Dashboard
         shopId={shopId}
+        cacheKey={cacheKey}
         goal={goal}
         scaleBudget={scaleBudget}
         onScale={setScaleBudget}
         onConfigure={() => setOpen(true)}
         liveStats={stats.data}
       />
-      <ConfigDialog open={open} onOpenChange={setOpen} initial={goal} onSave={(g) => mut.mutate(g)} saving={mut.isPending} liveStats={stats.data} />
+      {!isConsolidated && <ConfigDialog open={open} onOpenChange={setOpen} initial={goal} onSave={(g) => mut.mutate(g)} saving={mut.isPending} liveStats={stats.data} />}
     </>
   );
 }
@@ -204,8 +208,9 @@ type LiveStats = {
   store: { id: string; name: string | null; last_sync_at: string | null } | null;
 } | undefined;
 
-function Dashboard({ shopId, goal, scaleBudget, onScale, onConfigure, liveStats }: {
+function Dashboard({ shopId, cacheKey, goal, scaleBudget, onScale, onConfigure, liveStats }: {
   shopId: string;
+  cacheKey: string;
   goal: Goal;
   scaleBudget: number | null;
   onScale: (v: number | null) => void;
@@ -221,7 +226,7 @@ function Dashboard({ shopId, goal, scaleBudget, onScale, onConfigure, liveStats 
     },
     onSuccess: () => {
       toast.success("Meta de lucro sincronizada");
-      qc.invalidateQueries({ queryKey: ["shop-profit-goal-stats", shopId] });
+      qc.invalidateQueries({ queryKey: ["shop-profit-goal-stats", cacheKey] });
     },
     onError: (e: any) => toast.error(e?.message || "Erro ao sincronizar"),
   });

@@ -20,25 +20,28 @@ const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
 
 export const listShopCash = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
-    const [entries, imports, shop] = await Promise.all([
+    const [entries, imports, shops] = await Promise.all([
       context.supabase.from("shop_cash_entries").select("*")
-        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .order("date", { ascending: true }),
       context.supabase.from("shop_cash_imports").select("*")
-        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .order("created_at", { ascending: false }),
       context.supabase.from("shops").select("opening_balance, weekend_payouts_to_monday")
-        .eq("user_id", context.ownerId).eq("id", data.shop_id).maybeSingle(),
+        .eq("user_id", context.ownerId).in("id", data.shop_ids),
     ]);
     if (entries.error) throw new Error(entries.error.message);
     if (imports.error) throw new Error(imports.error.message);
+    const shopRows = shops.data ?? [];
+    const opening_balance = shopRows.reduce((s, r) => s + Number(r.opening_balance ?? 0), 0);
+    const weekend_payouts_to_monday = shopRows.some((r) => Boolean(r.weekend_payouts_to_monday));
     return {
       entries: entries.data ?? [],
       imports: imports.data ?? [],
-      opening_balance: Number(shop.data?.opening_balance ?? 0),
-      weekend_payouts_to_monday: Boolean(shop.data?.weekend_payouts_to_monday ?? false),
+      opening_balance,
+      weekend_payouts_to_monday,
     };
   });
 

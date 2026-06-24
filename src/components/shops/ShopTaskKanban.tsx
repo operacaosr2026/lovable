@@ -52,7 +52,7 @@ function fmtDue(due: string | null) {
   return hasTime ? `${label} · ${time}` : label;
 }
 
-export function ShopTaskKanban({ shopId }: { shopId: string }) {
+export function ShopTaskKanban({ shopIds }: { shopIds: string[] }) {
   const qc = useQueryClient();
   const list = useServerFn(listShopTasks);
   const createFn = useServerFn(createShopTask);
@@ -65,8 +65,10 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
   const [filter, setFilter] = useState<"all" | "today" | "overdue" | "upcoming">("all");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const confirm = useConfirm();
+  const isConsolidated = shopIds.length > 1;
 
-  const { data } = useQuery({ queryKey: ["shop-tasks", shopId], queryFn: () => list({ data: { shop_id: shopId } }) });
+  const cacheKey = shopIds.slice().sort().join(",");
+  const { data } = useQuery({ queryKey: ["shop-tasks", cacheKey], queryFn: () => list({ data: { shop_ids: shopIds } }) });
   const tasks = (data?.tasks ?? []) as Task[];
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -101,9 +103,9 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
     upcoming: tasks.filter((t) => !t.parent_task_id && t.status !== "done" && t.due_at && new Date(t.due_at) > endToday && new Date(t.due_at) <= in7).length,
   };
 
-  const queryKey = ["shop-tasks", shopId];
+  const queryKey = ["shop-tasks", cacheKey];
   const refresh = () => qc.invalidateQueries({ queryKey });
-  const create = useMutation({ mutationFn: (input: any) => createFn({ data: { shop_id: shopId, ...input } }), onSuccess: refresh });
+  const create = useMutation({ mutationFn: (input: any) => createFn({ data: { shop_id: shopIds[0], ...input } }), onSuccess: refresh });
   const update = useMutation({ mutationFn: ({ id, patch }: any) => updateFn({ data: { id, patch } }), onSuccess: refresh });
   const remove = useMutation({
     mutationFn: (id: string) => deleteFn({ data: { id } }),
@@ -158,9 +160,11 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
         <Chip active={filter === "overdue"} onClick={() => setFilter("overdue")} danger={counts.overdue > 0}>Vencidas · {counts.overdue}</Chip>
         <Chip active={filter === "upcoming"} onClick={() => setFilter("upcoming")}>Próximas · {counts.upcoming}</Chip>
         <div className="flex-1" />
-        <button onClick={handleAddTask} className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors">
-          <Plus className="size-3.5" /> Adicionar tarefa
-        </button>
+        {!isConsolidated && (
+          <button onClick={handleAddTask} className="flex items-center gap-1.5 text-xs px-3 h-8 rounded-full border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors">
+            <Plus className="size-3.5" /> Adicionar tarefa
+          </button>
+        )}
       </div>
 
       <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onDragEnd}>
@@ -180,7 +184,7 @@ export function ShopTaskKanban({ shopId }: { shopId: string }) {
         onOpenChange={(o) => { if (!o) setEditing(null); }}
         source="shop_task"
         id={editing?.id ?? null}
-        invalidateKeys={[["shop-tasks", shopId]]}
+        invalidateKeys={[["shop-tasks", cacheKey]]}
       />
     </>
   );

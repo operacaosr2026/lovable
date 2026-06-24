@@ -48,7 +48,8 @@ const PRIORITY_META: Record<string, { label: string; icon: any; color: string; b
   chargeback_risk: { label: "Risco chargeback",   icon: Flame,         color: "oklch(0.5 0.18 25)",   bg: "oklch(0.95 0.06 25)"   },
 };
 
-export function ShopSupport({ shopId }: { shopId: string }) {
+export function ShopSupport({ shopIds }: { shopIds: string[] }) {
+  const shopId = shopIds[0];
   const _listInboxes    = useServerFn(listInboxes);
   const _listConversations = useServerFn(listConversations);
   const _listStatuses   = useServerFn(listStatuses);
@@ -61,16 +62,18 @@ export function ShopSupport({ shopId }: { shopId: string }) {
   const [selectedConv, setSelectedConv] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState<null | "inboxes" | "statuses" | "templates">(null);
 
+  const cacheKey = shopIds.slice().sort().join(",");
+
   const inboxesQ = useQuery({ queryKey: ["support", "inboxes"], queryFn: () => _listInboxes() });
   const statusesQ = useQuery({ queryKey: ["support", "statuses"], queryFn: () => _listStatuses() });
   const shopsQ = useQuery({ queryKey: ["shops"], queryFn: () => _listShops() });
   const convsQ = useQuery({
-    queryKey: ["support", "conversations", shopId, selectedInbox, statusFilter, unidentifiedOnly, search],
-    queryFn: () => _listConversations({ data: { shopId, inboxId: selectedInbox, statusKey: statusFilter, unidentifiedOnly, search: search || null } }),
+    queryKey: ["support", "conversations", cacheKey, selectedInbox, statusFilter, unidentifiedOnly, search],
+    queryFn: () => _listConversations({ data: { shopIds, inboxId: selectedInbox, statusKey: statusFilter, unidentifiedOnly, search: search || null } }),
   });
 
   const allInboxes = inboxesQ.data?.inboxes ?? [];
-  const inboxes = allInboxes.filter((i: any) => i.shop_id === shopId);
+  const inboxes = allInboxes.filter((i: any) => shopIds.includes(i.shop_id));
   const statuses = statusesQ.data?.statuses ?? [];
   const conversations = convsQ.data?.conversations ?? [];
   const shops = shopsQ.data?.shops ?? [];

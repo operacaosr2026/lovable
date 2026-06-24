@@ -79,15 +79,15 @@ function ShopDetail() {
         <TabBtn active={tab === "integrations"} onClick={() => setTab("integrations")} icon={Plug}>Integrações</TabBtn>
       </div>
 
-      {tab === "dashboard" && <ShopDashboard shopId={shopId} shopName={s.name} />}
-      {tab === "products" && <ProductPipeline shopId={shopId} />}
-      {tab === "orders" && <ShopOrders shopId={shopId} />}
-      {tab === "support" && <ShopSupport shopId={shopId} />}
-      {tab === "tasks" && <ShopTaskKanban shopId={shopId} />}
-      {tab === "cash" && <ShopCashflow shopId={shopId} />}
-      {tab === "goal" && <ShopProfitGoal shopId={shopId} />}
+      {tab === "dashboard" && <ShopDashboard shopIds={[shopId]} shopName={s.name} />}
+      {tab === "products" && <ProductPipeline shopIds={[shopId]} />}
+      {tab === "orders" && <ShopOrders shopIds={[shopId]} />}
+      {tab === "support" && <ShopSupport shopIds={[shopId]} />}
+      {tab === "tasks" && <ShopTaskKanban shopIds={[shopId]} />}
+      {tab === "cash" && <ShopCashflow shopIds={[shopId]} />}
+      {tab === "goal" && <ShopProfitGoal shopIds={[shopId]} />}
       {tab === "integrations" && <ShopIntegrations shopId={shopId} metaConnected={meta_connected} />}
-      {tab === "wiki" && <ShopWiki shopId={shopId} />}
+      {tab === "wiki" && <ShopWiki shopIds={[shopId]} />}
     </PageShell>
   );
 }

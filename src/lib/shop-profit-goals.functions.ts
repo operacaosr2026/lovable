@@ -21,16 +21,22 @@ const upsertSchema = z.object({
 
 export const getShopProfitGoal = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { shop_id: string }) => data)
+  .inputValidator((data: { shop_ids: string[] }) => data)
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data: row, error } = await supabase
+    const { data: rows, error } = await supabase
       .from("shop_profit_goals")
       .select("*")
-      .eq("shop_id", data.shop_id)
-      .maybeSingle();
+      .in("shop_id", data.shop_ids);
     if (error) throw new Error(error.message);
-    return { goal: row };
+    if (!rows || rows.length === 0) return { goal: null };
+    if (rows.length === 1) return { goal: rows[0] };
+    // Aggregate multiple goals: sum numeric targets, use first row's per-product fields
+    const agg: any = { ...rows[0] };
+    for (const key of ["target_profit", "total_revenue", "total_sales", "total_marketing", "daily_budget"] as const) {
+      agg[key] = rows.reduce((s: number, r: any) => s + Number(r[key] ?? 0), 0);
+    }
+    return { goal: agg };
   });
 
 export const upsertShopProfitGoal = createServerFn({ method: "POST" })
@@ -52,33 +58,15 @@ export const upsertShopProfitGoal = createServerFn({ method: "POST" })
 
 export const getProfitGoalLiveStats = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((data: { shop_id: string; start_date: string; end_date: string }) => data)
+  .inputValidator((data: { shop_ids: string[]; start_date: string; end_date: string }) => data)
   .handler(async ({ data, context }) => {
     const { supabase, ownerId } = context;
-
-    const { data: settings } = await supabase
-      .from("shop_order_settings")
-      .select("shopify_store_id")
-      .eq("user_id", ownerId)
-      .eq("shop_id", data.shop_id)
-      .maybeSingle();
-
-    let storeInfo: { id: string; name: string | null; last_sync_at: string | null } | null = null;
-    if (settings?.shopify_store_id) {
-      const { data: st } = await supabase
-        .from("shopify_stores")
-        .select("id,name,last_sync_at")
-        .eq("user_id", ownerId)
-        .eq("id", settings.shopify_store_id)
-        .maybeSingle();
-      if (st) storeInfo = st as any;
-    }
 
     const { data: rows, error } = await supabase
       .from("shop_orders")
       .select("items_count,revenue,currency")
       .eq("user_id", ownerId)
-      .eq("shop_id", data.shop_id)
+      .in("shop_id", data.shop_ids)
       .gte("order_date", data.start_date)
       .lte("order_date", data.end_date);
     if (error) throw new Error(error.message);
@@ -96,8 +84,8 @@ export const getProfitGoalLiveStats = createServerFn({ method: "GET" })
       revenue,
       orders_count: rows?.length ?? 0,
       currency,
-      connected: Boolean(storeInfo),
-      store: storeInfo,
+      connected: true,
+      store: null,
     };
   });
 

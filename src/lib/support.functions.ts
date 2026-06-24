@@ -190,7 +190,7 @@ export const deleteStatus = createServerFn({ method: "POST" })
 // =================== Conversations ===================
 const ListConvInput = z.object({
   inboxId: z.string().uuid().nullable().optional(),
-  shopId: z.string().uuid().nullable().optional(),
+  shopIds: z.array(z.string().uuid()).nullable().optional(),
   statusKey: z.string().nullable().optional(),
   unidentifiedOnly: z.boolean().optional(),
   search: z.string().max(200).nullable().optional(),
@@ -207,7 +207,7 @@ export const listConversations = createServerFn({ method: "POST" })
       .order("last_message_at", { ascending: false })
       .limit(200);
     if (data.inboxId) q = q.eq("inbox_id", data.inboxId);
-    if (data.shopId) q = q.eq("shop_id", data.shopId);
+    if (data.shopIds && data.shopIds.length > 0) q = q.in("shop_id", data.shopIds);
     if (data.unidentifiedOnly) q = q.eq("is_unidentified", true);
     const { data: convs, error } = await q;
     if (error) throw new Error(error.message);

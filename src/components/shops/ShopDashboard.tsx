@@ -186,7 +186,9 @@ function UnitCostEditor({ shopId, currentCost, onSaved }: { shopId: string; curr
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ShopDashboard({ shopId, shopName }: { shopId: string; shopName: string }) {
+export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopName: string }) {
+  const isConsolidated = shopIds.length > 1;
+  const cacheKey = shopIds.slice().sort().join(",");
   const [period, setPeriod] = useState("30d");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const [calOpen, setCalOpen] = useState(false);
@@ -217,8 +219,8 @@ export function ShopDashboard({ shopId, shopName }: { shopId: string; shopName: 
   const qc           = useQueryClient();
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["shop-dashboard", shopId, from, to],
-    queryFn: () => getMetrics({ data: { shop_id: shopId, from, to, prev_from: prevFrom, prev_to: prevTo } }),
+    queryKey: ["shop-dashboard", cacheKey, from, to],
+    queryFn: () => getMetrics({ data: { shop_ids: shopIds, from, to, prev_from: prevFrom, prev_to: prevTo } }),
   });
 
   const [syncing, setSyncing] = useState(false);
@@ -228,12 +230,12 @@ export function ShopDashboard({ shopId, shopName }: { shopId: string; shopName: 
       // Calculates days to cover from period start to today
       const sinceDays = Math.max(30, Math.ceil((Date.now() - new Date(from + "T00:00:00").getTime()) / 86_400_000) + 2);
       const [fees, cb] = await Promise.all([
-        syncFeesFn({ data: { shop_id: shopId } }),
-        syncCbFn({ data: { shop_id: shopId } }),
-        syncRefundsFn({ data: { shop_id: shopId } }).catch(() => null),
-        syncAdsFn({ data: { shop_id: shopId, since_days: sinceDays } }).catch(() => null),
+        syncFeesFn({ data: { shop_id: shopIds[0] } }),
+        syncCbFn({ data: { shop_id: shopIds[0] } }),
+        syncRefundsFn({ data: { shop_id: shopIds[0] } }).catch(() => null),
+        syncAdsFn({ data: { shop_id: shopIds[0], since_days: sinceDays } }).catch(() => null),
       ]);
-      qc.invalidateQueries({ queryKey: ["shop-dashboard", shopId] });
+      qc.invalidateQueries({ queryKey: ["shop-dashboard", cacheKey] });
       const total = (fees?.synced ?? 0) + (cb?.synced ?? 0);
       if (!silent || total > 0)
         toast.success(total > 0 ? `${total} lançamentos sincronizados` : "Tudo já sincronizado");
@@ -359,8 +361,8 @@ export function ShopDashboard({ shopId, shopName }: { shopId: string; shopName: 
           <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        {data !== undefined && (
-          <UnitCostEditor shopId={shopId} currentCost={data.unitCost} onSaved={() => refetch()} />
+        {data !== undefined && !isConsolidated && (
+          <UnitCostEditor shopId={shopIds[0]} currentCost={data.unitCost} onSaved={() => refetch()} />
         )}
       </div>
 
