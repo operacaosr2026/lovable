@@ -24,7 +24,7 @@ export const listShops = createServerFn({ method: "GET" })
     const filter = getSectionResourceFilter(context, "shops");
     if (filter === "none") return { shops: [] };
 
-    let query = supabase.from("shops").select("*").eq("user_id", ownerId);
+    let query = supabase.from("shops").select("*").eq("user_id", ownerId).is("group_id", null);
     if (Array.isArray(filter)) query = query.in("id", filter);
     const { data: shops, error } = await query.order("created_at", { ascending: false });
     if (error) throw new Error(error.message);

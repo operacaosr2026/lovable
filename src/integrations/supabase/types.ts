@@ -2448,6 +2448,7 @@ export type Database = {
           country: string | null
           created_at: string
           description: string | null
+          group_id: string | null
           id: string
           logo_url: string | null
           name: string
@@ -2466,6 +2467,7 @@ export type Database = {
           country?: string | null
           created_at?: string
           description?: string | null
+          group_id?: string | null
           id?: string
           logo_url?: string | null
           name: string
@@ -2484,6 +2486,7 @@ export type Database = {
           country?: string | null
           created_at?: string
           description?: string | null
+          group_id?: string | null
           id?: string
           logo_url?: string | null
           name?: string
@@ -2497,7 +2500,15 @@ export type Database = {
           user_id?: string
           weekend_payouts_to_monday?: boolean
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "shops_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "shop_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sop_edges: {
         Row: {
