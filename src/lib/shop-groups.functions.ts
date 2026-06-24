@@ -89,6 +89,50 @@ export const updateGroup = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getGroup = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: group, error } = await supabaseAdmin
+      .from("shop_groups")
+      .select("*, shop_group_stores(id, role, shopify_store_id)")
+      .eq("id", data.id)
+      .eq("user_id", context.ownerId)
+      .single();
+    if (error) throw new Error(error.message);
+
+    // Resolve internal shops linked to these Shopify stores
+    const shopifyIds = (group.shop_group_stores ?? []).map((s: any) => s.shopify_store_id);
+    let shops: any[] = [];
+    if (shopifyIds.length > 0) {
+      const { data: settings } = await supabaseAdmin
+        .from("shop_order_settings")
+        .select("shop_id, shopify_store_id")
+        .eq("user_id", context.ownerId)
+        .in("shopify_store_id", shopifyIds);
+
+      const shopIds = (settings ?? []).map((s: any) => s.shop_id).filter(Boolean);
+      if (shopIds.length > 0) {
+        const { data: shopRows } = await supabaseAdmin
+          .from("shops")
+          .select("*")
+          .in("id", shopIds)
+          .eq("user_id", context.ownerId);
+        shops = (shopRows ?? []).map((s: any) => {
+          const setting = (settings ?? []).find((st: any) => st.shop_id === s.id);
+          const groupStore = (group.shop_group_stores ?? []).find(
+            (gs: any) => gs.shopify_store_id === setting?.shopify_store_id
+          );
+          return { ...s, shopify_store_id: setting?.shopify_store_id, role: groupStore?.role ?? "subloja" };
+        });
+        // Sort: matriz first
+        shops.sort((a, b) => (a.role === "matriz" ? -1 : b.role === "matriz" ? 1 : 0));
+      }
+    }
+
+    return { group, shops };
+  });
+
 export const deleteGroup = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))

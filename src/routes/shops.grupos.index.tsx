@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
@@ -148,10 +148,12 @@ function GroupCard({ group, shopifyStores, onEdit, onDelete }: { group: any; sho
 
   return (
     <div className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
-      <div className="p-5">
+      <Link to="/shops/grupos/$groupId" params={{ groupId: group.id }} search={{ tab: "dashboard" as const, meta_connected: undefined }} className="block p-5">
         <div className="flex items-start gap-3 mb-3">
           <div className="size-12 rounded-xl grid place-items-center shrink-0 bg-primary/10 text-primary text-base font-semibold">
-            {group.name?.[0]?.toUpperCase() ?? <Users className="size-6" />}
+            {group.logo_url
+              ? <img src={group.logo_url} alt="logo" className="size-12 rounded-xl object-cover" />
+              : group.name?.[0]?.toUpperCase() ?? <Users className="size-6" />}
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-base font-semibold leading-tight truncate flex items-center gap-1.5">
@@ -212,17 +214,17 @@ function GroupCard({ group, shopifyStores, onEdit, onDelete }: { group: any; sho
             </div>
           )}
         </div>
-      </div>
+      </Link>
 
       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
         <button
-          onClick={onEdit}
+          onClick={(e) => { e.preventDefault(); onEdit(); }}
           className="text-[11px] px-2 h-6 rounded-md bg-background border border-border text-muted-foreground hover:text-foreground"
         >
           editar
         </button>
         <button
-          onClick={onDelete}
+          onClick={(e) => { e.preventDefault(); onDelete(); }}
           className="text-[11px] px-2 h-6 rounded-md bg-background border border-border text-destructive hover:text-destructive"
         >
           excluir
