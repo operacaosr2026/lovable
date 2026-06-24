@@ -21,13 +21,44 @@ const StoreEntry = z.object({
 });
 
 // Ensures each shopify store in a group has a corresponding internal shop record.
-// Auto-creates the shop + shop_order_settings if missing.
+// Uses separate queries to avoid relying on PostgREST FK auto-discovery.
 async function syncGroupShops(
   ownerId: string,
   groupId: string,
   stores: { shopify_store_id: string; role: string }[]
 ) {
-  if (stores.length === 0) return;
+  // Get existing internal shops for this group
+  const { data: existingGroupShops } = await supabaseAdmin
+    .from("shops")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("user_id", ownerId);
+
+  const existingShopIds = (existingGroupShops ?? []).map((s: any) => s.id);
+
+  // Get shopify_store_id for each existing group shop
+  const existingSettings =
+    existingShopIds.length > 0
+      ? await supabaseAdmin
+          .from("shop_order_settings")
+          .select("shop_id, shopify_store_id")
+          .in("shop_id", existingShopIds)
+          .then(({ data }) => data ?? [])
+      : [];
+
+  const existingByShopifyId = new Map<string, string>(
+    (existingSettings as any[])
+      .filter((s) => s.shopify_store_id)
+      .map((s) => [s.shopify_store_id, s.shop_id])
+  );
+
+  if (stores.length === 0) {
+    // Remove all group shops
+    for (const shopId of existingShopIds) {
+      await supabaseAdmin.from("shops").delete().eq("id", shopId);
+    }
+    return;
+  }
 
   // Get Shopify store names
   const shopifyIds = stores.map((s) => s.shopify_store_id);
@@ -36,45 +67,33 @@ async function syncGroupShops(
     .select("id, name, shop_domain")
     .in("id", shopifyIds);
 
-  // Get existing group shops
-  const { data: existingShops } = await supabaseAdmin
-    .from("shops")
-    .select("id, shop_order_settings(shopify_store_id)")
-    .eq("group_id", groupId)
-    .eq("user_id", ownerId);
-
-  const existingByShopifyId = new Map<string, string>();
-  for (const shop of existingShops ?? []) {
-    const settings = (shop as any).shop_order_settings ?? [];
-    for (const s of settings) {
-      if (s.shopify_store_id) existingByShopifyId.set(s.shopify_store_id, shop.id);
-    }
-  }
-
-  // Create missing shops
+  // Create a shop for each store not yet linked
   for (const store of stores) {
     if (existingByShopifyId.has(store.shopify_store_id)) continue;
 
-    const shopifyStore = (shopifyStores ?? []).find((s) => s.id === store.shopify_store_id);
-    const name = shopifyStore?.name || shopifyStore?.shop_domain || "Loja";
+    const shopifyStore = (shopifyStores ?? []).find((s: any) => s.id === store.shopify_store_id);
+    const name = (shopifyStore as any)?.name || (shopifyStore as any)?.shop_domain || "Loja";
 
     const { data: newShop, error: shopErr } = await supabaseAdmin
       .from("shops")
       .insert({ user_id: ownerId, group_id: groupId, name, status: "ativa" })
       .select("id")
       .single();
-    if (shopErr) throw new Error(shopErr.message);
+    if (shopErr) throw new Error("Erro ao criar shop do grupo: " + shopErr.message);
 
-    const { error: settingsErr } = await supabaseAdmin
+    const { error: settErr } = await supabaseAdmin
       .from("shop_order_settings")
-      .insert({ user_id: ownerId, shop_id: newShop.id, shopify_store_id: store.shopify_store_id });
-    if (settingsErr) throw new Error(settingsErr.message);
+      .upsert(
+        { user_id: ownerId, shop_id: newShop.id, shopify_store_id: store.shopify_store_id },
+        { onConflict: "shop_id" }
+      );
+    if (settErr) throw new Error("Erro ao vincular loja Shopify: " + settErr.message);
   }
 
-  // Remove shops for stores that are no longer in the group
-  const currentShopifyIds = new Set(shopifyIds);
+  // Remove shops whose shopify store was removed from the group
+  const currentShopifySet = new Set(shopifyIds);
   for (const [shopifyId, shopId] of existingByShopifyId) {
-    if (!currentShopifyIds.has(shopifyId)) {
+    if (!currentShopifySet.has(shopifyId)) {
       await supabaseAdmin.from("shops").delete().eq("id", shopId);
     }
   }
@@ -104,20 +123,32 @@ export const getGroup = createServerFn({ method: "GET" })
       .single();
     if (error) throw new Error(error.message);
 
-    // Load internal shops that belong to this group, with their shopify_store_id
+    // Load shops belonging to this group
     const { data: shopRows } = await supabaseAdmin
       .from("shops")
-      .select("*, shop_order_settings(shopify_store_id)")
+      .select("*")
       .eq("group_id", data.id)
       .eq("user_id", context.ownerId);
 
+    const shopIds = (shopRows ?? []).map((s: any) => s.id);
+
+    // Get shopify_store_id for each shop via separate query
+    const settings =
+      shopIds.length > 0
+        ? await supabaseAdmin
+            .from("shop_order_settings")
+            .select("shop_id, shopify_store_id")
+            .in("shop_id", shopIds)
+            .then(({ data: d }) => d ?? [])
+        : [];
+
     const groupStores: any[] = group.shop_group_stores ?? [];
     const shops = (shopRows ?? []).map((s: any) => {
-      const shopifyId = s.shop_order_settings?.[0]?.shopify_store_id ?? null;
+      const setting = (settings as any[]).find((st) => st.shop_id === s.id);
+      const shopifyId = setting?.shopify_store_id ?? null;
       const groupStore = groupStores.find((gs) => gs.shopify_store_id === shopifyId);
       return { ...s, shopify_store_id: shopifyId, role: groupStore?.role ?? "subloja" };
     });
-    // Matriz first
     shops.sort((a, b) => (a.role === "matriz" ? -1 : b.role === "matriz" ? 1 : 0));
 
     return { group, shops };
@@ -177,7 +208,7 @@ export const updateGroup = createServerFn({ method: "POST" })
         if (se) throw new Error(se.message);
       }
 
-      await syncGroupShops(context.ownerId, data.id, data.stores ?? []);
+      await syncGroupShops(context.ownerId, data.id, data.stores);
     }
 
     return { ok: true };
@@ -187,7 +218,6 @@ export const deleteGroup = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    // Shops with group_id cascade-delete via FK, so just delete the group
     const { error } = await supabaseAdmin
       .from("shop_groups")
       .delete()
