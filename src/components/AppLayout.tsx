@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
+  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -61,6 +61,8 @@ const navGroups: NavGroup[] = [
         children: [
           { to: "/shops", label: "Lojas", icon: Store },
           { to: "/shops/products", label: "Produtos", icon: Package },
+          { to: "/shops/grupos", label: "Grupos", icon: Users },
+          { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
         ],
       },
       { to: "/shops/sops", label: "SOPs & Processos", icon: Network, section: "sops" },
@@ -83,6 +85,8 @@ const ALL_PAGES = [
   { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/shops", label: "Ecommerce / Lojas", icon: Store },
   { to: "/shops/products", label: "Produtos", icon: Package },
+  { to: "/shops/grupos", label: "Grupos", icon: Users },
+  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
@@ -303,7 +307,7 @@ export function AppLayout() {
         item.to === "/"
           ? path === "/"
           : isShopsRoot
-          ? path === "/shops" || (path.startsWith("/shops/") && !path.startsWith("/shops/products"))
+          ? path === "/shops" || (path.startsWith("/shops/") && !path.startsWith("/shops/products") && !path.startsWith("/shops/grupos") && !path.startsWith("/shops/banco-de-lojas"))
           : path.startsWith(item.to);
       const Icon = item.icon;
       const sectionOpen = !!item.children && !collapsed[item.to];
@@ -349,7 +353,9 @@ export function AppLayout() {
                     ? path === "/shops" ||
                       (path.startsWith("/shops/") &&
                         !path.startsWith("/shops/products") &&
-                        !path.startsWith("/shops/sops"))
+                        !path.startsWith("/shops/sops") &&
+                        !path.startsWith("/shops/grupos") &&
+                        !path.startsWith("/shops/banco-de-lojas"))
                     : path.startsWith(child.to);
                 const ChildIcon = child.icon;
                 return (

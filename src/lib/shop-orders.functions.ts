@@ -182,7 +182,7 @@ export const upsertOrderSettings = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shop_order_settings")
-      .update(data.patch).eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
+      .upsert({ user_id: context.ownerId, shop_id: data.shop_id, ...data.patch }, { onConflict: "user_id,shop_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
   });

@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { Plus, Search, Store, MapPin, ListChecks, Package, X, Upload, LayoutGrid, List } from "lucide-react";
 import { listShops, createShop, updateShop, deleteShop, SHOP_STATUSES } from "@/lib/shops.functions";
-import { getShopifyChargebackRate, getShopifyPayoutLag } from "@/lib/shop-orders.functions";
+import { getShopifyChargebackRate, getShopifyPayoutLag, listShopifyStores, upsertOrderSettings } from "@/lib/shop-orders.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -67,8 +67,17 @@ function ShopsDashboard() {
     });
   }, [shops, fStatus, search]);
 
+  const upsertSettingsFn = useServerFn(upsertOrderSettings);
   const refresh = () => qc.invalidateQueries({ queryKey: ["shops"] });
-  const create = useMutation({ mutationFn: (input: any) => createFn({ data: input }), onSuccess: refresh });
+  const create = useMutation({
+    mutationFn: async ({ shopData, shopifyStoreId }: { shopData: any; shopifyStoreId: string | null }) => {
+      const { shop } = await createFn({ data: shopData });
+      if (shopifyStoreId && shop?.id) {
+        await upsertSettingsFn({ data: { shop_id: shop.id, patch: { shopify_store_id: shopifyStoreId } } });
+      }
+    },
+    onSuccess: refresh,
+  });
   const update = useMutation({ mutationFn: ({ id, patch }: any) => updateFn({ data: { id, patch } }), onSuccess: refresh });
   const remove = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
 
@@ -171,9 +180,9 @@ function ShopsDashboard() {
         <ShopEditor
           shop={editing}
           onClose={() => setEditorOpen(false)}
-          onSave={async (patch) => {
+          onSave={async (patch, shopifyStoreId) => {
             if (editing) await update.mutateAsync({ id: editing.id, patch });
-            else await create.mutateAsync(patch);
+            else await create.mutateAsync({ shopData: patch, shopifyStoreId: shopifyStoreId ?? null });
             setEditorOpen(false);
           }}
           onDelete={editing ? async () => {
@@ -363,7 +372,7 @@ function ShopListRow({ s, onEdit, onDelete }: { s: any; onEdit: () => void; onDe
 function ShopEditor({ shop, onClose, onSave, onDelete }: {
   shop: any;
   onClose: () => void;
-  onSave: (patch: any) => void | Promise<void>;
+  onSave: (patch: any, shopifyStoreId?: string | null) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
 }) {
   const [name, setName] = useState(shop?.name ?? "");
@@ -373,7 +382,15 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
   const [status, setStatus] = useState<string>(shop?.status ?? "ativa");
   const [logoUrl, setLogoUrl] = useState<string>(shop?.logo_url ?? "");
   const [uploading, setUploading] = useState(false);
+  const [shopifyStoreId, setShopifyStoreId] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const listStoresFn = useServerFn(listShopifyStores);
+  const { data: shopifyStores = [] } = useQuery({
+    queryKey: ["shopify-stores"],
+    queryFn: () => listStoresFn(),
+    enabled: !shop,
+  });
 
   useEscapeToClose(onClose);
 
@@ -398,14 +415,17 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
     }
   };
 
-  const save = () => onSave({
-    name: name.trim() || (shop?.name ?? "Nova loja"),
-    description: description.trim() || null,
-    country: country.trim() || null,
-    tag: tag.trim() || null,
-    status,
-    logo_url: logoUrl || null,
-  });
+  const save = () => onSave(
+    {
+      name: name.trim() || (shop?.name ?? "Nova loja"),
+      description: description.trim() || null,
+      country: country.trim() || null,
+      tag: tag.trim() || null,
+      status,
+      logo_url: logoUrl || null,
+    },
+    shopifyStoreId || null,
+  );
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
@@ -474,6 +494,31 @@ function ShopEditor({ shop, onClose, onSave, onDelete }: {
             placeholder="Tag (ex: principal, teste...)"
             className="w-full px-3 h-9 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50"
           />
+          {!shop && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                Loja Shopify (Banco de Lojas)
+              </label>
+              {shopifyStores.length === 0 ? (
+                <div className="w-full px-3 h-9 rounded-lg bg-surface border border-dashed border-border text-xs text-muted-foreground flex items-center">
+                  Nenhuma loja no banco — conecte uma em Banco de Lojas
+                </div>
+              ) : (
+                <select
+                  value={shopifyStoreId}
+                  onChange={(e) => setShopifyStoreId(e.target.value)}
+                  className="w-full px-2 h-9 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
+                >
+                  <option value="">— Não vincular agora —</option>
+                  {(shopifyStores as any[]).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name || s.shop_domain}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-between items-center px-5 py-3 border-t border-border">

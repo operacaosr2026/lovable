@@ -496,7 +496,7 @@ function SettingsDialog({ shopId, open, onClose, settings, stores, onSaved }: an
   );
 }
 
-function ConnectStoreDialog({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected?: (s: any) => void }) {
+export function ConnectStoreDialog({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected?: (s: any) => void }) {
   const startOAuth = useServerFn(startShopifyOAuth);
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
