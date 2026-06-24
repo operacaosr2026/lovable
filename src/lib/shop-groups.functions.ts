@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 
 export const GROUP_STATUSES = ["ativo", "pausado", "arquivado"] as const;
@@ -38,7 +39,7 @@ export const createGroup = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ context, data }) => {
-    const { data: row, error } = await context.supabase
+    const { data: row, error } = await supabaseAdmin
       .from("shop_groups")
       .insert({ user_id: context.ownerId, ...data.group })
       .select()
@@ -46,7 +47,7 @@ export const createGroup = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     if (data.stores.length > 0) {
-      const { error: se } = await context.supabase
+      const { error: se } = await supabaseAdmin
         .from("shop_group_stores")
         .insert(data.stores.map((s) => ({ group_id: row.id, ...s })));
       if (se) throw new Error(se.message);
@@ -68,7 +69,7 @@ export const updateGroup = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ context, data }) => {
-    const { error } = await context.supabase
+    const { error } = await supabaseAdmin
       .from("shop_groups")
       .update(data.patch)
       .eq("id", data.id)
@@ -76,9 +77,9 @@ export const updateGroup = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     if (data.stores !== undefined) {
-      await context.supabase.from("shop_group_stores").delete().eq("group_id", data.id);
+      await supabaseAdmin.from("shop_group_stores").delete().eq("group_id", data.id);
       if (data.stores.length > 0) {
-        const { error: se } = await context.supabase
+        const { error: se } = await supabaseAdmin
           .from("shop_group_stores")
           .insert(data.stores.map((s) => ({ group_id: data.id, ...s })));
         if (se) throw new Error(se.message);
@@ -92,7 +93,7 @@ export const deleteGroup = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { error } = await context.supabase
+    const { error } = await supabaseAdmin
       .from("shop_groups")
       .delete()
       .eq("id", data.id)
