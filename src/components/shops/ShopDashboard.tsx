@@ -19,7 +19,7 @@ import { toast } from "sonner";
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
-function isoToday() { return new Date().toISOString().slice(0, 10); }
+function isoToday() { return new Date().toLocaleDateString("en-CA"); }
 function addDays(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
 }
@@ -227,16 +227,19 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
   const syncFees = async (silent = false) => {
     setSyncing(true);
     try {
-      // Calculates days to cover from period start to today
       const sinceDays = Math.max(30, Math.ceil((Date.now() - new Date(from + "T00:00:00").getTime()) / 86_400_000) + 2);
-      const [fees, cb] = await Promise.all([
-        syncFeesFn({ data: { shop_id: shopIds[0] } }),
-        syncCbFn({ data: { shop_id: shopIds[0] } }),
-        syncRefundsFn({ data: { shop_id: shopIds[0] } }).catch(() => null),
-        syncAdsFn({ data: { shop_id: shopIds[0], since_days: sinceDays } }).catch(() => null),
-      ]);
+      const results = await Promise.all(
+        shopIds.map((shopId) =>
+          Promise.all([
+            syncFeesFn({ data: { shop_id: shopId } }).catch(() => null),
+            syncCbFn({ data: { shop_id: shopId } }).catch(() => null),
+            syncRefundsFn({ data: { shop_id: shopId } }).catch(() => null),
+            syncAdsFn({ data: { shop_id: shopId, since_days: sinceDays } }).catch(() => null),
+          ])
+        )
+      );
       qc.invalidateQueries({ queryKey: ["shop-dashboard", cacheKey] });
-      const total = (fees?.synced ?? 0) + (cb?.synced ?? 0);
+      const total = results.flat().reduce((s, r: any) => s + (r?.synced ?? 0), 0);
       if (!silent || total > 0)
         toast.success(total > 0 ? `${total} lançamentos sincronizados` : "Tudo já sincronizado");
     } catch (e: any) {

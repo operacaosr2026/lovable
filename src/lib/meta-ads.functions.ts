@@ -190,6 +190,9 @@ function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d);
 }
+function isoDateInTimezone(offsetHours: number): string {
+  return new Date(Date.now() + offsetHours * 3600000).toISOString().slice(0, 10);
+}
 
 // ===== Integration config =====
 
@@ -312,7 +315,22 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
     if (!integ?.access_token || !integ.ad_account_id) throw new Error("Integração não configurada");
 
     const sinceDays = data.since_days ?? 30;
-    const today = isoDate(new Date());
+
+    // Fetch ad account timezone to compute "today" in the account's local time
+    let timezoneOffset = 0;
+    try {
+      const tzRes = await fetch(
+        `${META_GRAPH_API_BASE}/${integ.ad_account_id}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(integ.access_token)}`
+      );
+      const tzJson: any = await tzRes.json();
+      if (typeof tzJson?.timezone_offset_hours_utc === "number") {
+        timezoneOffset = tzJson.timezone_offset_hours_utc;
+      }
+    } catch {
+      // fallback to UTC
+    }
+
+    const today = isoDateInTimezone(timezoneOffset);
     const since = addDays(today, -sinceDays);
 
     // Check if specific campaigns are selected for this shop

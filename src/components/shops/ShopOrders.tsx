@@ -102,8 +102,8 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
   const isConsolidated = shopIds.length > 1;
   const cacheKey = shopIds.slice().sort().join(",");
   const qc = useQueryClient();
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return isoDate(d); });
-  const [to, setTo] = useState(() => isoDate(new Date()));
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 29); return d.toLocaleDateString("en-CA"); });
+  const [to, setTo] = useState(() => new Date().toLocaleDateString("en-CA"));
   const [openCost, setOpenCost] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

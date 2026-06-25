@@ -22,14 +22,23 @@ function daysBetween(from: string, to: string) {
 async function getShopifyCreds(_supabase: any, ownerId: string, shopify_store_id: string) {
   const { data, error } = await supabaseAdmin
     .from("shopify_stores")
-    .select("shop_domain,access_token")
+    .select("shop_domain,access_token,iana_timezone")
     .eq("user_id", ownerId)
     .eq("id", shopify_store_id)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Loja Shopify não encontrada");
   if (!data.access_token) throw new Error("Loja Shopify sem access_token");
-  return { domain: data.shop_domain as string, token: data.access_token as string };
+  return { domain: data.shop_domain as string, token: data.access_token as string, ianaTimezone: data.iana_timezone as string | null };
+}
+
+function shopifyLocalDate(created_at: string, ianaTimezone: string | null): string {
+  if (!ianaTimezone) return created_at.slice(0, 10);
+  try {
+    return new Date(created_at).toLocaleDateString("en-CA", { timeZone: ianaTimezone });
+  } catch {
+    return created_at.slice(0, 10);
+  }
 }
 
 async function fetchShopifyOrders(domain: string, token: string, sinceISO: string) {
@@ -255,13 +264,15 @@ export const connectShopifyStore = createServerFn({ method: "POST" })
     let domain = data.shop_domain.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
     if (!domain.includes(".")) domain = `${domain}.myshopify.com`;
 
-    // Validate credentials by calling Shopify
+    // Validate credentials and fetch store metadata (including timezone)
     const res = await fetch(`https://${domain}/admin/api/2024-10/shop.json`, {
       headers: { "X-Shopify-Access-Token": data.access_token, "Content-Type": "application/json" },
     });
     if (!res.ok) {
       throw new Error(`Falha ao conectar (${res.status}): verifique domínio e token`);
     }
+    const shopJson: any = await res.json();
+    const ianaTimezone: string | null = shopJson?.shop?.iana_timezone ?? null;
 
     // Upsert by (user_id, shop_domain): try update first, else insert
     const { data: existing } = await context.supabase.from("shopify_stores")
@@ -275,6 +286,7 @@ export const connectShopifyStore = createServerFn({ method: "POST" })
       installed_at: new Date().toISOString(),
       last_sync_status: "ok" as const,
       last_sync_error: null,
+      iana_timezone: ianaTimezone,
     };
 
     if (existing) {
@@ -375,7 +387,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
-    const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
+    const { domain, token, ianaTimezone } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const todayForSince = isoDate(new Date());
     const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
     const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
@@ -391,7 +403,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
           external_id: String(o.id),
           order_number: o.name ?? null,
           created_at_shopify: o.created_at,
-          order_date: (o.created_at as string).slice(0, 10),
+          order_date: shopifyLocalDate(o.created_at as string, ianaTimezone),
           items_count: items,
           revenue: Number(o.total_price ?? 0),
           currency: o.currency ?? null,
@@ -560,43 +572,51 @@ export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
-    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+    const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
 
     // Fetch balance transactions (fees per charge)
     const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
 
     // Only process transactions with a non-zero fee (charges, refunds, adjustments)
     const feeTxs = txs.filter((t: any) => Number(t.fee ?? 0) > 0);
+    if (!feeTxs.length) return { synced: 0, total_found: 0 };
 
-    // Load existing external IDs to avoid duplicates
     const extIds = feeTxs.map((t: any) => `shopify_fee_${t.id}`);
     const { data: existing } = await supabase.from("shop_cash_entries")
-      .select("mercury_transaction_id")
+      .select("id,mercury_transaction_id,date")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id)
       .in("mercury_transaction_id", extIds);
-    const existingSet = new Set((existing ?? []).map((r: any) => r.mercury_transaction_id));
+    const existingById = new Map((existing ?? []).map((r: any) => [r.mercury_transaction_id, r]));
 
-    const toInsert = feeTxs
-      .filter((t: any) => !existingSet.has(`shopify_fee_${t.id}`))
-      .map((t: any) => ({
-        user_id: ownerId,
-        shop_id: data.shop_id,
-        kind: "expense" as const,
-        amount: Math.abs(Number(t.fee)),
-        date: (t.processed_at as string).slice(0, 10),
-        category: FEES_CATEGORY,
-        description: `Taxa Shopify Payments · ${t.type ?? "charge"} #${t.source_id ?? t.id}`,
-        source: FEES_SOURCE,
-        mercury_transaction_id: `shopify_fee_${t.id}`,
-      }));
+    const toInsert: any[] = [];
+    const toUpdate: { id: string; date: string }[] = [];
+    for (const t of feeTxs) {
+      const extId = `shopify_fee_${t.id}`;
+      const correctDate = shopifyLocalDate(t.processed_at as string, ianaTimezone);
+      const ex = existingById.get(extId);
+      if (!ex) {
+        toInsert.push({
+          user_id: ownerId, shop_id: data.shop_id, kind: "expense" as const,
+          amount: Math.abs(Number(t.fee)), date: correctDate,
+          category: FEES_CATEGORY,
+          description: `Taxa Shopify Payments · ${t.type ?? "charge"} #${t.source_id ?? t.id}`,
+          source: FEES_SOURCE, mercury_transaction_id: extId,
+        });
+      } else if (ex.date !== correctDate) {
+        toUpdate.push({ id: ex.id, date: correctDate });
+      }
+    }
 
+    await ensureCategory(supabase, ownerId, data.shop_id, "expense", FEES_CATEGORY);
     if (toInsert.length) {
-      await ensureCategory(supabase, ownerId, data.shop_id, "expense", FEES_CATEGORY);
       const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
       if (error) throw new Error(error.message);
     }
+    for (const u of toUpdate) {
+      await supabase.from("shop_cash_entries").update({ date: u.date }).eq("id", u.id).eq("user_id", ownerId);
+    }
 
-    return { synced: toInsert.length, total_found: feeTxs.length };
+    return { synced: toInsert.length, updated: toUpdate.length, total_found: feeTxs.length };
   });
 
 export const syncShopifyChargebacks = createServerFn({ method: "POST" })
@@ -611,7 +631,7 @@ export const syncShopifyChargebacks = createServerFn({ method: "POST" })
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
-    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+    const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
 
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - data.since_days);
@@ -621,32 +641,40 @@ export const syncShopifyChargebacks = createServerFn({ method: "POST" })
 
     const extIds = disputes.map((d: any) => `shopify_dispute_${d.id}`);
     const { data: existing } = await supabase.from("shop_cash_entries")
-      .select("mercury_transaction_id")
+      .select("id,mercury_transaction_id,date")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id)
       .in("mercury_transaction_id", extIds);
-    const existingSet = new Set((existing ?? []).map((r: any) => r.mercury_transaction_id));
+    const existingById = new Map((existing ?? []).map((r: any) => [r.mercury_transaction_id, r]));
 
-    const toInsert = disputes
-      .filter((d: any) => !existingSet.has(`shopify_dispute_${d.id}`))
-      .map((d: any) => ({
-        user_id: ownerId,
-        shop_id: data.shop_id,
-        kind: "expense" as const,
-        amount: Math.abs(Number(d.amount ?? 0)),
-        date: (d.initiated_at as string).slice(0, 10),
-        category: CHARGEBACK_CATEGORY,
-        description: `Chargeback · ${d.reason ?? "dispute"} · ${d.status ?? ""}`,
-        source: FEES_SOURCE,
-        mercury_transaction_id: `shopify_dispute_${d.id}`,
-      }));
+    const toInsert: any[] = [];
+    const toUpdate: { id: string; date: string }[] = [];
+    for (const d of disputes) {
+      const extId = `shopify_dispute_${d.id}`;
+      const correctDate = shopifyLocalDate(d.initiated_at as string, ianaTimezone);
+      const ex = existingById.get(extId);
+      if (!ex) {
+        toInsert.push({
+          user_id: ownerId, shop_id: data.shop_id, kind: "expense" as const,
+          amount: Math.abs(Number(d.amount ?? 0)), date: correctDate,
+          category: CHARGEBACK_CATEGORY,
+          description: `Chargeback · ${d.reason ?? "dispute"} · ${d.status ?? ""}`,
+          source: FEES_SOURCE, mercury_transaction_id: extId,
+        });
+      } else if (ex.date !== correctDate) {
+        toUpdate.push({ id: ex.id, date: correctDate });
+      }
+    }
 
+    await ensureCategory(supabase, ownerId, data.shop_id, "expense", CHARGEBACK_CATEGORY);
     if (toInsert.length) {
-      await ensureCategory(supabase, ownerId, data.shop_id, "expense", CHARGEBACK_CATEGORY);
       const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
       if (error) throw new Error(error.message);
     }
+    for (const u of toUpdate) {
+      await supabase.from("shop_cash_entries").update({ date: u.date }).eq("id", u.id).eq("user_id", ownerId);
+    }
 
-    return { synced: toInsert.length };
+    return { synced: toInsert.length, updated: toUpdate.length };
   });
 
 export const syncShopifyRefunds = createServerFn({ method: "POST" })
@@ -661,7 +689,7 @@ export const syncShopifyRefunds = createServerFn({ method: "POST" })
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
-    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+    const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
 
     const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
     const refundTxs = txs.filter((t: any) => t.type === "refund" && Math.abs(Number(t.amount ?? 0)) > 0);
@@ -670,32 +698,40 @@ export const syncShopifyRefunds = createServerFn({ method: "POST" })
 
     const extIds = refundTxs.map((t: any) => `shopify_refund_${t.id}`);
     const { data: existing } = await supabase.from("shop_cash_entries")
-      .select("mercury_transaction_id")
+      .select("id,mercury_transaction_id,date")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id)
       .in("mercury_transaction_id", extIds);
-    const existingSet = new Set((existing ?? []).map((r: any) => r.mercury_transaction_id));
+    const existingById = new Map((existing ?? []).map((r: any) => [r.mercury_transaction_id, r]));
 
-    const toInsert = refundTxs
-      .filter((t: any) => !existingSet.has(`shopify_refund_${t.id}`))
-      .map((t: any) => ({
-        user_id: ownerId,
-        shop_id: data.shop_id,
-        kind: "expense" as const,
-        amount: Math.abs(Number(t.amount ?? 0)),
-        date: (t.processed_at as string).slice(0, 10),
-        category: REFUND_CATEGORY,
-        description: `Reembolso Shopify · pedido #${t.source_id ?? t.id}`,
-        source: FEES_SOURCE,
-        mercury_transaction_id: `shopify_refund_${t.id}`,
-      }));
+    const toInsert: any[] = [];
+    const toUpdate: { id: string; date: string }[] = [];
+    for (const t of refundTxs) {
+      const extId = `shopify_refund_${t.id}`;
+      const correctDate = shopifyLocalDate(t.processed_at as string, ianaTimezone);
+      const ex = existingById.get(extId);
+      if (!ex) {
+        toInsert.push({
+          user_id: ownerId, shop_id: data.shop_id, kind: "expense" as const,
+          amount: Math.abs(Number(t.amount ?? 0)), date: correctDate,
+          category: REFUND_CATEGORY,
+          description: `Reembolso Shopify · pedido #${t.source_id ?? t.id}`,
+          source: FEES_SOURCE, mercury_transaction_id: extId,
+        });
+      } else if (ex.date !== correctDate) {
+        toUpdate.push({ id: ex.id, date: correctDate });
+      }
+    }
 
+    await ensureCategory(supabase, ownerId, data.shop_id, "expense", REFUND_CATEGORY);
     if (toInsert.length) {
-      await ensureCategory(supabase, ownerId, data.shop_id, "expense", REFUND_CATEGORY);
       const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
       if (error) throw new Error(error.message);
     }
+    for (const u of toUpdate) {
+      await supabase.from("shop_cash_entries").update({ date: u.date }).eq("id", u.id).eq("user_id", ownerId);
+    }
 
-    return { synced: toInsert.length };
+    return { synced: toInsert.length, updated: toUpdate.length };
   });
 
 export const getShopifyPendingBalance = createServerFn({ method: "GET" })
@@ -812,11 +848,13 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const { data: settingsRows } = await supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
       .eq("user_id", ownerId).in("shop_id", shop_ids);
     const costByShop = new Map((settingsRows ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
-    const avgCost = costByShop.size ? Array.from(costByShop.values()).reduce((a, b) => a + b, 0) / costByShop.size : 0;
+    const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
+    const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
 
     const productCost = (orders ?? []).reduce((s: number, o: any) => {
       const items = Number(o.items_count ?? 0);
-      return s + items * (costByShop.get(o.shop_id) ?? avgCost);
+      const shopCost = costByShop.get(o.shop_id);
+      return s + items * (shopCost != null && shopCost > 0 ? shopCost : avgCost);
     }, 0);
 
     const { data: adRows, error: adErr } = await supabase
@@ -1317,7 +1355,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const orders = ordersRes.data ?? [];
     const prevOrders = prevOrdersRes.data ?? [];
     const costByShop = new Map((settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
-    const avgCost = costByShop.size ? Array.from(costByShop.values()).reduce((a, b) => a + b, 0) / costByShop.size : 0;
+    const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
+    const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
     const unitCost = avgCost;
 
     // Taxas, chargebacks, reembolsos e anúncios
@@ -1330,7 +1369,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const anuncios       = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
     const prevAnuncios   = (prevAdsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
 
-    function orderCost(o: any) { return Number(o.items_count ?? 0) * (costByShop.get((o as any).shop_id) ?? avgCost); }
+    function orderCost(o: any) {
+      const shopCost = costByShop.get((o as any).shop_id);
+      return Number(o.items_count ?? 0) * (shopCost != null && shopCost > 0 ? shopCost : avgCost);
+    }
 
     // Current period
     const faturamentoBruto = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
