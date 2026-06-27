@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen,
+  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -63,6 +63,7 @@ const navGroups: NavGroup[] = [
           { to: "/shops/products", label: "Produtos", icon: Package },
           { to: "/shops/grupos", label: "Grupos", icon: Users },
           { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
+          { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
         ],
       },
       { to: "/shops/sops", label: "SOPs & Processos", icon: Network, section: "sops" },
@@ -87,6 +88,7 @@ const ALL_PAGES = [
   { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/shops/grupos", label: "Grupos", icon: Users },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
+  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
   { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },

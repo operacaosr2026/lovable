@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -6,9 +6,12 @@ import {
   useDroppable, useDraggable,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronDown, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check } from "lucide-react";
+import { Plus, Trash2, ChevronDown, X, Wallet, TrendingUp, TrendingDown, Repeat, Pencil, Check, RefreshCw, Calendar as CalendarIcon } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -18,7 +21,7 @@ import {
   setOpeningBalance, setWeekendRule,
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
 } from "@/lib/shop-cash.functions";
-import { getShopifyPendingBalance, getMonthlyProfit, getShopifyPayoutLag } from "@/lib/shop-orders.functions";
+import { getShopifyPendingBalance, getMonthlyProfit, getShopifyPayoutLag, syncShopifyPayouts, setPayoutLagDays, getGroupShopifyPayoutLag, getGroupShopifyPendingBalance } from "@/lib/shop-orders.functions";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
 type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null };
@@ -79,7 +82,7 @@ function fmtMoneyCompact(n: number) {
 }
 const WEEKDAYS_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
-export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
+export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { id: string; name: string }[] }) {
   const shopId = shopIds[0];
   const isConsolidated = shopIds.length > 1;
   const cacheKey = shopIds.slice().sort().join(",");
@@ -93,11 +96,26 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
   const pendingFn = useServerFn(getShopifyPendingBalance);
   const monthlyProfitFn = useServerFn(getMonthlyProfit);
   const payoutLagFn = useServerFn(getShopifyPayoutLag);
+  const syncPayoutsFn = useServerFn(syncShopifyPayouts);
+  const setLagDaysFn = useServerFn(setPayoutLagDays);
+  const groupPayoutLagFn = useServerFn(getGroupShopifyPayoutLag);
+  const groupPendingFn = useServerFn(getGroupShopifyPendingBalance);
   const { data: payoutLag } = useQuery({
     queryKey: ["shop-payout-lag", cacheKey],
     queryFn: () => payoutLagFn({ data: { shop_id: shopId } }),
     staleTime: 5 * 60_000,
     enabled: !isConsolidated,
+  });
+  const { data: groupPayoutLags } = useQuery({
+    queryKey: ["shop-group-payout-lag", cacheKey],
+    queryFn: () => groupPayoutLagFn({ data: { shop_ids: shopIds } }),
+    staleTime: 5 * 60_000,
+    enabled: isConsolidated,
+  });
+  const { data: groupPendingData } = useQuery({
+    queryKey: ["shop-group-cash-pending", cacheKey],
+    queryFn: () => groupPendingFn({ data: { shop_ids: shopIds } }),
+    enabled: isConsolidated,
   });
 
   const queryKey = ["shop-cash", cacheKey];
@@ -108,11 +126,55 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
   const refresh = () => qc.invalidateQueries({ queryKey });
   const refreshCats = () => qc.invalidateQueries({ queryKey: catsKey });
 
+  const [syncing, setSyncing] = useState(false);
+  const [editingLag, setEditingLag] = useState(false);
+  const [lagInput, setLagInput] = useState("");
+
+  const saveLagDays = async (days: number) => {
+    if (!shopId) return;
+    try {
+      await setLagDaysFn({ data: { shop_id: shopId, days } });
+      qc.invalidateQueries({ queryKey: ["shop-payout-lag", cacheKey] });
+      setEditingLag(false);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao salvar período de repasse");
+    }
+  };
+
+  const syncPayouts = async () => {
+    setSyncing(true);
+    try {
+      if (isConsolidated) {
+        let total = 0;
+        for (const id of shopIds) {
+          const result = await syncPayoutsFn({ data: { shop_id: id, since_days: 90 } });
+          total += result?.synced ?? 0;
+        }
+        qc.invalidateQueries({ queryKey });
+        qc.invalidateQueries({ queryKey: ["shop-group-cash-pending", cacheKey] });
+        toast.success(total ? `${total} depósitos sincronizados` : "Depósitos já atualizados");
+      } else {
+        const result = await syncPayoutsFn({ data: { shop_id: shopId, since_days: 90 } });
+        qc.invalidateQueries({ queryKey });
+        qc.invalidateQueries({ queryKey: ["shop-cash-pending", cacheKey] });
+        toast.success(result?.synced ? `${result.synced} depósitos sincronizados` : "Depósitos já atualizados");
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao sincronizar depósitos");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const allCats = (catsQuery.data ?? []) as { id: string; kind: "income" | "expense"; name: string }[];
   const incomeCats = useMemo(() => allCats.filter(c => c.kind === "income").map(c => c.name), [allCats]);
   const expenseCats = useMemo(() => allCats.filter(c => c.kind === "expense").map(c => c.name), [allCats]);
 
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [rangeFrom, setRangeFrom] = useState<string | null>(null);
+  const [rangeTo, setRangeTo] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerRange, setPickerRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
+  const pickerFromRef = useRef<Date | undefined>(undefined);
   const [showPending, setShowPending] = useState(false);
   const [quickAdd, setQuickAdd] = useState<{ date: string; kind: "income" | "expense" } | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -148,15 +210,19 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
   });
 
   const dayList = useMemo(() => {
+    if (rangeFrom && rangeTo) {
+      const arr: string[] = [];
+      let d = rangeFrom;
+      while (d <= rangeTo) { arr.push(d); d = addDaysToKey(d, 1); }
+      return arr;
+    }
     const wd = weekdayFromKey(todayKey);
     const mondayOffset = wd === 0 ? -6 : -(wd - 1);
-    const weekStart = addDaysToKey(todayKey, mondayOffset + weekOffset * 7);
+    const weekStart = addDaysToKey(todayKey, mondayOffset);
     const arr: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      arr.push(addDaysToKey(weekStart, i));
-    }
+    for (let i = 0; i < 7; i++) arr.push(addDaysToKey(weekStart, i));
     return arr;
-  }, [todayKey, weekOffset]);
+  }, [todayKey, rangeFrom, rangeTo]);
 
   // Expand recurring entries up to a horizon (today + 60 days or end of view)
   const horizon = useMemo(() => {
@@ -186,6 +252,7 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
     };
     const out: DayItem[] = [];
     for (const e of entries) {
+      if (e.source === "shopify_pending_sync" && !showPending) continue;
       const rec = (e.recurrence ?? "none") as Recurrence;
       if (rec === "none") { out.push(applyShift(e)); continue; }
       const stop = e.recurrence_until && e.recurrence_until < horizon ? e.recurrence_until : horizon;
@@ -199,22 +266,8 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
         i++;
       }
     }
-    if (showPending) {
-      for (const p of pendingQuery.data?.items ?? []) {
-        out.push(applyShift({
-          id: p.id,
-          kind: "income",
-          amount: p.amount,
-          date: p.date,
-          category: "Depósitos pendentes (Shopify)",
-          description: null,
-          source: "shopify_pending",
-          import_id: null,
-        }));
-      }
-    }
     return out;
-  }, [entries, horizon, weekendToMonday, showPending, pendingQuery.data?.items]);
+  }, [entries, horizon, weekendToMonday, showPending]);
 
   const saldoBeforeRange = useMemo(() => {
     const first = dayList[0] ?? todayKey;
@@ -290,8 +343,13 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
   const weekendMut = useMutation({ mutationFn: (enabled: boolean) => weekendFn({ data: { shop_id: shopId, enabled } }), onSuccess: refresh });
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
-  const receivable = pendingQuery.data?.connected
-    ? (pendingQuery.data.balance ?? pendingQuery.data.pending)
+  const effectivePending = isConsolidated ? groupPendingData : pendingQuery.data;
+  const connectedShopsLag = isConsolidated
+    ? (groupPayoutLags ?? []).filter(s => s.connected)
+    : (payoutLag?.connected ? [{ shop_id: shopId, avgDays: payoutLag.avgDays, manualDays: payoutLag.manualDays, sampleSize: payoutLag.sampleSize }] : []);
+
+  const receivable = effectivePending?.connected
+    ? ((effectivePending as any).balance ?? effectivePending.pending ?? 0)
     : future.totalIncome;
   const forecastBalance = future.current + receivable - future.totalExpense
     - adjustments.aporteRodrigo - adjustments.aporteSergio
@@ -319,7 +377,7 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
             ) : undefined}
           />
           <Indicator icon={TrendingDown} label="Saídas previstas (30d)" value={fmtMoney(future.totalExpense)} accent="oklch(0.6 0.18 25)" />
-          {pendingQuery.data?.connected ? (
+          {effectivePending?.connected ? (
             <Indicator icon={TrendingUp} label="A receber (Shopify)" value={fmtMoney(receivable)} accent="oklch(0.6 0.13 230)" />
           ) : (
             <Indicator icon={TrendingUp} label="Entradas previstas (30d)" value={fmtMoney(receivable)} accent="oklch(0.55 0.13 155)" />
@@ -342,18 +400,75 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex items-center rounded-lg border border-border bg-surface">
-          <button onClick={() => setWeekOffset(o => o - 1)} className="p-2 hover:bg-accent rounded-l-lg"><ChevronLeft className="size-4" /></button>
-          <button onClick={() => setWeekOffset(0)} className="px-3 text-xs">Hoje</button>
-          <button onClick={() => setWeekOffset(o => o + 1)} className="p-2 hover:bg-accent rounded-r-lg"><ChevronRight className="size-4" /></button>
-        </div>
+        <Popover open={pickerOpen} onOpenChange={(open) => {
+          setPickerOpen(open);
+          if (open) { setPickerRange({ from: undefined, to: undefined }); pickerFromRef.current = undefined; }
+        }}>
+          <PopoverTrigger asChild>
+            <button className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs hover:bg-accent transition-colors">
+              <CalendarIcon className="size-3.5 text-muted-foreground" />
+              {rangeFrom && rangeTo
+                ? rangeFrom === rangeTo
+                  ? formatDateKey(rangeFrom, { day: "2-digit", month: "short" })
+                  : `${formatDateKey(rangeFrom, { day: "2-digit", month: "short" })} – ${formatDateKey(rangeTo, { day: "2-digit", month: "short" })}`
+                : "Semana atual"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="range"
+              selected={pickerRange}
+              onSelect={(range) => {
+                if (!range?.from && pickerFromRef.current) {
+                  // Segundo clique na mesma data → dia único
+                  const d = pickerFromRef.current;
+                  const key = dateKey(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+                  setRangeFrom(key); setRangeTo(key);
+                  setPickerOpen(false); return;
+                }
+                setPickerRange({ from: range?.from, to: range?.to });
+                pickerFromRef.current = range?.from;
+                if (range?.from && range?.to) {
+                  setRangeFrom(dateKey(range.from.getUTCFullYear(), range.from.getUTCMonth() + 1, range.from.getUTCDate()));
+                  setRangeTo(dateKey(range.to.getUTCFullYear(), range.to.getUTCMonth() + 1, range.to.getUTCDate()));
+                  setPickerOpen(false);
+                }
+              }}
+            />
+            <div className="p-2 border-t flex justify-end">
+              <button
+                onClick={() => { setRangeFrom(null); setRangeTo(null); setPickerOpen(false); }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Semana atual
+              </button>
+            </div>
+          </PopoverContent>
+        </Popover>
         <div className="flex-1" />
-        {payoutLag?.connected && payoutLag.avgDays != null && (
-          <span className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400" title="Tempo médio de repasse da Shopify Payments">
-            D+{Math.round(payoutLag.avgDays)}
-          </span>
+        {connectedShopsLag.length > 0 && (() => {
+          const days = connectedShopsLag.map(s => s.avgDays != null ? Math.round(s.avgDays) : null).filter((d): d is number => d != null);
+          if (days.length === 0) return null;
+          const min = Math.min(...days);
+          const max = Math.max(...days);
+          const label = min === max ? `D+${min}` : `D+${min}–${max}`;
+          return (
+            <span className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400" title="Tempo médio de repasse da Shopify Payments">
+              {label}
+            </span>
+          );
+        })()}
+        <div className="flex-1" />
+        {(effectivePending?.connected || connectedShopsLag.length > 0) && (
+          <button
+            onClick={syncPayouts}
+            disabled={syncing}
+            className="p-2 rounded-lg border border-border hover:border-primary/30 bg-card hover:bg-accent disabled:opacity-50 transition-all"
+            title="Sincronizar depósitos Shopify"
+          >
+            <RefreshCw className={`size-3.5 text-muted-foreground ${syncing ? "animate-spin" : ""}`} />
+          </button>
         )}
-        <div className="flex-1" />
         {!isConsolidated && (
           <>
             <Button variant="outline" size="sm" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setQuickAdd({ date: todayKey, kind: "income" })}>
@@ -389,6 +504,66 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
               />
               <span>Mostrar pendentes</span>
             </label>
+            {connectedShopsLag.length > 0 && (
+              <div className="px-2 py-2 border-t border-border mt-1">
+                <p className="text-xs text-muted-foreground mb-1.5">Período de repasse (pendentes)</p>
+                {!isConsolidated && payoutLag?.connected && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium">D+</span>
+                    {editingLag ? (
+                      <>
+                        <input
+                          type="number"
+                          min={1}
+                          max={30}
+                          className="w-14 text-xs text-center rounded border border-border bg-background px-1 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                          value={lagInput}
+                          onChange={(e) => setLagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { const n = parseInt(lagInput); if (n >= 1 && n <= 30) saveLagDays(n); }
+                            if (e.key === "Escape") setEditingLag(false);
+                          }}
+                          autoFocus
+                        />
+                        <button onClick={() => { const n = parseInt(lagInput); if (n >= 1 && n <= 30) saveLagDays(n); }} className="p-1 rounded hover:bg-accent" title="Salvar">
+                          <Check className="size-3 text-emerald-600" />
+                        </button>
+                        <button onClick={() => setEditingLag(false)} className="p-1 rounded hover:bg-accent" title="Cancelar">
+                          <X className="size-3 text-muted-foreground" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs font-semibold">
+                          {payoutLag.manualDays ?? (payoutLag.avgDays != null ? Math.round(payoutLag.avgDays) : "—")}
+                        </span>
+                        <span className="text-xs text-muted-foreground">dias</span>
+                        <button
+                          onClick={() => { setLagInput(String(payoutLag.manualDays ?? (payoutLag.avgDays != null ? Math.round(payoutLag.avgDays) : 7))); setEditingLag(true); }}
+                          className="p-1 rounded hover:bg-accent ml-auto"
+                          title="Editar"
+                        >
+                          <Pencil className="size-3 text-muted-foreground" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {isConsolidated && connectedShopsLag.map(s => (
+                  <PerShopLagEditor
+                    key={s.shop_id}
+                    shopId={s.shop_id}
+                    shopName={shops?.find(sh => sh.id === s.shop_id)?.name ?? s.shop_id.slice(0, 8)}
+                    avgDays={s.avgDays}
+                    manualDays={s.manualDays}
+                    onSave={async (days) => {
+                      await setLagDaysFn({ data: { shop_id: s.shop_id, days } });
+                      qc.invalidateQueries({ queryKey: ["shop-group-payout-lag", cacheKey] });
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </PopoverContent>
         </Popover>
       </div>
@@ -412,7 +587,7 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
         }}
       >
         <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
-          <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(130px, 1fr)) 92px 92px", gridTemplateRows: "auto 170px 170px auto", minWidth: 860 }}>
+          <div className="grid" style={{ gridTemplateColumns: dayList.map(d => { const wd = weekdayFromKey(d); return (wd === 0 || wd === 6) ? "92px" : "minmax(130px, 1fr)"; }).join(" "), gridTemplateRows: "auto 170px 170px auto", minWidth: dayList.length * 92 }}>
             {dayData.map((dd) => {
               const weekday = weekdayFromKey(dd.key);
               const isToday = dd.key === todayKey;
@@ -491,6 +666,46 @@ export function ShopCashflow({ shopIds }: { shopIds: string[] }) {
         />
       )}
 
+    </div>
+  );
+}
+
+function PerShopLagEditor({ shopId, shopName, avgDays, manualDays, onSave }: {
+  shopId: string; shopName: string;
+  avgDays: number | null; manualDays: number | null;
+  onSave: (days: number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState("");
+  const save = async () => {
+    const n = parseInt(input);
+    if (n >= 1 && n <= 30) { await onSave(n); setEditing(false); }
+  };
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{shopName}</span>
+      <span className="text-xs font-medium shrink-0">D+</span>
+      {editing ? (
+        <>
+          <input
+            type="number" min={1} max={30}
+            className="w-12 text-xs text-center rounded border border-border bg-background px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+            autoFocus
+          />
+          <button onClick={save} className="p-1 rounded hover:bg-accent" title="Salvar"><Check className="size-3 text-emerald-600" /></button>
+          <button onClick={() => setEditing(false)} className="p-1 rounded hover:bg-accent" title="Cancelar"><X className="size-3 text-muted-foreground" /></button>
+        </>
+      ) : (
+        <>
+          <span className="text-xs font-semibold shrink-0">{manualDays ?? (avgDays != null ? Math.round(avgDays) : "—")}</span>
+          <button onClick={() => { setInput(String(manualDays ?? (avgDays != null ? Math.round(avgDays) : 7))); setEditing(true); }} className="p-1 rounded hover:bg-accent" title="Editar">
+            <Pencil className="size-3 text-muted-foreground" />
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ export const listShopCash = createServerFn({ method: "GET" })
     const [entries, imports, shops] = await Promise.all([
       context.supabase.from("shop_cash_entries").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
+        .neq("source", "shopify_fees_sync")
         .order("date", { ascending: true }),
       context.supabase.from("shop_cash_imports").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)

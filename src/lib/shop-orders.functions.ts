@@ -540,15 +540,66 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       }).eq("id", id).eq("user_id", context.ownerId);
     }
 
-    return { synced: relevant.length };
+    // ---------- Transações pendentes ----------
+    // Usa payout_id da transação para buscar a data real do payout quando disponível.
+    // Para transações sem payout ainda, estima com o período manual (payout_lag_days),
+    // fallback para o lag calculado automaticamente, ou D+7 se nenhum disponível.
+    const lagDays = settings.payout_lag_days != null
+      ? Number(settings.payout_lag_days)
+      : settings.payout_lag_avg_days != null
+        ? Math.round(Number(settings.payout_lag_avg_days))
+        : 7;
+
+    // Mapa payout_id → date a partir dos payouts já buscados
+    const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
+
+    const transactions = await fetchShopifyBalanceTransactions(domain, token, 3);
+    // Exclui transações cujo payout já foi sincronizado como entrada real (in_transit, scheduled, paid)
+    const pendingTx = transactions.filter((t: any) =>
+      t.payout_status === "pending" &&
+      (t.payout_id == null || !payoutDateById.has(String(t.payout_id)))
+    );
+
+    // Remove provisórios antigos e recria com dados atuais
+    await context.supabase.from("shop_cash_entries").delete()
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .eq("source", "shopify_pending_sync");
+
+    if (pendingTx.length) {
+      const byDate = new Map<string, number>();
+      for (const t of pendingTx) {
+        // Se a transação já tem um payout_id, usa a data real; senão estima com lag
+        const realDate = t.payout_id ? payoutDateById.get(String(t.payout_id)) : null;
+        let key: string;
+        if (realDate) {
+          key = realDate;
+        } else {
+          const d = new Date(t.processed_at);
+          d.setUTCDate(d.getUTCDate() + lagDays);
+          key = d.toISOString().slice(0, 10);
+        }
+        byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
+      }
+      const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
+        user_id: context.ownerId,
+        shop_id: data.shop_id,
+        kind: "income" as const,
+        amount,
+        date,
+        category: PAYOUT_CATEGORY,
+        description: `Payout Shopify · previsto`,
+        source: "shopify_pending_sync",
+      }));
+      await context.supabase.from("shop_cash_entries").insert(provisionals);
+    }
+
+    return { synced: relevant.length + pendingTx.length };
   });
 
-// ---------- Shopify Payments — taxas e chargebacks ----------
+// ---------- Shopify Payments — taxas (apenas para KPI, não aparecem no caixa) ----------
 
-const FEES_CATEGORY      = "Taxas Shopify";
-const CHARGEBACK_CATEGORY = "Chargeback";
-const REFUND_CATEGORY    = "Reembolso";
-const FEES_SOURCE         = "shopify_fees_sync";
+const FEES_CATEGORY = "Taxas Shopify";
+const FEES_SOURCE   = "shopify_fees_sync";
 
 async function ensureCategory(supabase: any, ownerId: string, shopId: string, kind: "expense" | "income", name: string) {
   const { data } = await supabase.from("shop_cash_categories").select("id")
@@ -573,11 +624,7 @@ export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
     const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
-
-    // Fetch balance transactions (fees per charge)
     const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
-
-    // Only process transactions with a non-zero fee (charges, refunds, adjustments)
     const feeTxs = txs.filter((t: any) => Number(t.fee ?? 0) > 0);
     if (!feeTxs.length) return { synced: 0, total_found: 0 };
 
@@ -619,121 +666,6 @@ export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
     return { synced: toInsert.length, updated: toUpdate.length, total_found: feeTxs.length };
   });
 
-export const syncShopifyChargebacks = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
-    since_days: z.number().int().min(1).max(365).default(90),
-  }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase, ownerId } = context;
-    const { data: settings } = await supabase.from("shop_order_settings").select("*")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
-
-    const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
-
-    const since = new Date();
-    since.setUTCDate(since.getUTCDate() - data.since_days);
-    const disputes = await fetchShopifyDisputes(domain, token, since.toISOString());
-
-    if (!disputes.length) return { synced: 0 };
-
-    const extIds = disputes.map((d: any) => `shopify_dispute_${d.id}`);
-    const { data: existing } = await supabase.from("shop_cash_entries")
-      .select("id,mercury_transaction_id,date")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id)
-      .in("mercury_transaction_id", extIds);
-    const existingById = new Map((existing ?? []).map((r: any) => [r.mercury_transaction_id, r]));
-
-    const toInsert: any[] = [];
-    const toUpdate: { id: string; date: string }[] = [];
-    for (const d of disputes) {
-      const extId = `shopify_dispute_${d.id}`;
-      const correctDate = shopifyLocalDate(d.initiated_at as string, ianaTimezone);
-      const ex = existingById.get(extId);
-      if (!ex) {
-        toInsert.push({
-          user_id: ownerId, shop_id: data.shop_id, kind: "expense" as const,
-          amount: Math.abs(Number(d.amount ?? 0)), date: correctDate,
-          category: CHARGEBACK_CATEGORY,
-          description: `Chargeback · ${d.reason ?? "dispute"} · ${d.status ?? ""}`,
-          source: FEES_SOURCE, mercury_transaction_id: extId,
-        });
-      } else if (ex.date !== correctDate) {
-        toUpdate.push({ id: ex.id, date: correctDate });
-      }
-    }
-
-    await ensureCategory(supabase, ownerId, data.shop_id, "expense", CHARGEBACK_CATEGORY);
-    if (toInsert.length) {
-      const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
-      if (error) throw new Error(error.message);
-    }
-    for (const u of toUpdate) {
-      await supabase.from("shop_cash_entries").update({ date: u.date }).eq("id", u.id).eq("user_id", ownerId);
-    }
-
-    return { synced: toInsert.length, updated: toUpdate.length };
-  });
-
-export const syncShopifyRefunds = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
-    pages: z.number().int().min(1).max(20).default(5),
-  }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase, ownerId } = context;
-    const { data: settings } = await supabase.from("shop_order_settings").select("*")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
-
-    const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
-
-    const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
-    const refundTxs = txs.filter((t: any) => t.type === "refund" && Math.abs(Number(t.amount ?? 0)) > 0);
-
-    if (!refundTxs.length) return { synced: 0 };
-
-    const extIds = refundTxs.map((t: any) => `shopify_refund_${t.id}`);
-    const { data: existing } = await supabase.from("shop_cash_entries")
-      .select("id,mercury_transaction_id,date")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id)
-      .in("mercury_transaction_id", extIds);
-    const existingById = new Map((existing ?? []).map((r: any) => [r.mercury_transaction_id, r]));
-
-    const toInsert: any[] = [];
-    const toUpdate: { id: string; date: string }[] = [];
-    for (const t of refundTxs) {
-      const extId = `shopify_refund_${t.id}`;
-      const correctDate = shopifyLocalDate(t.processed_at as string, ianaTimezone);
-      const ex = existingById.get(extId);
-      if (!ex) {
-        toInsert.push({
-          user_id: ownerId, shop_id: data.shop_id, kind: "expense" as const,
-          amount: Math.abs(Number(t.amount ?? 0)), date: correctDate,
-          category: REFUND_CATEGORY,
-          description: `Reembolso Shopify · pedido #${t.source_id ?? t.id}`,
-          source: FEES_SOURCE, mercury_transaction_id: extId,
-        });
-      } else if (ex.date !== correctDate) {
-        toUpdate.push({ id: ex.id, date: correctDate });
-      }
-    }
-
-    await ensureCategory(supabase, ownerId, data.shop_id, "expense", REFUND_CATEGORY);
-    if (toInsert.length) {
-      const { error } = await supabase.from("shop_cash_entries").insert(toInsert);
-      if (error) throw new Error(error.message);
-    }
-    for (const u of toUpdate) {
-      await supabase.from("shop_cash_entries").update({ date: u.date }).eq("id", u.id).eq("user_id", ownerId);
-    }
-
-    return { synced: toInsert.length, updated: toUpdate.length };
-  });
-
 export const getShopifyPendingBalance = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
@@ -744,37 +676,23 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const paymentsBalance = await fetchShopifyPaymentsBalance(domain, token);
-    // Transações vêm ordenadas das mais recentes para as mais antigas; as ainda não
-    // incluídas em payout (payout_status "pending") ficam sempre entre as mais recentes.
-    const transactions = await fetchShopifyBalanceTransactions(domain, token, 10);
-    const pendingTx = transactions.filter((t: any) => t.payout_status === "pending");
-    const pendingFromTx = pendingTx.reduce((s, t: any) => s + Number(t.net ?? 0), 0);
+    const currency = paymentsBalance?.currency ?? null;
+    const balance = paymentsBalance?.amount ?? null;
 
-    // Payouts já criados pela Shopify mas ainda não depositados (agendados/em trânsito/previstos)
-    // representam dinheiro a receber que não aparece mais em balance/transactions com
-    // payout_id null. Eles já entram no caixa como lançamentos sincronizados (shopify_sync),
-    // então somamos só ao total "a receber".
-    const since = new Date(); since.setUTCDate(since.getUTCDate() - 14);
-    const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
-    let scheduledTotal = 0;
-    for (const p of payouts) {
-      if (p.id == null || !["scheduled", "in_transit", "pending"].includes(p.status)) continue;
-      scheduledTotal += Number(p.amount ?? 0);
-    }
+    // Payouts já sincronizados no banco com datas reais da Shopify
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: upcomingEntries } = await context.supabase.from("shop_cash_entries")
+      .select("shopify_payout_id,date,amount")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .eq("source", "shopify_sync")
+      .not("shopify_payout_id", "is", null)
+      .gte("date", today)
+      .order("date", { ascending: true });
 
-    const pending = pendingFromTx + scheduledTotal;
-    const currency = paymentsBalance?.currency ?? pendingTx[0]?.currency ?? transactions[0]?.currency ?? null;
-    const balance = paymentsBalance?.amount ?? pending;
-
-    // Estimativa de disponibilização: a Shopify não expõe essa data pela API,
-    // então usamos processado + 10 dias (D+10) por transação, somando as que
-    // caem no mesmo dia estimado.
     const byDate = new Map<string, number>();
-    for (const t of pendingTx) {
-      const d = new Date(t.processed_at);
-      d.setUTCDate(d.getUTCDate() + 10);
-      const key = d.toISOString().slice(0, 10);
-      byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
+    for (const e of upcomingEntries ?? []) {
+      const key = e.date as string;
+      byDate.set(key, (byDate.get(key) ?? 0) + Number(e.amount ?? 0));
     }
     const items = Array.from(byDate.entries()).map(([date, amount]) => ({
       id: `shopify-pending-${date}`,
@@ -782,6 +700,7 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
       amount,
       currency,
     }));
+    const pending = items.reduce((s, i) => s + i.amount, 0);
 
     return { connected: true, pending, balance, currency, items };
   });
@@ -817,14 +736,75 @@ export const getShopifyPayoutLag = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: settings } = await context.supabase.from("shop_order_settings")
-      .select("shopify_store_id,payout_lag_avg_days,payout_lag_sample_size")
+      .select("shopify_store_id,payout_lag_avg_days,payout_lag_sample_size,payout_lag_days")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!settings?.shopify_store_id) return { connected: false, avgDays: null, sampleSize: 0 };
+    if (!settings?.shopify_store_id) return { connected: false, avgDays: null, sampleSize: 0, manualDays: null };
     return {
       connected: true,
       avgDays: settings.payout_lag_avg_days != null ? Number(settings.payout_lag_avg_days) : null,
       sampleSize: settings.payout_lag_sample_size ?? 0,
+      manualDays: settings.payout_lag_days != null ? Number(settings.payout_lag_days) : null,
     };
+  });
+
+export const setPayoutLagDays = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    days: z.number().int().min(1).max(30).nullable(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase.from("shop_order_settings")
+      .update({ payout_lag_days: data.days })
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getGroupShopifyPayoutLag = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: rows } = await context.supabase.from("shop_order_settings")
+      .select("shop_id,shopify_store_id,payout_lag_avg_days,payout_lag_sample_size,payout_lag_days")
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
+    return (rows ?? []).map(s => ({
+      shop_id: s.shop_id as string,
+      connected: Boolean(s.shopify_store_id),
+      avgDays: s.payout_lag_avg_days != null ? Number(s.payout_lag_avg_days) : null,
+      sampleSize: s.payout_lag_sample_size ?? 0,
+      manualDays: s.payout_lag_days != null ? Number(s.payout_lag_days) : null,
+    }));
+  });
+
+export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: entries } = await context.supabase.from("shop_cash_entries")
+      .select("shop_id,amount")
+      .eq("user_id", context.ownerId)
+      .in("shop_id", data.shop_ids)
+      .eq("source", "shopify_sync")
+      .not("shopify_payout_id", "is", null)
+      .gte("date", today);
+
+    const { data: settings } = await context.supabase.from("shop_order_settings")
+      .select("shop_id,shopify_store_id")
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
+
+    const connectedIds = new Set((settings ?? []).filter(s => s.shopify_store_id).map(s => s.shop_id));
+    const connected = connectedIds.size > 0;
+
+    const byShop = new Map<string, number>();
+    for (const e of entries ?? []) {
+      const id = e.shop_id as string;
+      byShop.set(id, (byShop.get(id) ?? 0) + Number(e.amount ?? 0));
+    }
+    const pending = Array.from(byShop.values()).reduce((a, b) => a + b, 0);
+    const perShop = Array.from(byShop.entries()).map(([shop_id, p]) => ({ shop_id, pending: p }));
+    return { connected, pending, perShop };
   });
 
 export const getMonthlyProfit = createServerFn({ method: "GET" })
@@ -1311,7 +1291,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const { supabase, ownerId } = context;
     const { shop_ids, from, to, prev_from, prev_to } = data;
 
-    const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, chargebackRes, prevChargebackRes, refundRes, prevRefundRes, adsRes, prevAdsRes] = await Promise.all([
+    const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes] = await Promise.all([
       supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to),
@@ -1322,26 +1302,12 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         .eq("user_id", ownerId).in("shop_id", shop_ids),
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
         .in("shop_id", shop_ids),
-      // Taxas Shopify Payments no período
-      supabase.from("shop_cash_entries").select("amount,date")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", from).lte("date", to),
+      // Taxas Shopify Payments no período (apenas KPI, não aparecem no caixa)
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", prev_from).lte("date", prev_to),
-      // Chargebacks no período
-      supabase.from("shop_cash_entries").select("amount,date")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Chargeback")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Chargeback")
-        .gte("date", prev_from).lte("date", prev_to),
-      // Reembolsos no período
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Reembolso")
-        .gte("date", from).lte("date", to),
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Reembolso")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", prev_from).lte("date", prev_to),
       // Gastos de anúncios Meta Ads
       supabase.from("shop_cash_entries").select("amount")
@@ -1359,15 +1325,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
     const unitCost = avgCost;
 
-    // Taxas, chargebacks, reembolsos e anúncios
-    const taxas          = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const prevTaxas      = (prevFeesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const chargeback     = (chargebackRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const prevChargeback = (prevChargebackRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const reembolso      = (refundRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const prevReembolso  = (prevRefundRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const anuncios       = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const prevAnuncios   = (prevAdsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    // Taxas e anúncios
+    const taxas        = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const prevTaxas    = (prevFeesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const anuncios     = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const prevAnuncios = (prevAdsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
 
     function orderCost(o: any) {
       const shopCost = costByShop.get((o as any).shop_id);
@@ -1375,29 +1337,27 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     }
 
     // Current period
-    const faturamentoBruto = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
-    const faturamento = faturamentoBruto - chargeback - reembolso; // receita líquida real
-    const pedidos = orders.length;
-    const unidades = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
+    const faturamento  = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const pedidos      = orders.length;
+    const unidades     = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0);
-    const lucro = faturamento - custoProduto - taxas - anuncios;
-    const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
-    const ticketMedio = pedidos > 0 ? faturamento / pedidos : 0;
-    const cpa  = anuncios > 0 && pedidos > 0 ? anuncios / pedidos : 0;
-    const roas = anuncios > 0 ? faturamento / anuncios : 0;
-    const roi  = anuncios > 0 ? ((faturamento - custoProduto - taxas - anuncios) / anuncios) * 100 : 0;
+    const lucro        = faturamento - custoProduto - taxas - anuncios;
+    const margem       = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
+    const ticketMedio  = pedidos > 0 ? faturamento / pedidos : 0;
+    const cpa          = anuncios > 0 && pedidos > 0 ? anuncios / pedidos : 0;
+    const roas         = anuncios > 0 ? faturamento / anuncios : 0;
+    const roi          = anuncios > 0 ? ((faturamento - custoProduto - taxas - anuncios) / anuncios) * 100 : 0;
 
     // Previous period (for deltas)
-    const prevFaturamentoBruto = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
-    const prevFaturamento = prevFaturamentoBruto - prevChargeback - prevReembolso;
-    const prevPedidos = prevOrders.length;
-    const prevUnidades = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
-    const prevCusto = prevOrders.reduce((s, o) => s + orderCost(o), 0);
-    const prevLucro = prevFaturamento - prevCusto - prevTaxas - prevAnuncios;
-    const prevMargem = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
-    const prevTicket = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
-    const prevCpa  = prevAnuncios > 0 && prevPedidos > 0 ? prevAnuncios / prevPedidos : 0;
-    const prevRoas = prevAnuncios > 0 ? prevFaturamento / prevAnuncios : 0;
+    const prevFaturamento = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const prevPedidos     = prevOrders.length;
+    const prevUnidades    = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
+    const prevCusto       = prevOrders.reduce((s, o) => s + orderCost(o), 0);
+    const prevLucro       = prevFaturamento - prevCusto - prevTaxas - prevAnuncios;
+    const prevMargem      = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
+    const prevTicket      = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
+    const prevCpa         = prevAnuncios > 0 && prevPedidos > 0 ? prevAnuncios / prevPedidos : 0;
+    const prevRoas        = prevAnuncios > 0 ? prevFaturamento / prevAnuncios : 0;
 
     function delta(curr: number, prev: number) {
       if (prev === 0) return 0;
@@ -1436,8 +1396,6 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         lucro,             lucroDelta:        delta(lucro, prevLucro),
         custoProduto,      custoProdutoDelta: delta(custoProduto, prevCusto),
         taxas,             taxasDelta:        delta(taxas, prevTaxas),
-        chargeback,        chargebackDelta:   delta(chargeback, prevChargeback),
-        reembolso,         reembolsoDelta:    delta(reembolso, prevReembolso),
         anuncios,          anunciosDelta:     delta(anuncios, prevAnuncios),
         cpa,               cpaDelta:          delta(cpa, prevCpa),
         roas,              roasDelta:         delta(roas, prevRoas),

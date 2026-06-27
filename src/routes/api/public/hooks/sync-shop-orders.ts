@@ -147,6 +147,47 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   return relevant.length;
 }
 
+async function syncPendingTransactionsForShop(shopId: string, userId: string, domain: string, token: string, lagDays: number) {
+  const since = new Date(); since.setUTCDate(since.getUTCDate() - 14);
+  const payouts = await fetchPayouts(domain, token, since.toISOString());
+  const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
+
+  const transactions = await fetchBalanceTransactions(domain, token, 3);
+  const pendingTx = transactions.filter((t: any) =>
+    t.payout_status === "pending" &&
+    (t.payout_id == null || !payoutDateById.has(String(t.payout_id)))
+  );
+
+  await supabaseAdmin.from("shop_cash_entries").delete()
+    .eq("user_id", userId).eq("shop_id", shopId).eq("source", "shopify_pending_sync");
+
+  if (!pendingTx.length) return 0;
+
+  const byDate = new Map<string, number>();
+  for (const t of pendingTx) {
+    const realDate = t.payout_id ? payoutDateById.get(String(t.payout_id)) : null;
+    let key: string;
+    if (realDate) {
+      key = realDate;
+    } else {
+      const d = new Date(t.processed_at);
+      d.setUTCDate(d.getUTCDate() + lagDays);
+      key = d.toISOString().slice(0, 10);
+    }
+    byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
+  }
+  const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
+    user_id: userId, shop_id: shopId,
+    kind: "income" as const,
+    amount, date,
+    category: PAYOUT_CATEGORY,
+    description: `Payout Shopify · previsto`,
+    source: "shopify_pending_sync",
+  }));
+  await supabaseAdmin.from("shop_cash_entries").insert(provisionals);
+  return pendingTx.length;
+}
+
 async function processShop(s: any, today: string) {
   const cutoff: string | null = s.cashflow_start_date ?? null;
   const sinceDate = cutoff ?? addDays(today, -30);
@@ -171,6 +212,10 @@ async function processShop(s: any, today: string) {
         }
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+        const lagDays = s.payout_lag_days != null
+          ? Number(s.payout_lag_days)
+          : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
+        await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
         await supabaseAdmin.from("shopify_stores").update({
           last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
         }).eq("id", s.shopify_store_id);

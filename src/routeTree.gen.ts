@@ -29,6 +29,7 @@ import { Route as FinanceIndexRouteImport } from './routes/finance.index'
 import { Route as WhiteboardBoardIdRouteImport } from './routes/whiteboard.$boardId'
 import { Route as TasksListIdRouteImport } from './routes/tasks.$listId'
 import { Route as ShopsProductsRouteImport } from './routes/shops.products'
+import { Route as ShopsLojasGruposRouteImport } from './routes/shops.lojas-grupos'
 import { Route as ShopsGruposRouteImport } from './routes/shops.grupos'
 import { Route as ShopsBancoDeLojasRouteImport } from './routes/shops.banco-de-lojas'
 import { Route as ShopsShopIdRouteImport } from './routes/shops.$shopId'
@@ -43,10 +44,12 @@ import { Route as FinanceImportRouteImport } from './routes/finance.import'
 import { Route as FinanceAccountsRouteImport } from './routes/finance.accounts'
 import { Route as ShopsSopsIndexRouteImport } from './routes/shops.sops.index'
 import { Route as ShopsProductsIndexRouteImport } from './routes/shops.products.index'
+import { Route as ShopsLojasGruposIndexRouteImport } from './routes/shops.lojas-grupos.index'
 import { Route as ShopsGruposIndexRouteImport } from './routes/shops.grupos.index'
 import { Route as ShopsBancoDeLojasIndexRouteImport } from './routes/shops.banco-de-lojas.index'
 import { Route as ShopsSopsProcessIdRouteImport } from './routes/shops.sops.$processId'
 import { Route as ShopsProductsProductIdRouteImport } from './routes/shops.products.$productId'
+import { Route as ShopsLojasGruposCardIdRouteImport } from './routes/shops.lojas-grupos.$cardId'
 import { Route as ShopsGruposGroupIdRouteImport } from './routes/shops.grupos.$groupId'
 import { Route as ApiPublicShopifyCallbackRouteImport } from './routes/api/public/shopify/callback'
 import { Route as ApiPublicHooksTaskNotificationsRouteImport } from './routes/api/public/hooks/task-notifications'
@@ -156,6 +159,11 @@ const ShopsProductsRoute = ShopsProductsRouteImport.update({
   path: '/products',
   getParentRoute: () => ShopsRoute,
 } as any)
+const ShopsLojasGruposRoute = ShopsLojasGruposRouteImport.update({
+  id: '/lojas-grupos',
+  path: '/lojas-grupos',
+  getParentRoute: () => ShopsRoute,
+} as any)
 const ShopsGruposRoute = ShopsGruposRouteImport.update({
   id: '/grupos',
   path: '/grupos',
@@ -226,6 +234,11 @@ const ShopsProductsIndexRoute = ShopsProductsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ShopsProductsRoute,
 } as any)
+const ShopsLojasGruposIndexRoute = ShopsLojasGruposIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShopsLojasGruposRoute,
+} as any)
 const ShopsGruposIndexRoute = ShopsGruposIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -245,6 +258,11 @@ const ShopsProductsProductIdRoute = ShopsProductsProductIdRouteImport.update({
   id: '/$productId',
   path: '/$productId',
   getParentRoute: () => ShopsProductsRoute,
+} as any)
+const ShopsLojasGruposCardIdRoute = ShopsLojasGruposCardIdRouteImport.update({
+  id: '/$cardId',
+  path: '/$cardId',
+  getParentRoute: () => ShopsLojasGruposRoute,
 } as any)
 const ShopsGruposGroupIdRoute = ShopsGruposGroupIdRouteImport.update({
   id: '/$groupId',
@@ -318,6 +336,7 @@ export interface FileRoutesByFullPath {
   '/shops/$shopId': typeof ShopsShopIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
+  '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
   '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
@@ -328,10 +347,12 @@ export interface FileRoutesByFullPath {
   '/tasks/': typeof TasksIndexRoute
   '/whiteboard/': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
+  '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
   '/shops/grupos/': typeof ShopsGruposIndexRoute
+  '/shops/lojas-grupos/': typeof ShopsLojasGruposIndexRoute
   '/shops/products/': typeof ShopsProductsIndexRoute
   '/shops/sops/': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
@@ -367,10 +388,12 @@ export interface FileRoutesByTo {
   '/tasks': typeof TasksIndexRoute
   '/whiteboard': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
+  '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasIndexRoute
   '/shops/grupos': typeof ShopsGruposIndexRoute
+  '/shops/lojas-grupos': typeof ShopsLojasGruposIndexRoute
   '/shops/products': typeof ShopsProductsIndexRoute
   '/shops/sops': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
@@ -406,6 +429,7 @@ export interface FileRoutesById {
   '/shops/$shopId': typeof ShopsShopIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
+  '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
   '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
@@ -416,10 +440,12 @@ export interface FileRoutesById {
   '/tasks/': typeof TasksIndexRoute
   '/whiteboard/': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
+  '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
   '/shops/grupos/': typeof ShopsGruposIndexRoute
+  '/shops/lojas-grupos/': typeof ShopsLojasGruposIndexRoute
   '/shops/products/': typeof ShopsProductsIndexRoute
   '/shops/sops/': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
@@ -456,6 +482,7 @@ export interface FileRouteTypes {
     | '/shops/$shopId'
     | '/shops/banco-de-lojas'
     | '/shops/grupos'
+    | '/shops/lojas-grupos'
     | '/shops/products'
     | '/tasks/$listId'
     | '/whiteboard/$boardId'
@@ -466,10 +493,12 @@ export interface FileRouteTypes {
     | '/tasks/'
     | '/whiteboard/'
     | '/shops/grupos/$groupId'
+    | '/shops/lojas-grupos/$cardId'
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas/'
     | '/shops/grupos/'
+    | '/shops/lojas-grupos/'
     | '/shops/products/'
     | '/shops/sops/'
     | '/api/public/hooks/sync-shop-orders'
@@ -505,10 +534,12 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/whiteboard'
     | '/shops/grupos/$groupId'
+    | '/shops/lojas-grupos/$cardId'
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas'
     | '/shops/grupos'
+    | '/shops/lojas-grupos'
     | '/shops/products'
     | '/shops/sops'
     | '/api/public/hooks/sync-shop-orders'
@@ -543,6 +574,7 @@ export interface FileRouteTypes {
     | '/shops/$shopId'
     | '/shops/banco-de-lojas'
     | '/shops/grupos'
+    | '/shops/lojas-grupos'
     | '/shops/products'
     | '/tasks/$listId'
     | '/whiteboard/$boardId'
@@ -553,10 +585,12 @@ export interface FileRouteTypes {
     | '/tasks/'
     | '/whiteboard/'
     | '/shops/grupos/$groupId'
+    | '/shops/lojas-grupos/$cardId'
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas/'
     | '/shops/grupos/'
+    | '/shops/lojas-grupos/'
     | '/shops/products/'
     | '/shops/sops/'
     | '/api/public/hooks/sync-shop-orders'
@@ -732,6 +766,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShopsProductsRouteImport
       parentRoute: typeof ShopsRoute
     }
+    '/shops/lojas-grupos': {
+      id: '/shops/lojas-grupos'
+      path: '/lojas-grupos'
+      fullPath: '/shops/lojas-grupos'
+      preLoaderRoute: typeof ShopsLojasGruposRouteImport
+      parentRoute: typeof ShopsRoute
+    }
     '/shops/grupos': {
       id: '/shops/grupos'
       path: '/grupos'
@@ -830,6 +871,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShopsProductsIndexRouteImport
       parentRoute: typeof ShopsProductsRoute
     }
+    '/shops/lojas-grupos/': {
+      id: '/shops/lojas-grupos/'
+      path: '/'
+      fullPath: '/shops/lojas-grupos/'
+      preLoaderRoute: typeof ShopsLojasGruposIndexRouteImport
+      parentRoute: typeof ShopsLojasGruposRoute
+    }
     '/shops/grupos/': {
       id: '/shops/grupos/'
       path: '/'
@@ -857,6 +905,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/shops/products/$productId'
       preLoaderRoute: typeof ShopsProductsProductIdRouteImport
       parentRoute: typeof ShopsProductsRoute
+    }
+    '/shops/lojas-grupos/$cardId': {
+      id: '/shops/lojas-grupos/$cardId'
+      path: '/$cardId'
+      fullPath: '/shops/lojas-grupos/$cardId'
+      preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport
+      parentRoute: typeof ShopsLojasGruposRoute
     }
     '/shops/grupos/$groupId': {
       id: '/shops/grupos/$groupId'
@@ -993,6 +1048,19 @@ const ShopsGruposRouteWithChildren = ShopsGruposRoute._addFileChildren(
   ShopsGruposRouteChildren,
 )
 
+interface ShopsLojasGruposRouteChildren {
+  ShopsLojasGruposCardIdRoute: typeof ShopsLojasGruposCardIdRoute
+  ShopsLojasGruposIndexRoute: typeof ShopsLojasGruposIndexRoute
+}
+
+const ShopsLojasGruposRouteChildren: ShopsLojasGruposRouteChildren = {
+  ShopsLojasGruposCardIdRoute: ShopsLojasGruposCardIdRoute,
+  ShopsLojasGruposIndexRoute: ShopsLojasGruposIndexRoute,
+}
+
+const ShopsLojasGruposRouteWithChildren =
+  ShopsLojasGruposRoute._addFileChildren(ShopsLojasGruposRouteChildren)
+
 interface ShopsProductsRouteChildren {
   ShopsProductsProductIdRoute: typeof ShopsProductsProductIdRoute
   ShopsProductsIndexRoute: typeof ShopsProductsIndexRoute
@@ -1011,6 +1079,7 @@ interface ShopsRouteChildren {
   ShopsShopIdRoute: typeof ShopsShopIdRoute
   ShopsBancoDeLojasRoute: typeof ShopsBancoDeLojasRouteWithChildren
   ShopsGruposRoute: typeof ShopsGruposRouteWithChildren
+  ShopsLojasGruposRoute: typeof ShopsLojasGruposRouteWithChildren
   ShopsProductsRoute: typeof ShopsProductsRouteWithChildren
   ShopsIndexRoute: typeof ShopsIndexRoute
   ShopsSopsProcessIdRoute: typeof ShopsSopsProcessIdRoute
@@ -1021,6 +1090,7 @@ const ShopsRouteChildren: ShopsRouteChildren = {
   ShopsShopIdRoute: ShopsShopIdRoute,
   ShopsBancoDeLojasRoute: ShopsBancoDeLojasRouteWithChildren,
   ShopsGruposRoute: ShopsGruposRouteWithChildren,
+  ShopsLojasGruposRoute: ShopsLojasGruposRouteWithChildren,
   ShopsProductsRoute: ShopsProductsRouteWithChildren,
   ShopsIndexRoute: ShopsIndexRoute,
   ShopsSopsProcessIdRoute: ShopsSopsProcessIdRoute,

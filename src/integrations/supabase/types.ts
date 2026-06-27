@@ -389,6 +389,96 @@ export type Database = {
         }
         Relationships: []
       }
+      lg_cards: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          status: string
+          logo_url: string | null
+          country: string | null
+          tag: string | null
+          meta_shop_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          status?: string
+          logo_url?: string | null
+          country?: string | null
+          tag?: string | null
+          meta_shop_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          status?: string
+          logo_url?: string | null
+          country?: string | null
+          tag?: string | null
+          meta_shop_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lg_card_shops: {
+        Row: {
+          id: string
+          card_id: string
+          shop_id: string
+          payout_days: number
+          payment_days: number
+        }
+        Insert: {
+          id?: string
+          card_id: string
+          shop_id: string
+          payout_days?: number
+          payment_days?: number
+        }
+        Update: {
+          id?: string
+          card_id?: string
+          shop_id?: string
+          payout_days?: number
+          payment_days?: number
+        }
+        Relationships: []
+      }
+      lg_card_notes: {
+        Row: {
+          id: string
+          card_id: string
+          user_id: string
+          content: string
+          note_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          card_id: string
+          user_id: string
+          content: string
+          note_date?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          card_id?: string
+          user_id?: string
+          content?: string
+          note_date?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       gratitude_entries: {
         Row: {
           content: string
@@ -1701,6 +1791,7 @@ export type Database = {
           default_unit_cost: number
           linked_product_id: string | null
           payout_lag_avg_days: number | null
+          payout_lag_days: number | null
           payout_lag_sample_size: number | null
           processing_delay_days: number
           shop_id: string
@@ -1715,6 +1806,7 @@ export type Database = {
           default_unit_cost?: number
           linked_product_id?: string | null
           payout_lag_avg_days?: number | null
+          payout_lag_days?: number | null
           payout_lag_sample_size?: number | null
           processing_delay_days?: number
           shop_id: string
@@ -1729,6 +1821,7 @@ export type Database = {
           default_unit_cost?: number
           linked_product_id?: string | null
           payout_lag_avg_days?: number | null
+          payout_lag_days?: number | null
           payout_lag_sample_size?: number | null
           processing_delay_days?: number
           shop_id?: string
@@ -2391,6 +2484,7 @@ export type Database = {
           client_id: string | null
           client_secret: string | null
           created_at: string
+          iana_timezone: string | null
           id: string
           installed_at: string | null
           last_sync_at: string | null
@@ -2409,6 +2503,7 @@ export type Database = {
           client_id?: string | null
           client_secret?: string | null
           created_at?: string
+          iana_timezone?: string | null
           id?: string
           installed_at?: string | null
           last_sync_at?: string | null
@@ -2427,6 +2522,7 @@ export type Database = {
           client_id?: string | null
           client_secret?: string | null
           created_at?: string
+          iana_timezone?: string | null
           id?: string
           installed_at?: string | null
           last_sync_at?: string | null

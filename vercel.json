@@ -1,10 +1,8 @@
 {
   "buildCommand": "npm run build",
   "crons": [
-    {
-      "path": "/api/public/hooks/sync-shop-orders",
-      "schedule": "0 6 * * *"
-    }
+    { "path": "/api/public/hooks/sync-shop-orders", "schedule": "0 14 * * *" },
+    { "path": "/api/public/hooks/sync-shop-orders", "schedule": "0 2 * * *" }
   ],
   "outputDirectory": "dist/client",
   "framework": null,

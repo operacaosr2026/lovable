@@ -165,7 +165,7 @@ function GroupDetail() {
         <>
           {tab === "dashboard"    && <ShopDashboard shopIds={allShopIds} shopName={group.name} />}
           {tab === "goal"         && <ShopProfitGoal shopIds={allShopIds} />}
-          {tab === "cash"         && <ShopCashflow shopIds={allShopIds} />}
+          {tab === "cash"         && <ShopCashflow shopIds={allShopIds} shops={shops.map((s: any) => ({ id: s.id, name: s.name }))} />}
           {tab === "orders"       && <ShopOrders shopIds={allShopIds} />}
           {tab === "tasks"        && <ShopTaskKanban shopIds={allShopIds} />}
           {tab === "support"      && <ShopSupport shopIds={allShopIds} />}
