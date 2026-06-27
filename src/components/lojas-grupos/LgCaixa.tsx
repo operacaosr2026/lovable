@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Settings2, ChevronDown, ChevronUp, Check, X } from "lucide-react";
-import { ShopCashflow } from "@/components/shops/ShopCashflow";
+import { Settings2, ChevronDown, ChevronUp, Check } from "lucide-react";
+import { LgCashflowView } from "@/components/lojas-grupos/LgCashflowView";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
 import { toast } from "sonner";
 
@@ -103,10 +103,9 @@ export function LgCaixa({
         )}
       </div>
 
-      {/* ── ShopCashflow (existing component, unchanged) ── */}
-      <ShopCashflow
+      <LgCashflowView
         shopIds={shopIds}
-        shops={shops.map((s) => ({ id: s.id, name: s.name }))}
+        shopNamesMap={Object.fromEntries(shops.map((s) => [s.id, s.name]))}
       />
     </div>
   );

@@ -272,6 +272,9 @@ function LgCardEditor({
     return init;
   });
 
+  // Loja Matriz (ads + tráfego)
+  const [matrizShopId, setMatrizShopId] = useState<string>(card?.matriz_shop_id ?? "");
+
   useEscapeToClose(onClose);
 
   const toggleShop = (shopId: string) => {
@@ -307,14 +310,16 @@ function LgCardEditor({
     if (!name.trim()) return;
     setSaving(true);
     try {
+      const selectedIds = Object.keys(selectedShops);
       await onSave({
         card: {
-          name:        name.trim(),
-          description: description.trim() || null,
+          name:           name.trim(),
+          description:    description.trim() || null,
           status,
-          country:     country || null,
-          tag:         tag.trim() || null,
-          logo_url:    logoUrl || null,
+          country:        country || null,
+          tag:            tag.trim() || null,
+          logo_url:       logoUrl || null,
+          matriz_shop_id: (selectedIds.length > 1 && matrizShopId) ? matrizShopId : (selectedIds[0] ?? null),
         },
         shops: Object.values(selectedShops),
       });
@@ -450,6 +455,26 @@ function LgCardEditor({
               </div>
             )}
           </div>
+
+          {/* Loja Matriz (only when 2+ shops selected) */}
+          {Object.keys(selectedShops).length > 1 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">
+                Loja Matriz <span className="text-muted-foreground/60 font-normal">(recebe todo o tráfego · usada para ads e conversão)</span>
+              </label>
+              <select
+                value={matrizShopId}
+                onChange={(e) => setMatrizShopId(e.target.value)}
+                className="w-full h-9 rounded-xl border border-border bg-card text-foreground text-sm px-3 focus:outline-none focus:border-primary"
+              >
+                <option value="">— Selecionar</option>
+                {Object.keys(selectedShops).map((shopId) => {
+                  const shop = (allShops as any[]).find((s: any) => s.id === shopId);
+                  return <option key={shopId} value={shopId}>{shop?.name ?? shopId}</option>;
+                })}
+              </select>
+            </div>
+          )}
 
           {saveError && (
             <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">{saveError}</p>

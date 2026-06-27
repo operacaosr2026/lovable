@@ -5,6 +5,7 @@ import {
   listOrders, markOrdersPaid, markOrdersShipped,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
+import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,8 +37,18 @@ export function LgOrders({
   const qc       = useQueryClient();
   const isConsolidated = shopIds.length > 1;
 
-  const [from, setFrom]           = useState(() => { const d = new Date(); d.setDate(d.getDate() - 29); return isoDate(d); });
-  const [to, setTo]               = useState(() => isoDate(new Date()));
+  const [period, setPeriod]           = useState("30d");
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
+  const { from, to } = (() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const addD  = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    if (period === "hoje")   return { from: today, to: today };
+    if (period === "ontem")  { const y = addD(today, -1); return { from: y, to: y }; }
+    if (period === "7d")     return { from: addD(today, -6), to: today };
+    if (period === "mes")    { const d = new Date(); return { from: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`, to: today }; }
+    if (period === "custom" && customRange) return customRange;
+    return { from: addD(today, -29), to: today };
+  })();
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
@@ -170,9 +181,11 @@ export function LgOrders({
     <div className="space-y-4">
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-2">
-        <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-auto" />
-        <span className="text-muted-foreground text-sm">→</span>
-        <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-auto" />
+        <DateRangePicker
+          period={period} setPeriod={setPeriod}
+          customRange={customRange} setCustomRange={setCustomRange}
+          onApply={() => qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] })}
+        />
         <Button
           onClick={() => qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] })}
           disabled={loading}

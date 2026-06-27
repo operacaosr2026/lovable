@@ -6,13 +6,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export const LG_STATUSES = ["ativo", "pausado", "arquivado"] as const;
 
 const CardInput = z.object({
-  name:        z.string().trim().min(1).max(120),
-  description: z.string().nullable().optional(),
-  status:      z.enum(LG_STATUSES).default("ativo"),
-  country:     z.string().nullable().optional(),
-  tag:         z.string().nullable().optional(),
-  logo_url:    z.string().nullable().optional(),
-  meta_shop_id: z.string().uuid().nullable().optional(),
+  name:           z.string().trim().min(1).max(120),
+  description:    z.string().nullable().optional(),
+  status:         z.enum(LG_STATUSES).default("ativo"),
+  country:        z.string().nullable().optional(),
+  tag:            z.string().nullable().optional(),
+  logo_url:       z.string().nullable().optional(),
+  matriz_shop_id: z.string().uuid().nullable().optional(),
 });
 
 const ShopEntry = z.object({
@@ -292,14 +292,14 @@ export const listAllShopsForPicker = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
-// ─── Update meta_shop_id ──────────────────────────────────────────────────────
+// ─── Update matriz_shop_id ────────────────────────────────────────────────────
 
-export const updateLgCardMetaShop = createServerFn({ method: "POST" })
+export const updateLgCardMatriz = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d: { id: string; meta_shop_id: string | null }) =>
+  .inputValidator((d: { id: string; matriz_shop_id: string | null }) =>
     z.object({
-      id:           z.string().uuid(),
-      meta_shop_id: z.string().uuid().nullable(),
+      id:             z.string().uuid(),
+      matriz_shop_id: z.string().uuid().nullable(),
     }).parse(d)
   )
   .handler(async ({ data, context }) => {
@@ -307,10 +307,105 @@ export const updateLgCardMetaShop = createServerFn({ method: "POST" })
 
     const { error } = await supabaseAdmin
       .from("lg_cards")
-      .update({ meta_shop_id: data.meta_shop_id })
+      .update({ matriz_shop_id: data.matriz_shop_id })
       .eq("id", data.id)
       .eq("user_id", ownerId);
 
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// ─── Update note ──────────────────────────────────────────────────────────────
+
+export const updateLgCardNote = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { id: string; content: string; visitors?: number | null }) =>
+    z.object({
+      id:       z.string().uuid(),
+      content:  z.string().trim().min(1),
+      visitors: z.number().int().min(0).nullable().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    const { error } = await supabaseAdmin
+      .from("lg_card_notes")
+      .update({ content: data.content, visitors: data.visitors ?? null })
+      .eq("id", data.id)
+      .eq("user_id", ownerId);
+
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ─── Currency rates ───────────────────────────────────────────────────────────
+
+export const getLgCurrencyRates = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { card_id: string }) => z.object({ card_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    const { data: row } = await supabaseAdmin
+      .from("lg_card_currency_rates")
+      .select("brl_rate, eur_rate")
+      .eq("card_id", data.card_id)
+      .eq("user_id", ownerId)
+      .maybeSingle();
+
+    return { brl_rate: Number(row?.brl_rate ?? 5.0), eur_rate: Number(row?.eur_rate ?? 0.92) };
+  });
+
+export const saveLgCurrencyRates = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { card_id: string; brl_rate: number; eur_rate: number }) =>
+    z.object({
+      card_id:  z.string().uuid(),
+      brl_rate: z.number().positive(),
+      eur_rate: z.number().positive(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    const { error } = await supabaseAdmin
+      .from("lg_card_currency_rates")
+      .upsert({
+        card_id:    data.card_id,
+        user_id:    ownerId,
+        brl_rate:   data.brl_rate,
+        eur_rate:   data.eur_rate,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "card_id,user_id" });
+
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ─── Daily analytics ──────────────────────────────────────────────────────────
+
+export const listShopDailyAnalytics = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string; from: string; to: string }) =>
+    z.object({
+      shop_id: z.string().uuid(),
+      from:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      to:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("shop_daily_analytics")
+      .select("date, sessions")
+      .eq("shop_id", data.shop_id)
+      .eq("user_id", ownerId)
+      .gte("date", data.from)
+      .lte("date", data.to)
+      .order("date", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return rows ?? [];
   });

@@ -1,18 +1,17 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   syncShopifyOrders, syncShopifyPayouts, recomputeRange, getOrderSettings,
 } from "@/lib/shop-orders.functions";
 import { getMetaAdsIntegration, getMetaToken } from "@/lib/meta-ads.functions";
-import { updateLgCardMetaShop } from "@/lib/lg-cards.functions";
 import { MetaAdsIntegrationDialog } from "@/components/shops/MetaAdsIntegration";
 import { Track123IntegrationDialog } from "@/components/shops/Track123Integration";
 import { getTrack123Integration } from "@/lib/track123.functions";
 import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Sparkles, Megaphone, Webhook,
-  CheckCircle2, AlertCircle, Settings2, ChevronDown, Store,
+  CheckCircle2, AlertCircle, Settings2, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -145,32 +144,27 @@ function Track123Section({ shop }: { shop: ShopStub }) {
   );
 }
 
-// ─── Meta Ads (card level) ────────────────────────────────────────────────────
+// ─── Meta Ads (card level — uses matriz_shop_id automatically) ────────────────
 
 function MetaAdsSection({
   cardId, card, shops,
 }: { cardId: string; card: any; shops: ShopStub[] }) {
-  const qc             = useQueryClient();
-  const updateMetaFn   = useServerFn(updateLgCardMetaShop);
   const getMetaAdsFn   = useServerFn(getMetaAdsIntegration);
   const getMetaTokenFn = useServerFn(getMetaToken);
+  const [openDialog, setOpenDialog] = useState(false);
 
-  const [openDialog,  setOpenDialog]  = useState(false);
-  const [openPicker,  setOpenPicker]  = useState(false);
-  const [saving,      setSaving]      = useState(false);
-
-  const metaShopId = card?.meta_shop_id as string | null;
-  const metaShop   = shops.find((s) => s.id === metaShopId);
+  const matrizShopId = card?.matriz_shop_id as string | null;
+  const matrizShop   = shops.find((s) => s.id === matrizShopId);
 
   const metaAds = useQuery({
-    queryKey: ["meta-ads-integration", metaShopId],
-    queryFn:  () => getMetaAdsFn({ data: { shop_id: metaShopId! } }),
-    enabled:  Boolean(metaShopId),
+    queryKey: ["meta-ads-integration", matrizShopId],
+    queryFn:  () => getMetaAdsFn({ data: { shop_id: matrizShopId! } }),
+    enabled:  Boolean(matrizShopId),
   });
   const metaToken = useQuery({
-    queryKey: ["meta-token", metaShopId],
-    queryFn:  () => getMetaTokenFn({ data: { shop_id: metaShopId! } }),
-    enabled:  Boolean(metaShopId),
+    queryKey: ["meta-token", matrizShopId],
+    queryFn:  () => getMetaTokenFn({ data: { shop_id: matrizShopId! } }),
+    enabled:  Boolean(matrizShopId),
   });
 
   const connected   = Boolean(metaToken.data?.connected || metaAds.data?.configured);
@@ -178,22 +172,8 @@ function MetaAdsSection({
     ? (metaToken.data?.fb_user_name || (metaAds.data as any)?.account_name || "Conectado")
     : "Não conectado";
 
-  const selectShop = async (shopId: string) => {
-    setSaving(true);
-    try {
-      await updateMetaFn({ data: { id: cardId, meta_shop_id: shopId } });
-      qc.invalidateQueries({ queryKey: ["lg-card", cardId] });
-      setOpenPicker(false);
-      toast.success("Loja de anúncios atualizada");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Erro ao salvar");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 space-y-4">
+    <div className="rounded-2xl border border-border bg-surface p-5 space-y-3">
       <div className="flex items-start gap-4 flex-wrap">
         <div className="size-11 rounded-xl bg-muted/50 grid place-items-center shrink-0">
           <Megaphone className="size-5 text-foreground" />
@@ -201,7 +181,7 @@ function MetaAdsSection({
         <div className="flex-1 min-w-[200px]">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">Meta Ads</span>
-            {metaShopId ? (
+            {matrizShopId ? (
               <span className={cn(
                 "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
                 connected
@@ -213,71 +193,34 @@ function MetaAdsSection({
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border bg-amber-500/10 text-amber-600 border-amber-500/30">
-                <AlertCircle className="size-3" /> Loja não selecionada
+                <AlertCircle className="size-3" /> Sem loja matriz
               </span>
             )}
             <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">card</span>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
             Gasto de campanhas sincronizado automaticamente.
-            {metaShop && <span className="text-primary"> Via: {metaShop.name}</span>}
+            {matrizShop && <span className="text-primary"> Via: {matrizShop.name}</span>}
           </p>
         </div>
-        <div className="flex gap-2">
-          {shops.length > 1 && (
-            <Button size="sm" variant="outline" onClick={() => setOpenPicker((o) => !o)}>
-              <Store className="size-4" />
-              {metaShop ? "Trocar loja" : "Selecionar loja"}
-              <ChevronDown className="size-3" />
-            </Button>
-          )}
-          {metaShopId && (
-            <Button size="sm" variant="outline" onClick={() => setOpenDialog(true)}>
-              <Settings2 className="size-4" /> {connected ? "Configurar" : "Conectar"}
-            </Button>
-          )}
-        </div>
+        {matrizShopId && (
+          <Button size="sm" variant="outline" onClick={() => setOpenDialog(true)}>
+            <Settings2 className="size-4" /> {connected ? "Configurar" : "Conectar"}
+          </Button>
+        )}
       </div>
 
-      {/* Shop picker inline */}
-      {openPicker && (
-        <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
-          <div className="px-3 py-2 text-xs text-muted-foreground bg-muted/30">
-            Qual loja gerencia os anúncios para este card?
-          </div>
-          {shops.map((shop) => (
-            <button
-              key={shop.id}
-              onClick={() => selectShop(shop.id)}
-              disabled={saving}
-              className={cn(
-                "w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted/50 transition-colors",
-                shop.id === metaShopId && "bg-primary/5 text-primary font-medium"
-              )}
-            >
-              <Store className="size-3.5 text-muted-foreground shrink-0" />
-              {shop.name}
-              {shop.id === metaShopId && <CheckCircle2 className="size-3.5 ml-auto text-primary" />}
-            </button>
-          ))}
+      {!matrizShopId && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
+          <Info className="size-4 shrink-0 mt-0.5" />
+          Configure a <strong>Loja Matriz</strong> no editor do card para conectar o Meta Ads.
+          A loja matriz é a que gerencia os anúncios e recebe o tráfego.
         </div>
       )}
 
-      {/* If only 1 shop and no meta_shop_id, auto-select it */}
-      {shops.length === 1 && !metaShopId && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => selectShop(shops[0].id)}
-          disabled={saving}
-        >
-          <Store className="size-4" /> Usar {shops[0].name} para anúncios
-        </Button>
-      )}
-
-      {openDialog && metaShopId && (
+      {openDialog && matrizShopId && (
         <MetaAdsIntegrationDialog
-          shopId={metaShopId}
+          shopId={matrizShopId}
           open={openDialog}
           onClose={() => setOpenDialog(false)}
         />

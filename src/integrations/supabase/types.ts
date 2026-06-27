@@ -399,7 +399,7 @@ export type Database = {
           logo_url: string | null
           country: string | null
           tag: string | null
-          meta_shop_id: string | null
+          matriz_shop_id: string | null
           created_at: string
         }
         Insert: {
@@ -411,7 +411,7 @@ export type Database = {
           logo_url?: string | null
           country?: string | null
           tag?: string | null
-          meta_shop_id?: string | null
+          matriz_shop_id?: string | null
           created_at?: string
         }
         Update: {
@@ -423,8 +423,35 @@ export type Database = {
           logo_url?: string | null
           country?: string | null
           tag?: string | null
-          meta_shop_id?: string | null
+          matriz_shop_id?: string | null
           created_at?: string
+        }
+        Relationships: []
+      }
+      lg_card_currency_rates: {
+        Row: {
+          id: string
+          card_id: string
+          user_id: string
+          brl_rate: number
+          eur_rate: number
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          card_id: string
+          user_id: string
+          brl_rate?: number
+          eur_rate?: number
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          card_id?: string
+          user_id?: string
+          brl_rate?: number
+          eur_rate?: number
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -459,6 +486,7 @@ export type Database = {
           user_id: string
           content: string
           note_date: string
+          visitors: number | null
           created_at: string
         }
         Insert: {
@@ -467,6 +495,7 @@ export type Database = {
           user_id: string
           content: string
           note_date?: string
+          visitors?: number | null
           created_at?: string
         }
         Update: {
@@ -475,7 +504,32 @@ export type Database = {
           user_id?: string
           content?: string
           note_date?: string
+          visitors?: number | null
           created_at?: string
+        }
+        Relationships: []
+      }
+      shop_daily_analytics: {
+        Row: {
+          id: string
+          shop_id: string
+          user_id: string
+          date: string
+          sessions: number
+        }
+        Insert: {
+          id?: string
+          shop_id: string
+          user_id: string
+          date: string
+          sessions?: number
+        }
+        Update: {
+          id?: string
+          shop_id?: string
+          user_id?: string
+          date?: string
+          sessions?: number
         }
         Relationships: []
       }

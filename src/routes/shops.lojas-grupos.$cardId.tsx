@@ -191,6 +191,7 @@ function LgCardDetail() {
           cardName={card.name}
           shopNamesMap={shopNamesMap}
           isConsolidated={effectiveShopIds.length > 1}
+          matrizShopId={card.matriz_shop_id ?? null}
         />
       )}
       {tab === "caixa" && allShopIds.length > 0 && (
