@@ -200,7 +200,6 @@ export function DateRangePicker({
             <Calendar
               mode="range"
               numberOfMonths={2}
-              disabled={{ after: new Date() }}
               selected={(() => {
                 const r = pendingRange ?? customRange;
                 return r ? { from: new Date(r.from + "T00:00:00"), to: new Date(r.to + "T00:00:00") } : undefined;
@@ -725,12 +724,12 @@ export function LgDashboard({
         <KpiCard highlighted loading={isLoading}
           icon={<DollarSign className="size-4" />}
           label="Lucro" value={fmt(m?.lucro ?? 0)} delta={m?.lucroDelta ?? 0}
-          tooltip="Faturamento − custo − taxas − anúncios"
+          tooltip="Faturamento líquido − custo − taxas − anúncios"
         />
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="primary"
           label="Faturamento" value={fmt(m?.faturamento ?? 0)} delta={m?.faturamentoDelta ?? 0}
-          tooltip="Receita total de pedidos"
+          tooltip="Receita de pedidos descontados reembolsos e chargebacks"
           onClick={isConsolidated ? () => openBreakdown("faturamento", "Faturamento") : undefined}
         />
         <KpiCard loading={isLoading}
@@ -752,55 +751,93 @@ export function LgDashboard({
         />
       </div>
 
-      {/* ── Chart ── */}
-      <div className="bg-card border border-border rounded-2xl p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-          <div>
-            <SectionLabel>Evolução</SectionLabel>
-            <p className="text-sm font-semibold text-foreground -mt-1">Faturamento vs Lucro</p>
+      {/* ── Chart + Custos Adicionais ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <div>
+              <SectionLabel>Evolução</SectionLabel>
+              <p className="text-sm font-semibold text-foreground -mt-1">Faturamento vs Lucro</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {CHART_LINES.map(({ key, label, color }) => {
+                const active = activeLines[key];
+                return (
+                  <button key={key}
+                    onClick={() => setActiveLines(p => ({ ...p, [key]: !p[key] }))}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-all ${active ? "border-border bg-muted text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <span className="size-2 rounded-full" style={{ background: active ? color : "var(--color-border)" }} />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {CHART_LINES.map(({ key, label, color }) => {
-              const active = activeLines[key];
-              return (
-                <button key={key}
-                  onClick={() => setActiveLines(p => ({ ...p, [key]: !p[key] }))}
-                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-all ${active ? "border-border bg-muted text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
-                >
-                  <span className="size-2 rounded-full" style={{ background: active ? color : "var(--color-border)" }} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+
+          {isLoading ? (
+            <div className="h-[220px] bg-muted animate-pulse rounded-xl" />
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={data?.chartData ?? []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <defs>
+                  {CHART_LINES.map(({ key, color }) => (
+                    <linearGradient key={key} id={`lg-grad-${key}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
+                      <stop offset="95%" stopColor={color} stopOpacity={0} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
+                {CHART_LINES.map(({ key, color }) =>
+                  activeLines[key] && (
+                    <Area key={key} type="monotone" dataKey={key} stroke={color} strokeWidth={2}
+                      fill={`url(#lg-grad-${key})`} dot={false} activeDot={{ r: 4, fill: color }} />
+                  )
+                )}
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
-        {isLoading ? (
-          <div className="h-[220px] bg-muted animate-pulse rounded-xl" />
-        ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={data?.chartData ?? []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-              <defs>
-                {CHART_LINES.map(({ key, color }) => (
-                  <linearGradient key={key} id={`lg-grad-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
-                    <stop offset="95%" stopColor={color} stopOpacity={0} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
-              <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
-              {CHART_LINES.map(({ key, color }) =>
-                activeLines[key] && (
-                  <Area key={key} type="monotone" dataKey={key} stroke={color} strokeWidth={2}
-                    fill={`url(#lg-grad-${key})`} dot={false} activeDot={{ r: 4, fill: color }} />
-                )
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
+        {/* Custos Adicionais */}
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <MetricIcon color="info"><BarChart3 className="size-4" /></MetricIcon>
+            <div>
+              <p className="text-xs text-muted-foreground">Custos Adicionais</p>
+              <p className="text-lg font-bold text-foreground">
+                {isLoading ? "—" : fmt((m?.reembolsos ?? 0) + (m?.chargebacks ?? 0))}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-0.5">
+            {[
+              {
+                label: "Reembolsos",
+                value: isLoading ? "—" : (m?.reembolsos ? fmt(m.reembolsos) : "—"),
+                color: m?.reembolsos ? "text-destructive" : "text-muted-foreground",
+              },
+              {
+                label: "Chargebacks",
+                value: isLoading ? "—" : (m?.chargebacks ? fmt(m.chargebacks) : "—"),
+                color: m?.chargebacks ? "text-destructive" : "text-muted-foreground",
+              },
+              { label: "Impostos",    value: "—",            color: "text-muted-foreground" },
+              { label: "Operacional", value: "—",            color: "text-muted-foreground" },
+              { label: "Garantia",    value: "Sem Garantia", color: "text-emerald-500" },
+            ].map(item => (
+              <div key={item.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
+                <Package className="size-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground flex-1">{item.label}</span>
+                <span className={`text-xs font-medium ${item.color}`}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── KPI row 2: Ads ── */}

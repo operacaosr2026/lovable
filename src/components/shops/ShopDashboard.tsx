@@ -323,7 +323,6 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
               <Calendar
                 mode="range"
                 numberOfMonths={2}
-                disabled={{ after: new Date() }}
                 selected={customRange ? {
                   from: new Date(customRange.from + "T00:00:00"),
                   to:   new Date(customRange.to   + "T00:00:00"),

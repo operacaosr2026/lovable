@@ -383,6 +383,153 @@ export const saveLgCurrencyRates = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ─── Card quick metrics ───────────────────────────────────────────────────────
+
+export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { card_id: string }) => z.object({ card_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+
+    // A) shops in this card
+    const { data: cardShops } = await supabaseAdmin
+      .from("lg_card_shops")
+      .select("shop_id, shops(id, name)")
+      .eq("card_id", data.card_id);
+
+    if (!cardShops?.length) {
+      return { lucro: 0, taxaEstorno: 0, totalPedidos: 0, totalEstornos: 0, payoutLag: [] };
+    }
+
+    const shopIds = cardShops.map((s: any) => s.shop_id as string);
+    const shopNameById = new Map(cardShops.map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
+
+    const now = new Date();
+    const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const to   = now.toISOString().slice(0, 10);
+
+    // B, C, D, E in parallel
+    const [ordersRes, settingsRes, feesRes, adsRes, reembolsosRes, chargebacksRes, batchesRes] = await Promise.all([
+      supabaseAdmin
+        .from("shop_orders")
+        .select("revenue, items_count, payment_status, shop_id")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .gte("order_date", from)
+        .lte("order_date", to),
+      supabaseAdmin
+        .from("shop_order_settings")
+        .select("shop_id, default_unit_cost, payout_lag_avg_days, payout_lag_days")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds),
+      supabaseAdmin
+        .from("shop_cash_entries")
+        .select("amount")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .eq("category", "Taxas Shopify")
+        .gte("date", from)
+        .lte("date", to),
+      supabaseAdmin
+        .from("shop_cash_entries")
+        .select("amount")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .eq("category", "Facebook Ads")
+        .gte("date", from)
+        .lte("date", to),
+      supabaseAdmin
+        .from("shop_cash_entries")
+        .select("amount")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .eq("category", "Reembolso")
+        .gte("date", from)
+        .lte("date", to),
+      supabaseAdmin
+        .from("shop_cash_entries")
+        .select("amount")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .eq("category", "Chargeback")
+        .gte("date", from)
+        .lte("date", to),
+      supabaseAdmin
+        .from("shop_order_payment_batches")
+        .select("shop_id, payment_date, order_dates")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .order("batch_number", { ascending: false }),
+    ]);
+
+    const orders      = ordersRes.data ?? [];
+    const settings    = settingsRes.data ?? [];
+    const fees        = feesRes.data ?? [];
+    const ads         = adsRes.data ?? [];
+    const reembolsos_ = reembolsosRes.data ?? [];
+    const chargebacks_= chargebacksRes.data ?? [];
+    const batches     = batchesRes.data ?? [];
+
+    // Settings by shop
+    const costByShop = new Map(settings.map((s: any) => [s.shop_id as string, Number(s.default_unit_cost ?? 0)]));
+    const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
+    const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
+
+    // Last batch per shop (batches already ordered DESC by batch_number)
+    const lastBatchByShop = new Map<string, any>();
+    for (const b of batches) {
+      if (!lastBatchByShop.has(b.shop_id as string)) lastBatchByShop.set(b.shop_id as string, b);
+    }
+
+    // Lucro
+    const sumAmt = (rows: any[]) => rows.reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+    const reembolsos    = sumAmt(reembolsos_);
+    const chargebacks   = sumAmt(chargebacks_);
+    const faturamento   = ordersRevenue - reembolsos - chargebacks;
+    const custoProduto  = orders.reduce((s: number, o: any) => {
+      const shopCost = costByShop.get(o.shop_id as string);
+      const unit = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      return s + Number(o.items_count ?? 0) * unit;
+    }, 0);
+    const taxas    = sumAmt(fees);
+    const anuncios = sumAmt(ads);
+    const lucro    = faturamento - custoProduto - taxas - anuncios;
+
+    // Taxa de estorno
+    const totalPedidos  = orders.length;
+    const totalEstornos = orders.filter((o: any) => o.payment_status === "estornado").length;
+    const taxaEstorno   = totalPedidos > 0 ? totalEstornos / totalPedidos : 0;
+
+    // Payout lag por shop
+    const settingsByShop = new Map(settings.map((s: any) => [s.shop_id as string, s]));
+
+    const payoutLag = shopIds.map((shopId) => {
+      const shopName = shopNameById.get(shopId) ?? shopId;
+      const batch    = lastBatchByShop.get(shopId);
+
+      if (batch && Array.isArray(batch.order_dates) && batch.order_dates.length > 0) {
+        const payoutMs = new Date(`${batch.payment_date}T00:00:00Z`).getTime();
+        const diffs = (batch.order_dates as string[]).map(
+          (d) => (payoutMs - new Date(`${d}T00:00:00Z`).getTime()) / 86400_000
+        ).filter((d) => d >= 0);
+        const avgDays = diffs.length > 0 ? Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length) : null;
+        return { shop_id: shopId, shopName, days: avgDays };
+      }
+
+      // Fallback to cached setting
+      const s = settingsByShop.get(shopId);
+      const fallback = s?.payout_lag_days != null
+        ? Math.round(Number(s.payout_lag_days))
+        : s?.payout_lag_avg_days != null
+          ? Math.round(Number(s.payout_lag_avg_days))
+          : null;
+      return { shop_id: shopId, shopName, days: fallback };
+    });
+
+    return { lucro, taxaEstorno, totalPedidos, totalEstornos, payoutLag };
+  });
+
 // ─── Daily analytics ──────────────────────────────────────────────────────────
 
 export const listShopDailyAnalytics = createServerFn({ method: "GET" })

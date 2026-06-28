@@ -113,6 +113,28 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
   return out;
 }
 
+async function fetchShopifyRefundedOrders(domain: string, token: string, fromISO: string, toISO: string) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/orders.json`
+    + `?status=any&financial_status=refunded%2Cpartially_refunded&limit=250`
+    + `&created_at_min=${encodeURIComponent(fromISO)}`
+    + `&created_at_max=${encodeURIComponent(toISO)}`
+    + `&fields=id,total_price,current_total_price,refunds`;
+  for (let i = 0; i < 20 && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.orders ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
 async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: string) {
   const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any&created_at_min=${encodeURIComponent(sinceISO)}`;
   const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
@@ -176,6 +198,17 @@ export const getOrderSettings = createServerFn({ method: "GET" })
     return row;
   });
 
+export const getMultiOrderSettings = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: rows } = await context.supabase.from("shop_order_settings")
+      .select("shop_id,default_unit_cost")
+      .eq("user_id", context.ownerId)
+      .in("shop_id", data.shop_ids);
+    return rows ?? [];
+  });
+
 export const upsertOrderSettings = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -191,7 +224,7 @@ export const upsertOrderSettings = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shop_order_settings")
-      .upsert({ user_id: context.ownerId, shop_id: data.shop_id, ...data.patch }, { onConflict: "user_id,shop_id" });
+      .upsert({ user_id: context.ownerId, shop_id: data.shop_id, ...data.patch }, { onConflict: "shop_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -848,7 +881,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
   });
 
 // ---------- Recompute ----------
-async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any) {
+async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any, paymentDays: number = PROCESSING_DELAY_DAYS) {
   let settings = preloadedSettings;
   if (!settings) {
     const { data } = await context.supabase.from("shop_order_settings").select("*")
@@ -857,7 +890,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   }
   if (!settings) return { skipped: true };
 
-  const orderDate = addDays(processingDate, -PROCESSING_DELAY_DAYS);
+  const orderDate = addDays(processingDate, -paymentDays);
 
   // existing manual override?
   const { data: existing } = await context.supabase.from("shop_cash_entries").select("*")
@@ -922,6 +955,7 @@ export const recomputeRange = createServerFn({ method: "POST" })
     shop_id: z.string().uuid(),
     from_processing: z.string(),
     to_processing: z.string(),
+    payment_days: z.number().int().min(0).max(365).optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
@@ -931,7 +965,7 @@ export const recomputeRange = createServerFn({ method: "POST" })
     while (cur <= data.to_processing && days.length < 366) { days.push(cur); cur = addDays(cur, 1); }
     const CHUNK = 10;
     for (let i = 0; i < days.length; i += CHUNK) {
-      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settings)));
+      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settings, data.payment_days)));
     }
     return { days: days.length };
   });
@@ -1064,7 +1098,7 @@ export const listCostHistory = createServerFn({ method: "GET" })
 // ---------- Operational status: pay & ship ----------
 
 async function nextBatchNumber(context: any, shopId: string): Promise<number> {
-  const { data } = await context.supabase.from("shop_order_payment_batches")
+  const { data } = await supabaseAdmin.from("shop_order_payment_batches")
     .select("batch_number")
     .eq("user_id", context.ownerId).eq("shop_id", shopId)
     .order("batch_number", { ascending: false }).limit(1).maybeSingle();
@@ -1115,7 +1149,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       ? `Lote #${batchNumber} · ${sortedDates[0]}`
       : `Lote #${batchNumber} · ${sortedDates[0]} – ${sortedDates[sortedDates.length - 1]}`;
 
-    const { data: batch, error: bErr } = await context.supabase.from("shop_order_payment_batches")
+    const { data: batch, error: bErr } = await supabaseAdmin.from("shop_order_payment_batches")
       .insert({
         user_id: context.ownerId, shop_id: data.shop_id,
         batch_number: batchNumber,
@@ -1131,7 +1165,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     // Create cash entry (1 per batch). Não usar auto_kind/auto_ref_date aqui
     // pois há índice único (shop_id, auto_kind, auto_ref_date) que impede
     // múltiplos lotes pagos no mesmo dia. O vínculo é feito via cash_entry_id no batch.
-    const { data: cashRow, error: cErr } = await context.supabase.from("shop_cash_entries").insert({
+    const { data: cashRow, error: cErr } = await supabaseAdmin.from("shop_cash_entries").insert({
       user_id: context.ownerId, shop_id: data.shop_id,
       kind: "expense", amount: totalAmount, date: data.payment_date,
       category: COST_CATEGORY,
@@ -1141,13 +1175,13 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     }).select("id").single();
     if (cErr) {
       // Cleanup orphan batch
-      await context.supabase.from("shop_order_payment_batches").delete()
+      await supabaseAdmin.from("shop_order_payment_batches").delete()
         .eq("id", batch.id).eq("user_id", context.ownerId);
       throw new Error(cErr.message);
     }
 
     // Link entry to batch
-    await context.supabase.from("shop_order_payment_batches")
+    await supabaseAdmin.from("shop_order_payment_batches")
       .update({ cash_entry_id: cashRow.id })
       .eq("id", batch.id).eq("user_id", context.ownerId);
 
@@ -1234,6 +1268,129 @@ export const undoOrderPayment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateBatchPaymentDate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    order_ids: z.array(z.string().uuid()).min(1).max(2000),
+    payment_date: z.string(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: orders, error: ordersErr } = await context.supabase.from("shop_orders")
+      .select("id,payment_batch_id,order_date,items_count")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .neq("payment_status", "pending")
+      .in("id", data.order_ids);
+    if (ordersErr) throw new Error(`Erro ao buscar pedidos: ${ordersErr.message}`);
+
+    const { error: paidAtErr } = await context.supabase.from("shop_orders")
+      .update({ paid_at: data.payment_date })
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .neq("payment_status", "pending")
+      .in("id", data.order_ids);
+    if (paidAtErr) throw new Error(`Erro ao atualizar paid_at: ${paidAtErr.message}`);
+
+    // Collect batch IDs: first from payment_batch_id on orders, then by order_dates overlap
+    const directBatchIds = [...new Set((orders ?? []).map((o: any) => o.payment_batch_id).filter(Boolean))];
+    const orderDates = [...new Set((orders ?? []).map((o: any) => o.order_date).filter(Boolean))];
+
+    let allBatchIds = [...directBatchIds];
+    if (orderDates.length > 0) {
+      const { data: batchesByDate } = await context.supabase
+        .from("shop_order_payment_batches")
+        .select("id")
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .overlaps("order_dates", orderDates);
+      const extraIds = (batchesByDate ?? []).map((b: any) => b.id).filter((id: string) => !allBatchIds.includes(id));
+      allBatchIds = [...allBatchIds, ...extraIds];
+    }
+
+    for (const batchId of allBatchIds) {
+      const { data: batchRow, error: batchSelectErr } = await context.supabase
+        .from("shop_order_payment_batches")
+        .select("cash_entry_id")
+        .eq("id", batchId).eq("user_id", context.ownerId).maybeSingle();
+      if (batchSelectErr) throw new Error(`Erro ao buscar batch: ${batchSelectErr.message}`);
+
+      const { error: batchErr } = await context.supabase.from("shop_order_payment_batches")
+        .update({ payment_date: data.payment_date })
+        .eq("id", batchId).eq("user_id", context.ownerId);
+      if (batchErr) throw new Error(`Erro ao atualizar batch: ${batchErr.message}`);
+
+      if (batchRow?.cash_entry_id) {
+        const { error: cashErr } = await context.supabase.from("shop_cash_entries")
+          .update({ date: data.payment_date })
+          .eq("id", batchRow.cash_entry_id).eq("user_id", context.ownerId);
+        if (cashErr) throw new Error(`Erro ao atualizar caixa: ${cashErr.message}`);
+      }
+    }
+
+    // Fallback: orders are paid but have no batch (marked paid via sync or manual path).
+    // Create a batch + cash entry now so the payment is recorded in the caixa.
+    let batchesCreated = 0;
+    if (allBatchIds.length === 0 && (orders ?? []).length > 0) {
+      const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+      const defaultCost = Number(settings?.default_unit_cost ?? 0);
+
+      await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
+
+      const dates = [...new Set((orders ?? []).map((o: any) => o.order_date as string).filter(Boolean))].sort() as string[];
+      const costByDate = new Map<string, number>();
+      for (const d of dates) {
+        costByDate.set(d, await unitCostFor(context.supabase, context.ownerId, data.shop_id, d, defaultCost));
+      }
+      let totalItems = 0, totalAmount = 0;
+      for (const o of orders ?? []) {
+        const items = Number(o.items_count ?? 0);
+        totalItems += items;
+        totalAmount += items * (costByDate.get(o.order_date as string) ?? defaultCost);
+      }
+
+      const batchNumber = await nextBatchNumber(context, data.shop_id);
+      const desc = dates.length === 1
+        ? `Lote #${batchNumber} · ${dates[0]}`
+        : `Lote #${batchNumber} · ${dates[0]} – ${dates[dates.length - 1]}`;
+
+      const { data: batch, error: bErr } = await supabaseAdmin.from("shop_order_payment_batches")
+        .insert({
+          user_id: context.ownerId, shop_id: data.shop_id,
+          batch_number: batchNumber, payment_date: data.payment_date,
+          total_amount: totalAmount, total_items: totalItems,
+          total_orders: (orders ?? []).length, order_dates: dates, description: desc,
+        }).select("id").single();
+      if (bErr) throw new Error(bErr.message);
+
+      const { data: cashRow, error: cErr } = await supabaseAdmin.from("shop_cash_entries").insert({
+        user_id: context.ownerId, shop_id: data.shop_id,
+        kind: "expense", amount: totalAmount, date: data.payment_date,
+        category: COST_CATEGORY,
+        description: `${desc} · ${totalItems} itens · ${(orders ?? []).length} pedidos`,
+        source: "auto", reconciled: true,
+      }).select("id").single();
+      if (cErr) {
+        await supabaseAdmin.from("shop_order_payment_batches").delete().eq("id", batch.id).eq("user_id", context.ownerId);
+        throw new Error(cErr.message);
+      }
+
+      await supabaseAdmin.from("shop_order_payment_batches")
+        .update({ cash_entry_id: cashRow.id }).eq("id", batch.id).eq("user_id", context.ownerId);
+
+      await supabaseAdmin.from("shop_orders")
+        .update({ payment_batch_id: batch.id })
+        .in("id", (orders ?? []).map((o: any) => o.id))
+        .eq("user_id", context.ownerId);
+
+      for (const d of dates) {
+        await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
+      }
+
+      batchesCreated = 1;
+    }
+
+    return { updated: allBatchIds.length + batchesCreated, ordersFound: (orders ?? []).length, batchIds: allBatchIds, searchedCount: data.order_ids.length };
+  });
+
 export const deleteOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -1298,11 +1455,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       supabase.from("shop_orders").select("revenue,items_count,shop_id")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", prev_from).lte("order_date", prev_to),
-      supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
+      supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
         .eq("user_id", ownerId).in("shop_id", shop_ids),
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
         .in("shop_id", shop_ids),
-      // Taxas Shopify Payments no período (apenas KPI, não aparecem no caixa)
+      // Taxas Shopify Payments no período
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", from).lte("date", to),
@@ -1325,11 +1482,53 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
     const unitCost = avgCost;
 
-    // Taxas e anúncios
-    const taxas        = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const prevTaxas    = (prevFeesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const anuncios     = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const prevAnuncios = (prevAdsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const sumAmounts = (rows: any[] | null) => (rows ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+
+    // Taxas e anúncios (de shop_cash_entries)
+    const taxas        = sumAmounts(feesRes.data);
+    const prevTaxas    = sumAmounts(prevFeesRes.data);
+    const anuncios     = sumAmounts(adsRes.data);
+    const prevAnuncios = sumAmounts(prevAdsRes.data);
+
+    // Reembolsos e chargebacks — buscados ao vivo da Shopify API para o período exato
+    let reembolsos = 0, prevReembolsos = 0, chargebacks = 0, prevChargebacks = 0;
+    const shopifySettings = (settingsRes.data ?? []).filter((s: any) => s.shopify_store_id);
+    if (shopifySettings.length > 0) {
+      const shopifyResults = await Promise.all(
+        shopifySettings.map(async (s: any) => {
+          try {
+            const { domain, token } = await getShopifyCreds(supabase, ownerId, s.shopify_store_id);
+            const [refOrders, refPrevOrders, disputes, prevDisputes] = await Promise.all([
+              fetchShopifyRefundedOrders(domain, token, `${from}T00:00:00Z`, `${to}T23:59:59Z`),
+              fetchShopifyRefundedOrders(domain, token, `${prev_from}T00:00:00Z`, `${prev_to}T23:59:59Z`),
+              fetchShopifyDisputes(domain, token, `${from}T00:00:00Z`),
+              fetchShopifyDisputes(domain, token, `${prev_from}T00:00:00Z`),
+            ]);
+            // Pedidos void (pré-captura) têm total_price=$0 mas têm transações kind="void" no refunds[]
+            // Usamos o maior entre: soma de transações reais e a diferença de preço
+            const orderRefundAmount = (o: any) => {
+              const txSum = (o.refunds ?? [])
+                .flatMap((r: any) => r.transactions ?? [])
+                .filter((t: any) => (t.kind === "refund" || t.kind === "void") && t.status === "success")
+                .reduce((s: number, t: any) => s + Number(t.amount ?? 0), 0);
+              const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
+              return Math.max(txSum, priceDiff);
+            };
+            const refAmt     = refOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
+            const prevRefAmt = refPrevOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
+            const cbAmt      = disputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
+            const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
+            return { refAmt, prevRefAmt, cbAmt, prevCbAmt };
+          } catch {
+            return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0 };
+          }
+        })
+      );
+      reembolsos     = shopifyResults.reduce((acc, r) => acc + r.refAmt, 0);
+      prevReembolsos = shopifyResults.reduce((acc, r) => acc + r.prevRefAmt, 0);
+      chargebacks    = shopifyResults.reduce((acc, r) => acc + r.cbAmt, 0);
+      prevChargebacks= shopifyResults.reduce((acc, r) => acc + r.prevCbAmt, 0);
+    }
 
     function orderCost(o: any) {
       const shopCost = costByShop.get((o as any).shop_id);
@@ -1337,7 +1536,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     }
 
     // Current period
-    const faturamento  = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const ordersRevenue = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const faturamento  = ordersRevenue - reembolsos - chargebacks;
     const pedidos      = orders.length;
     const unidades     = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0);
@@ -1349,7 +1549,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const roi          = anuncios > 0 ? ((faturamento - custoProduto - taxas - anuncios) / anuncios) * 100 : 0;
 
     // Previous period (for deltas)
-    const prevFaturamento = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const prevOrdersRevenue = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const prevFaturamento = prevOrdersRevenue - prevReembolsos - prevChargebacks;
     const prevPedidos     = prevOrders.length;
     const prevUnidades    = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const prevCusto       = prevOrders.reduce((s, o) => s + orderCost(o), 0);
@@ -1397,6 +1598,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         custoProduto,      custoProdutoDelta: delta(custoProduto, prevCusto),
         taxas,             taxasDelta:        delta(taxas, prevTaxas),
         anuncios,          anunciosDelta:     delta(anuncios, prevAnuncios),
+        reembolsos,        reembolsosDelta:   delta(reembolsos, prevReembolsos),
+        chargebacks,       chargebacksDelta:  delta(chargebacks, prevChargebacks),
         cpa,               cpaDelta:          delta(cpa, prevCpa),
         roas,              roasDelta:         delta(roas, prevRoas),
         roi,

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   listLgCards, createLgCard, updateLgCard, deleteLgCard,
-  listAllShopsForPicker, LG_STATUSES,
+  listAllShopsForPicker, LG_STATUSES, getLgCardQuickMetrics,
 } from "@/lib/lg-cards.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
@@ -138,10 +138,27 @@ function LojasGruposIndex() {
 
 // ─── Card item ───────────────────────────────────────────────────────────────
 
+function fmt(value: number, currency?: string) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: currency ? "currency" : "decimal",
+    currency: currency ?? undefined,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
 function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void; onDelete: () => void }) {
   const st = STATUS_META[card.status] ?? STATUS_META.ativo;
   const shops: any[] = card.card_shops ?? [];
   const country = COUNTRIES.find((c) => c.code === card.country);
+
+  const metricsFn = useServerFn(getLgCardQuickMetrics);
+  const { data: metrics, isLoading: loadingMetrics } = useQuery({
+    queryKey: ["lg-card-metrics", card.id],
+    queryFn:  () => metricsFn({ data: { card_id: card.id } }),
+    enabled:  shops.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
 
   return (
     <div className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
@@ -210,6 +227,63 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
                 <div className="text-xs text-muted-foreground">+{shops.length - 3} mais</div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Metrics */}
+        {shops.length > 0 && (
+          <div className="border-t border-border mt-3 pt-3 space-y-1.5">
+            {loadingMetrics ? (
+              <div className="space-y-1.5">
+                <div className="h-3.5 w-28 rounded bg-muted animate-pulse" />
+                <div className="h-3.5 w-20 rounded bg-muted animate-pulse" />
+                <div className="h-3.5 w-24 rounded bg-muted animate-pulse" />
+              </div>
+            ) : metrics ? (
+              <>
+                {/* Lucro */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Lucro mês</span>
+                  <span className={`text-xs font-semibold ${metrics.lucro >= 0 ? "text-emerald-500" : "text-destructive"}`}>
+                    {fmt(metrics.lucro, "BRL")}
+                  </span>
+                </div>
+
+                {/* Taxa de estorno */}
+                {metrics.totalPedidos > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Estornos</span>
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${
+                      metrics.totalEstornos > 0
+                        ? "bg-yellow-500/10 text-yellow-600 border border-yellow-500/20"
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      {(metrics.taxaEstorno * 100).toFixed(1)}%
+                      {metrics.totalEstornos > 0 && ` (${metrics.totalEstornos})`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Tempo de repasse */}
+                {metrics.payoutLag.some((p: any) => p.days != null) && (
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0 pt-0.5">Repasse</span>
+                    <div className="text-right space-y-0.5">
+                      {metrics.payoutLag.map((p: any) => (
+                        <div key={p.shop_id} className="text-[10px] text-muted-foreground">
+                          {metrics.payoutLag.length > 1 && <span className="font-medium text-foreground/70">{p.shopName}: </span>}
+                          {p.days != null ? (
+                            <span className="font-semibold text-foreground">D+{p.days}</span>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : null}
           </div>
         )}
       </Link>

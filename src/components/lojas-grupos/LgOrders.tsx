@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  listOrders, markOrdersPaid, markOrdersShipped,
+  listOrders, markOrdersPaid, markOrdersShipped, recomputeRange,
+  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -53,23 +54,97 @@ export function LgOrders({
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
   const [payDate, setPayDate]     = useState(() => isoDate(new Date()));
+  const [reDateOpen, setReDateOpen] = useState(false);
+  const [reDate, setReDate]       = useState(() => isoDate(new Date()));
   const [configOpen, setConfigOpen] = useState(false);
 
-  const listOrdersFn = useServerFn(listOrders);
-  const payFn        = useServerFn(markOrdersPaid);
-  const shipFn       = useServerFn(markOrdersShipped);
-  const updateCfgFn  = useServerFn(updateLgCardShopConfig);
+  const listOrdersFn      = useServerFn(listOrders);
+  const payFn             = useServerFn(markOrdersPaid);
+  const reDateFn          = useServerFn(updateBatchPaymentDate);
+  useServerFn(markOrdersShipped);
+  const updateCfgFn       = useServerFn(updateLgCardShopConfig);
+  const recomputeRangeFn  = useServerFn(recomputeRange);
+  const getSettingsFn     = useServerFn(getMultiOrderSettings);
+  const upsertSettingsFn  = useServerFn(upsertOrderSettings);
 
   const ordersQuery = useQuery({
     queryKey: ["lg-orders", cacheKey, from, to],
     queryFn:  () => listOrdersFn({ data: { shop_ids: shopIds, from, to } }),
   });
 
+  // Quando os pedidos carregam, gera automaticamente as previsões de custo no caixa
+  // para cada loja, projetadas para order_date + payment_days (D+N configurado).
+  useEffect(() => {
+    if (!ordersQuery.data) return;
+    for (const shop of shops) {
+      const days = shop.payment_days ?? 7;
+      recomputeRangeFn({ data: {
+        shop_id: shop.id,
+        from_processing: addD(from, days),
+        to_processing:   addD(to,   days),
+        payment_days:    days,
+      }});
+    }
+  }, [ordersQuery.data]);
+
+  const settingsQuery = useQuery({
+    queryKey: ["lg-order-settings", cacheKey],
+    queryFn:  () => getSettingsFn({ data: { shop_ids: shopIds } }),
+    enabled:  shopIds.length > 0,
+  });
+
+  const [costDraft, setCostDraft] = useState<Record<string, string>>({});
+  const [savingCost, setSavingCost] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    const init: Record<string, string> = {};
+    for (const row of settingsQuery.data as any[]) {
+      init[row.shop_id] = String(row.default_unit_cost ?? 0);
+    }
+    setCostDraft((prev) => ({ ...init, ...prev }));
+  }, [settingsQuery.data]);
+
+  const addD = (iso: string, n: number) => {
+    const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+  };
+
+  const saveCost = async (shopId: string) => {
+    const val = parseFloat(costDraft[shopId] ?? "0");
+    if (isNaN(val) || val < 0) return;
+    setSavingCost(shopId);
+    try {
+      await upsertSettingsFn({ data: { shop_id: shopId, patch: { default_unit_cost: val } } });
+      const shop = shops.find((s) => s.id === shopId);
+      const days = shop?.payment_days ?? 7;
+      await recomputeRangeFn({ data: {
+        shop_id: shopId,
+        from_processing: addD(from, days),
+        to_processing:   addD(to,   days),
+        payment_days:    days,
+      }});
+      qc.invalidateQueries({ queryKey: ["shop-cash"] });
+      qc.invalidateQueries({ queryKey: ["lg-order-settings", cacheKey] });
+      toast.success("Custo atualizado");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao salvar");
+    } finally {
+      setSavingCost(null);
+    }
+  };
+
   const allOrders = (ordersQuery.data ?? []) as any[];
 
-  // Unit cost per shop (default 0 — this page only shows cost column via items_count)
   const shopNames: Record<string, string> = {};
   for (const s of shops) shopNames[s.id] = s.name;
+
+  const costByShop = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of (settingsQuery.data ?? []) as any[]) {
+      m.set(row.shop_id, Number(row.default_unit_cost ?? 0));
+    }
+    return m;
+  }, [settingsQuery.data]);
 
   // Group orders by date, then by shop within each date
   const groups = useMemo(() => {
@@ -80,7 +155,7 @@ export function LgOrders({
       const d = byDate.get(day)!;
       d.totalOrders++;
       d.totalItems += Number(o.items_count ?? 0);
-      d.totalCost  += Number(o.unit_cost ?? 0) * Number(o.items_count ?? 1);
+      d.totalCost  += (costByShop.get(o.shop_id as string) ?? 0) * Number(o.items_count ?? 0);
       const shopId = o.shop_id as string;
       if (!d.byShop.has(shopId)) d.byShop.set(shopId, []);
       d.byShop.get(shopId)!.push(o);
@@ -88,7 +163,7 @@ export function LgOrders({
     return Array.from(byDate.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([date, agg]) => ({ date, ...agg }));
-  }, [allOrders]);
+  }, [allOrders, costByShop]);
 
   const toggleDay = (date: string, checked: boolean) => {
     const group = groups.find((g) => g.date === date);
@@ -96,9 +171,7 @@ export function LgOrders({
     const next = new Set(selected);
     for (const orders of group.byShop.values()) {
       for (const o of orders) {
-        if (o.payment_status === "pending") {
-          if (checked) next.add(o.id); else next.delete(o.id);
-        }
+        if (checked) next.add(o.id); else next.delete(o.id);
       }
     }
     setSelected(next);
@@ -119,17 +192,52 @@ export function LgOrders({
   // Selection summary: group selected orders by shop for payment
   const selectionByShop = useMemo(() => {
     const m = new Map<string, string[]>();
-    for (const o of allOrders) {
-      if (selected.has(o.id) && o.payment_status === "pending") {
-        const shopId = o.shop_id as string;
-        if (!m.has(shopId)) m.set(shopId, []);
-        m.get(shopId)!.push(o.id);
+    for (const group of groups) {
+      for (const [shopId, orders] of group.byShop.entries()) {
+        for (const o of orders) {
+          if (selected.has(o.id) && o.payment_status === "pending") {
+            if (!m.has(shopId)) m.set(shopId, []);
+            m.get(shopId)!.push(o.id);
+          }
+        }
       }
     }
     return m;
-  }, [selected, allOrders]);
+  }, [selected, groups]);
 
-  const selectedCount = Array.from(selectionByShop.values()).reduce((s, a) => s + a.length, 0);
+  const selectionByShopPaid = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const group of groups) {
+      for (const [shopId, orders] of group.byShop.entries()) {
+        for (const o of orders) {
+          if (selected.has(o.id) && o.payment_status !== "pending") {
+            if (!m.has(shopId)) m.set(shopId, []);
+            m.get(shopId)!.push(o.id);
+          }
+        }
+      }
+    }
+    return m;
+  }, [selected, groups]);
+
+  const selectionMode = useMemo(() => {
+    if (selected.size === 0) return null;
+    let hasPending = false, hasPaid = false;
+    for (const group of groups) {
+      for (const orders of group.byShop.values()) {
+        for (const o of orders) {
+          if (!selected.has(o.id)) continue;
+          if (o.payment_status === "pending") hasPending = true;
+          else hasPaid = true;
+        }
+      }
+    }
+    if (hasPending && !hasPaid) return "pending";
+    if (hasPaid && !hasPending) return "paid";
+    return "mixed";
+  }, [selected, groups]);
+
+  const selectedCount = selected.size;
 
   // Pay selected orders — per shop
   const pay = useMutation({
@@ -146,6 +254,29 @@ export function LgOrders({
       toast.success(`${selectedCount} pedidos marcados como pagos · ${fmtMoney(totalAmount)}`);
       setSelected(new Set());
       setPayOpen(false);
+      qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["shop-cash"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Update payment date for already-paid orders
+  const reDate_ = useMutation({
+    mutationFn: async () => {
+      const results = [];
+      for (const [shopId, orderIds] of selectionByShopPaid.entries()) {
+        const r = await reDateFn({ data: { shop_id: shopId, order_ids: orderIds, payment_date: reDate } });
+        results.push(r);
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      const totalOrders = results.reduce((s: number, r: any) => s + Number(r.ordersFound ?? 0), 0);
+      const totalBatches = results.reduce((s: number, r: any) => s + Number(r.updated ?? 0), 0);
+      const totalSearched = results.reduce((s: number, r: any) => s + Number(r.searchedCount ?? 0), 0);
+      toast.success(`Data atualizada · buscados:${totalSearched} encontrados:${totalOrders} lotes:${totalBatches}`);
+      setSelected(new Set());
+      setReDateOpen(false);
       qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
     },
@@ -209,9 +340,19 @@ export function LgOrders({
           </span>
           <div className="flex-1" />
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Limpar</Button>
-          <Button size="sm" onClick={() => setPayOpen(true)}>
-            <CheckCircle2 className="size-4" /> Marcar como pago ({selectedCount})
-          </Button>
+          {selectionMode === "pending" && (
+            <Button size="sm" onClick={() => setPayOpen(true)}>
+              <CheckCircle2 className="size-4" /> Marcar como pago ({selectedCount})
+            </Button>
+          )}
+          {selectionMode === "paid" && (
+            <Button size="sm" variant="outline" onClick={() => setReDateOpen(true)}>
+              <Calendar className="size-4" /> Alterar data de pagamento ({selectedCount})
+            </Button>
+          )}
+          {selectionMode === "mixed" && (
+            <span className="text-xs text-muted-foreground">Selecione apenas pedidos do mesmo status</span>
+          )}
         </div>
       )}
 
@@ -246,15 +387,12 @@ export function LgOrders({
           const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
           const dayMonth = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 
-          // Selectable (pending) orders in this group
-          const pendingIds: string[] = [];
+          const allDayIds: string[] = [];
           for (const orders of group.byShop.values()) {
-            for (const o of orders) {
-              if (o.payment_status === "pending") pendingIds.push(o.id);
-            }
+            for (const o of orders) allDayIds.push(o.id);
           }
-          const allDaySelected = pendingIds.length > 0 && pendingIds.every((id) => selected.has(id));
-          const someDaySelected = pendingIds.some((id) => selected.has(id));
+          const allDaySelected = allDayIds.length > 0 && allDayIds.every((id) => selected.has(id));
+          const someDaySelected = allDayIds.some((id) => selected.has(id));
 
           return (
             <div key={group.date} className={cn(i > 0 && "border-t border-border/60")}>
@@ -266,7 +404,7 @@ export function LgOrders({
                 <div onClick={(e) => e.stopPropagation()}>
                   <Checkbox
                     checked={allDaySelected ? true : someDaySelected ? "indeterminate" : false}
-                    disabled={pendingIds.length === 0}
+                    disabled={allDayIds.length === 0}
                     onCheckedChange={(v) => toggleDay(group.date, !!v)}
                   />
                 </div>
@@ -303,13 +441,11 @@ export function LgOrders({
                       {/* Order rows */}
                       {orders.map((o: any) => {
                         const sel = selected.has(o.id);
-                        const cost = Number(o.unit_cost ?? 0) * Number(o.items_count ?? 1);
-                        const isPending = o.payment_status === "pending";
+                        const cost = (costByShop.get(o.shop_id as string) ?? 0) * Number(o.items_count ?? 0);
                         return (
                           <div key={o.id} className={cn("grid grid-cols-[32px_1fr_80px_80px_120px_100px] gap-3 px-8 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors text-sm", sel && "bg-primary/5")}>
                             <Checkbox
                               checked={sel}
-                              disabled={!isPending}
                               onCheckedChange={(v) => toggleOrder(o.id, !!v)}
                             />
                             <div className="min-w-0">
@@ -331,7 +467,7 @@ export function LgOrders({
                               {cost > 0 ? fmtMoney(cost) : "—"}
                             </div>
                             <div className="text-right text-xs text-muted-foreground">
-                              {o.order_date}
+                              {o.payment_status !== "pending" ? (o.paid_at ?? o.order_date) : o.order_date}
                             </div>
                           </div>
                         );
@@ -371,32 +507,59 @@ export function LgOrders({
         </DialogContent>
       </Dialog>
 
+      {/* ── Re-date dialog ── */}
+      <Dialog open={reDateOpen} onOpenChange={(o) => { if (!o) setReDateOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Alterar data de pagamento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Atualizar a data de pagamento de <span className="font-semibold text-foreground">{selectedCount} pedidos</span> já pagos.
+              O lançamento no caixa será movido para a nova data.
+            </p>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Nova data de pagamento</label>
+              <Input type="date" value={reDate} onChange={(e) => setReDate(e.target.value)} className="w-full" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReDateOpen(false)}>Cancelar</Button>
+            <Button onClick={() => reDate_.mutate()} disabled={reDate_.isPending}>
+              {reDate_.isPending && <RefreshCw className="size-4 animate-spin" />}
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Settings dialog ── */}
       <Dialog open={configOpen} onOpenChange={(o) => { if (!o) setConfigOpen(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Prazo de pagamento por loja</DialogTitle>
+            <DialogTitle>Configurações por loja</DialogTitle>
           </DialogHeader>
-          <div className="space-y-1">
+          <div className="space-y-0">
             <p className="text-xs text-muted-foreground mb-3">
-              Configure em quantos dias após o pedido o fornecedor será pago (D+X).
-              O custo será lançado como previsão no caixa nessa data.
+              Configure o prazo de pagamento ao fornecedor (D+N) e o custo unitário do produto por loja.
             </p>
             {shops.map((shop) => (
-              <div key={shop.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
-                <div className="size-7 rounded-lg bg-primary/10 text-primary text-xs font-semibold grid place-items-center shrink-0">
-                  {shop.name?.[0]?.toUpperCase()}
+              <div key={shop.id} className="py-3 border-b border-border last:border-0 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="size-6 rounded-md bg-primary/10 text-primary text-xs font-semibold grid place-items-center shrink-0">
+                    {shop.name?.[0]?.toUpperCase()}
+                  </div>
+                  <span className="text-sm font-medium text-foreground">{shop.name}</span>
                 </div>
-                <span className="text-sm text-foreground flex-1 truncate">{shop.name}</span>
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* Prazo de pagamento */}
+                <div className="flex items-center gap-2 pl-8">
+                  <span className="text-xs text-muted-foreground w-28">Prazo fornecedor</span>
                   <span className="text-xs text-muted-foreground">D+</span>
                   <input
-                    type="number"
-                    min={0}
-                    max={365}
+                    type="number" min={0} max={365}
                     value={paymentDraft[shop.id] ?? String(shop.payment_days)}
                     onChange={(e) => setPaymentDraft((prev) => ({ ...prev, [shop.id]: e.target.value }))}
-                    className="w-16 h-7 rounded-lg border border-border bg-card text-foreground text-xs px-2 focus:outline-none focus:border-primary text-center"
+                    className="w-14 h-7 rounded-lg border border-border bg-card text-foreground text-xs px-2 focus:outline-none focus:border-primary text-center"
                   />
                   <span className="text-xs text-muted-foreground">dias</span>
                   <button
@@ -405,6 +568,26 @@ export function LgOrders({
                     className="size-7 rounded-lg bg-primary grid place-items-center text-primary-foreground disabled:opacity-50"
                   >
                     {savingConfig === shop.id
+                      ? <div className="size-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      : <Check className="size-3.5" />}
+                  </button>
+                </div>
+                {/* Custo unitário */}
+                <div className="flex items-center gap-2 pl-8">
+                  <span className="text-xs text-muted-foreground w-28">Custo por unidade</span>
+                  <span className="text-xs text-muted-foreground">R$</span>
+                  <input
+                    type="number" min={0} step={0.01}
+                    value={costDraft[shop.id] ?? "0"}
+                    onChange={(e) => setCostDraft((prev) => ({ ...prev, [shop.id]: e.target.value }))}
+                    className="w-20 h-7 rounded-lg border border-border bg-card text-foreground text-xs px-2 focus:outline-none focus:border-primary text-center"
+                  />
+                  <button
+                    onClick={() => saveCost(shop.id)}
+                    disabled={savingCost === shop.id}
+                    className="size-7 rounded-lg bg-primary grid place-items-center text-primary-foreground disabled:opacity-50"
+                  >
+                    {savingCost === shop.id
                       ? <div className="size-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       : <Check className="size-3.5" />}
                   </button>

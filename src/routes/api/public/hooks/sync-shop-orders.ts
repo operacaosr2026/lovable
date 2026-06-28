@@ -147,6 +147,29 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   return relevant.length;
 }
 
+async function syncRefundsAndChargebacks(shopId: string, userId: string, domain: string, token: string) {
+  const transactions = await fetchBalanceTransactions(domain, token, 10);
+  const relevant = transactions.filter((t: any) =>
+    (t.type === "refund" || t.type === "dispute") && t.amount != null && t.id != null
+  );
+  if (!relevant.length) return;
+
+  const rows = relevant.map((t: any) => ({
+    user_id: userId,
+    shop_id: shopId,
+    kind: "expense" as const,
+    amount: Math.abs(Number(t.amount)),
+    date: String(t.processed_at).slice(0, 10),
+    category: t.type === "refund" ? "Reembolso" : "Chargeback",
+    description: t.type === "refund" ? "Reembolso Shopify" : "Chargeback Shopify",
+    source: "shopify_auto_sync",
+    shopify_transaction_id: String(t.id),
+  }));
+
+  await supabaseAdmin.from("shop_cash_entries")
+    .upsert(rows as any[], { onConflict: "shop_id,shopify_transaction_id" });
+}
+
 async function syncPendingTransactionsForShop(shopId: string, userId: string, domain: string, token: string, lagDays: number) {
   const since = new Date(); since.setUTCDate(since.getUTCDate() - 14);
   const payouts = await fetchPayouts(domain, token, since.toISOString());
@@ -212,6 +235,7 @@ async function processShop(s: any, today: string) {
         }
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+        await syncRefundsAndChargebacks(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         const lagDays = s.payout_lag_days != null
           ? Number(s.payout_lag_days)
           : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
