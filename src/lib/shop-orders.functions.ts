@@ -1466,12 +1466,14 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", prev_from).lte("date", prev_to),
-      // Gastos de anúncios Meta Ads
+      // Gastos de anúncios Meta Ads — apenas entradas auto-sincronizadas (não mistura com caixa manual)
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
+        .eq("auto_kind", "meta_ads_spend")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
+        .eq("auto_kind", "meta_ads_spend")
         .gte("date", prev_from).lte("date", prev_to),
     ]);
 

@@ -305,8 +305,13 @@ export const testMetaAdsConnection = createServerFn({ method: "POST" })
 
 export const syncMetaAdsSpend = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d: { shop_id: string; since_days?: number }) =>
-    z.object({ shop_id: z.string().uuid(), since_days: z.number().int().min(1).max(365).optional() }).parse(d)
+  .inputValidator((d: { shop_id: string; since_days?: number; from_date?: string; to_date?: string }) =>
+    z.object({
+      shop_id:    z.string().uuid(),
+      since_days: z.number().int().min(1).max(365).optional(),
+      from_date:  z.string().optional(),
+      to_date:    z.string().optional(),
+    }).parse(d)
   )
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
@@ -314,24 +319,31 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       .select("access_token,ad_account_id").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!integ?.access_token || !integ.ad_account_id) throw new Error("Integração não configurada");
 
-    const sinceDays = data.since_days ?? 30;
+    let since: string;
+    let today: string;
 
-    // Fetch ad account timezone to compute "today" in the account's local time
-    let timezoneOffset = 0;
-    try {
-      const tzRes = await fetch(
-        `${META_GRAPH_API_BASE}/${integ.ad_account_id}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(integ.access_token)}`
-      );
-      const tzJson: any = await tzRes.json();
-      if (typeof tzJson?.timezone_offset_hours_utc === "number") {
-        timezoneOffset = tzJson.timezone_offset_hours_utc;
+    if (data.from_date && data.to_date) {
+      // Usa as datas exatas do dashboard (evita mismatch de timezone entre conta Meta e browser)
+      since = data.from_date;
+      today = data.to_date;
+    } else {
+      const sinceDays = data.since_days ?? 30;
+      // Fetch ad account timezone to compute "today" in the account's local time
+      let timezoneOffset = 0;
+      try {
+        const tzRes = await fetch(
+          `${META_GRAPH_API_BASE}/${integ.ad_account_id}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(integ.access_token)}`
+        );
+        const tzJson: any = await tzRes.json();
+        if (typeof tzJson?.timezone_offset_hours_utc === "number") {
+          timezoneOffset = tzJson.timezone_offset_hours_utc;
+        }
+      } catch {
+        // fallback to UTC
       }
-    } catch {
-      // fallback to UTC
+      today = isoDateInTimezone(timezoneOffset);
+      since = addDays(today, -sinceDays);
     }
-
-    const today = isoDateInTimezone(timezoneOffset);
-    const since = addDays(today, -sinceDays);
 
     // Check if specific campaigns are selected for this shop
     const { data: tokenRow } = await supabaseAdmin
@@ -358,7 +370,7 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
 
       const rows = ((json.data ?? []) as any[])
         .map((d) => ({ date: d.date_start as string, spend: Number(d.spend ?? 0) }))
-        .filter((d) => d.spend > 0)
+        .filter((d) => d.date)
         .map((d) => ({
           user_id: ownerId,
           shop_id: data.shop_id,
@@ -372,16 +384,18 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
           auto_ref_date: d.date,
         }));
 
-      // Delete existing entries for the period first (partial index prevents ON CONFLICT upsert)
-      await supabaseAdmin.from("shop_cash_entries")
-        .delete()
-        .eq("user_id", ownerId)
-        .eq("shop_id", data.shop_id)
-        .eq("auto_kind", "meta_ads_spend")
-        .gte("auto_ref_date", since)
-        .lte("auto_ref_date", today);
+      // Only delete dates the API actually returned — preserves existing entries for dates
+      // not in the response (e.g. today's data not yet available in Meta's pipeline).
+      const rowDates = [...new Set(rows.map((r) => r.date))];
+      if (rowDates.length > 0) {
+        await supabaseAdmin.from("shop_cash_entries")
+          .delete()
+          .eq("user_id", ownerId)
+          .eq("shop_id", data.shop_id)
+          .eq("category", SPEND_CATEGORY)
+          .eq("source", "auto")
+          .in("date", rowDates);
 
-      if (rows.length) {
         const { error } = await supabaseAdmin.from("shop_cash_entries").insert(rows);
         if (error) throw new Error(error.message);
       }

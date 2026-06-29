@@ -436,6 +436,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .eq("category", "Facebook Ads")
+        .eq("auto_kind", "meta_ads_spend")
         .gte("date", from)
         .lte("date", to),
       supabaseAdmin

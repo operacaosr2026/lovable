@@ -50,6 +50,7 @@ export function LgOrders({
     if (period === "custom" && customRange) return customRange;
     return { from: addD(today, -29), to: today };
   })();
+  const [paymentFilter, setPaymentFilter] = useState<"todos"|"pendente"|"pago"|"parcial">("pendente");
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
@@ -148,22 +149,32 @@ export function LgOrders({
 
   // Group orders by date, then by shop within each date
   const groups = useMemo(() => {
-    const byDate = new Map<string, { totalOrders: number; totalItems: number; totalCost: number; byShop: Map<string, any[]> }>();
+    const byDate = new Map<string, { totalOrders: number; totalItems: number; totalCost: number; paidCount: number; pendingCount: number; byShop: Map<string, any[]> }>();
     for (const o of allOrders) {
       const day = o.order_date as string;
-      if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, byShop: new Map() });
+      if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;
       d.totalOrders++;
       d.totalItems += Number(o.items_count ?? 0);
       d.totalCost  += (costByShop.get(o.shop_id as string) ?? 0) * Number(o.items_count ?? 0);
+      const st = o.payment_status as string;
+      if (st === "paid" || st === "shipped") d.paidCount++;
+      else if (st === "pending") d.pendingCount++;
       const shopId = o.shop_id as string;
       if (!d.byShop.has(shopId)) d.byShop.set(shopId, []);
       d.byShop.get(shopId)!.push(o);
     }
     return Array.from(byDate.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([date, agg]) => ({ date, ...agg }));
+      .map(([date, agg]) => {
+        const dayStatus = agg.pendingCount === 0 ? "pago" : agg.paidCount === 0 ? "pendente" : "parcial";
+        return { date, ...agg, dayStatus };
+      });
   }, [allOrders, costByShop]);
+
+  const filteredGroups = useMemo(() =>
+    paymentFilter === "todos" ? groups : groups.filter(g => g.dayStatus === paymentFilter),
+  [groups, paymentFilter]);
 
   const toggleDay = (date: string, checked: boolean) => {
     const group = groups.find((g) => g.date === date);
@@ -326,6 +337,22 @@ export function LgOrders({
           <RefreshCw className={cn("size-4", loading && "animate-spin")} />
           Atualizar
         </Button>
+        <div className="flex items-center rounded-xl border border-border overflow-hidden text-xs h-8">
+          {(["pendente","pago","parcial","todos"] as const).map((f, idx, arr) => (
+            <button key={f}
+              onClick={() => setPaymentFilter(f)}
+              className={cn(
+                "px-3 h-full transition-colors",
+                idx < arr.length - 1 && "border-r border-border",
+                paymentFilter === f
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {f === "pendente" ? "Não pago" : f === "pago" ? "Pago" : f === "parcial" ? "Parcial" : "Todos"}
+            </button>
+          ))}
+        </div>
         <div className="flex-1" />
         <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)}>
           <Settings2 className="size-4" /> Configurações
@@ -375,13 +402,13 @@ export function LgOrders({
           </div>
         )}
 
-        {!loading && groups.length === 0 && (
+        {!loading && filteredGroups.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             Nenhum pedido no período selecionado.
           </div>
         )}
 
-        {groups.map((group, i) => {
+        {filteredGroups.map((group, i) => {
           const isOpen = expanded.has(group.date);
           const d      = localDate(group.date);
           const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
@@ -409,9 +436,18 @@ export function LgOrders({
                   />
                 </div>
                 <ChevronRight className={cn("size-4 text-muted-foreground transition-transform", isOpen && "rotate-90")} />
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-muted-foreground uppercase">{weekday}</span>
                   <span className="text-sm font-semibold text-foreground">{dayMonth}</span>
+                  {group.dayStatus === "pago" && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-medium">Pago</span>
+                  )}
+                  {group.dayStatus === "pendente" && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/20 font-medium">Não pago</span>
+                  )}
+                  {group.dayStatus === "parcial" && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 border border-blue-500/20 font-medium">Parcial · {group.paidCount}✓ {group.pendingCount}✗</span>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {isConsolidated ? `${group.byShop.size} loja${group.byShop.size !== 1 ? "s" : ""}` : ""}

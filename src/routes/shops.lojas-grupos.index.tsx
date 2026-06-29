@@ -245,7 +245,7 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Lucro mês</span>
                   <span className={`text-xs font-semibold ${metrics.lucro >= 0 ? "text-emerald-500" : "text-destructive"}`}>
-                    {fmt(metrics.lucro, "BRL")}
+                    {fmt(metrics.lucro, "USD")}
                   </span>
                 </div>
 

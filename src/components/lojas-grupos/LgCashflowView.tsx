@@ -90,6 +90,13 @@ function formatDateKey(k: string, opts: Intl.DateTimeFormatOptions) {
   return dateFromKey(k).toLocaleDateString("pt-BR", {...opts, timeZone: BRAZIL_TIME_ZONE});
 }
 function weekdayFromKey(k: string) { return dateFromKey(k).getUTCDay(); }
+function isoWeekNumber(k: string): number {
+  const d = new Date(k + "T12:00:00Z");
+  const thu = new Date(d);
+  thu.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 3);
+  const jan4 = new Date(Date.UTC(thu.getUTCFullYear(), 0, 4));
+  return Math.ceil(((thu.getTime() - jan4.getTime()) / 86400000 + ((jan4.getUTCDay() + 6) % 7)) / 7) + 1;
+}
 function shiftToMondayIfWeekend(k: string) {
   const wd = weekdayFromKey(k);
   if (wd===6) return addDaysToKey(k,2);
@@ -589,6 +596,7 @@ export function LgCashflowView({
   // Period date picker state
   const [period, setPeriod]           = useState("semana");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
+  const [weekOffset, setWeekOffset]   = useState(0); // 0 = semana atual, -1 = anterior, +1 = próxima
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -621,11 +629,23 @@ export function LgCashflowView({
       const last  = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
       return Array.from({ length: last }, (_, i) => addDaysToKey(start, i));
     }
-    // default: semana atual
+    // default: semana com offset (0 = atual, -1 = anterior, ...)
     const wd = weekdayFromKey(todayKey);
-    const offset = wd === 0 ? -6 : -(wd - 1);
-    return Array.from({ length: 7 }, (_, i) => addDaysToKey(todayKey, offset + i));
-  }, [period, customRange, todayKey]);
+    const offsetToMonday = wd === 0 ? -6 : -(wd - 1);
+    const mondayOfWeek = addDaysToKey(todayKey, offsetToMonday + weekOffset * 7);
+    return Array.from({ length: 7 }, (_, i) => addDaysToKey(mondayOfWeek, i));
+  }, [period, customRange, todayKey, weekOffset]);
+
+  const weekLabel = useMemo(() => {
+    if (period !== "semana") return "Semana";
+    const monday = dayList[0];
+    const weekNum = isoWeekNumber(monday);
+    const monthAbbr = new Date(monday + "T12:00:00Z")
+      .toLocaleDateString("pt-BR", { month: "short", timeZone: "UTC" })
+      .replace(".", "")
+      .replace(/^\w/, c => c.toUpperCase());
+    return `SEM #${weekNum} - ${monthAbbr}`;
+  }, [period, dayList]);
 
   const horizon = useMemo(() => {
     const last   = dayList[dayList.length - 1] ?? todayKey;
@@ -759,19 +779,29 @@ export function LgCashflowView({
         <DateRangePicker
           period={period === "semana" ? "hoje" : period}
           setPeriod={(p) => {
-            if (p === "hoje") { setPeriod("semana"); setCustomRange(undefined); }
-            else setPeriod(p);
+            if (p === "hoje") { setPeriod("semana"); setCustomRange(undefined); setWeekOffset(0); }
+            else { setPeriod(p); setWeekOffset(0); }
           }}
           customRange={customRange}
           setCustomRange={setCustomRange}
         />
-        {/* Semana atual override */}
-        <button
-          onClick={() => { setPeriod("semana"); setCustomRange(undefined); }}
-          className={`h-8 px-3 rounded-xl border text-xs transition-all ${period === "semana" ? "border-primary/40 bg-primary/5 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}
-        >
-          Semana
-        </button>
+        {/* Navegação de semanas */}
+        <div className={`flex items-center h-8 rounded-xl border text-xs transition-all overflow-hidden ${period === "semana" ? "border-primary/40 bg-primary/5 text-primary" : "border-border bg-card text-muted-foreground"}`}>
+          <button
+            onClick={() => { setPeriod("semana"); setCustomRange(undefined); setWeekOffset(w => w - 1); }}
+            className="px-2 h-full hover:bg-primary/10 transition-colors"
+            title="Semana anterior"
+          >‹</button>
+          <button
+            onClick={() => { setPeriod("semana"); setCustomRange(undefined); setWeekOffset(0); }}
+            className="px-3 h-full hover:bg-primary/10 transition-colors font-medium whitespace-nowrap"
+          >{weekLabel}</button>
+          <button
+            onClick={() => { setPeriod("semana"); setCustomRange(undefined); setWeekOffset(w => w + 1); }}
+            className="px-2 h-full hover:bg-primary/10 transition-colors"
+            title="Próxima semana"
+          >›</button>
+        </div>
 
         <div className="flex-1" />
 
