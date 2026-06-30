@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
   ArrowLeft, Layers, MapPin, Store, ChevronDown,
-  LayoutDashboard, Wallet, ShoppingBag, Plug, Eye,
+  LayoutDashboard, Wallet, ShoppingBag, Plug, Eye, Truck,
 } from "lucide-react";
 import { getLgCard } from "@/lib/lg-cards.functions";
 import { LgOverview }      from "@/components/lojas-grupos/LgOverview";
@@ -13,9 +13,10 @@ import { LgDashboard }     from "@/components/lojas-grupos/LgDashboard";
 import { LgCaixa }         from "@/components/lojas-grupos/LgCaixa";
 import { LgOrders }        from "@/components/lojas-grupos/LgOrders";
 import { LgIntegrations }  from "@/components/lojas-grupos/LgIntegrations";
+import { LgLogistica }     from "@/components/lojas-grupos/LgLogistica";
 
-type Tab = "overview" | "dashboard" | "caixa" | "pedidos" | "integracoes";
-const VALID_TABS: Tab[] = ["overview", "dashboard", "caixa", "pedidos", "integracoes"];
+type Tab = "overview" | "dashboard" | "caixa" | "pedidos" | "logistica" | "integracoes";
+const VALID_TABS: Tab[] = ["overview", "dashboard", "caixa", "pedidos", "logistica", "integracoes"];
 
 const COUNTRIES: Record<string, string> = {
   US: "🇺🇸", CA: "🇨🇦", GB: "🇬🇧", BE: "🇧🇪", CH: "🇨🇭", AU: "🇦🇺",
@@ -177,12 +178,13 @@ function LgCardDetail() {
         <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
         <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
+        <TabBtn active={tab === "logistica"}  onClick={() => setTab("logistica")}  icon={Truck}>Logística</TabBtn>
         <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>
       </div>
 
       {/* Content — only render when there are shops or for overview/integrations */}
       {tab === "overview" && (
-        <LgOverview card={card} />
+        <LgOverview card={card} shopIds={allShopIds} />
       )}
       {tab === "dashboard" && allShopIds.length > 0 && (
         <LgDashboard
@@ -214,6 +216,15 @@ function LgCardDetail() {
             id:           s.shop_id,
             name:         shopNamesMap[s.shop_id] ?? s.shop_id,
             payment_days: s.payment_days ?? 7,
+          }))}
+        />
+      )}
+      {tab === "logistica" && allShopIds.length > 0 && (
+        <LgLogistica
+          shopIds={effectiveShopIds}
+          shops={shops.map((s: any) => ({
+            id:   s.shop_id,
+            name: shopNamesMap[s.shop_id] ?? s.shop_id,
           }))}
         />
       )}

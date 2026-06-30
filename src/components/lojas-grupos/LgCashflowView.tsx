@@ -662,7 +662,7 @@ export function LgCashflowView({
         return { ...item, date:todayKey, originalDate:item.originalDate??item.date, shiftedFromWeekday:wd };
       }
       if (!weekendToMonday) return item;
-      if (!isShopify && !isOrderCost) return item;
+      if (!isShopify) return item;
       if (item.skip_weekend_rule) return item;
       const wd = weekdayFromKey(item.date);
       if (wd!==0 && wd!==6) return item;

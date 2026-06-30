@@ -211,6 +211,18 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
   return pendingTx.length;
 }
 
+async function processShopPayoutsOnly(s: any) {
+  if (!s.shopify_store_id) return;
+  const { data: store } = await supabaseAdmin.from("shopify_stores").select("*")
+    .eq("id", s.shopify_store_id).maybeSingle();
+  if (!store?.access_token || !store?.shop_domain) return;
+  const lagDays = s.payout_lag_days != null
+    ? Number(s.payout_lag_days)
+    : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
+  await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+  await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
+}
+
 async function processShop(s: any, today: string) {
   const cutoff: string | null = s.cashflow_start_date ?? null;
   const sinceDate = cutoff ?? addDays(today, -30);
@@ -230,6 +242,7 @@ async function processShop(s: any, today: string) {
             order_date: (o.created_at as string).slice(0, 10),
             items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
             revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
+            shopify_financial_status: o.financial_status ?? null,
           }));
           await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
         }
@@ -300,14 +313,20 @@ export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         const today = isoDate(new Date());
+        const body = await request.json().catch(() => ({})) as any;
+        const payoutsOnly = Boolean(body?.payouts_only);
         const { data: settings, error } = await supabaseAdmin
           .from("shop_order_settings").select("*").eq("automation_enabled", true);
         if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
         let processed = 0;
         for (const s of settings ?? []) {
-          try { await processShop(s, today); processed++; } catch (e) { console.error("shop fail", s.shop_id, e); }
+          try {
+            if (payoutsOnly) await processShopPayoutsOnly(s);
+            else await processShop(s, today);
+            processed++;
+          } catch (e) { console.error("shop fail", s.shop_id, e); }
         }
-        return new Response(JSON.stringify({ processed, today }), { headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ processed, today, payoutsOnly }), { headers: { "Content-Type": "application/json" } });
       },
     },
   },

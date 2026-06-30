@@ -389,150 +389,6 @@ export type Database = {
         }
         Relationships: []
       }
-      lg_cards: {
-        Row: {
-          id: string
-          user_id: string
-          name: string
-          description: string | null
-          status: string
-          logo_url: string | null
-          country: string | null
-          tag: string | null
-          matriz_shop_id: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          name: string
-          description?: string | null
-          status?: string
-          logo_url?: string | null
-          country?: string | null
-          tag?: string | null
-          matriz_shop_id?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          name?: string
-          description?: string | null
-          status?: string
-          logo_url?: string | null
-          country?: string | null
-          tag?: string | null
-          matriz_shop_id?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      lg_card_currency_rates: {
-        Row: {
-          id: string
-          card_id: string
-          user_id: string
-          brl_rate: number
-          eur_rate: number
-          updated_at: string | null
-        }
-        Insert: {
-          id?: string
-          card_id: string
-          user_id: string
-          brl_rate?: number
-          eur_rate?: number
-          updated_at?: string | null
-        }
-        Update: {
-          id?: string
-          card_id?: string
-          user_id?: string
-          brl_rate?: number
-          eur_rate?: number
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
-      lg_card_shops: {
-        Row: {
-          id: string
-          card_id: string
-          shop_id: string
-          payout_days: number
-          payment_days: number
-        }
-        Insert: {
-          id?: string
-          card_id: string
-          shop_id: string
-          payout_days?: number
-          payment_days?: number
-        }
-        Update: {
-          id?: string
-          card_id?: string
-          shop_id?: string
-          payout_days?: number
-          payment_days?: number
-        }
-        Relationships: []
-      }
-      lg_card_notes: {
-        Row: {
-          id: string
-          card_id: string
-          user_id: string
-          content: string
-          note_date: string
-          visitors: number | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          card_id: string
-          user_id: string
-          content: string
-          note_date?: string
-          visitors?: number | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          card_id?: string
-          user_id?: string
-          content?: string
-          note_date?: string
-          visitors?: number | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      shop_daily_analytics: {
-        Row: {
-          id: string
-          shop_id: string
-          user_id: string
-          date: string
-          sessions: number
-        }
-        Insert: {
-          id?: string
-          shop_id: string
-          user_id: string
-          date: string
-          sessions?: number
-        }
-        Update: {
-          id?: string
-          shop_id?: string
-          user_id?: string
-          date?: string
-          sessions?: number
-        }
-        Relationships: []
-      }
       gratitude_entries: {
         Row: {
           content: string
@@ -713,6 +569,206 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      lg_card_currency_rates: {
+        Row: {
+          brl_rate: number
+          card_id: string
+          eur_rate: number
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          brl_rate?: number
+          card_id: string
+          eur_rate?: number
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          brl_rate?: number
+          card_id?: string
+          eur_rate?: number
+          id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_currency_rates_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "lg_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lg_card_goals: {
+        Row: {
+          card_id: string
+          created_at: string | null
+          id: string
+          meta: number
+          prazo: string
+          start_date: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          card_id: string
+          created_at?: string | null
+          id?: string
+          meta: number
+          prazo: string
+          start_date: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          card_id?: string
+          created_at?: string | null
+          id?: string
+          meta?: number
+          prazo?: string
+          start_date?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_goals_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "lg_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lg_card_notes: {
+        Row: {
+          card_id: string
+          content: string
+          created_at: string | null
+          id: string
+          note_date: string
+          user_id: string
+          visitors: number | null
+        }
+        Insert: {
+          card_id: string
+          content: string
+          created_at?: string | null
+          id?: string
+          note_date?: string
+          user_id: string
+          visitors?: number | null
+        }
+        Update: {
+          card_id?: string
+          content?: string
+          created_at?: string | null
+          id?: string
+          note_date?: string
+          user_id?: string
+          visitors?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_notes_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "lg_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lg_card_shops: {
+        Row: {
+          card_id: string
+          id: string
+          payment_days: number
+          payout_days: number
+          shop_id: string
+        }
+        Insert: {
+          card_id: string
+          id?: string
+          payment_days?: number
+          payout_days?: number
+          shop_id: string
+        }
+        Update: {
+          card_id?: string
+          id?: string
+          payment_days?: number
+          payout_days?: number
+          shop_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_shops_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "lg_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lg_card_shops_shop_id_fkey"
+            columns: ["shop_id"]
+            isOneToOne: false
+            referencedRelation: "shops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lg_cards: {
+        Row: {
+          country: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          logo_url: string | null
+          matriz_shop_id: string | null
+          name: string
+          status: string
+          tag: string | null
+          user_id: string
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          logo_url?: string | null
+          matriz_shop_id?: string | null
+          name: string
+          status?: string
+          tag?: string | null
+          user_id: string
+        }
+        Update: {
+          country?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          logo_url?: string | null
+          matriz_shop_id?: string | null
+          name?: string
+          status?: string
+          tag?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lg_cards_matriz_shop_id_fkey"
+            columns: ["matriz_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shops"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       login_history: {
         Row: {
@@ -1574,6 +1630,7 @@ export type Database = {
           recurrence_until: string | null
           shop_id: string
           shopify_payout_id: string | null
+          shopify_transaction_id: string | null
           skip_weekend_rule: boolean
           source: string
           updated_at: string
@@ -1596,6 +1653,7 @@ export type Database = {
           recurrence_until?: string | null
           shop_id: string
           shopify_payout_id?: string | null
+          shopify_transaction_id?: string | null
           skip_weekend_rule?: boolean
           source?: string
           updated_at?: string
@@ -1618,6 +1676,7 @@ export type Database = {
           recurrence_until?: string | null
           shop_id?: string
           shopify_payout_id?: string | null
+          shopify_transaction_id?: string | null
           skip_weekend_rule?: boolean
           source?: string
           updated_at?: string
@@ -1665,6 +1724,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      shop_daily_analytics: {
+        Row: {
+          date: string
+          id: string
+          sessions: number
+          shop_id: string
+          user_id: string
+        }
+        Insert: {
+          date: string
+          id?: string
+          sessions?: number
+          shop_id: string
+          user_id: string
+        }
+        Update: {
+          date?: string
+          id?: string
+          sessions?: number
+          shop_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_daily_analytics_shop_id_fkey"
+            columns: ["shop_id"]
+            isOneToOne: false
+            referencedRelation: "shops"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       shop_group_stores: {
         Row: {
@@ -1941,11 +2032,14 @@ export type Database = {
       }
       shop_orders: {
         Row: {
+          carrier: string | null
           connection_id: string | null
           created_at: string
           created_at_shopify: string
           currency: string | null
+          customer_name: string | null
           delivered_at: string | null
+          delivery_status: string | null
           external_id: string
           id: string
           items_count: number
@@ -1959,16 +2053,22 @@ export type Database = {
           revenue: number
           shipped_at: string | null
           shop_id: string
+          shopify_financial_status: string | null
           source: string
+          tracking_code: string | null
+          tracking_url: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          carrier?: string | null
           connection_id?: string | null
           created_at?: string
           created_at_shopify: string
           currency?: string | null
+          customer_name?: string | null
           delivered_at?: string | null
+          delivery_status?: string | null
           external_id: string
           id?: string
           items_count?: number
@@ -1976,22 +2076,28 @@ export type Database = {
           order_number?: string | null
           paid_at?: string | null
           payment_batch_id?: string | null
-          payment_status?: string
+          payment_status?: "pending" | "paid" | "shipped" | "estornado" | "reembolsado"
           problem_at?: string | null
           raw?: Json | null
           revenue?: number
           shipped_at?: string | null
           shop_id: string
+          shopify_financial_status?: string | null
           source?: string
+          tracking_code?: string | null
+          tracking_url?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          carrier?: string | null
           connection_id?: string | null
           created_at?: string
           created_at_shopify?: string
           currency?: string | null
+          customer_name?: string | null
           delivered_at?: string | null
+          delivery_status?: string | null
           external_id?: string
           id?: string
           items_count?: number
@@ -1999,13 +2105,16 @@ export type Database = {
           order_number?: string | null
           paid_at?: string | null
           payment_batch_id?: string | null
-          payment_status?: string
+          payment_status?: "pending" | "paid" | "shipped" | "estornado" | "reembolsado"
           problem_at?: string | null
           raw?: Json | null
           revenue?: number
           shipped_at?: string | null
           shop_id?: string
+          shopify_financial_status?: string | null
           source?: string
+          tracking_code?: string | null
+          tracking_url?: string | null
           updated_at?: string
           user_id?: string
         }

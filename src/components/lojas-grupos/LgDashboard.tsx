@@ -15,7 +15,7 @@ import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  getShopDashboardMetrics, syncShopifyPaymentsFees,
+  getShopDashboardMetrics, syncShopifyPaymentsFees, syncShopifyOrders,
 } from "@/lib/shop-orders.functions";
 import { syncMetaAdsSpend } from "@/lib/meta-ads.functions";
 import {
@@ -82,19 +82,20 @@ function Delta({ value }: { value: number }) {
 
 function KpiCard({
   icon, iconColor = "primary", label, value, delta, highlighted = false,
-  tooltip, badge, loading, onClick,
+  highlightedVariant = "success", tooltip, badge, loading, onClick,
 }: {
   icon: React.ReactNode; iconColor?: IconColor; label: string; value: string;
-  delta: number; highlighted?: boolean; tooltip?: string;
-  badge?: React.ReactNode; loading?: boolean; onClick?: () => void;
+  delta: number; highlighted?: boolean; highlightedVariant?: "success" | "destructive";
+  tooltip?: string; badge?: React.ReactNode; loading?: boolean; onClick?: () => void;
 }) {
+  const hlClass = highlightedVariant === "destructive"
+    ? "bg-destructive text-destructive-foreground border-destructive/30 shadow-md shadow-destructive/20"
+    : "bg-success text-success-foreground border-success/30 shadow-md shadow-success/20";
   return (
     <div
       onClick={onClick}
       className={`relative flex flex-col gap-3 rounded-2xl p-4 border transition-all duration-200 group hover:scale-[1.01] hover:shadow-md ${
-        highlighted
-          ? "bg-success text-success-foreground border-success/30 shadow-md shadow-success/20"
-          : "bg-card border-border hover:border-primary/20"
+        highlighted ? hlClass : "bg-card border-border hover:border-primary/20"
       } ${onClick ? "cursor-pointer" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -565,7 +566,7 @@ export function LgDashboard({
   matrizShopId: string | null;
 }) {
   const cacheKey = shopIds.slice().sort().join(",");
-  const [period, setPeriod]           = useState("30d");
+  const [period, setPeriod]           = useState("hoje");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const [currency, setCurrency]       = useState("USD");
   const [brlRate, setBrlRate]         = useState(5.0);
@@ -583,12 +584,13 @@ export function LgDashboard({
     [period, customRange],
   );
 
-  const getRatesFn = useServerFn(getLgCurrencyRates);
-  const saveRatesFn = useServerFn(saveLgCurrencyRates);
-  const getMetrics = useServerFn(getShopDashboardMetrics);
-  const syncFeesFn = useServerFn(syncShopifyPaymentsFees);
-  const syncAdsFn  = useServerFn(syncMetaAdsSpend);
-  const qc         = useQueryClient();
+  const getRatesFn   = useServerFn(getLgCurrencyRates);
+  const saveRatesFn  = useServerFn(saveLgCurrencyRates);
+  const getMetrics   = useServerFn(getShopDashboardMetrics);
+  const syncOrdersFn = useServerFn(syncShopifyOrders);
+  const syncFeesFn   = useServerFn(syncShopifyPaymentsFees);
+  const syncAdsFn    = useServerFn(syncMetaAdsSpend);
+  const qc           = useQueryClient();
 
   // Load saved currency rates
   useEffect(() => {
@@ -606,7 +608,7 @@ export function LgDashboard({
 
   const currencyRate = currency === "BRL" ? brlRate : currency === "EUR" ? eurRate : 1;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["lg-dashboard", cacheKey, from, to],
     queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from, to, prev_from: prevFrom, prev_to: prevTo } }),
   });
@@ -615,11 +617,12 @@ export function LgDashboard({
   const syncData = async (silent = false) => {
     setSyncing(true);
     try {
-      const sinceDays = Math.max(30, Math.ceil((Date.now() - new Date(from + "T00:00:00").getTime()) / 86_400_000) + 2);
+      const sinceDays = Math.max(1, Math.ceil((Date.now() - new Date(from + "T00:00:00").getTime()) / 86_400_000) + 2);
       const results   = await Promise.all(
         shopIds.map((shopId) => Promise.all([
+          syncOrdersFn({ data: { shop_id: shopId, since_days: sinceDays } }).catch(() => null),
           syncFeesFn({ data: { shop_id: shopId } }).catch(() => null),
-          syncAdsFn({ data: { shop_id: shopId, since_days: sinceDays } }).catch(() => null),
+          syncAdsFn({ data: { shop_id: shopId, from_date: from, to_date: to } }).catch(() => null),
         ]))
       );
       qc.invalidateQueries({ queryKey: ["lg-dashboard", cacheKey] });
@@ -668,13 +671,20 @@ export function LgDashboard({
           {fmtDate(from)}{from !== to ? ` → ${fmtDate(to)}` : ""}
         </div>
 
-        <button
-          onClick={() => syncData(false)}
-          disabled={syncing}
-          className="size-8 rounded-xl bg-muted border border-border hover:border-primary/30 disabled:opacity-50 grid place-items-center text-muted-foreground hover:text-foreground transition-all"
-        >
-          <RefreshCw className={`size-3.5 ${(isLoading || syncing) ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {dataUpdatedAt > 0 && (
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+              {new Date(dataUpdatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+          <button
+            onClick={() => syncData(false)}
+            disabled={syncing}
+            className="size-8 rounded-xl bg-muted border border-border hover:border-primary/30 disabled:opacity-50 grid place-items-center text-muted-foreground hover:text-foreground transition-all"
+          >
+            <RefreshCw className={`size-3.5 ${(isLoading || syncing) ? "animate-spin" : ""}`} />
+          </button>
+        </div>
 
         {/* Period + date picker */}
         <DateRangePicker
@@ -721,7 +731,7 @@ export function LgDashboard({
 
       {/* ── KPI row 1 ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard highlighted loading={isLoading}
+        <KpiCard highlighted highlightedVariant={(m?.lucro ?? 0) < 0 ? "destructive" : "success"} loading={isLoading}
           icon={<DollarSign className="size-4" />}
           label="Lucro" value={fmt(m?.lucro ?? 0)} delta={m?.lucroDelta ?? 0}
           tooltip="Faturamento líquido − custo − taxas − anúncios"
