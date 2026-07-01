@@ -611,6 +611,7 @@ export type Database = {
           closed_at: string | null
           created_at: string | null
           id: string
+          lucro_por_venda: number | null
           meta: number
           prazo: string
           start_date: string
@@ -622,6 +623,7 @@ export type Database = {
           closed_at?: string | null
           created_at?: string | null
           id?: string
+          lucro_por_venda?: number | null
           meta: number
           prazo: string
           start_date: string
@@ -633,6 +635,7 @@ export type Database = {
           closed_at?: string | null
           created_at?: string | null
           id?: string
+          lucro_por_venda?: number | null
           meta?: number
           prazo?: string
           start_date?: string

@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot,
 } from "recharts";
 import {
   Megaphone, ShoppingCart, TrendingUp, Wallet,
@@ -16,6 +16,7 @@ import {
   getLgAccumulatedLucro,
   getLgCardGoal,
   createLgCardGoal,
+  updateLgCardGoal,
   finalizeLgCardGoal,
   listLgCardGoalHistory,
 } from "@/lib/lg-overview.functions";
@@ -25,15 +26,6 @@ import { LgNotesSection } from "@/components/lojas-grupos/LgNotesSection";
 
 function isoToday() {
   return new Date().toLocaleDateString("en-CA");
-}
-
-function fmt(n: number, opts?: { decimals?: number; prefix?: string }) {
-  const v = Math.abs(n);
-  let s: string;
-  if (v >= 1_000_000) s = `${(v / 1_000_000).toFixed(opts?.decimals ?? 1)}M`;
-  else if (v >= 1_000) s = `${(v / 1_000).toFixed(opts?.decimals ?? 1)}k`;
-  else s = v.toFixed(opts?.decimals ?? 2);
-  return `${n < 0 ? "-" : ""}${opts?.prefix ?? ""}${s}`;
 }
 
 function fmtMoney(n: number) {
@@ -46,16 +38,26 @@ function daysBetween(from: string, to: string) {
   return Math.round((b - a) / 86400_000);
 }
 
+function addDaysIso(iso: string, n: number) {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 function fmtDatePt(iso: string) {
-  return new Date(iso + "T00:00:00Z").toLocaleDateString("pt-BR");
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
 }
 
 function ProgressTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
+  const real = payload.find((p: any) => p.dataKey === "lucroAcumulado" && p.value != null);
+  const projetado = payload.find((p: any) => p.dataKey === "lucroProjetado" && p.value != null);
   return (
     <div className="rounded-xl bg-card border border-border p-2.5 shadow-lg text-xs">
       <p className="text-muted-foreground mb-1 font-medium">{label}</p>
-      <p className="font-semibold text-foreground">{fmtMoney(payload[0].value)}</p>
+      {real && <p className="font-semibold text-foreground">{fmtMoney(real.value)} <span className="text-muted-foreground font-normal">(real)</span></p>}
+      {projetado && <p className="font-semibold text-primary/70">{fmtMoney(projetado.value)} <span className="text-muted-foreground font-normal">(projeção)</span></p>}
     </div>
   );
 }
@@ -194,6 +196,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
   const getAccFn       = useServerFn(getLgAccumulatedLucro);
   const getGoalFn      = useServerFn(getLgCardGoal);
   const createGoalFn   = useServerFn(createLgCardGoal);
+  const updateGoalFn   = useServerFn(updateLgCardGoal);
   const finalizeGoalFn = useServerFn(finalizeLgCardGoal);
   const getHistoryFn   = useServerFn(listLgCardGoalHistory);
 
@@ -233,21 +236,32 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
   });
 
   // ── Subabas: Definir Meta / Histórico / Diário de Operação ────────────────
-  const [subTab, setSubTab] = useState<"definir" | "historico" | "diario">("historico");
-  const subTabInitialized = useRef(false);
-  useEffect(() => {
-    if (!subTabInitialized.current && goalData !== undefined) {
-      setSubTab(savedGoal ? "historico" : "definir");
-      subTabInitialized.current = true;
-    }
-  }, [goalData, savedGoal]);
+  const [subTab, setSubTab] = useState<"definir" | "historico" | "diario">("definir");
 
   // ── Nova meta (widget do canto) ─────────────────────────────────────────────
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [newMetaInput, setNewMetaInput] = useState("");
   const [newStartInput, setNewStartInput] = useState(isoToday());
   const [newPrazoInput, setNewPrazoInput] = useState("");
+  const [newLucroPorVendaInput, setNewLucroPorVendaInput] = useState("");
   const [creatingGoal, setCreatingGoal] = useState(false);
+
+  // ── Editar meta ativa (clicando no pill do canto) ───────────────────────────
+  const [editGoalOpen, setEditGoalOpen] = useState(false);
+  const [editMetaInput, setEditMetaInput] = useState("");
+  const [editStartInput, setEditStartInput] = useState("");
+  const [editPrazoInput, setEditPrazoInput] = useState("");
+  const [editLucroPorVendaInput, setEditLucroPorVendaInput] = useState("");
+  const [savingEditGoal, setSavingEditGoal] = useState(false);
+
+  function openEditGoal() {
+    if (!savedGoal) return;
+    setEditMetaInput(String(savedGoal.meta ?? ""));
+    setEditStartInput(savedGoal.start_date ?? "");
+    setEditPrazoInput(savedGoal.prazo ?? "");
+    setEditLucroPorVendaInput(String(savedGoal.lucro_por_venda ?? ""));
+    setEditGoalOpen(true);
+  }
 
   async function refreshGoalQueries() {
     await Promise.all([
@@ -259,21 +273,44 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
 
   async function handleCreateGoal() {
     const meta = parseFloat(newMetaInput);
+    const lucroPorVenda = parseFloat(newLucroPorVendaInput);
     if (!meta || meta <= 0) { toast.error("Informe um valor de meta válido"); return; }
     if (!newStartInput || !newPrazoInput) { toast.error("Informe início e fim"); return; }
+    if (!lucroPorVenda || lucroPorVenda <= 0) { toast.error("Informe o lucro previsto por venda"); return; }
     setCreatingGoal(true);
     try {
-      await createGoalFn({ data: { card_id: card.id, meta, start_date: newStartInput, prazo: newPrazoInput } });
+      await createGoalFn({ data: { card_id: card.id, meta, start_date: newStartInput, prazo: newPrazoInput, lucro_por_venda: lucroPorVenda } });
       await refreshGoalQueries();
       toast.success("Meta criada");
       setNewGoalOpen(false);
       setNewMetaInput("");
       setNewPrazoInput("");
+      setNewLucroPorVendaInput("");
       setSubTab("historico");
     } catch (e: any) {
       toast.error(e.message ?? "Erro ao criar meta");
     } finally {
       setCreatingGoal(false);
+    }
+  }
+
+  async function handleUpdateGoal() {
+    if (!savedGoal) return;
+    const meta = parseFloat(editMetaInput);
+    const lucroPorVenda = parseFloat(editLucroPorVendaInput);
+    if (!meta || meta <= 0) { toast.error("Informe um valor de meta válido"); return; }
+    if (!editStartInput || !editPrazoInput) { toast.error("Informe início e fim"); return; }
+    if (!lucroPorVenda || lucroPorVenda <= 0) { toast.error("Informe o lucro previsto por venda"); return; }
+    setSavingEditGoal(true);
+    try {
+      await updateGoalFn({ data: { id: savedGoal.id, meta, start_date: editStartInput, prazo: editPrazoInput, lucro_por_venda: lucroPorVenda } });
+      await refreshGoalQueries();
+      toast.success("Meta atualizada");
+      setEditGoalOpen(false);
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao atualizar meta");
+    } finally {
+      setSavingEditGoal(false);
     }
   }
 
@@ -290,9 +327,8 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
   }
 
   // ── Derived meta calculations ─────────────────────────────────────────────
-  // Nota: mesmo sem pedidos lucrativos no mês corrente, o progresso acumulado,
-  // o gráfico e a projeção continuam válidos — só "vendas/dia" e "investimento/dia"
-  // dependem do lucro por pedido deste mês.
+  // Vendas/dia = (falta pra meta ÷ dias restantes) ÷ lucro previsto por venda,
+  // definido junto com a meta (em vez de derivado de dados históricos).
   const derived = useMemo(() => {
     if (!savedGoal || !metricsData || !accData) return null;
 
@@ -310,26 +346,18 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
     const percentProjecao = meta > 0 ? (projecaoFinal / meta) * 100 : 0;
     const lucroNecessarioPorDia = diasRestantes > 0 ? lucroRestante / diasRestantes : 0;
 
-    // Preferimos os números deste mês; se não houver pedidos no mês corrente
-    // (ex: gastou em anúncios mas ainda não converteu), caímos para a média
-    // acumulada desde o início da meta em vez de zerar a projeção.
-    const { pedidos: pedidosMes, lucro: lucroMes, cpa: cpaMes } = metricsData.month;
-    const lucroPorPedidoMes = pedidosMes > 0 ? lucroMes / pedidosMes : 0;
-    const lucroPorPedidoAcc = (accData.pedidos ?? 0) > 0 ? (accData.lucro ?? 0) / accData.pedidos : 0;
-    const lucroPorPedido = lucroPorPedidoMes > 0 ? lucroPorPedidoMes : lucroPorPedidoAcc;
-    const cpaEfetivo = cpaMes > 0 ? cpaMes : (accData.cpa ?? 0);
-    const semDadosMes = lucroPorPedido <= 0;
+    const lucroPorVenda = Number(savedGoal.lucro_por_venda ?? 0);
+    const cpaEfetivo = (metricsData.month.cpa ?? 0) > 0 ? metricsData.month.cpa : (accData.cpa ?? 0);
+    const semLucroPorVenda = lucroPorVenda <= 0;
 
-    let vendasFaltam = 0, vendasPorDia = 0, investimentoPorDia = 0;
-    if (!semDadosMes && diasRestantes > 0) {
-      vendasFaltam = Math.max(0, lucroRestante / lucroPorPedido);
-      vendasPorDia = vendasFaltam / diasRestantes;
+    let vendasPorDia = 0, investimentoPorDia = 0;
+    if (!semLucroPorVenda && diasRestantes > 0) {
+      vendasPorDia = Math.round(lucroNecessarioPorDia / lucroPorVenda);
       investimentoPorDia = vendasPorDia * cpaEfetivo;
     }
 
     return {
       lucroAcumulado,
-      vendasFaltam: Math.round(vendasFaltam),
       vendasPorDia,
       investimentoPorDia,
       lucroNecessarioPorDia,
@@ -340,13 +368,51 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
       meta,
       batida,
       vencida,
-      semDadosMes,
+      semLucroPorVenda,
     };
   }, [savedGoal, metricsData, accData]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-
+  // ── Gráfico: dados reais + projeção futura até o prazo ────────────────────
   const d: any = derived;
+
+  const chartData = useMemo(() => {
+    const real = (accData?.chartData ?? []) as { date: string; lucroAcumulado: number }[];
+    if (!real.length || !d || !savedGoal) return real.map((p) => ({ ...p, lucroProjetado: null }));
+
+    const points = real.map((p) => ({ ...p, lucroProjetado: null as number | null }));
+    const lastValue = real[real.length - 1].lucroAcumulado;
+    // ponte: repete o último valor real como início da linha projetada, pra elas se conectarem
+    points[points.length - 1] = { ...points[points.length - 1], lucroProjetado: lastValue };
+
+    if (!d.vencida && !d.batida && d.diasRestantes > 0) {
+      const mediaDia = accData?.mediaUltimos7 ?? 0;
+      let cum = lastValue;
+      let cur = isoToday();
+      for (let i = 1; i <= d.diasRestantes; i++) {
+        cur = addDaysIso(cur, 1);
+        cum += mediaDia;
+        points.push({
+          date: `${cur.slice(8, 10)}/${cur.slice(5, 7)}`,
+          lucroAcumulado: null as any,
+          lucroProjetado: Math.round(cum * 100) / 100,
+        });
+      }
+    }
+    return points;
+  }, [accData, d, savedGoal]);
+
+  // Segmento reto ligando o ponto de hoje ao ponto final projetado, no mesmo
+  // formato usado pela linha da Meta (ReferenceLine com segment).
+  const projectionSegment = useMemo(() => {
+    if (chartData.length < 2) return null;
+    const last = chartData[chartData.length - 1];
+    const bridge = chartData.find((p) => p.lucroProjetado != null);
+    if (!bridge || !last || bridge === last || last.lucroProjetado == null) return null;
+    return [
+      { x: bridge.date, y: bridge.lucroProjetado as number },
+      { x: last.date, y: last.lucroProjetado as number },
+    ];
+  }, [chartData]);
 
   return (
     <div className="space-y-4">
@@ -358,7 +424,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
           <div className="flex items-center justify-between flex-wrap gap-3 border-b border-border">
             <div className="flex items-center gap-1">
               <SubTabBtn active={subTab === "definir"} onClick={() => setSubTab("definir")} icon={<Target className="size-3.5" />}>
-                Definir Meta
+                Atual
               </SubTabBtn>
               <SubTabBtn active={subTab === "historico"} onClick={() => setSubTab("historico")} icon={<TrendingUp className="size-3.5" />}>
                 Histórico
@@ -371,9 +437,65 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
             <div className="flex items-center gap-2 mb-2">
               {savedGoal ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground">
-                    {fmtMoney(Number(savedGoal.meta))} · {fmtDatePt(savedGoal.start_date)} → {fmtDatePt(savedGoal.prazo)}
-                  </span>
+                  <Popover open={editGoalOpen} onOpenChange={(o) => (o ? openEditGoal() : setEditGoalOpen(false))}>
+                    <PopoverTrigger asChild>
+                      <button className="text-xs px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors">
+                        {fmtMoney(Number(savedGoal.meta))} · {fmtDatePt(savedGoal.start_date)} → {fmtDatePt(savedGoal.prazo)}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72 space-y-3">
+                      <p className="text-sm font-semibold text-foreground">Editar meta</p>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-muted-foreground">Início</label>
+                        <input
+                          type="date"
+                          value={editStartInput}
+                          onChange={e => setEditStartInput(e.target.value)}
+                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-muted-foreground">Fim</label>
+                        <input
+                          type="date"
+                          value={editPrazoInput}
+                          min={editStartInput}
+                          onChange={e => setEditPrazoInput(e.target.value)}
+                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-muted-foreground">Valor (USD)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={editMetaInput}
+                          onChange={e => setEditMetaInput(e.target.value)}
+                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-muted-foreground">Lucro previsto por venda (USD)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="ex: 30"
+                          value={editLucroPorVendaInput}
+                          onChange={e => setEditLucroPorVendaInput(e.target.value)}
+                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <button
+                        onClick={handleUpdateGoal}
+                        disabled={savingEditGoal}
+                        className="w-full h-9 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      >
+                        {savingEditGoal ? "Salvando..." : "Salvar alterações"}
+                      </button>
+                    </PopoverContent>
+                  </Popover>
                   <button
                     onClick={handleFinalizeGoal}
                     title="Finalizar meta"
@@ -422,6 +544,18 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                         className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
                       />
                     </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-muted-foreground">Lucro previsto por venda (USD)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="ex: 30"
+                        value={newLucroPorVendaInput}
+                        onChange={e => setNewLucroPorVendaInput(e.target.value)}
+                        className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
                     <button
                       onClick={handleCreateGoal}
                       disabled={creatingGoal}
@@ -435,8 +569,9 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
             </div>
           </div>
 
-          {/* ── Definir Meta: detalhes (leitura) da meta ativa ──────────────── */}
-          {subTab === "definir" && (
+          {/* ── Histórico: detalhes (leitura) da meta ativa + metas anteriores */}
+          {subTab === "historico" && (
+            <>
             <Section title="Meta ativa" icon={<Target className="size-4" />}>
               {loadingGoal ? (
                 <Skeleton className="h-24 w-full rounded-xl" />
@@ -467,10 +602,45 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                 </div>
               )}
             </Section>
+
+            {/* Metas anteriores */}
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Metas anteriores</p>
+              {loadingHistory ? (
+                <div className="space-y-2">
+                  {[0, 1].map(i => <Skeleton key={i} className="h-14 rounded-xl" />)}
+                </div>
+              ) : !(historyData as any)?.goals?.length ? (
+                <p className="text-xs text-muted-foreground text-center py-4">Nenhuma meta registrada ainda.</p>
+              ) : (
+                <div className="space-y-2">
+                  {(historyData as any).goals.map((g: any) => (
+                    <div key={g.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{fmtMoney(g.meta)}</p>
+                        <p className="text-xs text-muted-foreground">{fmtDatePt(g.start_date)} → {fmtDatePt(g.prazo)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-foreground">{fmtMoney(g.lucro)}</p>
+                        <span className={cn(
+                          "text-[10px] font-medium rounded-full px-2 py-0.5",
+                          g.status === "ativa" ? "bg-primary/10 text-primary"
+                          : g.status === "batida" ? "bg-success/10 text-success"
+                          : "bg-destructive/10 text-destructive"
+                        )}>
+                          {g.status === "ativa" ? "Em andamento" : g.status === "batida" ? "Batida" : "Não batida"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            </>
           )}
 
-          {/* ── Histórico: progresso da meta ativa + metas anteriores ───────── */}
-          {subTab === "historico" && (
+          {/* ── Definir Meta: dashboard rico da meta ativa ──────────────────── */}
+          {subTab === "definir" && (
             <>
             {loadingGoal ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -517,15 +687,15 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                     icon={<ShoppingCart className="size-4" />}
                     accent="primary"
                     label="Vendas por dia"
-                    value={d.vencida || d.batida ? "—" : fmt(d.vendasPorDia, { decimals: 1 })}
-                    sub={d.semDadosMes && !d.vencida && !d.batida ? "Sem vendas lucrativas este mês" : "Média diária"}
+                    value={d.vencida || d.batida ? "—" : String(d.vendasPorDia)}
+                    sub={d.semLucroPorVenda && !d.vencida && !d.batida ? "Defina o lucro por venda" : "Média diária"}
                   />
                   <StatCard
                     icon={<Megaphone className="size-4" />}
                     accent="blue"
                     label="Investimento/dia"
                     value={d.vencida || d.batida ? "—" : fmtMoney(d.investimentoPorDia)}
-                    sub={d.semDadosMes && !d.vencida && !d.batida ? "Sem vendas lucrativas este mês" : "Média diária"}
+                    sub={d.semLucroPorVenda && !d.vencida && !d.batida ? "Defina o lucro por venda" : "Média diária"}
                   />
                   <StatCard
                     icon={<Wallet className="size-4" />}
@@ -544,10 +714,15 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                       <span className="size-1.5 rounded-full bg-primary" />
                       <span className="text-xs font-semibold text-foreground">Projeção de lucro acumulado</span>
                     </div>
-                    {(accData?.chartData?.length ?? 0) > 1 ? (
+                    {chartData.length > 0 ? (
                       <>
+                        <div className="flex items-center gap-3 mb-2 text-[11px] text-muted-foreground">
+                          <span className="flex items-center gap-1"><span className="w-3 h-0.5 rounded inline-block" style={{ background: "#6b7280" }} /> Real</span>
+                          <span className="flex items-center gap-1"><span className="w-3 h-0.5 rounded inline-block" style={{ borderTop: `1px dashed ${d.projecaoFinal >= d.meta ? "var(--color-success)" : "var(--color-destructive)"}` }} /> Projeção</span>
+                          <span className="flex items-center gap-1"><span className="w-3 h-0.5 rounded bg-success inline-block" style={{ borderTop: "1px dashed var(--color-success)" }} /> Meta</span>
+                        </div>
                         <ResponsiveContainer width="100%" height={240}>
-                          <AreaChart data={accData!.chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                          <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                             <defs>
                               <linearGradient id="lg-goal-progress-grad" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%"  stopColor="var(--color-primary)" stopOpacity={0.25} />
@@ -556,12 +731,41 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                             <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+                            <YAxis
+                              tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false}
+                              tickFormatter={v => `$${v}`}
+                              domain={[(min: number) => Math.min(0, min), (max: number) => Math.max(max, d.meta)]}
+                            />
                             <Tooltip content={<ProgressTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
                             <ReferenceLine y={d.meta} stroke="var(--color-success)" strokeDasharray="4 4"
                               label={{ value: "Meta", position: "insideTopRight", fill: "var(--color-success)", fontSize: 10 }} />
-                            <Area type="monotone" dataKey="lucroAcumulado" stroke="var(--color-primary)" strokeWidth={2}
-                              fill="url(#lg-goal-progress-grad)" dot={false} activeDot={{ r: 4, fill: "var(--color-primary)" }} />
+                            <Area type="monotone" dataKey="lucroAcumulado" stroke="#6b7280" strokeWidth={2}
+                              fill="url(#lg-goal-progress-grad)" dot={{ r: 3, fill: "#6b7280" }} activeDot={{ r: 4, fill: "#6b7280" }} connectNulls={false} />
+                            {projectionSegment && (
+                              <ReferenceLine
+                                segment={projectionSegment}
+                                stroke={d.projecaoFinal >= d.meta ? "var(--color-success)" : "var(--color-destructive)"}
+                                strokeWidth={2}
+                                strokeDasharray="6 4"
+                              />
+                            )}
+                            {chartData[chartData.length - 1]?.lucroProjetado != null && (
+                              <ReferenceDot
+                                x={chartData[chartData.length - 1].date}
+                                y={chartData[chartData.length - 1].lucroProjetado as number}
+                                r={4}
+                                fill={d.projecaoFinal >= d.meta ? "var(--color-success)" : "var(--color-destructive)"}
+                                stroke="var(--color-card)"
+                                strokeWidth={2}
+                                label={{
+                                  value: fmtMoney(chartData[chartData.length - 1].lucroProjetado as number),
+                                  position: "top",
+                                  fill: d.projecaoFinal >= d.meta ? "var(--color-success)" : "var(--color-destructive)",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                              />
+                            )}
                           </AreaChart>
                         </ResponsiveContainer>
                         {!d.vencida && !d.batida && (
@@ -576,7 +780,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                         )}
                       </>
                     ) : (
-                      <p className="text-xs text-muted-foreground py-16 text-center">Ainda não há dados suficientes para o gráfico.</p>
+                      <p className="text-xs text-muted-foreground py-16 text-center">Ainda não há dados para o gráfico.</p>
                     )}
                   </div>
 
@@ -642,40 +846,6 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                 </div>
               </>
             )}
-
-            {/* Metas anteriores */}
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Metas anteriores</p>
-              {loadingHistory ? (
-                <div className="space-y-2">
-                  {[0, 1].map(i => <Skeleton key={i} className="h-14 rounded-xl" />)}
-                </div>
-              ) : !(historyData as any)?.goals?.length ? (
-                <p className="text-xs text-muted-foreground text-center py-4">Nenhuma meta registrada ainda.</p>
-              ) : (
-                <div className="space-y-2">
-                  {(historyData as any).goals.map((g: any) => (
-                    <div key={g.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{fmtMoney(g.meta)}</p>
-                        <p className="text-xs text-muted-foreground">{fmtDatePt(g.start_date)} → {fmtDatePt(g.prazo)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-foreground">{fmtMoney(g.lucro)}</p>
-                        <span className={cn(
-                          "text-[10px] font-medium rounded-full px-2 py-0.5",
-                          g.status === "ativa" ? "bg-primary/10 text-primary"
-                          : g.status === "batida" ? "bg-success/10 text-success"
-                          : "bg-destructive/10 text-destructive"
-                        )}>
-                          {g.status === "ativa" ? "Em andamento" : g.status === "batida" ? "Batida" : "Não batida"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
             </>
           )}
 

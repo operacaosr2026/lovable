@@ -235,7 +235,7 @@ async function computeAccumulatedLucro(
   let cum = 0;
   const chartData = days.map((d) => {
     cum += lucroByDate.get(d) ?? 0;
-    return { date: d.slice(5).replace("-", "/"), lucroAcumulado: Math.round(cum * 100) / 100 };
+    return { date: `${d.slice(8, 10)}/${d.slice(5, 7)}`, lucroAcumulado: Math.round(cum * 100) / 100 };
   });
 
   const last7 = days.slice(-7);
@@ -288,6 +288,7 @@ export const createLgCardGoal = createServerFn({ method: "POST" })
     meta: z.number().positive(),
     start_date: z.string(),
     prazo: z.string(),
+    lucro_por_venda: z.number().positive(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, ownerId } = context;
@@ -305,7 +306,37 @@ export const createLgCardGoal = createServerFn({ method: "POST" })
 
     const { data: row, error } = await supabase
       .from("lg_card_goals")
-      .insert({ card_id: data.card_id, user_id: ownerId, meta: data.meta, start_date: data.start_date, prazo: data.prazo })
+      .insert({
+        card_id: data.card_id, user_id: ownerId, meta: data.meta,
+        start_date: data.start_date, prazo: data.prazo, lucro_por_venda: data.lucro_por_venda,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return { goal: row };
+  });
+
+export const updateLgCardGoal = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid(),
+    meta: z.number().positive(),
+    start_date: z.string(),
+    prazo: z.string(),
+    lucro_por_venda: z.number().positive(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, ownerId } = context;
+
+    if (data.prazo < data.start_date) throw new Error("A data de fim não pode ser anterior à data de início.");
+
+    const { data: row, error } = await supabase
+      .from("lg_card_goals")
+      .update({
+        meta: data.meta, start_date: data.start_date, prazo: data.prazo,
+        lucro_por_venda: data.lucro_por_venda, updated_at: new Date().toISOString(),
+      })
+      .eq("id", data.id).eq("user_id", ownerId)
       .select()
       .single();
     if (error) throw new Error(error.message);
