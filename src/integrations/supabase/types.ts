@@ -608,6 +608,7 @@ export type Database = {
       lg_card_goals: {
         Row: {
           card_id: string
+          closed_at: string | null
           created_at: string | null
           id: string
           meta: number
@@ -618,6 +619,7 @@ export type Database = {
         }
         Insert: {
           card_id: string
+          closed_at?: string | null
           created_at?: string | null
           id?: string
           meta: number
@@ -628,6 +630,7 @@ export type Database = {
         }
         Update: {
           card_id?: string
+          closed_at?: string | null
           created_at?: string | null
           id?: string
           meta?: number

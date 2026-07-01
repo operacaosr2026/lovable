@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
   ArrowLeft, Layers, MapPin, Store, ChevronDown,
-  LayoutDashboard, Wallet, ShoppingBag, Plug, Eye, Truck,
+  LayoutDashboard, Wallet, ShoppingBag, Plug, Target, Truck,
 } from "lucide-react";
 import { getLgCard } from "@/lib/lg-cards.functions";
 import { LgOverview }      from "@/components/lojas-grupos/LgOverview";
@@ -174,7 +174,7 @@ function LgCardDetail() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
-        <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Eye}>Overview</TabBtn>
+        <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Target}>Metas</TabBtn>
         <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
         <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
@@ -193,7 +193,6 @@ function LgCardDetail() {
           cardName={card.name}
           shopNamesMap={shopNamesMap}
           isConsolidated={effectiveShopIds.length > 1}
-          matrizShopId={card.matriz_shop_id ?? null}
         />
       )}
       {tab === "caixa" && allShopIds.length > 0 && (

@@ -20,14 +20,6 @@ function isoMonthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-function isoWeekStart() {
-  const d = new Date();
-  const day = d.getUTCDay(); // 0=Sun, 1=Mon...
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
-
 // ─── Shopify helpers (same pattern as shop-orders.functions.ts) ───────────────
 
 async function getShopifyCreds(ownerId: string, shopify_store_id: string) {
@@ -82,7 +74,7 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
   return out;
 }
 
-// ─── Main overview metrics ────────────────────────────────────────────────────
+// ─── Main overview metrics (mês, focado na Meta) ──────────────────────────────
 
 export const getLgOverviewMetrics = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -93,70 +85,25 @@ export const getLgOverviewMetrics = createServerFn({ method: "GET" })
     const { supabase, ownerId } = context;
     const { shop_ids } = data;
 
-    const today     = isoToday();
-    const weekStart = isoWeekStart();
+    const today = isoToday();
     const monthStart = isoMonthStart();
 
-    // ── DB queries in parallel ──────────────────────────────────────────────
-    const [
-      todayOrders, weekOrders, monthOrders,
-      todayAds, weekAds, monthAds,
-      todayFees, weekFees, monthFees,
-      settingsRes,
-      allTimeRes, estornadosRes,
-    ] = await Promise.all([
-      // Orders per period
-      supabase.from("shop_orders").select("revenue,items_count,shop_id")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", today).lte("order_date", today),
-      supabase.from("shop_orders").select("revenue,items_count,shop_id")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", weekStart).lte("order_date", today),
+    const [monthOrders, monthAds, monthFees, settingsRes] = await Promise.all([
       supabase.from("shop_orders").select("revenue,items_count,shop_id")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", monthStart).lte("order_date", today),
-
-      // Meta Ads spend per period
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
-        .gte("date", today).lte("date", today),
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
-        .gte("date", weekStart).lte("date", today),
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
         .gte("date", monthStart).lte("date", today),
-
-      // Shopify fees per period
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("category", "Taxas Shopify")
-        .gte("date", today).lte("date", today),
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("category", "Taxas Shopify")
-        .gte("date", weekStart).lte("date", today),
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .eq("category", "Taxas Shopify")
         .gte("date", monthStart).lte("date", today),
-
-      // Unit costs
       supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
         .eq("user_id", ownerId).in("shop_id", shop_ids),
-
-      // All-time totals (DB only)
-      supabase.from("shop_orders").select("revenue")
-        .eq("user_id", ownerId).in("shop_id", shop_ids),
-      supabase.from("shop_orders").select("id")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("payment_status", "estornado"),
     ]);
 
-    // ── Cost helpers ──────────────────────────────────────────────────────────
     const costByShop = new Map(
       (settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)])
     );
@@ -172,27 +119,13 @@ export const getLgOverviewMetrics = createServerFn({ method: "GET" })
 
     const sumAmt = (rows: any[] | null) =>
       (rows ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0);
-
-    const anunciosHoje = sumAmt(todayAds.data);
-    const anunciosSemana = sumAmt(weekAds.data);
     const anunciosMes = sumAmt(monthAds.data);
-    const taxasHoje = sumAmt(todayFees.data);
-    const taxasSemana = sumAmt(weekFees.data);
     const taxasMes = sumAmt(monthFees.data);
 
-    // ── Period computation (DB only, no Shopify for today/week) ──────────────
-    function computePeriod(orders: any[], anuncios: number, taxas: number) {
-      const revenue = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
-      const custo = orders.reduce((s, o) => s + orderCost(o), 0);
-      const pedidos = orders.length;
-      const lucro = revenue - custo - taxas - anuncios;
-      const cpa = anuncios > 0 && pedidos > 0 ? anuncios / pedidos : 0;
-      return { revenue, custo, pedidos, lucro, cpa, anuncios };
-    }
-
-    const p_hoje = computePeriod(todayOrders.data ?? [], anunciosHoje, taxasHoje);
-    const p_semana = computePeriod(weekOrders.data ?? [], anunciosSemana, taxasSemana);
-    const p_mes_raw = computePeriod(monthOrders.data ?? [], anunciosMes, taxasMes);
+    const orders = monthOrders.data ?? [];
+    const revenue = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
+    const custo = orders.reduce((s, o) => s + orderCost(o), 0);
+    const pedidos = orders.length;
 
     // ── Shopify API: refunds + chargebacks for month period only ──────────────
     let reembolsosMes = 0, chargebacksMes = 0;
@@ -228,147 +161,202 @@ export const getLgOverviewMetrics = createServerFn({ method: "GET" })
       chargebacksMes = shopifyResults.reduce((a, r) => a + r.cbAmt, 0);
     }
 
-    const faturamentoMes = p_mes_raw.revenue - reembolsosMes - chargebacksMes;
-    const lucroMes = faturamentoMes - p_mes_raw.custo - taxasMes - anunciosMes;
-    const cpaMes = anunciosMes > 0 && p_mes_raw.pedidos > 0 ? anunciosMes / p_mes_raw.pedidos : 0;
-
-    const reembolsoRate = p_mes_raw.revenue > 0 ? (reembolsosMes / p_mes_raw.revenue) * 100 : 0;
-    const estornoRate = p_mes_raw.revenue > 0 ? (chargebacksMes / p_mes_raw.revenue) * 100 : 0;
-
-    // ── All-time stats ────────────────────────────────────────────────────────
-    const allOrders = allTimeRes.data ?? [];
-    const totalFaturamento = allOrders.reduce((s, o) => s + Number((o as any).revenue ?? 0), 0);
-    const totalPedidos = allOrders.length;
-    const totalEstornados = estornadosRes.data?.length ?? 0;
-    const percentEstornos = totalPedidos > 0 ? (totalEstornados / totalPedidos) * 100 : 0;
+    const faturamentoMes = revenue - reembolsosMes - chargebacksMes;
+    const lucroMes = faturamentoMes - custo - taxasMes - anunciosMes;
+    const cpaMes = anunciosMes > 0 && pedidos > 0 ? anunciosMes / pedidos : 0;
 
     return {
-      today: {
-        lucro: p_hoje.lucro,
-        faturamento: p_hoje.revenue,
-        anuncios: anunciosHoje,
-        cpa: p_hoje.cpa,
-        pedidos: p_hoje.pedidos,
-      },
-      week: {
-        lucro: p_semana.lucro,
-      },
       month: {
         lucro: lucroMes,
-        faturamento: faturamentoMes,
-        anuncios: anunciosMes,
+        pedidos,
         cpa: cpaMes,
-        pedidos: p_mes_raw.pedidos,
-        reembolsoRate,
-        estornoRate,
-      },
-      allTime: {
-        faturamento: totalFaturamento,
-        pedidos: totalPedidos,
-        percentEstornos,
       },
     };
   });
 
-// ─── Accumulated lucro from goal start_date ───────────────────────────────────
+// ─── Accumulated lucro for a date range (usado tanto pra meta ativa quanto histórico) ──
+
+async function computeAccumulatedLucro(
+  supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
+) {
+  const [ordersRes, adsRes, feesRes, settingsRes] = await Promise.all([
+    supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date")
+      .eq("user_id", ownerId).in("shop_id", shop_ids)
+      .gte("order_date", start_date).lte("order_date", end_date),
+    supabase.from("shop_cash_entries").select("amount,date")
+      .eq("user_id", ownerId).in("shop_id", shop_ids)
+      .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
+      .gte("date", start_date).lte("date", end_date),
+    supabase.from("shop_cash_entries").select("amount,date")
+      .eq("user_id", ownerId).in("shop_id", shop_ids)
+      .eq("category", "Taxas Shopify")
+      .gte("date", start_date).lte("date", end_date),
+    supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
+      .eq("user_id", ownerId).in("shop_id", shop_ids),
+  ]);
+
+  const costByShop = new Map<string, number>(
+    (settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)])
+  );
+  const configuredCosts = Array.from(costByShop.values()).filter((c) => c > 0);
+  const avgCost = configuredCosts.length > 0
+    ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length
+    : 0;
+
+  const orders = ordersRes.data ?? [];
+  const orderCost = (o: any) => {
+    const c = costByShop.get(o.shop_id);
+    return Number(o.items_count ?? 0) * (c != null && c > 0 ? c : avgCost);
+  };
+  const revenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+  const custo = orders.reduce((s: number, o: any) => s + orderCost(o), 0);
+  const anuncios = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+  const taxas = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+  const lucro = revenue - custo - taxas - anuncios;
+
+  // ── Lucro por dia (série acumulada para o gráfico + tendência) ───────────
+  const lucroByDate = new Map<string, number>();
+  for (const o of orders) {
+    const d = o.order_date as string;
+    lucroByDate.set(d, (lucroByDate.get(d) ?? 0) + Number(o.revenue ?? 0) - orderCost(o));
+  }
+  for (const r of adsRes.data ?? []) {
+    const d = r.date as string;
+    lucroByDate.set(d, (lucroByDate.get(d) ?? 0) - Number(r.amount ?? 0));
+  }
+  for (const r of feesRes.data ?? []) {
+    const d = r.date as string;
+    lucroByDate.set(d, (lucroByDate.get(d) ?? 0) - Number(r.amount ?? 0));
+  }
+
+  const days: string[] = [];
+  for (let d = start_date; d <= end_date; d = addDays(d, 1)) days.push(d);
+
+  let cum = 0;
+  const chartData = days.map((d) => {
+    cum += lucroByDate.get(d) ?? 0;
+    return { date: d.slice(5).replace("-", "/"), lucroAcumulado: Math.round(cum * 100) / 100 };
+  });
+
+  const last7 = days.slice(-7);
+  const mediaUltimos7 = last7.length > 0
+    ? last7.reduce((s, d) => s + (lucroByDate.get(d) ?? 0), 0) / last7.length
+    : 0;
+  const mediaGeral = days.length > 0 ? lucro / days.length : 0;
+  const cpa = anuncios > 0 && orders.length > 0 ? anuncios / orders.length : 0;
+
+  return { lucro, pedidos: orders.length, chartData, mediaUltimos7, mediaGeral, cpa };
+}
 
 export const getLgAccumulatedLucro = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     shop_ids: z.array(z.string().uuid()).min(1),
     start_date: z.string(),
+    end_date: z.string().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, ownerId } = context;
-    const { shop_ids, start_date } = data;
-    const today = isoToday();
-
-    const [ordersRes, adsRes, feesRes, settingsRes] = await Promise.all([
-      supabase.from("shop_orders").select("revenue,items_count,shop_id")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", start_date).lte("order_date", today),
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
-        .gte("date", start_date).lte("date", today),
-      supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .eq("category", "Taxas Shopify")
-        .gte("date", start_date).lte("date", today),
-      supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
-        .eq("user_id", ownerId).in("shop_id", shop_ids),
-    ]);
-
-    const costByShop = new Map(
-      (settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)])
-    );
-    const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
-    const avgCost = configuredCosts.length > 0
-      ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length
-      : 0;
-
-    const orders = ordersRes.data ?? [];
-    const revenue = orders.reduce((s, o) => s + Number((o as any).revenue ?? 0), 0);
-    const custo = orders.reduce((s, o) => {
-      const c = costByShop.get((o as any).shop_id);
-      return s + Number((o as any).items_count ?? 0) * (c != null && c > 0 ? c : avgCost);
-    }, 0);
-    const anuncios = (adsRes.data ?? []).reduce((s, r) => s + Number((r as any).amount ?? 0), 0);
-    const taxas = (feesRes.data ?? []).reduce((s, r) => s + Number((r as any).amount ?? 0), 0);
-    const lucro = revenue - custo - taxas - anuncios;
-
-    return { lucro, pedidos: orders.length };
+    const end_date = data.end_date ?? isoToday();
+    return computeAccumulatedLucro(context.supabase, context.ownerId, data.shop_ids, data.start_date, end_date);
   });
 
-// ─── Goal CRUD ────────────────────────────────────────────────────────────────
+// ─── Goal CRUD (com histórico de metas) ────────────────────────────────────────
 
 export const getLgCardGoal = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ card_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, ownerId } = context;
+    const today = isoToday();
     const { data: row } = await supabase
       .from("lg_card_goals")
       .select("*")
       .eq("card_id", data.card_id)
       .eq("user_id", ownerId)
+      .is("closed_at", null)
+      .gte("prazo", today)
+      .order("start_date", { ascending: false })
+      .limit(1)
       .maybeSingle();
     return { goal: row ?? null };
   });
 
-export const upsertLgCardGoal = createServerFn({ method: "POST" })
+export const createLgCardGoal = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     card_id: z.string().uuid(),
     meta: z.number().positive(),
+    start_date: z.string(),
     prazo: z.string(),
-    start_date: z.string().optional(),
-    reset_start: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, ownerId } = context;
     const today = isoToday();
 
-    // Check if row already exists to preserve start_date
-    const { data: existing } = await supabase
-      .from("lg_card_goals")
-      .select("start_date")
-      .eq("card_id", data.card_id)
-      .eq("user_id", ownerId)
-      .maybeSingle();
+    if (data.prazo < data.start_date) throw new Error("A data de fim não pode ser anterior à data de início.");
 
-    const start_date = data.reset_start || !existing
-      ? (data.start_date ?? today)
-      : existing.start_date;
+    const { data: active } = await supabase
+      .from("lg_card_goals")
+      .select("id")
+      .eq("card_id", data.card_id).eq("user_id", ownerId)
+      .is("closed_at", null).gte("prazo", today)
+      .maybeSingle();
+    if (active) throw new Error("Já existe uma meta ativa. Finalize-a antes de criar uma nova.");
 
     const { data: row, error } = await supabase
       .from("lg_card_goals")
-      .upsert(
-        { card_id: data.card_id, user_id: ownerId, meta: data.meta, prazo: data.prazo, start_date, updated_at: new Date().toISOString() },
-        { onConflict: "card_id,user_id" }
-      )
+      .insert({ card_id: data.card_id, user_id: ownerId, meta: data.meta, start_date: data.start_date, prazo: data.prazo })
       .select()
       .single();
     if (error) throw new Error(error.message);
     return { goal: row };
+  });
+
+export const finalizeLgCardGoal = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, ownerId } = context;
+    const { error } = await supabase
+      .from("lg_card_goals")
+      .update({ closed_at: new Date().toISOString() })
+      .eq("id", data.id).eq("user_id", ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const listLgCardGoalHistory = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    card_id: z.string().uuid(),
+    shop_ids: z.array(z.string().uuid()).min(1),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, ownerId } = context;
+    const today = isoToday();
+
+    const { data: rows, error } = await supabase
+      .from("lg_card_goals")
+      .select("*")
+      .eq("card_id", data.card_id).eq("user_id", ownerId)
+      .order("start_date", { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const goals = await Promise.all((rows ?? []).map(async (g: any) => {
+      const isActive = !g.closed_at && g.prazo >= today;
+      const closedDate = g.closed_at ? String(g.closed_at).slice(0, 10) : null;
+      const endDate = isActive ? today : closedDate && closedDate < g.prazo ? closedDate : g.prazo;
+      const { lucro } = await computeAccumulatedLucro(supabase, ownerId, data.shop_ids, g.start_date, endDate);
+      return {
+        id: g.id as string,
+        meta: Number(g.meta),
+        start_date: g.start_date as string,
+        prazo: g.prazo as string,
+        closed_at: g.closed_at as string | null,
+        lucro,
+        status: isActive ? "ativa" : lucro >= Number(g.meta) ? "batida" : "nao_batida",
+      };
+    }));
+
+    return { goals };
   });
