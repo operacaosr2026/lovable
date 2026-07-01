@@ -22,6 +22,7 @@ function fmtMoney(n: number) {
 }
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function localDate(date: string) { return new Date(date + "T00:00:00"); }
+function fmtDayMonth(date: string) { return localDate(date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); }
 
 type ShopConfig = { id: string; name: string; payment_days: number };
 
@@ -71,6 +72,8 @@ export function LgOrders({
   const ordersQuery = useQuery({
     queryKey: ["lg-orders", cacheKey, from, to],
     queryFn:  () => listOrdersFn({ data: { shop_ids: shopIds, from, to } }),
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
   });
 
   // Quando os pedidos carregam, gera automaticamente as previsões de custo no caixa
@@ -137,7 +140,8 @@ export function LgOrders({
   const allOrders = (ordersQuery.data ?? []) as any[];
 
   const shopNames: Record<string, string> = {};
-  for (const s of shops) shopNames[s.id] = s.name;
+  const shopPaymentDays: Record<string, number> = {};
+  for (const s of shops) { shopNames[s.id] = s.name; shopPaymentDays[s.id] = s.payment_days ?? 7; }
 
   const costByShop = useMemo(() => {
     const m = new Map<string, number>();
@@ -162,10 +166,12 @@ export function LgOrders({
 
   // Group orders by date, then by shop within each date
   const groups = useMemo(() => {
-    const byDate = new Map<string, { totalOrders: number; totalItems: number; totalCost: number; paidCount: number; pendingCount: number; refundCount: number; estornoCount: number; byShop: Map<string, any[]> }>();
+    const byDate = new Map<string, { totalOrders: number; totalItems: number; totalCost: number; paidCount: number; pendingCount: number; byShop: Map<string, any[]> }>();
     for (const o of allOrders) {
+      const rb = shopifyRefundBadge(resolveFinancialStatus(o));
+      if (rb === "reembolso") continue; // pedido reembolsado: retirado da listagem
       const day = o.order_date as string;
-      if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, refundCount: 0, estornoCount: 0, byShop: new Map() });
+      if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;
       d.totalOrders++;
       d.totalItems += Number(o.items_count ?? 0);
@@ -173,9 +179,6 @@ export function LgOrders({
       const st = o.payment_status as string;
       if (st === "paid" || st === "shipped") d.paidCount++;
       else if (st === "pending") d.pendingCount++;
-      const rb = shopifyRefundBadge(resolveFinancialStatus(o));
-      if (rb === "reembolso") d.refundCount++;
-      if (rb === "estorno")   d.estornoCount++;
       const shopId = o.shop_id as string;
       if (!d.byShop.has(shopId)) d.byShop.set(shopId, []);
       d.byShop.get(shopId)!.push(o);
@@ -402,13 +405,12 @@ export function LgOrders({
       {/* ── Orders list ── */}
       <div className="rounded-2xl border border-border bg-surface overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[32px_24px_140px_1fr_110px_110px_100px_140px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <div className="grid grid-cols-[32px_24px_140px_1fr_110px_100px_140px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <div />
           <div />
           <div>Data</div>
           <div>Resumo</div>
           <div>Processamento</div>
-          <div>Shopify</div>
           <div className="text-right">Pedidos</div>
           <div className="text-right">Custo de Produto</div>
         </div>
@@ -431,6 +433,9 @@ export function LgOrders({
           const d      = localDate(group.date);
           const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
           const dayMonth = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const processDates = Array.from(new Set(
+            Array.from(group.byShop.keys()).map((shopId) => addD(group.date, shopPaymentDays[shopId] ?? 7))
+          )).sort();
 
           const allDayIds: string[] = [];
           for (const orders of group.byShop.values()) {
@@ -443,7 +448,7 @@ export function LgOrders({
             <div key={group.date} className={cn(i > 0 && "border-t border-border/60")}>
               {/* Day row */}
               <div
-                className="grid grid-cols-[32px_24px_140px_1fr_110px_110px_100px_140px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer"
+                className="grid grid-cols-[32px_24px_140px_1fr_110px_100px_140px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer"
                 onClick={() => toggleExpand(group.date)}
               >
                 <div onClick={(e) => e.stopPropagation()}>
@@ -458,8 +463,9 @@ export function LgOrders({
                   <span className="text-xs text-muted-foreground uppercase">{weekday}</span>
                   <span className="text-sm font-semibold text-foreground">{dayMonth}</span>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {isConsolidated ? `${group.byShop.size} loja${group.byShop.size !== 1 ? "s" : ""}` : ""}
+                <div className="text-xs text-muted-foreground truncate">
+                  {isConsolidated ? `${group.byShop.size} loja${group.byShop.size !== 1 ? "s" : ""} · ` : ""}
+                  Processar dia {processDates.map(fmtDayMonth).join(", ")}
                 </div>
                 {/* col Processamento */}
                 <div>
@@ -471,19 +477,6 @@ export function LgOrders({
                   )}
                   {group.dayStatus === "parcial" && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 border border-blue-500/20 font-medium">Parcial · {group.paidCount}✓ {group.pendingCount}✗</span>
-                  )}
-                </div>
-                {/* col Shopify */}
-                <div className="flex flex-col gap-0.5">
-                  {group.refundCount > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 border border-rose-500/20 font-medium">
-                      {group.refundCount} Reembolso{group.refundCount > 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {group.estornoCount > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-orange-500/10 text-orange-600 border border-orange-500/20 font-medium">
-                      {group.estornoCount} Estorno{group.estornoCount > 1 ? "s" : ""}
-                    </span>
                   )}
                 </div>
                 <div className="text-right text-sm font-medium text-foreground">
@@ -509,10 +502,9 @@ export function LgOrders({
                         </div>
                       )}
                       {/* Sub-header for order rows */}
-                      <div className="grid grid-cols-[32px_1fr_80px_110px_110px_120px_100px] gap-3 px-8 py-1 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
+                      <div className="grid grid-cols-[32px_1fr_80px_110px_120px_100px] gap-3 px-8 py-1 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
                         <div /><div /><div />
                         <div>Processamento</div>
-                        <div>Shopify</div>
                         <div className="text-right">Custo</div>
                         <div className="text-right">Data</div>
                       </div>
@@ -520,9 +512,8 @@ export function LgOrders({
                       {orders.map((o: any) => {
                         const sel = selected.has(o.id);
                         const cost = (costByShop.get(o.shop_id as string) ?? 0) * Number(o.items_count ?? 0);
-                        const rb = shopifyRefundBadge(resolveFinancialStatus(o));
                         return (
-                          <div key={o.id} className={cn("grid grid-cols-[32px_1fr_80px_110px_110px_120px_100px] gap-3 px-8 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors text-sm", sel && "bg-primary/5")}>
+                          <div key={o.id} className={cn("grid grid-cols-[32px_1fr_80px_110px_120px_100px] gap-3 px-8 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors text-sm", sel && "bg-primary/5")}>
                             <Checkbox
                               checked={sel}
                               onCheckedChange={(v) => toggleOrder(o.id, !!v)}
@@ -541,15 +532,6 @@ export function LgOrders({
                               )}>
                                 {o.payment_status === "pending" ? "Pendente" : "Pago"}
                               </span>
-                            </div>
-                            {/* col Shopify */}
-                            <div>
-                              {rb === "reembolso" && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 border border-rose-500/20 font-medium">Reembolso</span>
-                              )}
-                              {rb === "estorno" && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-orange-500/10 text-orange-600 border border-orange-500/20 font-medium">Estorno</span>
-                              )}
                             </div>
                             <div className="text-right text-sm font-semibold text-foreground">
                               {cost > 0 ? fmtMoney(cost) : "—"}

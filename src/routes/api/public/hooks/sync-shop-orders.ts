@@ -211,6 +211,34 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
   return pendingTx.length;
 }
 
+// Sincronização leve: só busca pedidos novos e grava em shop_orders (sem
+// payouts/payout_lag/refunds, que são pesados e já rodam separadamente).
+async function syncOrdersOnlyForShop(s: any, today: string) {
+  if (!s.shopify_store_id) return;
+  const cutoff: string | null = s.cashflow_start_date ?? null;
+  const sinceDate = cutoff ?? addDays(today, -30);
+  const { data: store } = await supabaseAdmin.from("shopify_stores").select("*")
+    .eq("id", s.shopify_store_id).maybeSingle();
+  if (!store?.access_token || !store?.shop_domain) return;
+  try {
+    const orders = await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`);
+    if (orders.length) {
+      const rows = orders.map((o: any) => ({
+        user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
+        external_id: String(o.id), order_number: o.name ?? null,
+        created_at_shopify: o.created_at,
+        order_date: (o.created_at as string).slice(0, 10),
+        items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
+        revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
+        shopify_financial_status: o.financial_status ?? null,
+      }));
+      await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
+    }
+  } catch (e: any) {
+    console.error("orders-only sync fail", s.shop_id, e);
+  }
+}
+
 async function processShopPayoutsOnly(s: any) {
   if (!s.shopify_store_id) return;
   const { data: store } = await supabaseAdmin.from("shopify_stores").select("*")
@@ -315,6 +343,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
         const today = isoDate(new Date());
         const body = await request.json().catch(() => ({})) as any;
         const payoutsOnly = Boolean(body?.payouts_only);
+        const ordersOnly  = Boolean(body?.orders_only);
         const { data: settings, error } = await supabaseAdmin
           .from("shop_order_settings").select("*").eq("automation_enabled", true);
         if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
@@ -322,11 +351,12 @@ export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
         for (const s of settings ?? []) {
           try {
             if (payoutsOnly) await processShopPayoutsOnly(s);
+            else if (ordersOnly) await syncOrdersOnlyForShop(s, today);
             else await processShop(s, today);
             processed++;
           } catch (e) { console.error("shop fail", s.shop_id, e); }
         }
-        return new Response(JSON.stringify({ processed, today, payoutsOnly }), { headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ processed, today, payoutsOnly, ordersOnly }), { headers: { "Content-Type": "application/json" } });
       },
     },
   },

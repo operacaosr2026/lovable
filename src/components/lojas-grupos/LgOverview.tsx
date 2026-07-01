@@ -156,6 +156,8 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
     queryFn: () => getMetricsFn({ data: { shop_ids: shopIds } }),
     enabled: hasShops,
     staleTime: 3 * 60_000,
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
   });
 
   // ── Goal query ────────────────────────────────────────────────────────────

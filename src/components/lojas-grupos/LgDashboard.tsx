@@ -611,6 +611,8 @@ export function LgDashboard({
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["lg-dashboard", cacheKey, from, to],
     queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from, to, prev_from: prevFrom, prev_to: prevTo } }),
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
   });
 
   const [syncing, setSyncing] = useState(false);

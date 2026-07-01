@@ -141,6 +141,8 @@ export function LgLogistica({
     queryKey: ["lg-logistics", cacheKey, from, today, statusFilter],
     queryFn: () => listFn({ data: { shop_ids: shopIds, from, to: today, delivery_status: statusFilter === "todos" ? undefined : statusFilter } }),
     enabled: shopIds.length > 0,
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
   });
 
   const shopNames: Record<string, string> = {};
