@@ -172,36 +172,36 @@ function StatCard({
   trendIcon?: React.ReactNode; footer?: React.ReactNode; footerIcon?: React.ReactNode; loading?: boolean;
 }) {
   return (
-    <div className={cn("relative overflow-hidden rounded-3xl border p-6 flex flex-col gap-4", ACCENT_CARD[accent])}>
+    <div className={cn("relative overflow-hidden rounded-3xl border p-5 flex flex-col gap-3", ACCENT_CARD[accent])}>
       <div className={cn("pointer-events-none absolute -right-8 -bottom-10 size-32 rounded-full blur-2xl opacity-30", ACCENT_SOLID[accent])} />
       <div className="relative flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className={cn("size-11 rounded-2xl grid place-items-center shrink-0", ACCENTS[accent])}>
+        <div className="flex items-center gap-2.5">
+          <div className={cn("size-9 rounded-2xl grid place-items-center shrink-0", ACCENTS[accent])}>
             {icon}
           </div>
-          <span className="text-sm font-bold text-foreground">{label}</span>
+          <span className="text-xs font-bold text-foreground">{label}</span>
         </div>
         {trendIcon && (
-          <div className={cn("size-9 rounded-xl grid place-items-center shrink-0", ACCENTS[accent])}>
+          <div className={cn("size-7 rounded-xl grid place-items-center shrink-0", ACCENTS[accent])}>
             {trendIcon}
           </div>
         )}
       </div>
       <div className="relative">
         {loading
-          ? <Skeleton className="h-12 w-32" />
-          : <p className={cn("text-5xl font-extrabold leading-none", ACCENT_TEXT[accent])}>{value}</p>
+          ? <Skeleton className="h-10 w-28" />
+          : <p className={cn("text-4xl font-extrabold leading-none", ACCENT_TEXT[accent])}>{value}</p>
         }
-        {sub && <p className="text-sm text-muted-foreground mt-2">{sub}</p>}
+        {sub && <p className="text-xs text-muted-foreground mt-1.5">{sub}</p>}
       </div>
       {footer && (
-        <div className={cn("relative flex items-center gap-2 rounded-xl px-3 py-2.5", ACCENT_PILL[accent])}>
+        <div className={cn("relative flex items-center gap-2 rounded-xl px-2.5 py-2", ACCENT_PILL[accent])}>
           {footerIcon && (
-            <span className={cn("size-6 rounded-full grid place-items-center text-white shrink-0", ACCENT_SOLID[accent])}>
+            <span className={cn("size-5 rounded-full grid place-items-center text-white shrink-0", ACCENT_SOLID[accent])}>
               {footerIcon}
             </span>
           )}
-          <span className="text-sm text-muted-foreground">{footer}</span>
+          <span className="text-xs text-muted-foreground">{footer}</span>
         </div>
       )}
     </div>
@@ -777,28 +777,28 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                     const badgeLabel = d.batida ? "Batida!" : d.vencida ? "Vencida" : "Em andamento";
 
                     return (
-                      <div className={cn("rounded-3xl border bg-card p-5 flex flex-col gap-3.5", stateColor === "success" ? "border-success/15" : stateColor === "destructive" ? "border-destructive/15" : "border-primary/15")}>
+                      <div className={cn("rounded-3xl border bg-card p-4 flex flex-col gap-2.5", stateColor === "success" ? "border-success/15" : stateColor === "destructive" ? "border-destructive/15" : "border-primary/15")}>
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <div className={cn("size-9 rounded-xl grid place-items-center shrink-0", bgSoftCls, textCls)}>
-                              <Target className="size-4" />
+                            <div className={cn("size-7 rounded-xl grid place-items-center shrink-0", bgSoftCls, textCls)}>
+                              <Target className="size-3.5" />
                             </div>
                             <span className="text-[10px] font-bold text-foreground uppercase tracking-wide">Progresso da meta</span>
                           </div>
-                          <span className={cn("flex items-center gap-1 rounded-full text-xs font-semibold px-2.5 py-1 shrink-0", bgSoftCls, textCls)}>
+                          <span className={cn("flex items-center gap-1 rounded-full text-[11px] font-semibold px-2 py-0.5 shrink-0", bgSoftCls, textCls)}>
                             {badgeIcon}
                             {badgeLabel}
                           </span>
                         </div>
 
                         <div>
-                          <p className={cn("text-4xl font-extrabold leading-none", textCls)}>
+                          <p className={cn("text-3xl font-extrabold leading-none", textCls)}>
                             {clampedPercent.toFixed(1)}%
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1.5">da meta atingida</p>
+                          <p className="text-xs text-muted-foreground mt-1">da meta atingida</p>
                         </div>
 
-                        <div className="relative pt-5">
+                        <div className="relative pt-4">
                           <div
                             className={cn("absolute top-0 -translate-x-1/2 rounded-full text-white text-[10px] font-bold px-2 py-0.5 whitespace-nowrap", bgSolidCls)}
                             style={{ left: `${clampedPercent}%` }}
@@ -806,7 +806,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                             {clampedPercent.toFixed(1)}%
                             <span className={cn("absolute left-1/2 -bottom-1 -translate-x-1/2 size-1.5 rotate-45", bgSolidCls)} />
                           </div>
-                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                             <div
                               className={cn("h-full rounded-full transition-all", bgSolidCls)}
                               style={{ width: `${clampedPercent}%` }}
@@ -818,20 +818,20 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
 
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <div className={cn("size-8 rounded-lg grid place-items-center shrink-0", bgSoftCls, textCls)}>
-                              <Wallet className="size-3.5" />
+                            <div className={cn("size-7 rounded-lg grid place-items-center shrink-0", bgSoftCls, textCls)}>
+                              <Wallet className="size-3" />
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-foreground">{fmtMoney(d.lucroAcumulado)}</p>
+                              <p className="text-xs font-bold text-foreground">{fmtMoney(d.lucroAcumulado)}</p>
                               <p className="text-[10px] text-muted-foreground">Lucro acumulado</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className={cn("size-8 rounded-lg grid place-items-center shrink-0", bgSoftCls, textCls)}>
-                              <Flag className="size-3.5" />
+                            <div className={cn("size-7 rounded-lg grid place-items-center shrink-0", bgSoftCls, textCls)}>
+                              <Flag className="size-3" />
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-foreground">{fmtMoney(d.meta)}</p>
+                              <p className="text-xs font-bold text-foreground">{fmtMoney(d.meta)}</p>
                               <p className="text-[10px] text-muted-foreground">Meta definida</p>
                             </div>
                           </div>

@@ -1478,14 +1478,14 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
         .in("shop_id", shop_ids),
       // Taxas Shopify Payments no período
-      supabase.from("shop_cash_entries").select("amount")
+      supabase.from("shop_cash_entries").select("amount,date")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", from).lte("date", to),
       supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", prev_from).lte("date", prev_to),
       // Gastos de anúncios Meta Ads — apenas entradas auto-sincronizadas (não mistura com caixa manual)
-      supabase.from("shop_cash_entries").select("amount")
+      supabase.from("shop_cash_entries").select("amount,date")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .eq("auto_kind", "meta_ads_spend")
         .gte("date", from).lte("date", to),
@@ -1561,6 +1561,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const pedidos      = orders.length;
     const unidades     = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0);
+    const custoTotal   = custoProduto + taxas + anuncios;
     const lucro        = faturamento - custoProduto - taxas - anuncios;
     const margem       = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
     const ticketMedio  = pedidos > 0 ? faturamento / pedidos : 0;
@@ -1574,6 +1575,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const prevPedidos     = prevOrders.length;
     const prevUnidades    = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const prevCusto       = prevOrders.reduce((s, o) => s + orderCost(o), 0);
+    const prevCustoTotal  = prevCusto + prevTaxas + prevAnuncios;
     const prevLucro       = prevFaturamento - prevCusto - prevTaxas - prevAnuncios;
     const prevMargem      = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
     const prevTicket      = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
@@ -1585,23 +1587,39 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       return Math.round(((curr - prev) / prev) * 100 * 10) / 10;
     }
 
-    // Daily chart data grouped by order_date
-    const byDate = new Map<string, { faturamento: number; lucro: number; custo: number }>();
+    // Daily chart data grouped by order_date. O lucro por dia desconta taxas e
+    // anúncios daquele dia (mesmas deduções do KPI "Lucro" agregado), pra não
+    // divergir do valor mostrado ao selecionar um único dia como período.
+    // Reembolsos/chargebacks (buscados ao vivo da Shopify, sem data por pedido)
+    // continuam só no agregado do período, não neste breakdown diário.
+    const feesByDate = new Map<string, number>();
+    for (const r of (feesRes.data ?? []) as any[]) feesByDate.set(r.date, (feesByDate.get(r.date) ?? 0) + Number(r.amount ?? 0));
+    const adsByDate = new Map<string, number>();
+    for (const r of (adsRes.data ?? []) as any[]) adsByDate.set(r.date, (adsByDate.get(r.date) ?? 0) + Number(r.amount ?? 0));
+
+    const byDate = new Map<string, { faturamento: number; custo: number }>();
     for (const o of orders) {
       const d = o.order_date as string;
-      const prev = byDate.get(d) ?? { faturamento: 0, lucro: 0, custo: 0 };
+      const prev = byDate.get(d) ?? { faturamento: 0, custo: 0 };
       const rev = Number(o.revenue ?? 0);
       const cost = orderCost(o);
-      byDate.set(d, { faturamento: prev.faturamento + rev, custo: prev.custo + cost, lucro: prev.lucro + (rev - cost) });
+      byDate.set(d, { faturamento: prev.faturamento + rev, custo: prev.custo + cost });
     }
+    for (const d of feesByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const d of adsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+
     const chartData = Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, v]) => ({
-        date: date.slice(5).replace("-", "/"), // MM/DD → DD/MM display
-        faturamento: Math.round(v.faturamento * 100) / 100,
-        lucro: Math.round(v.lucro * 100) / 100,
-        custo: Math.round(v.custo * 100) / 100,
-      }));
+      .map(([date, v]) => {
+        const dayTaxas = feesByDate.get(date) ?? 0;
+        const dayAnuncios = adsByDate.get(date) ?? 0;
+        return {
+          date: date.slice(5).replace("-", "/"), // MM/DD → DD/MM display
+          faturamento: Math.round(v.faturamento * 100) / 100,
+          lucro: Math.round((v.faturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          custo: Math.round(v.custo * 100) / 100,
+        };
+      });
 
     const goalsData = goalRes.data ?? [];
     const aggregatedGoal = goalsData.length === 0 ? null : {
@@ -1616,6 +1634,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         faturamento,       faturamentoDelta:  delta(faturamento, prevFaturamento),
         lucro,             lucroDelta:        delta(lucro, prevLucro),
         custoProduto,      custoProdutoDelta: delta(custoProduto, prevCusto),
+        custoTotal,        custoTotalDelta:   delta(custoTotal, prevCustoTotal),
         taxas,             taxasDelta:        delta(taxas, prevTaxas),
         anuncios,          anunciosDelta:     delta(anuncios, prevAnuncios),
         reembolsos,        reembolsosDelta:   delta(reembolsos, prevReembolsos),

@@ -362,6 +362,24 @@ export function LgDashboard({
     refetchIntervalInBackground: true,
   });
 
+  // Gráfico "Evolução": quando o período é "Hoje" (1 dia só), mostra os últimos
+  // 7 dias em vez de um único ponto. Qualquer outro período selecionado usa o
+  // mesmo range escolhido pelo usuário.
+  const isToday = period === "hoje";
+  const chartRange = useMemo(
+    () => isToday ? getPeriodRange("7d") : { from, to, prevFrom, prevTo },
+    [isToday, from, to, prevFrom, prevTo],
+  );
+  const { data: chartQueryData, isLoading: chartQueryLoading } = useQuery({
+    queryKey: ["lg-dashboard-chart", cacheKey, chartRange.from, chartRange.to],
+    queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: chartRange.from, to: chartRange.to, prev_from: chartRange.prevFrom, prev_to: chartRange.prevTo } }),
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
+    enabled: isToday,
+  });
+  const chartData = isToday ? (chartQueryData?.chartData ?? []) : (data?.chartData ?? []);
+  const chartLoading = isToday ? chartQueryLoading : isLoading;
+
   const [syncing, setSyncing] = useState(false);
   const syncData = async (silent = false) => {
     setSyncing(true);
@@ -377,7 +395,7 @@ export function LgDashboard({
       qc.invalidateQueries({ queryKey: ["lg-dashboard", cacheKey] });
       qc.invalidateQueries({ queryKey: ["lg-note-metrics"] });
       const total = results.flat().reduce((s, r: any) => s + (r?.synced ?? 0), 0);
-      if (!silent || total > 0)
+      if (!silent)
         toast.success(total > 0 ? `${total} lançamentos sincronizados` : "Tudo já sincronizado");
     } catch (e: any) {
       toast.error(e?.message ?? "Erro ao sincronizar");
@@ -493,9 +511,8 @@ export function LgDashboard({
         />
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="info"
-          label="Custos Totais" value={fmt(m?.custoProduto ?? 0)} delta={m?.custoProdutoDelta ?? 0}
-          tooltip="Custo de produto no período"
-          onClick={isConsolidated ? () => openBreakdown("custoProduto", "Custo de Produto") : undefined}
+          label="Custo Total" value={fmt(m?.custoTotal ?? 0)} delta={m?.custoTotalDelta ?? 0}
+          tooltip="Anúncios + Taxas + Custo de Produto"
         />
         <KpiCard loading={isLoading}
           icon={<Shield className="size-4" />} iconColor="warning"
@@ -534,11 +551,11 @@ export function LgDashboard({
             </div>
           </div>
 
-          {isLoading ? (
+          {chartLoading ? (
             <div className="h-[220px] bg-muted animate-pulse rounded-xl" />
           ) : (
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={data?.chartData ?? []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   {CHART_LINES.map(({ key, color }) => (
                     <linearGradient key={key} id={`lg-grad-${key}`} x1="0" y1="0" x2="0" y2="1">

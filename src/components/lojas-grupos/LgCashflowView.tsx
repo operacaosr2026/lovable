@@ -38,7 +38,7 @@ import {
 } from "@/lib/shop-cash.functions";
 import {
   getShopifyPendingBalance, syncShopifyPayouts,
-  getGroupShopifyPendingBalance, getShopifyLastSyncedAt,
+  getGroupShopifyPendingBalance, getShopifyLastSyncedAt, setManualOverride,
 } from "@/lib/shop-orders.functions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -461,7 +461,12 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
             <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></div>
         )}
         {entry.virtual && <div className="text-[11px] text-muted-foreground">Esta é uma ocorrência recorrente. Editar afeta toda a série.</div>}
-        {entry.source !== "manual" && <div className="text-[11px] text-muted-foreground">Importado do Shopify · alterações são manuais.</div>}
+        {entry.source === "auto" && entry.auto_kind === "order_cost" && (
+          <div className="text-[11px] text-muted-foreground">Custo calculado automaticamente a partir dos pedidos pendentes desse dia. Excluir cria um ajuste manual de $0 pra não ser recalculado.</div>
+        )}
+        {entry.source !== "manual" && !(entry.source === "auto" && entry.auto_kind === "order_cost") && (
+          <div className="text-[11px] text-muted-foreground">Importado do Shopify · alterações são manuais.</div>
+        )}
         {isShopify && (
           <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
             <input type="checkbox" checked={skipWeekend} onChange={(e) => setSkipWeekend(e.target.checked)} className="size-3.5 accent-primary" />
@@ -771,6 +776,8 @@ export function LgCashflowView({
   const createMut  = useMutation({ mutationFn: (v:any) => createFn({ data:v }), onSuccess: refresh });
   const deleteMut  = useMutation({ mutationFn: (id:string) => deleteFn({ data:{id} }), onSuccess: refresh });
   const updateMut  = useMutation({ mutationFn: (v:any) => updateFn({ data:v }), onSuccess: refresh });
+  const overrideFn  = useServerFn(setManualOverride);
+  const overrideMut = useMutation({ mutationFn: (v: any) => overrideFn({ data: v }), onSuccess: refresh });
   const weekendFn  = useServerFn(setWeekendRule);
   const weekendMut = useMutation({ mutationFn: (enabled:boolean) => weekendFn({ data:{ shop_id:shopId, enabled } }), onSuccess: refresh });
 
@@ -935,7 +942,17 @@ export function LgCashflowView({
           categories={editing.kind==="income" ? incomeCats : expenseCats}
           onClose={() => setEditing(null)}
           onSave={(patch:any) => { updateMut.mutate({ id:editing.id, patch }); setEditing(null); }}
-          onDelete={() => { deleteMut.mutate(editing.id); setEditing(null); }}
+          onDelete={() => {
+            if (editing.source === "auto" && editing.auto_kind === "order_cost") {
+              // Excluir a linha não basta: o custo é recalculado a partir dos pedidos
+              // pendentes e voltaria a aparecer. Um override manual em $0 impede a
+              // regeneração automática (mesmo mecanismo usado para ajustar o valor).
+              overrideMut.mutate({ shop_id: editing.shop_id ?? shopId, processing_date: editing.originalDate ?? editing.date, amount: 0 });
+            } else {
+              deleteMut.mutate(editing.id);
+            }
+            setEditing(null);
+          }}
         />
       )}
       {manageCats && (

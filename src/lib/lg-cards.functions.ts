@@ -421,13 +421,19 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     const todayStr = now.toISOString().slice(0, 10);
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 
-    const [shopsRes, cashRes, monthOrdersRes, costRes, feesRes, adsRes] = await Promise.all([
+    const [shopsRes, cashRes, monthOrdersRes, costRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
       supabaseAdmin.from("shops").select("id, opening_balance").in("id", shopIds),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount, date").in("shop_id", shopIds).lte("date", todayStr),
+      // "Saldo atual" no Caixa (LgCashflowView) só soma lançamentos conciliados,
+      // e ignora os sincronizados automaticamente (taxas/pendências do Shopify).
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount")
+        .in("shop_id", shopIds).eq("reconciled", true)
+        .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
       supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, payment_status").in("shop_id", shopIds).gte("order_date", monthStart).lte("order_date", todayStr),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").in("shop_id", shopIds),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", monthStart).lte("date", todayStr),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", monthStart).lte("date", todayStr),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Reembolso").gte("date", monthStart).lte("date", todayStr),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Chargeback").gte("date", monthStart).lte("date", todayStr),
     ]);
 
     const openingBalanceByShop = new Map((shopsRes.data ?? []).map((s: any) => [s.id, Number(s.opening_balance ?? 0)]));
@@ -459,6 +465,10 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     for (const r of (feesRes.data ?? []) as any[]) feesByShop.set(r.shop_id, (feesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
     const adsByShop = new Map<string, number>();
     for (const r of (adsRes.data ?? []) as any[]) adsByShop.set(r.shop_id, (adsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+    const reembolsosByShop = new Map<string, number>();
+    for (const r of (reembolsosRes.data ?? []) as any[]) reembolsosByShop.set(r.shop_id, (reembolsosByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+    const chargebacksByShop = new Map<string, number>();
+    for (const r of (chargebacksRes.data ?? []) as any[]) chargebacksByShop.set(r.shop_id, (chargebacksByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
 
     return {
       cards: cards.map((c: any) => {
@@ -466,7 +476,8 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
         let saldo = 0, lucroMes = 0, totalPedidos = 0, totalEstornos = 0;
         for (const id of ids) {
           saldo += (openingBalanceByShop.get(id) ?? 0) + (cashByShop.get(id) ?? 0);
-          lucroMes += (revenueByShop.get(id) ?? 0) - (custoByShop.get(id) ?? 0) - (feesByShop.get(id) ?? 0) - (adsByShop.get(id) ?? 0);
+          const faturamento = (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
+          lucroMes += faturamento - (custoByShop.get(id) ?? 0) - (feesByShop.get(id) ?? 0) - (adsByShop.get(id) ?? 0);
           totalPedidos += totalOrdersByShop.get(id) ?? 0;
           totalEstornos += totalEstornosByShop.get(id) ?? 0;
         }
