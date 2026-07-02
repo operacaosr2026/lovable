@@ -40,9 +40,9 @@ const navGroups: NavGroup[] = [
     label: "Pessoal",
     collapsible: true,
     items: [
-      { to: "/calendar", label: "Calendário", icon: Calendar },
       { to: "/habits", label: "Hábitos", icon: Repeat },
       { to: "/tasks", label: "Tarefas", icon: KanbanSquare },
+      { to: "/calendar", label: "Calendário", icon: Calendar },
       { to: "/whiteboard", label: "Quadro Branco", icon: PenTool },
       { to: "/finance", label: "Financeiro", icon: Wallet },
     ],
@@ -52,6 +52,7 @@ const navGroups: NavGroup[] = [
     label: "Empresa",
     collapsible: true,
     items: [
+      { to: "/shops/sops", label: "SOPs & Processos", icon: Network, section: "sops" },
       { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
       {
         to: "/shops",
@@ -59,14 +60,11 @@ const navGroups: NavGroup[] = [
         icon: Store,
         section: "shops",
         children: [
-          { to: "/shops", label: "Lojas", icon: Store },
           { to: "/shops/products", label: "Produtos", icon: Package },
-          { to: "/shops/grupos", label: "Grupos", icon: Users },
           { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
           { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
         ],
       },
-      { to: "/shops/sops", label: "SOPs & Processos", icon: Network, section: "sops" },
     ],
   },
 ];
@@ -86,7 +84,6 @@ const ALL_PAGES = [
   { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/shops", label: "Ecommerce / Lojas", icon: Store },
   { to: "/shops/products", label: "Produtos", icon: Package },
-  { to: "/shops/grupos", label: "Grupos", icon: Users },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
   { to: "/shops/sops", label: "SOPs & Processos", icon: Network },

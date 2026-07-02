@@ -3,15 +3,24 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, ShoppingBag, ExternalLink } from "lucide-react";
+import { Plus, ShoppingBag, ExternalLink, Store, Users } from "lucide-react";
 import { listShopifyStores } from "@/lib/shop-orders.functions";
 import { ConnectStoreDialog } from "@/components/shops/ShopIntegrations";
+import { GruposPanel } from "@/components/shops/GruposPanel";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+type Tab = "lojas" | "grupos";
 
 export const Route = createFileRoute("/shops/banco-de-lojas/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab === "grupos" ? "grupos" : "lojas") as Tab,
+  }),
   component: BancoDeLojasIndex,
 });
 
 function BancoDeLojasIndex() {
+  const { tab } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const qc = useQueryClient();
   const listFn = useServerFn(listShopifyStores);
   const [openConnect, setOpenConnect] = useState(false);
@@ -23,48 +32,66 @@ function BancoDeLojasIndex() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Banco de Lojas"
-        subtitle={isLoading ? "Carregando..." : `${stores.length} ${stores.length === 1 ? "loja conectada" : "lojas conectadas"}`}
-        actions={
-          <button
-            onClick={() => setOpenConnect(true)}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
-          >
-            <Plus className="size-4" /> Nova loja
-          </button>
-        }
-      />
+      <PageHeader title="Banco de Lojas" subtitle="Repositório de lojas e grupos para referência e análise." />
 
-      {!isLoading && stores.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-12 text-center">
-          <ShoppingBag className="size-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Nenhuma loja Shopify conectada ainda.</p>
-          <button
-            onClick={() => setOpenConnect(true)}
-            className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
-          >
-            <Plus className="size-4" /> Conectar primeira loja
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {stores.map((store: any) => (
-            <StoreCard key={store.id} store={store} />
-          ))}
-        </div>
-      )}
+      <Tabs value={tab} onValueChange={(v) => navigate({ search: { tab: v as Tab } })}>
+        <TabsList>
+          <TabsTrigger value="lojas" className="flex items-center gap-1.5">
+            <Store className="size-3.5" /> Lojas
+          </TabsTrigger>
+          <TabsTrigger value="grupos" className="flex items-center gap-1.5">
+            <Users className="size-3.5" /> Grupos
+          </TabsTrigger>
+        </TabsList>
 
-      {openConnect && (
-        <ConnectStoreDialog
-          open={openConnect}
-          onClose={() => setOpenConnect(false)}
-          onConnected={() => {
-            qc.invalidateQueries({ queryKey: ["shopify-stores"] });
-            setOpenConnect(false);
-          }}
-        />
-      )}
+        <TabsContent value="lojas" className="pt-4">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <p className="text-sm text-muted-foreground">
+              {isLoading ? "Carregando..." : `${stores.length} ${stores.length === 1 ? "loja conectada" : "lojas conectadas"}`}
+            </p>
+            <button
+              onClick={() => setOpenConnect(true)}
+              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
+            >
+              <Plus className="size-4" /> Nova loja
+            </button>
+          </div>
+
+          {!isLoading && stores.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-12 text-center">
+              <ShoppingBag className="size-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Nenhuma loja Shopify conectada ainda.</p>
+              <button
+                onClick={() => setOpenConnect(true)}
+                className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
+              >
+                <Plus className="size-4" /> Conectar primeira loja
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {stores.map((store: any) => (
+                <StoreCard key={store.id} store={store} />
+              ))}
+            </div>
+          )}
+
+          {openConnect && (
+            <ConnectStoreDialog
+              open={openConnect}
+              onClose={() => setOpenConnect(false)}
+              onConnected={() => {
+                qc.invalidateQueries({ queryKey: ["shopify-stores"] });
+                setOpenConnect(false);
+              }}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="grupos" className="pt-4">
+          <GruposPanel />
+        </TabsContent>
+      </Tabs>
     </PageShell>
   );
 }

@@ -67,7 +67,7 @@ function GroupDetail() {
   if (!group) return (
     <PageShell>
       <div className="text-sm text-muted-foreground">Grupo não encontrado.</div>
-      <Link to="/shops/grupos" className="text-sm text-primary mt-3 inline-block">← Voltar</Link>
+      <Link to="/shops/banco-de-lojas" search={{ tab: "grupos" }} className="text-sm text-primary mt-3 inline-block">← Voltar</Link>
     </PageShell>
   );
 
@@ -77,7 +77,7 @@ function GroupDetail() {
     <PageShell>
       {/* Breadcrumb + group header */}
       <div className="flex items-center gap-3 mb-3">
-        <Link to="/shops/grupos" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground shrink-0">
+        <Link to="/shops/banco-de-lojas" search={{ tab: "grupos" }} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground shrink-0">
           <ArrowLeft className="size-4" /> Grupos
         </Link>
         <div className="flex items-center gap-2 min-w-0">

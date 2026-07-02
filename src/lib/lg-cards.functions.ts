@@ -383,6 +383,103 @@ export const saveLgCurrencyRates = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ─── Overview de todos os cards (usado no Dashboard) ──────────────────────────
+
+export const listLgCardsOverview = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { ownerId } = context;
+
+    const { data: cards, error } = await supabaseAdmin
+      .from("lg_cards")
+      .select("id, name, logo_url")
+      .eq("user_id", ownerId)
+      .eq("status", "ativo")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    if (!cards?.length) return { cards: [] };
+
+    const cardIds = cards.map((c: any) => c.id);
+    const { data: cardShops } = await supabaseAdmin
+      .from("lg_card_shops")
+      .select("card_id, shop_id")
+      .in("card_id", cardIds);
+
+    const shopIdsByCard = new Map<string, string[]>();
+    const allShopIds = new Set<string>();
+    for (const cs of (cardShops ?? []) as any[]) {
+      allShopIds.add(cs.shop_id);
+      if (!shopIdsByCard.has(cs.card_id)) shopIdsByCard.set(cs.card_id, []);
+      shopIdsByCard.get(cs.card_id)!.push(cs.shop_id);
+    }
+    const shopIds = Array.from(allShopIds);
+    if (!shopIds.length) {
+      return { cards: cards.map((c: any) => ({ ...c, saldo: 0, lucroMes: 0, taxaEstorno: 0 })) };
+    }
+
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+    const [shopsRes, cashRes, monthOrdersRes, costRes, feesRes, adsRes] = await Promise.all([
+      supabaseAdmin.from("shops").select("id, opening_balance").in("id", shopIds),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount, date").in("shop_id", shopIds).lte("date", todayStr),
+      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, payment_status").in("shop_id", shopIds).gte("order_date", monthStart).lte("order_date", todayStr),
+      supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").in("shop_id", shopIds),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", monthStart).lte("date", todayStr),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", monthStart).lte("date", todayStr),
+    ]);
+
+    const openingBalanceByShop = new Map((shopsRes.data ?? []).map((s: any) => [s.id, Number(s.opening_balance ?? 0)]));
+    const cashByShop = new Map<string, number>();
+    for (const e of (cashRes.data ?? []) as any[]) {
+      const amt = Number(e.amount ?? 0);
+      cashByShop.set(e.shop_id, (cashByShop.get(e.shop_id) ?? 0) + (e.kind === "income" ? amt : -amt));
+    }
+
+    const costByShop = new Map((costRes.data ?? []).map((s: any) => [s.shop_id, Number(s.default_unit_cost ?? 0)]));
+    const configuredCosts = Array.from(costByShop.values()).filter((c) => c > 0);
+    const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
+
+    const revenueByShop = new Map<string, number>();
+    const custoByShop = new Map<string, number>();
+    const totalOrdersByShop = new Map<string, number>();
+    const totalEstornosByShop = new Map<string, number>();
+    for (const o of (monthOrdersRes.data ?? []) as any[]) {
+      const sid = o.shop_id as string;
+      revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
+      const shopCost = costByShop.get(sid);
+      const unit = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + Number(o.items_count ?? 0) * unit);
+      totalOrdersByShop.set(sid, (totalOrdersByShop.get(sid) ?? 0) + 1);
+      if (o.payment_status === "estornado") totalEstornosByShop.set(sid, (totalEstornosByShop.get(sid) ?? 0) + 1);
+    }
+
+    const feesByShop = new Map<string, number>();
+    for (const r of (feesRes.data ?? []) as any[]) feesByShop.set(r.shop_id, (feesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+    const adsByShop = new Map<string, number>();
+    for (const r of (adsRes.data ?? []) as any[]) adsByShop.set(r.shop_id, (adsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+
+    return {
+      cards: cards.map((c: any) => {
+        const ids = shopIdsByCard.get(c.id) ?? [];
+        let saldo = 0, lucroMes = 0, totalPedidos = 0, totalEstornos = 0;
+        for (const id of ids) {
+          saldo += (openingBalanceByShop.get(id) ?? 0) + (cashByShop.get(id) ?? 0);
+          lucroMes += (revenueByShop.get(id) ?? 0) - (custoByShop.get(id) ?? 0) - (feesByShop.get(id) ?? 0) - (adsByShop.get(id) ?? 0);
+          totalPedidos += totalOrdersByShop.get(id) ?? 0;
+          totalEstornos += totalEstornosByShop.get(id) ?? 0;
+        }
+        return {
+          ...c,
+          saldo,
+          lucroMes,
+          taxaEstorno: totalPedidos > 0 ? totalEstornos / totalPedidos : 0,
+        };
+      }),
+    };
+  });
+
 // ─── Card quick metrics ───────────────────────────────────────────────────────
 
 export const getLgCardQuickMetrics = createServerFn({ method: "GET" })

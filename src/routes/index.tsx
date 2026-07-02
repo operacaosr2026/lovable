@@ -16,8 +16,7 @@ import {
 import { saveGratitudeEntry } from "@/lib/gratitude.functions";
 import { listTasks, updateTask, getRoutineLogs } from "@/lib/tasks.functions";
 import { updateShopTask } from "@/lib/shop-tasks.functions";
-import { listShops } from "@/lib/shops.functions";
-import { getShopifyChargebackRate } from "@/lib/shop-orders.functions";
+import { listLgCardsOverview } from "@/lib/lg-cards.functions";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,43 +55,40 @@ function SectionHead({ icon: Icon, title, count, tint, iconColor }: any) {
   );
 }
 
-function ShopRow({ s }: { s: any }) {
-  const chargebackFn = useServerFn(getShopifyChargebackRate);
-  const { data: chargeback } = useQuery({
-    queryKey: ["shop-chargeback-rate", s.id],
-    queryFn: () => chargebackFn({ data: { shop_id: s.id } }),
-    staleTime: 5 * 60_000,
-  });
+function CardRow({ c }: { c: any }) {
+  const taxaEstornoPct = Number(c.taxaEstorno ?? 0) * 100;
 
   return (
     <Link
-      to="/shops/$shopId"
-      params={{ shopId: s.id }}
+      to="/shops/lojas-grupos/$cardId"
+      params={{ cardId: c.id }}
       className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 hover:bg-surface-hover transition-colors"
     >
       <div className="flex items-center gap-2.5 flex-1 min-w-0 basis-full sm:basis-auto">
-        <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0 text-xs font-semibold">
-          {s.name?.[0]?.toUpperCase() ?? <Store className="size-3.5" />}
+        <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0 text-xs font-semibold overflow-hidden">
+          {c.logo_url
+            ? <img src={c.logo_url} alt="" className="size-8 object-cover" />
+            : c.name?.[0]?.toUpperCase() ?? <Store className="size-3.5" />}
         </div>
-        <span className="text-sm font-medium truncate">{s.name}</span>
+        <span className="text-sm font-medium truncate">{c.name}</span>
       </div>
       <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:gap-4 shrink-0">
         <div className="text-right sm:w-28 sm:shrink-0">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
-          <div className={`text-sm font-semibold tabular-nums ${Number(s.balance) < 0 ? "text-rose-500" : "text-foreground"}`}>
-            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.balance ?? 0))}
+          <div className={`text-sm font-semibold tabular-nums ${Number(c.saldo) < 0 ? "text-rose-500" : "text-foreground"}`}>
+            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.saldo ?? 0))}
           </div>
         </div>
         <div className="text-right sm:w-28 sm:shrink-0">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
-          <div className={`text-sm font-semibold tabular-nums ${Number(s.monthProfit) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
-            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(s.monthProfit ?? 0))}
+          <div className={`text-sm font-semibold tabular-nums ${Number(c.lucroMes) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
+            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.lucroMes ?? 0))}
           </div>
         </div>
         <div className="text-right sm:w-24 sm:shrink-0">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno</div>
-          <div className={`text-sm font-semibold tabular-nums ${(chargeback?.rate ?? 0) > 0.5 ? "text-rose-500" : "text-foreground"}`}>
-            {chargeback?.connected && chargeback.rate != null ? `${chargeback.rate.toFixed(2)}%` : "—"}
+          <div className={`text-sm font-semibold tabular-nums ${taxaEstornoPct > 0.5 ? "text-rose-500" : "text-foreground"}`}>
+            {taxaEstornoPct.toFixed(2)}%
           </div>
         </div>
       </div>
@@ -113,7 +109,7 @@ function Dashboard() {
   const listTasksFn = useServerFn(listTasks);
   const updateTaskFn = useServerFn(updateTask);
   const getLogsFn = useServerFn(getRoutineLogs);
-  const listShopsFn = useServerFn(listShops);
+  const listLgCardsOverviewFn = useServerFn(listLgCardsOverview);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
@@ -126,10 +122,10 @@ function Dashboard() {
   const { data: routineLogsData } = useQuery({
     queryKey: ["routine-logs"], queryFn: () => getLogsFn(), enabled: !!session,
   });
-  const { data: shopsData } = useQuery({
-    queryKey: ["shops"], queryFn: () => listShopsFn(), enabled: !!session,
+  const { data: cardsData } = useQuery({
+    queryKey: ["lg-cards-overview"], queryFn: () => listLgCardsOverviewFn(), enabled: !!session,
   });
-  const shops = ((shopsData as any)?.shops ?? []).filter((s: any) => s.status === "ativa");
+  const cards = (cardsData as any)?.cards ?? [];
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dashboard"] });
   const invalidateRoutines = () => {
@@ -244,12 +240,12 @@ function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Lojas */}
-        {shops.length > 0 && (
+        {cards.length > 0 && (
           <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-            <SectionHead icon={Store} title="Lojas" count={`${shops.length} ${shops.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
+            <SectionHead icon={Store} title="Lojas" count={`${cards.length} ${cards.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
             <div className="divide-y divide-border flex-1 overflow-y-auto">
-              {shops.map((s: any) => (
-                <ShopRow key={s.id} s={s} />
+              {cards.map((c: any) => (
+                <CardRow key={c.id} c={c} />
               ))}
             </div>
           </section>

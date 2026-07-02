@@ -38,7 +38,7 @@ import {
 } from "@/lib/shop-cash.functions";
 import {
   getShopifyPendingBalance, syncShopifyPayouts,
-  getGroupShopifyPendingBalance,
+  getGroupShopifyPendingBalance, getShopifyLastSyncedAt,
 } from "@/lib/shop-orders.functions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,6 +53,18 @@ type Entry = {
   shop_id?: string;
 };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
+
+function fmtLastSynced(iso: string | null) {
+  if (!iso) return "Nunca sincronizado";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Sincronizado agora";
+  if (minutes < 60) return `Sincronizado há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Sincronizado há ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `Sincronizado há ${days} ${days === 1 ? "dia" : "dias"}`;
+}
 
 // ─── Date helpers (same as ShopCashflow) ─────────────────────────────────────
 
@@ -566,6 +578,7 @@ export function LgCashflowView({
   const pendingFn   = useServerFn(getShopifyPendingBalance);
   const syncPaysFn  = useServerFn(syncShopifyPayouts);
   const groupPendFn = useServerFn(getGroupShopifyPendingBalance);
+  const lastSyncFn  = useServerFn(getShopifyLastSyncedAt);
 
   const queryKey = ["shop-cash", cacheKey];
   const catsKey  = ["shop-cash-cats", cacheKey];
@@ -581,6 +594,10 @@ export function LgCashflowView({
     queryKey: ["shop-group-cash-pending", cacheKey],
     queryFn:  () => groupPendFn({ data: { shop_ids: shopIds } }),
     enabled:  isConsolidated,
+  });
+  const lastSyncQuery = useQuery({
+    queryKey: ["shop-cash-last-synced", cacheKey],
+    queryFn:  () => lastSyncFn({ data: { shop_ids: shopIds } }),
   });
 
   const refresh     = () => qc.invalidateQueries({ queryKey });
@@ -742,6 +759,7 @@ export function LgCashflowView({
       qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ["shop-group-cash-pending", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash-pending", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["shop-cash-last-synced", cacheKey] });
       toast.success(total ? `${total} depósitos sincronizados` : "Depósitos já atualizados");
     } catch (e: any) {
       toast.error(e?.message ?? "Erro ao sincronizar");
@@ -805,6 +823,9 @@ export function LgCashflowView({
 
         <div className="flex-1" />
 
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {syncing ? "Sincronizando..." : fmtLastSynced(lastSyncQuery.data?.lastSyncedAt ?? null)}
+        </span>
         <button
           onClick={syncPayouts}
           disabled={syncing}

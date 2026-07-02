@@ -626,7 +626,25 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       await context.supabase.from("shop_cash_entries").insert(provisionals);
     }
 
+    await context.supabase.from("shop_order_settings")
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
+
     return { synced: relevant.length + pendingTx.length };
+  });
+
+export const getShopifyLastSyncedAt = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: rows } = await context.supabase.from("shop_order_settings")
+      .select("last_synced_at")
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
+    const timestamps = (rows ?? []).map((r: any) => r.last_synced_at).filter(Boolean) as string[];
+    const lastSyncedAt = timestamps.length
+      ? timestamps.reduce((max, t) => (t > max ? t : max))
+      : null;
+    return { lastSyncedAt };
   });
 
 // ---------- Shopify Payments — taxas (apenas para KPI, não aparecem no caixa) ----------
