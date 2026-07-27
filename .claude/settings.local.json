@@ -77,7 +77,16 @@
       "Bash(git -C \"/Users/rodrigo/Desktop/Projetos Code/SRX/lovable\" diff --stat)",
       "Bash(git -C \"/Users/rodrigo/Desktop/Projetos Code/SRX/lovable\" log --oneline -5)",
       "Bash(git -C \"/Users/rodrigo/Desktop/Projetos Code/SRX/lovable\" diff src/components/lojas-grupos/LgOrders.tsx src/lib/shop-orders.functions.ts)",
-      "Bash(git -C '/Users/rodrigo/Desktop/Projetos Code/SRX/lovable' add src/components/lojas-grupos/LgDashboard.tsx src/components/lojas-grupos/LgOrders.tsx src/components/shops/ShopDashboard.tsx src/lib/lg-cards.functions.ts src/lib/shop-cash.functions.ts src/lib/shop-orders.functions.ts src/routes/api/public/hooks/sync-shop-orders.ts src/routes/shops.lojas-grupos.index.tsx supabase/migrations/20260627120000_add_estornado_payment_status.sql supabase/migrations/20260627130000_add_shopify_transaction_id.sql .claude/settings.local.json)"
+      "Bash(git -C '/Users/rodrigo/Desktop/Projetos Code/SRX/lovable' add src/components/lojas-grupos/LgDashboard.tsx src/components/lojas-grupos/LgOrders.tsx src/components/shops/ShopDashboard.tsx src/lib/lg-cards.functions.ts src/lib/shop-cash.functions.ts src/lib/shop-orders.functions.ts src/routes/api/public/hooks/sync-shop-orders.ts src/routes/shops.lojas-grupos.index.tsx supabase/migrations/20260627120000_add_estornado_payment_status.sql supabase/migrations/20260627130000_add_shopify_transaction_id.sql .claude/settings.local.json)",
+      "Bash(git -C \"/Users/rodrigo/Desktop/Projetos Code/SRX/lovable\" push origin main)",
+      "Bash(git -C \"/Users/rodrigo/Desktop/Projetos Code/SRX/lovable\" add src/components/lojas-grupos/LgCashflowView.tsx src/components/lojas-grupos/LgOrders.tsx src/lib/lg-cards.functions.ts src/lib/meta-ads.functions.ts src/lib/shop-orders.functions.ts src/routes/shops.lojas-grupos.index.tsx)",
+      "Bash(git -C '/Users/rodrigo/Desktop/Projetos Code/SRX/lovable' commit -m ' *)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(grep -v 'LgLog\\\\|lg-log\\\\|route-guards\\\\|__root\\\\|index\\\\.tsx\\\\|settings\\\\.\\\\|shops\\\\.$shopId\\\\|shops\\\\.index\\\\|tasks\\\\.$list\\\\|vite\\\\.config\\\\|meta-ads\\\\|track123')",
+      "Read(//tmp/**)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }
