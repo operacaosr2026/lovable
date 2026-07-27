@@ -2,6 +2,20 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { attachLiveShopifyNames } from "@/lib/shop-orders.functions";
+
+// Same as attachLiveShopifyNames, but for rows carrying a nested `shops` object
+// (as returned by PostgREST embedding, e.g. lg_card_shops.select("...,shops(id,name,...)")).
+async function patchEmbeddedShopNames<T extends { shops: { id: string; name: string } | null }>(
+  ownerId: string,
+  rows: T[],
+): Promise<T[]> {
+  const inner = rows.map((r) => r.shops).filter(Boolean) as { id: string; name: string }[];
+  if (inner.length === 0) return rows;
+  const patched = await attachLiveShopifyNames(ownerId, inner);
+  const nameById = new Map(patched.map((p) => [p.id, p.name]));
+  return rows.map((r) => (r.shops ? { ...r, shops: { ...r.shops, name: nameById.get(r.shops.id) ?? r.shops.name } } : r));
+}
 
 export const LG_STATUSES = ["ativo", "pausado", "arquivado"] as const;
 
@@ -44,7 +58,7 @@ export const listLgCards = createServerFn({ method: "GET" })
         .from("lg_card_shops")
         .select("card_id, shop_id, payout_days, payment_days, shops(id, name, status)")
         .in("card_id", cardIds);
-      shops = data ?? [];
+      shops = await patchEmbeddedShopNames(ownerId, data ?? []);
     }
 
     const shopsByCard: Record<string, any[]> = {};
@@ -83,7 +97,7 @@ export const getLgCard = createServerFn({ method: "GET" })
       .select("id, shop_id, payout_days, payment_days, shops(id, name, status, country)")
       .eq("card_id", data.id);
 
-    return { card, shops: cardShops ?? [] };
+    return { card, shops: await patchEmbeddedShopNames(ownerId, cardShops ?? []) };
   });
 
 // ─── Create ──────────────────────────────────────────────────────────────────
@@ -289,7 +303,7 @@ export const listAllShopsForPicker = createServerFn({ method: "GET" })
       .order("name", { ascending: true });
 
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return attachLiveShopifyNames(ownerId, data ?? []);
   });
 
 // ─── Update matriz_shop_id ────────────────────────────────────────────────────
@@ -510,7 +524,8 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     }
 
     const shopIds = cardShops.map((s: any) => s.shop_id as string);
-    const shopNameById = new Map(cardShops.map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
+    const patchedCardShops = await patchEmbeddedShopNames(ownerId, cardShops as any[]);
+    const shopNameById = new Map(patchedCardShops.map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
 
     const now = new Date();
     const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;

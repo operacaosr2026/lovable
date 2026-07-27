@@ -6,11 +6,9 @@ import {
 } from "@/lib/shop-orders.functions";
 import { getMetaAdsIntegration, getMetaToken } from "@/lib/meta-ads.functions";
 import { MetaAdsIntegrationDialog } from "@/components/shops/MetaAdsIntegration";
-import { Track123IntegrationDialog } from "@/components/shops/Track123Integration";
-import { getTrack123Integration } from "@/lib/track123.functions";
 import { Button } from "@/components/ui/button";
 import {
-  RefreshCw, Sparkles, Megaphone, Webhook,
+  RefreshCw, Sparkles, Megaphone,
   CheckCircle2, AlertCircle, Settings2, Info,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -91,55 +89,6 @@ function SyncAllSection({ shops }: { shops: ShopStub[] }) {
           {syncing ? "Sincronizando..." : "Sincronizar todas"}
         </Button>
       </div>
-    </div>
-  );
-}
-
-// ─── Track 123 per shop ───────────────────────────────────────────────────────
-
-function Track123Section({ shop }: { shop: ShopStub }) {
-  const getTrackFn = useServerFn(getTrack123Integration);
-  const [open, setOpen] = useState(false);
-
-  const track = useQuery({
-    queryKey: ["track123-integration", shop.id],
-    queryFn:  () => getTrackFn({ data: { shop_id: shop.id } }),
-  });
-
-  const configured = Boolean(track.data?.configured);
-
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-start gap-4 flex-wrap">
-        <div className="size-11 rounded-xl bg-muted/50 grid place-items-center shrink-0">
-          <Webhook className="size-5 text-foreground" />
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold">Track123</span>
-            <span className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
-              configured
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/30"
-                : "bg-muted text-muted-foreground border-border"
-            )}>
-              {configured ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
-              {configured ? "Conectado" : "Não conectado"}
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">
-              {shop.name}
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground mt-0.5">Rastreamento de encomendas e notificações automáticas</p>
-        </div>
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-          <Settings2 className="size-4" /> {configured ? "Configurar" : "Conectar"}
-        </Button>
-      </div>
-
-      {open && (
-        <Track123IntegrationDialog shopId={shop.id} open={open} onClose={() => setOpen(false)} />
-      )}
     </div>
   );
 }
@@ -251,17 +200,6 @@ export function LgIntegrations({
         <MetaAdsSection cardId={cardId} card={card} shops={shops} />
       </div>
 
-      {/* 3. Track 123 (per shop) */}
-      {shops.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Track 123</p>
-          <div className="space-y-3">
-            {shops.map((shop) => (
-              <Track123Section key={shop.id} shop={shop} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

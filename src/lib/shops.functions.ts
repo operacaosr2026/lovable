@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
-import { COST_CATEGORY } from "@/lib/shop-orders.functions";
+import { COST_CATEGORY, attachLiveShopifyNames } from "@/lib/shop-orders.functions";
 
 export const SHOP_STATUSES = ["ativa", "pausada", "arquivada"] as const;
 
@@ -67,10 +67,10 @@ export const listShops = createServerFn({ method: "GET" })
       for (const r of (adRows ?? []) as any[]) init(r.shop_id).monthProfit -= Number(r.amount ?? 0);
     }
     return {
-      shops: (shops ?? []).map((s: any) => ({
+      shops: await attachLiveShopifyNames(ownerId, (shops ?? []).map((s: any) => ({
         ...s,
         ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0), monthProfit: 0 }),
-      })),
+      }))),
     };
   });
 

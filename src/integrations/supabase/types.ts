@@ -2650,6 +2650,9 @@ export type Database = {
       shopify_stores: {
         Row: {
           access_token: string | null
+          board_column_id: string | null
+          board_note: string | null
+          board_position: number
           client_id: string | null
           client_secret: string | null
           created_at: string
@@ -2669,6 +2672,9 @@ export type Database = {
         }
         Insert: {
           access_token?: string | null
+          board_column_id?: string | null
+          board_note?: string | null
+          board_position?: number
           client_id?: string | null
           client_secret?: string | null
           created_at?: string
@@ -2688,6 +2694,9 @@ export type Database = {
         }
         Update: {
           access_token?: string | null
+          board_column_id?: string | null
+          board_note?: string | null
+          board_position?: number
           client_id?: string | null
           client_secret?: string | null
           created_at?: string
@@ -2705,7 +2714,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "shopify_stores_board_column_id_fkey"
+            columns: ["board_column_id"]
+            isOneToOne: false
+            referencedRelation: "store_board_columns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       shops: {
         Row: {
@@ -2774,6 +2791,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      store_board_columns: {
+        Row: {
+          created_at: string | null
+          features: string[]
+          id: string
+          name: string
+          position: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          features?: string[]
+          id?: string
+          name: string
+          position?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          features?: string[]
+          id?: string
+          name?: string
+          position?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       sop_edges: {
         Row: {
