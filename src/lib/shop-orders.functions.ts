@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -19,7 +19,7 @@ function daysBetween(from: string, to: string) {
 
 // access_token is no longer readable by the user role (column SELECT was revoked).
 // Use the admin client and scope strictly by user_id to keep authorization correct.
-export async function getShopifyCreds(_supabase: any, ownerId: string, shopify_store_id: string) {
+export const getShopifyCreds = createServerOnlyFn(async (_supabase: any, ownerId: string, shopify_store_id: string) => {
   const { data, error } = await supabaseAdmin
     .from("shopify_stores")
     .select("shop_domain,access_token,iana_timezone")
@@ -30,7 +30,7 @@ export async function getShopifyCreds(_supabase: any, ownerId: string, shopify_s
   if (!data) throw new Error("Loja Shopify não encontrada");
   if (!data.access_token) throw new Error("Loja Shopify sem access_token");
   return { domain: data.shop_domain as string, token: data.access_token as string, ianaTimezone: data.iana_timezone as string | null };
-}
+});
 
 function shopifyLocalDate(created_at: string, ianaTimezone: string | null): string {
   if (!ianaTimezone) return created_at.slice(0, 10);
@@ -56,7 +56,7 @@ async function fetchShopifyOrders(domain: string, token: string, sinceISO: strin
   return out;
 }
 
-export async function fetchShopifyPayouts(domain: string, token: string, sinceISO: string) {
+export const fetchShopifyPayouts = createServerOnlyFn(async (domain: string, token: string, sinceISO: string) => {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/payouts.json?limit=250&date_min=${encodeURIComponent(sinceISO.slice(0, 10))}`;
   for (let i = 0; i < 20 && url; i++) {
@@ -73,7 +73,7 @@ export async function fetchShopifyPayouts(domain: string, token: string, sinceIS
     url = m ? m[1] : "";
   }
   return out;
-}
+});
 
 async function fetchShopifyBalanceTransactions(domain: string, token: string, maxPages: number) {
   const out: any[] = [];
@@ -143,7 +143,7 @@ async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: 
   return Number(json.count ?? 0);
 }
 
-export async function fetchShopifyPaymentsBalance(domain: string, token: string) {
+export const fetchShopifyPaymentsBalance = createServerOnlyFn(async (domain: string, token: string) => {
   const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance.json`;
   const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
   if (!res.ok) {
@@ -156,7 +156,7 @@ export async function fetchShopifyPaymentsBalance(domain: string, token: string)
   if (balances.length === 0) return null;
   const total = balances.reduce((s, b) => s + Number(b.amount ?? 0), 0);
   return { amount: total, currency: balances[0]?.currency ?? null };
-}
+});
 
 async function ensureCostCategory(supabase: any, ownerId: string, shopId: string) {
   const { data } = await supabase.from("shop_cash_categories").select("id")
@@ -1669,10 +1669,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
 // store for financial sync via shop_order_settings.shopify_store_id. When
 // linked, its display name should always mirror the live Shopify store name
 // (editable in Banco de Lojas) instead of the snapshot copied at link time.
-export async function attachLiveShopifyNames<T extends { id: string; name: string }>(
+export const attachLiveShopifyNames = createServerOnlyFn(async <T extends { id: string; name: string }>(
   ownerId: string,
   rows: T[],
-): Promise<T[]> {
+): Promise<T[]> => {
   if (rows.length === 0) return rows;
   const { data: settings } = await supabaseAdmin
     .from("shop_order_settings")
@@ -1695,4 +1695,4 @@ export async function attachLiveShopifyNames<T extends { id: string; name: strin
     const liveName = shopifyId ? nameByShopifyId.get(shopifyId) : null;
     return liveName ? { ...r, name: liveName } : r;
   });
-}
+});
