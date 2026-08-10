@@ -599,10 +599,22 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
 
-    // Last batch per shop (batches already ordered DESC by batch_number)
-    const lastBatchByShop = new Map<string, any>();
+    // Single most recent payment per shop (by payment_date; ties broken by which
+    // batch's orders are themselves most recent, not merged with other batches —
+    // batch_number order does not reflect which orders are chronologically most recent)
+    const latestPaymentByShop = new Map<string, { payment_date: string; order_dates: string[] }>();
     for (const b of batches) {
-      if (!lastBatchByShop.has(b.shop_id as string)) lastBatchByShop.set(b.shop_id as string, b);
+      const shopId = b.shop_id as string;
+      const orderDates = (b.order_dates ?? []) as string[];
+      const maxOrderDate = orderDates.reduce((m, d) => (d > m ? d : m), "");
+      const current = latestPaymentByShop.get(shopId);
+      const currentMaxOrderDate = current ? current.order_dates.reduce((m, d) => (d > m ? d : m), "") : "";
+      const isBetter = !current
+        || b.payment_date > current.payment_date
+        || (b.payment_date === current.payment_date && maxOrderDate > currentMaxOrderDate);
+      if (isBetter) {
+        latestPaymentByShop.set(shopId, { payment_date: b.payment_date, order_dates: orderDates });
+      }
     }
 
     // Lucro
@@ -630,11 +642,11 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
 
     const payoutLag = shopIds.map((shopId) => {
       const shopName = shopNameById.get(shopId) ?? shopId;
-      const batch    = lastBatchByShop.get(shopId);
+      const latest   = latestPaymentByShop.get(shopId);
 
-      if (batch && Array.isArray(batch.order_dates) && batch.order_dates.length > 0) {
-        const payoutMs = new Date(`${batch.payment_date}T00:00:00Z`).getTime();
-        const diffs = (batch.order_dates as string[]).map(
+      if (latest && latest.order_dates.length > 0) {
+        const payoutMs = new Date(`${latest.payment_date}T00:00:00Z`).getTime();
+        const diffs = latest.order_dates.map(
           (d) => (payoutMs - new Date(`${d}T00:00:00Z`).getTime()) / 86400_000
         ).filter((d) => d >= 0);
         const avgDays = diffs.length > 0 ? Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length) : null;

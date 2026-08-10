@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import {
-  Plus, Store, MapPin, Layers, Upload, X, Check,
+  Plus, Store, MapPin, Layers, Upload, X, Check, Archive, ArchiveRestore,
 } from "lucide-react";
 import {
   listLgCards, createLgCard, updateLgCard, deleteLgCard,
@@ -44,9 +44,12 @@ function LojasGruposIndex() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing]       = useState<any>(null);
   const [saveError, setSaveError]   = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const { data } = useQuery({ queryKey: ["lg-cards"], queryFn: () => listFn() });
   const cards = (data?.cards ?? []) as any[];
+  const archivedCount = cards.filter((c) => c.status === "arquivado").length;
+  const visibleCards = showArchived ? cards : cards.filter((c) => c.status !== "arquivado");
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["lg-cards"] });
 
@@ -67,21 +70,38 @@ function LojasGruposIndex() {
     <PageShell>
       <PageHeader
         title="Lojas e Grupos"
-        subtitle={`${cards.length} ${cards.length === 1 ? "card" : "cards"}`}
+        subtitle={`${visibleCards.length} ${visibleCards.length === 1 ? "card" : "cards"}`}
         actions={
-          <button
-            onClick={() => { setEditing(null); setEditorOpen(true); }}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
-          >
-            <Plus className="size-4" /> Novo card
-          </button>
+          <div className="flex items-center gap-2">
+            {archivedCount > 0 && (
+              <button
+                onClick={() => setShowArchived((v) => !v)}
+                className={`h-9 px-3 rounded-lg border text-sm font-medium flex items-center gap-1.5 transition-colors ${
+                  showArchived
+                    ? "bg-primary/10 border-primary/30 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {showArchived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
+                {showArchived ? "Ocultar arquivados" : `Mostrar arquivados (${archivedCount})`}
+              </button>
+            )}
+            <button
+              onClick={() => { setEditing(null); setEditorOpen(true); }}
+              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
+            >
+              <Plus className="size-4" /> Novo card
+            </button>
+          </div>
         }
       />
 
-      {cards.length === 0 ? (
+      {visibleCards.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-12 text-center">
           <Layers className="size-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Nenhum card criado ainda.</p>
+          <p className="text-sm text-muted-foreground">
+            {cards.length === 0 ? "Nenhum card criado ainda." : "Nenhum card ativo. Todos estão arquivados."}
+          </p>
           <button
             onClick={() => { setEditing(null); setEditorOpen(true); }}
             className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
@@ -91,7 +111,7 @@ function LojasGruposIndex() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {cards.map((card: any) => (
+          {visibleCards.map((card: any) => (
             <LgCardItem
               key={card.id}
               card={card}

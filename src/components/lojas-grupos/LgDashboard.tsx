@@ -380,6 +380,18 @@ export function LgDashboard({
   const chartData = isToday ? (chartQueryData?.chartData ?? []) : (data?.chartData ?? []);
   const chartLoading = isToday ? chartQueryLoading : isLoading;
 
+  const zeroOffsets = useMemo(() => {
+    const keys = ["faturamento", "lucro", "custo", "anuncios"] as const;
+    const result = {} as Record<(typeof keys)[number], number>;
+    for (const k of keys) {
+      const values = chartData.map((d: any) => Number(d[k]) || 0);
+      const max = Math.max(0, ...values);
+      const min = Math.min(0, ...values);
+      result[k] = max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
+    }
+    return result;
+  }, [chartData]);
+
   const [syncing, setSyncing] = useState(false);
   const syncData = async (silent = false) => {
     setSyncing(true);
@@ -403,6 +415,16 @@ export function LgDashboard({
       setSyncing(false);
     }
   };
+
+  // Sync silencioso ao entrar na tela — sem isso, o card mostra dados já
+  // salvos no banco (parecendo "atualizado") mas taxas/anúncios só chegam
+  // de fato do Shopify/Meta Ads quando o usuário aperta o refresh manual.
+  const autoSyncedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (autoSyncedKeyRef.current === cacheKey) return;
+    autoSyncedKeyRef.current = cacheKey;
+    syncData(true);
+  }, [cacheKey]);
 
   const m   = data?.metrics;
   const fmt = (n: number) => fmtCurrency(n, currency, currencyRate);
@@ -557,12 +579,30 @@ export function LgDashboard({
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
-                  {CHART_LINES.map(({ key, color }) => (
-                    <linearGradient key={key} id={`lg-grad-${key}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
-                      <stop offset="95%" stopColor={color} stopOpacity={0} />
-                    </linearGradient>
-                  ))}
+                  {CHART_LINES.map(({ key, color }) => {
+                    const neg = "var(--color-destructive)";
+                    const off = zeroOffsets[key] * 100;
+                    const p1 = Math.min(5, off);
+                    const p3 = Math.max(95, off);
+                    return (
+                      <linearGradient key={key} id={`lg-grad-${key}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset={`${p1}%`}  stopColor={color} stopOpacity={0.25} />
+                        <stop offset={`${off}%`} stopColor={color} stopOpacity={0} />
+                        <stop offset={`${off}%`} stopColor={neg}   stopOpacity={0} />
+                        <stop offset={`${p3}%`}  stopColor={neg}   stopOpacity={0.25} />
+                      </linearGradient>
+                    );
+                  })}
+                  {CHART_LINES.map(({ key, color }) => {
+                    const neg = "var(--color-destructive)";
+                    const off = zeroOffsets[key] * 100;
+                    return (
+                      <linearGradient key={key} id={`lg-stroke-${key}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset={`${off}%`} stopColor={color} />
+                        <stop offset={`${off}%`} stopColor={neg} />
+                      </linearGradient>
+                    );
+                  })}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -570,7 +610,7 @@ export function LgDashboard({
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
                 {CHART_LINES.map(({ key, color }) =>
                   activeLines[key] && (
-                    <Area key={key} type="monotone" dataKey={key} stroke={color} strokeWidth={2}
+                    <Area key={key} type="monotone" dataKey={key} stroke={`url(#lg-stroke-${key})`} strokeWidth={2}
                       fill={`url(#lg-grad-${key})`} dot={false} activeDot={{ r: 4, fill: color }} />
                   )
                 )}

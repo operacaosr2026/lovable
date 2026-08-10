@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -221,6 +221,19 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
     queryFn: () => getMetrics({ data: { shop_ids: shopIds, from, to, prev_from: prevFrom, prev_to: prevTo } }),
   });
 
+  const chartData = data?.chartData ?? [];
+  const zeroOffsets = useMemo(() => {
+    const keys = ["faturamento", "lucro", "custo"] as const;
+    const result = {} as Record<(typeof keys)[number], number>;
+    for (const k of keys) {
+      const values = chartData.map((d: any) => Number(d[k]) || 0);
+      const max = Math.max(0, ...values);
+      const min = Math.min(0, ...values);
+      result[k] = max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
+    }
+    return result;
+  }, [chartData]);
+
   const [syncing, setSyncing] = useState(false);
   const syncData = async (silent = false) => {
     setSyncing(true);
@@ -242,6 +255,16 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
       setSyncing(false);
     }
   };
+
+  // Sync silencioso ao entrar na tela — sem isso, o dashboard mostra dados já
+  // salvos no banco (parecendo "atualizado") mas taxas/anúncios só chegam
+  // de fato do Shopify/Meta Ads quando o usuário aperta o refresh manual.
+  const autoSyncedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (autoSyncedKeyRef.current === cacheKey) return;
+    autoSyncedKeyRef.current = cacheKey;
+    syncData(true);
+  }, [cacheKey]);
 
   const m = data?.metrics;
   const fmt = (n: number) => fmtCurrency(n, currency);
@@ -408,14 +431,31 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
             <div className="h-[220px] bg-muted animate-pulse rounded-xl" />
           ) : (
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={data?.chartData ?? []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   {(["faturamento","lucro","custo"] as const).map(k => {
                     const c = { faturamento: "var(--color-primary)", lucro: "var(--color-success)", custo: "var(--color-warning)" }[k];
+                    const neg = "var(--color-destructive)";
+                    const off = zeroOffsets[k] * 100;
+                    const p1 = Math.min(5, off);
+                    const p3 = Math.max(95, off);
                     return (
                       <linearGradient key={k} id={`grad-${k}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%"  stopColor={c} stopOpacity={0.25} />
-                        <stop offset="95%" stopColor={c} stopOpacity={0} />
+                        <stop offset={`${p1}%`}  stopColor={c}   stopOpacity={0.25} />
+                        <stop offset={`${off}%`} stopColor={c}   stopOpacity={0} />
+                        <stop offset={`${off}%`} stopColor={neg} stopOpacity={0} />
+                        <stop offset={`${p3}%`}  stopColor={neg} stopOpacity={0.25} />
+                      </linearGradient>
+                    );
+                  })}
+                  {(["faturamento","lucro","custo"] as const).map(k => {
+                    const c = { faturamento: "var(--color-primary)", lucro: "var(--color-success)", custo: "var(--color-warning)" }[k];
+                    const neg = "var(--color-destructive)";
+                    const off = zeroOffsets[k] * 100;
+                    return (
+                      <linearGradient key={k} id={`stroke-${k}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset={`${off}%`} stopColor={c} />
+                        <stop offset={`${off}%`} stopColor={neg} />
                       </linearGradient>
                     );
                   })}
@@ -424,9 +464,9 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
                 <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
-                {activeLines.faturamento && <Area type="monotone" dataKey="faturamento" stroke="var(--color-primary)" strokeWidth={2} fill="url(#grad-faturamento)" dot={false} activeDot={{ r: 4, fill: "var(--color-primary)" }} />}
-                {activeLines.lucro       && <Area type="monotone" dataKey="lucro"       stroke="var(--color-success)" strokeWidth={2} fill="url(#grad-lucro)"       dot={false} activeDot={{ r: 4, fill: "var(--color-success)" }} />}
-                {activeLines.custo       && <Area type="monotone" dataKey="custo"       stroke="var(--color-warning)" strokeWidth={2} fill="url(#grad-custo)"       dot={false} activeDot={{ r: 4, fill: "var(--color-warning)" }} />}
+                {activeLines.faturamento && <Area type="monotone" dataKey="faturamento" stroke="url(#stroke-faturamento)" strokeWidth={2} fill="url(#grad-faturamento)" dot={false} activeDot={{ r: 4, fill: "var(--color-primary)" }} />}
+                {activeLines.lucro       && <Area type="monotone" dataKey="lucro"       stroke="url(#stroke-lucro)"       strokeWidth={2} fill="url(#grad-lucro)"       dot={false} activeDot={{ r: 4, fill: "var(--color-success)" }} />}
+                {activeLines.custo       && <Area type="monotone" dataKey="custo"       stroke="url(#stroke-custo)"       strokeWidth={2} fill="url(#grad-custo)"       dot={false} activeDot={{ r: 4, fill: "var(--color-warning)" }} />}
               </AreaChart>
             </ResponsiveContainer>
           )}
