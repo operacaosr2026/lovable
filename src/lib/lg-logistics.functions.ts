@@ -14,18 +14,32 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ context, data }: any) => {
-    let q = supabaseAdmin
+    const { data: rows, error } = await supabaseAdmin
       .from("shop_orders")
-      .select("id,order_number,order_date,shop_id,items_count,customer_name,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at")
+      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note")
       .eq("user_id", context.ownerId)
       .in("shop_id", data.shop_ids)
       .gte("order_date", data.from)
       .lte("order_date", data.to)
-      .order("order_date", { ascending: false }) as any;
-    if (data.delivery_status) q = q.eq("delivery_status", data.delivery_status);
-    const { data: rows, error } = await q;
+      .order("order_date", { ascending: false });
     if (error) throw new Error(error.message);
-    return rows ?? [];
+
+    // O status pode ter sido atualizado automaticamente (Track123) via shipped_at/
+    // delivered_at/problem_at sem que a coluna delivery_status tenha sido tocada —
+    // aqui reconciliamos as duas fontes pra refletir o que já foi detectado.
+    // delivered_at/problem_at são sinais fortes: sempre prevalecem sobre um
+    // delivery_status desatualizado (ex.: preso em "shipped" desde o envio).
+    const withEffectiveStatus = (rows ?? []).map((o: any) => {
+      let status = o.delivery_status;
+      if (o.delivered_at) status = "delivered";
+      else if (o.problem_at) status = "problem";
+      else if (!status || status === "pending_shipment") status = o.shipped_at ? "shipped" : "pending_shipment";
+      return { ...o, delivery_status: status };
+    });
+
+    return data.delivery_status
+      ? withEffectiveStatus.filter((o: any) => o.delivery_status === data.delivery_status)
+      : withEffectiveStatus;
   });
 
 export const updateOrderLogistics = createServerFn({ method: "POST" })
@@ -37,6 +51,7 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
       tracking_code: z.string().optional().nullable(),
       tracking_url: z.string().optional().nullable(),
       delivery_status: z.string().optional(),
+      logistics_note: z.string().max(500).optional().nullable(),
     }).parse(d)
   )
   .handler(async ({ context, data }: any) => {

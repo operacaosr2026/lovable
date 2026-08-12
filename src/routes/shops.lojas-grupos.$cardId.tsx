@@ -178,9 +178,7 @@ function LgCardDetail() {
         <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
         <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
-        {shops.length > 1 && (
-          <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Logística</TabBtn>
-        )}
+        <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>
         <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>
       </div>
 
@@ -220,7 +218,7 @@ function LgCardDetail() {
           }))}
         />
       )}
-      {tab === "logistica" && shops.length > 1 && allShopIds.length > 0 && (
+      {tab === "logistica" && allShopIds.length > 0 && (
         <LgLogistica
           shopIds={effectiveShopIds}
           shops={shops.map((s: any) => ({

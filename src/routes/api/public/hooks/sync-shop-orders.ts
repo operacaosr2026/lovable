@@ -273,6 +273,39 @@ async function processShop(s: any, today: string) {
             shopify_financial_status: o.financial_status ?? null,
           }));
           await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
+
+          // Espelha transportadora/código/link de rastreio do Shopify em shop_orders
+          // (lido pela aba Rastreamento), sem sobrescrever ajustes manuais.
+          const { data: dbOrders } = await supabaseAdmin.from("shop_orders")
+            .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
+            .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
+            .in("external_id", orders.map((o: any) => String(o.id)));
+          const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
+          for (const o of orders) {
+            const existing = dbOrderByExt.get(String(o.id));
+            if (!existing) continue;
+            const fulfillments = (o.fulfillments ?? []) as any[];
+            const fWithTrack = [...fulfillments].reverse()
+              .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
+            if (!fWithTrack) continue;
+            const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
+            if (!trackingNumber) continue;
+            const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
+            if (!existing.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
+            if (!existing.tracking_code) patch.tracking_code = String(trackingNumber);
+            if (!existing.tracking_url) {
+              const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
+              if (url) patch.tracking_url = url;
+            }
+            if (!existing.delivery_status || existing.delivery_status === "pending_shipment") {
+              patch.delivery_status = "shipped";
+              patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : today;
+            }
+            if (Object.keys(patch).length) {
+              await supabaseAdmin.from("shop_orders").update(patch)
+                .eq("id", existing.id).eq("user_id", s.user_id);
+            }
+          }
         }
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);

@@ -468,6 +468,12 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
         .in("external_id", orders.map((o: any) => String(o.id)));
       const orderIdByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r.id]));
 
+      const { data: existingLogistics } = await context.supabase.from("shop_orders")
+        .select("id,carrier,tracking_code,tracking_url,delivery_status")
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .in("id", Array.from(orderIdByExt.values()));
+      const existingById = new Map((existingLogistics ?? []).map((r: any) => [r.id, r]));
+
       const trackingRows: any[] = [];
       for (const o of orders) {
         const orderId = orderIdByExt.get(String(o.id));
@@ -487,6 +493,25 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
           tracking_number: String(trackingNumber),
           carrier: fWithTrack.tracking_company ?? null,
         });
+
+        // Espelha transportadora/código/link direto em shop_orders — é o que a
+        // aba Rastreamento lê — sem sobrescrever o que já foi ajustado manualmente.
+        const existing = existingById.get(orderId);
+        const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
+        if (!existing?.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
+        if (!existing?.tracking_code) patch.tracking_code = String(trackingNumber);
+        if (!existing?.tracking_url) {
+          const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
+          if (url) patch.tracking_url = url;
+        }
+        if (!existing?.delivery_status || existing.delivery_status === "pending_shipment") {
+          patch.delivery_status = "shipped";
+          patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : isoDate(new Date());
+        }
+        if (Object.keys(patch).length) {
+          await context.supabase.from("shop_orders").update(patch)
+            .eq("id", orderId).eq("user_id", context.ownerId);
+        }
       }
       if (trackingRows.length) {
         await context.supabase.from("shop_order_tracking")
@@ -542,7 +567,11 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const since = new Date(); since.setUTCDate(since.getUTCDate() - data.since_days);
     const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
-    const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
+    const { data: dismissedRows } = await context.supabase.from("shop_cash_dismissed_payouts")
+      .select("shopify_payout_id").eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
+    const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
+    const relevant = payouts.filter((p: any) =>
+      p.id != null && !dismissedIds.has(String(p.id)) && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
 
     // Migração única: remove lançamentos de "Depósito Shopify" feitos manualmente
     // (importação de planilha) para que a sincronização automática vire a fonte da verdade.
@@ -555,10 +584,11 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     if (!relevant.length) return { synced: 0 };
 
     const { data: existing } = await context.supabase.from("shop_cash_entries")
-      .select("id,shopify_payout_id")
+      .select("id,shopify_payout_id,date_locked")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("shopify_payout_id", relevant.map((p: any) => String(p.id)));
     const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
+    const lockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked).map((r: any) => r.id));
 
     const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
       user_id: context.ownerId,
@@ -579,11 +609,15 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     for (const p of relevant) {
       const id = existingById.get(String(p.id));
       if (!id) continue;
-      await context.supabase.from("shop_cash_entries").update({
+      // Se o usuário travou a data manualmente (ela caiu diferente do previsto
+      // pelo Shopify), a sincronização atualiza valor/descrição mas não mexe na data.
+      const patch: { amount: number; description: string; date?: string } = {
         amount: Number(p.amount ?? 0),
-        date: p.date,
         description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
-      }).eq("id", id).eq("user_id", context.ownerId);
+      };
+      if (!lockedIds.has(id)) patch.date = p.date;
+      await context.supabase.from("shop_cash_entries").update(patch)
+        .eq("id", id).eq("user_id", context.ownerId);
     }
 
     // ---------- Transações pendentes ----------
@@ -643,7 +677,10 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       .update({ last_synced_at: new Date().toISOString() })
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
 
-    return { synced: relevant.length + pendingTx.length };
+    // "synced" reflete apenas o que passou a existir agora (novos depósitos), não
+    // o total de payouts revisados — senão toda sincronização repetida "recontava"
+    // os mesmos depósitos e dava a impressão de estarem sendo duplicados.
+    return { synced: toInsert.length };
   });
 
 export const getShopifyLastSyncedAt = createServerFn({ method: "GET" })
@@ -1078,9 +1115,15 @@ export const setManualOverride = createServerFn({ method: "POST" })
     shop_id: z.string().uuid(),
     processing_date: z.string(),
     amount: z.number().min(0),
+    auto_ref_date: z.string().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const orderDate = addDays(data.processing_date, -PROCESSING_DELAY_DAYS);
+    // O lag real (D+X) é configurável por loja e pode não ser o padrão de 7 dias
+    // (ver lg_card_shops.payment_days). Usar o auto_ref_date do próprio lançamento
+    // evita recalcular um valor diferente do que gerou o registro "auto" original,
+    // o que faria o override cair numa data errada e criar uma linha órfã enquanto
+    // o custo automático original continuava aparecendo (e sendo recriado).
+    const orderDate = data.auto_ref_date ?? addDays(data.processing_date, -PROCESSING_DELAY_DAYS);
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
     const { data: existing } = await context.supabase.from("shop_cash_entries").select("id")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
@@ -1105,9 +1148,10 @@ export const clearManualOverride = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({
     shop_id: z.string().uuid(),
     processing_date: z.string(),
+    auto_ref_date: z.string().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const orderDate = addDays(data.processing_date, -PROCESSING_DELAY_DAYS);
+    const orderDate = data.auto_ref_date ?? addDays(data.processing_date, -PROCESSING_DELAY_DAYS);
     await context.supabase.from("shop_cash_entries").delete()
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate);

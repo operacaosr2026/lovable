@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       accounts: {
@@ -1618,6 +1593,27 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_cash_dismissed_payouts: {
+        Row: {
+          dismissed_at: string
+          shop_id: string
+          shopify_payout_id: string
+          user_id: string
+        }
+        Insert: {
+          dismissed_at?: string
+          shop_id: string
+          shopify_payout_id: string
+          user_id: string
+        }
+        Update: {
+          dismissed_at?: string
+          shop_id?: string
+          shopify_payout_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       shop_cash_entries: {
         Row: {
           amount: number
@@ -1626,6 +1622,7 @@ export type Database = {
           category: string | null
           created_at: string
           date: string
+          date_locked: boolean
           description: string | null
           id: string
           import_id: string | null
@@ -1649,6 +1646,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           date: string
+          date_locked?: boolean
           description?: string | null
           id?: string
           import_id?: string | null
@@ -1672,6 +1670,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           date?: string
+          date_locked?: boolean
           description?: string | null
           id?: string
           import_id?: string | null
@@ -1940,6 +1939,7 @@ export type Database = {
           cashflow_start_date: string | null
           created_at: string
           default_unit_cost: number
+          last_synced_at: string | null
           linked_product_id: string | null
           payout_lag_avg_days: number | null
           payout_lag_days: number | null
@@ -1955,6 +1955,7 @@ export type Database = {
           cashflow_start_date?: string | null
           created_at?: string
           default_unit_cost?: number
+          last_synced_at?: string | null
           linked_product_id?: string | null
           payout_lag_avg_days?: number | null
           payout_lag_days?: number | null
@@ -1970,6 +1971,7 @@ export type Database = {
           cashflow_start_date?: string | null
           created_at?: string
           default_unit_cost?: number
+          last_synced_at?: string | null
           linked_product_id?: string | null
           payout_lag_avg_days?: number | null
           payout_lag_days?: number | null
@@ -2043,12 +2045,12 @@ export type Database = {
           created_at: string
           created_at_shopify: string
           currency: string | null
-          customer_name: string | null
           delivered_at: string | null
           delivery_status: string | null
           external_id: string
           id: string
           items_count: number
+          logistics_note: string | null
           order_date: string
           order_number: string | null
           paid_at: string | null
@@ -2072,17 +2074,17 @@ export type Database = {
           created_at?: string
           created_at_shopify: string
           currency?: string | null
-          customer_name?: string | null
           delivered_at?: string | null
           delivery_status?: string | null
           external_id: string
           id?: string
           items_count?: number
+          logistics_note?: string | null
           order_date: string
           order_number?: string | null
           paid_at?: string | null
           payment_batch_id?: string | null
-          payment_status?: "pending" | "paid" | "shipped" | "estornado" | "reembolsado"
+          payment_status?: string
           problem_at?: string | null
           raw?: Json | null
           revenue?: number
@@ -2101,17 +2103,17 @@ export type Database = {
           created_at?: string
           created_at_shopify?: string
           currency?: string | null
-          customer_name?: string | null
           delivered_at?: string | null
           delivery_status?: string | null
           external_id?: string
           id?: string
           items_count?: number
+          logistics_note?: string | null
           order_date?: string
           order_number?: string | null
           paid_at?: string | null
           payment_batch_id?: string | null
-          payment_status?: "pending" | "paid" | "shipped" | "estornado" | "reembolsado"
+          payment_status?: string
           problem_at?: string | null
           raw?: Json | null
           revenue?: number
@@ -2792,36 +2794,6 @@ export type Database = {
           },
         ]
       }
-      store_board_columns: {
-        Row: {
-          created_at: string | null
-          features: string[]
-          id: string
-          name: string
-          position: number
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          features?: string[]
-          id?: string
-          name: string
-          position?: number
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string | null
-          features?: string[]
-          id?: string
-          name?: string
-          position?: number
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
       sop_edges: {
         Row: {
           created_at: string
@@ -3031,6 +3003,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      store_board_columns: {
+        Row: {
+          created_at: string | null
+          features: string[]
+          id: string
+          name: string
+          position: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          features?: string[]
+          id?: string
+          name: string
+          position?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          features?: string[]
+          id?: string
+          name?: string
+          position?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       store_revenues: {
         Row: {
@@ -4362,9 +4364,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: ["admin", "member"],

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, ChevronRight } from "lucide-react";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,15 @@ import { toast } from "sonner";
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addD(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+}
+// order_number já vem com "#" do Shopify (ex: "#WV1145") — não duplica o prefixo.
+function orderLabel(o: any) {
+  const n = o.order_number ?? o.id.slice(0, 8);
+  return String(n).startsWith("#") ? n : `#${n}`;
+}
+function fmtShortDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Package }> = {
@@ -54,12 +63,16 @@ function EditLogisticsModal({
   const [trackingCode, setTrackingCode] = useState(order.tracking_code ?? "");
   const [trackingUrl, setTrackingUrl]   = useState(order.tracking_url ?? "");
   const [status, setStatus]             = useState(order.delivery_status ?? "pending_shipment");
+  const [note, setNote]                 = useState(order.logistics_note ?? "");
   const [saving, setSaving]             = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave({ carrier: carrier || null, tracking_code: trackingCode || null, tracking_url: trackingUrl || null, delivery_status: status });
+      await onSave({
+        carrier: carrier || null, tracking_code: trackingCode || null, tracking_url: trackingUrl || null,
+        delivery_status: status, logistics_note: note || null,
+      });
       onClose();
     } finally {
       setSaving(false);
@@ -70,7 +83,7 @@ function EditLogisticsModal({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Logística — #{order.order_number ?? order.id.slice(0, 8)}</DialogTitle>
+          <DialogTitle>Logística — {orderLabel(order)}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -96,6 +109,10 @@ function EditLogisticsModal({
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">URL de rastreio</label>
             <Input value={trackingUrl} onChange={(e) => setTrackingUrl(e.target.value)} placeholder="https://..." />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">Obs</label>
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação sobre o envio..." />
           </div>
         </div>
         <DialogFooter>
@@ -125,7 +142,6 @@ export function LgLogistica({
   const [period, setPeriod]           = useState("30d");
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
-  const [expandedDay, setExpandedDay]   = useState<Set<string>>(new Set());
 
   const today = isoDate(new Date());
   const from = (() => {
@@ -167,27 +183,48 @@ export function LgLogistica({
     problem:   allOrders.filter((o) => o.delivery_status === "problem" || o.delivery_status === "returned").length,
   };
 
-  // Group by date
-  const byDate = new Map<string, any[]>();
-  for (const o of allOrders) {
-    const d = o.order_date as string;
-    if (!byDate.has(d)) byDate.set(d, []);
-    byDate.get(d)!.push(o);
-  }
-  const groups = Array.from(byDate.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
+  const postingDurations = allOrders
+    .filter((o) => o.order_date && o.shipped_at)
+    .map((o) => (new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()) / 86_400_000)
+    .filter((d) => d >= 0);
+  const avgPostingDays = postingDurations.length
+    ? postingDurations.reduce((a, b) => a + b, 0) / postingDurations.length
+    : null;
 
-  const toggleDay = (date: string) => {
-    setExpandedDay((prev) => {
-      const next = new Set(prev);
-      if (next.has(date)) next.delete(date); else next.add(date);
-      return next;
-    });
-  };
+  // Tempo médio de entrega: dias entre postagem (shipped_at) e entrega (delivered_at)
+  const deliveryDurations = allOrders
+    .filter((o) => o.shipped_at && o.delivered_at)
+    .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
+    .filter((d) => d >= 0);
+  const avgDeliveryDays = deliveryDurations.length
+    ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
+    : null;
+
+  const sortedOrders = [...allOrders].sort((a, b) => (b.order_date as string).localeCompare(a.order_date as string));
 
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-indigo-500/10">
+            <Clock className="size-4 text-indigo-600" />
+          </div>
+          <p className="text-xl font-bold text-foreground">
+            {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">Tempo médio de postagem</p>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-violet-500/10">
+            <Clock className="size-4 text-violet-600" />
+          </div>
+          <p className="text-xl font-bold text-foreground">
+            {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">Tempo médio de entrega</p>
+        </div>
         {([
           { key: "pending",   label: "Pendente envio", color: "amber",   icon: Package },
           { key: "shipped",   label: "Em trânsito",    color: "blue",    icon: Truck },
@@ -256,13 +293,13 @@ export function LgLogistica({
 
       {/* Orders table */}
       <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        <div className="grid grid-cols-[24px_120px_1fr_120px_140px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <div />
-          <div>Data</div>
+        <div className="grid grid-cols-6 gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <div>Pedido</div>
-          <div>Transportadora</div>
+          <div>Data do Pedido</div>
+          <div>Data Etiqueta</div>
           <div>Rastreio</div>
           <div>Status</div>
+          <div>Obs</div>
         </div>
 
         {isLoading && (
@@ -272,82 +309,50 @@ export function LgLogistica({
           </div>
         )}
 
-        {!isLoading && groups.length === 0 && (
+        {!isLoading && sortedOrders.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             Nenhum pedido no período.
           </div>
         )}
 
-        {groups.map(([date, dayOrders], i) => {
-          const d = new Date(date + "T00:00:00");
-          const weekday  = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
-          const dayMonth = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-          const isOpen   = expandedDay.has(date);
-
-          return (
-            <div key={date} className={cn(i > 0 && "border-t border-border/60")}>
-              {/* Day header */}
-              <div
-                className="grid grid-cols-[24px_120px_1fr_120px_140px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer"
-                onClick={() => toggleDay(date)}
-              >
-                <ChevronRight className={cn("size-4 text-muted-foreground transition-transform", isOpen && "rotate-90")} />
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground uppercase">{weekday}</span>
-                  <span className="text-sm font-semibold text-foreground">{dayMonth}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">{dayOrders.length} pedido{dayOrders.length !== 1 ? "s" : ""}</div>
-                <div />
-                <div />
-                <div />
-              </div>
-
-              {/* Expanded order rows */}
-              {isOpen && (
-                <div className="bg-muted/20 border-t border-border/40">
-                  {dayOrders.map((o: any) => (
-                    <div
-                      key={o.id}
-                      className="grid grid-cols-[24px_120px_1fr_120px_140px_100px] gap-3 px-4 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors cursor-pointer text-sm"
-                      onClick={() => setEditingOrder(o)}
-                    >
-                      <div />
-                      <div className="text-xs text-muted-foreground">
-                        {isConsolidated && <span className="block text-[10px] font-medium text-primary">{shopNames[o.shop_id] ?? ""}</span>}
-                        {dayMonth}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-foreground truncate">#{o.order_number ?? o.id.slice(0, 8)}</p>
-                        {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">{o.carrier ?? "—"}</div>
-                      <div className="text-xs truncate">
-                        {o.tracking_url ? (
-                          <a
-                            href={o.tracking_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-primary hover:underline inline-flex items-center gap-1"
-                          >
-                            {o.tracking_code ?? "Ver"} <ExternalLink className="size-3" />
-                          </a>
-                        ) : o.tracking_code ? (
-                          <span className="text-muted-foreground">{o.tracking_code}</span>
-                        ) : (
-                          <span className="text-muted-foreground/50">—</span>
-                        )}
-                      </div>
-                      <div>
-                        <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+        {sortedOrders.map((o: any, i: number) => (
+            <div
+              key={o.id}
+              className={cn(
+                "grid grid-cols-6 gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                i > 0 && "border-t border-border/60",
               )}
+              onClick={() => setEditingOrder(o)}
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-foreground truncate">{orderLabel(o)}</p>
+                {isConsolidated && <p className="text-[10px] font-medium text-primary truncate">{shopNames[o.shop_id] ?? ""}</p>}
+              </div>
+              <div className="text-xs text-muted-foreground">{fmtShortDate(o.order_date)}</div>
+              <div className="text-xs text-muted-foreground">{fmtShortDate(o.shipped_at)}</div>
+              <div className="text-xs truncate">
+                {o.tracking_url ? (
+                  <a
+                    href={o.tracking_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    {o.tracking_code ?? "Ver"} <ExternalLink className="size-3" />
+                  </a>
+                ) : o.tracking_code ? (
+                  <span className="text-muted-foreground">{o.tracking_code}</span>
+                ) : (
+                  <span className="text-muted-foreground/50">—</span>
+                )}
+              </div>
+              <div>
+                <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
+              </div>
+              <div className="text-xs text-muted-foreground truncate">{o.logistics_note || "—"}</div>
             </div>
-          );
-        })}
+        ))}
       </div>
 
       {/* Edit modal */}

@@ -195,8 +195,19 @@ export const updateCashEntry = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
+    let patch: typeof data.patch & { date_locked?: boolean } = data.patch;
+    if (patch.date !== undefined) {
+      // Se o usuário está de fato mudando a data (ex.: o depósito caiu num dia
+      // diferente do previsto pelo Shopify), trava essa data pra sincronizações
+      // futuras não sobrescreverem o ajuste manual.
+      const { data: existing } = await context.supabase.from("shop_cash_entries")
+        .select("date").eq("user_id", context.ownerId).eq("id", data.id).maybeSingle();
+      if (existing && existing.date !== patch.date) {
+        patch = { ...patch, date_locked: true };
+      }
+    }
     const { error } = await context.supabase.from("shop_cash_entries")
-      .update(data.patch).eq("user_id", context.ownerId).eq("id", data.id);
+      .update(patch).eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -205,6 +216,16 @@ export const deleteCashEntry = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
+    const { data: row } = await context.supabase.from("shop_cash_entries")
+      .select("shop_id, shopify_payout_id")
+      .eq("user_id", context.ownerId).eq("id", data.id).maybeSingle();
+    // Payouts sincronizados do Shopify voltam a cada "Sincronizar" a menos que
+    // o id seja lembrado como descartado pelo usuário.
+    if (row?.shopify_payout_id) {
+      await context.supabase.from("shop_cash_dismissed_payouts").upsert({
+        user_id: context.ownerId, shop_id: row.shop_id, shopify_payout_id: row.shopify_payout_id,
+      });
+    }
     const { error } = await context.supabase.from("shop_cash_entries")
       .delete().eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);

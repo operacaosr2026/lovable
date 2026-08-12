@@ -47,7 +47,7 @@ type Recurrence = "none" | "daily" | "weekly" | "monthly";
 type Entry = {
   id: string; kind: "income" | "expense"; amount: number; date: string;
   category: string | null; description: string | null; source: string;
-  auto_kind?: string | null; import_id: string | null;
+  auto_kind?: string | null; auto_ref_date?: string | null; import_id: string | null;
   recurrence?: Recurrence | null; recurrence_until?: string | null;
   skip_weekend_rule?: boolean | null; reconciled?: boolean | null;
   shop_id?: string;
@@ -729,8 +729,8 @@ export function LgCashflowView({
     let acc = saldoBeforeRange;
     return dayList.map((key) => {
       const items    = byDay.get(key) ?? [];
-      const incomeItems  = items.filter(e=>e.kind==="income");
-      const expenseItems = items.filter(e=>e.kind==="expense");
+      const incomeItems  = items.filter(e=>e.kind==="income" && Number(e.amount)!==0);
+      const expenseItems = items.filter(e=>e.kind==="expense" && Number(e.amount)!==0);
       const income   = incomeItems.reduce((a,e)=>a+Number(e.amount),0);
       const expense  = expenseItems.reduce((a,e)=>a+Number(e.amount),0);
       acc = acc + income - expense;
@@ -777,7 +777,7 @@ export function LgCashflowView({
   const deleteMut  = useMutation({ mutationFn: (id:string) => deleteFn({ data:{id} }), onSuccess: refresh });
   const updateMut  = useMutation({ mutationFn: (v:any) => updateFn({ data:v }), onSuccess: refresh });
   const overrideFn  = useServerFn(setManualOverride);
-  const overrideMut = useMutation({ mutationFn: (v: any) => overrideFn({ data: v }), onSuccess: refresh });
+  const overrideMut = useMutation({ mutationFn: (v: any) => overrideFn({ data: v }), onSuccess: refresh, onError: (e: any) => toast.error(e?.message ?? "Erro ao excluir lançamento") });
   const weekendFn  = useServerFn(setWeekendRule);
   const weekendMut = useMutation({ mutationFn: (enabled:boolean) => weekendFn({ data:{ shop_id:shopId, enabled } }), onSuccess: refresh });
 
@@ -947,7 +947,7 @@ export function LgCashflowView({
               // Excluir a linha não basta: o custo é recalculado a partir dos pedidos
               // pendentes e voltaria a aparecer. Um override manual em $0 impede a
               // regeneração automática (mesmo mecanismo usado para ajustar o valor).
-              overrideMut.mutate({ shop_id: editing.shop_id ?? shopId, processing_date: editing.originalDate ?? editing.date, amount: 0 });
+              overrideMut.mutate({ shop_id: editing.shop_id ?? shopId, processing_date: editing.originalDate ?? editing.date, amount: 0, auto_ref_date: editing.auto_ref_date ?? undefined });
             } else {
               deleteMut.mutate(editing.id);
             }
