@@ -23,6 +23,11 @@ function fmtMoney(n: number) {
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function localDate(date: string) { return new Date(date + "T00:00:00"); }
 function fmtDayMonth(date: string) { return localDate(date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); }
+// order_number já vem com "#" do Shopify (ex: "#WV1145") — não duplica o prefixo.
+function orderLabel(o: any) {
+  const n = o.order_number ?? o.id.slice(0, 8);
+  return String(n).startsWith("#") ? n : `#${n}`;
+}
 
 type ShopConfig = { id: string; name: string; payment_days: number };
 
@@ -519,7 +524,7 @@ export function LgOrders({
                               onCheckedChange={(v) => toggleOrder(o.id, !!v)}
                             />
                             <div className="min-w-0">
-                              <p className="font-medium text-foreground truncate">#{o.order_number ?? o.id.slice(0, 8)}</p>
+                              <p className="font-medium text-foreground truncate">{orderLabel(o)}</p>
                               {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
                             </div>
                             <div className="text-xs text-muted-foreground">{o.items_count ?? 0} itens</div>

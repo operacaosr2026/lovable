@@ -536,12 +536,14 @@ export function LgDashboard({
           label="Custo Total" value={fmt(m?.custoTotal ?? 0)} delta={m?.custoTotalDelta ?? 0}
           tooltip="Anúncios + Taxas + Custo de Produto"
         />
-        <KpiCard loading={isLoading}
-          icon={<Shield className="size-4" />} iconColor="warning"
-          label="Taxas" value={m?.taxas ? fmt(m.taxas) : "—"} delta={m?.taxasDelta ?? 0}
-          tooltip="Taxas Shopify Payments"
-          onClick={isConsolidated ? () => openBreakdown("taxas", "Taxas") : undefined}
-        />
+        <div className="hidden sm:block">
+          <KpiCard loading={isLoading}
+            icon={<Shield className="size-4" />} iconColor="warning"
+            label="Taxas" value={m?.taxas ? fmt(m.taxas) : "—"} delta={m?.taxasDelta ?? 0}
+            tooltip="Taxas Shopify Payments"
+            onClick={isConsolidated ? () => openBreakdown("taxas", "Taxas") : undefined}
+          />
+        </div>
         <KpiCard loading={isLoading}
           icon={<Percent className="size-4" />} iconColor="primary"
           label="Margem" value={`${(m?.margem ?? 0).toFixed(1)}%`} delta={m?.margemDelta ?? 0}

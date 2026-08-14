@@ -2050,6 +2050,7 @@ export type Database = {
           external_id: string
           id: string
           items_count: number
+          kpi_excluded: boolean
           logistics_note: string | null
           order_date: string
           order_number: string | null
@@ -2079,6 +2080,7 @@ export type Database = {
           external_id: string
           id?: string
           items_count?: number
+          kpi_excluded?: boolean
           logistics_note?: string | null
           order_date: string
           order_number?: string | null
@@ -2108,6 +2110,7 @@ export type Database = {
           external_id?: string
           id?: string
           items_count?: number
+          kpi_excluded?: boolean
           logistics_note?: string | null
           order_date?: string
           order_number?: string | null

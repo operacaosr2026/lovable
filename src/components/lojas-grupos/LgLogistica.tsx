@@ -20,6 +20,19 @@ function orderLabel(o: any) {
   const n = o.order_number ?? o.id.slice(0, 8);
   return String(n).startsWith("#") ? n : `#${n}`;
 }
+function orderNum(o: any): number {
+  const m = String(o.order_number ?? "").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+// Agrupa os status brutos do Shopify/Track123 nos 4 buckets exibidos nos cards de KPI.
+function inBucket(o: any, key: string): boolean {
+  const s = o.delivery_status;
+  if (key === "pending")   return s === "pending_shipment" || !s;
+  if (key === "shipped")   return s === "shipped" || s === "in_transit";
+  if (key === "delivered") return s === "delivered";
+  if (key === "problem")   return s === "problem" || s === "returned";
+  return true;
+}
 function fmtShortDate(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -139,7 +152,7 @@ export function LgLogistica({
   const cacheKey = shopIds.slice().sort().join(",");
   const qc = useQueryClient();
 
-  const [period, setPeriod]           = useState("30d");
+  const [period, setPeriod]           = useState("ano");
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
@@ -147,15 +160,15 @@ export function LgLogistica({
   const from = (() => {
     if (period === "7d")  return addD(today, -6);
     if (period === "mes") { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`; }
-    return addD(today, -29);
+    return `${new Date().getFullYear()}-01-01`;
   })();
 
   const listFn   = useServerFn(listLogisticsOrders);
   const updateFn = useServerFn(updateOrderLogistics);
 
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ["lg-logistics", cacheKey, from, today, statusFilter],
-    queryFn: () => listFn({ data: { shop_ids: shopIds, from, to: today, delivery_status: statusFilter === "todos" ? undefined : statusFilter } }),
+    queryKey: ["lg-logistics", cacheKey, from, today],
+    queryFn: () => listFn({ data: { shop_ids: shopIds, from, to: today } }),
     enabled: shopIds.length > 0,
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: true,
@@ -174,17 +187,27 @@ export function LgLogistica({
     onError: (e: any) => toast.error(e.message),
   });
 
-  // KPIs
+  // Toggle silencioso do checkbox "Fora do KPI" — sem toast, só recalcula os KPIs.
+  const toggleKpi = useMutation({
+    mutationFn: (vars: any) => updateFn({ data: vars }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] }),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // KPIs — pedidos marcados como "fora do KPI" (problema causado pelo cliente,
+  // ex: endereço/tamanho errado) não entram nas contagens nem nas médias, senão
+  // distorcem os números. Eles continuam listados normalmente na tabela.
   const allOrders = orders as any[];
+  const kpiOrders = allOrders.filter((o) => !o.kpi_excluded);
   const kpis = {
-    pending:   allOrders.filter((o) => o.delivery_status === "pending_shipment" || !o.delivery_status).length,
-    shipped:   allOrders.filter((o) => o.delivery_status === "shipped" || o.delivery_status === "in_transit").length,
-    delivered: allOrders.filter((o) => o.delivery_status === "delivered").length,
-    problem:   allOrders.filter((o) => o.delivery_status === "problem" || o.delivery_status === "returned").length,
+    pending:   kpiOrders.filter((o) => inBucket(o, "pending")).length,
+    shipped:   kpiOrders.filter((o) => inBucket(o, "shipped")).length,
+    delivered: kpiOrders.filter((o) => inBucket(o, "delivered")).length,
+    problem:   kpiOrders.filter((o) => inBucket(o, "problem")).length,
   };
 
   // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
-  const postingDurations = allOrders
+  const postingDurations = kpiOrders
     .filter((o) => o.order_date && o.shipped_at)
     .map((o) => (new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()) / 86_400_000)
     .filter((d) => d >= 0);
@@ -193,7 +216,7 @@ export function LgLogistica({
     : null;
 
   // Tempo médio de entrega: dias entre postagem (shipped_at) e entrega (delivered_at)
-  const deliveryDurations = allOrders
+  const deliveryDurations = kpiOrders
     .filter((o) => o.shipped_at && o.delivered_at)
     .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
     .filter((d) => d >= 0);
@@ -201,7 +224,11 @@ export function LgLogistica({
     ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
     : null;
 
-  const sortedOrders = [...allOrders].sort((a, b) => (b.order_date as string).localeCompare(a.order_date as string));
+  const visibleOrders = statusFilter === "todos" ? allOrders : allOrders.filter((o) => inBucket(o, statusFilter));
+  const sortedOrders = [...visibleOrders].sort((a, b) => {
+    const dateCmp = (b.order_date as string).localeCompare(a.order_date as string);
+    return dateCmp !== 0 ? dateCmp : orderNum(b) - orderNum(a);
+  });
 
   return (
     <div className="space-y-4">
@@ -227,9 +254,9 @@ export function LgLogistica({
         </div>
         {([
           { key: "pending",   label: "Pendente envio", color: "amber",   icon: Package },
+          { key: "problem",   label: "Com problema",   color: "rose",    icon: AlertTriangle },
           { key: "shipped",   label: "Em trânsito",    color: "blue",    icon: Truck },
           { key: "delivered", label: "Entregues",       color: "emerald", icon: CheckCircle2 },
-          { key: "problem",   label: "Com problema",   color: "rose",    icon: AlertTriangle },
         ] as const).map(({ key, label, color, icon: Icon }) => (
           <button
             key={key}
@@ -263,7 +290,7 @@ export function LgLogistica({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-xl border border-border overflow-hidden text-xs h-8">
-          {(["7d", "mes", "30d"] as const).map((p, i, arr) => (
+          {(["7d", "mes", "ano"] as const).map((p, i, arr) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
@@ -273,7 +300,7 @@ export function LgLogistica({
                 period === p ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {p === "7d" ? "7 dias" : p === "mes" ? "Este mês" : "30 dias"}
+              {p === "7d" ? "7 dias" : p === "mes" ? "Este mês" : "Este ano"}
             </button>
           ))}
         </div>
@@ -293,13 +320,14 @@ export function LgLogistica({
 
       {/* Orders table */}
       <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        <div className="grid grid-cols-6 gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_0.8fr] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <div>Pedido</div>
           <div>Data do Pedido</div>
-          <div>Data Etiqueta</div>
+          <div>Data Postado</div>
           <div>Rastreio</div>
           <div>Status</div>
           <div>Obs</div>
+          <div title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do KPI</div>
         </div>
 
         {isLoading && (
@@ -319,8 +347,9 @@ export function LgLogistica({
             <div
               key={o.id}
               className={cn(
-                "grid grid-cols-6 gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                "grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_0.8fr] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
+                o.kpi_excluded && "opacity-50",
               )}
               onClick={() => setEditingOrder(o)}
             >
@@ -351,6 +380,15 @@ export function LgLogistica({
                 <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
               </div>
               <div className="text-xs text-muted-foreground truncate">{o.logistics_note || "—"}</div>
+              <div onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={!!o.kpi_excluded}
+                  onChange={(e) => toggleKpi.mutate({ order_id: o.id, kpi_excluded: e.target.checked })}
+                  title="Excluir este pedido da contagem dos KPIs (ex: problema causado pelo cliente)"
+                  className="size-4 rounded border-border accent-primary cursor-pointer"
+                />
+              </div>
             </div>
         ))}
       </div>

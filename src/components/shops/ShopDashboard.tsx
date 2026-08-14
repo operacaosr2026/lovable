@@ -393,9 +393,11 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
           label="Faturamento" value={fmt(m?.faturamento ?? 0)} delta={m?.faturamentoDelta ?? 0} tooltip="Receita total de pedidos" />
         <KpiCard loading={isLoading} icon={<DollarSign className="size-4" />} iconColor="info"
           label="Custos Totais" value={fmt(m?.custoProduto ?? 0)} delta={m?.custoProdutoDelta ?? 0} tooltip="Custo de produto no período" />
-        <KpiCard loading={isLoading} icon={<Shield className="size-4" />} iconColor="warning"
-          label="Taxas" value={m?.taxas ? fmt(m.taxas) : "—"} delta={m?.taxasDelta ?? 0}
-          tooltip="Taxas Shopify Payments · sincronizadas ao atualizar" />
+        <div className="hidden sm:block">
+          <KpiCard loading={isLoading} icon={<Shield className="size-4" />} iconColor="warning"
+            label="Taxas" value={m?.taxas ? fmt(m.taxas) : "—"} delta={m?.taxasDelta ?? 0}
+            tooltip="Taxas Shopify Payments · sincronizadas ao atualizar" />
+        </div>
         <KpiCard loading={isLoading} icon={<Percent className="size-4" />} iconColor="primary"
           label="Margem" value={`${(m?.margem ?? 0).toFixed(1)}%`} delta={m?.margemDelta ?? 0} tooltip="Lucro ÷ Faturamento × 100" />
       </div>
