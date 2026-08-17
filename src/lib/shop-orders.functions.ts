@@ -288,7 +288,7 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
       client_secret: data.client_secret,
     });
     if (error) throw new Error(error.message);
-    const scopes = "read_orders,read_products,read_shopify_payments_payouts";
+    const scopes = "read_orders,read_products,read_shopify_payments_payouts,read_shopify_payments_disputes";
     const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
     const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
       `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +

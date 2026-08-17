@@ -1885,6 +1885,57 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_order_disputes: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string | null
+          finalized_on: string | null
+          id: string
+          initiated_at: string
+          order_external_id: string | null
+          reason: string | null
+          shop_id: string
+          shopify_dispute_id: string
+          status: string | null
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          currency?: string | null
+          finalized_on?: string | null
+          id?: string
+          initiated_at: string
+          order_external_id?: string | null
+          reason?: string | null
+          shop_id: string
+          shopify_dispute_id: string
+          status?: string | null
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string | null
+          finalized_on?: string | null
+          id?: string
+          initiated_at?: string
+          order_external_id?: string | null
+          reason?: string | null
+          shop_id?: string
+          shopify_dispute_id?: string
+          status?: string | null
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       shop_order_payment_batches: {
         Row: {
           batch_number: number

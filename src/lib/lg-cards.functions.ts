@@ -434,15 +434,27 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    // Estorno demora a acontecer depois da compra (semanas), então medir só
+    // pedidos feitos "este mês" deixa a taxa sempre perto de 0 no início do
+    // mês. Usa uma janela rolante de 90 dias, igual ao relatório do Shopify.
+    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 90);
+    const estornoStart = estornoWindowStart.toISOString().slice(0, 10);
 
-    const [shopsRes, cashRes, monthOrdersRes, costRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
+    const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, chargebackDisputesRes, costRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
       supabaseAdmin.from("shops").select("id, opening_balance").in("id", shopIds),
       // "Saldo atual" no Caixa (LgCashflowView) só soma lançamentos conciliados,
       // e ignora os sincronizados automaticamente (taxas/pendências do Shopify).
       supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount")
         .in("shop_id", shopIds).eq("reconciled", true)
         .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
-      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, payment_status").in("shop_id", shopIds).gte("order_date", monthStart).lte("order_date", todayStr),
+      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count").in("shop_id", shopIds).gte("order_date", monthStart).lte("order_date", todayStr),
+      supabaseAdmin.from("shop_orders").select("shop_id").in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
+      // Taxa de estorno = pedidos com chargeback real ÷ total de pedidos, igual
+      // ao relatório do Shopify (não usa shopify_financial_status/refund: aquilo
+      // é qualquer reembolso, mais amplo que o chargeback_rate do Shopify).
+      supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
+        .in("shop_id", shopIds).eq("type", "chargeback")
+        .gte("initiated_at", estornoStart).lte("initiated_at", todayStr),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").in("shop_id", shopIds),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", monthStart).lte("date", todayStr),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", monthStart).lte("date", todayStr),
@@ -463,17 +475,29 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
 
     const revenueByShop = new Map<string, number>();
     const custoByShop = new Map<string, number>();
-    const totalOrdersByShop = new Map<string, number>();
-    const totalEstornosByShop = new Map<string, number>();
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
       const shopCost = costByShop.get(sid);
       const unit = shopCost != null && shopCost > 0 ? shopCost : avgCost;
       custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + Number(o.items_count ?? 0) * unit);
-      totalOrdersByShop.set(sid, (totalOrdersByShop.get(sid) ?? 0) + 1);
-      if (o.payment_status === "estornado") totalEstornosByShop.set(sid, (totalEstornosByShop.get(sid) ?? 0) + 1);
     }
+
+    // Taxa de estorno em janela rolante de 90 dias (ver comentário acima)
+    const totalOrdersByShop = new Map<string, number>();
+    for (const o of (estornoOrdersRes.data ?? []) as any[]) {
+      const sid = o.shop_id as string;
+      totalOrdersByShop.set(sid, (totalOrdersByShop.get(sid) ?? 0) + 1);
+    }
+    const chargebackOrdersByShop = new Map<string, Set<string>>();
+    for (const d of (chargebackDisputesRes.data ?? []) as any[]) {
+      if (d.order_external_id == null) continue;
+      const sid = d.shop_id as string;
+      if (!chargebackOrdersByShop.has(sid)) chargebackOrdersByShop.set(sid, new Set());
+      chargebackOrdersByShop.get(sid)!.add(d.order_external_id as string);
+    }
+    const totalEstornosByShop = new Map<string, number>();
+    for (const [sid, set] of chargebackOrdersByShop) totalEstornosByShop.set(sid, set.size);
 
     const feesByShop = new Map<string, number>();
     for (const r of (feesRes.data ?? []) as any[]) feesByShop.set(r.shop_id, (feesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
@@ -530,16 +554,35 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const now = new Date();
     const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const to   = now.toISOString().slice(0, 10);
+    // Estorno demora a acontecer depois da compra (semanas), então medir só
+    // pedidos feitos "este mês" deixa a taxa sempre perto de 0 no início do
+    // mês. Usa uma janela rolante de 90 dias, igual ao relatório do Shopify.
+    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 90);
+    const estornoFrom = estornoWindowStart.toISOString().slice(0, 10);
 
     // B, C, D, E in parallel
-    const [ordersRes, settingsRes, feesRes, adsRes, reembolsosRes, chargebacksRes, batchesRes] = await Promise.all([
+    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
       supabaseAdmin
         .from("shop_orders")
-        .select("revenue, items_count, payment_status, shop_id")
+        .select("revenue, items_count, shop_id")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", from)
         .lte("order_date", to),
+      supabaseAdmin
+        .from("shop_orders")
+        .select("shop_id")
+        .eq("user_id", ownerId)
+        .in("shop_id", shopIds)
+        .gte("order_date", estornoFrom)
+        .lte("order_date", to),
+      supabaseAdmin
+        .from("shop_order_disputes")
+        .select("shop_id, order_external_id")
+        .in("shop_id", shopIds)
+        .eq("type", "chargeback")
+        .gte("initiated_at", estornoFrom)
+        .lte("initiated_at", to),
       supabaseAdmin
         .from("shop_order_settings")
         .select("shop_id, default_unit_cost, payout_lag_avg_days, payout_lag_days")
@@ -578,44 +621,21 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .eq("category", "Chargeback")
         .gte("date", from)
         .lte("date", to),
-      supabaseAdmin
-        .from("shop_order_payment_batches")
-        .select("shop_id, payment_date, order_dates")
-        .eq("user_id", ownerId)
-        .in("shop_id", shopIds)
-        .order("batch_number", { ascending: false }),
     ]);
 
-    const orders      = ordersRes.data ?? [];
-    const settings    = settingsRes.data ?? [];
+    const orders             = ordersRes.data ?? [];
+    const estornoOrders      = estornoOrdersRes.data ?? [];
+    const chargebackDisputes = chargebackDisputesRes.data ?? [];
+    const settings           = settingsRes.data ?? [];
     const fees        = feesRes.data ?? [];
     const ads         = adsRes.data ?? [];
     const reembolsos_ = reembolsosRes.data ?? [];
     const chargebacks_= chargebacksRes.data ?? [];
-    const batches     = batchesRes.data ?? [];
 
     // Settings by shop
     const costByShop = new Map(settings.map((s: any) => [s.shop_id as string, Number(s.default_unit_cost ?? 0)]));
     const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
-
-    // Single most recent payment per shop (by payment_date; ties broken by which
-    // batch's orders are themselves most recent, not merged with other batches —
-    // batch_number order does not reflect which orders are chronologically most recent)
-    const latestPaymentByShop = new Map<string, { payment_date: string; order_dates: string[] }>();
-    for (const b of batches) {
-      const shopId = b.shop_id as string;
-      const orderDates = (b.order_dates ?? []) as string[];
-      const maxOrderDate = orderDates.reduce((m, d) => (d > m ? d : m), "");
-      const current = latestPaymentByShop.get(shopId);
-      const currentMaxOrderDate = current ? current.order_dates.reduce((m, d) => (d > m ? d : m), "") : "";
-      const isBetter = !current
-        || b.payment_date > current.payment_date
-        || (b.payment_date === current.payment_date && maxOrderDate > currentMaxOrderDate);
-      if (isBetter) {
-        latestPaymentByShop.set(shopId, { payment_date: b.payment_date, order_dates: orderDates });
-      }
-    }
 
     // Lucro
     const sumAmt = (rows: any[]) => rows.reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
@@ -632,35 +652,31 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const anuncios = sumAmt(ads);
     const lucro    = faturamento - custoProduto - taxas - anuncios;
 
-    // Taxa de estorno
-    const totalPedidos  = orders.length;
-    const totalEstornos = orders.filter((o: any) => o.payment_status === "estornado").length;
+    // Taxa de estorno — igual à fórmula do Shopify: pedidos com chargeback
+    // real (shop_order_disputes, sincronizado do endpoint de disputas) sobre
+    // total de pedidos, numa janela de 90 dias (ver comentário acima).
+    const totalPedidos  = estornoOrders.length;
+    const totalEstornos = new Set(
+      chargebackDisputes.map((d: any) => d.order_external_id).filter((id: any) => id != null)
+    ).size;
     const taxaEstorno   = totalPedidos > 0 ? totalEstornos / totalPedidos : 0;
 
-    // Payout lag por shop
+    // Payout lag por shop — D+X real, sincronizado dos payouts do Shopify
+    // (payout_lag_days = ajuste manual do usuário; payout_lag_avg_days = média
+    // calculada a partir dos payouts reais). Não usar shop_order_payment_batches
+    // aqui: aquilo é o registro de quando o custo do produto foi pago (COGS),
+    // sem relação com o depósito que o Shopify faz na conta do lojista.
     const settingsByShop = new Map(settings.map((s: any) => [s.shop_id as string, s]));
 
     const payoutLag = shopIds.map((shopId) => {
       const shopName = shopNameById.get(shopId) ?? shopId;
-      const latest   = latestPaymentByShop.get(shopId);
-
-      if (latest && latest.order_dates.length > 0) {
-        const payoutMs = new Date(`${latest.payment_date}T00:00:00Z`).getTime();
-        const diffs = latest.order_dates.map(
-          (d) => (payoutMs - new Date(`${d}T00:00:00Z`).getTime()) / 86400_000
-        ).filter((d) => d >= 0);
-        const avgDays = diffs.length > 0 ? Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length) : null;
-        return { shop_id: shopId, shopName, days: avgDays };
-      }
-
-      // Fallback to cached setting
       const s = settingsByShop.get(shopId);
-      const fallback = s?.payout_lag_days != null
+      const days = s?.payout_lag_days != null
         ? Math.round(Number(s.payout_lag_days))
         : s?.payout_lag_avg_days != null
           ? Math.round(Number(s.payout_lag_avg_days))
           : null;
-      return { shop_id: shopId, shopName, days: fallback };
+      return { shop_id: shopId, shopName, days };
     });
 
     return { lucro, taxaEstorno, totalPedidos, totalEstornos, payoutLag };

@@ -80,6 +80,29 @@ async function fetchBalanceTransactions(domain: string, token: string, maxPages:
   return out;
 }
 
+// Disputas reais (chargeback/inquiry), fonte usada pelo relatório "Taxa de
+// estorno" do próprio Shopify. Não confundir com balance transactions: lá o
+// type nunca vem como "dispute" nesse endpoint, então filtrar por isso deixa
+// a taxa sempre em 0%.
+async function fetchDisputes(domain: string, token: string, maxPages: number) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250`;
+  for (let i = 0; i < maxPages && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      if (res.status === 403) { console.warn(`disputes 403 (escopo read_shopify_payments_disputes ausente?) — ${domain}`); return []; }
+      if (res.status === 404) return [];
+      throw new Error(`Shopify disputes ${res.status}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.disputes ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
 // Tempo médio de repasse: para cada venda já incluída em um payout, mede os dias
 // entre o processamento da venda e a data do depósito. Calculado 1x/dia aqui (e não
 // na hora, pelo front) porque chamar a API de balanço da Shopify é lento.
@@ -149,25 +172,57 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
 
 async function syncRefundsAndChargebacks(shopId: string, userId: string, domain: string, token: string) {
   const transactions = await fetchBalanceTransactions(domain, token, 10);
-  const relevant = transactions.filter((t: any) =>
-    (t.type === "refund" || t.type === "dispute") && t.amount != null && t.id != null
-  );
-  if (!relevant.length) return;
+  const refunds = transactions.filter((t: any) => t.type === "refund" && t.amount != null && t.id != null);
 
-  const rows = relevant.map((t: any) => ({
-    user_id: userId,
-    shop_id: shopId,
-    kind: "expense" as const,
-    amount: Math.abs(Number(t.amount)),
-    date: String(t.processed_at).slice(0, 10),
-    category: t.type === "refund" ? "Reembolso" : "Chargeback",
-    description: t.type === "refund" ? "Reembolso Shopify" : "Chargeback Shopify",
-    source: "shopify_auto_sync",
-    shopify_transaction_id: String(t.id),
-  }));
+  const disputes = await fetchDisputes(domain, token, 10);
+  const chargebacks = disputes.filter((d: any) => d.type === "chargeback" && d.amount != null && d.id != null);
 
-  await supabaseAdmin.from("shop_cash_entries")
-    .upsert(rows as any[], { onConflict: "shop_id,shopify_transaction_id" });
+  const cashRows = [
+    ...refunds.map((t: any) => ({
+      user_id: userId, shop_id: shopId,
+      kind: "expense" as const,
+      amount: Math.abs(Number(t.amount)),
+      date: String(t.processed_at).slice(0, 10),
+      category: "Reembolso",
+      description: "Reembolso Shopify",
+      source: "shopify_auto_sync",
+      shopify_transaction_id: String(t.id),
+    })),
+    ...chargebacks.map((d: any) => ({
+      user_id: userId, shop_id: shopId,
+      kind: "expense" as const,
+      amount: Math.abs(Number(d.amount)),
+      date: String(d.initiated_at).slice(0, 10),
+      category: "Chargeback",
+      description: "Chargeback Shopify",
+      source: "shopify_auto_sync",
+      shopify_transaction_id: `dispute_${d.id}`,
+    })),
+  ];
+  if (cashRows.length) {
+    await supabaseAdmin.from("shop_cash_entries")
+      .upsert(cashRows as any[], { onConflict: "shop_id,shopify_transaction_id" });
+  }
+
+  // Grava toda disputa (chargeback e inquiry) vinculada ao pedido, pra calcular
+  // a taxa de estorno do mesmo jeito que o relatório do Shopify: pedidos com
+  // chargeback ÷ total de pedidos na janela.
+  if (disputes.length) {
+    const disputeRows = disputes.filter((d: any) => d.id != null).map((d: any) => ({
+      user_id: userId, shop_id: shopId,
+      shopify_dispute_id: String(d.id),
+      order_external_id: d.order_id != null ? String(d.order_id) : null,
+      type: String(d.type ?? "unknown"),
+      status: d.status ?? null,
+      reason: d.reason ?? null,
+      amount: Math.abs(Number(d.amount ?? 0)),
+      currency: d.currency ?? null,
+      initiated_at: String(d.initiated_at).slice(0, 10),
+      finalized_on: d.finalized_on ? String(d.finalized_on).slice(0, 10) : null,
+    }));
+    await supabaseAdmin.from("shop_order_disputes")
+      .upsert(disputeRows as any[], { onConflict: "shop_id,shopify_dispute_id" });
+  }
 }
 
 async function syncPendingTransactionsForShop(shopId: string, userId: string, domain: string, token: string, lagDays: number) {
