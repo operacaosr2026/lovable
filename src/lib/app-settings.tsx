@@ -179,7 +179,6 @@ export const HOME_OPTIONS: { value: string; label: string }[] = [
   { value: "/", label: "Dashboard" },
   { value: "/projects", label: "Projetos" },
   { value: "/shops", label: "Ecommerce" },
-  { value: "/finance", label: "Financeiro" },
   { value: "/journal", label: "Diário" },
 ];
 

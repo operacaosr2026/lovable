@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, Wallet, FolderKanban,
-  Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers,
+  LayoutDashboard, FolderKanban,
+  Search, LogOut, Store, Package, Menu, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -36,15 +36,6 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    key: "pessoal",
-    label: "Pessoal",
-    collapsible: true,
-    items: [
-      { to: "/whiteboard", label: "Quadro Branco", icon: PenTool },
-      { to: "/finance", label: "Financeiro", icon: Wallet },
-    ],
-  },
-  {
     key: "empresa",
     label: "Empresa",
     collapsible: true,
@@ -72,8 +63,6 @@ const adminNav: NavItem[] = [
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/whiteboard", label: "Quadro Branco", icon: PenTool },
-  { to: "/finance", label: "Financeiro", icon: Wallet },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/shops", label: "Ecommerce / Lojas", icon: Store },
@@ -260,7 +249,7 @@ export function AppLayout() {
     )
     .filter((group) => group.items.length > 0);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ pessoal: true, empresa: true, "/shops": true });
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ empresa: true, "/shops": true });
   const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(() => {

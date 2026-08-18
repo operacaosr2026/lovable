@@ -3,14 +3,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
-import { ArrowLeft, KanbanSquare, NotebookPen, Paperclip, Calendar as CalIcon, Pencil, PenTool } from "lucide-react";
+import { ArrowLeft, KanbanSquare, NotebookPen, Paperclip, Calendar as CalIcon, Pencil } from "lucide-react";
 import { getProject, updateProject } from "@/lib/projects.functions";
 import { ProjectEditor } from "@/components/projects/ProjectEditor";
 import { ProjectKanban } from "@/components/projects/ProjectKanban";
 import { ProjectNotes } from "@/components/projects/ProjectNotes";
 import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
 import { ProjectCalendar } from "@/components/projects/ProjectCalendar";
-import { ProjectWhiteboards } from "@/components/projects/ProjectWhiteboards";
 import { CATEGORY_META, STATUS_META, PRIORITY_META } from "@/components/projects/meta";
 
 
@@ -18,7 +17,7 @@ export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetail,
 });
 
-type Tab = "kanban" | "notes" | "files" | "calendar" | "mindmaps";
+type Tab = "kanban" | "notes" | "files" | "calendar";
 
 function ProjectDetail() {
   const { projectId } = Route.useParams();
@@ -94,14 +93,12 @@ function ProjectDetail() {
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
         <TabBtn active={tab === "kanban"} onClick={() => setTab("kanban")} icon={KanbanSquare}>Tarefas</TabBtn>
         <TabBtn active={tab === "notes"} onClick={() => setTab("notes")} icon={NotebookPen}>Notas</TabBtn>
-        <TabBtn active={tab === "mindmaps"} onClick={() => setTab("mindmaps")} icon={PenTool}>Mapas mentais</TabBtn>
         <TabBtn active={tab === "files"} onClick={() => setTab("files")} icon={Paperclip}>Anexos</TabBtn>
         <TabBtn active={tab === "calendar"} onClick={() => setTab("calendar")} icon={CalIcon}>Calendário</TabBtn>
       </div>
 
       {tab === "kanban" && <ProjectKanban projectId={projectId} />}
       {tab === "notes" && <ProjectNotes projectId={projectId} />}
-      {tab === "mindmaps" && <ProjectWhiteboards projectId={projectId} />}
       {tab === "files" && <ProjectAttachments projectId={projectId} />}
       {tab === "calendar" && <ProjectCalendar projectId={projectId} />}
 

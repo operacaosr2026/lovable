@@ -9,20 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WhiteboardRouteImport } from './routes/whiteboard'
 import { Route as ShopsRouteImport } from './routes/shops'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GratitudeRouteImport } from './routes/gratitude'
-import { Route as FinanceRouteImport } from './routes/finance'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as WhiteboardIndexRouteImport } from './routes/whiteboard.index'
 import { Route as ShopsIndexRouteImport } from './routes/shops.index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
-import { Route as FinanceIndexRouteImport } from './routes/finance.index'
-import { Route as WhiteboardBoardIdRouteImport } from './routes/whiteboard.$boardId'
 import { Route as ShopsProductsRouteImport } from './routes/shops.products'
 import { Route as ShopsLojasGruposRouteImport } from './routes/shops.lojas-grupos'
 import { Route as ShopsGruposRouteImport } from './routes/shops.grupos'
@@ -33,10 +28,6 @@ import { Route as SettingsMembersRouteImport } from './routes/settings.members'
 import { Route as SettingsGeralRouteImport } from './routes/settings.geral'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
-import { Route as FinanceTransactionsRouteImport } from './routes/finance.transactions'
-import { Route as FinanceSettingsRouteImport } from './routes/finance.settings'
-import { Route as FinanceImportRouteImport } from './routes/finance.import'
-import { Route as FinanceAccountsRouteImport } from './routes/finance.accounts'
 import { Route as ShopsSopsIndexRouteImport } from './routes/shops.sops.index'
 import { Route as ShopsProductsIndexRouteImport } from './routes/shops.products.index'
 import { Route as ShopsLojasGruposIndexRouteImport } from './routes/shops.lojas-grupos.index'
@@ -53,11 +44,6 @@ import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from './routes
 import { Route as ApiPublicHooksMailPollStatusInboxIdRouteImport } from './routes/api/public/hooks/mail.poll-status.$inboxId'
 import { Route as ApiPublicHooksMailInboundInboxIdRouteImport } from './routes/api/public/hooks/mail.inbound.$inboxId'
 
-const WhiteboardRoute = WhiteboardRouteImport.update({
-  id: '/whiteboard',
-  path: '/whiteboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ShopsRoute = ShopsRouteImport.update({
   id: '/shops',
   path: '/shops',
@@ -83,20 +69,10 @@ const GratitudeRoute = GratitudeRouteImport.update({
   path: '/gratitude',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FinanceRoute = FinanceRouteImport.update({
-  id: '/finance',
-  path: '/finance',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const WhiteboardIndexRoute = WhiteboardIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => WhiteboardRoute,
 } as any)
 const ShopsIndexRoute = ShopsIndexRouteImport.update({
   id: '/',
@@ -112,16 +88,6 @@ const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ProjectsRoute,
-} as any)
-const FinanceIndexRoute = FinanceIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => FinanceRoute,
-} as any)
-const WhiteboardBoardIdRoute = WhiteboardBoardIdRouteImport.update({
-  id: '/$boardId',
-  path: '/$boardId',
-  getParentRoute: () => WhiteboardRoute,
 } as any)
 const ShopsProductsRoute = ShopsProductsRouteImport.update({
   id: '/products',
@@ -172,26 +138,6 @@ const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
-} as any)
-const FinanceTransactionsRoute = FinanceTransactionsRouteImport.update({
-  id: '/transactions',
-  path: '/transactions',
-  getParentRoute: () => FinanceRoute,
-} as any)
-const FinanceSettingsRoute = FinanceSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => FinanceRoute,
-} as any)
-const FinanceImportRoute = FinanceImportRouteImport.update({
-  id: '/import',
-  path: '/import',
-  getParentRoute: () => FinanceRoute,
-} as any)
-const FinanceAccountsRoute = FinanceAccountsRouteImport.update({
-  id: '/accounts',
-  path: '/accounts',
-  getParentRoute: () => FinanceRoute,
 } as any)
 const ShopsSopsIndexRoute = ShopsSopsIndexRouteImport.update({
   id: '/sops/',
@@ -277,17 +223,11 @@ const ApiPublicHooksMailInboundInboxIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/finance': typeof FinanceRouteWithChildren
   '/gratitude': typeof GratitudeRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/shops': typeof ShopsRouteWithChildren
-  '/whiteboard': typeof WhiteboardRouteWithChildren
-  '/finance/accounts': typeof FinanceAccountsRoute
-  '/finance/import': typeof FinanceImportRoute
-  '/finance/settings': typeof FinanceSettingsRoute
-  '/finance/transactions': typeof FinanceTransactionsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/settings/geral': typeof SettingsGeralRoute
@@ -298,12 +238,9 @@ export interface FileRoutesByFullPath {
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
-  '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
-  '/finance/': typeof FinanceIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/shops/': typeof ShopsIndexRoute
-  '/whiteboard/': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
@@ -324,22 +261,15 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/gratitude': typeof GratitudeRoute
   '/login': typeof LoginRoute
-  '/finance/accounts': typeof FinanceAccountsRoute
-  '/finance/import': typeof FinanceImportRoute
-  '/finance/settings': typeof FinanceSettingsRoute
-  '/finance/transactions': typeof FinanceTransactionsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/settings/geral': typeof SettingsGeralRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/$shopId': typeof ShopsShopIdRoute
-  '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
-  '/finance': typeof FinanceIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/shops': typeof ShopsIndexRoute
-  '/whiteboard': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
@@ -359,17 +289,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/finance': typeof FinanceRouteWithChildren
   '/gratitude': typeof GratitudeRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/shops': typeof ShopsRouteWithChildren
-  '/whiteboard': typeof WhiteboardRouteWithChildren
-  '/finance/accounts': typeof FinanceAccountsRoute
-  '/finance/import': typeof FinanceImportRoute
-  '/finance/settings': typeof FinanceSettingsRoute
-  '/finance/transactions': typeof FinanceTransactionsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/settings/geral': typeof SettingsGeralRoute
@@ -380,12 +304,9 @@ export interface FileRoutesById {
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
-  '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
-  '/finance/': typeof FinanceIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/shops/': typeof ShopsIndexRoute
-  '/whiteboard/': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
@@ -406,17 +327,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/finance'
     | '/gratitude'
     | '/login'
     | '/projects'
     | '/settings'
     | '/shops'
-    | '/whiteboard'
-    | '/finance/accounts'
-    | '/finance/import'
-    | '/finance/settings'
-    | '/finance/transactions'
     | '/invite/$token'
     | '/projects/$projectId'
     | '/settings/geral'
@@ -427,12 +342,9 @@ export interface FileRouteTypes {
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
-    | '/whiteboard/$boardId'
-    | '/finance/'
     | '/projects/'
     | '/settings/'
     | '/shops/'
-    | '/whiteboard/'
     | '/shops/grupos/$groupId'
     | '/shops/lojas-grupos/$cardId'
     | '/shops/products/$productId'
@@ -453,22 +365,15 @@ export interface FileRouteTypes {
     | '/'
     | '/gratitude'
     | '/login'
-    | '/finance/accounts'
-    | '/finance/import'
-    | '/finance/settings'
-    | '/finance/transactions'
     | '/invite/$token'
     | '/projects/$projectId'
     | '/settings/geral'
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/$shopId'
-    | '/whiteboard/$boardId'
-    | '/finance'
     | '/projects'
     | '/settings'
     | '/shops'
-    | '/whiteboard'
     | '/shops/grupos/$groupId'
     | '/shops/lojas-grupos/$cardId'
     | '/shops/products/$productId'
@@ -487,17 +392,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/finance'
     | '/gratitude'
     | '/login'
     | '/projects'
     | '/settings'
     | '/shops'
-    | '/whiteboard'
-    | '/finance/accounts'
-    | '/finance/import'
-    | '/finance/settings'
-    | '/finance/transactions'
     | '/invite/$token'
     | '/projects/$projectId'
     | '/settings/geral'
@@ -508,12 +407,9 @@ export interface FileRouteTypes {
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
-    | '/whiteboard/$boardId'
-    | '/finance/'
     | '/projects/'
     | '/settings/'
     | '/shops/'
-    | '/whiteboard/'
     | '/shops/grupos/$groupId'
     | '/shops/lojas-grupos/$cardId'
     | '/shops/products/$productId'
@@ -533,13 +429,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  FinanceRoute: typeof FinanceRouteWithChildren
   GratitudeRoute: typeof GratitudeRoute
   LoginRoute: typeof LoginRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   SettingsRoute: typeof SettingsRouteWithChildren
   ShopsRoute: typeof ShopsRouteWithChildren
-  WhiteboardRoute: typeof WhiteboardRouteWithChildren
   InviteTokenRoute: typeof InviteTokenRoute
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route
@@ -551,13 +445,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/whiteboard': {
-      id: '/whiteboard'
-      path: '/whiteboard'
-      fullPath: '/whiteboard'
-      preLoaderRoute: typeof WhiteboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/shops': {
       id: '/shops'
       path: '/shops'
@@ -593,26 +480,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GratitudeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/finance': {
-      id: '/finance'
-      path: '/finance'
-      fullPath: '/finance'
-      preLoaderRoute: typeof FinanceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/whiteboard/': {
-      id: '/whiteboard/'
-      path: '/'
-      fullPath: '/whiteboard/'
-      preLoaderRoute: typeof WhiteboardIndexRouteImport
-      parentRoute: typeof WhiteboardRoute
     }
     '/shops/': {
       id: '/shops/'
@@ -634,20 +507,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/'
       preLoaderRoute: typeof ProjectsIndexRouteImport
       parentRoute: typeof ProjectsRoute
-    }
-    '/finance/': {
-      id: '/finance/'
-      path: '/'
-      fullPath: '/finance/'
-      preLoaderRoute: typeof FinanceIndexRouteImport
-      parentRoute: typeof FinanceRoute
-    }
-    '/whiteboard/$boardId': {
-      id: '/whiteboard/$boardId'
-      path: '/$boardId'
-      fullPath: '/whiteboard/$boardId'
-      preLoaderRoute: typeof WhiteboardBoardIdRouteImport
-      parentRoute: typeof WhiteboardRoute
     }
     '/shops/products': {
       id: '/shops/products'
@@ -718,34 +577,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/invite/$token'
       preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/finance/transactions': {
-      id: '/finance/transactions'
-      path: '/transactions'
-      fullPath: '/finance/transactions'
-      preLoaderRoute: typeof FinanceTransactionsRouteImport
-      parentRoute: typeof FinanceRoute
-    }
-    '/finance/settings': {
-      id: '/finance/settings'
-      path: '/settings'
-      fullPath: '/finance/settings'
-      preLoaderRoute: typeof FinanceSettingsRouteImport
-      parentRoute: typeof FinanceRoute
-    }
-    '/finance/import': {
-      id: '/finance/import'
-      path: '/import'
-      fullPath: '/finance/import'
-      preLoaderRoute: typeof FinanceImportRouteImport
-      parentRoute: typeof FinanceRoute
-    }
-    '/finance/accounts': {
-      id: '/finance/accounts'
-      path: '/accounts'
-      fullPath: '/finance/accounts'
-      preLoaderRoute: typeof FinanceAccountsRouteImport
-      parentRoute: typeof FinanceRoute
     }
     '/shops/sops/': {
       id: '/shops/sops/'
@@ -855,25 +686,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface FinanceRouteChildren {
-  FinanceAccountsRoute: typeof FinanceAccountsRoute
-  FinanceImportRoute: typeof FinanceImportRoute
-  FinanceSettingsRoute: typeof FinanceSettingsRoute
-  FinanceTransactionsRoute: typeof FinanceTransactionsRoute
-  FinanceIndexRoute: typeof FinanceIndexRoute
-}
-
-const FinanceRouteChildren: FinanceRouteChildren = {
-  FinanceAccountsRoute: FinanceAccountsRoute,
-  FinanceImportRoute: FinanceImportRoute,
-  FinanceSettingsRoute: FinanceSettingsRoute,
-  FinanceTransactionsRoute: FinanceTransactionsRoute,
-  FinanceIndexRoute: FinanceIndexRoute,
-}
-
-const FinanceRouteWithChildren =
-  FinanceRoute._addFileChildren(FinanceRouteChildren)
-
 interface ProjectsRouteChildren {
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
@@ -982,29 +794,13 @@ const ShopsRouteChildren: ShopsRouteChildren = {
 
 const ShopsRouteWithChildren = ShopsRoute._addFileChildren(ShopsRouteChildren)
 
-interface WhiteboardRouteChildren {
-  WhiteboardBoardIdRoute: typeof WhiteboardBoardIdRoute
-  WhiteboardIndexRoute: typeof WhiteboardIndexRoute
-}
-
-const WhiteboardRouteChildren: WhiteboardRouteChildren = {
-  WhiteboardBoardIdRoute: WhiteboardBoardIdRoute,
-  WhiteboardIndexRoute: WhiteboardIndexRoute,
-}
-
-const WhiteboardRouteWithChildren = WhiteboardRoute._addFileChildren(
-  WhiteboardRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  FinanceRoute: FinanceRouteWithChildren,
   GratitudeRoute: GratitudeRoute,
   LoginRoute: LoginRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,
-  WhiteboardRoute: WhiteboardRouteWithChildren,
   InviteTokenRoute: InviteTokenRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,

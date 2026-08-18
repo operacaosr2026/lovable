@@ -32,10 +32,8 @@ type Permission = { section: Section; resource_id: string | null };
 const SECTION_LABELS: Record<Section, string> = {
   shops: "Lojas / Ecommerce",
   projects: "Projetos",
-  finance: "Financeiro",
   journal: "Diário",
   sops: "SOPs & Processos",
-  whiteboard: "Quadro Branco",
 };
 
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>

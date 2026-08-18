@@ -7,10 +7,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export const SECTIONS = [
   "shops",
   "projects",
-  "finance",
   "journal",
   "sops",
-  "whiteboard",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
@@ -100,10 +98,9 @@ export const listOwnerResources = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [shops, projects, boards, journalPages, sops] = await Promise.all([
+    const [shops, projects, journalPages, sops] = await Promise.all([
       supabase.from("shops").select("id,name").eq("user_id", userId).eq("archived", false).order("name"),
       supabase.from("projects").select("id,name").eq("user_id", userId).eq("archived", false).order("name"),
-      supabase.from("whiteboard_nodes").select("board_id").eq("user_id", userId).limit(0), // boards aren't a separate table
       supabase.from("journal_pages").select("id,title").eq("user_id", userId).is("parent_id", null).order("title"),
       supabase.from("sop_processes").select("id,name").eq("user_id", userId).order("name"),
     ]);

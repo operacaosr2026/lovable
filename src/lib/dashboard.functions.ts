@@ -25,15 +25,12 @@ export const getDashboard = createServerFn({ method: "GET" })
     const todayStart = `${todayStr}T00:00:00.000Z`;
 
     const [
-      profile, stores, revenues, gratitude,
-      accounts, fxRow, shopTasksToday,
+      profile, stores, revenues, gratitude, shopTasksToday,
     ] = await Promise.all([
       supabase.from("profiles").select("full_name, avatar_url").eq("id", userId).maybeSingle(),
       supabase.from("stores").select("*").eq("user_id", userId).order("position"),
       supabase.from("store_revenues").select("*").gte("date", sevenStr).lte("date", todayStr),
       supabase.from("gratitude_entries").select("*").eq("date", todayStr).maybeSingle(),
-      supabase.from("accounts").select("*").eq("user_id", userId).eq("archived", false),
-      supabase.from("fx_rates").select("*").eq("user_id", userId).maybeSingle(),
       shopFilter === "none"
         ? Promise.resolve({ data: [] as any[] })
         : (() => {
@@ -52,31 +49,6 @@ export const getDashboard = createServerFn({ method: "GET" })
       for (const s of shopRows ?? []) shopNames.set(s.id, s.name);
     }
 
-    // Compute total net worth in BRL
-    const fx = fxRow.data?.usd_to_brl ? Number(fxRow.data.usd_to_brl) : 5.0;
-    const accs = accounts.data ?? [];
-    let totalBRL = 0;
-    if (accs.length > 0) {
-      const ids = accs.map((a) => a.id);
-      const { data: txs } = await supabase
-        .from("transactions").select("kind, amount, currency, account_id, to_account_id, paid, date")
-        .in("account_id", ids).eq("paid", true).lte("date", todayStr);
-      const balances: Record<string, number> = Object.fromEntries(accs.map((a) => [a.id, 0]));
-      for (const t of txs ?? []) {
-        const amt = Number(t.amount);
-        if (t.kind === "income" && balances[t.account_id] !== undefined) balances[t.account_id] += amt;
-        else if (t.kind === "expense" && balances[t.account_id] !== undefined) balances[t.account_id] -= amt;
-        else if (t.kind === "transfer") {
-          if (balances[t.account_id] !== undefined) balances[t.account_id] -= amt;
-          if (t.to_account_id && balances[t.to_account_id] !== undefined) balances[t.to_account_id] += amt;
-        }
-      }
-      for (const a of accs) {
-        const b = balances[a.id] ?? 0;
-        totalBRL += a.currency === "USD" ? b * fx : b;
-      }
-    }
-
     return {
       profile: profile.data,
       stores: stores.data ?? [],
@@ -90,8 +62,6 @@ export const getDashboard = createServerFn({ method: "GET" })
         source: "shop_task" as const,
       })),
       gratitude: gratitude.data,
-      totalBRL,
-      accountsCount: accs.length,
       todayStr,
       weekStartStr,
     };
