@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, KanbanSquare, Wallet, FolderKanban, Repeat,
-  Calendar, Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers,
+  LayoutDashboard, Wallet, FolderKanban,
+  Search, LogOut, Store, Package, Menu, PenTool, Network, Users, Database, Settings as SettingsIcon, ChevronDown, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -40,9 +40,6 @@ const navGroups: NavGroup[] = [
     label: "Pessoal",
     collapsible: true,
     items: [
-      { to: "/habits", label: "Hábitos", icon: Repeat },
-      { to: "/tasks", label: "Tarefas", icon: KanbanSquare },
-      { to: "/calendar", label: "Calendário", icon: Calendar },
       { to: "/whiteboard", label: "Quadro Branco", icon: PenTool },
       { to: "/finance", label: "Financeiro", icon: Wallet },
     ],
@@ -75,9 +72,6 @@ const adminNav: NavItem[] = [
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/calendar", label: "Calendário", icon: Calendar },
-  { to: "/habits", label: "Hábitos", icon: Repeat },
-  { to: "/tasks", label: "Tarefas", icon: KanbanSquare },
   { to: "/whiteboard", label: "Quadro Branco", icon: PenTool },
   { to: "/finance", label: "Financeiro", icon: Wallet },
   { to: "/gratitude", label: "Gratidão", icon: Heart },

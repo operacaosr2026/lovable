@@ -4,17 +4,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  Sparkles, Plus, Check, Flame,
-  Calendar as CalIcon, ListChecks, Repeat, ChevronRight,
-  CheckCircle2, Circle, Clock, Store,
+  Sparkles, ListChecks, ChevronRight, Store,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
-import {
-  getDashboard, createTask, toggleTask,
-  toggleHabitToday,
-} from "@/lib/dashboard.functions";
+import { getDashboard } from "@/lib/dashboard.functions";
 import { saveGratitudeEntry } from "@/lib/gratitude.functions";
-import { listTasks, updateTask, getRoutineLogs } from "@/lib/tasks.functions";
 import { updateShopTask } from "@/lib/shop-tasks.functions";
 import { listLgCardsOverview } from "@/lib/lg-cards.functions";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
@@ -101,14 +95,8 @@ function Dashboard() {
   const qc = useQueryClient();
 
   const getDashboardFn = useServerFn(getDashboard);
-  const createTaskFn = useServerFn(createTask);
-  const toggleTaskFn = useServerFn(toggleTask);
   const updateShopTaskFn = useServerFn(updateShopTask);
   const saveGratitudeFn = useServerFn(saveGratitudeEntry);
-  const toggleHabitFn = useServerFn(toggleHabitToday);
-  const listTasksFn = useServerFn(listTasks);
-  const updateTaskFn = useServerFn(updateTask);
-  const getLogsFn = useServerFn(getRoutineLogs);
   const listLgCardsOverviewFn = useServerFn(listLgCardsOverview);
 
   const { data, isLoading } = useQuery({
@@ -116,25 +104,13 @@ function Dashboard() {
     queryFn: () => getDashboardFn(),
     enabled: !!session,
   });
-  const { data: tasksData } = useQuery({
-    queryKey: ["tasks"], queryFn: () => listTasksFn(), enabled: !!session,
-  });
-  const { data: routineLogsData } = useQuery({
-    queryKey: ["routine-logs"], queryFn: () => getLogsFn(), enabled: !!session,
-  });
   const { data: cardsData } = useQuery({
     queryKey: ["lg-cards-overview"], queryFn: () => listLgCardsOverviewFn(), enabled: !!session,
   });
   const cards = (cardsData as any)?.cards ?? [];
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dashboard"] });
-  const invalidateRoutines = () => {
-    qc.invalidateQueries({ queryKey: ["tasks"] });
-    qc.invalidateQueries({ queryKey: ["routine-logs"] });
-  };
 
-  const mCreateTask = useMutation({ mutationFn: (d: any) => createTaskFn({ data: d }), onSuccess: invalidate });
-  const mToggleTask = useMutation({ mutationFn: (d: any) => toggleTaskFn({ data: d }), onSuccess: invalidate });
   const mToggleShopTask = useMutation({
     mutationFn: (d: { id: string; done: boolean }) => updateShopTaskFn({ data: { id: d.id, patch: { status: d.done ? "done" : "todo" } } }),
     onSuccess: invalidate,
@@ -151,14 +127,9 @@ function Dashboard() {
       qc.invalidateQueries({ queryKey: ["gratitude-history"] });
     },
   });
-  const mToggleHabit = useMutation({ mutationFn: (d: any) => toggleHabitFn({ data: d }), onSuccess: invalidate });
-  const mToggleRoutine = useMutation({
-    mutationFn: (d: any) => updateTaskFn({ data: d }), onSuccess: invalidateRoutines,
-  });
 
   const [gratitude, setGratitude] = useState("");
-  const [newTask, setNewTask] = useState("");
-  const [openTask, setOpenTask] = useState<{ id: string; source: "task" | "shop_task" } | null>(null);
+  const [openTask, setOpenTask] = useState<{ id: string; source: "shop_task" } | null>(null);
 
   // Sync gratitude
   const todayGratitude = data?.gratitude?.content ?? "";
@@ -177,45 +148,6 @@ function Dashboard() {
   })();
   const firstName = (data?.profile?.full_name ?? session?.user?.user_metadata?.full_name ?? session?.user?.email?.split("@")[0] ?? "")
     .toString().split(" ")[0];
-
-
-
-  // Habits progress (week)
-  const habitProgress = (data?.habits ?? []).map((h: any) => {
-    const count = (data?.habitLogs ?? []).filter((l: any) => l.habit_id === h.id).length;
-    const goal = h.weekly_goal || 7;
-    const pct = Math.min(100, Math.round((count / goal) * 100));
-    const todayDone = (data?.habitLogs ?? []).some((l: any) => l.habit_id === h.id && l.date === data?.todayStr);
-    return { ...h, count, pct, todayDone };
-  });
-
-  // Routines expected today
-  const todayKey = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  })();
-  const allTasksList: any[] = (tasksData as any)?.tasks ?? [];
-  const routineLogs: any[] = (routineLogsData as any)?.logs ?? [];
-  const logsByTask: Record<string, Set<string>> = {};
-  for (const l of routineLogs) {
-    (logsByTask[l.task_id] ||= new Set()).add(l.completed_on);
-  }
-  const dow = new Date().getDay();
-  const todayRoutines = allTasksList.filter((t) => {
-    if (!t.recurrence_frequency) return false;
-    if (t.recurrence_frequency === "daily") return true;
-    if (t.recurrence_frequency === "custom") return (t.recurrence_weekdays ?? []).includes(dow);
-    if (t.recurrence_frequency === "weekly") {
-      if (!t.due_at) return false;
-      return new Date(t.due_at).getDay() === dow;
-    }
-    if (t.recurrence_frequency === "monthly") {
-      if (!t.due_at) return false;
-      return new Date(t.due_at).getDate() === new Date().getDate();
-    }
-    return false;
-  }).sort((a, b) => (a.recurrence_time ?? "99").localeCompare(b.recurrence_time ?? "99"));
-  const routinesDone = todayRoutines.filter((t) => logsByTask[t.id]?.has(todayKey)).length;
 
   if (isLoading || !data) {
     return (
@@ -254,28 +186,10 @@ function Dashboard() {
         {/* Tarefas de hoje */}
         <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
           <SectionHead icon={ListChecks} title="Tarefas de hoje"
-            count={`${data.tasks.filter((t: any) => !t.done).length + (data.shopTasksToday?.length ?? 0)} pendentes`}
+            count={`${data.shopTasksToday?.length ?? 0} pendentes`}
             tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
           <div className="p-3 flex-1 flex flex-col overflow-y-auto">
             <ul className="flex-1">
-              {data.tasks.filter((t: any) => !t.done).map((t: any) => (
-                <li key={t.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-surface-hover transition-colors group">
-                  <button
-                    onClick={() => mToggleTask.mutate({ id: t.id, done: !t.done })}
-                    className={`size-5 rounded-full border-2 grid place-items-center transition-colors ${t.done ? "bg-success border-success" : "border-border group-hover:border-primary"}`}>
-                    {t.done && <Check className="size-3 text-background" strokeWidth={3} />}
-                  </button>
-                  <button
-                    onClick={() => setOpenTask({ id: t.id, source: "task" })}
-                    className={`text-[15px] flex-1 text-left hover:underline underline-offset-2 ${t.done ? "line-through text-muted-foreground" : ""}`}
-                  >{t.title}</button>
-                  {t.scheduled_time && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1 tabular-nums">
-                      <CalIcon className="size-3" /> {t.scheduled_time}
-                    </span>
-                  )}
-                </li>
-              ))}
               {(data.shopTasksToday ?? []).map((t: any) => (
                 <li key={t.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-surface-hover transition-colors group">
                   <button
@@ -293,57 +207,10 @@ function Dashboard() {
                   )}
                 </li>
               ))}
+              {(data.shopTasksToday ?? []).length === 0 && (
+                <li className="text-sm text-muted-foreground px-3 py-3">Nenhuma tarefa para hoje.</li>
+              )}
             </ul>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newTask.trim()) return;
-                mCreateTask.mutate({ title: newTask.trim() });
-                setNewTask("");
-              }}
-              className="flex items-center gap-2 px-3 py-2 mt-1"
-            >
-              <Plus className="size-4 text-muted-foreground" />
-              <input
-                value={newTask}
-                onChange={(e) => setNewTask(e.target.value)}
-                placeholder="Adicionar tarefa..."
-                className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/70"
-              />
-            </form>
-
-            {todayRoutines.length > 0 && (
-              <div className="mt-2 pt-3 border-t border-border">
-                <div className="flex items-center gap-2 px-3 mb-1.5">
-                  <Repeat className="size-3.5 text-primary" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex-1">Rotinas de hoje</span>
-                  <span className="text-[11px] text-muted-foreground tabular-nums">{routinesDone}/{todayRoutines.length}</span>
-                </div>
-                <ul className="space-y-0.5">
-                  {todayRoutines.map((t: any) => {
-                    const done = logsByTask[t.id]?.has(todayKey) ?? false;
-                    return (
-                      <li key={t.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-hover group">
-                        <button
-                          disabled={done || mToggleRoutine.isPending}
-                          onClick={() => mToggleRoutine.mutate({ id: t.id, patch: { status: "done" } })}
-                          className={`shrink-0 transition-transform active:scale-90 ${done ? "text-success" : "text-muted-foreground hover:text-primary"}`}
-                          aria-label="Concluir rotina"
-                        >
-                          {done ? <CheckCircle2 className="size-5" /> : <Circle className="size-5" />}
-                        </button>
-                        <span className={`text-[14px] flex-1 truncate ${done ? "line-through text-muted-foreground" : ""}`}>{t.title}</span>
-                        {t.recurrence_time && (
-                          <span className="text-[11px] text-muted-foreground flex items-center gap-1 tabular-nums">
-                            <Clock className="size-3" /> {t.recurrence_time}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
           </div>
         </section>
 
@@ -372,45 +239,17 @@ function Dashboard() {
             </div>
           </div>
         </section>
-
-        {/* Hábitos */}
-        <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-          <SectionHead icon={Repeat} title="Hábitos" count={<span className="flex items-center gap-1 text-warning"><Flame className="size-3" /> semana</span> as any}
-            tint="--tint-green" iconColor="oklch(0.5 0.13 155)" />
-          <div className="p-6 space-y-5 flex-1 overflow-y-auto">
-            {habitProgress.length === 0 && (
-              <div className="text-sm text-muted-foreground">Nenhum hábito ainda. Adicione em /habits.</div>
-            )}
-            {habitProgress.map((h: any) => (
-              <div key={h.id}>
-                <div className="flex items-center justify-between mb-2">
-                  <button
-                    onClick={() => mToggleHabit.mutate({ habit_id: h.id })}
-                    className={`text-[15px] flex items-center gap-2 ${h.todayDone ? "text-foreground" : "text-foreground hover:text-primary"}`}
-                  >
-                    <span className={`size-4 rounded-full border-2 grid place-items-center ${h.todayDone ? "bg-success border-success" : "border-border"}`}>
-                      {h.todayDone && <Check className="size-2.5 text-background" strokeWidth={3} />}
-                    </span>
-                    {h.name}
-                  </button>
-                  <span className="text-xs text-muted-foreground tabular-nums">{h.count}/{h.weekly_goal} · {h.pct}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full transition-all gradient-primary" style={{ width: `${h.pct}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
 
-      <TaskDetailDialog
-        open={!!openTask}
-        onOpenChange={(o) => { if (!o) setOpenTask(null); }}
-        source={openTask?.source ?? "task"}
-        id={openTask?.id ?? null}
-        invalidateKeys={[["dashboard"], ["tasks"], ["shop-tasks"]]}
-      />
+      {openTask && (
+        <TaskDetailDialog
+          open={!!openTask}
+          onOpenChange={(o) => { if (!o) setOpenTask(null); }}
+          source={openTask.source}
+          id={openTask.id}
+          invalidateKeys={[["dashboard"], ["shop-tasks"]]}
+        />
+      )}
     </PageShell>
   );
 }

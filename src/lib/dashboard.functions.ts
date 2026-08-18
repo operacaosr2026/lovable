@@ -25,15 +25,12 @@ export const getDashboard = createServerFn({ method: "GET" })
     const todayStart = `${todayStr}T00:00:00.000Z`;
 
     const [
-      profile, stores, revenues, tasks, habits, habitLogs, gratitude,
+      profile, stores, revenues, gratitude,
       accounts, fxRow, shopTasksToday,
     ] = await Promise.all([
       supabase.from("profiles").select("full_name, avatar_url").eq("id", userId).maybeSingle(),
       supabase.from("stores").select("*").eq("user_id", userId).order("position"),
       supabase.from("store_revenues").select("*").gte("date", sevenStr).lte("date", todayStr),
-      supabase.from("tasks").select("*").eq("scheduled_date", todayStr).order("scheduled_time", { nullsFirst: false }),
-      supabase.from("habits").select("*").order("position"),
-      supabase.from("habit_logs").select("*").gte("date", weekStartStr),
       supabase.from("gratitude_entries").select("*").eq("date", todayStr).maybeSingle(),
       supabase.from("accounts").select("*").eq("user_id", userId).eq("archived", false),
       supabase.from("fx_rates").select("*").eq("user_id", userId).maybeSingle(),
@@ -84,7 +81,6 @@ export const getDashboard = createServerFn({ method: "GET" })
       profile: profile.data,
       stores: stores.data ?? [],
       revenues: revenues.data ?? [],
-      tasks: tasks.data ?? [],
       shopTasksToday: (shopTasksToday.data ?? []).map((t: any) => ({
         id: t.id,
         title: t.title,
@@ -93,48 +89,12 @@ export const getDashboard = createServerFn({ method: "GET" })
         shop_name: shopNames.get(t.shop_id) ?? null,
         source: "shop_task" as const,
       })),
-      habits: habits.data ?? [],
-      habitLogs: habitLogs.data ?? [],
       gratitude: gratitude.data,
       totalBRL,
       accountsCount: accs.length,
       todayStr,
       weekStartStr,
     };
-  });
-
-/* ==================== TASKS ==================== */
-
-export const createTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({
-      title: z.string().trim().min(1).max(200),
-      scheduled_time: z.string().nullable().optional(),
-    }).parse(d),
-  )
-  .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase.from("tasks").insert({
-      user_id: userId,
-      title: data.title,
-      scheduled_time: data.scheduled_time ?? null,
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-export const toggleTask = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ id: z.string().uuid(), done: z.boolean() }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase } = context;
-    const { error } = await supabase
-      .from("tasks")
-      .update({ done: data.done, done_at: data.done ? new Date().toISOString() : null })
-      .eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
   });
 
 /* ==================== GRATITUDE ==================== */
@@ -151,50 +111,6 @@ export const upsertGratitude = createServerFn({ method: "POST" })
         { user_id: userId, date: today, content: data.content, updated_at: new Date().toISOString() },
         { onConflict: "user_id,date" },
       );
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-/* ==================== HABITS ==================== */
-
-export const toggleHabitToday = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ habit_id: z.string().uuid() }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
-    const today = new Date().toISOString().slice(0, 10);
-    const existing = await supabase
-      .from("habit_logs")
-      .select("id")
-      .eq("habit_id", data.habit_id)
-      .eq("date", today)
-      .maybeSingle();
-
-    if (existing.data) {
-      await supabase.from("habit_logs").delete().eq("id", existing.data.id);
-    } else {
-      await supabase.from("habit_logs").insert({ user_id: userId, habit_id: data.habit_id, date: today });
-    }
-    return { ok: true };
-  });
-
-export const createHabit = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({
-      name: z.string().trim().min(1).max(100),
-      weekly_goal: z.number().int().min(1).max(7).default(7),
-      annual_goal: z.number().int().min(1).optional(),
-    }).parse(d),
-  )
-  .handler(async ({ context, data }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase.from("habits").insert({
-      user_id: userId,
-      name: data.name,
-      weekly_goal: data.weekly_goal,
-      annual_goal: data.annual_goal ?? null,
-    });
     if (error) throw new Error(error.message);
     return { ok: true };
   });

@@ -10,24 +10,19 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WhiteboardRouteImport } from './routes/whiteboard'
-import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as ShopsRouteImport } from './routes/shops'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as HabitsRouteImport } from './routes/habits'
 import { Route as GratitudeRouteImport } from './routes/gratitude'
 import { Route as FinanceRouteImport } from './routes/finance'
-import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardIndexRouteImport } from './routes/whiteboard.index'
-import { Route as TasksIndexRouteImport } from './routes/tasks.index'
 import { Route as ShopsIndexRouteImport } from './routes/shops.index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as FinanceIndexRouteImport } from './routes/finance.index'
 import { Route as WhiteboardBoardIdRouteImport } from './routes/whiteboard.$boardId'
-import { Route as TasksListIdRouteImport } from './routes/tasks.$listId'
 import { Route as ShopsProductsRouteImport } from './routes/shops.products'
 import { Route as ShopsLojasGruposRouteImport } from './routes/shops.lojas-grupos'
 import { Route as ShopsGruposRouteImport } from './routes/shops.grupos'
@@ -52,7 +47,6 @@ import { Route as ShopsProductsProductIdRouteImport } from './routes/shops.produ
 import { Route as ShopsLojasGruposCardIdRouteImport } from './routes/shops.lojas-grupos.$cardId'
 import { Route as ShopsGruposGroupIdRouteImport } from './routes/shops.grupos.$groupId'
 import { Route as ApiPublicShopifyCallbackRouteImport } from './routes/api/public/shopify/callback'
-import { Route as ApiPublicHooksTaskNotificationsRouteImport } from './routes/api/public/hooks/task-notifications'
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from './routes/api/public/hooks/sync-track123'
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from './routes/api/public/hooks/sync-shop-orders'
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from './routes/api/public/hooks/track123.$shopId.$secret'
@@ -62,11 +56,6 @@ import { Route as ApiPublicHooksMailInboundInboxIdRouteImport } from './routes/a
 const WhiteboardRoute = WhiteboardRouteImport.update({
   id: '/whiteboard',
   path: '/whiteboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TasksRoute = TasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShopsRoute = ShopsRouteImport.update({
@@ -89,11 +78,6 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HabitsRoute = HabitsRouteImport.update({
-  id: '/habits',
-  path: '/habits',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const GratitudeRoute = GratitudeRouteImport.update({
   id: '/gratitude',
   path: '/gratitude',
@@ -102,11 +86,6 @@ const GratitudeRoute = GratitudeRouteImport.update({
 const FinanceRoute = FinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CalendarRoute = CalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -118,11 +97,6 @@ const WhiteboardIndexRoute = WhiteboardIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WhiteboardRoute,
-} as any)
-const TasksIndexRoute = TasksIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TasksRoute,
 } as any)
 const ShopsIndexRoute = ShopsIndexRouteImport.update({
   id: '/',
@@ -148,11 +122,6 @@ const WhiteboardBoardIdRoute = WhiteboardBoardIdRouteImport.update({
   id: '/$boardId',
   path: '/$boardId',
   getParentRoute: () => WhiteboardRoute,
-} as any)
-const TasksListIdRoute = TasksListIdRouteImport.update({
-  id: '/$listId',
-  path: '/$listId',
-  getParentRoute: () => TasksRoute,
 } as any)
 const ShopsProductsRoute = ShopsProductsRouteImport.update({
   id: '/products',
@@ -275,12 +244,6 @@ const ApiPublicShopifyCallbackRoute =
     path: '/api/public/shopify/callback',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicHooksTaskNotificationsRoute =
-  ApiPublicHooksTaskNotificationsRouteImport.update({
-    id: '/api/public/hooks/task-notifications',
-    path: '/api/public/hooks/task-notifications',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicHooksSyncTrack123Route =
   ApiPublicHooksSyncTrack123RouteImport.update({
     id: '/api/public/hooks/sync-track123',
@@ -314,15 +277,12 @@ const ApiPublicHooksMailInboundInboxIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/calendar': typeof CalendarRoute
   '/finance': typeof FinanceRouteWithChildren
   '/gratitude': typeof GratitudeRoute
-  '/habits': typeof HabitsRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/shops': typeof ShopsRouteWithChildren
-  '/tasks': typeof TasksRouteWithChildren
   '/whiteboard': typeof WhiteboardRouteWithChildren
   '/finance/accounts': typeof FinanceAccountsRoute
   '/finance/import': typeof FinanceImportRoute
@@ -338,13 +298,11 @@ export interface FileRoutesByFullPath {
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
-  '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
   '/finance/': typeof FinanceIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/shops/': typeof ShopsIndexRoute
-  '/tasks/': typeof TasksIndexRoute
   '/whiteboard/': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
@@ -357,7 +315,6 @@ export interface FileRoutesByFullPath {
   '/shops/sops/': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
   '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
-  '/api/public/hooks/task-notifications': typeof ApiPublicHooksTaskNotificationsRoute
   '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
   '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
   '/api/public/hooks/mail/poll-status/$inboxId': typeof ApiPublicHooksMailPollStatusInboxIdRoute
@@ -365,9 +322,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/calendar': typeof CalendarRoute
   '/gratitude': typeof GratitudeRoute
-  '/habits': typeof HabitsRoute
   '/login': typeof LoginRoute
   '/finance/accounts': typeof FinanceAccountsRoute
   '/finance/import': typeof FinanceImportRoute
@@ -379,13 +334,11 @@ export interface FileRoutesByTo {
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/$shopId': typeof ShopsShopIdRoute
-  '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
   '/finance': typeof FinanceIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/shops': typeof ShopsIndexRoute
-  '/tasks': typeof TasksIndexRoute
   '/whiteboard': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
@@ -398,7 +351,6 @@ export interface FileRoutesByTo {
   '/shops/sops': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
   '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
-  '/api/public/hooks/task-notifications': typeof ApiPublicHooksTaskNotificationsRoute
   '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
   '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
   '/api/public/hooks/mail/poll-status/$inboxId': typeof ApiPublicHooksMailPollStatusInboxIdRoute
@@ -407,15 +359,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/calendar': typeof CalendarRoute
   '/finance': typeof FinanceRouteWithChildren
   '/gratitude': typeof GratitudeRoute
-  '/habits': typeof HabitsRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/shops': typeof ShopsRouteWithChildren
-  '/tasks': typeof TasksRouteWithChildren
   '/whiteboard': typeof WhiteboardRouteWithChildren
   '/finance/accounts': typeof FinanceAccountsRoute
   '/finance/import': typeof FinanceImportRoute
@@ -431,13 +380,11 @@ export interface FileRoutesById {
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
-  '/tasks/$listId': typeof TasksListIdRoute
   '/whiteboard/$boardId': typeof WhiteboardBoardIdRoute
   '/finance/': typeof FinanceIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/shops/': typeof ShopsIndexRoute
-  '/tasks/': typeof TasksIndexRoute
   '/whiteboard/': typeof WhiteboardIndexRoute
   '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
   '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
@@ -450,7 +397,6 @@ export interface FileRoutesById {
   '/shops/sops/': typeof ShopsSopsIndexRoute
   '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
   '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
-  '/api/public/hooks/task-notifications': typeof ApiPublicHooksTaskNotificationsRoute
   '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
   '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
   '/api/public/hooks/mail/poll-status/$inboxId': typeof ApiPublicHooksMailPollStatusInboxIdRoute
@@ -460,15 +406,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/calendar'
     | '/finance'
     | '/gratitude'
-    | '/habits'
     | '/login'
     | '/projects'
     | '/settings'
     | '/shops'
-    | '/tasks'
     | '/whiteboard'
     | '/finance/accounts'
     | '/finance/import'
@@ -484,13 +427,11 @@ export interface FileRouteTypes {
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
-    | '/tasks/$listId'
     | '/whiteboard/$boardId'
     | '/finance/'
     | '/projects/'
     | '/settings/'
     | '/shops/'
-    | '/tasks/'
     | '/whiteboard/'
     | '/shops/grupos/$groupId'
     | '/shops/lojas-grupos/$cardId'
@@ -503,7 +444,6 @@ export interface FileRouteTypes {
     | '/shops/sops/'
     | '/api/public/hooks/sync-shop-orders'
     | '/api/public/hooks/sync-track123'
-    | '/api/public/hooks/task-notifications'
     | '/api/public/shopify/callback'
     | '/api/public/hooks/mail/inbound/$inboxId'
     | '/api/public/hooks/mail/poll-status/$inboxId'
@@ -511,9 +451,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/calendar'
     | '/gratitude'
-    | '/habits'
     | '/login'
     | '/finance/accounts'
     | '/finance/import'
@@ -525,13 +463,11 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/$shopId'
-    | '/tasks/$listId'
     | '/whiteboard/$boardId'
     | '/finance'
     | '/projects'
     | '/settings'
     | '/shops'
-    | '/tasks'
     | '/whiteboard'
     | '/shops/grupos/$groupId'
     | '/shops/lojas-grupos/$cardId'
@@ -544,7 +480,6 @@ export interface FileRouteTypes {
     | '/shops/sops'
     | '/api/public/hooks/sync-shop-orders'
     | '/api/public/hooks/sync-track123'
-    | '/api/public/hooks/task-notifications'
     | '/api/public/shopify/callback'
     | '/api/public/hooks/mail/inbound/$inboxId'
     | '/api/public/hooks/mail/poll-status/$inboxId'
@@ -552,15 +487,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/calendar'
     | '/finance'
     | '/gratitude'
-    | '/habits'
     | '/login'
     | '/projects'
     | '/settings'
     | '/shops'
-    | '/tasks'
     | '/whiteboard'
     | '/finance/accounts'
     | '/finance/import'
@@ -576,13 +508,11 @@ export interface FileRouteTypes {
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
-    | '/tasks/$listId'
     | '/whiteboard/$boardId'
     | '/finance/'
     | '/projects/'
     | '/settings/'
     | '/shops/'
-    | '/tasks/'
     | '/whiteboard/'
     | '/shops/grupos/$groupId'
     | '/shops/lojas-grupos/$cardId'
@@ -595,7 +525,6 @@ export interface FileRouteTypes {
     | '/shops/sops/'
     | '/api/public/hooks/sync-shop-orders'
     | '/api/public/hooks/sync-track123'
-    | '/api/public/hooks/task-notifications'
     | '/api/public/shopify/callback'
     | '/api/public/hooks/mail/inbound/$inboxId'
     | '/api/public/hooks/mail/poll-status/$inboxId'
@@ -604,20 +533,16 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  CalendarRoute: typeof CalendarRoute
   FinanceRoute: typeof FinanceRouteWithChildren
   GratitudeRoute: typeof GratitudeRoute
-  HabitsRoute: typeof HabitsRoute
   LoginRoute: typeof LoginRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   SettingsRoute: typeof SettingsRouteWithChildren
   ShopsRoute: typeof ShopsRouteWithChildren
-  TasksRoute: typeof TasksRouteWithChildren
   WhiteboardRoute: typeof WhiteboardRouteWithChildren
   InviteTokenRoute: typeof InviteTokenRoute
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route
-  ApiPublicHooksTaskNotificationsRoute: typeof ApiPublicHooksTaskNotificationsRoute
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute
   ApiPublicHooksMailInboundInboxIdRoute: typeof ApiPublicHooksMailInboundInboxIdRoute
   ApiPublicHooksMailPollStatusInboxIdRoute: typeof ApiPublicHooksMailPollStatusInboxIdRoute
@@ -631,13 +556,6 @@ declare module '@tanstack/react-router' {
       path: '/whiteboard'
       fullPath: '/whiteboard'
       preLoaderRoute: typeof WhiteboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tasks': {
-      id: '/tasks'
-      path: '/tasks'
-      fullPath: '/tasks'
-      preLoaderRoute: typeof TasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shops': {
@@ -668,13 +586,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/habits': {
-      id: '/habits'
-      path: '/habits'
-      fullPath: '/habits'
-      preLoaderRoute: typeof HabitsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/gratitude': {
       id: '/gratitude'
       path: '/gratitude'
@@ -687,13 +598,6 @@ declare module '@tanstack/react-router' {
       path: '/finance'
       fullPath: '/finance'
       preLoaderRoute: typeof FinanceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/calendar': {
-      id: '/calendar'
-      path: '/calendar'
-      fullPath: '/calendar'
-      preLoaderRoute: typeof CalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -709,13 +613,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/whiteboard/'
       preLoaderRoute: typeof WhiteboardIndexRouteImport
       parentRoute: typeof WhiteboardRoute
-    }
-    '/tasks/': {
-      id: '/tasks/'
-      path: '/'
-      fullPath: '/tasks/'
-      preLoaderRoute: typeof TasksIndexRouteImport
-      parentRoute: typeof TasksRoute
     }
     '/shops/': {
       id: '/shops/'
@@ -751,13 +648,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/whiteboard/$boardId'
       preLoaderRoute: typeof WhiteboardBoardIdRouteImport
       parentRoute: typeof WhiteboardRoute
-    }
-    '/tasks/$listId': {
-      id: '/tasks/$listId'
-      path: '/$listId'
-      fullPath: '/tasks/$listId'
-      preLoaderRoute: typeof TasksListIdRouteImport
-      parentRoute: typeof TasksRoute
     }
     '/shops/products': {
       id: '/shops/products'
@@ -927,13 +817,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicShopifyCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/task-notifications': {
-      id: '/api/public/hooks/task-notifications'
-      path: '/api/public/hooks/task-notifications'
-      fullPath: '/api/public/hooks/task-notifications'
-      preLoaderRoute: typeof ApiPublicHooksTaskNotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/hooks/sync-track123': {
       id: '/api/public/hooks/sync-track123'
       path: '/api/public/hooks/sync-track123'
@@ -1099,18 +982,6 @@ const ShopsRouteChildren: ShopsRouteChildren = {
 
 const ShopsRouteWithChildren = ShopsRoute._addFileChildren(ShopsRouteChildren)
 
-interface TasksRouteChildren {
-  TasksListIdRoute: typeof TasksListIdRoute
-  TasksIndexRoute: typeof TasksIndexRoute
-}
-
-const TasksRouteChildren: TasksRouteChildren = {
-  TasksListIdRoute: TasksListIdRoute,
-  TasksIndexRoute: TasksIndexRoute,
-}
-
-const TasksRouteWithChildren = TasksRoute._addFileChildren(TasksRouteChildren)
-
 interface WhiteboardRouteChildren {
   WhiteboardBoardIdRoute: typeof WhiteboardBoardIdRoute
   WhiteboardIndexRoute: typeof WhiteboardIndexRoute
@@ -1127,20 +998,16 @@ const WhiteboardRouteWithChildren = WhiteboardRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  CalendarRoute: CalendarRoute,
   FinanceRoute: FinanceRouteWithChildren,
   GratitudeRoute: GratitudeRoute,
-  HabitsRoute: HabitsRoute,
   LoginRoute: LoginRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,
-  TasksRoute: TasksRouteWithChildren,
   WhiteboardRoute: WhiteboardRouteWithChildren,
   InviteTokenRoute: InviteTokenRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
-  ApiPublicHooksTaskNotificationsRoute: ApiPublicHooksTaskNotificationsRoute,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
   ApiPublicHooksMailInboundInboxIdRoute: ApiPublicHooksMailInboundInboxIdRoute,
   ApiPublicHooksMailPollStatusInboxIdRoute:

@@ -10,10 +10,7 @@ export const SECTIONS = [
   "finance",
   "journal",
   "sops",
-  "tasks",
   "whiteboard",
-  "habits",
-  "calendar",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
@@ -103,10 +100,9 @@ export const listOwnerResources = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [shops, projects, lists, boards, journalPages, sops] = await Promise.all([
+    const [shops, projects, boards, journalPages, sops] = await Promise.all([
       supabase.from("shops").select("id,name").eq("user_id", userId).eq("archived", false).order("name"),
       supabase.from("projects").select("id,name").eq("user_id", userId).eq("archived", false).order("name"),
-      supabase.from("task_lists").select("id,name").eq("user_id", userId).order("name"),
       supabase.from("whiteboard_nodes").select("board_id").eq("user_id", userId).limit(0), // boards aren't a separate table
       supabase.from("journal_pages").select("id,title").eq("user_id", userId).is("parent_id", null).order("title"),
       supabase.from("sop_processes").select("id,name").eq("user_id", userId).order("name"),
@@ -114,7 +110,6 @@ export const listOwnerResources = createServerFn({ method: "GET" })
     return {
       shops: (shops.data ?? []) as { id: string; name: string }[],
       projects: (projects.data ?? []) as { id: string; name: string }[],
-      tasks: (lists.data ?? []) as { id: string; name: string }[],
       journal: (journalPages.data ?? []).map((p: any) => ({ id: p.id, name: p.title })),
       sops: (sops.data ?? []) as { id: string; name: string }[],
     };

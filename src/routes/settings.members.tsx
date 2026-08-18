@@ -35,20 +35,16 @@ const SECTION_LABELS: Record<Section, string> = {
   finance: "Financeiro",
   journal: "Diário",
   sops: "SOPs & Processos",
-  tasks: "Tarefas",
   whiteboard: "Quadro Branco",
-  habits: "Hábitos",
-  calendar: "Calendário",
 };
 
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
   s === "shops" || s === "projects" || s === "sops"
 );
 
-const RESOURCE_BY_SECTION: Partial<Record<Section, "shops" | "projects" | "tasks" | "sops">> = {
+const RESOURCE_BY_SECTION: Partial<Record<Section, "shops" | "projects" | "sops">> = {
   shops: "shops",
   projects: "projects",
-  tasks: "tasks",
   sops: "sops",
 };
 

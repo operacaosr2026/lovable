@@ -14,7 +14,6 @@ import {
   getTaskDetail, registerTaskAttachment, deleteTaskAttachment,
   TASK_ATTACHMENT_BUCKET, type TaskSource,
 } from "@/lib/task-details.functions";
-import { updateListTask, deleteListTask, createListTask } from "@/lib/workspace-tasks.functions";
 import { updateProjectTask, deleteProjectTask } from "@/lib/project-tasks.functions";
 import { updateShopTask, deleteShopTask } from "@/lib/shop-tasks.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -30,8 +29,6 @@ type Props = {
   projectId?: string | null;
   /** Optional cache keys to invalidate after saves */
   invalidateKeys?: (string | undefined)[][];
-  /** When set and `id` is null, the dialog opens in "create" mode: nothing is persisted until Salvar is clicked. */
-  createListId?: string | null;
 };
 
 function fmtDateTimeLocal(iso: string | null | undefined) {
@@ -50,27 +47,20 @@ function humanSize(bytes: number | null | undefined) {
 }
 
 export function TaskDetailDialog({
-  open, onOpenChange, source, id, projectId, invalidateKeys = [], createListId = null,
+  open, onOpenChange, source, id, projectId, invalidateKeys = [],
 }: Props) {
   const qc = useQueryClient();
 
   const getDetailFn = useServerFn(getTaskDetail);
-  const createFn = useServerFn(createListTask);
-  const updListFn = useServerFn(updateListTask);
   const updProjectFn = useServerFn(updateProjectTask);
   const updShopFn = useServerFn(updateShopTask);
-  const delListFn = useServerFn(deleteListTask);
   const delProjectFn = useServerFn(deleteProjectTask);
   const delShopFn = useServerFn(deleteShopTask);
   const registerFn = useServerFn(registerTaskAttachment);
   const deleteAttFn = useServerFn(deleteTaskAttachment);
 
-  // While creating a new task, nothing exists in the DB yet — localId/localSource
-  // take over once Salvar is pressed for the first time.
-  const [localId, setLocalId] = useState<string | null>(null);
-  const [localSource, setLocalSource] = useState<TaskSource>("task");
-  const effectiveId = id ?? localId;
-  const effectiveSource = id ? source : localSource;
+  const effectiveId = id;
+  const effectiveSource = source;
   const isNew = !effectiveId;
 
   const detailQ = useQuery({
@@ -108,51 +98,16 @@ export function TaskDetailDialog({
     setDirty(false);
   }, [task]);
 
-  // Reset everything when the dialog closes, or set up a blank draft when it opens for creation
+  // Reset everything when the dialog closes
   useEffect(() => {
-    if (open) {
-      if (!id && !localId) {
-        setTitle("");
-        setDescription("");
-        setDueAt("");
-        setChecklist([]);
-        setStatus("todo");
-        setDirty(false);
-      }
-      return;
-    }
+    if (open) return;
     initRef.current = null;
-    setLocalId(null);
-    setLocalSource("task");
-  }, [open, id]);
+  }, [open]);
 
   const handleSave = async () => {
+    if (!effectiveId) return;
     setSavingFlag(true);
     try {
-      if (isNew) {
-        if (!createListId) return;
-        const result: any = await createFn({ data: {
-          list_id: createListId,
-          title: title.trim() || "Nova tarefa",
-          status,
-          due_at: dueAt ? new Date(dueAt).toISOString() : null,
-        } });
-        const newId = result?.task?.id;
-        const newSource: TaskSource = result?.source ?? "task";
-        if (newId && (description.trim() || checklist.length > 0)) {
-          const patch = { description, checklist };
-          if (newSource === "shop_task") await updShopFn({ data: { id: newId, patch } });
-          else await updListFn({ data: { id: newId, source: "task", patch } });
-        }
-        setLocalId(newId);
-        setLocalSource(newSource);
-        for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
-        setDirty(false);
-        toast.success("Tarefa criada");
-        onOpenChange(false);
-        return;
-      }
-
       const patch: Record<string, any> = {
         title,
         description,
@@ -162,10 +117,8 @@ export function TaskDetailDialog({
       };
       if (effectiveSource === "project_task") {
         await updProjectFn({ data: { id: effectiveId, patch } });
-      } else if (effectiveSource === "shop_task") {
-        await updShopFn({ data: { id: effectiveId, patch } });
       } else {
-        await updListFn({ data: { id: effectiveId, source: "task", patch } });
+        await updShopFn({ data: { id: effectiveId, patch } });
       }
       for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
       qc.invalidateQueries({ queryKey: ["task-detail", effectiveSource, effectiveId] });
@@ -186,10 +139,8 @@ export function TaskDetailDialog({
     try {
       if (effectiveSource === "project_task") {
         await delProjectFn({ data: { id: effectiveId } });
-      } else if (effectiveSource === "shop_task") {
-        await delShopFn({ data: { id: effectiveId } });
       } else {
-        await delListFn({ data: { id: effectiveId, source: "task" } });
+        await delShopFn({ data: { id: effectiveId } });
       }
       for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
       onOpenChange(false);

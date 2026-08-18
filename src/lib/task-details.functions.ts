@@ -2,15 +2,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const Source = z.enum(["task", "shop_task", "project_task"]);
+const Source = z.enum(["shop_task", "project_task"]);
 export type TaskSource = z.infer<typeof Source>;
 
 const tableFor = (s: TaskSource) =>
-  s === "task" ? "tasks" : s === "shop_task" ? "shop_tasks" : "project_tasks";
+  s === "shop_task" ? "shop_tasks" : "project_tasks";
 
 const attachmentTableFor = (s: TaskSource) =>
-  s === "task" ? "task_attachments"
-  : s === "shop_task" ? "shop_task_attachments"
+  s === "shop_task" ? "shop_task_attachments"
   : "project_attachments";
 
 const ATTACHMENT_BUCKET = "task-attachments";
