@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       accounts: {
@@ -203,45 +228,6 @@ export type Database = {
         }
         Relationships: []
       }
-      calendar_events: {
-        Row: {
-          all_day: boolean | null
-          color: string
-          created_at: string | null
-          date: string
-          end_time: string | null
-          id: string
-          member_ids: string[]
-          start_time: string | null
-          title: string
-          user_id: string
-        }
-        Insert: {
-          all_day?: boolean | null
-          color?: string
-          created_at?: string | null
-          date: string
-          end_time?: string | null
-          id?: string
-          member_ids?: string[]
-          start_time?: string | null
-          title: string
-          user_id: string
-        }
-        Update: {
-          all_day?: boolean | null
-          color?: string
-          created_at?: string | null
-          date?: string
-          end_time?: string | null
-          id?: string
-          member_ids?: string[]
-          start_time?: string | null
-          title?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       categories: {
         Row: {
           color: string
@@ -388,68 +374,6 @@ export type Database = {
           id?: string
           updated_at?: string
           user_id?: string
-        }
-        Relationships: []
-      }
-      habit_logs: {
-        Row: {
-          created_at: string
-          date: string
-          habit_id: string
-          id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          date: string
-          habit_id: string
-          id?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          date?: string
-          habit_id?: string
-          id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "habit_logs_habit_id_fkey"
-            columns: ["habit_id"]
-            isOneToOne: false
-            referencedRelation: "habits"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      habits: {
-        Row: {
-          annual_goal: number | null
-          created_at: string
-          id: string
-          name: string
-          position: number
-          user_id: string
-          weekly_goal: number
-        }
-        Insert: {
-          annual_goal?: number | null
-          created_at?: string
-          id?: string
-          name: string
-          position?: number
-          user_id: string
-          weekly_goal?: number
-        }
-        Update: {
-          annual_goal?: number | null
-          created_at?: string
-          id?: string
-          name?: string
-          position?: number
-          user_id?: string
-          weekly_goal?: number
         }
         Relationships: []
       }
@@ -3654,39 +3578,6 @@ export type Database = {
         }
         Relationships: []
       }
-      task_attachments: {
-        Row: {
-          created_at: string
-          file_name: string
-          file_path: string
-          id: string
-          mime_type: string | null
-          size_bytes: number | null
-          task_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          file_name: string
-          file_path: string
-          id?: string
-          mime_type?: string | null
-          size_bytes?: number | null
-          task_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          file_name?: string
-          file_path?: string
-          id?: string
-          mime_type?: string | null
-          size_bytes?: number | null
-          task_id?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       task_completion_logs: {
         Row: {
           completed_at: string
@@ -3710,154 +3601,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      task_lists: {
-        Row: {
-          color: string
-          created_at: string
-          icon: string | null
-          id: string
-          is_system: boolean
-          name: string
-          position: number
-          shop_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          color?: string
-          created_at?: string
-          icon?: string | null
-          id?: string
-          is_system?: boolean
-          name: string
-          position?: number
-          shop_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          color?: string
-          created_at?: string
-          icon?: string | null
-          id?: string
-          is_system?: boolean
-          name?: string
-          position?: number
-          shop_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "task_lists_shop_id_fkey"
-            columns: ["shop_id"]
-            isOneToOne: false
-            referencedRelation: "shops"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      task_notifications: {
-        Row: {
-          id: string
-          kind: string
-          minutes_before: number | null
-          sent_at: string
-          task_id: string
-          user_id: string
-        }
-        Insert: {
-          id?: string
-          kind: string
-          minutes_before?: number | null
-          sent_at?: string
-          task_id: string
-          user_id: string
-        }
-        Update: {
-          id?: string
-          kind?: string
-          minutes_before?: number | null
-          sent_at?: string
-          task_id?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      tasks: {
-        Row: {
-          checklist: Json
-          created_at: string
-          description: string | null
-          done: boolean
-          done_at: string | null
-          due_at: string | null
-          id: string
-          list_id: string | null
-          position: number
-          recurrence_frequency: string | null
-          recurrence_time: string | null
-          recurrence_weekdays: number[]
-          reminder_minutes: number[]
-          scheduled_date: string
-          scheduled_time: string | null
-          status: string
-          tags: string[]
-          title: string
-          user_id: string
-        }
-        Insert: {
-          checklist?: Json
-          created_at?: string
-          description?: string | null
-          done?: boolean
-          done_at?: string | null
-          due_at?: string | null
-          id?: string
-          list_id?: string | null
-          position?: number
-          recurrence_frequency?: string | null
-          recurrence_time?: string | null
-          recurrence_weekdays?: number[]
-          reminder_minutes?: number[]
-          scheduled_date?: string
-          scheduled_time?: string | null
-          status?: string
-          tags?: string[]
-          title: string
-          user_id: string
-        }
-        Update: {
-          checklist?: Json
-          created_at?: string
-          description?: string | null
-          done?: boolean
-          done_at?: string | null
-          due_at?: string | null
-          id?: string
-          list_id?: string | null
-          position?: number
-          recurrence_frequency?: string | null
-          recurrence_time?: string | null
-          recurrence_weekdays?: number[]
-          reminder_minutes?: number[]
-          scheduled_date?: string
-          scheduled_time?: string | null
-          status?: string
-          tags?: string[]
-          title?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "tasks_list_id_fk"
-            columns: ["list_id"]
-            isOneToOne: false
-            referencedRelation: "task_lists"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       track123_event_rules: {
         Row: {
@@ -4050,27 +3793,6 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
-        }
-        Relationships: []
-      }
-      user_settings: {
-        Row: {
-          updated_at: string
-          user_id: string
-          whatsapp_enabled: boolean
-          whatsapp_number: string | null
-        }
-        Insert: {
-          updated_at?: string
-          user_id: string
-          whatsapp_enabled?: boolean
-          whatsapp_number?: string | null
-        }
-        Update: {
-          updated_at?: string
-          user_id?: string
-          whatsapp_enabled?: boolean
-          whatsapp_number?: string | null
         }
         Relationships: []
       }
@@ -4418,6 +4140,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["admin", "member"],
