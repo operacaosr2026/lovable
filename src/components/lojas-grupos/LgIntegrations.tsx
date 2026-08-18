@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   syncShopifyOrders, syncShopifyPayouts, recomputeRange, getOrderSettings,
 } from "@/lib/shop-orders.functions";
-import { getMetaAdsIntegration, getMetaToken } from "@/lib/meta-ads.functions";
+import { getConnectedMetaAdAccounts, getMetaToken } from "@/lib/meta-ads.functions";
 import { MetaAdsIntegrationDialog } from "@/components/shops/MetaAdsIntegration";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,16 +98,16 @@ function SyncAllSection({ shops }: { shops: ShopStub[] }) {
 function MetaAdsSection({
   cardId, card, shops,
 }: { cardId: string; card: any; shops: ShopStub[] }) {
-  const getMetaAdsFn   = useServerFn(getMetaAdsIntegration);
+  const getAccountsFn  = useServerFn(getConnectedMetaAdAccounts);
   const getMetaTokenFn = useServerFn(getMetaToken);
   const [openDialog, setOpenDialog] = useState(false);
 
   const matrizShopId = card?.matriz_shop_id as string | null;
   const matrizShop   = shops.find((s) => s.id === matrizShopId);
 
-  const metaAds = useQuery({
-    queryKey: ["meta-ads-integration", matrizShopId],
-    queryFn:  () => getMetaAdsFn({ data: { shop_id: matrizShopId! } }),
+  const accountsQuery = useQuery({
+    queryKey: ["meta-ad-accounts", matrizShopId],
+    queryFn:  () => getAccountsFn({ data: { shop_id: matrizShopId! } }),
     enabled:  Boolean(matrizShopId),
   });
   const metaToken = useQuery({
@@ -116,9 +116,10 @@ function MetaAdsSection({
     enabled:  Boolean(matrizShopId),
   });
 
-  const connected   = Boolean(metaToken.data?.connected || metaAds.data?.configured);
+  const accounts    = accountsQuery.data?.accounts ?? [];
+  const connected   = Boolean(metaToken.data?.connected) && accounts.length > 0;
   const statusLabel = connected
-    ? (metaToken.data?.fb_user_name || (metaAds.data as any)?.account_name || "Conectado")
+    ? (accounts.length === 1 ? (accounts[0].account_name ?? "Conectado") : `${accounts.length} contas conectadas`)
     : "Não conectado";
 
   return (

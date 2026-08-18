@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  createMetaOAuthUrl, getMetaToken, selectMetaAdAccount, disconnectMeta,
+  createMetaOAuthUrl, getMetaToken, getConnectedMetaAdAccounts,
+  connectMetaAdAccount, disconnectMetaAdAccount, disconnectMeta,
   getMetaCampaigns, saveMetaCampaigns, syncMetaAdsSpend, syncMetaAdsActivities,
 } from "@/lib/meta-ads.functions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, AlertCircle, Megaphone, RefreshCw, Copy, Check, LogOut } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Megaphone, RefreshCw, Copy, Check, LogOut, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -18,15 +19,20 @@ export function MetaAdsIntegrationDialog({
   const qc = useQueryClient();
   const createUrlFn      = useServerFn(createMetaOAuthUrl);
   const getTokenFn       = useServerFn(getMetaToken);
-  const selectAccountFn  = useServerFn(selectMetaAdAccount);
+  const getAccountsFn    = useServerFn(getConnectedMetaAdAccounts);
+  const connectAccountFn = useServerFn(connectMetaAdAccount);
+  const disconnectAcctFn = useServerFn(disconnectMetaAdAccount);
   const disconnectFn     = useServerFn(disconnectMeta);
   const syncSpendFn      = useServerFn(syncMetaAdsSpend);
   const syncActivitiesFn = useServerFn(syncMetaAdsActivities);
+  const getCampaignsFn   = useServerFn(getMetaCampaigns);
+  const saveCampaignsFn  = useServerFn(saveMetaCampaigns);
 
-  const [authUrl, setAuthUrl]         = useState<string | null>(null);
-  const [copied, setCopied]           = useState(false);
-  const [showCampaigns, setShowCampaigns] = useState(false);
-  const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set());
+  const [authUrl, setAuthUrl]             = useState<string | null>(null);
+  const [copied, setCopied]               = useState(false);
+  const [showPicker, setShowPicker]       = useState(false);
+  const [campaignsAccountId, setCampaignsAccountId] = useState<string | null>(null);
+  const [selectedCampaigns, setSelectedCampaigns]   = useState<Set<string>>(new Set());
 
   const token = useQuery({
     queryKey: ["meta-token", shopId],
@@ -34,7 +40,18 @@ export function MetaAdsIntegrationDialog({
   });
   const d = token.data;
   const connected = Boolean(d?.connected);
-  const hasAccount = Boolean(d?.selected_ad_account_id);
+
+  const accountsQuery = useQuery({
+    queryKey: ["meta-ad-accounts", shopId],
+    queryFn:  () => getAccountsFn({ data: { shop_id: shopId } }),
+    enabled:  connected,
+  });
+  const connectedAccounts = accountsQuery.data?.accounts ?? [];
+  const connectedIds = new Set(connectedAccounts.map((a) => a.ad_account_id));
+  const availableAccounts = ((d?.ad_accounts ?? []) as any[]).filter((acc) => {
+    const normalizedId = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id}`;
+    return !connectedIds.has(normalizedId) && !connectedIds.has(acc.id);
+  });
 
   const generateUrl = useMutation({
     mutationFn: () => createUrlFn({ data: { shop_id: shopId } }),
@@ -51,35 +68,44 @@ export function MetaAdsIntegrationDialog({
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["meta-token", shopId] });
-    qc.invalidateQueries({ queryKey: ["meta-ads-integration", shopId] });
+    qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
   };
 
-  const getCampaignsFn = useServerFn(getMetaCampaigns);
-  const saveCampaignsFn = useServerFn(saveMetaCampaigns);
-
   const campaigns = useQuery({
-    queryKey: ["meta-campaigns", shopId],
-    queryFn: () => getCampaignsFn({ data: { shop_id: shopId } }),
-    enabled: connected && hasAccount,
+    queryKey: ["meta-campaigns", shopId, campaignsAccountId],
+    queryFn: () => getCampaignsFn({ data: { shop_id: shopId, ad_account_id: campaignsAccountId! } }),
+    enabled: Boolean(campaignsAccountId),
   });
 
-  const selectAccount = useMutation({
-    mutationFn: (id: string) => selectAccountFn({ data: { shop_id: shopId, ad_account_id: id } }),
+  const connectAccount = useMutation({
+    mutationFn: (adAccountId: string) => connectAccountFn({ data: { shop_id: shopId, ad_account_id: adAccountId } }),
+    onSuccess: (_res, adAccountId) => {
+      toast.success("Conta de anúncios conectada");
+      qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
+      setShowPicker(false);
+      setCampaignsAccountId(adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`);
+      setSelectedCampaigns(new Set());
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const disconnectAccount = useMutation({
+    mutationFn: (adAccountId: string) => disconnectAcctFn({ data: { shop_id: shopId, ad_account_id: adAccountId } }),
     onSuccess: () => {
-      toast.success("Conta de anúncios selecionada");
-      qc.invalidateQueries({ queryKey: ["meta-token", shopId] });
-      qc.invalidateQueries({ queryKey: ["meta-ads-integration", shopId] });
-      setShowCampaigns(true);
+      toast.success("Conta desconectada");
+      qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
 
   const saveCampaigns = useMutation({
-    mutationFn: () => saveCampaignsFn({ data: { shop_id: shopId, campaign_ids: Array.from(selectedCampaigns) } }),
+    mutationFn: () => saveCampaignsFn({
+      data: { shop_id: shopId, ad_account_id: campaignsAccountId!, campaign_ids: Array.from(selectedCampaigns) },
+    }),
     onSuccess: () => {
       toast.success(selectedCampaigns.size > 0 ? `${selectedCampaigns.size} campanhas selecionadas` : "Sincronizando conta inteira");
-      setShowCampaigns(false);
-      qc.invalidateQueries({ queryKey: ["meta-token", shopId] });
+      setCampaignsAccountId(null);
+      qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -103,6 +129,7 @@ export function MetaAdsIntegrationDialog({
     onSuccess: ({ spend, activities }) => {
       toast.success(`${spend.synced} dias sincronizados · ${activities.synced} alterações no Diário`);
       qc.invalidateQueries({ queryKey: ["shop-cash"] });
+      qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -113,10 +140,15 @@ export function MetaAdsIntegrationDialog({
       toast.success("Conta desconectada");
       setAuthUrl(null);
       qc.invalidateQueries({ queryKey: ["meta-token", shopId] });
-      qc.invalidateQueries({ queryKey: ["meta-ads-integration", shopId] });
+      qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const openCampaignsFor = (adAccountId: string, existingIds: string[]) => {
+    setCampaignsAccountId(adAccountId);
+    setSelectedCampaigns(new Set(existingIds));
+  };
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -182,37 +214,11 @@ export function MetaAdsIntegrationDialog({
             </div>
           )}
 
-          {/* ── Conectado, sem conta selecionada ── */}
-          {connected && !hasAccount && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Selecione qual conta de anúncios rastrear nesta loja:</p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {((d?.ad_accounts ?? []) as any[]).length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Nenhuma conta de anúncios encontrada neste perfil.</p>
-                )}
-                {((d?.ad_accounts ?? []) as any[]).map((acc: any) => (
-                  <button
-                    key={acc.id}
-                    onClick={() => selectAccount.mutate(acc.id)}
-                    disabled={selectAccount.isPending}
-                    className="w-full flex items-center justify-between rounded-xl border border-border hover:border-primary/40 px-4 py-3 text-left transition-all"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{acc.name}</p>
-                      <p className="text-xs text-muted-foreground">{acc.account_id} · {acc.currency}</p>
-                    </div>
-                    {selectAccount.isPending && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* ── Seleção de campanhas ── */}
-          {connected && hasAccount && showCampaigns && (
+          {connected && campaignsAccountId && (
             <div className="space-y-3">
               <div>
-                <p className="text-sm font-medium">Selecione as campanhas desta loja</p>
+                <p className="text-sm font-medium">Selecione as campanhas desta conta</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Deixe tudo desmarcado para sincronizar a conta inteira.</p>
               </div>
               {campaigns.isLoading && <div className="flex justify-center py-4"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}
@@ -246,65 +252,93 @@ export function MetaAdsIntegrationDialog({
                   {saveCampaigns.isPending && <Loader2 className="size-4 animate-spin" />}
                   {selectedCampaigns.size > 0 ? `Salvar ${selectedCampaigns.size} campanhas` : "Usar conta inteira"}
                 </Button>
-                <Button variant="outline" onClick={() => setShowCampaigns(false)}>Cancelar</Button>
+                <Button variant="outline" onClick={() => setCampaignsAccountId(null)}>Cancelar</Button>
               </div>
             </div>
           )}
 
-          {/* ── Conectado com conta selecionada ── */}
-          {connected && hasAccount && !showCampaigns && (
+          {/* ── Seletor de contas para adicionar ── */}
+          {connected && showPicker && !campaignsAccountId && (
             <div className="space-y-3">
-              <div className="rounded-xl border border-border p-4 space-y-1">
-                <p className="text-xs text-muted-foreground">Conta ativa</p>
-                <p className="font-medium text-sm">
-                  {((d?.ad_accounts ?? []) as any[]).find((a: any) =>
-                    a.id === d?.selected_ad_account_id ||
-                    `act_${a.account_id}` === d?.selected_ad_account_id
-                  )?.name ?? d?.selected_ad_account_id}
-                </p>
-                <p className="text-xs text-muted-foreground">Perfil: {d?.fb_user_name}</p>
-              </div>
-
-              {/* Campanhas selecionadas */}
-              {(() => {
-                const ids: string[] = d?.selected_campaign_ids ?? [];
-                const allCampaigns = campaigns.data?.campaigns ?? [];
-                if (ids.length === 0) {
-                  return (
-                    <p className="text-xs text-muted-foreground px-1">
-                      Campanhas: <span className="text-foreground font-medium">conta inteira</span>
-                    </p>
-                  );
-                }
-                const names = ids
-                  .map(id => allCampaigns.find(c => c.id === id)?.name ?? id)
-                  .filter(Boolean);
-                return (
-                  <div className="space-y-1 px-1">
-                    <p className="text-xs text-muted-foreground">Campanhas ({ids.length}):</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {names.map((name, i) => (
-                        <span key={i} className="inline-flex items-center rounded-lg bg-primary/8 text-primary text-[11px] font-medium px-2 py-0.5 border border-primary/15">
-                          {name}
-                        </span>
-                      ))}
+              <p className="text-sm text-muted-foreground">Selecione uma conta de anúncios para conectar:</p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {availableAccounts.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">Todas as contas do perfil já estão conectadas.</p>
+                )}
+                {availableAccounts.map((acc: any) => (
+                  <button
+                    key={acc.id}
+                    onClick={() => connectAccount.mutate(acc.id)}
+                    disabled={connectAccount.isPending}
+                    className="w-full flex items-center justify-between rounded-xl border border-border hover:border-primary/40 px-4 py-3 text-left transition-all"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{acc.name}</p>
+                      <p className="text-xs text-muted-foreground">{acc.account_id} · {acc.currency}</p>
                     </div>
+                    {connectAccount.isPending && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+                  </button>
+                ))}
+              </div>
+              <Button variant="outline" className="w-full" onClick={() => setShowPicker(false)}>Cancelar</Button>
+            </div>
+          )}
+
+          {/* ── Contas conectadas ── */}
+          {connected && !showPicker && !campaignsAccountId && (
+            <div className="space-y-3">
+              {connectedAccounts.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhuma conta de anúncios conectada ainda.</p>
+              )}
+
+              {connectedAccounts.map((acc) => {
+                const ids = (acc.selected_campaign_ids ?? []) as string[];
+                return (
+                  <div key={acc.ad_account_id} className="rounded-xl border border-border p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium text-sm">{acc.account_name ?? acc.ad_account_id}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {ids.length > 0 ? `${ids.length} campanhas selecionadas` : "Conta inteira"}
+                        </p>
+                        {acc.last_sync_status === "error" && (
+                          <p className="text-xs text-destructive mt-1">{acc.last_sync_error}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => disconnectAccount.mutate(acc.ad_account_id)}
+                        disabled={disconnectAccount.isPending}
+                        title="Desconectar esta conta"
+                        className="size-6 rounded-lg grid place-items-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                    <Button
+                      size="sm" variant="outline"
+                      onClick={() => openCampaignsFor(acc.ad_account_id, ids)}
+                    >
+                      Campanhas
+                    </Button>
                   </div>
                 );
-              })()}
+              })}
 
-              <div className="flex gap-2 flex-wrap">
-                <Button className="flex-1" onClick={() => sync.mutate()} disabled={sync.isPending}>
-                  {sync.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  Sincronizar gastos
-                </Button>
-                <Button variant="outline" onClick={() => { setShowCampaigns(true); setSelectedCampaigns(new Set()); }}>
-                  Campanhas
-                </Button>
-                <Button variant="outline" onClick={() => disconnect.mutate()} disabled={disconnect.isPending}>
-                  {disconnect.isPending ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
-                </Button>
-              </div>
+              <Button variant="outline" className="w-full gap-2" onClick={() => setShowPicker(true)}>
+                <Plus className="size-4" /> Adicionar conta
+              </Button>
+
+              {connectedAccounts.length > 0 && (
+                <div className="flex gap-2 flex-wrap pt-1">
+                  <Button className="flex-1" onClick={() => sync.mutate()} disabled={sync.isPending}>
+                    {sync.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                    Sincronizar gastos
+                  </Button>
+                  <Button variant="outline" onClick={() => disconnect.mutate()} disabled={disconnect.isPending}>
+                    {disconnect.isPending ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

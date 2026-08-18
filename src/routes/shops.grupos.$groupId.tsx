@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getGroup } from "@/lib/shop-groups.functions";
-import { getMetaAdsIntegration, getMetaToken } from "@/lib/meta-ads.functions";
+import { getConnectedMetaAdAccounts, getMetaToken } from "@/lib/meta-ads.functions";
 import { MetaAdsIntegrationDialog } from "@/components/shops/MetaAdsIntegration";
 import { ShopDashboard } from "@/components/shops/ShopDashboard";
 import { ShopProfitGoal } from "@/components/shops/ShopProfitGoal";
@@ -208,12 +208,12 @@ function GroupDetail() {
 }
 
 function GroupMetaAdsSection({ shopId, metaConnected }: { shopId: string; metaConnected?: true }) {
-  const getMetaAdsFn = useServerFn(getMetaAdsIntegration);
+  const getAccountsFn = useServerFn(getConnectedMetaAdAccounts);
   const getMetaTokenFn = useServerFn(getMetaToken);
 
-  const metaAds = useQuery({
-    queryKey: ["meta-ads-integration", shopId],
-    queryFn: () => getMetaAdsFn({ data: { shop_id: shopId } }),
+  const accountsQuery = useQuery({
+    queryKey: ["meta-ad-accounts", shopId],
+    queryFn: () => getAccountsFn({ data: { shop_id: shopId } }),
   });
   const metaToken = useQuery({
     queryKey: ["meta-token", shopId],
@@ -229,9 +229,10 @@ function GroupMetaAdsSection({ shopId, metaConnected }: { shopId: string; metaCo
     }
   }, [metaConnected]);
 
-  const connected = Boolean(metaToken.data?.connected || metaAds.data?.configured);
+  const accounts = accountsQuery.data?.accounts ?? [];
+  const connected = Boolean(metaToken.data?.connected) && accounts.length > 0;
   const statusLabel = connected
-    ? (metaToken.data?.fb_user_name || metaAds.data?.account_name || "Conectado")
+    ? (accounts.length === 1 ? (accounts[0].account_name ?? "Conectado") : `${accounts.length} contas conectadas`)
     : "Não conectado";
 
   return (

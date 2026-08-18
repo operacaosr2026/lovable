@@ -1764,9 +1764,61 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_meta_ad_accounts: {
+        Row: {
+          account_name: string | null
+          ad_account_id: string
+          created_at: string | null
+          currency: string | null
+          enabled: boolean
+          id: string
+          last_activities_sync_at: string | null
+          last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_status: string | null
+          selected_campaign_ids: Json | null
+          shop_id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_name?: string | null
+          ad_account_id: string
+          created_at?: string | null
+          currency?: string | null
+          enabled?: boolean
+          id?: string
+          last_activities_sync_at?: string | null
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          selected_campaign_ids?: Json | null
+          shop_id: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_name?: string | null
+          ad_account_id?: string
+          created_at?: string | null
+          currency?: string | null
+          enabled?: boolean
+          id?: string
+          last_activities_sync_at?: string | null
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          selected_campaign_ids?: Json | null
+          shop_id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       shop_meta_tokens: {
         Row: {
           access_token: string
+          activities_journal_page_id: string | null
           ad_accounts: Json | null
           created_at: string | null
           fb_user_id: string | null
@@ -1781,6 +1833,7 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          activities_journal_page_id?: string | null
           ad_accounts?: Json | null
           created_at?: string | null
           fb_user_id?: string | null
@@ -1795,6 +1848,7 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          activities_journal_page_id?: string | null
           ad_accounts?: Json | null
           created_at?: string | null
           fb_user_id?: string | null

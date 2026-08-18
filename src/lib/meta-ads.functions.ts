@@ -61,7 +61,22 @@ export const getMetaToken = createServerFn({ method: "GET" })
     };
   });
 
-export const selectMetaAdAccount = createServerFn({ method: "POST" })
+export const getConnectedMetaAdAccounts = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+    const { data: rows } = await supabaseAdmin
+      .from("shop_meta_ad_accounts")
+      .select("ad_account_id, account_name, currency, enabled, selected_campaign_ids, last_sync_at, last_sync_status, last_sync_error")
+      .eq("user_id", ownerId)
+      .eq("shop_id", data.shop_id)
+      .order("created_at", { ascending: true });
+
+    return { accounts: rows ?? [] };
+  });
+
+export const connectMetaAdAccount = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string; ad_account_id: string }) =>
     z.object({ shop_id: z.string().uuid(), ad_account_id: z.string().min(1) }).parse(d)
@@ -69,10 +84,9 @@ export const selectMetaAdAccount = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
-    // Fetch full token row to get access_token for sync functions
     const { data: tokenRow } = await supabaseAdmin
       .from("shop_meta_tokens")
-      .select("access_token")
+      .select("ad_accounts")
       .eq("user_id", ownerId)
       .eq("shop_id", data.shop_id)
       .maybeSingle();
@@ -83,79 +97,92 @@ export const selectMetaAdAccount = createServerFn({ method: "POST" })
       ? data.ad_account_id
       : `act_${data.ad_account_id}`;
 
-    // Save selection to OAuth token table
-    await supabaseAdmin
-      .from("shop_meta_tokens")
-      .update({ selected_ad_account_id: adAccountId, updated_at: new Date().toISOString() })
-      .eq("user_id", ownerId)
-      .eq("shop_id", data.shop_id);
+    const profileAccounts = (tokenRow.ad_accounts ?? []) as any[];
+    const match = profileAccounts.find(
+      (a) => a.id === adAccountId || `act_${a.account_id}` === adAccountId
+    );
 
-    // Also sync to meta_ads_integrations so existing sync functions work
-    const { data: existing } = await supabaseAdmin
-      .from("meta_ads_integrations")
-      .select("id")
+    const { error } = await supabaseAdmin
+      .from("shop_meta_ad_accounts")
+      .upsert(
+        {
+          user_id: ownerId,
+          shop_id: data.shop_id,
+          ad_account_id: adAccountId,
+          account_name: match?.name ?? null,
+          currency: match?.currency ?? null,
+          enabled: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "shop_id,ad_account_id" }
+      );
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
+export const disconnectMetaAdAccount = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string; ad_account_id: string }) =>
+    z.object({ shop_id: z.string().uuid(), ad_account_id: z.string().min(1) }).parse(d)
+  )
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+    await supabaseAdmin
+      .from("shop_meta_ad_accounts")
+      .delete()
       .eq("user_id", ownerId)
       .eq("shop_id", data.shop_id)
-      .maybeSingle();
-
-    if (existing) {
-      await supabaseAdmin
-        .from("meta_ads_integrations")
-        .update({ access_token: tokenRow.access_token, ad_account_id: adAccountId, enabled: true })
-        .eq("id", existing.id);
-    } else {
-      await supabaseAdmin
-        .from("meta_ads_integrations")
-        .insert({ user_id: ownerId, shop_id: data.shop_id, access_token: tokenRow.access_token, ad_account_id: adAccountId, enabled: true });
-    }
-
+      .eq("ad_account_id", data.ad_account_id);
     return { ok: true };
   });
 
 export const getMetaCampaigns = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { shop_id: string; ad_account_id: string }) =>
+    z.object({ shop_id: z.string().uuid(), ad_account_id: z.string().min(1) }).parse(d)
+  )
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
-    const { data: row } = await supabaseAdmin
-      .from("shop_meta_tokens")
-      .select("access_token, selected_ad_account_id, selected_campaign_ids")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    const [{ data: tokenRow }, { data: accountRow }] = await Promise.all([
+      supabaseAdmin.from("shop_meta_tokens").select("access_token")
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle(),
+      supabaseAdmin.from("shop_meta_ad_accounts").select("selected_campaign_ids")
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", data.ad_account_id).maybeSingle(),
+    ]);
 
-    if (!row?.access_token || !row.selected_ad_account_id)
-      throw new Error("Conta de anúncios não selecionada");
+    if (!tokenRow?.access_token) throw new Error("Conta Meta não conectada");
 
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${row.selected_ad_account_id}/campaigns` +
-      `?fields=id,name,status,objective&limit=100&access_token=${row.access_token}`
+      `https://graph.facebook.com/v19.0/${data.ad_account_id}/campaigns` +
+      `?fields=id,name,status,objective&limit=100&access_token=${tokenRow.access_token}`
     );
     const json = await res.json();
     if (json.error) throw new Error(json.error.message);
 
     return {
       campaigns: (json.data ?? []) as { id: string; name: string; status: string; objective: string }[],
-      selected_ids: (row.selected_campaign_ids ?? []) as string[],
+      selected_ids: (accountRow?.selected_campaign_ids ?? []) as string[],
     };
   });
 
 export const saveMetaCampaigns = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d: { shop_id: string; campaign_ids: string[] }) =>
-    z.object({ shop_id: z.string().uuid(), campaign_ids: z.array(z.string()) }).parse(d)
+  .inputValidator((d: { shop_id: string; ad_account_id: string; campaign_ids: string[] }) =>
+    z.object({
+      shop_id: z.string().uuid(),
+      ad_account_id: z.string().min(1),
+      campaign_ids: z.array(z.string()),
+    }).parse(d)
   )
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
-    const { data: row } = await supabaseAdmin
-      .from("shop_meta_tokens")
-      .select("access_token")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!row) throw new Error("Conta Meta não conectada");
-
-    await supabaseAdmin
-      .from("shop_meta_tokens")
+    const { error } = await supabaseAdmin
+      .from("shop_meta_ad_accounts")
       .update({ selected_campaign_ids: data.campaign_ids, updated_at: new Date().toISOString() })
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id);
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", data.ad_account_id);
+    if (error) throw new Error(error.message);
 
     return { ok: true };
   });
@@ -167,6 +194,7 @@ export const disconnectMeta = createServerFn({ method: "POST" })
     const { ownerId } = context;
     await Promise.all([
       supabaseAdmin.from("shop_meta_tokens").delete().eq("user_id", ownerId).eq("shop_id", data.shop_id),
+      supabaseAdmin.from("shop_meta_ad_accounts").delete().eq("user_id", ownerId).eq("shop_id", data.shop_id),
       supabaseAdmin.from("meta_ads_integrations").delete().eq("user_id", ownerId).eq("shop_id", data.shop_id),
     ]);
     return { ok: true };
@@ -315,9 +343,15 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
-    const { data: integ } = await supabaseAdmin.from("meta_ads_integrations")
-      .select("access_token,ad_account_id").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!integ?.access_token || !integ.ad_account_id) throw new Error("Integração não configurada");
+    const { data: tokenRow } = await supabaseAdmin.from("shop_meta_tokens")
+      .select("access_token").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    if (!tokenRow?.access_token) throw new Error("Integração não configurada");
+    const accessToken = tokenRow.access_token;
+
+    const { data: accounts } = await supabaseAdmin.from("shop_meta_ad_accounts")
+      .select("ad_account_id, selected_campaign_ids")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("enabled", true);
+    if (!accounts || accounts.length === 0) throw new Error("Nenhuma conta de anúncios conectada");
 
     let since: string;
     let today: string;
@@ -328,11 +362,11 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       today = data.to_date;
     } else {
       const sinceDays = data.since_days ?? 30;
-      // Fetch ad account timezone to compute "today" in the account's local time
+      // Fetch first ad account's timezone to compute "today" in local time
       let timezoneOffset = 0;
       try {
         const tzRes = await fetch(
-          `${META_GRAPH_API_BASE}/${integ.ad_account_id}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(integ.access_token)}`
+          `${META_GRAPH_API_BASE}/${accounts[0].ad_account_id}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(accessToken)}`
         );
         const tzJson: any = await tzRes.json();
         if (typeof tzJson?.timezone_offset_hours_utc === "number") {
@@ -345,87 +379,95 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       since = addDays(today, -sinceDays);
     }
 
-    // Check if specific campaigns are selected for this shop
-    const { data: tokenRow } = await supabaseAdmin
-      .from("shop_meta_tokens")
-      .select("selected_campaign_ids")
-      .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    const campaignIds: string[] = tokenRow?.selected_campaign_ids ?? [];
+    const timeRange = encodeURIComponent(JSON.stringify({ since, until: today }));
+    const spendByDate = new Map<string, number>();
+    const errors: string[] = [];
 
-    try {
-      const timeRange = encodeURIComponent(JSON.stringify({ since, until: today }));
+    for (const account of accounts) {
+      const campaignIds = (account.selected_campaign_ids ?? []) as string[];
       const filtering = campaignIds.length > 0
         ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }]))}`
         : "";
-      const url = `${META_GRAPH_API_BASE}/${integ.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&access_token=${encodeURIComponent(integ.access_token)}`;
-      const r = await fetch(url);
-      const json: any = await r.json();
-      if (!r.ok || json.error) {
-        const msg = json?.error?.message || `Falha (${r.status})`;
-        await supabaseAdmin.from("meta_ads_integrations")
-          .update({ last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: String(msg).slice(0, 500) })
-          .eq("user_id", ownerId).eq("shop_id", data.shop_id);
-        throw new Error(msg);
+      const url = `${META_GRAPH_API_BASE}/${account.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&access_token=${encodeURIComponent(accessToken)}`;
+
+      try {
+        const r = await fetch(url);
+        const json: any = await r.json();
+        if (!r.ok || json.error) {
+          const msg = json?.error?.message || `Falha (${r.status})`;
+          errors.push(`${account.ad_account_id}: ${msg}`);
+          await supabaseAdmin.from("shop_meta_ad_accounts")
+            .update({ last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: String(msg).slice(0, 500) })
+            .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", account.ad_account_id);
+          continue;
+        }
+
+        for (const d of (json.data ?? []) as any[]) {
+          const date = d.date_start as string;
+          const spend = Number(d.spend ?? 0);
+          if (!date) continue;
+          spendByDate.set(date, (spendByDate.get(date) ?? 0) + spend);
+        }
+
+        await supabaseAdmin.from("shop_meta_ad_accounts")
+          .update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null })
+          .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", account.ad_account_id);
+      } catch (e: any) {
+        const msg = String(e?.message ?? e);
+        errors.push(`${account.ad_account_id}: ${msg}`);
+        await supabaseAdmin.from("shop_meta_ad_accounts")
+          .update({ last_sync_status: "error", last_sync_error: msg.slice(0, 500) })
+          .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", account.ad_account_id);
       }
-
-      const rows = ((json.data ?? []) as any[])
-        .map((d) => ({ date: d.date_start as string, spend: Number(d.spend ?? 0) }))
-        .filter((d) => d.date)
-        .map((d) => ({
-          user_id: ownerId,
-          shop_id: data.shop_id,
-          kind: "expense",
-          amount: d.spend,
-          date: d.date,
-          category: SPEND_CATEGORY,
-          description: "Gasto Meta Ads (sincronizado)",
-          source: "auto",
-          auto_kind: "meta_ads_spend",
-          auto_ref_date: d.date,
-        }));
-
-      // Only delete dates the API actually returned — preserves existing entries for dates
-      // not in the response (e.g. today's data not yet available in Meta's pipeline).
-      const rowDates = [...new Set(rows.map((r) => r.date))];
-      if (rowDates.length > 0) {
-        await supabaseAdmin.from("shop_cash_entries")
-          .delete()
-          .eq("user_id", ownerId)
-          .eq("shop_id", data.shop_id)
-          .eq("category", SPEND_CATEGORY)
-          .eq("source", "auto")
-          .in("date", rowDates);
-
-        const { error } = await supabaseAdmin.from("shop_cash_entries").insert(rows);
-        if (error) throw new Error(error.message);
-      }
-
-      const totalSpend = rows.reduce((s, r) => s + r.amount, 0);
-
-      await supabaseAdmin.from("meta_ads_integrations")
-        .update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null })
-        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
-
-      return { synced: rows.length, totalSpend };
-    } catch (e: any) {
-      await supabaseAdmin.from("meta_ads_integrations")
-        .update({ last_sync_status: "error", last_sync_error: String(e?.message ?? e).slice(0, 500) })
-        .eq("user_id", ownerId).eq("shop_id", data.shop_id);
-      throw e;
     }
+
+    const rows = [...spendByDate.entries()].map(([date, spend]) => ({
+      user_id: ownerId,
+      shop_id: data.shop_id,
+      kind: "expense",
+      amount: spend,
+      date,
+      category: SPEND_CATEGORY,
+      description: "Gasto Meta Ads (sincronizado)",
+      source: "auto",
+      auto_kind: "meta_ads_spend",
+      auto_ref_date: date,
+    }));
+
+    // Only delete dates the API actually returned — preserves existing entries for dates
+    // not in the response (e.g. today's data not yet available in Meta's pipeline).
+    const rowDates = [...spendByDate.keys()];
+    if (rowDates.length > 0) {
+      await supabaseAdmin.from("shop_cash_entries")
+        .delete()
+        .eq("user_id", ownerId)
+        .eq("shop_id", data.shop_id)
+        .eq("category", SPEND_CATEGORY)
+        .eq("source", "auto")
+        .in("date", rowDates);
+
+      const { error } = await supabaseAdmin.from("shop_cash_entries").insert(rows);
+      if (error) throw new Error(error.message);
+    }
+
+    if (errors.length === accounts.length) throw new Error(errors.join("; "));
+
+    const totalSpend = rows.reduce((s, r) => s + r.amount, 0);
+    return { synced: rows.length, totalSpend, errors };
   });
 
 // ===== Activities (change log) -> Diário =====
 
 const ACTIVITIES_PAGE_TITLE = "Alterações Meta Ads";
 
-function formatActivity(a: any): string {
+function formatActivity(a: any, accountLabel?: string | null): string {
   const date = new Date((a.event_time ?? 0) * 1000).toLocaleString("pt-BR", {
     dateStyle: "short", timeStyle: "short",
   });
   const label = a.translated_event_type || a.event_type || "Alteração";
   const who = a.actor_name ? ` por ${a.actor_name}` : "";
   const what = a.object_name ? ` · ${a.object_name}` : "";
+  const account = accountLabel ? ` [${accountLabel}]` : "";
 
   let detail = "";
   if (a.extra_data) {
@@ -443,7 +485,7 @@ function formatActivity(a: any): string {
     }
   }
 
-  return `${date} — ${label}${what}${who}${detail}`;
+  return `${date}${account} — ${label}${what}${who}${detail}`;
 }
 
 export const syncMetaAdsActivities = createServerFn({ method: "POST" })
@@ -451,28 +493,41 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
-    const { data: integ } = await supabaseAdmin.from("meta_ads_integrations")
-      .select("access_token,ad_account_id,journal_page_id,last_activities_sync_at")
+    const { data: tokenRow } = await supabaseAdmin.from("shop_meta_tokens")
+      .select("access_token,activities_journal_page_id")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    if (!integ?.access_token || !integ.ad_account_id) throw new Error("Integração não configurada");
+    if (!tokenRow?.access_token) throw new Error("Integração não configurada");
 
-    const since = integ.last_activities_sync_at
-      ? Math.floor(new Date(integ.last_activities_sync_at).getTime() / 1000)
-      : Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+    const { data: accounts } = await supabaseAdmin.from("shop_meta_ad_accounts")
+      .select("ad_account_id, account_name, last_activities_sync_at")
+      .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("enabled", true);
+    if (!accounts || accounts.length === 0) throw new Error("Nenhuma conta de anúncios conectada");
 
-    const url = `${META_GRAPH_API_BASE}/${integ.ad_account_id}/activities?since=${since}&limit=100&fields=event_time,event_type,translated_event_type,extra_data,actor_name,object_name,object_type&access_token=${encodeURIComponent(integ.access_token)}`;
-    const r = await fetch(url);
-    const json: any = await r.json();
-    if (!r.ok || json.error) {
-      const msg = json?.error?.message || `Falha (${r.status})`;
-      throw new Error(msg);
+    const allActivities: any[] = [];
+    const now = new Date().toISOString();
+
+    for (const account of accounts) {
+      const since = account.last_activities_sync_at
+        ? Math.floor(new Date(account.last_activities_sync_at).getTime() / 1000)
+        : Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+
+      const url = `${META_GRAPH_API_BASE}/${account.ad_account_id}/activities?since=${since}&limit=100&fields=event_time,event_type,translated_event_type,extra_data,actor_name,object_name,object_type&access_token=${encodeURIComponent(tokenRow.access_token)}`;
+      const r = await fetch(url);
+      const json: any = await r.json();
+      if (!r.ok || json.error) continue; // não aborta as demais contas
+
+      for (const a of (json.data ?? []) as any[]) {
+        allActivities.push({ ...a, __accountLabel: account.account_name ?? account.ad_account_id });
+      }
+
+      await supabaseAdmin.from("shop_meta_ad_accounts")
+        .update({ last_activities_sync_at: now })
+        .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", account.ad_account_id);
     }
 
-    const activities = ((json.data ?? []) as any[])
-      .slice()
-      .sort((a, b) => (b.event_time ?? 0) - (a.event_time ?? 0));
+    allActivities.sort((a, b) => (b.event_time ?? 0) - (a.event_time ?? 0));
 
-    let pageId = integ.journal_page_id ?? null;
+    let pageId = tokenRow.activities_journal_page_id ?? null;
     if (pageId) {
       const { data: page } = await supabaseAdmin.from("journal_pages")
         .select("id").eq("id", pageId).maybeSingle();
@@ -497,7 +552,7 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
       pageId = newPage.id;
     }
 
-    if (activities.length > 0) {
+    if (allActivities.length > 0) {
       const { data: page } = await supabaseAdmin.from("journal_pages")
         .select("content").eq("id", pageId).maybeSingle();
 
@@ -509,9 +564,9 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
         blocks = [];
       }
 
-      const newBlocks = activities.map((a) => ({
+      const newBlocks = allActivities.map((a) => ({
         type: "bulletListItem",
-        content: [{ type: "text", text: formatActivity(a), styles: {} }],
+        content: [{ type: "text", text: formatActivity(a, accounts.length > 1 ? a.__accountLabel : null), styles: {} }],
       }));
 
       const { error } = await supabaseAdmin.from("journal_pages")
@@ -520,11 +575,11 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
 
-    await supabaseAdmin.from("meta_ads_integrations")
-      .update({ journal_page_id: pageId, last_activities_sync_at: new Date().toISOString() })
+    await supabaseAdmin.from("shop_meta_tokens")
+      .update({ activities_journal_page_id: pageId })
       .eq("user_id", ownerId).eq("shop_id", data.shop_id);
 
-    return { synced: activities.length, journal_page_id: pageId };
+    return { synced: allActivities.length, journal_page_id: pageId };
   });
 
 // ===== Metrics =====
