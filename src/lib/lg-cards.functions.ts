@@ -296,10 +296,21 @@ export const listAllShopsForPicker = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { ownerId } = context;
 
+    const { data: settings, error: settingsError } = await supabaseAdmin
+      .from("shop_order_settings")
+      .select("shop_id")
+      .eq("user_id", ownerId)
+      .not("shopify_store_id", "is", null);
+    if (settingsError) throw new Error(settingsError.message);
+
+    const connectedShopIds = [...new Set((settings ?? []).map((s) => s.shop_id))];
+    if (connectedShopIds.length === 0) return [];
+
     const { data, error } = await supabaseAdmin
       .from("shops")
       .select("id, name, status, country, tag")
       .eq("user_id", ownerId)
+      .in("id", connectedShopIds)
       .order("name", { ascending: true });
 
     if (error) throw new Error(error.message);
