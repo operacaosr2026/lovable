@@ -65,7 +65,6 @@ const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },
-  { to: "/shops", label: "Ecommerce / Lojas", icon: Store },
   { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
@@ -284,12 +283,11 @@ export function AppLayout() {
 
   const navContent = (onNavigate?: () => void) => {
     const renderItem = (item: NavItem) => {
-      const isShopsRoot = item.to === "/shops";
       const active =
         item.to === "/"
           ? path === "/"
-          : isShopsRoot
-          ? path === "/shops" || (path.startsWith("/shops/") && !path.startsWith("/shops/products") && !path.startsWith("/shops/grupos") && !path.startsWith("/shops/banco-de-lojas"))
+          : item.children
+          ? item.children.some((child) => path.startsWith(child.to))
           : path.startsWith(item.to);
       const Icon = item.icon;
       const sectionOpen = !!item.children && !collapsed[item.to];
@@ -330,15 +328,7 @@ export function AppLayout() {
           {sectionOpen && item.children && (
             <div className="ml-4 pl-3 border-l border-white/10 mb-0.5">
               {item.children.map((child) => {
-                const childActive =
-                  child.to === "/shops"
-                    ? path === "/shops" ||
-                      (path.startsWith("/shops/") &&
-                        !path.startsWith("/shops/products") &&
-                        !path.startsWith("/shops/sops") &&
-                        !path.startsWith("/shops/grupos") &&
-                        !path.startsWith("/shops/banco-de-lojas"))
-                    : path.startsWith(child.to);
+                const childActive = path.startsWith(child.to);
                 const ChildIcon = child.icon;
                 return (
                   <Link

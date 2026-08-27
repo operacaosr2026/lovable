@@ -178,7 +178,7 @@ export function useAppSettings() {
 export const HOME_OPTIONS: { value: string; label: string }[] = [
   { value: "/", label: "Dashboard" },
   { value: "/projects", label: "Projetos" },
-  { value: "/shops", label: "Ecommerce" },
+  { value: "/shops/banco-de-lojas", label: "Ecommerce" },
   { value: "/journal", label: "Diário" },
 ];
 

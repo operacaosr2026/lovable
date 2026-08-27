@@ -22,7 +22,6 @@ import { Route as ShopsProductsRouteImport } from './routes/shops.products'
 import { Route as ShopsLojasGruposRouteImport } from './routes/shops.lojas-grupos'
 import { Route as ShopsGruposRouteImport } from './routes/shops.grupos'
 import { Route as ShopsBancoDeLojasRouteImport } from './routes/shops.banco-de-lojas'
-import { Route as ShopsShopIdRouteImport } from './routes/shops.$shopId'
 import { Route as SettingsSegurancaRouteImport } from './routes/settings.seguranca'
 import { Route as SettingsMembersRouteImport } from './routes/settings.members'
 import { Route as SettingsGeralRouteImport } from './routes/settings.geral'
@@ -107,11 +106,6 @@ const ShopsGruposRoute = ShopsGruposRouteImport.update({
 const ShopsBancoDeLojasRoute = ShopsBancoDeLojasRouteImport.update({
   id: '/banco-de-lojas',
   path: '/banco-de-lojas',
-  getParentRoute: () => ShopsRoute,
-} as any)
-const ShopsShopIdRoute = ShopsShopIdRouteImport.update({
-  id: '/$shopId',
-  path: '/$shopId',
   getParentRoute: () => ShopsRoute,
 } as any)
 const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
@@ -233,7 +227,6 @@ export interface FileRoutesByFullPath {
   '/settings/geral': typeof SettingsGeralRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
-  '/shops/$shopId': typeof ShopsShopIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
@@ -266,7 +259,6 @@ export interface FileRoutesByTo {
   '/settings/geral': typeof SettingsGeralRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
-  '/shops/$shopId': typeof ShopsShopIdRoute
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/shops': typeof ShopsIndexRoute
@@ -299,7 +291,6 @@ export interface FileRoutesById {
   '/settings/geral': typeof SettingsGeralRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
-  '/shops/$shopId': typeof ShopsShopIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
@@ -337,7 +328,6 @@ export interface FileRouteTypes {
     | '/settings/geral'
     | '/settings/members'
     | '/settings/seguranca'
-    | '/shops/$shopId'
     | '/shops/banco-de-lojas'
     | '/shops/grupos'
     | '/shops/lojas-grupos'
@@ -370,7 +360,6 @@ export interface FileRouteTypes {
     | '/settings/geral'
     | '/settings/members'
     | '/settings/seguranca'
-    | '/shops/$shopId'
     | '/projects'
     | '/settings'
     | '/shops'
@@ -402,7 +391,6 @@ export interface FileRouteTypes {
     | '/settings/geral'
     | '/settings/members'
     | '/settings/seguranca'
-    | '/shops/$shopId'
     | '/shops/banco-de-lojas'
     | '/shops/grupos'
     | '/shops/lojas-grupos'
@@ -534,13 +522,6 @@ declare module '@tanstack/react-router' {
       path: '/banco-de-lojas'
       fullPath: '/shops/banco-de-lojas'
       preLoaderRoute: typeof ShopsBancoDeLojasRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/$shopId': {
-      id: '/shops/$shopId'
-      path: '/$shopId'
-      fullPath: '/shops/$shopId'
-      preLoaderRoute: typeof ShopsShopIdRouteImport
       parentRoute: typeof ShopsRoute
     }
     '/settings/seguranca': {
@@ -771,7 +752,6 @@ const ShopsProductsRouteWithChildren = ShopsProductsRoute._addFileChildren(
 )
 
 interface ShopsRouteChildren {
-  ShopsShopIdRoute: typeof ShopsShopIdRoute
   ShopsBancoDeLojasRoute: typeof ShopsBancoDeLojasRouteWithChildren
   ShopsGruposRoute: typeof ShopsGruposRouteWithChildren
   ShopsLojasGruposRoute: typeof ShopsLojasGruposRouteWithChildren
@@ -782,7 +762,6 @@ interface ShopsRouteChildren {
 }
 
 const ShopsRouteChildren: ShopsRouteChildren = {
-  ShopsShopIdRoute: ShopsShopIdRoute,
   ShopsBancoDeLojasRoute: ShopsBancoDeLojasRouteWithChildren,
   ShopsGruposRoute: ShopsGruposRouteWithChildren,
   ShopsLojasGruposRoute: ShopsLojasGruposRouteWithChildren,

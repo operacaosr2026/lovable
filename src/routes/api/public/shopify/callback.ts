@@ -9,7 +9,7 @@ function htmlMessage(title: string, message: string, ok: boolean) {
 .card{background:#171719;padding:32px 40px;border-radius:12px;max-width:440px;text-align:center;border:1px solid #2a2a2e}
 h1{margin:0 0 8px;font-size:18px;color:${ok ? "#22c55e" : "#ef4444"}}p{margin:0;color:#a1a1aa;font-size:14px}</style>
 </head><body><div class="card"><h1>${title}</h1><p>${message}</p>
-<script>setTimeout(()=>{try{window.opener&&window.opener.postMessage({type:"shopify-oauth",ok:${ok}},window.location.origin)}catch(e){}window.close();window.location.href="/shops"},1500)</script>
+<script>setTimeout(()=>{try{window.opener&&window.opener.postMessage({type:"shopify-oauth",ok:${ok}},window.location.origin)}catch(e){}window.close();window.location.href="/shops/banco-de-lojas"},1500)</script>
 </div></body></html>`,
     { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } },
   );
