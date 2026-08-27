@@ -3,11 +3,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, ShoppingBag, ExternalLink, Pencil, X, List, Layers } from "lucide-react";
-import { listShopifyStores, renameShopifyStore } from "@/lib/shop-orders.functions";
+import { Plus, ShoppingBag, ExternalLink, Pencil, Trash2, X, List, Layers } from "lucide-react";
+import { listShopifyStores, renameShopifyStore, deleteShopifyStore } from "@/lib/shop-orders.functions";
 import { ConnectStoreDialog } from "@/components/shops/ShopIntegrations";
 import { StoreBoard } from "@/components/shops/StoreBoard";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type ViewMode = "esteira" | "lista";
 
@@ -22,7 +23,9 @@ function BancoDeLojasIndex() {
   const { view } = Route.useSearch();
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const listFn = useServerFn(listShopifyStores);
+  const deleteFn = useServerFn(deleteShopifyStore);
   const [openConnect, setOpenConnect] = useState(false);
   const [editing, setEditing] = useState<any>(null);
 
@@ -30,6 +33,17 @@ function BancoDeLojasIndex() {
     queryKey: ["shopify-stores"],
     queryFn: () => listFn(),
   });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["shopify-stores"] }),
+  });
+
+  const handleDelete = (store: any) => {
+    confirm(`Excluir "${store.name || store.shop_domain}"? Isso remove a loja do banco de lojas.`).then((ok) => {
+      if (ok) remove.mutate(store.id);
+    });
+  };
 
   return (
     <PageShell>
@@ -83,6 +97,7 @@ function BancoDeLojasIndex() {
               key={store.id}
               store={store}
               onEdit={() => setEditing(store)}
+              onDelete={() => handleDelete(store)}
             />
           ))}
         </div>
@@ -95,6 +110,10 @@ function BancoDeLojasIndex() {
           onRenamed={() => {
             qc.invalidateQueries({ queryKey: ["shopify-stores"] });
             setEditing(null);
+          }}
+          onDelete={() => {
+            setEditing(null);
+            handleDelete(editing);
           }}
         />
       )}
@@ -113,7 +132,7 @@ function BancoDeLojasIndex() {
   );
 }
 
-function StoreCard({ store, onEdit }: { store: any; onEdit: () => void }) {
+function StoreCard({ store, onEdit, onDelete }: { store: any; onEdit: () => void; onDelete: () => void }) {
   const domain = store.shop_domain ?? "";
   const storeUrl = domain ? `https://${domain}` : null;
 
@@ -138,18 +157,27 @@ function StoreCard({ store, onEdit }: { store: any; onEdit: () => void }) {
           </a>
         )}
       </div>
-      <button
-        onClick={onEdit}
-        className="absolute top-3 right-3 size-7 rounded-md grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-muted text-muted-foreground hover:text-foreground"
-        title="Editar nome"
-      >
-        <Pencil className="size-3.5" />
-      </button>
+      <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={onEdit}
+          className="size-7 rounded-md grid place-items-center hover:bg-muted text-muted-foreground hover:text-foreground"
+          title="Editar nome"
+        >
+          <Pencil className="size-3.5" />
+        </button>
+        <button
+          onClick={onDelete}
+          className="size-7 rounded-md grid place-items-center hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+          title="Excluir loja"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
 
-function RenameStoreDialog({ store, onClose, onRenamed }: { store: any; onClose: () => void; onRenamed: () => void }) {
+function RenameStoreDialog({ store, onClose, onRenamed, onDelete }: { store: any; onClose: () => void; onRenamed: () => void; onDelete: () => void }) {
   const [name, setName] = useState(store?.name ?? "");
   const [error, setError] = useState<string | null>(null);
   const renameFn = useServerFn(renameShopifyStore);
@@ -189,15 +217,23 @@ function RenameStoreDialog({ store, onClose, onRenamed }: { store: any; onClose:
           </p>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border">
-          <button onClick={onClose} className="h-9 px-4 rounded-lg text-sm hover:bg-muted">Cancelar</button>
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-border">
           <button
-            onClick={() => rename.mutate()}
-            disabled={rename.isPending || !name.trim()}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            onClick={onDelete}
+            className="h-9 px-3 rounded-lg text-sm text-destructive hover:bg-destructive/10 flex items-center gap-1.5"
           >
-            Salvar
+            <Trash2 className="size-3.5" /> Excluir loja
           </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="h-9 px-4 rounded-lg text-sm hover:bg-muted">Cancelar</button>
+            <button
+              onClick={() => rename.mutate()}
+              disabled={rename.isPending || !name.trim()}
+              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            >
+              Salvar
+            </button>
+          </div>
         </div>
       </div>
     </div>

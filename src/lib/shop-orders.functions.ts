@@ -251,6 +251,16 @@ export const renameShopifyStore = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const deleteShopifyStore = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase.from("shopify_stores")
+      .delete().eq("id", data.id).eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 function normalizeShopDomain(input: string) {
   let d = input.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
   if (!d.includes(".")) d = `${d}.myshopify.com`;
