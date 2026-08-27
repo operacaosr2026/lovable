@@ -33,7 +33,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import {
   listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
-  setOpeningBalance, setWeekendRule,
+  setOpeningBalance, setWeekendRule, resetShopCash,
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
 } from "@/lib/shop-cash.functions";
 import {
@@ -573,6 +573,7 @@ export function LgCashflowView({
   const isConsolidated = shopIds.length > 1;
   const cacheKey       = shopIds.slice().sort().join(",");
   const qc             = useQueryClient();
+  const confirm         = useConfirm();
 
   const listFn      = useServerFn(listShopCash);
   const createFn    = useServerFn(createCashEntry);
@@ -780,6 +781,27 @@ export function LgCashflowView({
   const overrideMut = useMutation({ mutationFn: (v: any) => overrideFn({ data: v }), onSuccess: refresh, onError: (e: any) => toast.error(e?.message ?? "Erro ao excluir lançamento") });
   const weekendFn  = useServerFn(setWeekendRule);
   const weekendMut = useMutation({ mutationFn: (enabled:boolean) => weekendFn({ data:{ shop_id:shopId, enabled } }), onSuccess: refresh });
+  const resetCashFn = useServerFn(resetShopCash);
+  const resetMut = useMutation({
+    mutationFn: async () => { for (const id of shopIds) await resetCashFn({ data: { shop_id: id } }); },
+    onSuccess: () => {
+      refresh();
+      qc.invalidateQueries({ queryKey: ["shop-group-cash-pending", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["shop-cash-pending", cacheKey] });
+      toast.success("Caixa resetado");
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao resetar caixa"),
+  });
+  const handleResetCash = () => {
+    confirm({
+      title: "Resetar caixa",
+      description: isConsolidated
+        ? "Isso apaga todos os lançamentos, importações e lotes de pagamento de todas as lojas deste card. O saldo volta para o valor inicial configurado. Essa ação não pode ser desfeita."
+        : "Isso apaga todos os lançamentos, importações e lotes de pagamento desta loja. O saldo volta para o valor inicial configurado. Essa ação não pode ser desfeita.",
+      confirmText: "Resetar",
+      variant: "destructive",
+    }).then((ok) => { if (ok) resetMut.mutate(); });
+  };
 
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
@@ -868,6 +890,14 @@ export function LgCashflowView({
             </label>
             <button onClick={() => setManageCats(true)} className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-accent">
               Gerenciar categorias
+            </button>
+            <div className="h-px bg-border my-1" />
+            <button
+              onClick={handleResetCash}
+              disabled={resetMut.isPending}
+              className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-destructive/10 text-destructive disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <Trash2 className="size-3.5" /> {resetMut.isPending ? "Resetando..." : "Resetar caixa"}
             </button>
           </PopoverContent>
         </Popover>
