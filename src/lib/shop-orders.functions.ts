@@ -230,14 +230,23 @@ export const upsertOrderSettings = createServerFn({ method: "POST" })
   });
 
 // Keeps a `shops` row mirrored to a `shopify_stores` connection, so features
-// built on top of `shops` (e.g. Lojas e Grupos) always reflect Banco de Lojas.
+// built on top of `shops` (e.g. Lojas e Grupos, order fetching via
+// shop_order_settings.shopify_store_id) always reflect Banco de Lojas.
 export const syncMirrorShop = createServerOnlyFn(async (ownerId: string, storeId: string, name: string) => {
   const { data: existing } = await supabaseAdmin.from("shops")
     .select("id").eq("user_id", ownerId).eq("shopify_store_id", storeId).maybeSingle();
-  if (existing) {
-    await supabaseAdmin.from("shops").update({ name }).eq("id", existing.id);
+
+  let shopId = existing?.id as string | undefined;
+  if (shopId) {
+    await supabaseAdmin.from("shops").update({ name }).eq("id", shopId);
   } else {
-    await supabaseAdmin.from("shops").insert({ user_id: ownerId, name, shopify_store_id: storeId });
+    const { data: inserted } = await supabaseAdmin.from("shops")
+      .insert({ user_id: ownerId, name, shopify_store_id: storeId }).select("id").single();
+    shopId = inserted?.id;
+  }
+  if (shopId) {
+    await supabaseAdmin.from("shop_order_settings")
+      .upsert({ user_id: ownerId, shop_id: shopId, shopify_store_id: storeId }, { onConflict: "shop_id" });
   }
 });
 
