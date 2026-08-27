@@ -296,38 +296,28 @@ export const listAllShopsForPicker = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { ownerId } = context;
 
-    const { data: settings, error: settingsError } = await supabaseAdmin
-      .from("shop_order_settings")
-      .select("shop_id,shopify_store_id")
+    // `shops` rows are mirrored from `shopify_stores` on connect/rename/delete
+    // (see syncMirrorShop in shop-orders.functions.ts) — only mirrored rows
+    // that still point at a live Shopify connection belong in this picker.
+    const { data, error } = await supabaseAdmin
+      .from("shops")
+      .select("id, name, status, country, tag, shopify_store_id")
       .eq("user_id", ownerId)
-      .not("shopify_store_id", "is", null);
-    if (settingsError) throw new Error(settingsError.message);
-    if (!settings || settings.length === 0) return [];
+      .not("shopify_store_id", "is", null)
+      .order("name", { ascending: true });
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return [];
 
-    // shop_order_settings.shopify_store_id has no DB-level FK to shopify_stores,
-    // so a deleted store leaves a dangling reference here — verify it still exists.
     const { data: liveStores, error: storesError } = await supabaseAdmin
       .from("shopify_stores")
       .select("id")
       .eq("user_id", ownerId)
-      .in("id", [...new Set(settings.map((s) => s.shopify_store_id))] as string[]);
+      .in("id", [...new Set(data.map((s) => s.shopify_store_id))] as string[]);
     if (storesError) throw new Error(storesError.message);
     const liveStoreIds = new Set((liveStores ?? []).map((s) => s.id));
 
-    const connectedShopIds = [...new Set(
-      settings.filter((s) => liveStoreIds.has(s.shopify_store_id as string)).map((s) => s.shop_id)
-    )];
-    if (connectedShopIds.length === 0) return [];
-
-    const { data, error } = await supabaseAdmin
-      .from("shops")
-      .select("id, name, status, country, tag")
-      .eq("user_id", ownerId)
-      .in("id", connectedShopIds)
-      .order("name", { ascending: true });
-
-    if (error) throw new Error(error.message);
-    return attachLiveShopifyNames(ownerId, data ?? []);
+    const connected = data.filter((s) => liveStoreIds.has(s.shopify_store_id as string));
+    return attachLiveShopifyNames(ownerId, connected);
   });
 
 // ─── Update matriz_shop_id ────────────────────────────────────────────────────

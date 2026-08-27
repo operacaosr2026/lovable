@@ -229,6 +229,18 @@ export const upsertOrderSettings = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Keeps a `shops` row mirrored to a `shopify_stores` connection, so features
+// built on top of `shops` (e.g. Lojas e Grupos) always reflect Banco de Lojas.
+export const syncMirrorShop = createServerOnlyFn(async (ownerId: string, storeId: string, name: string) => {
+  const { data: existing } = await supabaseAdmin.from("shops")
+    .select("id").eq("user_id", ownerId).eq("shopify_store_id", storeId).maybeSingle();
+  if (existing) {
+    await supabaseAdmin.from("shops").update({ name }).eq("id", existing.id);
+  } else {
+    await supabaseAdmin.from("shops").insert({ user_id: ownerId, name, shopify_store_id: storeId });
+  }
+});
+
 export const listShopifyStores = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
@@ -248,6 +260,7 @@ export const renameShopifyStore = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("shopify_stores")
       .update({ name: data.name }).eq("id", data.id).eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
+    await syncMirrorShop(context.ownerId, data.id, data.name);
     return { ok: true };
   });
 
@@ -260,6 +273,9 @@ export const deleteShopifyStore = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     // shop_order_settings.shopify_store_id has no DB-level FK/cascade, so clear it here.
     await context.supabase.from("shop_order_settings")
+      .update({ shopify_store_id: null }).eq("shopify_store_id", data.id).eq("user_id", context.ownerId);
+    // Unlink the mirrored `shops` row (kept, since it may still be referenced by Lojas e Grupos cards).
+    await context.supabase.from("shops")
       .update({ shopify_store_id: null }).eq("shopify_store_id", data.id).eq("user_id", context.ownerId);
     return { ok: true };
   });
@@ -353,12 +369,14 @@ export const connectShopifyStore = createServerFn({ method: "POST" })
         .update(payload).eq("id", existing.id).eq("user_id", context.ownerId)
         .select("id,name,shop_domain").single();
       if (error) throw new Error(error.message);
+      await syncMirrorShop(context.ownerId, row.id, payload.name);
       return row;
     }
     const { data: row, error } = await supabaseAdmin.from("shopify_stores")
       .insert({ user_id: context.ownerId, ...payload })
       .select("id,name,shop_domain").single();
     if (error) throw new Error(error.message);
+    await syncMirrorShop(context.ownerId, row.id, payload.name);
     return row;
   });
 

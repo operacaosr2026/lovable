@@ -2772,6 +2772,7 @@ export type Database = {
           pipeline_position: number
           pipeline_stage: string
           position: number
+          shopify_store_id: string | null
           status: string
           tag: string | null
           updated_at: string
@@ -2791,6 +2792,7 @@ export type Database = {
           pipeline_position?: number
           pipeline_stage?: string
           position?: number
+          shopify_store_id?: string | null
           status?: string
           tag?: string | null
           updated_at?: string
@@ -2810,6 +2812,7 @@ export type Database = {
           pipeline_position?: number
           pipeline_stage?: string
           position?: number
+          shopify_store_id?: string | null
           status?: string
           tag?: string | null
           updated_at?: string

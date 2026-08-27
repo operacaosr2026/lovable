@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { syncMirrorShop } from "@/lib/shop-orders.functions";
 import crypto from "crypto";
 
 function htmlMessage(title: string, message: string, ok: boolean) {
@@ -77,10 +78,16 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
           scope: scope ?? null, installed_at: new Date().toISOString(),
           last_sync_status: "ok" as const, last_sync_error: null,
         };
+        let storeId = existing?.id as string | undefined;
         if (existing) {
           await supabaseAdmin.from("shopify_stores").update(payload).eq("id", existing.id);
         } else {
-          await supabaseAdmin.from("shopify_stores").insert({ user_id: st.user_id, ...payload });
+          const { data: inserted } = await supabaseAdmin.from("shopify_stores")
+            .insert({ user_id: st.user_id, ...payload }).select("id").single();
+          storeId = inserted?.id;
+        }
+        if (storeId) {
+          await syncMirrorShop(st.user_id, storeId, st.name);
         }
         await supabaseAdmin.from("shopify_oauth_states").delete().eq("state", state);
 
