@@ -258,6 +258,9 @@ export const deleteShopifyStore = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("shopify_stores")
       .delete().eq("id", data.id).eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
+    // shop_order_settings.shopify_store_id has no DB-level FK/cascade, so clear it here.
+    await context.supabase.from("shop_order_settings")
+      .update({ shopify_store_id: null }).eq("shopify_store_id", data.id).eq("user_id", context.ownerId);
     return { ok: true };
   });
 

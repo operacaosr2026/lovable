@@ -298,12 +298,25 @@ export const listAllShopsForPicker = createServerFn({ method: "GET" })
 
     const { data: settings, error: settingsError } = await supabaseAdmin
       .from("shop_order_settings")
-      .select("shop_id")
+      .select("shop_id,shopify_store_id")
       .eq("user_id", ownerId)
       .not("shopify_store_id", "is", null);
     if (settingsError) throw new Error(settingsError.message);
+    if (!settings || settings.length === 0) return [];
 
-    const connectedShopIds = [...new Set((settings ?? []).map((s) => s.shop_id))];
+    // shop_order_settings.shopify_store_id has no DB-level FK to shopify_stores,
+    // so a deleted store leaves a dangling reference here — verify it still exists.
+    const { data: liveStores, error: storesError } = await supabaseAdmin
+      .from("shopify_stores")
+      .select("id")
+      .eq("user_id", ownerId)
+      .in("id", [...new Set(settings.map((s) => s.shopify_store_id))] as string[]);
+    if (storesError) throw new Error(storesError.message);
+    const liveStoreIds = new Set((liveStores ?? []).map((s) => s.id));
+
+    const connectedShopIds = [...new Set(
+      settings.filter((s) => liveStoreIds.has(s.shopify_store_id as string)).map((s) => s.shop_id)
+    )];
     if (connectedShopIds.length === 0) return [];
 
     const { data, error } = await supabaseAdmin
