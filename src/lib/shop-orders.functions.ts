@@ -135,6 +135,29 @@ async function fetchShopifyRefundedOrders(domain: string, token: string, fromISO
   return out;
 }
 
+// Pedidos com status "cancelado" (estorno de verdade, distinto de um simples
+// reembolso em pedido que segue aberto/fechado normalmente) — a API da
+// Shopify não filtra por data de cancelamento, só por status, então filtramos
+// `cancelled_at` no cliente.
+async function fetchShopifyCancelledOrders(domain: string, token: string) {
+  const out: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/orders.json`
+    + `?status=cancelled&limit=250&fields=id,cancelled_at,cancel_reason`;
+  for (let i = 0; i < 20 && url; i++) {
+    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 403) return [];
+      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    }
+    const json: any = await res.json();
+    out.push(...(json.orders ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1] : "";
+  }
+  return out;
+}
+
 async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: string) {
   const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any&created_at_min=${encodeURIComponent(sinceISO)}`;
   const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
@@ -869,6 +892,37 @@ export const getShopifyChargebackRate = createServerFn({ method: "GET" })
     return { connected: true, rate, chargebacks, totalOrders };
   });
 
+// Contagem de pedidos cancelados (estorno de verdade — status "cancelado" na
+// Shopify, com cancel_reason) por loja, na janela informada. Diferente de um
+// pedido apenas reembolsado que segue aberto/fechado normalmente. Chamada
+// server-to-server (não é um endpoint de cliente), pensada pra ser usada por
+// outras server functions que já sabem quais shop_ids consultar.
+export const getGroupShopifyCancelledCounts = createServerOnlyFn(async (
+  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
+) => {
+  const { data: settings } = await supabaseAdmin.from("shop_order_settings")
+    .select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", shopIds);
+  const fromMs = new Date(fromISO).getTime();
+  const toMs = new Date(toISO).getTime();
+
+  const rows = await Promise.all((settings ?? []).map(async (s: any) => {
+    if (!s.shopify_store_id) return { shop_id: s.shop_id as string, cancelledOrders: 0 };
+    try {
+      const { domain, token } = await getShopifyCreds(supabaseAdmin, ownerId, s.shopify_store_id);
+      const cancelled = await fetchShopifyCancelledOrders(domain, token);
+      const count = cancelled.filter((o: any) => {
+        if (!o.cancelled_at) return false;
+        const ts = new Date(o.cancelled_at).getTime();
+        return ts >= fromMs && ts <= toMs;
+      }).length;
+      return { shop_id: s.shop_id as string, cancelledOrders: count };
+    } catch {
+      return { shop_id: s.shop_id as string, cancelledOrders: 0 };
+    }
+  }));
+  return rows;
+});
+
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
 // e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
 // a cada carregamento de tela.
@@ -944,7 +998,30 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
       byShop.set(id, (byShop.get(id) ?? 0) + Number(e.amount ?? 0));
     }
     const pending = Array.from(byShop.values()).reduce((a, b) => a + b, 0);
-    const perShop = Array.from(byShop.entries()).map(([shop_id, p]) => ({ shop_id, pending: p }));
+
+    // Per-shop breakdown: prefer the live Shopify Payments balance (accurate,
+    // real-time); fall back to the synced-payouts sum when Payments isn't
+    // enabled for that store or the call fails.
+    const settingsByShop = new Map((settings ?? []).map((s) => [s.shop_id as string, s.shopify_store_id as string | null]));
+    const perShop = await Promise.all(data.shop_ids.map(async (shopId) => {
+      const pendingSum = byShop.get(shopId) ?? 0;
+      const storeId = settingsByShop.get(shopId);
+      if (!storeId) return { shop_id: shopId, amount: 0, pending: pendingSum, connected: false, live: false };
+      try {
+        const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, storeId);
+        const live = await fetchShopifyPaymentsBalance(domain, token);
+        return {
+          shop_id: shopId,
+          amount: live?.amount ?? pendingSum,
+          pending: pendingSum,
+          connected: true,
+          live: live != null,
+        };
+      } catch {
+        return { shop_id: shopId, amount: pendingSum, pending: pendingSum, connected: true, live: false };
+      }
+    }));
+
     return { connected, pending, perShop };
   });
 

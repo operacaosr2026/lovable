@@ -16,7 +16,7 @@ import { LgIntegrations }  from "@/components/lojas-grupos/LgIntegrations";
 import { LgLogistica }     from "@/components/lojas-grupos/LgLogistica";
 
 type Tab = "overview" | "dashboard" | "caixa" | "pedidos" | "logistica" | "integracoes";
-const VALID_TABS: Tab[] = ["overview", "dashboard", "caixa", "pedidos", "logistica", "integracoes"];
+const VALID_TABS: Tab[] = ["dashboard", "overview", "caixa", "pedidos", "logistica", "integracoes"];
 
 const COUNTRIES: Record<string, string> = {
   US: "🇺🇸", CA: "🇨🇦", GB: "🇬🇧", BE: "🇧🇪", CH: "🇨🇭", AU: "🇦🇺",
@@ -174,8 +174,8 @@ function LgCardDetail() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
-        <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Target}>Metas</TabBtn>
         <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
+        <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Target}>Metas</TabBtn>
         <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
         <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>

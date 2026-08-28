@@ -750,8 +750,11 @@ export function LgCashflowView({
   }, [expanded, opening]);
 
   const effectivePending = isConsolidated ? groupPendQuery.data : pendingQuery.data;
+  const perShopReceivable = isConsolidated ? ((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[] : [];
   const receivable = effectivePending?.connected
-    ? ((effectivePending as any).balance ?? effectivePending.pending ?? 0)
+    ? (isConsolidated
+        ? perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0)
+        : ((effectivePending as any).balance ?? effectivePending.pending ?? 0))
     : 0;
 
   const syncPayouts = async () => {
@@ -816,6 +819,16 @@ export function LgCashflowView({
             label={effectivePending?.connected ? "A receber (Shopify)" : "Entradas previstas (30d)"}
             value={fmtMoney(receivable)}
             accent="oklch(0.6 0.13 230)"
+            sub={isConsolidated && effectivePending?.connected && perShopReceivable.length > 1 ? (
+              <div className="space-y-0.5 mt-1">
+                {perShopReceivable.map((p) => (
+                  <div key={p.shop_id} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{shopNamesMap[p.shop_id] ?? p.shop_id}</span>
+                    <span className="tabular-nums shrink-0">{fmtMoney(Number(p.amount ?? 0))}</span>
+                  </div>
+                ))}
+              </div>
+            ) : undefined}
           />
         </div>
       </TooltipProvider>

@@ -1,17 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageHeader";
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import {
-  Sparkles, ListChecks, ChevronRight, Store,
-} from "lucide-react";
-import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
-import { getDashboard } from "@/lib/dashboard.functions";
-import { saveGratitudeEntry } from "@/lib/gratitude.functions";
-import { updateShopTask } from "@/lib/shop-tasks.functions";
+import { TrendingUp, Megaphone, Package, Wallet, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { listLgCardsOverview } from "@/lib/lg-cards.functions";
-import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { redirect } from "@tanstack/react-router";
@@ -37,106 +31,121 @@ export const Route = createFileRoute("/")({
   ),
 });
 
-function SectionHead({ icon: Icon, title, count, tint, iconColor }: any) {
+// ─── Period helpers ─────────────────────────────────────────────────────────────
+
+function isoToday() { return new Date().toLocaleDateString("en-CA"); }
+function addDays(iso: string, n: number) {
+  const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+}
+function getPeriodRange(period: string, custom?: { from: string; to: string }) {
+  const today = isoToday();
+  let from = today, to = today;
+  if (period === "ontem") { from = addDays(today, -1); to = addDays(today, -1); }
+  if (period === "7d")    { from = addDays(today, -6); }
+  if (period === "30d")   { from = addDays(today, -29); }
+  if (period === "mes")   {
+    const d = new Date(); from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; to = today;
+  }
+  if (period === "custom" && custom) { from = custom.from; to = custom.to; }
+  return { from, to };
+}
+function fmtDate(iso: string) {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function fmtMoney(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
+}
+function fmtPct(n: number) {
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+// ─── Metric breakdown card ────────────────────────────────────────────────────
+
+type MetricAccent = "primary" | "info" | "warning" | "success" | "destructive";
+
+const METRIC_ACCENTS: Record<MetricAccent, { chip: string; bar: string }> = {
+  primary:     { chip: "bg-primary/10 text-primary",         bar: "bg-primary" },
+  info:        { chip: "bg-info/10 text-info",               bar: "bg-info" },
+  warning:     { chip: "bg-warning/15 text-warning",         bar: "bg-warning" },
+  success:     { chip: "bg-success/15 text-success",         bar: "bg-success" },
+  destructive: { chip: "bg-destructive/10 text-destructive", bar: "bg-destructive" },
+};
+
+function MetricBreakdownCard({
+  icon: Icon, accent, label, total, rows, negative, secondaryBadge, format = fmtMoney, emptyLabel = "Sem dados no período.", periodOverride,
+}: {
+  icon: any; accent: MetricAccent; label: string; total: number;
+  rows: { id: string; name: string; value: number; sub?: string }[];
+  negative?: boolean;
+  secondaryBadge?: React.ReactNode;
+  format?: (n: number) => string;
+  emptyLabel?: string;
+  periodOverride?: string;
+}) {
+  const a = METRIC_ACCENTS[accent];
+  const maxValue = Math.max(1e-9, ...rows.map((r) => Math.abs(r.value)));
+  const sorted = [...rows].sort((x, y) => y.value - x.value);
+
   return (
-    <div className="flex items-center gap-3 px-5 py-3.5 rounded-t-[1.25rem] border-b border-border" style={{ background: `var(${tint})` }}>
-      <div className="size-8 rounded-lg grid place-items-center bg-surface border border-border" style={{ color: iconColor }}>
-        <Icon className="size-4" />
+    <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 soft-shadow-sm min-w-0">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className={`size-9 rounded-xl grid place-items-center shrink-0 ${a.chip}`}>
+          <Icon className="size-4.5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{label}</p>
+          <p className={`text-xl xl:text-2xl font-bold tracking-tight truncate ${negative ? "text-destructive" : "text-foreground"}`}>
+            {format(total)}
+          </p>
+          {periodOverride && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{periodOverride}</p>}
+        </div>
+        {secondaryBadge && <div className="ml-auto shrink-0">{secondaryBadge}</div>}
       </div>
-      <div className="text-[15px] font-semibold tracking-tight flex-1">{title}</div>
-      {count !== undefined && count !== null && <span className="text-xs text-muted-foreground tabular-nums">{count}</span>}
+
+      {sorted.length > 0 ? (
+        <div className="mt-4 space-y-2.5">
+          {sorted.map((row) => (
+            <div key={row.id} className="flex items-center gap-2">
+              <span className="text-xs text-foreground/90 truncate w-14 sm:w-16 shrink-0" title={row.name}>{row.name}</span>
+              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden min-w-[24px]">
+                <div
+                  className={`h-full rounded-full ${a.bar} transition-all duration-500`}
+                  style={{ width: `${Math.max(2, (Math.abs(row.value) / maxValue) * 100)}%` }}
+                />
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-xs font-semibold tabular-nums text-foreground">{format(row.value)}</span>
+                {row.sub && <span className="block text-[9px] text-muted-foreground tabular-nums leading-tight truncate max-w-20">{row.sub}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground mt-4">{emptyLabel}</p>
+      )}
     </div>
   );
 }
 
-function CardRow({ c }: { c: any }) {
-  const taxaEstornoPct = Number(c.taxaEstorno ?? 0) * 100;
-
-  return (
-    <Link
-      to="/shops/lojas-grupos/$cardId"
-      params={{ cardId: c.id }}
-      className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 hover:bg-surface-hover transition-colors"
-    >
-      <div className="flex items-center gap-2.5 flex-1 min-w-0 basis-full sm:basis-auto">
-        <div className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary shrink-0 text-xs font-semibold overflow-hidden">
-          {c.logo_url
-            ? <img src={c.logo_url} alt="" className="size-8 object-cover" />
-            : c.name?.[0]?.toUpperCase() ?? <Store className="size-3.5" />}
-        </div>
-        <span className="text-sm font-medium truncate">{c.name}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:gap-4 shrink-0">
-        <div className="text-right sm:w-28 sm:shrink-0">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo atual</div>
-          <div className={`text-sm font-semibold tabular-nums ${Number(c.saldo) < 0 ? "text-rose-500" : "text-foreground"}`}>
-            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.saldo ?? 0))}
-          </div>
-        </div>
-        <div className="text-right sm:w-28 sm:shrink-0">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Lucro do mês</div>
-          <div className={`text-sm font-semibold tabular-nums ${Number(c.lucroMes) < 0 ? "text-rose-500" : "text-emerald-500"}`}>
-            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.lucroMes ?? 0))}
-          </div>
-        </div>
-        <div className="text-right sm:w-24 sm:shrink-0">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estorno</div>
-          <div className={`text-sm font-semibold tabular-nums ${taxaEstornoPct > 0.5 ? "text-rose-500" : "text-foreground"}`}>
-            {taxaEstornoPct.toFixed(2)}%
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
+// ─── Dashboard ──────────────────────────────────────────────────────────────────
 
 function Dashboard() {
   const { session } = useAuth();
-  const qc = useQueryClient();
-
-  const getDashboardFn = useServerFn(getDashboard);
-  const updateShopTaskFn = useServerFn(updateShopTask);
-  const saveGratitudeFn = useServerFn(saveGratitudeEntry);
   const listLgCardsOverviewFn = useServerFn(listLgCardsOverview);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => getDashboardFn(),
+  const [period, setPeriod] = useState("mes");
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
+  const { from, to } = useMemo(() => getPeriodRange(period, customRange), [period, customRange]);
+
+  const { data: cardsData, isFetching } = useQuery({
+    queryKey: ["lg-cards-overview", from, to],
+    queryFn: () => listLgCardsOverviewFn({ data: { from, to } }),
     enabled: !!session,
   });
-  const { data: cardsData } = useQuery({
-    queryKey: ["lg-cards-overview"], queryFn: () => listLgCardsOverviewFn(), enabled: !!session,
-  });
   const cards = (cardsData as any)?.cards ?? [];
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["dashboard"] });
-
-  const mToggleShopTask = useMutation({
-    mutationFn: (d: { id: string; done: boolean }) => updateShopTaskFn({ data: { id: d.id, patch: { status: d.done ? "done" : "todo" } } }),
-    onSuccess: invalidate,
-  });
-  const mGratitude = useMutation({
-    mutationFn: (d: { content: string }) => {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      return saveGratitudeFn({ data: { date: todayStr, content: d.content } });
-    },
-    onSuccess: () => {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["gratitude-entry", todayStr] });
-      qc.invalidateQueries({ queryKey: ["gratitude-history"] });
-    },
-  });
-
-  const [gratitude, setGratitude] = useState("");
-  const [openTask, setOpenTask] = useState<{ id: string; source: "shop_task" } | null>(null);
-
-  // Sync gratitude
-  const todayGratitude = data?.gratitude?.content ?? "";
-  if (gratitude === "" && todayGratitude && !mGratitude.isPending) {
-    // initial hydration only
-    setTimeout(() => setGratitude(todayGratitude), 0);
-  }
+  const shopEstorno = (cardsData as any)?.shopEstorno ?? [];
 
   const today = new Date();
   const dateLabel = today.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
@@ -146,18 +155,23 @@ function Dashboard() {
     if (h < 18) return "Boa tarde";
     return "Boa noite";
   })();
-  const firstName = (data?.profile?.full_name ?? session?.user?.user_metadata?.full_name ?? session?.user?.email?.split("@")[0] ?? "")
+  const firstName = (session?.user?.user_metadata?.full_name ?? session?.user?.email?.split("@")[0] ?? "")
     .toString().split(" ")[0];
 
-  if (isLoading || !data) {
-    return (
-      <PageShell>
-        <div className="grid place-items-center h-64">
-          <div className="size-6 rounded-full border-2 border-border border-t-primary animate-spin" />
-        </div>
-      </PageShell>
-    );
-  }
+  const totalFaturamento = cards.reduce((s: number, c: any) => s + Number(c.faturamentoMes ?? 0), 0);
+  const totalAds         = cards.reduce((s: number, c: any) => s + Number(c.anunciosMes ?? 0), 0);
+  const totalCusto       = cards.reduce((s: number, c: any) => s + Number(c.custoProdutoMes ?? 0), 0);
+  const totalLucro       = cards.reduce((s: number, c: any) => s + Number(c.lucroMes ?? 0), 0);
+  const margemTotal      = totalFaturamento > 0 ? totalLucro / totalFaturamento : 0;
+
+  const estornoTotals = shopEstorno.reduce(
+    (acc: { pedidos: number; estornos: number }, s: any) => ({
+      pedidos: acc.pedidos + Number(s.totalPedidos ?? 0),
+      estornos: acc.estornos + Number(s.totalEstornos ?? 0),
+    }),
+    { pedidos: 0, estornos: 0 },
+  );
+  const taxaEstornoTotal = estornoTotals.pedidos > 0 ? estornoTotals.estornos / estornoTotals.pedidos : 0;
 
   return (
     <PageShell>
@@ -170,85 +184,99 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Lojas */}
-        {cards.length > 0 && (
-          <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-            <SectionHead icon={Store} title="Lojas" count={`${cards.length} ${cards.length === 1 ? "loja" : "lojas"}`} tint="--tint-indigo" iconColor="oklch(0.55 0.22 285)" />
-            <div className="divide-y divide-border flex-1 overflow-y-auto">
-              {cards.map((c: any) => (
-                <CardRow key={c.id} c={c} />
-              ))}
+      {cards.length > 0 && (
+        <div className="rounded-[1.75rem] border border-primary/15 bg-gradient-to-br from-primary/[0.05] via-card to-card p-5 sm:p-6 soft-shadow">
+          <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <div className="size-8 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
+                <SlidersHorizontal className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground leading-tight">Visão geral</h2>
+                <p className="text-[11px] text-muted-foreground leading-tight">
+                  {fmtDate(from)} → {fmtDate(to)} · todas as lojas e grupos
+                </p>
+              </div>
             </div>
-          </section>
-        )}
-
-        {/* Tarefas de hoje */}
-        <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-          <SectionHead icon={ListChecks} title="Tarefas de hoje"
-            count={`${data.shopTasksToday?.length ?? 0} pendentes`}
-            tint="--tint-blue" iconColor="oklch(0.55 0.2 250)" />
-          <div className="p-3 flex-1 flex flex-col overflow-y-auto">
-            <ul className="flex-1">
-              {(data.shopTasksToday ?? []).map((t: any) => (
-                <li key={t.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-surface-hover transition-colors group">
-                  <button
-                    onClick={() => mToggleShopTask.mutate({ id: t.id, done: true })}
-                    className="size-5 rounded-full border-2 grid place-items-center transition-colors border-border group-hover:border-primary">
-                  </button>
-                  <button
-                    onClick={() => setOpenTask({ id: t.id, source: "shop_task" })}
-                    className="text-[15px] flex-1 text-left hover:underline underline-offset-2"
-                  >{t.title}</button>
-                  {t.shop_name && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Store className="size-3" /> {t.shop_name}
-                    </span>
-                  )}
-                </li>
-              ))}
-              {(data.shopTasksToday ?? []).length === 0 && (
-                <li className="text-sm text-muted-foreground px-3 py-3">Nenhuma tarefa para hoje.</li>
-              )}
-            </ul>
+            <div className="flex items-center gap-2">
+              {isFetching && <div className="size-3.5 rounded-full border-2 border-border border-t-primary animate-spin" />}
+              <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
+            </div>
           </div>
-        </section>
 
-        {/* Gratidão */}
-        <section className="h-[280px] rounded-[1.5rem] bg-surface border border-border overflow-hidden soft-shadow flex flex-col">
-          <SectionHead icon={Sparkles} title="Gratidão" tint="--tint-amber" iconColor="oklch(0.55 0.16 65)" />
-          <div className="p-6 flex flex-col flex-1 overflow-y-auto">
-            <textarea
-              value={gratitude}
-              onChange={(e) => setGratitude(e.target.value)}
-              placeholder="Pelo que você é grato hoje?"
-              className="flex-1 resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-muted-foreground/70"
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            <MetricBreakdownCard
+              icon={TrendingUp}
+              accent="primary"
+              label="Faturamento total"
+              total={totalFaturamento}
+              rows={cards.map((c: any) => ({ id: c.id, name: c.name, value: Number(c.faturamentoMes ?? 0) }))}
             />
-            <div className="flex items-center justify-between text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-              <Link to="/gratitude" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                <span>Ver histórico</span>
-                <ChevronRight className="size-3" />
-              </Link>
-              <button
-                disabled={!gratitude.trim() || mGratitude.isPending}
-                onClick={() => mGratitude.mutate({ content: gratitude.trim() })}
-                className="text-primary font-semibold hover:underline disabled:opacity-50"
-              >
-                {mGratitude.isPending ? "Salvando..." : data.gratitude ? "Atualizar" : "Salvar"}
-              </button>
+            <MetricBreakdownCard
+              icon={Megaphone}
+              accent="info"
+              label="Gasto com ads"
+              total={totalAds}
+              rows={cards.map((c: any) => ({ id: c.id, name: c.name, value: Number(c.anunciosMes ?? 0) }))}
+            />
+            <MetricBreakdownCard
+              icon={Package}
+              accent="warning"
+              label="Gasto com pedidos"
+              total={totalCusto}
+              rows={cards.map((c: any) => ({ id: c.id, name: c.name, value: Number(c.custoProdutoMes ?? 0) }))}
+            />
+            <MetricBreakdownCard
+              icon={Wallet}
+              accent="success"
+              label="Lucro"
+              total={totalLucro}
+              negative={totalLucro < 0}
+              secondaryBadge={
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                  margemTotal >= 0 ? "bg-success/15 text-success border-success/30" : "bg-destructive/15 text-destructive border-destructive/30"
+                }`}>
+                  {fmtPct(margemTotal)}
+                </span>
+              }
+              rows={cards.map((c: any) => ({
+                id: c.id, name: c.name, value: Number(c.lucroMes ?? 0),
+                sub: fmtPct(Number(c.margemMes ?? 0)),
+              }))}
+            />
+            <div className="relative rounded-2xl overflow-hidden min-w-0">
+              <div className="blur-sm pointer-events-none select-none">
+                <MetricBreakdownCard
+                  icon={RotateCcw}
+                  accent="destructive"
+                  label="Taxa de estorno"
+                  total={taxaEstornoTotal}
+                  format={fmtPct}
+                  emptyLabel="Sem pedidos nos últimos 90 dias."
+                  periodOverride="Últimos 90 dias (fixo)"
+                  secondaryBadge={
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border bg-destructive/15 text-destructive border-destructive/30">
+                      {estornoTotals.estornos} {estornoTotals.estornos === 1 ? "estorno" : "estornos"}
+                    </span>
+                  }
+                  rows={shopEstorno.map((s: any) => ({
+                    id: s.shop_id, name: s.shop_name, value: Number(s.taxaEstorno ?? 0),
+                    sub: `${s.totalEstornos ?? 0} ${Number(s.totalEstornos ?? 0) === 1 ? "estorno" : "estornos"}`,
+                  }))}
+                />
+              </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card/40">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border shadow-lg">
+                  <RotateCcw className="size-4 text-destructive" />
+                  <span className="text-sm font-semibold text-foreground">Taxa de estorno</span>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-foreground text-background shadow-lg">
+                  Em breve
+                </span>
+              </div>
             </div>
           </div>
-        </section>
-      </div>
-
-      {openTask && (
-        <TaskDetailDialog
-          open={!!openTask}
-          onOpenChange={(o) => { if (!o) setOpenTask(null); }}
-          source={openTask.source}
-          id={openTask.id}
-          invalidateKeys={[["dashboard"], ["shop-tasks"]]}
-        />
+        </div>
       )}
     </PageShell>
   );
