@@ -35,6 +35,11 @@
   --color-warning: var(--warning);
   --color-info: var(--info);
   --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-sidebar-fg-muted: var(--sidebar-fg-muted);
+  --color-sidebar-active-bg: var(--sidebar-active-bg);
+  --color-sidebar-hover-bg: var(--sidebar-hover-bg);
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
   --color-tint-blue: var(--tint-blue);
@@ -60,22 +65,26 @@
 
 :root {
   --radius: 0.75rem;
-  /* ClickUp-inspired: near-white workspace, deep slate sidebar, gradient brand */
-  --background: oklch(0.99 0.002 250);
+  /* Aligned with SRX Route: soft gray-blue workspace, deep slate sidebar, gradient brand */
+  --background: oklch(0.975 0.004 255);
   --foreground: oklch(0.16 0.015 260);
-  --sidebar-bg: oklch(0.16 0.02 270);         /* deep slate sidebar */
-  --sidebar-fg: oklch(0.92 0.008 260);
+  /* Light sidebar, matching SRX Route: white bg, near-black active text, lavender active pill */
+  --sidebar-bg: oklch(1 0 0);
+  --sidebar-border: oklch(0.93 0.004 250);
+  --sidebar-fg: oklch(0.16 0.015 260);
+  --sidebar-fg-muted: oklch(0.5 0.012 260);
+  --sidebar-active-bg: oklch(0.95 0.012 285);
+  --sidebar-hover-bg: oklch(0.97 0.004 250);
   --surface: oklch(1 0 0);
   --surface-hover: oklch(0.97 0.004 250);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.16 0.015 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.16 0.015 260);
-  --primary: oklch(0.58 0.22 295);            /* ClickUp purple */
+  --primary: oklch(0.58 0.22 295);            /* purple — matches SRX Route's #7c6af7 */
   --primary-foreground: oklch(0.99 0 0);
-  --brand-from: oklch(0.62 0.22 295);         /* purple */
-  --brand-via: oklch(0.62 0.24 340);          /* magenta */
-  --brand-to: oklch(0.68 0.2 30);             /* coral */
+  --brand-from: #7c6af7;                      /* purple, same as SRX Route */
+  --brand-to: #f97b6b;                        /* coral, same as SRX Route */
   --secondary: oklch(0.97 0.004 250);
   --secondary-foreground: oklch(0.22 0.015 260);
   --muted: oklch(0.965 0.004 250);
@@ -102,8 +111,12 @@
 .dark {
   --background: oklch(0.15 0.012 270);
   --foreground: oklch(0.95 0.005 260);
-  --sidebar-bg: oklch(0.11 0.015 270);
-  --sidebar-fg: oklch(0.92 0.008 260);
+  --sidebar-bg: oklch(0.09 0.015 270);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-fg: oklch(0.97 0.005 260);
+  --sidebar-fg-muted: oklch(0.65 0.03 270);
+  --sidebar-active-bg: oklch(0.4 0.12 295 / 35%);
+  --sidebar-hover-bg: oklch(1 0 0 / 5%);
   --surface: oklch(0.19 0.012 270);
   --surface-hover: oklch(0.22 0.014 270);
   --card: oklch(0.19 0.012 270);
@@ -202,7 +215,7 @@
   .soft-shadow-xl { box-shadow: var(--shadow-xl); }
 
   .gradient-primary {
-    background-image: linear-gradient(135deg, var(--brand-from), var(--brand-via) 55%, var(--brand-to));
+    background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
   }
   .gradient-primary-soft {
     background-image: linear-gradient(135deg,
@@ -216,11 +229,10 @@
     background-color: var(--background);
     background-image:
       radial-gradient(at 12% 8%, color-mix(in oklab, var(--brand-from) 10%, transparent) 0px, transparent 45%),
-      radial-gradient(at 88% 14%, color-mix(in oklab, var(--brand-via) 9%, transparent) 0px, transparent 50%),
       radial-gradient(at 60% 90%, color-mix(in oklab, var(--brand-to) 8%, transparent) 0px, transparent 55%);
   }
   .text-gradient-primary {
-    background: linear-gradient(135deg, var(--brand-from), var(--brand-via) 60%, var(--brand-to));
+    background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -232,7 +244,7 @@
       linear-gradient(135deg, var(--brand-from), var(--brand-to)) border-box;
     border: 1px solid transparent;
   }
-  .ring-brand { box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand-via) 35%, transparent), var(--shadow-md); }
+  .ring-brand { box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand-from) 35%, transparent), var(--shadow-md); }
 
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
