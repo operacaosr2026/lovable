@@ -24,7 +24,7 @@ const COUNTRIES: Record<string, string> = {
 
 export const Route = createFileRoute("/shops/lojas-grupos/$cardId")({
   validateSearch: (s: Record<string, unknown>) => ({
-    tab: (VALID_TABS.includes(s.tab as Tab) ? s.tab : "overview") as Tab,
+    tab: (VALID_TABS.includes(s.tab as Tab) ? s.tab : "dashboard") as Tab,
   }),
   component: LgCardDetail,
 });

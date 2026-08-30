@@ -394,7 +394,8 @@ function LgCardEditor({
       const { data: signed } = await supabase.storage.from("project-attachments").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
       setLogoUrl(signed?.signedUrl ?? "");
     } catch (e: any) {
-      alert(e.message ?? "Erro ao fazer upload");
+      console.error("Erro ao fazer upload de logo", e);
+      alert(`${e.message ?? "Erro ao fazer upload"}${e.status ? ` (status ${e.status}${e.statusCode ? `, ${e.statusCode}` : ""})` : ""}`);
     } finally {
       setUploading(false);
     }

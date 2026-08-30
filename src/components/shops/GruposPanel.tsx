@@ -274,7 +274,8 @@ function GroupEditor({ group, saveError, onClose, onSave, onDelete }: {
       const { data: signed } = await supabase.storage.from("project-attachments").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
       setLogoUrl(signed?.signedUrl ?? "");
     } catch (err: any) {
-      alert("Erro ao enviar: " + err.message);
+      console.error("Erro ao enviar logo do grupo", err);
+      alert(`Erro ao enviar: ${err.message}${err.status ? ` (status ${err.status}${err.statusCode ? `, ${err.statusCode}` : ""})` : ""}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
