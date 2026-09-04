@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { attachLiveShopifyNames, getGroupShopifyCancelledCounts } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, getGroupShopifyCancelledCounts, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 
 // Same as attachLiveShopifyNames, but for rows carrying a nested `shops` object
 // (as returned by PostgREST embedding, e.g. lg_card_shops.select("...,shops(id,name,...)")).
@@ -622,7 +622,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const estornoFrom = estornoWindowStart.toISOString().slice(0, 10);
 
     // B, C, D, E in parallel
-    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
+    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks] = await Promise.all([
       supabaseAdmin
         .from("shop_orders")
         .select("revenue, items_count, shop_id")
@@ -666,22 +666,9 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .eq("auto_kind", "meta_ads_spend")
         .gte("date", from)
         .lte("date", to),
-      supabaseAdmin
-        .from("shop_cash_entries")
-        .select("amount")
-        .eq("user_id", ownerId)
-        .in("shop_id", shopIds)
-        .eq("category", "Reembolso")
-        .gte("date", from)
-        .lte("date", to),
-      supabaseAdmin
-        .from("shop_cash_entries")
-        .select("amount")
-        .eq("user_id", ownerId)
-        .in("shop_id", shopIds)
-        .eq("category", "Chargeback")
-        .gte("date", from)
-        .lte("date", to),
+      // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
+      // usada pelo Dashboard, pra "lucro" bater entre as duas telas.
+      getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
     ]);
 
     const orders             = ordersRes.data ?? [];
@@ -690,8 +677,6 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const settings           = settingsRes.data ?? [];
     const fees        = feesRes.data ?? [];
     const ads         = adsRes.data ?? [];
-    const reembolsos_ = reembolsosRes.data ?? [];
-    const chargebacks_= chargebacksRes.data ?? [];
 
     // Settings by shop
     const costByShop = new Map(settings.map((s: any) => [s.shop_id as string, Number(s.default_unit_cost ?? 0)]));
@@ -701,8 +686,8 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     // Lucro
     const sumAmt = (rows: any[]) => rows.reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
     const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
-    const reembolsos    = sumAmt(reembolsos_);
-    const chargebacks   = sumAmt(chargebacks_);
+    const reembolsos    = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
+    const chargebacks   = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
     const faturamento   = ordersRevenue - reembolsos - chargebacks;
     const custoProduto  = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id as string);

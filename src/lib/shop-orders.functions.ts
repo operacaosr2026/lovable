@@ -135,6 +135,18 @@ async function fetchShopifyRefundedOrders(domain: string, token: string, fromISO
   return out;
 }
 
+// Pedidos void (pré-captura) têm total_price=$0 mas têm transações kind="void"
+// no refunds[]. Usamos o maior entre: soma de transações reais e a diferença
+// de preço.
+function orderRefundAmount(o: any) {
+  const txSum = (o.refunds ?? [])
+    .flatMap((r: any) => r.transactions ?? [])
+    .filter((t: any) => (t.kind === "refund" || t.kind === "void") && t.status === "success")
+    .reduce((s: number, t: any) => s + Number(t.amount ?? 0), 0);
+  const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
+  return Math.max(txSum, priceDiff);
+}
+
 // Pedidos com status "cancelado" (estorno de verdade, distinto de um simples
 // reembolso em pedido que segue aberto/fechado normalmente) — a API da
 // Shopify não filtra por data de cancelamento, só por status, então filtramos
@@ -923,6 +935,36 @@ export const getGroupShopifyCancelledCounts = createServerOnlyFn(async (
   return rows;
 });
 
+// Reembolsos e chargebacks ao vivo da Shopify API, por loja, para um período
+// exato — mesma lógica usada pelo Dashboard (getShopDashboardMetrics), para
+// que "lucro" bata entre as duas telas em vez de depender do cache em
+// shop_cash_entries (populado pelo sync em background, que pode estar atrasado).
+export const getGroupShopifyRefundsAndChargebacks = createServerOnlyFn(async (
+  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
+) => {
+  const { data: settings } = await supabaseAdmin.from("shop_order_settings")
+    .select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", shopIds);
+
+  const rows = await Promise.all((settings ?? []).map(async (s: any) => {
+    if (!s.shopify_store_id) return { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0 };
+    try {
+      const { domain, token } = await getShopifyCreds(supabaseAdmin, ownerId, s.shopify_store_id);
+      const [refOrders, disputes] = await Promise.all([
+        fetchShopifyRefundedOrders(domain, token, `${fromISO}T00:00:00Z`, `${toISO}T23:59:59Z`),
+        fetchShopifyDisputes(domain, token, `${fromISO}T00:00:00Z`),
+      ]);
+      const refAmt = refOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
+      const cbAmt  = disputes
+        .filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${toISO}T23:59:59Z`)
+        .reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
+      return { shop_id: s.shop_id as string, refAmt, cbAmt };
+    } catch {
+      return { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0 };
+    }
+  }));
+  return rows;
+});
+
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
 // e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
 // a cada carregamento de tela.
@@ -1698,16 +1740,6 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
               fetchShopifyDisputes(domain, token, `${from}T00:00:00Z`),
               fetchShopifyDisputes(domain, token, `${prev_from}T00:00:00Z`),
             ]);
-            // Pedidos void (pré-captura) têm total_price=$0 mas têm transações kind="void" no refunds[]
-            // Usamos o maior entre: soma de transações reais e a diferença de preço
-            const orderRefundAmount = (o: any) => {
-              const txSum = (o.refunds ?? [])
-                .flatMap((r: any) => r.transactions ?? [])
-                .filter((t: any) => (t.kind === "refund" || t.kind === "void") && t.status === "success")
-                .reduce((s: number, t: any) => s + Number(t.amount ?? 0), 0);
-              const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
-              return Math.max(txSum, priceDiff);
-            };
             const refAmt     = refOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
             const prevRefAmt = refPrevOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
             const cbAmt      = disputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);

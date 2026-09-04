@@ -489,8 +489,17 @@ function StoreDragCard({ store, features, onEdit, dragging }: {
           </a>
         )}
         {!dragging && features && features.length > 0 && (
-          <div className="mt-2 space-y-1.5" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-            {features.map((f) => <FeatureBadge key={f} feature={f} store={store} />)}
+          <div className="mt-2 flex flex-col gap-1.5" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+            {features.includes("hold") && <FeatureBadge feature="hold" store={store} />}
+            {/* Média de pedidos e tempo de payout sempre lado a lado — são as
+                duas métricas mais lidas de relance no board. */}
+            {(features.includes("avg_orders") || features.includes("payout_time")) && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {features.includes("avg_orders") && <FeatureBadge feature="avg_orders" store={store} />}
+                {features.includes("payout_time") && <FeatureBadge feature="payout_time" store={store} />}
+              </div>
+            )}
+            {features.includes("note") && <FeatureBadge feature="note" store={store} />}
           </div>
         )}
       </div>

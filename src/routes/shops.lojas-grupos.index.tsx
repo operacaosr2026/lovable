@@ -185,7 +185,7 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
       <Link
         to="/shops/lojas-grupos/$cardId"
         params={{ cardId: card.id }}
-        search={{ tab: "overview" as const }}
+        search={{ tab: "dashboard" as const }}
         className="block p-5"
       >
         {/* Header */}
