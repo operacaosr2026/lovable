@@ -185,7 +185,10 @@ function CreativeEditor({ creative, status, productId, onClose, onCreate, onSave
       setMediaUrl(signed?.signedUrl ?? "");
       setMediaPath(path);
       setMediaKind(file.type.startsWith("video/") ? "video" : "image");
-    } catch (err: any) { alert("Erro: " + err.message); } finally { setUploading(false); }
+    } catch (err: any) {
+      console.error("Erro ao enviar criativo do produto", err);
+      alert(`Erro ao enviar: ${err.message}${err.status ? ` (status ${err.status}${err.statusCode ? `, ${err.statusCode}` : ""})` : ""}`);
+    } finally { setUploading(false); }
   };
 
   const submit = async () => {

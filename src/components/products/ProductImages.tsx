@@ -51,7 +51,8 @@ export function ProductImages({ productId }: { productId: string }) {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["product", productId] });
     } catch (e: any) {
-      alert("Erro ao enviar: " + e.message);
+      console.error("Erro ao enviar imagem do produto", e);
+      alert(`Erro ao enviar: ${e.message}${e.status ? ` (status ${e.status}${e.statusCode ? `, ${e.statusCode}` : ""})` : ""}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

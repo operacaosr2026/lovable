@@ -28,6 +28,16 @@ function orderLabel(o: any) {
   const n = o.order_number ?? o.id.slice(0, 8);
   return String(n).startsWith("#") ? n : `#${n}`;
 }
+// Nome do(s) produto(s) do pedido — extraído do JSON bruto da Shopify (raw.line_items),
+// já salvo no sync; não existe coluna própria pra isso em shop_orders.
+function productSummary(o: any) {
+  const titles = ((o.raw?.line_items ?? []) as any[])
+    .map((li) => li.title ?? li.name)
+    .filter(Boolean);
+  if (!titles.length) return null;
+  const unique = Array.from(new Set(titles));
+  return unique.length > 1 ? `${unique[0]} +${unique.length - 1}` : unique[0];
+}
 
 type ShopConfig = { id: string; name: string; payment_days: number };
 
@@ -524,7 +534,10 @@ export function LgOrders({
                               onCheckedChange={(v) => toggleOrder(o.id, !!v)}
                             />
                             <div className="min-w-0">
-                              <p className="font-medium text-foreground truncate">{orderLabel(o)}</p>
+                              <p className="font-medium text-foreground truncate">
+                                {orderLabel(o)}
+                                {productSummary(o) && <span className="font-normal text-muted-foreground"> - {productSummary(o)}</span>}
+                              </p>
                               {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
                             </div>
                             <div className="text-xs text-muted-foreground">{o.items_count ?? 0} itens</div>

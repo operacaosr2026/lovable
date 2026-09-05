@@ -324,7 +324,10 @@ function ProductEditor({ product, onClose, onSave, onDelete }: any) {
       if (error) throw error;
       const { data: signed } = await supabase.storage.from("project-attachments").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
       setImageUrl(signed?.signedUrl ?? "");
-    } catch (err: any) { alert("Erro: " + err.message); } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+    } catch (err: any) {
+      console.error("Erro ao enviar imagem do produto", err);
+      alert(`Erro ao enviar: ${err.message}${err.status ? ` (status ${err.status}${err.statusCode ? `, ${err.statusCode}` : ""})` : ""}`);
+    } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
   const addTag = () => {
