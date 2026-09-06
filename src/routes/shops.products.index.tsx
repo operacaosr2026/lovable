@@ -15,6 +15,8 @@ export const Route = createFileRoute("/shops/products/")({
   component: ProductsIndex,
 });
 
+const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(isFinite(n) ? n : 0);
+
 const STATUS_META: Record<string, { label: string; tint: string; accent: string }> = {
   ativo:     { label: "Ativo",     tint: "oklch(0.96 0.04 155)",  accent: "oklch(0.5 0.13 155)" },
   teste:     { label: "Teste",     tint: "oklch(0.97 0.025 250)", accent: "oklch(0.55 0.18 250)" },
@@ -155,7 +157,7 @@ function ProductCard({ p, onEdit }: { p: any; onEdit: () => void }) {
               {st.label}
             </span>
           </div>
-          {p.niche && <div className="text-[11px] text-muted-foreground">{p.niche}</div>}
+          <div className="text-[11px] text-muted-foreground">Custo: {usd(p.cost ?? 0)}</div>
         </div>
       </Link>
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
