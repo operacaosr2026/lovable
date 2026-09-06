@@ -28,6 +28,13 @@ function isoToday() {
   return new Date().toLocaleDateString("en-CA");
 }
 
+function formatAxisMoney(v: number) {
+  const n = Math.round(v);
+  if (Math.abs(n) < 1000) return `$${n}`;
+  const k = n / 1000;
+  return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`;
+}
+
 function fmtMoney(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
@@ -889,7 +896,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                           <>
                             <div className="group relative">
                               <ResponsiveContainer width="100%" height={280}>
-                                <AreaChart data={chartData} margin={{ top: 8, right: 46, left: -16, bottom: 0 }}>
+                                <AreaChart data={chartData} margin={{ top: 44, right: 46, left: -8, bottom: 0 }}>
                                   <defs>
                                     <linearGradient id="lg-goal-progress-grad" x1="0" y1="0" x2="0" y2="1">
                                       <stop offset="5%"  stopColor="var(--color-primary)" stopOpacity={0.25} />
@@ -904,8 +911,9 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                                   <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
                                   <YAxis
                                     tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false}
-                                    tickFormatter={v => `$${v}`}
-                                    domain={[(min: number) => Math.min(0, min), (max: number) => Math.max(max, d.meta, d.projecaoFinal)]}
+                                    tickFormatter={v => formatAxisMoney(v)}
+                                    domain={[(min: number) => Math.min(0, min), (max: number) => Math.ceil(Math.max(max, d.meta, d.projecaoFinal) / 500) * 500]}
+                                    width={48}
                                   />
                                   <Tooltip content={<ProgressTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
                                   <ReferenceLine y={d.meta} stroke="var(--color-success)" strokeDasharray="4 4"
