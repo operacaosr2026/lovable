@@ -12,72 +12,8 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
-      accounts: {
-        Row: {
-          archived: boolean
-          color: string
-          created_at: string
-          currency: string
-          icon_url: string | null
-          id: string
-          match_keywords: string[]
-          name: string
-          position: number
-          user_id: string
-        }
-        Insert: {
-          archived?: boolean
-          color?: string
-          created_at?: string
-          currency: string
-          icon_url?: string | null
-          id?: string
-          match_keywords?: string[]
-          name: string
-          position?: number
-          user_id: string
-        }
-        Update: {
-          archived?: boolean
-          color?: string
-          created_at?: string
-          currency?: string
-          icon_url?: string | null
-          id?: string
-          match_keywords?: string[]
-          name?: string
-          position?: number
-          user_id?: string
-        }
-        Relationships: []
-      }
       app_settings: {
         Row: {
           app_name: string
@@ -171,13 +107,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "bank_account_links_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "bank_account_links_connection_id_fkey"
             columns: ["connection_id"]
             isOneToOne: false
@@ -225,128 +154,6 @@ export type Database = {
           updated_at?: string
           user_id?: string
           wise_profile_id?: string | null
-        }
-        Relationships: []
-      }
-      categories: {
-        Row: {
-          color: string
-          created_at: string
-          id: string
-          kind: string
-          name: string
-          user_id: string
-        }
-        Insert: {
-          color?: string
-          created_at?: string
-          id?: string
-          kind: string
-          name: string
-          user_id: string
-        }
-        Update: {
-          color?: string
-          created_at?: string
-          id?: string
-          kind?: string
-          name?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      category_rules: {
-        Row: {
-          applies_to: string
-          category_id: string
-          created_at: string
-          enabled: boolean
-          id: string
-          match_type: string
-          match_value: string
-          position: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          applies_to?: string
-          category_id: string
-          created_at?: string
-          enabled?: boolean
-          id?: string
-          match_type?: string
-          match_value: string
-          position?: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          applies_to?: string
-          category_id?: string
-          created_at?: string
-          enabled?: boolean
-          id?: string
-          match_type?: string
-          match_value?: string
-          position?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "category_rules_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "categories"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      financial_goals: {
-        Row: {
-          created_at: string
-          id: string
-          month: number | null
-          period: string
-          target_amount_brl: number
-          user_id: string
-          year: number
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          month?: number | null
-          period: string
-          target_amount_brl: number
-          user_id: string
-          year: number
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          month?: number | null
-          period?: string
-          target_amount_brl?: number
-          user_id?: string
-          year?: number
-        }
-        Relationships: []
-      }
-      fx_rates: {
-        Row: {
-          updated_at: string
-          usd_to_brl: number
-          user_id: string
-        }
-        Insert: {
-          updated_at?: string
-          usd_to_brl?: number
-          user_id: string
-        }
-        Update: {
-          updated_at?: string
-          usd_to_brl?: number
-          user_id?: string
         }
         Relationships: []
       }
@@ -941,6 +748,44 @@ export type Database = {
         }
         Relationships: []
       }
+      product_checklist_items: {
+        Row: {
+          checked: boolean
+          created_at: string
+          id: string
+          position: number
+          product_id: string
+          text: string
+          user_id: string
+        }
+        Insert: {
+          checked?: boolean
+          created_at?: string
+          id?: string
+          position?: number
+          product_id: string
+          text: string
+          user_id: string
+        }
+        Update: {
+          checked?: boolean
+          created_at?: string
+          id?: string
+          position?: number
+          product_id?: string
+          text?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_checklist_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_creatives: {
         Row: {
           created_at: string
@@ -999,6 +844,92 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "product_creatives_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_doc_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          position: number
+          product_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          position?: number
+          product_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          position?: number
+          product_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_doc_folders_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_docs: {
+        Row: {
+          content: string
+          created_at: string
+          folder_id: string | null
+          id: string
+          position: number
+          product_id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          folder_id?: string | null
+          id?: string
+          position?: number
+          product_id: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          folder_id?: string | null
+          id?: string
+          position?: number
+          product_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_docs_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "product_doc_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_docs_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
@@ -1423,66 +1354,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      recurrences: {
-        Row: {
-          account_id: string
-          active: boolean
-          amount: number
-          category_id: string | null
-          created_at: string
-          currency: string
-          description: string | null
-          frequency: string
-          id: string
-          kind: string
-          next_date: string
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          active?: boolean
-          amount: number
-          category_id?: string | null
-          created_at?: string
-          currency: string
-          description?: string | null
-          frequency: string
-          id?: string
-          kind: string
-          next_date: string
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          active?: boolean
-          amount?: number
-          category_id?: string | null
-          created_at?: string
-          currency?: string
-          description?: string | null
-          frequency?: string
-          id?: string
-          kind?: string
-          next_date?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "recurrences_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "recurrences_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "categories"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       shop_cash_categories: {
         Row: {
@@ -2655,6 +2526,7 @@ export type Database = {
           created_at: string
           expires_at: string
           name: string
+          replace_placeholder_id: string | null
           shop_domain: string
           state: string
           user_id: string
@@ -2665,6 +2537,7 @@ export type Database = {
           created_at?: string
           expires_at?: string
           name: string
+          replace_placeholder_id?: string | null
           shop_domain: string
           state: string
           user_id: string
@@ -2675,6 +2548,7 @@ export type Database = {
           created_at?: string
           expires_at?: string
           name?: string
+          replace_placeholder_id?: string | null
           shop_domain?: string
           state?: string
           user_id?: string
@@ -2693,12 +2567,13 @@ export type Database = {
           iana_timezone: string | null
           id: string
           installed_at: string | null
+          is_placeholder: boolean
           last_sync_at: string | null
           last_sync_error: string | null
           last_sync_status: string | null
           name: string | null
           scope: string | null
-          shop_domain: string
+          shop_domain: string | null
           store_id: string | null
           token_secret_name: string | null
           updated_at: string
@@ -2715,12 +2590,13 @@ export type Database = {
           iana_timezone?: string | null
           id?: string
           installed_at?: string | null
+          is_placeholder?: boolean
           last_sync_at?: string | null
           last_sync_error?: string | null
           last_sync_status?: string | null
           name?: string | null
           scope?: string | null
-          shop_domain: string
+          shop_domain?: string | null
           store_id?: string | null
           token_secret_name?: string | null
           updated_at?: string
@@ -2737,12 +2613,13 @@ export type Database = {
           iana_timezone?: string | null
           id?: string
           installed_at?: string | null
+          is_placeholder?: boolean
           last_sync_at?: string | null
           last_sync_error?: string | null
           last_sync_status?: string | null
           name?: string | null
           scope?: string | null
-          shop_domain?: string
+          shop_domain?: string | null
           store_id?: string | null
           token_secret_name?: string | null
           updated_at?: string
@@ -3746,92 +3623,6 @@ export type Database = {
         }
         Relationships: []
       }
-      transactions: {
-        Row: {
-          account_id: string
-          amount: number
-          category_id: string | null
-          created_at: string
-          currency: string
-          date: string
-          description: string | null
-          external_id: string | null
-          id: string
-          import_source: string
-          kind: string
-          needs_review: boolean
-          paid: boolean
-          recurrence_id: string | null
-          to_account_id: string | null
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          amount: number
-          category_id?: string | null
-          created_at?: string
-          currency: string
-          date?: string
-          description?: string | null
-          external_id?: string | null
-          id?: string
-          import_source?: string
-          kind: string
-          needs_review?: boolean
-          paid?: boolean
-          recurrence_id?: string | null
-          to_account_id?: string | null
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          amount?: number
-          category_id?: string | null
-          created_at?: string
-          currency?: string
-          date?: string
-          description?: string | null
-          external_id?: string | null
-          id?: string
-          import_source?: string
-          kind?: string
-          needs_review?: boolean
-          paid?: boolean
-          recurrence_id?: string | null
-          to_account_id?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "transactions_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "transactions_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "categories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "transactions_recurrence_id_fkey"
-            columns: ["recurrence_id"]
-            isOneToOne: false
-            referencedRelation: "recurrences"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "transactions_to_account_id_fkey"
-            columns: ["to_account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       user_roles: {
         Row: {
           created_at: string
@@ -3853,200 +3644,166 @@ export type Database = {
         }
         Relationships: []
       }
-      whiteboard_edges: {
-        Row: {
-          board_id: string
-          color: string
-          created_at: string
-          id: string
-          kind: string
-          source_node_id: string
-          target_node_id: string
-          user_id: string
-        }
-        Insert: {
-          board_id: string
-          color?: string
-          created_at?: string
-          id?: string
-          kind?: string
-          source_node_id: string
-          target_node_id: string
-          user_id: string
-        }
-        Update: {
-          board_id?: string
-          color?: string
-          created_at?: string
-          id?: string
-          kind?: string
-          source_node_id?: string
-          target_node_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "whiteboard_edges_board_id_fkey"
-            columns: ["board_id"]
-            isOneToOne: false
-            referencedRelation: "whiteboards"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whiteboard_edges_source_node_id_fkey"
-            columns: ["source_node_id"]
-            isOneToOne: false
-            referencedRelation: "whiteboard_nodes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whiteboard_edges_target_node_id_fkey"
-            columns: ["target_node_id"]
-            isOneToOne: false
-            referencedRelation: "whiteboard_nodes"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      whiteboard_nodes: {
-        Row: {
-          board_id: string
-          created_at: string
-          data: Json
-          height: number | null
-          id: string
-          kind: string
-          parent_id: string | null
-          task_id: string | null
-          updated_at: string
-          user_id: string
-          width: number | null
-          x: number
-          y: number
-          z_index: number
-        }
-        Insert: {
-          board_id: string
-          created_at?: string
-          data?: Json
-          height?: number | null
-          id?: string
-          kind?: string
-          parent_id?: string | null
-          task_id?: string | null
-          updated_at?: string
-          user_id: string
-          width?: number | null
-          x?: number
-          y?: number
-          z_index?: number
-        }
-        Update: {
-          board_id?: string
-          created_at?: string
-          data?: Json
-          height?: number | null
-          id?: string
-          kind?: string
-          parent_id?: string | null
-          task_id?: string | null
-          updated_at?: string
-          user_id?: string
-          width?: number | null
-          x?: number
-          y?: number
-          z_index?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "whiteboard_nodes_board_id_fkey"
-            columns: ["board_id"]
-            isOneToOne: false
-            referencedRelation: "whiteboards"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whiteboard_nodes_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "whiteboard_nodes"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      whiteboards: {
+      workspace_lists: {
         Row: {
           color: string
           created_at: string
-          icon: string | null
           id: string
-          is_favorite: boolean
-          last_opened_at: string | null
           name: string
           position: number
-          project_id: string | null
           updated_at: string
           user_id: string
-          viewport: Json
         }
         Insert: {
           color?: string
           created_at?: string
-          icon?: string | null
           id?: string
-          is_favorite?: boolean
-          last_opened_at?: string | null
-          name?: string
+          name: string
           position?: number
-          project_id?: string | null
           updated_at?: string
           user_id: string
-          viewport?: Json
         }
         Update: {
           color?: string
           created_at?: string
-          icon?: string | null
           id?: string
-          is_favorite?: boolean
-          last_opened_at?: string | null
           name?: string
           position?: number
-          project_id?: string | null
           updated_at?: string
           user_id?: string
-          viewport?: Json
         }
-        Relationships: [
-          {
-            foreignKeyName: "whiteboards_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       workspace_members: {
         Row: {
           created_at: string
           id: string
+          is_admin: boolean
           member_id: string
           owner_id: string
         }
         Insert: {
           created_at?: string
           id?: string
+          is_admin?: boolean
           member_id: string
           owner_id: string
         }
         Update: {
           created_at?: string
           id?: string
+          is_admin?: boolean
           member_id?: string
           owner_id?: string
         }
         Relationships: []
+      }
+      workspace_statuses: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          is_done: boolean
+          list_id: string
+          name: string
+          position: number
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          is_done?: boolean
+          list_id: string
+          name: string
+          position?: number
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          is_done?: boolean
+          list_id?: string
+          name?: string
+          position?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_statuses_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_tasks: {
+        Row: {
+          assignee_id: string | null
+          checklist: Json
+          created_at: string
+          description: string | null
+          due_at: string | null
+          id: string
+          list_id: string
+          position: number
+          priority: string
+          status_id: string
+          tags: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          checklist?: Json
+          created_at?: string
+          description?: string | null
+          due_at?: string | null
+          id?: string
+          list_id: string
+          position?: number
+          priority?: string
+          status_id: string
+          tags?: Json
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assignee_id?: string | null
+          checklist?: Json
+          created_at?: string
+          description?: string | null
+          due_at?: string | null
+          id?: string
+          list_id?: string
+          position?: number
+          priority?: string
+          status_id?: string
+          tags?: Json
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_tasks_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_tasks_status_id_fkey"
+            columns: ["status_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_statuses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -4069,6 +3826,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      srx_painel_saude: {
+        Args: { p_ate?: string; p_desde?: string; p_janela?: string }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin" | "member"
@@ -4087,12 +3848,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4116,11 +3877,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4141,11 +3902,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4166,11 +3927,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4183,11 +3944,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4197,9 +3958,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: ["admin", "member"],

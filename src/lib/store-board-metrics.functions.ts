@@ -17,13 +17,10 @@ export const getStoreHoldBalance = createServerFn({ method: "GET" })
     return { amount: balance?.amount ?? 0, currency: balance?.currency ?? null };
   });
 
-function previousWeekRange() {
-  const now = new Date();
-  const daysSinceMonday = (now.getUTCDay() + 6) % 7;
-  const thisMonday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday));
-  const prevMonday = new Date(thisMonday);
-  prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
-  return { fromISO: prevMonday.toISOString(), toISO: thisMonday.toISOString() };
+function last7DaysRange() {
+  const toISO = new Date().toISOString();
+  const fromISO = new Date(Date.now() - 7 * 86400_000).toISOString();
+  return { fromISO, toISO };
 }
 
 async function fetchShopifyOrdersCountRange(domain: string, token: string, fromISO: string, toISO: string) {
@@ -35,13 +32,13 @@ async function fetchShopifyOrdersCountRange(domain: string, token: string, fromI
   return Number(json.count ?? 0);
 }
 
-// Feature "Média de pedidos diários": pedidos pagos da semana anterior (segunda a domingo) / 7.
+// Feature "Média de pedidos diários": pedidos pagos dos últimos 7 dias corridos / 7.
 export const getStoreAvgDailyOrders = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => StoreIdInput.parse(d))
   .handler(async ({ context, data }) => {
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, data.shopify_store_id);
-    const { fromISO, toISO } = previousWeekRange();
+    const { fromISO, toISO } = last7DaysRange();
     const totalOrders = await fetchShopifyOrdersCountRange(domain, token, fromISO, toISO);
     return { avgPerDay: totalOrders / 7, totalOrders };
   });

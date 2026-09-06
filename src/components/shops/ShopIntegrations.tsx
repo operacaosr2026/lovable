@@ -110,9 +110,12 @@ export function ShopIntegrations({ shopId }: { shopId: string }) {
   );
 }
 
-export function ConnectStoreDialog({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected?: (s: any) => void }) {
+export function ConnectStoreDialog({ open, onClose, onConnected, initialName, replacePlaceholderId }: {
+  open: boolean; onClose: () => void; onConnected?: (s: any) => void;
+  initialName?: string; replacePlaceholderId?: string;
+}) {
   const startOAuth = useServerFn(startShopifyOAuth);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [domain, setDomain] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -123,6 +126,7 @@ export function ConnectStoreDialog({ open, onClose, onConnected }: { open: boole
       shop_domain: domain.trim(),
       client_id: clientId.trim(),
       client_secret: clientSecret.trim(),
+      replace_placeholder_id: replacePlaceholderId,
     } }),
     onSuccess: (r: any) => { if (r?.url) window.location.href = r.url; },
     onError: (e: any) => toast.error(e.message),

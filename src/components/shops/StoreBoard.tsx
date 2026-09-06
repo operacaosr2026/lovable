@@ -17,7 +17,7 @@ import {
   reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setStoreBoardNote,
   type BOARD_COLUMN_FEATURES,
 } from "@/lib/store-board.functions";
-import { listShopifyStores } from "@/lib/shop-orders.functions";
+import { listShopifyStores, createPlaceholderStore } from "@/lib/shop-orders.functions";
 import { getStoreHoldBalance, getStoreAvgDailyOrders, getStorePayoutTime } from "@/lib/store-board-metrics.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -27,10 +27,11 @@ import {
 type Store = {
   id: string;
   name: string | null;
-  shop_domain: string;
+  shop_domain: string | null;
   board_column_id: string | null;
   board_position: number;
   board_note: string | null;
+  is_placeholder: boolean;
 };
 type ColumnFeature = (typeof BOARD_COLUMN_FEATURES)[number];
 type Column = { id: string; name: string; position: number; features: ColumnFeature[] };
@@ -47,6 +48,7 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   const qc = useQueryClient();
   const listColumnsFn = useServerFn(listBoardColumns);
   const listStoresFn = useServerFn(listShopifyStores);
+  const createPlaceholderFn = useServerFn(createPlaceholderStore);
   const createColFn = useServerFn(createBoardColumn);
   const renameColFn = useServerFn(renameBoardColumn);
   const deleteColFn = useServerFn(deleteBoardColumn);
@@ -88,6 +90,12 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   }, [columnsData, storesData]);
 
   const moveStores = useMutation({ mutationFn: (updates: { id: string; board_column_id: string; board_position: number }[]) => moveStoresFn({ data: { updates } }) });
+
+  const addPlaceholder = useMutation({
+    mutationFn: (input: { name: string; board_column_id: string }) => createPlaceholderFn({ data: input }),
+    onSuccess: () => refreshStores(),
+    onError: (e: any) => toast.error(e.message),
+  });
 
   // One-time repair: assign stores created before the board existed to the first column.
   useEffect(() => {
@@ -275,12 +283,13 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
       <div className="flex gap-3 overflow-x-auto pb-2 items-start">
         <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
-          {columns.map((col) => (
+          {columns.map((col, i) => (
             <BoardColumn
               key={col.id}
               column={col}
               stores={board[col.id] ?? []}
               onEditStore={onEditStore}
+              onAddStore={i === 0 ? (name) => addPlaceholder.mutate({ name, board_column_id: col.id }) : undefined}
               onRename={(name) => renameColumnLocal(col.id, name)}
               onFeaturesChange={(features) => setColumnFeaturesLocal(col.id, features)}
               onDelete={async () => {
@@ -309,10 +318,11 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   );
 }
 
-function BoardColumn({ column, stores, onEditStore, onRename, onFeaturesChange, onDelete }: {
+function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeaturesChange, onDelete }: {
   column: Column;
   stores: Store[];
   onEditStore: (store: any) => void;
+  onAddStore?: (name: string) => void;
   onRename: (name: string) => void;
   onFeaturesChange: (features: ColumnFeature[]) => void;
   onDelete: () => void;
@@ -331,6 +341,15 @@ function BoardColumn({ column, stores, onEditStore, onRename, onFeaturesChange, 
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(column.name);
   useEffect(() => { setName(column.name); }, [column.name]);
+
+  const [addingStore, setAddingStore] = useState(false);
+  const [newStoreName, setNewStoreName] = useState("");
+  const commitAddStore = () => {
+    const trimmed = newStoreName.trim();
+    if (trimmed) onAddStore?.(trimmed);
+    setNewStoreName("");
+    setAddingStore(false);
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -436,11 +455,42 @@ function BoardColumn({ column, stores, onEditStore, onRename, onFeaturesChange, 
             <StoreDragCard key={s.id} store={s} features={column.features} onEdit={() => onEditStore(s)} />
           ))}
         </SortableContext>
-        {stores.length === 0 && (
+        {stores.length === 0 && !addingStore && (
           <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
             Arraste uma loja para cá
           </div>
         )}
+
+        {onAddStore && (addingStore ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={newStoreName}
+              onChange={(e) => setNewStoreName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitAddStore();
+                if (e.key === "Escape") { setNewStoreName(""); setAddingStore(false); }
+              }}
+              onBlur={commitAddStore}
+              placeholder="Nome da loja"
+              className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+            />
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={commitAddStore}
+              className="size-8 rounded-lg bg-primary text-primary-foreground grid place-items-center shrink-0"
+            >
+              <Check className="size-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAddingStore(true)}
+            className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 flex items-center justify-center gap-1.5"
+          >
+            <Plus className="size-3.5" /> Adicionar loja
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -469,26 +519,34 @@ function StoreDragCard({ store, features, onEdit, dragging }: {
       style={style}
       {...(dragging ? {} : attributes)}
       {...(dragging ? {} : listeners)}
-      className={`group relative rounded-xl bg-background border border-border hover:border-primary/40 p-3 flex items-start gap-2.5 cursor-grab active:cursor-grabbing transition-shadow ${dragging ? "shadow-xl border-primary/40" : ""}`}
+      className={`group relative rounded-xl bg-background border p-3 flex items-start gap-2.5 cursor-grab active:cursor-grabbing transition-shadow ${store.is_placeholder ? "border-dashed border-border/70" : "border-border hover:border-primary/40"} ${dragging ? "shadow-xl border-primary/40" : ""}`}
     >
-      <div className="size-8 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
+      <div className={`size-8 rounded-lg grid place-items-center shrink-0 ${store.is_placeholder ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}>
         <ShoppingBag className="size-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{store.name || domain}</div>
-        {domain && <div className="text-[11px] text-muted-foreground truncate mt-0.5">{domain}</div>}
-        {storeUrl && (
-          <a
-            href={storeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-          >
-            <ExternalLink className="size-2.5" /> Abrir loja
-          </a>
+        <div className="text-sm font-medium truncate">{store.name || domain || "Nova loja"}</div>
+        {store.is_placeholder ? (
+          <span className="mt-0.5 inline-block text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-300">
+            Aguardando Shopify
+          </span>
+        ) : (
+          <>
+            {domain && <div className="text-[11px] text-muted-foreground truncate mt-0.5">{domain}</div>}
+            {storeUrl && (
+              <a
+                href={storeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+              >
+                <ExternalLink className="size-2.5" /> Abrir loja
+              </a>
+            )}
+          </>
         )}
-        {!dragging && features && features.length > 0 && (
+        {!dragging && !store.is_placeholder && features && features.length > 0 && (
           <div className="mt-2 flex flex-col gap-1.5" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
             {features.includes("hold") && <FeatureBadge feature="hold" store={store} />}
             {/* Média de pedidos e tempo de payout sempre lado a lado — são as

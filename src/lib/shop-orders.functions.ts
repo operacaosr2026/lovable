@@ -289,9 +289,32 @@ export const listShopifyStores = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase.from("shopify_stores")
-      .select("id,name,shop_domain,board_column_id,board_position,board_note").eq("user_id", context.ownerId);
+      .select("id,name,shop_domain,board_column_id,board_position,board_note,is_placeholder").eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
     return data ?? [];
+  });
+
+export const createPlaceholderStore = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    name: z.string().trim().min(1).max(100),
+    board_column_id: z.string().uuid(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { count } = await context.supabase.from("shopify_stores")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.ownerId).eq("board_column_id", data.board_column_id);
+    const { data: row, error } = await context.supabase.from("shopify_stores")
+      .insert({
+        user_id: context.ownerId,
+        name: data.name,
+        is_placeholder: true,
+        board_column_id: data.board_column_id,
+        board_position: count ?? 0,
+      })
+      .select("id,name,shop_domain,board_column_id,board_position,board_note,is_placeholder").single();
+    if (error) throw new Error(error.message);
+    return row;
   });
 
 export const renameShopifyStore = createServerFn({ method: "POST" })
@@ -301,10 +324,11 @@ export const renameShopifyStore = createServerFn({ method: "POST" })
     name: z.string().trim().min(1).max(100),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { error } = await context.supabase.from("shopify_stores")
-      .update({ name: data.name }).eq("id", data.id).eq("user_id", context.ownerId);
+    const { data: row, error } = await context.supabase.from("shopify_stores")
+      .update({ name: data.name }).eq("id", data.id).eq("user_id", context.ownerId)
+      .select("is_placeholder").single();
     if (error) throw new Error(error.message);
-    await syncMirrorShop(context.ownerId, data.id, data.name);
+    if (!row?.is_placeholder) await syncMirrorShop(context.ownerId, data.id, data.name);
     return { ok: true };
   });
 
@@ -345,6 +369,7 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
     shop_domain: z.string().trim().min(3).max(200),
     client_id: z.string().trim().min(5).max(200),
     client_secret: z.string().trim().min(5).max(500),
+    replace_placeholder_id: z.string().uuid().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const domain = normalizeShopDomain(data.shop_domain);
@@ -359,6 +384,7 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
       state,
       client_id: data.client_id,
       client_secret: data.client_secret,
+      replace_placeholder_id: data.replace_placeholder_id ?? null,
     });
     if (error) throw new Error(error.message);
     const scopes = "read_orders,read_products,read_shopify_payments_payouts,read_shopify_payments_disputes";

@@ -86,6 +86,19 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
             .insert({ user_id: st.user_id, ...payload }).select("id").single();
           storeId = inserted?.id;
         }
+
+        const placeholderId = st.replace_placeholder_id as string | null;
+        if (storeId && placeholderId && placeholderId !== storeId) {
+          const { data: placeholder } = await supabaseAdmin.from("shopify_stores")
+            .select("board_column_id,board_position").eq("id", placeholderId).eq("user_id", st.user_id).maybeSingle();
+          if (placeholder) {
+            await supabaseAdmin.from("shopify_stores")
+              .update({ board_column_id: placeholder.board_column_id, board_position: placeholder.board_position })
+              .eq("id", storeId);
+          }
+          await supabaseAdmin.from("shopify_stores").delete().eq("id", placeholderId).eq("user_id", st.user_id);
+        }
+
         if (storeId) {
           await syncMirrorShop(st.user_id, storeId, st.name);
         }

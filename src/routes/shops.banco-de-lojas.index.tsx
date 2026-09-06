@@ -28,6 +28,7 @@ function BancoDeLojasIndex() {
   const deleteFn = useServerFn(deleteShopifyStore);
   const [openConnect, setOpenConnect] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [connecting, setConnecting] = useState<any>(null);
 
   const { data: stores = [], isLoading } = useQuery({
     queryKey: ["shopify-stores"],
@@ -52,7 +53,10 @@ function BancoDeLojasIndex() {
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <p className="text-sm text-muted-foreground">
-            {isLoading ? "Carregando..." : `${stores.length} ${stores.length === 1 ? "loja conectada" : "lojas conectadas"}`}
+            {isLoading ? "Carregando..." : (() => {
+              const connected = stores.filter((s: any) => !s.is_placeholder).length;
+              return `${connected} ${connected === 1 ? "loja conectada" : "lojas conectadas"}`;
+            })()}
           </p>
           <div className="flex items-center rounded-lg border border-border bg-surface p-0.5">
             <button
@@ -115,6 +119,10 @@ function BancoDeLojasIndex() {
             setEditing(null);
             handleDelete(editing);
           }}
+          onConnect={() => {
+            setConnecting(editing);
+            setEditing(null);
+          }}
         />
       )}
 
@@ -125,6 +133,19 @@ function BancoDeLojasIndex() {
           onConnected={() => {
             qc.invalidateQueries({ queryKey: ["shopify-stores"] });
             setOpenConnect(false);
+          }}
+        />
+      )}
+
+      {connecting && (
+        <ConnectStoreDialog
+          open={!!connecting}
+          onClose={() => setConnecting(null)}
+          initialName={connecting.name ?? ""}
+          replacePlaceholderId={connecting.id}
+          onConnected={() => {
+            qc.invalidateQueries({ queryKey: ["shopify-stores"] });
+            setConnecting(null);
           }}
         />
       )}
@@ -143,7 +164,11 @@ function StoreCard({ store, onEdit, onDelete }: { store: any; onEdit: () => void
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold truncate">{store.name || domain}</div>
-        {domain && (
+        {store.is_placeholder ? (
+          <span className="mt-1 inline-block text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-300">
+            Aguardando Shopify
+          </span>
+        ) : domain && (
           <div className="text-xs text-muted-foreground mt-0.5 truncate">{domain}</div>
         )}
         {storeUrl && (
@@ -177,7 +202,7 @@ function StoreCard({ store, onEdit, onDelete }: { store: any; onEdit: () => void
   );
 }
 
-function RenameStoreDialog({ store, onClose, onRenamed, onDelete }: { store: any; onClose: () => void; onRenamed: () => void; onDelete: () => void }) {
+function RenameStoreDialog({ store, onClose, onRenamed, onDelete, onConnect }: { store: any; onClose: () => void; onRenamed: () => void; onDelete: () => void; onConnect: () => void }) {
   const [name, setName] = useState(store?.name ?? "");
   const [error, setError] = useState<string | null>(null);
   const renameFn = useServerFn(renameShopifyStore);
@@ -196,7 +221,7 @@ function RenameStoreDialog({ store, onClose, onRenamed, onDelete }: { store: any
         className="w-full max-w-sm rounded-2xl bg-popover border border-border shadow-xl"
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <div className="text-base font-semibold">Editar loja</div>
+          <div className="text-base font-semibold">{store.is_placeholder ? "Loja para produzir" : "Editar loja"}</div>
           <button onClick={onClose} className="size-7 rounded-md grid place-items-center hover:bg-muted text-muted-foreground">
             <X className="size-4" />
           </button>
@@ -212,9 +237,23 @@ function RenameStoreDialog({ store, onClose, onRenamed, onDelete }: { store: any
               autoFocus
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Domínio e credenciais estão vinculados à autorização Shopify e não podem ser alterados aqui. Para trocá-los, reconecte a loja.
-          </p>
+          {store.is_placeholder ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Essa loja ainda não existe na Shopify. Quando criá-la lá, conecte aqui os dados (domínio, Client ID e Client Secret) para ela virar uma loja de verdade nesta mesma coluna.
+              </p>
+              <button
+                onClick={onConnect}
+                className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
+              >
+                Conectar na Shopify
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Domínio e credenciais estão vinculados à autorização Shopify e não podem ser alterados aqui. Para trocá-los, reconecte a loja.
+            </p>
+          )}
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
         <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-border">
