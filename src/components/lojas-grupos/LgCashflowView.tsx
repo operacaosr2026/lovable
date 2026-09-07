@@ -10,7 +10,7 @@
  *
  * ShopCashflow.tsx NÃO foi modificado.
  */
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -382,16 +382,41 @@ const RECURRENCE_OPTIONS = [
   { value: "monthly" as const, label: "Mensal" },
 ];
 
-function QuickAdd({ shopId, date, kind, categories, onClose, onSave }: any) {
+function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
+  const [shopId, setShopId] = useState<string>(shopIds[0]);
   const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState<string>(categories[0] ?? "");
+  const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState("");
   const [d, setD] = useState(date);
   const [recurrence, setRecurrence] = useState<"none"|"daily"|"weekly"|"monthly">("none");
   const [until, setUntil] = useState("");
+
+  const listCatsFn = useServerFn(listCashCategories);
+  const catsQuery = useQuery({
+    queryKey: ["shop-cash-cats", shopId],
+    queryFn: () => listCatsFn({ data: { shop_id: shopId } }),
+  });
+  const categories = useMemo(
+    () => ((catsQuery.data ?? []) as { kind: "income"|"expense"; name: string }[])
+      .filter(c => c.kind === kind).map(c => c.name),
+    [catsQuery.data, kind]
+  );
+  // Categorias são por loja: ao trocar de loja (ou carregar a lista), garante que a
+  // categoria selecionada continua válida, voltando pra primeira disponível senão.
+  useEffect(() => {
+    if (!category || !categories.includes(category)) setCategory(categories[0] ?? "");
+  }, [categories]);
+
+  const isConsolidated = shopIds.length > 1;
   return (
     <Modal onClose={onClose} title={kind === "income" ? "Nova entrada" : "Nova saída"}>
       <div className="space-y-3">
+        {isConsolidated && (
+          <div><label className="text-xs text-muted-foreground">Loja</label>
+            <select value={shopId} onChange={(e) => setShopId(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              {shopIds.map((id: string) => <option key={id} value={id}>{shopNamesMap[id] ?? id}</option>)}
+            </select></div>
+        )}
         <div><label className="text-xs text-muted-foreground">Valor</label>
           <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></div>
         <div><label className="text-xs text-muted-foreground">Categoria</label>
@@ -877,16 +902,12 @@ export function LgCashflowView({
           <RefreshCw className={`size-3.5 text-muted-foreground ${syncing ? "animate-spin" : ""}`} />
         </button>
 
-        {!isConsolidated && (
-          <>
-            <Button variant="outline" size="sm" className="text-blue-700 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/5" onClick={() => setQuickAdd({ date:todayKey, kind:"income" })}>
-              <Plus className="size-3.5" /> Entrada
-            </Button>
-            <Button variant="outline" size="sm" className="text-neutral-600 dark:text-neutral-400 border-neutral-400/30 hover:bg-neutral-500/5" onClick={() => setQuickAdd({ date:todayKey, kind:"expense" })}>
-              <Plus className="size-3.5" /> Saída
-            </Button>
-          </>
-        )}
+        <Button variant="outline" size="sm" className="text-blue-700 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/5" onClick={() => setQuickAdd({ date:todayKey, kind:"income" })}>
+          <Plus className="size-3.5" /> Entrada
+        </Button>
+        <Button variant="outline" size="sm" className="text-neutral-600 dark:text-neutral-400 border-neutral-400/30 hover:bg-neutral-500/5" onClick={() => setQuickAdd({ date:todayKey, kind:"expense" })}>
+          <Plus className="size-3.5" /> Saída
+        </Button>
 
         <Popover>
           <PopoverTrigger asChild>
@@ -973,8 +994,7 @@ export function LgCashflowView({
       {/* ── Modals ── */}
       {quickAdd && (
         <QuickAdd
-          shopId={shopId} date={quickAdd.date} kind={quickAdd.kind}
-          categories={quickAdd.kind==="income" ? incomeCats : expenseCats}
+          shopIds={shopIds} shopNamesMap={shopNamesMap} date={quickAdd.date} kind={quickAdd.kind}
           onClose={() => setQuickAdd(null)}
           onSave={(v:any) => { createMut.mutate(v); setQuickAdd(null); }}
         />
