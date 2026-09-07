@@ -240,11 +240,16 @@ async function computeAccumulatedLucro(
     return { date: `${d.slice(8, 10)}/${d.slice(5, 7)}`, lucroAcumulado: Math.round(cum * 100) / 100 };
   });
 
-  const last3 = days.slice(-3);
+  // Hoje ainda está em andamento (pedidos/ads seguem chegando ao longo do dia), então
+  // não conta como "dia fechado" pras médias — senão ela cai artificialmente cedo no dia.
+  const closedDays = end_date === isoToday() ? days.slice(0, -1) : days;
+
+  const last3 = closedDays.slice(-3);
   const mediaUltimos3 = last3.length > 0
     ? last3.reduce((s, d) => s + (lucroByDate.get(d) ?? 0), 0) / last3.length
     : 0;
-  const mediaGeral = days.length > 0 ? lucro / days.length : 0;
+  const lucroFechado = closedDays.reduce((s, d) => s + (lucroByDate.get(d) ?? 0), 0);
+  const mediaGeral = closedDays.length > 0 ? lucroFechado / closedDays.length : 0;
   const cpa = anuncios > 0 && orders.length > 0 ? anuncios / orders.length : 0;
 
   // ── Ontem (dia anterior ao fim do período) ────────────────────────────────
