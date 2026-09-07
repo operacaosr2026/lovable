@@ -71,9 +71,14 @@ function ProgressTooltip({ active, payload, label }: any) {
 
 // Badge (pill) preso ao ponto final da projeção no gráfico
 function ProjectionEndLabel(props: any) {
-  const x = props.viewBox?.x ?? props.viewBox?.cx ?? props.cx ?? props.x;
-  const y = props.viewBox?.y ?? props.viewBox?.cy ?? props.cy ?? props.y;
-  if (x == null || y == null || Number.isNaN(x) || Number.isNaN(y)) return null;
+  const vb = props.viewBox;
+  // ReferenceDot passa o label com viewBox = {x: cx-r, y: cy-r, width: 2r, height: 2r};
+  // o centro real do ponto é x/y + metade da largura/altura da própria caixa, não vb.x/vb.y direto.
+  const x = vb ? vb.x + vb.width / 2 : (props.cx ?? props.x);
+  const rawY = vb ? vb.y + vb.height / 2 : (props.cy ?? props.y);
+  if (x == null || rawY == null || Number.isNaN(x) || Number.isNaN(rawY)) return null;
+  // Nunca deixa o selo estourar o topo do gráfico, mesmo quando o ponto fica muito perto da borda superior.
+  const y = Math.max(rawY, 34);
   const text = String(props.value);
   const width = text.length * 6.5 + 18;
   return (
