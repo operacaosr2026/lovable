@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { recomputeShopAutomation } from "@/lib/shop-orders.functions";
 
 
 export const GROUP_STATUSES = ["ativo", "pausado", "arquivado"] as const;
@@ -21,82 +22,84 @@ const StoreEntry = z.object({
 });
 
 // Ensures each shopify store in a group has a corresponding internal shop record.
-// Uses separate queries to avoid relying on PostgREST FK auto-discovery.
+// Reuses an existing `shops` mirror row for that Shopify store when one already
+// exists (e.g. one created by Lojas e Grupos, or by another group) instead of
+// creating a duplicate — a shop stays a single record no matter which feature
+// attached it. Removing a store from a group unlinks its shop (group_id = null)
+// rather than deleting it, so the record — and anything else pointing at it —
+// survives and the shop becomes pickable elsewhere (e.g. a Lojas e Grupos card).
 async function syncGroupShops(
   ownerId: string,
   groupId: string,
   stores: { shopify_store_id: string; role: string }[]
 ) {
-  // Get existing internal shops for this group
+  const keepShopifyIds = new Set(stores.map((s) => s.shopify_store_id));
+  const affectedShopIds = new Set<string>();
+
   const { data: existingGroupShops } = await supabaseAdmin
     .from("shops")
-    .select("id")
+    .select("id, shopify_store_id")
     .eq("group_id", groupId)
     .eq("user_id", ownerId);
 
-  const existingShopIds = (existingGroupShops ?? []).map((s: any) => s.id);
-
-  // Get shopify_store_id for each existing group shop
-  const existingSettings =
-    existingShopIds.length > 0
-      ? await supabaseAdmin
-          .from("shop_order_settings")
-          .select("shop_id, shopify_store_id")
-          .in("shop_id", existingShopIds)
-          .then(({ data }) => data ?? [])
-      : [];
-
-  const existingByShopifyId = new Map<string, string>(
-    (existingSettings as any[])
-      .filter((s) => s.shopify_store_id)
-      .map((s) => [s.shopify_store_id, s.shop_id])
-  );
-
-  if (stores.length === 0) {
-    // Remove all group shops
-    for (const shopId of existingShopIds) {
-      await supabaseAdmin.from("shops").delete().eq("id", shopId);
-    }
-    return;
-  }
-
-  // Get Shopify store names
-  const shopifyIds = stores.map((s) => s.shopify_store_id);
-  const { data: shopifyStores } = await supabaseAdmin
-    .from("shopify_stores")
-    .select("id, name, shop_domain")
-    .in("id", shopifyIds);
-
-  // Create a shop for each store not yet linked
-  for (const store of stores) {
-    if (existingByShopifyId.has(store.shopify_store_id)) continue;
-
-    const shopifyStore = (shopifyStores ?? []).find((s: any) => s.id === store.shopify_store_id);
-    const name = (shopifyStore as any)?.name || (shopifyStore as any)?.shop_domain || "Loja";
-
-    const { data: newShop, error: shopErr } = await supabaseAdmin
-      .from("shops")
-      .insert({ user_id: ownerId, group_id: groupId, name, status: "ativa" })
-      .select("id")
-      .single();
-    if (shopErr) throw new Error("Erro ao criar shop do grupo: " + shopErr.message);
-
-    const { error: settErr } = await supabaseAdmin
-      .from("shop_order_settings")
-      .upsert(
-        { user_id: ownerId, shop_id: newShop.id, shopify_store_id: store.shopify_store_id },
-        { onConflict: "shop_id" }
-      );
-    if (settErr) throw new Error("Erro ao vincular loja Shopify: " + settErr.message);
-  }
-
-  // Remove shops whose shopify store was removed from the group
-  const currentShopifySet = new Set(shopifyIds);
-  for (const [shopifyId, shopId] of existingByShopifyId) {
-    if (!currentShopifySet.has(shopifyId)) {
-      await supabaseAdmin.from("shops").delete().eq("id", shopId);
+  for (const s of (existingGroupShops ?? []) as any[]) {
+    if (!s.shopify_store_id || !keepShopifyIds.has(s.shopify_store_id)) {
+      await supabaseAdmin.from("shops").update({ group_id: null }).eq("id", s.id);
+      affectedShopIds.add(s.id);
     }
   }
+
+  if (stores.length > 0) {
+    // Get Shopify store names
+    const shopifyIds = stores.map((s) => s.shopify_store_id);
+    const { data: shopifyStores } = await supabaseAdmin
+      .from("shopify_stores")
+      .select("id, name, shop_domain")
+      .in("id", shopifyIds);
+
+    for (const store of stores) {
+      const { data: existing } = await supabaseAdmin
+        .from("shops")
+        .select("id")
+        .eq("user_id", ownerId)
+        .eq("shopify_store_id", store.shopify_store_id)
+        .maybeSingle();
+
+      const shopifyStore = (shopifyStores ?? []).find((s: any) => s.id === store.shopify_store_id);
+      const name = (shopifyStore as any)?.name || (shopifyStore as any)?.shop_domain || "Loja";
+
+      let shopId: string;
+      if (existing) {
+        shopId = existing.id;
+        const { error: updErr } = await supabaseAdmin
+          .from("shops")
+          .update({ group_id: groupId, name })
+          .eq("id", shopId);
+        if (updErr) throw new Error("Erro ao vincular loja ao grupo: " + updErr.message);
+      } else {
+        const { data: newShop, error: shopErr } = await supabaseAdmin
+          .from("shops")
+          .insert({ user_id: ownerId, group_id: groupId, name, status: "ativa", shopify_store_id: store.shopify_store_id })
+          .select("id")
+          .single();
+        if (shopErr) throw new Error("Erro ao criar shop do grupo: " + shopErr.message);
+        shopId = newShop.id;
+      }
+
+      const { error: settErr } = await supabaseAdmin
+        .from("shop_order_settings")
+        .upsert(
+          { user_id: ownerId, shop_id: shopId, shopify_store_id: store.shopify_store_id },
+          { onConflict: "shop_id" }
+        );
+      if (settErr) throw new Error("Erro ao vincular loja Shopify: " + settErr.message);
+      affectedShopIds.add(shopId);
+    }
+  }
+
+  // Archiving/reactivating the group, or changing which shops it holds, can
+  // change whether those shops should keep syncing.
+  await Promise.all([...affectedShopIds].map((id) => recomputeShopAutomation(id)));
 }
 
 export const listGroups = createServerFn({ method: "GET" })
