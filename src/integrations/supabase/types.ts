@@ -2706,6 +2706,39 @@ export type Database = {
           },
         ]
       }
+      simulated_expenses: {
+        Row: {
+          amount: number
+          created_at: string | null
+          description: string
+          id: string
+          recurrence: string
+          recurrence_until: string | null
+          start_date: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          description: string
+          id?: string
+          recurrence?: string
+          recurrence_until?: string | null
+          start_date: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          description?: string
+          id?: string
+          recurrence?: string
+          recurrence_until?: string | null
+          start_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       sop_edges: {
         Row: {
           created_at: string
@@ -2919,6 +2952,7 @@ export type Database = {
       store_board_columns: {
         Row: {
           created_at: string | null
+          excluded_from_caixa: boolean
           features: string[]
           id: string
           name: string
@@ -2928,6 +2962,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          excluded_from_caixa?: boolean
           features?: string[]
           id?: string
           name: string
@@ -2937,6 +2972,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          excluded_from_caixa?: boolean
           features?: string[]
           id?: string
           name?: string

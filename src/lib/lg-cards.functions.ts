@@ -1,8 +1,8 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { attachLiveShopifyNames, getGroupShopifyCancelledCounts, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, getGroupShopifyCancelledCounts, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 
 // Same as attachLiveShopifyNames, but for rows carrying a nested `shops` object
 // (as returned by PostgREST embedding, e.g. lg_card_shops.select("...,shops(id,name,...)")).
@@ -130,6 +130,7 @@ export const createLgCard = createServerFn({ method: "POST" })
       }));
       const { error: se } = await supabaseAdmin.from("lg_card_shops").insert(rows);
       if (se) throw new Error(se.message);
+      await Promise.all(data.shops.map((s) => recomputeShopAutomation(s.shop_id)));
     }
 
     return { id: card.id };
@@ -148,6 +149,15 @@ export const updateLgCard = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
+
+    // Shops linked before this edit — needed so we can also recompute their
+    // sync state if they're being dropped from the card (or the card is
+    // being archived/reactivated).
+    const { data: previousLinks } = await supabaseAdmin
+      .from("lg_card_shops")
+      .select("shop_id")
+      .eq("card_id", data.id);
+    const previousShopIds = (previousLinks ?? []).map((s: any) => s.shop_id as string);
 
     const { error } = await supabaseAdmin
       .from("lg_cards")
@@ -171,6 +181,11 @@ export const updateLgCard = createServerFn({ method: "POST" })
       if (se) throw new Error(se.message);
     }
 
+    // Archiving/reactivating a card, or changing which shops it holds, can
+    // change whether those shops should keep syncing.
+    const affectedShopIds = new Set([...previousShopIds, ...data.shops.map((s) => s.shop_id)]);
+    await Promise.all([...affectedShopIds].map((id) => recomputeShopAutomation(id)));
+
     return { ok: true };
   });
 
@@ -182,6 +197,9 @@ export const deleteLgCard = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
+    const { data: links } = await supabaseAdmin.from("lg_card_shops").select("shop_id").eq("card_id", data.id);
+    const shopIds = (links ?? []).map((s: any) => s.shop_id as string);
+
     const { error } = await supabaseAdmin
       .from("lg_cards")
       .delete()
@@ -189,6 +207,8 @@ export const deleteLgCard = createServerFn({ method: "POST" })
       .eq("user_id", ownerId);
 
     if (error) throw new Error(error.message);
+    // A deleted archived card can no longer keep its shops paused.
+    await Promise.all(shopIds.map((id) => recomputeShopAutomation(id)));
     return { ok: true };
   });
 
@@ -319,6 +339,49 @@ export const listAllShopsForPicker = createServerFn({ method: "GET" })
     const connected = data.filter((s) => liveStoreIds.has(s.shopify_store_id as string));
     return attachLiveShopifyNames(ownerId, connected);
   });
+
+// ─── List shops for the consolidated Caixa page ──────────────────────────────
+// Same base set as the picker above, minus any shop currently sitting in a
+// Banco de Lojas board column marked "Excluir do Caixa" (e.g. Em Hold,
+// Cemitério) — those shouldn't count toward the combined balance/receivable.
+// Shared with the Simulador (caixa-simulator.functions.ts), which needs the
+// same shop set to compute the real starting balance.
+export const getCaixaShops = createServerOnlyFn(async (ownerId: string) => {
+  const { data, error } = await supabaseAdmin
+    .from("shops")
+    .select("id, name, shopify_store_id")
+    .eq("user_id", ownerId)
+    .not("shopify_store_id", "is", null)
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
+
+  const { data: liveStores, error: storesError } = await supabaseAdmin
+    .from("shopify_stores")
+    .select("id, board_column_id")
+    .eq("user_id", ownerId)
+    .in("id", [...new Set(data.map((s) => s.shopify_store_id))] as string[]);
+  if (storesError) throw new Error(storesError.message);
+  const columnIdByStoreId = new Map((liveStores ?? []).map((s: any) => [s.id, s.board_column_id]));
+
+  const columnIds = [...new Set((liveStores ?? []).map((s: any) => s.board_column_id).filter(Boolean))] as string[];
+  const { data: columns } = columnIds.length > 0
+    ? await supabaseAdmin.from("store_board_columns").select("id, excluded_from_caixa").in("id", columnIds)
+    : { data: [] as any[] };
+  const excludedColumnIds = new Set((columns ?? []).filter((c: any) => c.excluded_from_caixa).map((c: any) => c.id));
+
+  const connected = data.filter((s) => {
+    const storeId = s.shopify_store_id as string;
+    if (!columnIdByStoreId.has(storeId)) return false; // not a live Shopify connection
+    const columnId = columnIdByStoreId.get(storeId);
+    return !columnId || !excludedColumnIds.has(columnId);
+  });
+  return attachLiveShopifyNames(ownerId, connected);
+});
+
+export const listCaixaShops = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => getCaixaShops(context.ownerId));
 
 // ─── Update matriz_shop_id ────────────────────────────────────────────────────
 
@@ -605,7 +668,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       .eq("card_id", data.card_id);
 
     if (!cardShops?.length) {
-      return { lucro: 0, taxaEstorno: 0, totalPedidos: 0, totalEstornos: 0, payoutLag: [] };
+      return { lucro: 0, taxaEstorno: 0, totalPedidos: 0, totalEstornos: 0, payoutLag: [], estornoPorLoja: [] };
     }
 
     const shopIds = cardShops.map((s: any) => s.shop_id as string);
@@ -707,6 +770,30 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     ).size;
     const taxaEstorno   = totalPedidos > 0 ? totalEstornos / totalPedidos : 0;
 
+    // Mesma taxa, mas por loja — cada uma tem um mix de produto/público
+    // diferente, então a taxa agregada do card esconde lojas com estorno alto.
+    const pedidosPorLoja = new Map<string, number>();
+    for (const o of estornoOrders as any[]) {
+      pedidosPorLoja.set(o.shop_id, (pedidosPorLoja.get(o.shop_id) ?? 0) + 1);
+    }
+    const estornosPorLojaSet = new Map<string, Set<string>>();
+    for (const d of chargebackDisputes as any[]) {
+      if (d.order_external_id == null) continue;
+      if (!estornosPorLojaSet.has(d.shop_id)) estornosPorLojaSet.set(d.shop_id, new Set());
+      estornosPorLojaSet.get(d.shop_id)!.add(d.order_external_id);
+    }
+    const estornoPorLoja = shopIds.map((shopId) => {
+      const pedidos  = pedidosPorLoja.get(shopId) ?? 0;
+      const estornos = estornosPorLojaSet.get(shopId)?.size ?? 0;
+      return {
+        shop_id: shopId,
+        shopName: shopNameById.get(shopId) ?? shopId,
+        totalPedidos: pedidos,
+        totalEstornos: estornos,
+        taxaEstorno: pedidos > 0 ? estornos / pedidos : 0,
+      };
+    });
+
     // Payout lag por shop — D+X real, sincronizado dos payouts do Shopify
     // (payout_lag_days = ajuste manual do usuário; payout_lag_avg_days = média
     // calculada a partir dos payouts reais). Não usar shop_order_payment_batches
@@ -725,7 +812,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       return { shop_id: shopId, shopName, days };
     });
 
-    return { lucro, taxaEstorno, totalPedidos, totalEstornos, payoutLag };
+    return { lucro, taxaEstorno, totalPedidos, totalEstornos, payoutLag, estornoPorLoja };
   });
 
 // ─── Daily analytics ──────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
+import { recomputePayoutLag } from "@/lib/shop-orders.functions";
 
 const PROCESSING_DELAY_DAYS = 7;
 
@@ -104,34 +105,10 @@ async function fetchDisputes(domain: string, token: string, maxPages: number) {
 }
 
 // Tempo médio de repasse: para cada venda já incluída em um payout, mede os dias
-// entre o processamento da venda e a data do depósito. Calculado 1x/dia aqui (e não
-// na hora, pelo front) porque chamar a API de balanço da Shopify é lento.
-async function updatePayoutLag(shopId: string, userId: string, domain: string, token: string) {
-  const transactions = await fetchBalanceTransactions(domain, token, 10);
-  const charges = transactions.filter((t: any) => t.type === "charge" && t.payout_id != null);
-  if (!charges.length) {
-    await supabaseAdmin.from("shop_order_settings")
-      .update({ payout_lag_avg_days: null, payout_lag_sample_size: 0 })
-      .eq("user_id", userId).eq("shop_id", shopId);
-    return;
-  }
-
-  const since = new Date(); since.setUTCDate(since.getUTCDate() - 90);
-  const payouts = await fetchPayouts(domain, token, since.toISOString());
-  const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
-
-  const days: number[] = [];
-  for (const t of charges) {
-    const payoutDate = payoutDateById.get(String(t.payout_id));
-    if (!payoutDate) continue;
-    const diff = (new Date(`${payoutDate}T00:00:00Z`).getTime() - new Date(t.processed_at).getTime()) / 86400_000;
-    if (diff >= 0) days.push(diff);
-  }
-
-  await supabaseAdmin.from("shop_order_settings").update({
-    payout_lag_avg_days: days.length ? days.reduce((s, d) => s + d, 0) / days.length : null,
-    payout_lag_sample_size: days.length,
-  }).eq("user_id", userId).eq("shop_id", shopId);
+// entre o processamento da venda e a data do depósito. Compartilhado com o botão
+// "Sincronizar" (src/lib/shop-orders.functions.ts) — não é mais exclusivo do cron.
+async function updatePayoutLag(shopId: string, _userId: string, domain: string, token: string) {
+  await recomputePayoutLag(shopId, domain, token);
 }
 
 async function syncPayoutsForShop(shopId: string, userId: string, domain: string, token: string) {

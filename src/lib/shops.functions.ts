@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
-import { COST_CATEGORY, attachLiveShopifyNames } from "@/lib/shop-orders.functions";
+import { COST_CATEGORY, attachLiveShopifyNames, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 
 export const SHOP_STATUSES = ["ativa", "pausada", "arquivada"] as const;
 
@@ -113,6 +113,8 @@ export const updateShop = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("shops").update(data.patch).eq("id", data.id);
     if (error) throw new Error(error.message);
+    // Archiving/unarchiving a shop pauses or resumes its Shopify sync.
+    if (data.patch.status !== undefined) await recomputeShopAutomation(data.id);
     return { ok: true };
   });
 

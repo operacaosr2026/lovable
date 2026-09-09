@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -236,15 +236,15 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
               {shops.length === 1 ? "Loja" : `Lojas (${shops.length})`}
             </div>
-            <div className="space-y-1">
-              {shops.slice(0, 3).map((s: any) => (
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+              {shops.slice(0, 6).map((s: any) => (
                 <div key={s.id} className="text-xs truncate flex items-center gap-1.5">
                   <Store className="size-3 text-muted-foreground shrink-0" />
-                  {s.shops?.name ?? s.shop_id}
+                  <span className="truncate">{s.shops?.name ?? s.shop_id}</span>
                 </div>
               ))}
-              {shops.length > 3 && (
-                <div className="text-xs text-muted-foreground">+{shops.length - 3} mais</div>
+              {shops.length > 6 && (
+                <div className="text-xs text-muted-foreground">+{shops.length - 6} mais</div>
               )}
             </div>
           </div>
@@ -269,37 +269,32 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
                   </span>
                 </div>
 
-                {/* Taxa de estorno */}
-                {metrics.totalPedidos > 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Estornos</span>
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${
-                      metrics.totalEstornos > 0
-                        ? "bg-yellow-500/10 text-yellow-600 border border-yellow-500/20"
-                        : "bg-muted text-muted-foreground"
-                    }`}>
-                      {(metrics.taxaEstorno * 100).toFixed(1)}%
-                      {metrics.totalEstornos > 0 && ` (${metrics.totalEstornos})`}
-                    </span>
-                  </div>
-                )}
-
-                {/* Tempo de repasse */}
-                {metrics.payoutLag.some((p: any) => p.days != null) && (
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0 pt-0.5">Repasse</span>
-                    <div className="text-right space-y-0.5">
-                      {metrics.payoutLag.map((p: any) => (
-                        <div key={p.shop_id} className="text-[10px] text-muted-foreground">
-                          {metrics.payoutLag.length > 1 && <span className="font-medium text-foreground/70">{p.shopName}: </span>}
-                          {p.days != null ? (
-                            <span className="font-semibold text-foreground">D+{p.days}</span>
-                          ) : (
-                            <span>—</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                {/* Estornos + Repasse por loja, nome uma vez só */}
+                {(metrics.totalPedidos > 0 || metrics.payoutLag.some((p: any) => p.days != null)) && (
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-2 gap-y-1 items-center pt-0.5">
+                    <span />
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium text-right">Estorno</span>
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium text-right">Repasse</span>
+                    {metrics.payoutLag.map((p: any) => {
+                      const e = metrics.estornoPorLoja.find((x: any) => x.shop_id === p.shop_id);
+                      return (
+                        <Fragment key={p.shop_id}>
+                          <span className="text-[10px] text-foreground/70 truncate">{p.shopName}</span>
+                          <span className={`justify-self-end text-[10px] font-medium px-1.5 py-0.5 rounded-md ${
+                            e && e.totalPedidos > 0
+                              ? e.totalEstornos > 0
+                                ? "bg-yellow-500/10 text-yellow-600 border border-yellow-500/20"
+                                : "bg-muted text-muted-foreground"
+                              : "text-muted-foreground"
+                          }`}>
+                            {e && e.totalPedidos > 0 ? `${(e.taxaEstorno * 100).toFixed(1)}%` : "—"}
+                          </span>
+                          <span className="justify-self-end text-[10px] font-semibold text-foreground">
+                            {p.days != null ? `D+${p.days}` : "—"}
+                          </span>
+                        </Fragment>
+                      );
+                    })}
                   </div>
                 )}
               </>

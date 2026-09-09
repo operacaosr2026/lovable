@@ -14,14 +14,14 @@ import { GripVertical, Plus, ShoppingBag, ExternalLink, Pencil, X, Trash2, Check
 import { toast } from "sonner";
 import {
   listBoardColumns, createBoardColumn, renameBoardColumn, deleteBoardColumn,
-  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setStoreBoardNote,
+  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setStoreBoardNote,
   type BOARD_COLUMN_FEATURES,
 } from "@/lib/store-board.functions";
 import { listShopifyStores, createPlaceholderStore } from "@/lib/shop-orders.functions";
 import { getStoreHoldBalance, getStoreAvgDailyOrders, getStorePayoutTime } from "@/lib/store-board-metrics.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 type Store = {
@@ -34,7 +34,7 @@ type Store = {
   is_placeholder: boolean;
 };
 type ColumnFeature = (typeof BOARD_COLUMN_FEATURES)[number];
-type Column = { id: string; name: string; position: number; features: ColumnFeature[] };
+type Column = { id: string; name: string; position: number; features: ColumnFeature[]; excluded_from_caixa: boolean };
 
 const FEATURE_LABELS: Record<ColumnFeature, string> = {
   hold: "Em Hold",
@@ -55,6 +55,7 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   const reorderColsFn = useServerFn(reorderBoardColumns);
   const moveStoresFn = useServerFn(moveBoardStores);
   const setFeaturesFn = useServerFn(setBoardColumnFeatures);
+  const setExcludedFn = useServerFn(setBoardColumnExcludedFromCaixa);
   const confirm = useConfirm();
 
   const { data: columnsData } = useQuery({ queryKey: ["board-columns"], queryFn: () => listColumnsFn() });
@@ -125,6 +126,9 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   const setFeatures = useMutation({
     mutationFn: (input: { id: string; features: ColumnFeature[] }) => setFeaturesFn({ data: input }),
   });
+  const setExcluded = useMutation({
+    mutationFn: (input: { id: string; excluded: boolean }) => setExcludedFn({ data: input }),
+  });
 
   const setColumnFeaturesLocal = (id: string, features: ColumnFeature[]) => {
     const prevColumns = columns;
@@ -134,15 +138,23 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
     });
   };
 
+  const setColumnExcludedFromCaixaLocal = (id: string, excluded: boolean) => {
+    const prevColumns = columns;
+    setColumns((prev) => prev.map((c) => (c.id === id ? { ...c, excluded_from_caixa: excluded } : c)));
+    setExcluded.mutate({ id, excluded }, {
+      onError: (e: any) => { toast.error(e.message); setColumns(prevColumns); },
+    });
+  };
+
   // Optimistic column edits: update local state immediately, let the request
   // reconcile in the background instead of waiting on invalidate+refetch.
   const addColumn = (name: string) => {
     const tempId = `temp-${crypto.randomUUID()}`;
-    setColumns((prev) => [...prev, { id: tempId, name, position: prev.length, features: [] }]);
+    setColumns((prev) => [...prev, { id: tempId, name, position: prev.length, features: [], excluded_from_caixa: false }]);
     setBoard((prev) => ({ ...prev, [tempId]: [] }));
     createColumn.mutate(name, {
       onSuccess: (row: any) => {
-        setColumns((prev) => prev.map((c) => (c.id === tempId ? { id: row.id, name: row.name, position: row.position, features: row.features } : c)));
+        setColumns((prev) => prev.map((c) => (c.id === tempId ? { id: row.id, name: row.name, position: row.position, features: row.features, excluded_from_caixa: row.excluded_from_caixa } : c)));
         setBoard((prev) => {
           const { [tempId]: items, ...rest } = prev;
           const settled = items ?? [];
@@ -292,6 +304,7 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
               onAddStore={i === 0 ? (name) => addPlaceholder.mutate({ name, board_column_id: col.id }) : undefined}
               onRename={(name) => renameColumnLocal(col.id, name)}
               onFeaturesChange={(features) => setColumnFeaturesLocal(col.id, features)}
+              onExcludedFromCaixaChange={(excluded) => setColumnExcludedFromCaixaLocal(col.id, excluded)}
               onDelete={async () => {
                 if ((board[col.id] ?? []).length > 0) {
                   toast.error("Mova ou remova as lojas desta coluna antes de excluí-la.");
@@ -318,13 +331,14 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   );
 }
 
-function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeaturesChange, onDelete }: {
+function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeaturesChange, onExcludedFromCaixaChange, onDelete }: {
   column: Column;
   stores: Store[];
   onEditStore: (store: any) => void;
   onAddStore?: (name: string) => void;
   onRename: (name: string) => void;
   onFeaturesChange: (features: ColumnFeature[]) => void;
+  onExcludedFromCaixaChange: (excluded: boolean) => void;
   onDelete: () => void;
 }) {
   const isPending = column.id.startsWith("temp-");
@@ -419,9 +433,10 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
               className="w-full h-7 px-1.5 rounded-md bg-transparent border border-transparent hover:border-border flex items-center justify-between gap-1 text-[11px] text-muted-foreground outline-none cursor-pointer disabled:cursor-wait"
             >
               <span className="truncate text-left">
-                {column.features.length === 0
-                  ? "Sem função"
-                  : column.features.map((f) => FEATURE_LABELS[f]).join(", ")}
+                {[
+                  ...column.features.map((f) => FEATURE_LABELS[f]),
+                  ...(column.excluded_from_caixa ? ["Fora do Caixa"] : []),
+                ].join(", ") || "Sem função"}
               </span>
               <ChevronDown className="size-3 shrink-0" />
             </button>
@@ -442,6 +457,14 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
                 {FEATURE_LABELS[f]}
               </DropdownMenuCheckboxItem>
             ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={column.excluded_from_caixa}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(checked) => onExcludedFromCaixaChange(checked)}
+            >
+              Excluir do Caixa
+            </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

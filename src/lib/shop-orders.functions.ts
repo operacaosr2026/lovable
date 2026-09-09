@@ -193,6 +193,39 @@ export const fetchShopifyPaymentsBalance = createServerOnlyFn(async (domain: str
   return { amount: total, currency: balances[0]?.currency ?? null };
 });
 
+// Computes and stores the average payout lag (days between a charge landing
+// and the payout that includes it) for a shop, from live Shopify data. Shared
+// by the "Sincronizar" button (syncShopifyPayouts) and the daily cron
+// (sync-shop-orders), so the Repasse metric refreshes on either trigger
+// instead of only waiting for the cron's schedule.
+export const recomputePayoutLag = createServerOnlyFn(async (shopId: string, domain: string, token: string) => {
+  const transactions = await fetchShopifyBalanceTransactions(domain, token, 10);
+  const charges = transactions.filter((t: any) => t.type === "charge" && t.payout_id != null);
+  if (!charges.length) {
+    await supabaseAdmin.from("shop_order_settings")
+      .update({ payout_lag_avg_days: null, payout_lag_sample_size: 0 })
+      .eq("shop_id", shopId);
+    return;
+  }
+
+  const since = new Date(); since.setUTCDate(since.getUTCDate() - 90);
+  const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
+  const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
+
+  const days: number[] = [];
+  for (const t of charges) {
+    const payoutDate = payoutDateById.get(String(t.payout_id));
+    if (!payoutDate) continue;
+    const diff = (new Date(`${payoutDate}T00:00:00Z`).getTime() - new Date(t.processed_at).getTime()) / 86400_000;
+    if (diff >= 0) days.push(diff);
+  }
+
+  await supabaseAdmin.from("shop_order_settings").update({
+    payout_lag_avg_days: days.length ? days.reduce((s, d) => s + d, 0) / days.length : null,
+    payout_lag_sample_size: days.length,
+  }).eq("shop_id", shopId);
+});
+
 async function ensureCostCategory(supabase: any, ownerId: string, shopId: string) {
   const { data } = await supabase.from("shop_cash_categories").select("id")
     .eq("user_id", ownerId).eq("shop_id", shopId).eq("kind", "expense").eq("name", COST_CATEGORY).maybeSingle();
@@ -261,8 +294,66 @@ export const upsertOrderSettings = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("shop_order_settings")
       .upsert({ user_id: context.ownerId, shop_id: data.shop_id, ...data.patch }, { onConflict: "shop_id" });
     if (error) throw new Error(error.message);
+
+    // Setting the sync cutoff means data before it shouldn't count anymore —
+    // purge whatever was already auto-synced before that date, everywhere the
+    // shop is shown (it's the same shop_id/data no matter which card/group
+    // references it). Manual entries are never touched. This isn't a
+    // permanent loss: moving the cutoff earlier again and re-syncing re-fetches
+    // those orders/payouts straight from Shopify.
+    if (data.patch.cashflow_start_date) {
+      const cutoff = data.patch.cashflow_start_date;
+      await context.supabase.from("shop_orders")
+        .delete().eq("shop_id", data.shop_id).lt("order_date", cutoff);
+      await context.supabase.from("shop_cash_entries")
+        .delete().eq("shop_id", data.shop_id).lt("date", cutoff)
+        .in("source", ["auto", "shopify_sync", "shopify_fees_sync", "shopify_pending_sync", "shopify_auto_sync"]);
+      await context.supabase.from("shop_order_disputes")
+        .delete().eq("shop_id", data.shop_id).lt("initiated_at", cutoff);
+    }
+
     return { ok: true };
   });
+
+// Recomputes shop_order_settings.automation_enabled (the flag the sync cron
+// checks) from every place a shop can be archived: its own status, its Grupo
+// (matriz/subloja), and every Lojas e Grupos card it's linked to. The shop's
+// own status wins outright; otherwise sync stays on unless it belongs to at
+// least one card/group and ALL of them are archived — so a shop shared by an
+// active card and an archived group, say, keeps syncing until nothing active
+// still needs it. A shop with no card/group at all always syncs (today's
+// baseline behavior).
+export const recomputeShopAutomation = createServerOnlyFn(async (shopId: string) => {
+  const { data: shop } = await supabaseAdmin
+    .from("shops")
+    .select("status, group_id")
+    .eq("id", shopId)
+    .maybeSingle();
+  if (!shop) return;
+
+  if (shop.status === "arquivada") {
+    await supabaseAdmin.from("shop_order_settings").update({ automation_enabled: false }).eq("shop_id", shopId);
+    return;
+  }
+
+  let groupArchived: boolean | null = null;
+  if (shop.group_id) {
+    const { data: group } = await supabaseAdmin.from("shop_groups").select("status").eq("id", shop.group_id).maybeSingle();
+    groupArchived = group?.status === "arquivado";
+  }
+
+  const { data: cardLinks } = await supabaseAdmin
+    .from("lg_card_shops")
+    .select("lg_cards(status)")
+    .eq("shop_id", shopId);
+  const cardStatuses = ((cardLinks ?? []) as any[]).map((c) => c.lg_cards?.status).filter(Boolean) as string[];
+
+  const hasContext = groupArchived !== null || cardStatuses.length > 0;
+  const anyActive = groupArchived === false || cardStatuses.some((s) => s !== "arquivado");
+  const enable = !hasContext || anyActive;
+
+  await supabaseAdmin.from("shop_order_settings").update({ automation_enabled: enable }).eq("shop_id", shopId);
+});
 
 // Keeps a `shops` row mirrored to a `shopify_stores` connection, so features
 // built on top of `shops` (e.g. Lojas e Grupos, order fetching via
@@ -668,6 +759,12 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const since = new Date(); since.setUTCDate(since.getUTCDate() - data.since_days);
     const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
+    // Best-effort — a store without Shopify Payments enabled shouldn't fail the sync.
+    try {
+      await recomputePayoutLag(data.shop_id, domain, token);
+    } catch (e) {
+      console.error("payout lag recompute failed", data.shop_id, e);
+    }
     const { data: dismissedRows } = await context.supabase.from("shop_cash_dismissed_payouts")
       .select("shopify_payout_id").eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
     const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));

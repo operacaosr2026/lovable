@@ -21,6 +21,7 @@ import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ShopsProductsRouteImport } from './routes/shops.products'
 import { Route as ShopsLojasGruposRouteImport } from './routes/shops.lojas-grupos'
 import { Route as ShopsGruposRouteImport } from './routes/shops.grupos'
+import { Route as ShopsCaixaRouteImport } from './routes/shops.caixa'
 import { Route as ShopsBancoDeLojasRouteImport } from './routes/shops.banco-de-lojas'
 import { Route as SettingsSegurancaRouteImport } from './routes/settings.seguranca'
 import { Route as SettingsMembersRouteImport } from './routes/settings.members'
@@ -31,6 +32,7 @@ import { Route as ShopsSopsIndexRouteImport } from './routes/shops.sops.index'
 import { Route as ShopsProductsIndexRouteImport } from './routes/shops.products.index'
 import { Route as ShopsLojasGruposIndexRouteImport } from './routes/shops.lojas-grupos.index'
 import { Route as ShopsGruposIndexRouteImport } from './routes/shops.grupos.index'
+import { Route as ShopsCaixaIndexRouteImport } from './routes/shops.caixa.index'
 import { Route as ShopsBancoDeLojasIndexRouteImport } from './routes/shops.banco-de-lojas.index'
 import { Route as ShopsSopsProcessIdRouteImport } from './routes/shops.sops.$processId'
 import { Route as ShopsProductsProductIdRouteImport } from './routes/shops.products.$productId'
@@ -103,6 +105,11 @@ const ShopsGruposRoute = ShopsGruposRouteImport.update({
   path: '/grupos',
   getParentRoute: () => ShopsRoute,
 } as any)
+const ShopsCaixaRoute = ShopsCaixaRouteImport.update({
+  id: '/caixa',
+  path: '/caixa',
+  getParentRoute: () => ShopsRoute,
+} as any)
 const ShopsBancoDeLojasRoute = ShopsBancoDeLojasRouteImport.update({
   id: '/banco-de-lojas',
   path: '/banco-de-lojas',
@@ -152,6 +159,11 @@ const ShopsGruposIndexRoute = ShopsGruposIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ShopsGruposRoute,
+} as any)
+const ShopsCaixaIndexRoute = ShopsCaixaIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShopsCaixaRoute,
 } as any)
 const ShopsBancoDeLojasIndexRoute = ShopsBancoDeLojasIndexRouteImport.update({
   id: '/',
@@ -228,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
+  '/shops/caixa': typeof ShopsCaixaRouteWithChildren
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
@@ -239,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
+  '/shops/caixa/': typeof ShopsCaixaIndexRoute
   '/shops/grupos/': typeof ShopsGruposIndexRoute
   '/shops/lojas-grupos/': typeof ShopsLojasGruposIndexRoute
   '/shops/products/': typeof ShopsProductsIndexRoute
@@ -267,6 +281,7 @@ export interface FileRoutesByTo {
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasIndexRoute
+  '/shops/caixa': typeof ShopsCaixaIndexRoute
   '/shops/grupos': typeof ShopsGruposIndexRoute
   '/shops/lojas-grupos': typeof ShopsLojasGruposIndexRoute
   '/shops/products': typeof ShopsProductsIndexRoute
@@ -292,6 +307,7 @@ export interface FileRoutesById {
   '/settings/members': typeof SettingsMembersRoute
   '/settings/seguranca': typeof SettingsSegurancaRoute
   '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
+  '/shops/caixa': typeof ShopsCaixaRouteWithChildren
   '/shops/grupos': typeof ShopsGruposRouteWithChildren
   '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
   '/shops/products': typeof ShopsProductsRouteWithChildren
@@ -303,6 +319,7 @@ export interface FileRoutesById {
   '/shops/products/$productId': typeof ShopsProductsProductIdRoute
   '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
   '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
+  '/shops/caixa/': typeof ShopsCaixaIndexRoute
   '/shops/grupos/': typeof ShopsGruposIndexRoute
   '/shops/lojas-grupos/': typeof ShopsLojasGruposIndexRoute
   '/shops/products/': typeof ShopsProductsIndexRoute
@@ -329,6 +346,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/banco-de-lojas'
+    | '/shops/caixa'
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
@@ -340,6 +358,7 @@ export interface FileRouteTypes {
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas/'
+    | '/shops/caixa/'
     | '/shops/grupos/'
     | '/shops/lojas-grupos/'
     | '/shops/products/'
@@ -368,6 +387,7 @@ export interface FileRouteTypes {
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas'
+    | '/shops/caixa'
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
@@ -392,6 +412,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/seguranca'
     | '/shops/banco-de-lojas'
+    | '/shops/caixa'
     | '/shops/grupos'
     | '/shops/lojas-grupos'
     | '/shops/products'
@@ -403,6 +424,7 @@ export interface FileRouteTypes {
     | '/shops/products/$productId'
     | '/shops/sops/$processId'
     | '/shops/banco-de-lojas/'
+    | '/shops/caixa/'
     | '/shops/grupos/'
     | '/shops/lojas-grupos/'
     | '/shops/products/'
@@ -517,6 +539,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShopsGruposRouteImport
       parentRoute: typeof ShopsRoute
     }
+    '/shops/caixa': {
+      id: '/shops/caixa'
+      path: '/caixa'
+      fullPath: '/shops/caixa'
+      preLoaderRoute: typeof ShopsCaixaRouteImport
+      parentRoute: typeof ShopsRoute
+    }
     '/shops/banco-de-lojas': {
       id: '/shops/banco-de-lojas'
       path: '/banco-de-lojas'
@@ -586,6 +615,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/shops/grupos/'
       preLoaderRoute: typeof ShopsGruposIndexRouteImport
       parentRoute: typeof ShopsGruposRoute
+    }
+    '/shops/caixa/': {
+      id: '/shops/caixa/'
+      path: '/'
+      fullPath: '/shops/caixa/'
+      preLoaderRoute: typeof ShopsCaixaIndexRouteImport
+      parentRoute: typeof ShopsCaixaRoute
     }
     '/shops/banco-de-lojas/': {
       id: '/shops/banco-de-lojas/'
@@ -710,6 +746,18 @@ const ShopsBancoDeLojasRouteChildren: ShopsBancoDeLojasRouteChildren = {
 const ShopsBancoDeLojasRouteWithChildren =
   ShopsBancoDeLojasRoute._addFileChildren(ShopsBancoDeLojasRouteChildren)
 
+interface ShopsCaixaRouteChildren {
+  ShopsCaixaIndexRoute: typeof ShopsCaixaIndexRoute
+}
+
+const ShopsCaixaRouteChildren: ShopsCaixaRouteChildren = {
+  ShopsCaixaIndexRoute: ShopsCaixaIndexRoute,
+}
+
+const ShopsCaixaRouteWithChildren = ShopsCaixaRoute._addFileChildren(
+  ShopsCaixaRouteChildren,
+)
+
 interface ShopsGruposRouteChildren {
   ShopsGruposGroupIdRoute: typeof ShopsGruposGroupIdRoute
   ShopsGruposIndexRoute: typeof ShopsGruposIndexRoute
@@ -753,6 +801,7 @@ const ShopsProductsRouteWithChildren = ShopsProductsRoute._addFileChildren(
 
 interface ShopsRouteChildren {
   ShopsBancoDeLojasRoute: typeof ShopsBancoDeLojasRouteWithChildren
+  ShopsCaixaRoute: typeof ShopsCaixaRouteWithChildren
   ShopsGruposRoute: typeof ShopsGruposRouteWithChildren
   ShopsLojasGruposRoute: typeof ShopsLojasGruposRouteWithChildren
   ShopsProductsRoute: typeof ShopsProductsRouteWithChildren
@@ -763,6 +812,7 @@ interface ShopsRouteChildren {
 
 const ShopsRouteChildren: ShopsRouteChildren = {
   ShopsBancoDeLojasRoute: ShopsBancoDeLojasRouteWithChildren,
+  ShopsCaixaRoute: ShopsCaixaRouteWithChildren,
   ShopsGruposRoute: ShopsGruposRouteWithChildren,
   ShopsLojasGruposRoute: ShopsLojasGruposRouteWithChildren,
   ShopsProductsRoute: ShopsProductsRouteWithChildren,

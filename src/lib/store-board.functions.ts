@@ -10,7 +10,7 @@ export const listBoardColumns = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await supabaseAdmin
       .from("store_board_columns")
-      .select("id,name,position,features")
+      .select("id,name,position,features,excluded_from_caixa")
       .eq("user_id", context.ownerId)
       .order("position", { ascending: true });
     if (error) throw new Error(error.message);
@@ -20,7 +20,7 @@ export const listBoardColumns = createServerFn({ method: "GET" })
     const { data: created, error: createErr } = await supabaseAdmin
       .from("store_board_columns")
       .insert({ user_id: context.ownerId, name: DEFAULT_COLUMN_NAME, position: 0 })
-      .select("id,name,position,features")
+      .select("id,name,position,features,excluded_from_caixa")
       .single();
     if (createErr) throw new Error(createErr.message);
     return [created];
@@ -42,7 +42,7 @@ export const createBoardColumn = createServerFn({ method: "POST" })
     const { data: row, error } = await supabaseAdmin
       .from("store_board_columns")
       .insert({ user_id: context.ownerId, name: data.name, position })
-      .select("id,name,position,features")
+      .select("id,name,position,features,excluded_from_caixa")
       .single();
     if (error) throw new Error(error.message);
     return row;
@@ -60,6 +60,22 @@ export const setBoardColumnFeatures = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin
       .from("store_board_columns")
       .update({ features: data.features })
+      .eq("id", data.id)
+      .eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const setBoardColumnExcludedFromCaixa = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid(),
+    excluded: z.boolean(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await supabaseAdmin
+      .from("store_board_columns")
+      .update({ excluded_from_caixa: data.excluded })
       .eq("id", data.id)
       .eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
