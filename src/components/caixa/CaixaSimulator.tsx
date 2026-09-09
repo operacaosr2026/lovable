@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -20,9 +20,9 @@ const RECURRENCE_LABELS: Record<(typeof SIM_RECURRENCE)[number], string> = {
 };
 
 const PERIODS = [
+  { days: 7, label: "7 dias" },
+  { days: 15, label: "15 dias" },
   { days: 30, label: "30 dias" },
-  { days: 60, label: "60 dias" },
-  { days: 90, label: "90 dias" },
 ];
 
 function fmt(value: number) {
@@ -32,6 +32,17 @@ function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d);
 }
+function daysBetween(a: string, b: string) {
+  return Math.round((new Date(b + "T00:00:00Z").getTime() - new Date(a + "T00:00:00Z").getTime()) / 86_400_000);
+}
+function shortDate(date: string) { return `${date.slice(8, 10)}/${date.slice(5, 7)}`; }
+function fmtAxis(v: number) {
+  const abs = Math.abs(v);
+  const body = abs >= 1000 ? `${(abs / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : `${abs}`;
+  return `${v < 0 ? "-" : ""}$${body}`;
+}
+
+type StatementRow = { date: string; entrada: number; saida: number; total: number };
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -47,7 +58,13 @@ function CustomTooltip({ active, payload, label }: any) {
 export function CaixaSimulator() {
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const [periodDays, setPeriodDays] = useState(90);
+  const [periodDays, setPeriodDays] = useState(15);
+  const [openWeeks, setOpenWeeks] = useState<Set<number>>(new Set([0]));
+  const toggleWeek = (idx: number) => setOpenWeeks((prev) => {
+    const next = new Set(prev);
+    next.has(idx) ? next.delete(idx) : next.add(idx);
+    return next;
+  });
 
   const today = isoDate(new Date());
   const from = today;
@@ -115,6 +132,32 @@ export function CaixaSimulator() {
     saldo: s.saldo,
   }));
 
+  // Extrato segue o mesmo período do gráfico: 7 dias = 1 semana, 15 = 2, 30 = 4.
+  const extratoWeeks = periodDays === 7 ? 1 : periodDays === 15 ? 2 : 4;
+  const weeks = useMemo(() => {
+    const allDays: StatementRow[] = (series ?? []).map((s: any) => ({
+      date: s.date, entrada: s.entrada, saida: s.saida, total: s.saldo,
+    }));
+    const days = allDays.slice(0, extratoWeeks * 7);
+    const byWeek = new Map<number, StatementRow[]>();
+    for (const s of days) {
+      const idx = Math.floor(daysBetween(from, s.date) / 7);
+      if (!byWeek.has(idx)) byWeek.set(idx, []);
+      byWeek.get(idx)!.push(s);
+    }
+    return [...byWeek.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([idx, days]) => ({
+        idx,
+        start: addDays(from, idx * 7),
+        end: addDays(from, idx * 7 + 6),
+        days,
+        totalEntrada: days.reduce((s, d) => s + d.entrada, 0),
+        totalSaida: days.reduce((s, d) => s + d.saida, 0),
+        endTotal: days[days.length - 1].total,
+      }));
+  }, [series, from, extratoWeeks]);
+
   return (
     <div className="space-y-4">
       {/* Summary */}
@@ -172,7 +215,7 @@ export function CaixaSimulator() {
           <div className="h-[220px] bg-muted animate-pulse rounded-xl" />
         ) : (
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="sim-grad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset={`${Math.min(5, zeroOffset * 100)}%`} stopColor="var(--color-primary)" stopOpacity={0.25} />
@@ -187,7 +230,7 @@ export function CaixaSimulator() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+              <YAxis width={56} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} />
               <ReferenceLine y={0} stroke="var(--color-border)" strokeDasharray="3 3" />
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
               <Area type="monotone" dataKey="saldo" stroke="url(#sim-stroke)" strokeWidth={2} fill="url(#sim-grad)" dot={false} activeDot={{ r: 4 }} />
@@ -206,7 +249,7 @@ export function CaixaSimulator() {
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
             placeholder="Descrição (ex: Ads, Fornecedor...)"
-            className="sm:col-span-4 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+            className="sm:col-span-3 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
           />
           <input
             value={amount}
@@ -229,16 +272,20 @@ export function CaixaSimulator() {
             {SIM_RECURRENCE.map((r) => <option key={r} value={r}>{RECURRENCE_LABELS[r]}</option>)}
           </select>
           {recurrence !== "none" ? (
-            <input
-              type="date"
-              value={until}
-              onChange={(e) => setUntil(e.target.value)}
-              placeholder="Até quando"
-              title="Repetir até (opcional)"
-              className="sm:col-span-1 h-9 px-1 rounded-lg bg-background border border-border text-xs outline-none focus:border-primary/50"
-            />
+            <div
+              className="sm:col-span-2 h-9 flex items-center gap-1.5 px-2 rounded-lg bg-background border border-border focus-within:border-primary/50"
+              title="Repetir até (opcional) — deixe em branco para repetir indefinidamente"
+            >
+              <span className="text-xs text-muted-foreground shrink-0">até</span>
+              <input
+                type="date"
+                value={until}
+                onChange={(e) => setUntil(e.target.value)}
+                className="min-w-0 flex-1 h-full text-sm outline-none bg-transparent"
+              />
+            </div>
           ) : (
-            <div className="sm:col-span-1" />
+            <div className="sm:col-span-2" />
           )}
           <button
             onClick={addExpense}
@@ -274,6 +321,58 @@ export function CaixaSimulator() {
           </div>
         )}
       </div>
+
+      {/* Extrato — agrupado por semana, expande pra ver os dias */}
+      {weeks.length > 0 && (
+        <div className="rounded-2xl border border-border bg-surface p-4">
+          <p className="text-sm font-semibold text-foreground mb-3">Extrato</p>
+          <div className="space-y-2">
+            {weeks.map((w) => {
+              const open = openWeeks.has(w.idx);
+              return (
+                <div key={w.idx} className="rounded-lg border border-border overflow-hidden">
+                  <button
+                    onClick={() => toggleWeek(w.idx)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted/40 transition-colors"
+                  >
+                    <ChevronDown className={`size-3.5 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                    <span className="font-medium text-foreground">Semana {w.idx + 1}</span>
+                    <span className="text-xs text-muted-foreground">{shortDate(w.start)} – {shortDate(w.end)}</span>
+                    <span className="ml-auto flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-emerald-600">{w.totalEntrada > 0 ? `+${fmt(w.totalEntrada)}` : "—"}</span>
+                      <span className="text-xs text-destructive">{w.totalSaida > 0 ? `-${fmt(w.totalSaida)}` : "—"}</span>
+                      <span className={`text-sm font-semibold ${w.endTotal < 0 ? "text-destructive" : "text-foreground"}`}>{fmt(w.endTotal)}</span>
+                    </span>
+                  </button>
+
+                  {open && (
+                    <table className="w-full text-sm border-collapse border-t border-border">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium bg-muted/40">
+                          <th className="text-left font-medium px-3 py-1.5">Data</th>
+                          <th className="text-right font-medium px-3 py-1.5">Entrada</th>
+                          <th className="text-right font-medium px-3 py-1.5">Saída</th>
+                          <th className="text-right font-medium px-3 py-1.5">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {w.days.map((s) => (
+                          <tr key={s.date}>
+                            <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{shortDate(s.date)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600 whitespace-nowrap">{s.entrada > 0 ? fmt(s.entrada) : "—"}</td>
+                            <td className="px-3 py-2 text-right text-destructive whitespace-nowrap">{s.saida > 0 ? fmt(s.saida) : "—"}</td>
+                            <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${s.total < 0 ? "text-destructive" : "text-foreground"}`}>{fmt(s.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

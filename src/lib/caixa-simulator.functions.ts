@@ -127,12 +127,21 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
         supabaseAdmin.from("shop_cash_entries").select("kind, amount")
           .in("shop_id", shopIds).eq("reconciled", true)
           .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
-        supabaseAdmin.from("shop_cash_entries").select("date, kind, amount")
+        supabaseAdmin.from("shop_cash_entries").select("date, kind, amount, category, source, description")
           .in("shop_id", shopIds).gt("date", today).gte("date", data.from).lte("date", data.to),
       ]);
       startingBalance = (openingRes.data ?? []).reduce((s, r: any) => s + Number(r.opening_balance ?? 0), 0)
         + (reconciledRes.data ?? []).reduce((s, r: any) => s + (r.kind === "income" ? Number(r.amount) : -Number(r.amount)), 0);
-      realFuture = (futureRes.data ?? []) as any[];
+
+      // "Depósito Shopify" ainda não confirmado (previsto/estimado a partir de
+      // transações pendentes, source shopify_pending_sync, ou um payout real
+      // mas com status "previsto") é otimista demais pra projeção — só conta
+      // depósito já em trânsito ou agendado pelo Shopify.
+      realFuture = ((futureRes.data ?? []) as any[]).filter((e) => {
+        if (e.category !== "Depósito Shopify") return true;
+        if (e.source === "shopify_pending_sync") return false;
+        return /trânsito|agendado/i.test(e.description ?? "");
+      });
     }
 
     const { data: simExpenses } = await supabaseAdmin
@@ -140,31 +149,42 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
       .select("*")
       .eq("user_id", ownerId);
 
-    const deltaByDate = new Map<string, number>();
+    const entradaByDate = new Map<string, number>();
+    const saidaByDate   = new Map<string, number>();
     for (const e of realFuture) {
-      const amt = e.kind === "income" ? Number(e.amount) : -Number(e.amount);
-      deltaByDate.set(e.date, (deltaByDate.get(e.date) ?? 0) + amt);
+      const map = e.kind === "income" ? entradaByDate : saidaByDate;
+      map.set(e.date, (map.get(e.date) ?? 0) + Number(e.amount));
     }
     for (const se of (simExpenses ?? []) as any[]) {
       const dates = expandOccurrences(se.start_date, se.recurrence, se.recurrence_until, data.from, data.to);
       for (const date of dates) {
-        deltaByDate.set(date, (deltaByDate.get(date) ?? 0) - Number(se.amount));
+        saidaByDate.set(date, (saidaByDate.get(date) ?? 0) + Number(se.amount));
       }
     }
 
-    const series: { date: string; saldo: number }[] = [];
+    const series: { date: string; saldo: number; entrada: number; saida: number }[] = [];
+    const statement: { date: string; entrada: number; saida: number; total: number }[] = [];
     let running = startingBalance;
     const d = new Date(data.from + "T00:00:00Z");
     const toD = new Date(data.to + "T00:00:00Z");
     while (d <= toD) {
       const dateStr = d.toISOString().slice(0, 10);
-      if (dateStr > today) running += deltaByDate.get(dateStr) ?? 0;
-      series.push({ date: dateStr, saldo: Math.round(running * 100) / 100 });
+      const entrada = dateStr > today ? (entradaByDate.get(dateStr) ?? 0) : 0;
+      const saida   = dateStr > today ? (saidaByDate.get(dateStr) ?? 0) : 0;
+      running += entrada - saida;
+      const total = Math.round(running * 100) / 100;
+      series.push({ date: dateStr, saldo: total, entrada, saida });
+      if (entrada > 0 || saida > 0) statement.push({ date: dateStr, entrada, saida, total });
       d.setUTCDate(d.getUTCDate() + 1);
     }
 
     const negativeDay = series.find((s) => s.saldo < 0) ?? null;
     const simulatedTotal = (simExpenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
 
-    return { startingBalance, series, negativeFrom: negativeDay?.date ?? null, simulatedCount: (simExpenses ?? []).length, simulatedTotal };
+    return {
+      startingBalance, series, statement,
+      negativeFrom: negativeDay?.date ?? null,
+      simulatedCount: (simExpenses ?? []).length,
+      simulatedTotal,
+    };
   });
