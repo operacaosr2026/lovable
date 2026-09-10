@@ -8,720 +8,720 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as ShopsRouteImport } from './routes/shops'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ProjectsRouteImport } from './routes/projects'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as GratitudeRouteImport } from './routes/gratitude'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as ShopsIndexRouteImport } from './routes/shops.index'
-import { Route as SettingsIndexRouteImport } from './routes/settings.index'
-import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
-import { Route as ShopsProductsRouteImport } from './routes/shops.products'
-import { Route as ShopsLojasGruposRouteImport } from './routes/shops.lojas-grupos'
-import { Route as ShopsGruposRouteImport } from './routes/shops.grupos'
-import { Route as ShopsCaixaRouteImport } from './routes/shops.caixa'
-import { Route as ShopsBancoDeLojasRouteImport } from './routes/shops.banco-de-lojas'
-import { Route as SettingsSegurancaRouteImport } from './routes/settings.seguranca'
-import { Route as SettingsMembersRouteImport } from './routes/settings.members'
-import { Route as SettingsGeralRouteImport } from './routes/settings.geral'
-import { Route as ProjectsProjectIdRouteImport } from './routes/projects.$projectId'
-import { Route as InviteTokenRouteImport } from './routes/invite.$token'
-import { Route as ShopsSopsIndexRouteImport } from './routes/shops.sops.index'
-import { Route as ShopsProductsIndexRouteImport } from './routes/shops.products.index'
-import { Route as ShopsLojasGruposIndexRouteImport } from './routes/shops.lojas-grupos.index'
-import { Route as ShopsGruposIndexRouteImport } from './routes/shops.grupos.index'
-import { Route as ShopsCaixaIndexRouteImport } from './routes/shops.caixa.index'
-import { Route as ShopsBancoDeLojasIndexRouteImport } from './routes/shops.banco-de-lojas.index'
-import { Route as ShopsSopsProcessIdRouteImport } from './routes/shops.sops.$processId'
-import { Route as ShopsProductsProductIdRouteImport } from './routes/shops.products.$productId'
-import { Route as ShopsLojasGruposCardIdRouteImport } from './routes/shops.lojas-grupos.$cardId'
-import { Route as ShopsGruposGroupIdRouteImport } from './routes/shops.grupos.$groupId'
-import { Route as ApiPublicShopifyCallbackRouteImport } from './routes/api/public/shopify/callback'
-import { Route as ApiPublicHooksSyncTrack123RouteImport } from './routes/api/public/hooks/sync-track123'
-import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from './routes/api/public/hooks/sync-shop-orders'
-import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from './routes/api/public/hooks/track123.$shopId.$secret'
-import { Route as ApiPublicHooksMailPollStatusInboxIdRouteImport } from './routes/api/public/hooks/mail.poll-status.$inboxId'
-import { Route as ApiPublicHooksMailInboundInboxIdRouteImport } from './routes/api/public/hooks/mail.inbound.$inboxId'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as ShopsRouteImport } from "./routes/shops";
+import { Route as SettingsRouteImport } from "./routes/settings";
+import { Route as ProjectsRouteImport } from "./routes/projects";
+import { Route as LoginRouteImport } from "./routes/login";
+import { Route as GratitudeRouteImport } from "./routes/gratitude";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
+import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
+import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
+import { Route as ShopsProductsRouteImport } from "./routes/shops.products";
+import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupos";
+import { Route as ShopsGruposRouteImport } from "./routes/shops.grupos";
+import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
+import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
+import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
+import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
+import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
+import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
+import { Route as ShopsSopsIndexRouteImport } from "./routes/shops.sops.index";
+import { Route as ShopsProductsIndexRouteImport } from "./routes/shops.products.index";
+import { Route as ShopsLojasGruposIndexRouteImport } from "./routes/shops.lojas-grupos.index";
+import { Route as ShopsGruposIndexRouteImport } from "./routes/shops.grupos.index";
+import { Route as ShopsCaixaIndexRouteImport } from "./routes/shops.caixa.index";
+import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
+import { Route as ShopsSopsProcessIdRouteImport } from "./routes/shops.sops.$processId";
+import { Route as ShopsProductsProductIdRouteImport } from "./routes/shops.products.$productId";
+import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas-grupos.$cardId";
+import { Route as ShopsGruposGroupIdRouteImport } from "./routes/shops.grupos.$groupId";
+import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
+import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
+import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
+import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
+import { Route as ApiPublicHooksMailPollStatusInboxIdRouteImport } from "./routes/api/public/hooks/mail.poll-status.$inboxId";
+import { Route as ApiPublicHooksMailInboundInboxIdRouteImport } from "./routes/api/public/hooks/mail.inbound.$inboxId";
 
 const ShopsRoute = ShopsRouteImport.update({
-  id: '/shops',
-  path: '/shops',
+  id: "/shops",
+  path: "/shops",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+  id: "/settings",
+  path: "/settings",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ProjectsRoute = ProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
+  id: "/projects",
+  path: "/projects",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+  id: "/login",
+  path: "/login",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const GratitudeRoute = GratitudeRouteImport.update({
-  id: '/gratitude',
-  path: '/gratitude',
+  id: "/gratitude",
+  path: "/gratitude",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ShopsIndexRoute = ShopsIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => SettingsRoute,
-} as any)
+} as any);
 const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ProjectsRoute,
-} as any)
+} as any);
 const ShopsProductsRoute = ShopsProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
+  id: "/products",
+  path: "/products",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const ShopsLojasGruposRoute = ShopsLojasGruposRouteImport.update({
-  id: '/lojas-grupos',
-  path: '/lojas-grupos',
+  id: "/lojas-grupos",
+  path: "/lojas-grupos",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const ShopsGruposRoute = ShopsGruposRouteImport.update({
-  id: '/grupos',
-  path: '/grupos',
+  id: "/grupos",
+  path: "/grupos",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const ShopsCaixaRoute = ShopsCaixaRouteImport.update({
-  id: '/caixa',
-  path: '/caixa',
+  id: "/caixa",
+  path: "/caixa",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const ShopsBancoDeLojasRoute = ShopsBancoDeLojasRouteImport.update({
-  id: '/banco-de-lojas',
-  path: '/banco-de-lojas',
+  id: "/banco-de-lojas",
+  path: "/banco-de-lojas",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
-  id: '/seguranca',
-  path: '/seguranca',
+  id: "/seguranca",
+  path: "/seguranca",
   getParentRoute: () => SettingsRoute,
-} as any)
+} as any);
 const SettingsMembersRoute = SettingsMembersRouteImport.update({
-  id: '/members',
-  path: '/members',
+  id: "/members",
+  path: "/members",
   getParentRoute: () => SettingsRoute,
-} as any)
+} as any);
 const SettingsGeralRoute = SettingsGeralRouteImport.update({
-  id: '/geral',
-  path: '/geral',
+  id: "/geral",
+  path: "/geral",
   getParentRoute: () => SettingsRoute,
-} as any)
+} as any);
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
-  id: '/$projectId',
-  path: '/$projectId',
+  id: "/$projectId",
+  path: "/$projectId",
   getParentRoute: () => ProjectsRoute,
-} as any)
+} as any);
 const InviteTokenRoute = InviteTokenRouteImport.update({
-  id: '/invite/$token',
-  path: '/invite/$token',
+  id: "/invite/$token",
+  path: "/invite/$token",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ShopsSopsIndexRoute = ShopsSopsIndexRouteImport.update({
-  id: '/sops/',
-  path: '/sops/',
+  id: "/sops/",
+  path: "/sops/",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const ShopsProductsIndexRoute = ShopsProductsIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsProductsRoute,
-} as any)
+} as any);
 const ShopsLojasGruposIndexRoute = ShopsLojasGruposIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsLojasGruposRoute,
-} as any)
+} as any);
 const ShopsGruposIndexRoute = ShopsGruposIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsGruposRoute,
-} as any)
+} as any);
 const ShopsCaixaIndexRoute = ShopsCaixaIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsCaixaRoute,
-} as any)
+} as any);
 const ShopsBancoDeLojasIndexRoute = ShopsBancoDeLojasIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsBancoDeLojasRoute,
-} as any)
+} as any);
 const ShopsSopsProcessIdRoute = ShopsSopsProcessIdRouteImport.update({
-  id: '/sops/$processId',
-  path: '/sops/$processId',
+  id: "/sops/$processId",
+  path: "/sops/$processId",
   getParentRoute: () => ShopsRoute,
-} as any)
+} as any);
 const ShopsProductsProductIdRoute = ShopsProductsProductIdRouteImport.update({
-  id: '/$productId',
-  path: '/$productId',
+  id: "/$productId",
+  path: "/$productId",
   getParentRoute: () => ShopsProductsRoute,
-} as any)
+} as any);
 const ShopsLojasGruposCardIdRoute = ShopsLojasGruposCardIdRouteImport.update({
-  id: '/$cardId',
-  path: '/$cardId',
+  id: "/$cardId",
+  path: "/$cardId",
   getParentRoute: () => ShopsLojasGruposRoute,
-} as any)
+} as any);
 const ShopsGruposGroupIdRoute = ShopsGruposGroupIdRouteImport.update({
-  id: '/$groupId',
-  path: '/$groupId',
+  id: "/$groupId",
+  path: "/$groupId",
   getParentRoute: () => ShopsGruposRoute,
-} as any)
+} as any);
 const ApiPublicShopifyCallbackRoute =
   ApiPublicShopifyCallbackRouteImport.update({
-    id: '/api/public/shopify/callback',
-    path: '/api/public/shopify/callback',
+    id: "/api/public/shopify/callback",
+    path: "/api/public/shopify/callback",
     getParentRoute: () => rootRouteImport,
-  } as any)
+  } as any);
 const ApiPublicHooksSyncTrack123Route =
   ApiPublicHooksSyncTrack123RouteImport.update({
-    id: '/api/public/hooks/sync-track123',
-    path: '/api/public/hooks/sync-track123',
+    id: "/api/public/hooks/sync-track123",
+    path: "/api/public/hooks/sync-track123",
     getParentRoute: () => rootRouteImport,
-  } as any)
+  } as any);
 const ApiPublicHooksSyncShopOrdersRoute =
   ApiPublicHooksSyncShopOrdersRouteImport.update({
-    id: '/api/public/hooks/sync-shop-orders',
-    path: '/api/public/hooks/sync-shop-orders',
+    id: "/api/public/hooks/sync-shop-orders",
+    path: "/api/public/hooks/sync-shop-orders",
     getParentRoute: () => rootRouteImport,
-  } as any)
+  } as any);
 const ApiPublicHooksTrack123ShopIdSecretRoute =
   ApiPublicHooksTrack123ShopIdSecretRouteImport.update({
-    id: '/api/public/hooks/track123/$shopId/$secret',
-    path: '/api/public/hooks/track123/$shopId/$secret',
+    id: "/api/public/hooks/track123/$shopId/$secret",
+    path: "/api/public/hooks/track123/$shopId/$secret",
     getParentRoute: () => rootRouteImport,
-  } as any)
+  } as any);
 const ApiPublicHooksMailPollStatusInboxIdRoute =
   ApiPublicHooksMailPollStatusInboxIdRouteImport.update({
-    id: '/api/public/hooks/mail/poll-status/$inboxId',
-    path: '/api/public/hooks/mail/poll-status/$inboxId',
+    id: "/api/public/hooks/mail/poll-status/$inboxId",
+    path: "/api/public/hooks/mail/poll-status/$inboxId",
     getParentRoute: () => rootRouteImport,
-  } as any)
+  } as any);
 const ApiPublicHooksMailInboundInboxIdRoute =
   ApiPublicHooksMailInboundInboxIdRouteImport.update({
-    id: '/api/public/hooks/mail/inbound/$inboxId',
-    path: '/api/public/hooks/mail/inbound/$inboxId',
+    id: "/api/public/hooks/mail/inbound/$inboxId",
+    path: "/api/public/hooks/mail/inbound/$inboxId",
     getParentRoute: () => rootRouteImport,
-  } as any)
+  } as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/gratitude': typeof GratitudeRoute
-  '/login': typeof LoginRoute
-  '/projects': typeof ProjectsRouteWithChildren
-  '/settings': typeof SettingsRouteWithChildren
-  '/shops': typeof ShopsRouteWithChildren
-  '/invite/$token': typeof InviteTokenRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
-  '/settings/geral': typeof SettingsGeralRoute
-  '/settings/members': typeof SettingsMembersRoute
-  '/settings/seguranca': typeof SettingsSegurancaRoute
-  '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
-  '/shops/caixa': typeof ShopsCaixaRouteWithChildren
-  '/shops/grupos': typeof ShopsGruposRouteWithChildren
-  '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
-  '/shops/products': typeof ShopsProductsRouteWithChildren
-  '/projects/': typeof ProjectsIndexRoute
-  '/settings/': typeof SettingsIndexRoute
-  '/shops/': typeof ShopsIndexRoute
-  '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
-  '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
-  '/shops/products/$productId': typeof ShopsProductsProductIdRoute
-  '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
-  '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
-  '/shops/caixa/': typeof ShopsCaixaIndexRoute
-  '/shops/grupos/': typeof ShopsGruposIndexRoute
-  '/shops/lojas-grupos/': typeof ShopsLojasGruposIndexRoute
-  '/shops/products/': typeof ShopsProductsIndexRoute
-  '/shops/sops/': typeof ShopsSopsIndexRoute
-  '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
-  '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
-  '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
-  '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
-  '/api/public/hooks/mail/poll-status/$inboxId': typeof ApiPublicHooksMailPollStatusInboxIdRoute
-  '/api/public/hooks/track123/$shopId/$secret': typeof ApiPublicHooksTrack123ShopIdSecretRoute
+  "/": typeof IndexRoute;
+  "/gratitude": typeof GratitudeRoute;
+  "/login": typeof LoginRoute;
+  "/projects": typeof ProjectsRouteWithChildren;
+  "/settings": typeof SettingsRouteWithChildren;
+  "/shops": typeof ShopsRouteWithChildren;
+  "/invite/$token": typeof InviteTokenRoute;
+  "/projects/$projectId": typeof ProjectsProjectIdRoute;
+  "/settings/geral": typeof SettingsGeralRoute;
+  "/settings/members": typeof SettingsMembersRoute;
+  "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
+  "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
+  "/shops/grupos": typeof ShopsGruposRouteWithChildren;
+  "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
+  "/shops/products": typeof ShopsProductsRouteWithChildren;
+  "/projects/": typeof ProjectsIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/shops/": typeof ShopsIndexRoute;
+  "/shops/grupos/$groupId": typeof ShopsGruposGroupIdRoute;
+  "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
+  "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
+  "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
+  "/shops/banco-de-lojas/": typeof ShopsBancoDeLojasIndexRoute;
+  "/shops/caixa/": typeof ShopsCaixaIndexRoute;
+  "/shops/grupos/": typeof ShopsGruposIndexRoute;
+  "/shops/lojas-grupos/": typeof ShopsLojasGruposIndexRoute;
+  "/shops/products/": typeof ShopsProductsIndexRoute;
+  "/shops/sops/": typeof ShopsSopsIndexRoute;
+  "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
+  "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
+  "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/hooks/mail/inbound/$inboxId": typeof ApiPublicHooksMailInboundInboxIdRoute;
+  "/api/public/hooks/mail/poll-status/$inboxId": typeof ApiPublicHooksMailPollStatusInboxIdRoute;
+  "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/gratitude': typeof GratitudeRoute
-  '/login': typeof LoginRoute
-  '/invite/$token': typeof InviteTokenRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
-  '/settings/geral': typeof SettingsGeralRoute
-  '/settings/members': typeof SettingsMembersRoute
-  '/settings/seguranca': typeof SettingsSegurancaRoute
-  '/projects': typeof ProjectsIndexRoute
-  '/settings': typeof SettingsIndexRoute
-  '/shops': typeof ShopsIndexRoute
-  '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
-  '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
-  '/shops/products/$productId': typeof ShopsProductsProductIdRoute
-  '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
-  '/shops/banco-de-lojas': typeof ShopsBancoDeLojasIndexRoute
-  '/shops/caixa': typeof ShopsCaixaIndexRoute
-  '/shops/grupos': typeof ShopsGruposIndexRoute
-  '/shops/lojas-grupos': typeof ShopsLojasGruposIndexRoute
-  '/shops/products': typeof ShopsProductsIndexRoute
-  '/shops/sops': typeof ShopsSopsIndexRoute
-  '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
-  '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
-  '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
-  '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
-  '/api/public/hooks/mail/poll-status/$inboxId': typeof ApiPublicHooksMailPollStatusInboxIdRoute
-  '/api/public/hooks/track123/$shopId/$secret': typeof ApiPublicHooksTrack123ShopIdSecretRoute
+  "/": typeof IndexRoute;
+  "/gratitude": typeof GratitudeRoute;
+  "/login": typeof LoginRoute;
+  "/invite/$token": typeof InviteTokenRoute;
+  "/projects/$projectId": typeof ProjectsProjectIdRoute;
+  "/settings/geral": typeof SettingsGeralRoute;
+  "/settings/members": typeof SettingsMembersRoute;
+  "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/projects": typeof ProjectsIndexRoute;
+  "/settings": typeof SettingsIndexRoute;
+  "/shops": typeof ShopsIndexRoute;
+  "/shops/grupos/$groupId": typeof ShopsGruposGroupIdRoute;
+  "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
+  "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
+  "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
+  "/shops/banco-de-lojas": typeof ShopsBancoDeLojasIndexRoute;
+  "/shops/caixa": typeof ShopsCaixaIndexRoute;
+  "/shops/grupos": typeof ShopsGruposIndexRoute;
+  "/shops/lojas-grupos": typeof ShopsLojasGruposIndexRoute;
+  "/shops/products": typeof ShopsProductsIndexRoute;
+  "/shops/sops": typeof ShopsSopsIndexRoute;
+  "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
+  "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
+  "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/hooks/mail/inbound/$inboxId": typeof ApiPublicHooksMailInboundInboxIdRoute;
+  "/api/public/hooks/mail/poll-status/$inboxId": typeof ApiPublicHooksMailPollStatusInboxIdRoute;
+  "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/gratitude': typeof GratitudeRoute
-  '/login': typeof LoginRoute
-  '/projects': typeof ProjectsRouteWithChildren
-  '/settings': typeof SettingsRouteWithChildren
-  '/shops': typeof ShopsRouteWithChildren
-  '/invite/$token': typeof InviteTokenRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
-  '/settings/geral': typeof SettingsGeralRoute
-  '/settings/members': typeof SettingsMembersRoute
-  '/settings/seguranca': typeof SettingsSegurancaRoute
-  '/shops/banco-de-lojas': typeof ShopsBancoDeLojasRouteWithChildren
-  '/shops/caixa': typeof ShopsCaixaRouteWithChildren
-  '/shops/grupos': typeof ShopsGruposRouteWithChildren
-  '/shops/lojas-grupos': typeof ShopsLojasGruposRouteWithChildren
-  '/shops/products': typeof ShopsProductsRouteWithChildren
-  '/projects/': typeof ProjectsIndexRoute
-  '/settings/': typeof SettingsIndexRoute
-  '/shops/': typeof ShopsIndexRoute
-  '/shops/grupos/$groupId': typeof ShopsGruposGroupIdRoute
-  '/shops/lojas-grupos/$cardId': typeof ShopsLojasGruposCardIdRoute
-  '/shops/products/$productId': typeof ShopsProductsProductIdRoute
-  '/shops/sops/$processId': typeof ShopsSopsProcessIdRoute
-  '/shops/banco-de-lojas/': typeof ShopsBancoDeLojasIndexRoute
-  '/shops/caixa/': typeof ShopsCaixaIndexRoute
-  '/shops/grupos/': typeof ShopsGruposIndexRoute
-  '/shops/lojas-grupos/': typeof ShopsLojasGruposIndexRoute
-  '/shops/products/': typeof ShopsProductsIndexRoute
-  '/shops/sops/': typeof ShopsSopsIndexRoute
-  '/api/public/hooks/sync-shop-orders': typeof ApiPublicHooksSyncShopOrdersRoute
-  '/api/public/hooks/sync-track123': typeof ApiPublicHooksSyncTrack123Route
-  '/api/public/shopify/callback': typeof ApiPublicShopifyCallbackRoute
-  '/api/public/hooks/mail/inbound/$inboxId': typeof ApiPublicHooksMailInboundInboxIdRoute
-  '/api/public/hooks/mail/poll-status/$inboxId': typeof ApiPublicHooksMailPollStatusInboxIdRoute
-  '/api/public/hooks/track123/$shopId/$secret': typeof ApiPublicHooksTrack123ShopIdSecretRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/gratitude": typeof GratitudeRoute;
+  "/login": typeof LoginRoute;
+  "/projects": typeof ProjectsRouteWithChildren;
+  "/settings": typeof SettingsRouteWithChildren;
+  "/shops": typeof ShopsRouteWithChildren;
+  "/invite/$token": typeof InviteTokenRoute;
+  "/projects/$projectId": typeof ProjectsProjectIdRoute;
+  "/settings/geral": typeof SettingsGeralRoute;
+  "/settings/members": typeof SettingsMembersRoute;
+  "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
+  "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
+  "/shops/grupos": typeof ShopsGruposRouteWithChildren;
+  "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
+  "/shops/products": typeof ShopsProductsRouteWithChildren;
+  "/projects/": typeof ProjectsIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/shops/": typeof ShopsIndexRoute;
+  "/shops/grupos/$groupId": typeof ShopsGruposGroupIdRoute;
+  "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
+  "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
+  "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
+  "/shops/banco-de-lojas/": typeof ShopsBancoDeLojasIndexRoute;
+  "/shops/caixa/": typeof ShopsCaixaIndexRoute;
+  "/shops/grupos/": typeof ShopsGruposIndexRoute;
+  "/shops/lojas-grupos/": typeof ShopsLojasGruposIndexRoute;
+  "/shops/products/": typeof ShopsProductsIndexRoute;
+  "/shops/sops/": typeof ShopsSopsIndexRoute;
+  "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
+  "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
+  "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/hooks/mail/inbound/$inboxId": typeof ApiPublicHooksMailInboundInboxIdRoute;
+  "/api/public/hooks/mail/poll-status/$inboxId": typeof ApiPublicHooksMailPollStatusInboxIdRoute;
+  "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
-    | '/'
-    | '/gratitude'
-    | '/login'
-    | '/projects'
-    | '/settings'
-    | '/shops'
-    | '/invite/$token'
-    | '/projects/$projectId'
-    | '/settings/geral'
-    | '/settings/members'
-    | '/settings/seguranca'
-    | '/shops/banco-de-lojas'
-    | '/shops/caixa'
-    | '/shops/grupos'
-    | '/shops/lojas-grupos'
-    | '/shops/products'
-    | '/projects/'
-    | '/settings/'
-    | '/shops/'
-    | '/shops/grupos/$groupId'
-    | '/shops/lojas-grupos/$cardId'
-    | '/shops/products/$productId'
-    | '/shops/sops/$processId'
-    | '/shops/banco-de-lojas/'
-    | '/shops/caixa/'
-    | '/shops/grupos/'
-    | '/shops/lojas-grupos/'
-    | '/shops/products/'
-    | '/shops/sops/'
-    | '/api/public/hooks/sync-shop-orders'
-    | '/api/public/hooks/sync-track123'
-    | '/api/public/shopify/callback'
-    | '/api/public/hooks/mail/inbound/$inboxId'
-    | '/api/public/hooks/mail/poll-status/$inboxId'
-    | '/api/public/hooks/track123/$shopId/$secret'
-  fileRoutesByTo: FileRoutesByTo
+    | "/"
+    | "/gratitude"
+    | "/login"
+    | "/projects"
+    | "/settings"
+    | "/shops"
+    | "/invite/$token"
+    | "/projects/$projectId"
+    | "/settings/geral"
+    | "/settings/members"
+    | "/settings/seguranca"
+    | "/shops/banco-de-lojas"
+    | "/shops/caixa"
+    | "/shops/grupos"
+    | "/shops/lojas-grupos"
+    | "/shops/products"
+    | "/projects/"
+    | "/settings/"
+    | "/shops/"
+    | "/shops/grupos/$groupId"
+    | "/shops/lojas-grupos/$cardId"
+    | "/shops/products/$productId"
+    | "/shops/sops/$processId"
+    | "/shops/banco-de-lojas/"
+    | "/shops/caixa/"
+    | "/shops/grupos/"
+    | "/shops/lojas-grupos/"
+    | "/shops/products/"
+    | "/shops/sops/"
+    | "/api/public/hooks/sync-shop-orders"
+    | "/api/public/hooks/sync-track123"
+    | "/api/public/shopify/callback"
+    | "/api/public/hooks/mail/inbound/$inboxId"
+    | "/api/public/hooks/mail/poll-status/$inboxId"
+    | "/api/public/hooks/track123/$shopId/$secret";
+  fileRoutesByTo: FileRoutesByTo;
   to:
-    | '/'
-    | '/gratitude'
-    | '/login'
-    | '/invite/$token'
-    | '/projects/$projectId'
-    | '/settings/geral'
-    | '/settings/members'
-    | '/settings/seguranca'
-    | '/projects'
-    | '/settings'
-    | '/shops'
-    | '/shops/grupos/$groupId'
-    | '/shops/lojas-grupos/$cardId'
-    | '/shops/products/$productId'
-    | '/shops/sops/$processId'
-    | '/shops/banco-de-lojas'
-    | '/shops/caixa'
-    | '/shops/grupos'
-    | '/shops/lojas-grupos'
-    | '/shops/products'
-    | '/shops/sops'
-    | '/api/public/hooks/sync-shop-orders'
-    | '/api/public/hooks/sync-track123'
-    | '/api/public/shopify/callback'
-    | '/api/public/hooks/mail/inbound/$inboxId'
-    | '/api/public/hooks/mail/poll-status/$inboxId'
-    | '/api/public/hooks/track123/$shopId/$secret'
+    | "/"
+    | "/gratitude"
+    | "/login"
+    | "/invite/$token"
+    | "/projects/$projectId"
+    | "/settings/geral"
+    | "/settings/members"
+    | "/settings/seguranca"
+    | "/projects"
+    | "/settings"
+    | "/shops"
+    | "/shops/grupos/$groupId"
+    | "/shops/lojas-grupos/$cardId"
+    | "/shops/products/$productId"
+    | "/shops/sops/$processId"
+    | "/shops/banco-de-lojas"
+    | "/shops/caixa"
+    | "/shops/grupos"
+    | "/shops/lojas-grupos"
+    | "/shops/products"
+    | "/shops/sops"
+    | "/api/public/hooks/sync-shop-orders"
+    | "/api/public/hooks/sync-track123"
+    | "/api/public/shopify/callback"
+    | "/api/public/hooks/mail/inbound/$inboxId"
+    | "/api/public/hooks/mail/poll-status/$inboxId"
+    | "/api/public/hooks/track123/$shopId/$secret";
   id:
-    | '__root__'
-    | '/'
-    | '/gratitude'
-    | '/login'
-    | '/projects'
-    | '/settings'
-    | '/shops'
-    | '/invite/$token'
-    | '/projects/$projectId'
-    | '/settings/geral'
-    | '/settings/members'
-    | '/settings/seguranca'
-    | '/shops/banco-de-lojas'
-    | '/shops/caixa'
-    | '/shops/grupos'
-    | '/shops/lojas-grupos'
-    | '/shops/products'
-    | '/projects/'
-    | '/settings/'
-    | '/shops/'
-    | '/shops/grupos/$groupId'
-    | '/shops/lojas-grupos/$cardId'
-    | '/shops/products/$productId'
-    | '/shops/sops/$processId'
-    | '/shops/banco-de-lojas/'
-    | '/shops/caixa/'
-    | '/shops/grupos/'
-    | '/shops/lojas-grupos/'
-    | '/shops/products/'
-    | '/shops/sops/'
-    | '/api/public/hooks/sync-shop-orders'
-    | '/api/public/hooks/sync-track123'
-    | '/api/public/shopify/callback'
-    | '/api/public/hooks/mail/inbound/$inboxId'
-    | '/api/public/hooks/mail/poll-status/$inboxId'
-    | '/api/public/hooks/track123/$shopId/$secret'
-  fileRoutesById: FileRoutesById
+    | "__root__"
+    | "/"
+    | "/gratitude"
+    | "/login"
+    | "/projects"
+    | "/settings"
+    | "/shops"
+    | "/invite/$token"
+    | "/projects/$projectId"
+    | "/settings/geral"
+    | "/settings/members"
+    | "/settings/seguranca"
+    | "/shops/banco-de-lojas"
+    | "/shops/caixa"
+    | "/shops/grupos"
+    | "/shops/lojas-grupos"
+    | "/shops/products"
+    | "/projects/"
+    | "/settings/"
+    | "/shops/"
+    | "/shops/grupos/$groupId"
+    | "/shops/lojas-grupos/$cardId"
+    | "/shops/products/$productId"
+    | "/shops/sops/$processId"
+    | "/shops/banco-de-lojas/"
+    | "/shops/caixa/"
+    | "/shops/grupos/"
+    | "/shops/lojas-grupos/"
+    | "/shops/products/"
+    | "/shops/sops/"
+    | "/api/public/hooks/sync-shop-orders"
+    | "/api/public/hooks/sync-track123"
+    | "/api/public/shopify/callback"
+    | "/api/public/hooks/mail/inbound/$inboxId"
+    | "/api/public/hooks/mail/poll-status/$inboxId"
+    | "/api/public/hooks/track123/$shopId/$secret";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  GratitudeRoute: typeof GratitudeRoute
-  LoginRoute: typeof LoginRoute
-  ProjectsRoute: typeof ProjectsRouteWithChildren
-  SettingsRoute: typeof SettingsRouteWithChildren
-  ShopsRoute: typeof ShopsRouteWithChildren
-  InviteTokenRoute: typeof InviteTokenRoute
-  ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute
-  ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route
-  ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute
-  ApiPublicHooksMailInboundInboxIdRoute: typeof ApiPublicHooksMailInboundInboxIdRoute
-  ApiPublicHooksMailPollStatusInboxIdRoute: typeof ApiPublicHooksMailPollStatusInboxIdRoute
-  ApiPublicHooksTrack123ShopIdSecretRoute: typeof ApiPublicHooksTrack123ShopIdSecretRoute
+  IndexRoute: typeof IndexRoute;
+  GratitudeRoute: typeof GratitudeRoute;
+  LoginRoute: typeof LoginRoute;
+  ProjectsRoute: typeof ProjectsRouteWithChildren;
+  SettingsRoute: typeof SettingsRouteWithChildren;
+  ShopsRoute: typeof ShopsRouteWithChildren;
+  InviteTokenRoute: typeof InviteTokenRoute;
+  ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
+  ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
+  ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute;
+  ApiPublicHooksMailInboundInboxIdRoute: typeof ApiPublicHooksMailInboundInboxIdRoute;
+  ApiPublicHooksMailPollStatusInboxIdRoute: typeof ApiPublicHooksMailPollStatusInboxIdRoute;
+  ApiPublicHooksTrack123ShopIdSecretRoute: typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/shops': {
-      id: '/shops'
-      path: '/shops'
-      fullPath: '/shops'
-      preLoaderRoute: typeof ShopsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/projects': {
-      id: '/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof ProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/gratitude': {
-      id: '/gratitude'
-      path: '/gratitude'
-      fullPath: '/gratitude'
-      preLoaderRoute: typeof GratitudeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shops/': {
-      id: '/shops/'
-      path: '/'
-      fullPath: '/shops/'
-      preLoaderRoute: typeof ShopsIndexRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/settings/': {
-      id: '/settings/'
-      path: '/'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof SettingsIndexRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/projects/': {
-      id: '/projects/'
-      path: '/'
-      fullPath: '/projects/'
-      preLoaderRoute: typeof ProjectsIndexRouteImport
-      parentRoute: typeof ProjectsRoute
-    }
-    '/shops/products': {
-      id: '/shops/products'
-      path: '/products'
-      fullPath: '/shops/products'
-      preLoaderRoute: typeof ShopsProductsRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/lojas-grupos': {
-      id: '/shops/lojas-grupos'
-      path: '/lojas-grupos'
-      fullPath: '/shops/lojas-grupos'
-      preLoaderRoute: typeof ShopsLojasGruposRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/grupos': {
-      id: '/shops/grupos'
-      path: '/grupos'
-      fullPath: '/shops/grupos'
-      preLoaderRoute: typeof ShopsGruposRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/caixa': {
-      id: '/shops/caixa'
-      path: '/caixa'
-      fullPath: '/shops/caixa'
-      preLoaderRoute: typeof ShopsCaixaRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/banco-de-lojas': {
-      id: '/shops/banco-de-lojas'
-      path: '/banco-de-lojas'
-      fullPath: '/shops/banco-de-lojas'
-      preLoaderRoute: typeof ShopsBancoDeLojasRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/settings/seguranca': {
-      id: '/settings/seguranca'
-      path: '/seguranca'
-      fullPath: '/settings/seguranca'
-      preLoaderRoute: typeof SettingsSegurancaRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/members': {
-      id: '/settings/members'
-      path: '/members'
-      fullPath: '/settings/members'
-      preLoaderRoute: typeof SettingsMembersRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/geral': {
-      id: '/settings/geral'
-      path: '/geral'
-      fullPath: '/settings/geral'
-      preLoaderRoute: typeof SettingsGeralRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/projects/$projectId': {
-      id: '/projects/$projectId'
-      path: '/$projectId'
-      fullPath: '/projects/$projectId'
-      preLoaderRoute: typeof ProjectsProjectIdRouteImport
-      parentRoute: typeof ProjectsRoute
-    }
-    '/invite/$token': {
-      id: '/invite/$token'
-      path: '/invite/$token'
-      fullPath: '/invite/$token'
-      preLoaderRoute: typeof InviteTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shops/sops/': {
-      id: '/shops/sops/'
-      path: '/sops'
-      fullPath: '/shops/sops/'
-      preLoaderRoute: typeof ShopsSopsIndexRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/products/': {
-      id: '/shops/products/'
-      path: '/'
-      fullPath: '/shops/products/'
-      preLoaderRoute: typeof ShopsProductsIndexRouteImport
-      parentRoute: typeof ShopsProductsRoute
-    }
-    '/shops/lojas-grupos/': {
-      id: '/shops/lojas-grupos/'
-      path: '/'
-      fullPath: '/shops/lojas-grupos/'
-      preLoaderRoute: typeof ShopsLojasGruposIndexRouteImport
-      parentRoute: typeof ShopsLojasGruposRoute
-    }
-    '/shops/grupos/': {
-      id: '/shops/grupos/'
-      path: '/'
-      fullPath: '/shops/grupos/'
-      preLoaderRoute: typeof ShopsGruposIndexRouteImport
-      parentRoute: typeof ShopsGruposRoute
-    }
-    '/shops/caixa/': {
-      id: '/shops/caixa/'
-      path: '/'
-      fullPath: '/shops/caixa/'
-      preLoaderRoute: typeof ShopsCaixaIndexRouteImport
-      parentRoute: typeof ShopsCaixaRoute
-    }
-    '/shops/banco-de-lojas/': {
-      id: '/shops/banco-de-lojas/'
-      path: '/'
-      fullPath: '/shops/banco-de-lojas/'
-      preLoaderRoute: typeof ShopsBancoDeLojasIndexRouteImport
-      parentRoute: typeof ShopsBancoDeLojasRoute
-    }
-    '/shops/sops/$processId': {
-      id: '/shops/sops/$processId'
-      path: '/sops/$processId'
-      fullPath: '/shops/sops/$processId'
-      preLoaderRoute: typeof ShopsSopsProcessIdRouteImport
-      parentRoute: typeof ShopsRoute
-    }
-    '/shops/products/$productId': {
-      id: '/shops/products/$productId'
-      path: '/$productId'
-      fullPath: '/shops/products/$productId'
-      preLoaderRoute: typeof ShopsProductsProductIdRouteImport
-      parentRoute: typeof ShopsProductsRoute
-    }
-    '/shops/lojas-grupos/$cardId': {
-      id: '/shops/lojas-grupos/$cardId'
-      path: '/$cardId'
-      fullPath: '/shops/lojas-grupos/$cardId'
-      preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport
-      parentRoute: typeof ShopsLojasGruposRoute
-    }
-    '/shops/grupos/$groupId': {
-      id: '/shops/grupos/$groupId'
-      path: '/$groupId'
-      fullPath: '/shops/grupos/$groupId'
-      preLoaderRoute: typeof ShopsGruposGroupIdRouteImport
-      parentRoute: typeof ShopsGruposRoute
-    }
-    '/api/public/shopify/callback': {
-      id: '/api/public/shopify/callback'
-      path: '/api/public/shopify/callback'
-      fullPath: '/api/public/shopify/callback'
-      preLoaderRoute: typeof ApiPublicShopifyCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/sync-track123': {
-      id: '/api/public/hooks/sync-track123'
-      path: '/api/public/hooks/sync-track123'
-      fullPath: '/api/public/hooks/sync-track123'
-      preLoaderRoute: typeof ApiPublicHooksSyncTrack123RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/sync-shop-orders': {
-      id: '/api/public/hooks/sync-shop-orders'
-      path: '/api/public/hooks/sync-shop-orders'
-      fullPath: '/api/public/hooks/sync-shop-orders'
-      preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/track123/$shopId/$secret': {
-      id: '/api/public/hooks/track123/$shopId/$secret'
-      path: '/api/public/hooks/track123/$shopId/$secret'
-      fullPath: '/api/public/hooks/track123/$shopId/$secret'
-      preLoaderRoute: typeof ApiPublicHooksTrack123ShopIdSecretRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/mail/poll-status/$inboxId': {
-      id: '/api/public/hooks/mail/poll-status/$inboxId'
-      path: '/api/public/hooks/mail/poll-status/$inboxId'
-      fullPath: '/api/public/hooks/mail/poll-status/$inboxId'
-      preLoaderRoute: typeof ApiPublicHooksMailPollStatusInboxIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/hooks/mail/inbound/$inboxId': {
-      id: '/api/public/hooks/mail/inbound/$inboxId'
-      path: '/api/public/hooks/mail/inbound/$inboxId'
-      fullPath: '/api/public/hooks/mail/inbound/$inboxId'
-      preLoaderRoute: typeof ApiPublicHooksMailInboundInboxIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+    "/shops": {
+      id: "/shops";
+      path: "/shops";
+      fullPath: "/shops";
+      preLoaderRoute: typeof ShopsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/settings": {
+      id: "/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof SettingsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof ProjectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/login": {
+      id: "/login";
+      path: "/login";
+      fullPath: "/login";
+      preLoaderRoute: typeof LoginRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/gratitude": {
+      id: "/gratitude";
+      path: "/gratitude";
+      fullPath: "/gratitude";
+      preLoaderRoute: typeof GratitudeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/shops/": {
+      id: "/shops/";
+      path: "/";
+      fullPath: "/shops/";
+      preLoaderRoute: typeof ShopsIndexRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/settings/": {
+      id: "/settings/";
+      path: "/";
+      fullPath: "/settings/";
+      preLoaderRoute: typeof SettingsIndexRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/projects/": {
+      id: "/projects/";
+      path: "/";
+      fullPath: "/projects/";
+      preLoaderRoute: typeof ProjectsIndexRouteImport;
+      parentRoute: typeof ProjectsRoute;
+    };
+    "/shops/products": {
+      id: "/shops/products";
+      path: "/products";
+      fullPath: "/shops/products";
+      preLoaderRoute: typeof ShopsProductsRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/lojas-grupos": {
+      id: "/shops/lojas-grupos";
+      path: "/lojas-grupos";
+      fullPath: "/shops/lojas-grupos";
+      preLoaderRoute: typeof ShopsLojasGruposRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/grupos": {
+      id: "/shops/grupos";
+      path: "/grupos";
+      fullPath: "/shops/grupos";
+      preLoaderRoute: typeof ShopsGruposRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/caixa": {
+      id: "/shops/caixa";
+      path: "/caixa";
+      fullPath: "/shops/caixa";
+      preLoaderRoute: typeof ShopsCaixaRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/banco-de-lojas": {
+      id: "/shops/banco-de-lojas";
+      path: "/banco-de-lojas";
+      fullPath: "/shops/banco-de-lojas";
+      preLoaderRoute: typeof ShopsBancoDeLojasRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/settings/seguranca": {
+      id: "/settings/seguranca";
+      path: "/seguranca";
+      fullPath: "/settings/seguranca";
+      preLoaderRoute: typeof SettingsSegurancaRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/members": {
+      id: "/settings/members";
+      path: "/members";
+      fullPath: "/settings/members";
+      preLoaderRoute: typeof SettingsMembersRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/geral": {
+      id: "/settings/geral";
+      path: "/geral";
+      fullPath: "/settings/geral";
+      preLoaderRoute: typeof SettingsGeralRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/projects/$projectId": {
+      id: "/projects/$projectId";
+      path: "/$projectId";
+      fullPath: "/projects/$projectId";
+      preLoaderRoute: typeof ProjectsProjectIdRouteImport;
+      parentRoute: typeof ProjectsRoute;
+    };
+    "/invite/$token": {
+      id: "/invite/$token";
+      path: "/invite/$token";
+      fullPath: "/invite/$token";
+      preLoaderRoute: typeof InviteTokenRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/shops/sops/": {
+      id: "/shops/sops/";
+      path: "/sops";
+      fullPath: "/shops/sops/";
+      preLoaderRoute: typeof ShopsSopsIndexRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/products/": {
+      id: "/shops/products/";
+      path: "/";
+      fullPath: "/shops/products/";
+      preLoaderRoute: typeof ShopsProductsIndexRouteImport;
+      parentRoute: typeof ShopsProductsRoute;
+    };
+    "/shops/lojas-grupos/": {
+      id: "/shops/lojas-grupos/";
+      path: "/";
+      fullPath: "/shops/lojas-grupos/";
+      preLoaderRoute: typeof ShopsLojasGruposIndexRouteImport;
+      parentRoute: typeof ShopsLojasGruposRoute;
+    };
+    "/shops/grupos/": {
+      id: "/shops/grupos/";
+      path: "/";
+      fullPath: "/shops/grupos/";
+      preLoaderRoute: typeof ShopsGruposIndexRouteImport;
+      parentRoute: typeof ShopsGruposRoute;
+    };
+    "/shops/caixa/": {
+      id: "/shops/caixa/";
+      path: "/";
+      fullPath: "/shops/caixa/";
+      preLoaderRoute: typeof ShopsCaixaIndexRouteImport;
+      parentRoute: typeof ShopsCaixaRoute;
+    };
+    "/shops/banco-de-lojas/": {
+      id: "/shops/banco-de-lojas/";
+      path: "/";
+      fullPath: "/shops/banco-de-lojas/";
+      preLoaderRoute: typeof ShopsBancoDeLojasIndexRouteImport;
+      parentRoute: typeof ShopsBancoDeLojasRoute;
+    };
+    "/shops/sops/$processId": {
+      id: "/shops/sops/$processId";
+      path: "/sops/$processId";
+      fullPath: "/shops/sops/$processId";
+      preLoaderRoute: typeof ShopsSopsProcessIdRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/products/$productId": {
+      id: "/shops/products/$productId";
+      path: "/$productId";
+      fullPath: "/shops/products/$productId";
+      preLoaderRoute: typeof ShopsProductsProductIdRouteImport;
+      parentRoute: typeof ShopsProductsRoute;
+    };
+    "/shops/lojas-grupos/$cardId": {
+      id: "/shops/lojas-grupos/$cardId";
+      path: "/$cardId";
+      fullPath: "/shops/lojas-grupos/$cardId";
+      preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport;
+      parentRoute: typeof ShopsLojasGruposRoute;
+    };
+    "/shops/grupos/$groupId": {
+      id: "/shops/grupos/$groupId";
+      path: "/$groupId";
+      fullPath: "/shops/grupos/$groupId";
+      preLoaderRoute: typeof ShopsGruposGroupIdRouteImport;
+      parentRoute: typeof ShopsGruposRoute;
+    };
+    "/api/public/shopify/callback": {
+      id: "/api/public/shopify/callback";
+      path: "/api/public/shopify/callback";
+      fullPath: "/api/public/shopify/callback";
+      preLoaderRoute: typeof ApiPublicShopifyCallbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/sync-track123": {
+      id: "/api/public/hooks/sync-track123";
+      path: "/api/public/hooks/sync-track123";
+      fullPath: "/api/public/hooks/sync-track123";
+      preLoaderRoute: typeof ApiPublicHooksSyncTrack123RouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/sync-shop-orders": {
+      id: "/api/public/hooks/sync-shop-orders";
+      path: "/api/public/hooks/sync-shop-orders";
+      fullPath: "/api/public/hooks/sync-shop-orders";
+      preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/track123/$shopId/$secret": {
+      id: "/api/public/hooks/track123/$shopId/$secret";
+      path: "/api/public/hooks/track123/$shopId/$secret";
+      fullPath: "/api/public/hooks/track123/$shopId/$secret";
+      preLoaderRoute: typeof ApiPublicHooksTrack123ShopIdSecretRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/mail/poll-status/$inboxId": {
+      id: "/api/public/hooks/mail/poll-status/$inboxId";
+      path: "/api/public/hooks/mail/poll-status/$inboxId";
+      fullPath: "/api/public/hooks/mail/poll-status/$inboxId";
+      preLoaderRoute: typeof ApiPublicHooksMailPollStatusInboxIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/mail/inbound/$inboxId": {
+      id: "/api/public/hooks/mail/inbound/$inboxId";
+      path: "/api/public/hooks/mail/inbound/$inboxId";
+      fullPath: "/api/public/hooks/mail/inbound/$inboxId";
+      preLoaderRoute: typeof ApiPublicHooksMailInboundInboxIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
 interface ProjectsRouteChildren {
-  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
-  ProjectsIndexRoute: typeof ProjectsIndexRoute
+  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute;
+  ProjectsIndexRoute: typeof ProjectsIndexRoute;
 }
 
 const ProjectsRouteChildren: ProjectsRouteChildren = {
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
-}
+};
 
 const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
   ProjectsRouteChildren,
-)
+);
 
 interface SettingsRouteChildren {
-  SettingsGeralRoute: typeof SettingsGeralRoute
-  SettingsMembersRoute: typeof SettingsMembersRoute
-  SettingsSegurancaRoute: typeof SettingsSegurancaRoute
-  SettingsIndexRoute: typeof SettingsIndexRoute
+  SettingsGeralRoute: typeof SettingsGeralRoute;
+  SettingsMembersRoute: typeof SettingsMembersRoute;
+  SettingsSegurancaRoute: typeof SettingsSegurancaRoute;
+  SettingsIndexRoute: typeof SettingsIndexRoute;
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -729,85 +729,85 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsMembersRoute: SettingsMembersRoute,
   SettingsSegurancaRoute: SettingsSegurancaRoute,
   SettingsIndexRoute: SettingsIndexRoute,
-}
+};
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
   SettingsRouteChildren,
-)
+);
 
 interface ShopsBancoDeLojasRouteChildren {
-  ShopsBancoDeLojasIndexRoute: typeof ShopsBancoDeLojasIndexRoute
+  ShopsBancoDeLojasIndexRoute: typeof ShopsBancoDeLojasIndexRoute;
 }
 
 const ShopsBancoDeLojasRouteChildren: ShopsBancoDeLojasRouteChildren = {
   ShopsBancoDeLojasIndexRoute: ShopsBancoDeLojasIndexRoute,
-}
+};
 
 const ShopsBancoDeLojasRouteWithChildren =
-  ShopsBancoDeLojasRoute._addFileChildren(ShopsBancoDeLojasRouteChildren)
+  ShopsBancoDeLojasRoute._addFileChildren(ShopsBancoDeLojasRouteChildren);
 
 interface ShopsCaixaRouteChildren {
-  ShopsCaixaIndexRoute: typeof ShopsCaixaIndexRoute
+  ShopsCaixaIndexRoute: typeof ShopsCaixaIndexRoute;
 }
 
 const ShopsCaixaRouteChildren: ShopsCaixaRouteChildren = {
   ShopsCaixaIndexRoute: ShopsCaixaIndexRoute,
-}
+};
 
 const ShopsCaixaRouteWithChildren = ShopsCaixaRoute._addFileChildren(
   ShopsCaixaRouteChildren,
-)
+);
 
 interface ShopsGruposRouteChildren {
-  ShopsGruposGroupIdRoute: typeof ShopsGruposGroupIdRoute
-  ShopsGruposIndexRoute: typeof ShopsGruposIndexRoute
+  ShopsGruposGroupIdRoute: typeof ShopsGruposGroupIdRoute;
+  ShopsGruposIndexRoute: typeof ShopsGruposIndexRoute;
 }
 
 const ShopsGruposRouteChildren: ShopsGruposRouteChildren = {
   ShopsGruposGroupIdRoute: ShopsGruposGroupIdRoute,
   ShopsGruposIndexRoute: ShopsGruposIndexRoute,
-}
+};
 
 const ShopsGruposRouteWithChildren = ShopsGruposRoute._addFileChildren(
   ShopsGruposRouteChildren,
-)
+);
 
 interface ShopsLojasGruposRouteChildren {
-  ShopsLojasGruposCardIdRoute: typeof ShopsLojasGruposCardIdRoute
-  ShopsLojasGruposIndexRoute: typeof ShopsLojasGruposIndexRoute
+  ShopsLojasGruposCardIdRoute: typeof ShopsLojasGruposCardIdRoute;
+  ShopsLojasGruposIndexRoute: typeof ShopsLojasGruposIndexRoute;
 }
 
 const ShopsLojasGruposRouteChildren: ShopsLojasGruposRouteChildren = {
   ShopsLojasGruposCardIdRoute: ShopsLojasGruposCardIdRoute,
   ShopsLojasGruposIndexRoute: ShopsLojasGruposIndexRoute,
-}
+};
 
 const ShopsLojasGruposRouteWithChildren =
-  ShopsLojasGruposRoute._addFileChildren(ShopsLojasGruposRouteChildren)
+  ShopsLojasGruposRoute._addFileChildren(ShopsLojasGruposRouteChildren);
 
 interface ShopsProductsRouteChildren {
-  ShopsProductsProductIdRoute: typeof ShopsProductsProductIdRoute
-  ShopsProductsIndexRoute: typeof ShopsProductsIndexRoute
+  ShopsProductsProductIdRoute: typeof ShopsProductsProductIdRoute;
+  ShopsProductsIndexRoute: typeof ShopsProductsIndexRoute;
 }
 
 const ShopsProductsRouteChildren: ShopsProductsRouteChildren = {
   ShopsProductsProductIdRoute: ShopsProductsProductIdRoute,
   ShopsProductsIndexRoute: ShopsProductsIndexRoute,
-}
+};
 
 const ShopsProductsRouteWithChildren = ShopsProductsRoute._addFileChildren(
   ShopsProductsRouteChildren,
-)
+);
 
 interface ShopsRouteChildren {
-  ShopsBancoDeLojasRoute: typeof ShopsBancoDeLojasRouteWithChildren
-  ShopsCaixaRoute: typeof ShopsCaixaRouteWithChildren
-  ShopsGruposRoute: typeof ShopsGruposRouteWithChildren
-  ShopsLojasGruposRoute: typeof ShopsLojasGruposRouteWithChildren
-  ShopsProductsRoute: typeof ShopsProductsRouteWithChildren
-  ShopsIndexRoute: typeof ShopsIndexRoute
-  ShopsSopsProcessIdRoute: typeof ShopsSopsProcessIdRoute
-  ShopsSopsIndexRoute: typeof ShopsSopsIndexRoute
+  ShopsBancoDeLojasRoute: typeof ShopsBancoDeLojasRouteWithChildren;
+  ShopsCaixaRoute: typeof ShopsCaixaRouteWithChildren;
+  ShopsGruposRoute: typeof ShopsGruposRouteWithChildren;
+  ShopsLojasGruposRoute: typeof ShopsLojasGruposRouteWithChildren;
+  ShopsProductsRoute: typeof ShopsProductsRouteWithChildren;
+  ShopsIndexRoute: typeof ShopsIndexRoute;
+  ShopsSopsProcessIdRoute: typeof ShopsSopsProcessIdRoute;
+  ShopsSopsIndexRoute: typeof ShopsSopsIndexRoute;
 }
 
 const ShopsRouteChildren: ShopsRouteChildren = {
@@ -819,9 +819,9 @@ const ShopsRouteChildren: ShopsRouteChildren = {
   ShopsIndexRoute: ShopsIndexRoute,
   ShopsSopsProcessIdRoute: ShopsSopsProcessIdRoute,
   ShopsSopsIndexRoute: ShopsSopsIndexRoute,
-}
+};
 
-const ShopsRouteWithChildren = ShopsRoute._addFileChildren(ShopsRouteChildren)
+const ShopsRouteWithChildren = ShopsRoute._addFileChildren(ShopsRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -839,17 +839,17 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicHooksMailPollStatusInboxIdRoute,
   ApiPublicHooksTrack123ShopIdSecretRoute:
     ApiPublicHooksTrack123ShopIdSecretRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
 
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
+import type { getRouter } from "./router.tsx";
+import type { startInstance } from "./start.ts";
+declare module "@tanstack/react-start" {
   interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>;
   }
 }
