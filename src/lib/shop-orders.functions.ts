@@ -1450,53 +1450,97 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
 
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
 
-    // Create batch
-    const batchNumber = await nextBatchNumber(context, data.shop_id);
     const sortedDates = [...dates].sort();
-    const desc = sortedDates.length === 1
-      ? `Lote #${batchNumber} · ${sortedDates[0]}`
-      : `Lote #${batchNumber} · ${sortedDates[0]} – ${sortedDates[sortedDates.length - 1]}`;
 
-    const { data: batch, error: bErr } = await supabaseAdmin.from("shop_order_payment_batches")
-      .insert({
+    // Merge into an existing batch for the same payment date, if any, so that
+    // paying orders in separate actions on the same day still shows as one
+    // "Lote" row in the caixa instead of one row per confirmation.
+    const { data: existingBatch, error: existingErr } = await supabaseAdmin
+      .from("shop_order_payment_batches")
+      .select("id,batch_number,total_amount,total_items,total_orders,order_dates,cash_entry_id")
+      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+      .eq("payment_date", data.payment_date)
+      .not("cash_entry_id", "is", null)
+      .maybeSingle();
+    if (existingErr) throw new Error(existingErr.message);
+
+    let batchId: string;
+    let batchNumber: number;
+
+    if (existingBatch) {
+      batchId = existingBatch.id;
+      batchNumber = existingBatch.batch_number as number;
+      const mergedOrderDates = Array.from(
+        new Set([...(existingBatch.order_dates as string[] ?? []), ...sortedDates]),
+      ).sort();
+      totalAmount += Number(existingBatch.total_amount ?? 0);
+      totalItems += Number(existingBatch.total_items ?? 0);
+      const mergedTotalOrders = Number(existingBatch.total_orders ?? 0) + orders.length;
+      const mergedDesc = mergedOrderDates.length === 1
+        ? `Lote #${batchNumber} · ${mergedOrderDates[0]}`
+        : `Lote #${batchNumber} · ${mergedOrderDates[0]} – ${mergedOrderDates[mergedOrderDates.length - 1]}`;
+
+      const { error: updBatchErr } = await supabaseAdmin.from("shop_order_payment_batches")
+        .update({
+          total_amount: totalAmount, total_items: totalItems,
+          total_orders: mergedTotalOrders, order_dates: mergedOrderDates, description: mergedDesc,
+        }).eq("id", batchId).eq("user_id", context.ownerId);
+      if (updBatchErr) throw new Error(updBatchErr.message);
+
+      const { error: updCashErr } = await supabaseAdmin.from("shop_cash_entries")
+        .update({
+          amount: totalAmount,
+          description: `${mergedDesc} · ${totalItems} itens · ${mergedTotalOrders} pedidos`,
+        }).eq("id", existingBatch.cash_entry_id as string).eq("user_id", context.ownerId);
+      if (updCashErr) throw new Error(updCashErr.message);
+    } else {
+      batchNumber = await nextBatchNumber(context, data.shop_id);
+      const desc = sortedDates.length === 1
+        ? `Lote #${batchNumber} · ${sortedDates[0]}`
+        : `Lote #${batchNumber} · ${sortedDates[0]} – ${sortedDates[sortedDates.length - 1]}`;
+
+      const { data: batch, error: bErr } = await supabaseAdmin.from("shop_order_payment_batches")
+        .insert({
+          user_id: context.ownerId, shop_id: data.shop_id,
+          batch_number: batchNumber,
+          payment_date: data.payment_date,
+          total_amount: totalAmount,
+          total_items: totalItems,
+          total_orders: orders.length,
+          order_dates: sortedDates,
+          description: desc,
+        }).select("id").single();
+      if (bErr) throw new Error(bErr.message);
+      batchId = batch.id;
+
+      // Create cash entry (1 per batch). Não usar auto_kind/auto_ref_date aqui
+      // pois há índice único (shop_id, auto_kind, auto_ref_date) que impede
+      // múltiplos lotes pagos no mesmo dia. O vínculo é feito via cash_entry_id no batch.
+      const { data: cashRow, error: cErr } = await supabaseAdmin.from("shop_cash_entries").insert({
         user_id: context.ownerId, shop_id: data.shop_id,
-        batch_number: batchNumber,
-        payment_date: data.payment_date,
-        total_amount: totalAmount,
-        total_items: totalItems,
-        total_orders: orders.length,
-        order_dates: sortedDates,
-        description: desc,
+        kind: "expense", amount: totalAmount, date: data.payment_date,
+        category: COST_CATEGORY,
+        description: `${desc} · ${totalItems} itens · ${orders.length} pedidos`,
+        source: "auto",
+        reconciled: true,
       }).select("id").single();
-    if (bErr) throw new Error(bErr.message);
+      if (cErr) {
+        // Cleanup orphan batch
+        await supabaseAdmin.from("shop_order_payment_batches").delete()
+          .eq("id", batchId).eq("user_id", context.ownerId);
+        throw new Error(cErr.message);
+      }
 
-    // Create cash entry (1 per batch). Não usar auto_kind/auto_ref_date aqui
-    // pois há índice único (shop_id, auto_kind, auto_ref_date) que impede
-    // múltiplos lotes pagos no mesmo dia. O vínculo é feito via cash_entry_id no batch.
-    const { data: cashRow, error: cErr } = await supabaseAdmin.from("shop_cash_entries").insert({
-      user_id: context.ownerId, shop_id: data.shop_id,
-      kind: "expense", amount: totalAmount, date: data.payment_date,
-      category: COST_CATEGORY,
-      description: `${desc} · ${totalItems} itens · ${orders.length} pedidos`,
-      source: "auto",
-      reconciled: true,
-    }).select("id").single();
-    if (cErr) {
-      // Cleanup orphan batch
-      await supabaseAdmin.from("shop_order_payment_batches").delete()
-        .eq("id", batch.id).eq("user_id", context.ownerId);
-      throw new Error(cErr.message);
+      // Link entry to batch
+      await supabaseAdmin.from("shop_order_payment_batches")
+        .update({ cash_entry_id: cashRow.id })
+        .eq("id", batchId).eq("user_id", context.ownerId);
     }
-
-    // Link entry to batch
-    await supabaseAdmin.from("shop_order_payment_batches")
-      .update({ cash_entry_id: cashRow.id })
-      .eq("id", batch.id).eq("user_id", context.ownerId);
 
     // Update orders → paid
     await context.supabase.from("shop_orders").update({
       payment_status: "paid",
-      payment_batch_id: batch.id,
+      payment_batch_id: batchId,
       paid_at: data.payment_date,
     }).in("id", orders.map((o) => o.id)).eq("user_id", context.ownerId);
 
@@ -1511,7 +1555,11 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     }).eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("source", "order_payment").in("source_ref", dates).neq("status", "done");
 
-    return { batch_id: batch.id, batch_number: batchNumber, total_amount: totalAmount, total_items: totalItems, total_orders: orders.length };
+    return {
+      batch_id: batchId, batch_number: batchNumber,
+      total_amount: totalAmount, total_items: totalItems, total_orders: orders.length,
+      merged: Boolean(existingBatch),
+    };
   });
 
 export const markOrdersShipped = createServerFn({ method: "POST" })

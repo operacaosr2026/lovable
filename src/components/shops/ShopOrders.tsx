@@ -273,7 +273,11 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
   const pay = useMutation({
     mutationFn: (date: string) => payFn({ data: { shop_id: shopId, order_ids: Array.from(selectedOrders), payment_date: date } }),
     onSuccess: (r) => {
-      toast.success(`Lote #${r.batch_number} criado · ${fmtMoney(Number(r.total_amount))}`);
+      toast.success(
+        r.merged
+          ? `Lote #${r.batch_number} atualizado · total ${fmtMoney(Number(r.total_amount))}`
+          : `Lote #${r.batch_number} criado · ${fmtMoney(Number(r.total_amount))}`,
+      );
       setSelectedOrders(new Set());
       setPayOpen(false);
       qc.invalidateQueries({ queryKey: ["orders", cacheKey] });

@@ -106,6 +106,7 @@ export function LgCaixa({
       <LgCashflowView
         shopIds={shopIds}
         shopNamesMap={Object.fromEntries(shops.map((s) => [s.id, s.name]))}
+        simplified
       />
     </div>
   );
