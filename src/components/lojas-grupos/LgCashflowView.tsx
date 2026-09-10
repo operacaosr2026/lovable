@@ -637,7 +637,7 @@ export function LgCashflowView({
   const [syncing,    setSyncing]    = useState(false);
   const [showPending, setShowPending] = useState(false);
   const [quickAdd,   setQuickAdd]   = useState<{ date: string; kind: "income"|"expense" } | null>(null);
-  const [editing,    setEditing]    = useState<Entry | null>(null);
+  const [editing,    setEditing]    = useState<DayItem | null>(null);
   const [manageCats, setManageCats] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DayItem | null>(null);
 

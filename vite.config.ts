@@ -11,8 +11,8 @@ export default defineConfig({
     }),
     tailwindcss(),
     tanstackStart({
-      tsr: {
-        appDirectory: "src",
+      srcDirectory: "src",
+      router: {
         routesDirectory: "src/routes",
         generatedRouteTree: "src/routeTree.gen.ts",
         quoteStyle: "double",
