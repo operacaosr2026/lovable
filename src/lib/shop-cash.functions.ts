@@ -171,6 +171,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
       recurrence: data.recurrence ?? "none",
       recurrence_until: data.recurrence_until ?? null,
       source: "manual",
+      reconciled: true,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };
@@ -195,15 +196,21 @@ export const updateCashEntry = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
-    let patch: typeof data.patch & { date_locked?: boolean } = data.patch;
-    if (patch.date !== undefined) {
-      // Se o usuário está de fato mudando a data (ex.: o depósito caiu num dia
-      // diferente do previsto pelo Shopify), trava essa data pra sincronizações
-      // futuras não sobrescreverem o ajuste manual.
+    let patch: typeof data.patch & { date_locked?: boolean; amount_locked?: boolean } = data.patch;
+    if (patch.date !== undefined || patch.amount !== undefined) {
+      // Se o usuário está de fato mudando data e/ou valor (ex.: o depósito caiu
+      // num dia diferente do previsto, ou o valor sincronizado estava errado),
+      // trava esses campos pra sincronizações futuras não sobrescreverem o
+      // ajuste manual.
       const { data: existing } = await context.supabase.from("shop_cash_entries")
-        .select("date").eq("user_id", context.ownerId).eq("id", data.id).maybeSingle();
-      if (existing && existing.date !== patch.date) {
-        patch = { ...patch, date_locked: true };
+        .select("date, amount").eq("user_id", context.ownerId).eq("id", data.id).maybeSingle();
+      if (existing) {
+        if (patch.date !== undefined && existing.date !== patch.date) {
+          patch = { ...patch, date_locked: true };
+        }
+        if (patch.amount !== undefined && Number(existing.amount) !== patch.amount) {
+          patch = { ...patch, amount_locked: true };
+        }
       }
     }
     const { error } = await context.supabase.from("shop_cash_entries")

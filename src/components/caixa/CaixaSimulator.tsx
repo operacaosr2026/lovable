@@ -8,7 +8,7 @@ import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical, ChevronDown } 
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  listSimulatedExpenses, createSimulatedExpense, deleteSimulatedExpense,
+  listSimulatedExpenses, createSimulatedExpense, updateSimulatedExpense, deleteSimulatedExpense,
   getCaixaSimulation, SIM_RECURRENCE,
 } from "@/lib/caixa-simulator.functions";
 
@@ -26,7 +26,7 @@ const PERIODS = [
 ];
 
 function fmt(value: number) {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
 }
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
@@ -72,6 +72,7 @@ export function CaixaSimulator() {
 
   const listFn = useServerFn(listSimulatedExpenses);
   const createFn = useServerFn(createSimulatedExpense);
+  const updateFn = useServerFn(updateSimulatedExpense);
   const deleteFn = useServerFn(deleteSimulatedExpense);
   const simFn = useServerFn(getCaixaSimulation);
 
@@ -95,6 +96,11 @@ export function CaixaSimulator() {
     onSuccess: refresh,
     onError: (e: any) => toast.error(e.message ?? "Erro ao adicionar gasto"),
   });
+  const update = useMutation({
+    mutationFn: (input: { id: string; patch: any }) => updateFn({ data: input }),
+    onSuccess: refresh,
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar gasto"),
+  });
   const remove = useMutation({
     mutationFn: (id: string) => deleteFn({ data: { id } }),
     onSuccess: refresh,
@@ -105,18 +111,34 @@ export function CaixaSimulator() {
   const [date, setDate] = useState(today);
   const [recurrence, setRecurrence] = useState<(typeof SIM_RECURRENCE)[number]>("none");
   const [until, setUntil] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setDesc(""); setAmount(""); setDate(today); setRecurrence("none"); setUntil(""); setEditingId(null);
+  };
+
+  const startEdit = (e: any) => {
+    setEditingId(e.id);
+    setDesc(e.description);
+    setAmount(String(e.amount));
+    setDate(e.start_date);
+    setRecurrence(e.recurrence);
+    setUntil(e.recurrence_until ?? "");
+  };
 
   const addExpense = () => {
     const amt = parseFloat(amount.replace(",", "."));
     if (!desc.trim() || !amt || amt <= 0 || !date) return;
-    create.mutate({
+    const payload = {
       description: desc.trim(),
       amount: amt,
       start_date: date,
       recurrence,
       recurrence_until: recurrence !== "none" && until ? until : null,
-    });
-    setDesc(""); setAmount(""); setRecurrence("none"); setUntil("");
+    };
+    if (editingId) update.mutate({ id: editingId, patch: payload });
+    else create.mutate(payload);
+    resetForm();
   };
 
   const series = simulation?.series ?? [];
@@ -177,7 +199,7 @@ export function CaixaSimulator() {
               <div className="flex items-center gap-1.5 text-destructive text-[11px] uppercase tracking-wider font-medium mb-1">
                 <AlertTriangle className="size-3.5" /> Fica negativo
               </div>
-              <div className="text-sm font-semibold text-destructive">
+              <div className="text-xl font-semibold text-destructive">
                 em {simulation.negativeFrom.slice(8, 10)}/{simulation.negativeFrom.slice(5, 7)}
               </div>
             </>
@@ -186,7 +208,9 @@ export function CaixaSimulator() {
               <div className="flex items-center gap-1.5 text-emerald-600 text-[11px] uppercase tracking-wider font-medium mb-1">
                 <CheckCircle2 className="size-3.5" /> Caixa suporta
               </div>
-              <div className="text-sm font-semibold text-emerald-600">nos próximos {periodDays} dias</div>
+              <div className="text-xl font-semibold text-emerald-600">
+                {periodDays} <span className="text-sm font-medium">dias</span>
+              </div>
             </>
           )}
         </div>
@@ -287,13 +311,25 @@ export function CaixaSimulator() {
           ) : (
             <div className="sm:col-span-2" />
           )}
-          <button
-            onClick={addExpense}
-            disabled={create.isPending}
-            className="sm:col-span-1 h-9 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-1 disabled:opacity-50"
-          >
-            <Plus className="size-4" />
-          </button>
+          <div className="sm:col-span-1 flex items-center gap-1.5">
+            <button
+              onClick={addExpense}
+              disabled={create.isPending || update.isPending}
+              title={editingId ? "Salvar alterações" : "Adicionar"}
+              className="h-9 flex-1 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              {editingId ? <CheckCircle2 className="size-4" /> : <Plus className="size-4" />}
+            </button>
+            {editingId && (
+              <button
+                onClick={resetForm}
+                title="Cancelar edição"
+                className="h-9 px-2 rounded-lg border border-border text-muted-foreground hover:text-foreground text-sm"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
 
         {expenses.length === 0 ? (
@@ -301,16 +337,25 @@ export function CaixaSimulator() {
         ) : (
           <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
             {expenses.map((e: any) => (
-              <div key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+              <div
+                key={e.id}
+                onClick={() => startEdit(e)}
+                className={`flex items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/40 ${editingId === e.id ? "bg-primary/5" : ""}`}
+              >
                 <span className="flex-1 truncate">{e.description}</span>
                 <span className="text-xs text-muted-foreground shrink-0">
                   {e.start_date.slice(8, 10)}/{e.start_date.slice(5, 7)}
                   {e.recurrence !== "none" && ` · ${RECURRENCE_LABELS[e.recurrence as keyof typeof RECURRENCE_LABELS]}`}
+                  {e.recurrence !== "none" && e.recurrence_until && ` · até ${e.recurrence_until.slice(8, 10)}/${e.recurrence_until.slice(5, 7)}`}
                 </span>
                 <span className="font-medium text-destructive shrink-0">{fmt(Number(e.amount))}</span>
                 <button
-                  onClick={async () => {
-                    if (await confirm(`Remover "${e.description}"?`)) remove.mutate(e.id);
+                  onClick={async (ev) => {
+                    ev.stopPropagation();
+                    if (await confirm(`Remover "${e.description}"?`)) {
+                      if (editingId === e.id) resetForm();
+                      remove.mutate(e.id);
+                    }
                   }}
                   className="text-muted-foreground hover:text-destructive shrink-0"
                 >

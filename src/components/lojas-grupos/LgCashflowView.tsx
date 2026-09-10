@@ -239,32 +239,57 @@ function EntryChip({
 // (Facebook, Fornecedor, etc.), mostrando a soma. O detalhamento de quais
 // valores compõem a soma aparece no title (tooltip nativo, ao passar o mouse).
 
-type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[] };
+type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[]; pending?: boolean };
 
+function isPendingItem(e: DayItem) {
+  const src = e.source ?? "";
+  return src === "shopify_pending" || src === "shopify_pending_sync";
+}
+
+// Lançamentos pendentes/previstos (mostrados só com "Mostrar pendentes" ligado)
+// ficam num grupo à parte, fora do agrupamento normal por categoria — não dá
+// pra conciliar previsão, então não faz sentido somar junto com o confirmado.
 function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup[] {
   if (items.length === 0) return [];
-  if (kind === "income") {
-    return [{
-      key: "income",
-      label: "Vendas",
+  const confirmed = items.filter((e) => !isPendingItem(e));
+  const pending = items.filter(isPendingItem);
+
+  const groupConfirmed = (list: DayItem[]): EntryGroup[] => {
+    if (list.length === 0) return [];
+    if (kind === "income") {
+      return [{
+        key: "income",
+        label: "Vendas",
+        kind,
+        total: list.reduce((s, e) => s + Number(e.amount), 0),
+        entries: list,
+      }];
+    }
+    const byCategory = new Map<string, DayItem[]>();
+    for (const e of list) {
+      const cat = e.category ?? "Saída";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(e);
+    }
+    return Array.from(byCategory.entries()).map(([cat, entries]) => ({
+      key: cat,
+      label: cat,
       kind,
-      total: items.reduce((s, e) => s + Number(e.amount), 0),
-      entries: items,
-    }];
-  }
-  const byCategory = new Map<string, DayItem[]>();
-  for (const e of items) {
-    const cat = e.category ?? "Saída";
-    if (!byCategory.has(cat)) byCategory.set(cat, []);
-    byCategory.get(cat)!.push(e);
-  }
-  return Array.from(byCategory.entries()).map(([cat, entries]) => ({
-    key: cat,
-    label: cat,
+      total: entries.reduce((s, e) => s + Number(e.amount), 0),
+      entries,
+    }));
+  };
+
+  const pendingGroup: EntryGroup[] = pending.length > 0 ? [{
+    key: `${kind}-pending`,
+    label: kind === "income" ? "Vendas (previsto)" : "Previsto",
     kind,
-    total: entries.reduce((s, e) => s + Number(e.amount), 0),
-    entries,
-  }));
+    total: pending.reduce((s, e) => s + Number(e.amount), 0),
+    entries: pending,
+    pending: true,
+  }] : [];
+
+  return [...groupConfirmed(confirmed), ...pendingGroup];
 }
 
 function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, todayKey }: {
@@ -276,24 +301,33 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
   todayKey: string;
 }) {
   const isIncome = group.kind === "income";
+  const isPendingGroup = Boolean(group.pending);
   const title = group.entries.length > 1
     ? `${group.entries.map((e) => fmtMoney(Number(e.amount))).join(" + ")} = ${fmtMoney(group.total)}`
     : undefined;
   const chipClasses = cn(
     "w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md border transition-colors",
-    isIncome
-      ? "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 text-blue-700 dark:text-blue-400"
-      : "border-neutral-400/20 bg-neutral-500/5 hover:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400",
+    isPendingGroup
+      ? "border-dashed border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 cursor-default"
+      : isIncome
+        ? "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 text-blue-700 dark:text-blue-400"
+        : "border-neutral-400/20 bg-neutral-500/5 hover:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400",
   );
 
   // Grupo com um único lançamento: clique abre a edição direto, sem popover.
+  // Previsão (pendente) não é editável nem conciliável — só exibe o valor.
   if (group.entries.length === 1) {
     const e = group.entries[0];
     const src = e.source ?? "";
     const isPending = src === "shopify_pending" || src === "shopify_pending_sync";
     const canReconcile = !isPending && !e.virtual && e.date <= todayKey;
     return (
-      <button type="button" title={title} onClick={() => onEdit(e)} className={chipClasses}>
+      <button
+        type="button" title={title}
+        onClick={isPending ? undefined : () => onEdit(e)}
+        disabled={isPending}
+        className={chipClasses}
+      >
         <span className="flex items-center gap-1.5 min-w-0 truncate">
           {canReconcile && (
             <span
@@ -316,17 +350,44 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
     );
   }
 
+  const reconcilable = group.entries.filter((e) => {
+    const src = e.source ?? "";
+    const isPending = src === "shopify_pending" || src === "shopify_pending_sync";
+    return !isPending && !e.virtual && e.date <= todayKey;
+  });
+  const allReconciled = reconcilable.length > 0 && reconcilable.every((e) => e.reconciled);
+
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button type="button" title={title} className={chipClasses}>
-          <span className="truncate">{group.label}</span>
+          <span className="flex items-center gap-1.5 min-w-0 truncate">
+            {reconcilable.length > 0 && (
+              <span
+                role="checkbox" aria-checked={allReconciled}
+                title={allReconciled ? "Conciliado" : "Marcar todos como conciliados"}
+                onClick={(ev) => {
+                  ev.stopPropagation(); ev.preventDefault();
+                  const target = !allReconciled;
+                  for (const e of reconcilable) if (Boolean(e.reconciled) !== target) onToggleReconciled(e);
+                }}
+                onPointerDown={(ev) => ev.stopPropagation()}
+                className={cn(
+                  "shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                  allReconciled ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current",
+                )}
+              >
+                {allReconciled && <Check className="size-2.5" />}
+              </span>
+            )}
+            <span className="truncate">{group.label}</span>
+          </span>
           <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2 space-y-1">
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 mb-1">
-          {group.label} · {group.entries.length} lançamentos
+          {group.label} · {group.entries.length} lançamentos{isPendingGroup ? " · previsto" : ""}
         </div>
         {group.entries.map((e) => {
           const src = e.source ?? "";
@@ -336,8 +397,9 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
             <button
               key={e.id + e.date}
               type="button"
-              onClick={() => onEdit(e)}
-              className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-left"
+              onClick={isPending ? undefined : () => onEdit(e)}
+              disabled={isPending}
+              className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-left disabled:cursor-default disabled:hover:bg-transparent"
             >
               <span className="flex items-center gap-1.5 min-w-0 truncate text-muted-foreground">
                 {canReconcile && (
@@ -537,6 +599,17 @@ const RECURRENCE_OPTIONS = [
   { value: "monthly" as const, label: "Mensal" },
 ];
 
+const QUICK_ADD_ALL_SHOPS = "__all__";
+
+// Divide um valor total em N parcelas em centavos, sem perder ou sobrar
+// centavo por arredondamento (o resto fica com as primeiras parcelas).
+function splitAmountEvenly(total: number, n: number): number[] {
+  const cents = Math.round(total * 100);
+  const base = Math.floor(cents / n);
+  const remainder = cents - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
+}
+
 function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
   const [shopId, setShopId] = useState<string>(shopIds[0]);
   const [amount, setAmount] = useState("");
@@ -546,10 +619,12 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
   const [recurrence, setRecurrence] = useState<"none"|"daily"|"weekly"|"monthly">("none");
   const [until, setUntil] = useState("");
 
+  const isAllShops = shopId === QUICK_ADD_ALL_SHOPS;
+  const catsShopId = isAllShops ? shopIds[0] : shopId;
   const listCatsFn = useServerFn(listCashCategories);
   const catsQuery = useQuery({
-    queryKey: ["shop-cash-cats", shopId],
-    queryFn: () => listCatsFn({ data: { shop_id: shopId } }),
+    queryKey: ["shop-cash-cats", catsShopId],
+    queryFn: () => listCatsFn({ data: { shop_id: catsShopId } }),
   });
   const categories = useMemo(
     () => ((catsQuery.data ?? []) as { kind: "income"|"expense"; name: string }[])
@@ -569,10 +644,11 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
         {isConsolidated && (
           <div><label className="text-xs text-muted-foreground">Loja</label>
             <select value={shopId} onChange={(e) => setShopId(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              <option value={QUICK_ADD_ALL_SHOPS}>Todas as lojas</option>
               {shopIds.map((id: string) => <option key={id} value={id}>{shopNamesMap[id] ?? id}</option>)}
             </select></div>
         )}
-        <div><label className="text-xs text-muted-foreground">Valor</label>
+        <div><label className="text-xs text-muted-foreground">Valor{isAllShops ? " (total, dividido entre as lojas)" : ""}</label>
           <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></div>
         <div><label className="text-xs text-muted-foreground">Categoria</label>
           <select value={category} onChange={(e) => setCategory(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
@@ -598,7 +674,14 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
         <Button onClick={() => {
           const v = parseFloat(amount);
           if (isNaN(v) || v <= 0) return;
-          onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description||null, recurrence, recurrence_until: until||null });
+          if (isAllShops) {
+            const shares = splitAmountEvenly(v, shopIds.length);
+            for (let i = 0; i < shopIds.length; i++) {
+              onSave({ shop_id: shopIds[i], kind, amount: shares[i], date: d, category, description: description||null, recurrence, recurrence_until: until||null });
+            }
+          } else {
+            onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description||null, recurrence, recurrence_until: until||null });
+          }
         }}>Salvar</Button>
       </div>
     </Modal>
@@ -870,7 +953,7 @@ export function LgCashflowView({
 
   const expanded = useMemo<DayItem[]>(() => {
     const applyShift = (item: DayItem): DayItem => {
-      const isShopify  = item.source==="shopify_import"||item.source==="shopify_sync"||item.source==="shopify_pending";
+      const isShopify  = item.source==="shopify_import"||item.source==="shopify_sync"||item.source==="shopify_pending"||item.source==="shopify_pending_sync";
       const isOrderCost = item.source==="auto" && item.auto_kind==="order_cost";
       if (isOrderCost && item.date < todayKey) {
         const wd = weekdayFromKey(item.date);
@@ -887,7 +970,7 @@ export function LgCashflowView({
     const out: DayItem[] = [];
     for (const e of entries) {
       if (e.auto_kind === "meta_ads_spend") continue;
-      if (e.source==="shopify_pending_sync" && !showPending) continue;
+      if (e.source==="shopify_pending_sync" && (!showPending || e.date<=todayKey)) continue;
       const rec = (e.recurrence ?? "none") as Recurrence;
       if (rec==="none") { out.push(applyShift(e)); continue; }
       const stop = e.recurrence_until && e.recurrence_until<horizon ? e.recurrence_until : horizon;
@@ -983,7 +1066,41 @@ export function LgCashflowView({
 
   const createMut  = useMutation({ mutationFn: (v:any) => createFn({ data:v }), onSuccess: refresh });
   const deleteMut  = useMutation({ mutationFn: (id:string) => deleteFn({ data:{id} }), onSuccess: refresh });
-  const updateMut  = useMutation({ mutationFn: (v:any) => updateFn({ data:v }), onSuccess: refresh });
+  const updateMut  = useMutation({
+    mutationFn: (v: any) => updateFn({ data: v }),
+    // Atualização otimista: o toggle de conciliado (principalmente o "marcar
+    // todos" do grupo, que dispara N mutações de uma vez) fica visível na
+    // hora. Usa a forma funcional de setQueryData pra ler o cache mais
+    // recente em cada chamada — senão, com várias mutações concorrentes, uma
+    // que resolve depois sobrescreve o cache com um snapshot desatualizado
+    // (sem as outras alterações otimistas) e o check "pisca e volta".
+    // Não força refetch em caso de sucesso: como o patch já é o que o
+    // servidor vai gravar, o refetch só serviria pra reintroduzir a mesma
+    // corrida — só corrige (via refresh) se der erro de verdade.
+    onMutate: async (v: { id: string; patch: any }) => {
+      await qc.cancelQueries({ queryKey });
+      let previousEntry: any = null;
+      qc.setQueryData(queryKey, (old: any) => {
+        if (!old?.entries) return old;
+        return {
+          ...old,
+          entries: old.entries.map((e: any) => {
+            if (e.id !== v.id) return e;
+            previousEntry = e;
+            return { ...e, ...v.patch };
+          }),
+        };
+      });
+      return { previousEntry };
+    },
+    onError: (_err, v: { id: string; patch: any }, ctx: any) => {
+      if (!ctx?.previousEntry) { refresh(); return; }
+      qc.setQueryData(queryKey, (old: any) => {
+        if (!old?.entries) return old;
+        return { ...old, entries: old.entries.map((e: any) => (e.id === v.id ? ctx.previousEntry : e)) };
+      });
+    },
+  });
   const overrideFn  = useServerFn(setManualOverride);
   const overrideMut = useMutation({ mutationFn: (v: any) => overrideFn({ data: v }), onSuccess: refresh, onError: (e: any) => toast.error(e?.message ?? "Erro ao excluir lançamento") });
   const weekendFn  = useServerFn(setWeekendRule);
@@ -1014,9 +1131,9 @@ export function LgCashflowView({
 
   return (
     <div className="space-y-5">
-      {/* ── 2 KPIs apenas ── */}
+      {/* ── 3 KPIs ── */}
       <TooltipProvider delayDuration={150}>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future)} accent="oklch(0.55 0.15 250)" negative={future < 0} />
           <Indicator
             icon={TrendingUp}
@@ -1034,6 +1151,7 @@ export function LgCashflowView({
               </div>
             ) : undefined}
           />
+          <Indicator icon={Wallet} label="Saldo total" value={fmtMoney(future + receivable)} accent="oklch(0.55 0.15 160)" negative={future + receivable < 0} />
         </div>
       </TooltipProvider>
 

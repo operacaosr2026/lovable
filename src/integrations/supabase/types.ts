@@ -1412,6 +1412,7 @@ export type Database = {
       shop_cash_entries: {
         Row: {
           amount: number
+          amount_locked: boolean
           auto_kind: string | null
           auto_ref_date: string | null
           category: string | null
@@ -1436,6 +1437,7 @@ export type Database = {
         }
         Insert: {
           amount?: number
+          amount_locked?: boolean
           auto_kind?: string | null
           auto_ref_date?: string | null
           category?: string | null
@@ -1460,6 +1462,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          amount_locked?: boolean
           auto_kind?: string | null
           auto_ref_date?: string | null
           category?: string | null

@@ -759,11 +759,12 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     if (!relevant.length) return { synced: 0 };
 
     const { data: existing } = await context.supabase.from("shop_cash_entries")
-      .select("id,shopify_payout_id,date_locked")
+      .select("id,shopify_payout_id,date_locked,amount_locked")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("shopify_payout_id", relevant.map((p: any) => String(p.id)));
     const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
-    const lockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked).map((r: any) => r.id));
+    const dateLockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked).map((r: any) => r.id));
+    const amountLockedIds = new Set((existing ?? []).filter((r: any) => r.amount_locked).map((r: any) => r.id));
 
     const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
       user_id: context.ownerId,
@@ -784,13 +785,14 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     for (const p of relevant) {
       const id = existingById.get(String(p.id));
       if (!id) continue;
-      // Se o usuário travou a data manualmente (ela caiu diferente do previsto
-      // pelo Shopify), a sincronização atualiza valor/descrição mas não mexe na data.
-      const patch: { amount: number; description: string; date?: string } = {
-        amount: Number(p.amount ?? 0),
+      // Se o usuário travou a data ou o valor manualmente (o depósito caiu num
+      // dia diferente do previsto, ou o valor sincronizado estava errado), a
+      // sincronização não sobrescreve esse campo de novo.
+      const patch: { amount?: number; description: string; date?: string } = {
         description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
       };
-      if (!lockedIds.has(id)) patch.date = p.date;
+      if (!dateLockedIds.has(id)) patch.date = p.date;
+      if (!amountLockedIds.has(id)) patch.amount = Number(p.amount ?? 0);
       await context.supabase.from("shop_cash_entries").update(patch)
         .eq("id", id).eq("user_id", context.ownerId);
     }

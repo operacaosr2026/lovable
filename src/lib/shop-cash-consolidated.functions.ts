@@ -15,11 +15,22 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { CASH_KINDS, RECURRENCES } from "@/lib/shop-cash.functions";
 
 async function findOrCreateOverride(supabase: any, ownerId: string, id: string) {
-  const { data: existing, error: existErr } = await supabase
+  // `id` pode ser o id do próprio override (edição de algo criado direto
+  // nessa tela) ou o id do lançamento original em shop_cash_entries (edição
+  // de algo sincronizado — na primeira vez ou nas seguintes). Tenta os dois
+  // antes de criar, senão a 2ª edição do mesmo lançamento tenta inserir outro
+  // override com o mesmo source_entry_id e esbarra no índice único.
+  const { data: byId, error: byIdErr } = await supabase
     .from("shop_cash_overrides").select("*")
     .eq("user_id", ownerId).eq("id", id).maybeSingle();
-  if (existErr) throw new Error(existErr.message);
-  if (existing) return existing;
+  if (byIdErr) throw new Error(byIdErr.message);
+  if (byId) return byId;
+
+  const { data: bySource, error: bySourceErr } = await supabase
+    .from("shop_cash_overrides").select("*")
+    .eq("user_id", ownerId).eq("source_entry_id", id).maybeSingle();
+  if (bySourceErr) throw new Error(bySourceErr.message);
+  if (bySource) return bySource;
 
   const { data: source, error: srcErr } = await supabase
     .from("shop_cash_entries").select("*")
@@ -151,6 +162,7 @@ export const createConsolidatedCashEntry = createServerFn({ method: "POST" })
       description: data.description ?? null,
       recurrence: data.recurrence ?? "none",
       recurrence_until: data.recurrence_until ?? null,
+      reconciled: true,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };

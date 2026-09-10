@@ -233,7 +233,7 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
 
   const expanded = useMemo<DayItem[]>(() => {
     const applyShift = (item: DayItem): DayItem => {
-      const isShopifyEntry = item.source === "shopify_import" || item.source === "shopify_sync" || item.source === "shopify_pending";
+      const isShopifyEntry = item.source === "shopify_import" || item.source === "shopify_sync" || item.source === "shopify_pending" || item.source === "shopify_pending_sync";
       const isOrderCost = item.source === "auto" && item.auto_kind === "order_cost";
 
       // Custos de pedidos vencidos (não pagos) são transferidos para hoje.
@@ -252,7 +252,7 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
     };
     const out: DayItem[] = [];
     for (const e of entries) {
-      if (e.source === "shopify_pending_sync" && !showPending) continue;
+      if (e.source === "shopify_pending_sync" && (!showPending || e.date <= todayKey)) continue;
       const rec = (e.recurrence ?? "none") as Recurrence;
       if (rec === "none") { out.push(applyShift(e)); continue; }
       const stop = e.recurrence_until && e.recurrence_until < horizon ? e.recurrence_until : horizon;
@@ -267,7 +267,7 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
       }
     }
     return out;
-  }, [entries, horizon, weekendToMonday, showPending]);
+  }, [entries, horizon, weekendToMonday, showPending, todayKey]);
 
   const saldoBeforeRange = useMemo(() => {
     const first = dayList[0] ?? todayKey;
@@ -337,7 +337,35 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
 
   const createMut = useMutation({ mutationFn: (v: any) => createFn({ data: v }), onSuccess: refresh });
   const deleteMut = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
-  const updateMut = useMutation({ mutationFn: (v: any) => updateFn({ data: v }), onSuccess: refresh });
+  const updateMut = useMutation({
+    mutationFn: (v: any) => updateFn({ data: v }),
+    // Atualização otimista via forma funcional de setQueryData (lê o cache
+    // mais recente a cada chamada, evitando que mutações concorrentes se
+    // pisem) e sem refetch forçado em caso de sucesso — só corrige em erro.
+    onMutate: async (v: { id: string; patch: any }) => {
+      await qc.cancelQueries({ queryKey });
+      let previousEntry: any = null;
+      qc.setQueryData(queryKey, (old: any) => {
+        if (!old?.entries) return old;
+        return {
+          ...old,
+          entries: old.entries.map((e: any) => {
+            if (e.id !== v.id) return e;
+            previousEntry = e;
+            return { ...e, ...v.patch };
+          }),
+        };
+      });
+      return { previousEntry };
+    },
+    onError: (_err, v: { id: string; patch: any }, ctx: any) => {
+      if (!ctx?.previousEntry) { refresh(); return; }
+      qc.setQueryData(queryKey, (old: any) => {
+        if (!old?.entries) return old;
+        return { ...old, entries: old.entries.map((e: any) => (e.id === v.id ? ctx.previousEntry : e)) };
+      });
+    },
+  });
   const openingMut = useMutation({ mutationFn: (v: number) => openingFn({ data: { shop_id: shopId, opening_balance: v } }), onSuccess: refresh });
   const weekendFn = useServerFn(setWeekendRule);
   const weekendMut = useMutation({ mutationFn: (enabled: boolean) => weekendFn({ data: { shop_id: shopId, enabled } }), onSuccess: refresh });
