@@ -2,7 +2,7 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { attachLiveShopifyNames, getGroupShopifyCancelledCounts, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 
 // Same as attachLiveShopifyNames, but for rows carrying a nested `shops` object
 // (as returned by PostgREST embedding, e.g. lg_card_shops.select("...,shops(id,name,...)")).
@@ -530,14 +530,14 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     const from = data?.from ?? defaultMonthStart;
     const to = data?.to ?? todayStr;
 
-    // Taxa de estorno é sempre uma janela rolante fixa de 90 dias, independente
+    // Taxa de estorno é sempre uma janela rolante fixa de 30 dias, independente
     // do seletor de datas: estorno demora a acontecer depois da compra
     // (semanas), então medir só o período selecionado (ex: hoje, ou o mês
     // corrente no início do mês) deixaria a taxa artificialmente perto de 0.
-    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 90);
+    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 30);
     const estornoStart = estornoWindowStart.toISOString().slice(0, 10);
 
-    const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, cancelledCounts, costRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
+    const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, chargebackDisputesRes, costRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
       supabaseAdmin.from("shops").select("id, name, opening_balance").in("id", shopIds),
       // "Saldo atual" no Caixa (LgCashflowView) só soma lançamentos conciliados,
       // e ignora os sincronizados automaticamente (taxas/pendências do Shopify).
@@ -546,10 +546,13 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
         .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
       supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count").in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
       supabaseAdmin.from("shop_orders").select("shop_id").in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
-      // Taxa de estorno = pedidos com status "cancelado" ÷ total de pedidos,
-      // direto na API da Shopify. Diferente de um reembolso simples: o pedido
-      // precisa estar de fato cancelado (cancel_reason), não só devolvido.
-      getGroupShopifyCancelledCounts(ownerId, shopIds, `${estornoStart}T00:00:00Z`, `${todayStr}T23:59:59Z`),
+      // Taxa de estorno = chargeback real (disputa formal do banco/cartão do
+      // cliente, sincronizada em shop_order_disputes) ÷ total de pedidos —
+      // mesma fonte usada em getLgCardQuickMetrics, pra bater com a tela de
+      // Lojas e Grupos. Diferente de um simples cancelamento de pedido.
+      supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
+        .in("shop_id", shopIds).eq("type", "chargeback")
+        .gte("initiated_at", `${estornoStart}T00:00:00Z`).lte("initiated_at", `${todayStr}T23:59:59Z`),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").in("shop_id", shopIds),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
@@ -586,14 +589,20 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
       custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + Number(o.items_count ?? 0) * unit);
     }
 
-    // Taxa de estorno em janela rolante de 90 dias (ver comentário acima)
+    // Taxa de estorno em janela rolante de 30 dias (ver comentário acima)
     const totalOrdersByShop = new Map<string, number>();
     for (const o of (estornoOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       totalOrdersByShop.set(sid, (totalOrdersByShop.get(sid) ?? 0) + 1);
     }
+    const estornosPorLojaSet = new Map<string, Set<string>>();
+    for (const d of (chargebackDisputesRes.data ?? []) as any[]) {
+      if (d.order_external_id == null) continue;
+      if (!estornosPorLojaSet.has(d.shop_id)) estornosPorLojaSet.set(d.shop_id, new Set());
+      estornosPorLojaSet.get(d.shop_id)!.add(d.order_external_id);
+    }
     const totalEstornosByShop = new Map<string, number>(
-      (cancelledCounts ?? []).map((r: any) => [r.shop_id as string, Number(r.cancelledOrders ?? 0)]),
+      Array.from(estornosPorLojaSet.entries()).map(([shopId, set]) => [shopId, set.size]),
     );
 
     const feesByShop = new Map<string, number>();
@@ -680,8 +689,8 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const to   = now.toISOString().slice(0, 10);
     // Estorno demora a acontecer depois da compra (semanas), então medir só
     // pedidos feitos "este mês" deixa a taxa sempre perto de 0 no início do
-    // mês. Usa uma janela rolante de 90 dias, igual ao relatório do Shopify.
-    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 90);
+    // mês. Usa uma janela rolante de 30 dias.
+    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 30);
     const estornoFrom = estornoWindowStart.toISOString().slice(0, 10);
 
     // B, C, D, E in parallel
@@ -763,7 +772,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
 
     // Taxa de estorno — igual à fórmula do Shopify: pedidos com chargeback
     // real (shop_order_disputes, sincronizado do endpoint de disputas) sobre
-    // total de pedidos, numa janela de 90 dias (ver comentário acima).
+    // total de pedidos, numa janela de 30 dias (ver comentário acima).
     const totalPedidos  = estornoOrders.length;
     const totalEstornos = new Set(
       chargebackDisputes.map((d: any) => d.order_external_id).filter((id: any) => id != null)

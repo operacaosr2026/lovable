@@ -68,7 +68,7 @@ function fmtLastSynced(iso: string | null) {
 
 // ─── Date helpers (same as ShopCashflow) ─────────────────────────────────────
 
-const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
+const BRAZIL_TIME_ZONE = "America/New_York";
 const WEEKDAYS_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
 function dateKey(y: number, m: number, d: number) {

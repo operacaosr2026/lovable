@@ -162,7 +162,6 @@ function Dashboard() {
   const totalAds         = cards.reduce((s: number, c: any) => s + Number(c.anunciosMes ?? 0), 0);
   const totalCusto       = cards.reduce((s: number, c: any) => s + Number(c.custoProdutoMes ?? 0), 0);
   const totalLucro       = cards.reduce((s: number, c: any) => s + Number(c.lucroMes ?? 0), 0);
-  const margemTotal      = totalFaturamento > 0 ? totalLucro / totalFaturamento : 0;
 
   const estornoTotals = shopEstorno.reduce(
     (acc: { pedidos: number; estornos: number }, s: any) => ({
@@ -232,49 +231,23 @@ function Dashboard() {
               label="Lucro"
               total={totalLucro}
               negative={totalLucro < 0}
-              secondaryBadge={
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                  margemTotal >= 0 ? "bg-success/15 text-success border-success/30" : "bg-destructive/15 text-destructive border-destructive/30"
-                }`}>
-                  {fmtPct(margemTotal)}
-                </span>
-              }
               rows={cards.map((c: any) => ({
                 id: c.id, name: c.name, value: Number(c.lucroMes ?? 0),
-                sub: fmtPct(Number(c.margemMes ?? 0)),
               }))}
             />
-            <div className="relative rounded-2xl overflow-hidden min-w-0">
-              <div className="blur-sm pointer-events-none select-none">
-                <MetricBreakdownCard
-                  icon={RotateCcw}
-                  accent="destructive"
-                  label="Taxa de estorno"
-                  total={taxaEstornoTotal}
-                  format={fmtPct}
-                  emptyLabel="Sem pedidos nos últimos 90 dias."
-                  periodOverride="Últimos 90 dias (fixo)"
-                  secondaryBadge={
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border bg-destructive/15 text-destructive border-destructive/30">
-                      {estornoTotals.estornos} {estornoTotals.estornos === 1 ? "estorno" : "estornos"}
-                    </span>
-                  }
-                  rows={shopEstorno.map((s: any) => ({
-                    id: s.shop_id, name: s.shop_name, value: Number(s.taxaEstorno ?? 0),
-                    sub: `${s.totalEstornos ?? 0} ${Number(s.totalEstornos ?? 0) === 1 ? "estorno" : "estornos"}`,
-                  }))}
-                />
-              </div>
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card/40">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border shadow-lg">
-                  <RotateCcw className="size-4 text-destructive" />
-                  <span className="text-sm font-semibold text-foreground">Taxa de estorno</span>
-                </div>
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-foreground text-background shadow-lg">
-                  Em breve
-                </span>
-              </div>
-            </div>
+            <MetricBreakdownCard
+              icon={RotateCcw}
+              accent="destructive"
+              label="Taxa de estorno"
+              total={taxaEstornoTotal}
+              format={fmtPct}
+              emptyLabel="Sem pedidos nos últimos 30 dias."
+              periodOverride="Últimos 30 dias (fixo)"
+              rows={shopEstorno.map((s: any) => ({
+                id: s.shop_id, name: s.shop_name, value: Number(s.taxaEstorno ?? 0),
+                sub: `${s.totalEstornos ?? 0} ${Number(s.totalEstornos ?? 0) === 1 ? "estorno" : "estornos"}`,
+              }))}
+            />
           </div>
         </div>
       )}

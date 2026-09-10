@@ -27,7 +27,7 @@ type Recurrence = "none" | "daily" | "weekly" | "monthly";
 type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
-const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
+const BRAZIL_TIME_ZONE = "America/New_York";
 
 function dateKey(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
