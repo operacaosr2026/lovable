@@ -16,7 +16,7 @@ export const EXPENSE_CATEGORIES = [
 export const INCOME_CATEGORIES = ["Depósito Shopify", "Aporte Rodrigo", "Aporte Sergio", "Outros recebimentos"] as const;
 
 const ImportRow = z.object({ date: z.string(), amount: z.number() });
-const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
+export const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
 
 export const listShopCash = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])

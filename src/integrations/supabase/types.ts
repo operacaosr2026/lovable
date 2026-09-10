@@ -1525,6 +1525,71 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_cash_overrides: {
+        Row: {
+          amount: number
+          category: string | null
+          created_at: string
+          date: string
+          deleted: boolean
+          description: string | null
+          id: string
+          kind: string
+          reconciled: boolean
+          recurrence: string
+          recurrence_until: string | null
+          shop_id: string
+          skip_weekend_rule: boolean
+          source_entry_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          category?: string | null
+          created_at?: string
+          date: string
+          deleted?: boolean
+          description?: string | null
+          id?: string
+          kind: string
+          reconciled?: boolean
+          recurrence?: string
+          recurrence_until?: string | null
+          shop_id: string
+          skip_weekend_rule?: boolean
+          source_entry_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          created_at?: string
+          date?: string
+          deleted?: boolean
+          description?: string | null
+          id?: string
+          kind?: string
+          reconciled?: boolean
+          recurrence?: string
+          recurrence_until?: string | null
+          shop_id?: string
+          skip_weekend_rule?: boolean
+          source_entry_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_cash_overrides_source_entry_id_fkey"
+            columns: ["source_entry_id"]
+            isOneToOne: false
+            referencedRelation: "shop_cash_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shop_daily_analytics: {
         Row: {
           date: string

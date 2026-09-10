@@ -53,7 +53,7 @@ function CaixaIndex() {
       ) : tab === "simulador" ? (
         <CaixaSimulator />
       ) : (
-        <LgCashflowView shopIds={shopIds} shopNamesMap={shopNamesMap} />
+        <LgCashflowView shopIds={shopIds} shopNamesMap={shopNamesMap} simplified standalone />
       )}
     </PageShell>
   );

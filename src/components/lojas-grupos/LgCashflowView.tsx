@@ -37,6 +37,10 @@ import {
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
 } from "@/lib/shop-cash.functions";
 import {
+  listShopCashConsolidated, createConsolidatedCashEntry,
+  updateConsolidatedCashEntry, deleteConsolidatedCashEntry,
+} from "@/lib/shop-cash-consolidated.functions";
+import {
   getShopifyPendingBalance, syncShopifyPayouts,
   getGroupShopifyPendingBalance, getShopifyLastSyncedAt, setManualOverride,
 } from "@/lib/shop-orders.functions";
@@ -201,7 +205,6 @@ function EntryChip({
       {entry.description && (
         <div className="truncate text-muted-foreground text-[10px] mt-0.5">{entry.description}</div>
       )}
-      {/* Shop tag — only in consolidated mode */}
       {shopName && (
         <div className="mt-1 inline-flex items-center text-[10px] bg-muted/60 border border-border text-muted-foreground rounded px-1.5 py-0.5 max-w-full truncate">
           {shopName}
@@ -231,15 +234,149 @@ function EntryChip({
   );
 }
 
+// ─── Grouped entries (modo simplificado) ───────────────────────────────────────
+// Junta todas as entradas do dia num único "Vendas", e as saídas por categoria
+// (Facebook, Fornecedor, etc.), mostrando a soma. O detalhamento de quais
+// valores compõem a soma aparece no title (tooltip nativo, ao passar o mouse).
+
+type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[] };
+
+function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup[] {
+  if (items.length === 0) return [];
+  if (kind === "income") {
+    return [{
+      key: "income",
+      label: "Vendas",
+      kind,
+      total: items.reduce((s, e) => s + Number(e.amount), 0),
+      entries: items,
+    }];
+  }
+  const byCategory = new Map<string, DayItem[]>();
+  for (const e of items) {
+    const cat = e.category ?? "Saída";
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(e);
+  }
+  return Array.from(byCategory.entries()).map(([cat, entries]) => ({
+    key: cat,
+    label: cat,
+    kind,
+    total: entries.reduce((s, e) => s + Number(e.amount), 0),
+    entries,
+  }));
+}
+
+function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, todayKey }: {
+  group: EntryGroup;
+  onEdit: (e: DayItem) => void;
+  onToggleReconciled: (e: DayItem) => void;
+  shopNamesMap?: Record<string, string>;
+  isConsolidated: boolean;
+  todayKey: string;
+}) {
+  const isIncome = group.kind === "income";
+  const title = group.entries.length > 1
+    ? `${group.entries.map((e) => fmtMoney(Number(e.amount))).join(" + ")} = ${fmtMoney(group.total)}`
+    : undefined;
+  const chipClasses = cn(
+    "w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md border transition-colors",
+    isIncome
+      ? "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 text-blue-700 dark:text-blue-400"
+      : "border-neutral-400/20 bg-neutral-500/5 hover:bg-neutral-500/10 text-neutral-600 dark:text-neutral-400",
+  );
+
+  // Grupo com um único lançamento: clique abre a edição direto, sem popover.
+  if (group.entries.length === 1) {
+    const e = group.entries[0];
+    const src = e.source ?? "";
+    const isPending = src === "shopify_pending" || src === "shopify_pending_sync";
+    const canReconcile = !isPending && !e.virtual && e.date <= todayKey;
+    return (
+      <button type="button" title={title} onClick={() => onEdit(e)} className={chipClasses}>
+        <span className="flex items-center gap-1.5 min-w-0 truncate">
+          {canReconcile && (
+            <span
+              role="checkbox" aria-checked={!!e.reconciled}
+              title={e.reconciled ? "Conciliado" : "Marcar como conciliado"}
+              onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); onToggleReconciled(e); }}
+              onPointerDown={(ev) => ev.stopPropagation()}
+              className={cn(
+                "shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                e.reconciled ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current",
+              )}
+            >
+              {e.reconciled && <Check className="size-2.5" />}
+            </span>
+          )}
+          <span className="truncate">{group.label}</span>
+        </span>
+        <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
+      </button>
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" title={title} className={chipClasses}>
+          <span className="truncate">{group.label}</span>
+          <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2 space-y-1">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 mb-1">
+          {group.label} · {group.entries.length} lançamentos
+        </div>
+        {group.entries.map((e) => {
+          const src = e.source ?? "";
+          const isPending = src === "shopify_pending" || src === "shopify_pending_sync";
+          const canReconcile = !isPending && !e.virtual && e.date <= todayKey;
+          return (
+            <button
+              key={e.id + e.date}
+              type="button"
+              onClick={() => onEdit(e)}
+              className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-left"
+            >
+              <span className="flex items-center gap-1.5 min-w-0 truncate text-muted-foreground">
+                {canReconcile && (
+                  <span
+                    role="checkbox" aria-checked={!!e.reconciled}
+                    title={e.reconciled ? "Conciliado" : "Marcar como conciliado"}
+                    onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); onToggleReconciled(e); }}
+                    onPointerDown={(ev) => ev.stopPropagation()}
+                    className={cn(
+                      "shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                      e.reconciled ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current",
+                    )}
+                  >
+                    {e.reconciled && <Check className="size-2.5" />}
+                  </span>
+                )}
+                <span className="truncate">
+                  {isConsolidated ? (shopNamesMap?.[e.shop_id ?? ""] ?? "—") : (e.category ?? (isIncome ? "Entrada" : "Saída"))}
+                </span>
+              </span>
+              <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(e.amount))}</span>
+            </button>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Day cells ────────────────────────────────────────────────────────────────
 
-function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled, shopNamesMap, isConsolidated }: {
+function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, simplified }: {
   dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
   weekday: number; isToday: boolean; todayKey: string;
   onEdit: (e: DayItem) => void;
   onToggleReconciled: (e: DayItem) => void;
   shopNamesMap?: Record<string, string>;
   isConsolidated: boolean;
+  simplified?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dd.key}` });
   return (
@@ -264,13 +401,17 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
           <span className="text-[10px] tabular-nums text-blue-700 dark:text-blue-400 font-semibold">{dd.income > 0 ? `+${fmtMoney(dd.income)}` : "—"}</span>
         </div>
         <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
-          {dd.incomeItems.map((e) => (
-            <EntryChip
-              key={e.id+e.date} entry={e} todayKey={todayKey}
-              onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled}
-              shopName={isConsolidated ? shopNamesMap?.[e.shop_id ?? ""] : undefined}
-            />
-          ))}
+          {simplified
+            ? groupDayItems(dd.incomeItems, "income").map((g) => (
+              <GroupedEntryChip key={g.key} group={g} onEdit={onEdit} onToggleReconciled={onToggleReconciled} shopNamesMap={shopNamesMap} isConsolidated={isConsolidated} todayKey={todayKey} />
+            ))
+            : dd.incomeItems.map((e) => (
+              <EntryChip
+                key={e.id+e.date} entry={e} todayKey={todayKey}
+                onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled}
+                shopName={isConsolidated ? shopNamesMap?.[e.shop_id ?? ""] : undefined}
+              />
+            ))}
           {dd.incomeItems.length === 0 && <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>}
         </div>
       </div>
@@ -281,13 +422,17 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
           <span className="text-[10px] tabular-nums text-neutral-600 dark:text-neutral-400 font-semibold">{dd.expense > 0 ? `-${fmtMoney(dd.expense)}` : "—"}</span>
         </div>
         <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
-          {dd.expenseItems.map((e) => (
-            <EntryChip
-              key={e.id+e.date} entry={e} todayKey={todayKey}
-              onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled}
-              shopName={isConsolidated ? shopNamesMap?.[e.shop_id ?? ""] : undefined}
-            />
-          ))}
+          {simplified
+            ? groupDayItems(dd.expenseItems, "expense").map((g) => (
+              <GroupedEntryChip key={g.key} group={g} onEdit={onEdit} onToggleReconciled={onToggleReconciled} shopNamesMap={shopNamesMap} isConsolidated={isConsolidated} todayKey={todayKey} />
+            ))
+            : dd.expenseItems.map((e) => (
+              <EntryChip
+                key={e.id+e.date} entry={e} todayKey={todayKey}
+                onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled}
+                shopName={isConsolidated ? shopNamesMap?.[e.shop_id ?? ""] : undefined}
+              />
+            ))}
           {dd.expenseItems.length === 0 && <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>}
         </div>
       </div>
@@ -299,13 +444,14 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
   );
 }
 
-function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled, shopNamesMap, isConsolidated }: {
+function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, simplified }: {
   dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
   weekday: number; isToday: boolean; todayKey: string;
   onEdit: (e: DayItem) => void;
   onToggleReconciled: (e: DayItem) => void;
   shopNamesMap?: Record<string, string>;
   isConsolidated: boolean;
+  simplified?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dd.key}` });
   const items = [...dd.incomeItems, ...dd.expenseItems];
@@ -320,7 +466,16 @@ function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
         <div className="text-[10px] text-muted-foreground mt-0.5">{formatDateKey(dd.key, { day:"2-digit", month:"2-digit" })}</div>
       </div>
       <div className="row-span-2 p-1.5 flex flex-col gap-1 overflow-y-auto">
-        {items.map((e) => (
+        {simplified ? (
+          <>
+            {groupDayItems(dd.incomeItems, "income").map((g) => (
+              <GroupedEntryChip key={g.key} group={g} onEdit={onEdit} onToggleReconciled={onToggleReconciled} shopNamesMap={shopNamesMap} isConsolidated={isConsolidated} todayKey={todayKey} />
+            ))}
+            {groupDayItems(dd.expenseItems, "expense").map((g) => (
+              <GroupedEntryChip key={g.key} group={g} onEdit={onEdit} onToggleReconciled={onToggleReconciled} shopNamesMap={shopNamesMap} isConsolidated={isConsolidated} todayKey={todayKey} />
+            ))}
+          </>
+        ) : items.map((e) => (
           <EntryChip
             key={e.id+e.date} entry={e} todayKey={todayKey}
             onClick={() => onEdit(e)} onToggleReconciled={onToggleReconciled}
@@ -589,10 +744,14 @@ function ManageCategories({ shopId, categories, onClose, onChange }: any) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function LgCashflowView({
-  shopIds, shopNamesMap,
+  shopIds, shopNamesMap, simplified, standalone,
 }: {
   shopIds:      string[];
   shopNamesMap: Record<string, string>;
+  simplified?: boolean;
+  // Cópia isolada: puxa os lançamentos das lojas, mas editar/excluir/conciliar
+  // aqui não altera o registro compartilhado usado pela loja/Grupo.
+  standalone?: boolean;
 }) {
   const shopId         = shopIds[0];
   const isConsolidated = shopIds.length > 1;
@@ -600,10 +759,18 @@ export function LgCashflowView({
   const qc             = useQueryClient();
   const confirm         = useConfirm();
 
-  const listFn      = useServerFn(listShopCash);
-  const createFn    = useServerFn(createCashEntry);
-  const deleteFn    = useServerFn(deleteCashEntry);
-  const updateFn    = useServerFn(updateCashEntry);
+  const sharedListFn   = useServerFn(listShopCash);
+  const sharedCreateFn = useServerFn(createCashEntry);
+  const sharedDeleteFn = useServerFn(deleteCashEntry);
+  const sharedUpdateFn = useServerFn(updateCashEntry);
+  const standaloneListFn   = useServerFn(listShopCashConsolidated);
+  const standaloneCreateFn = useServerFn(createConsolidatedCashEntry);
+  const standaloneDeleteFn = useServerFn(deleteConsolidatedCashEntry);
+  const standaloneUpdateFn = useServerFn(updateConsolidatedCashEntry);
+  const listFn: any   = standalone ? standaloneListFn   : sharedListFn;
+  const createFn: any = standalone ? standaloneCreateFn : sharedCreateFn;
+  const deleteFn: any = standalone ? standaloneDeleteFn : sharedDeleteFn;
+  const updateFn: any = standalone ? standaloneUpdateFn : sharedUpdateFn;
   const openingFn   = useServerFn(setOpeningBalance);
   const listCatsFn  = useServerFn(listCashCategories);
   const pendingFn   = useServerFn(getShopifyPendingBalance);
@@ -611,7 +778,7 @@ export function LgCashflowView({
   const groupPendFn = useServerFn(getGroupShopifyPendingBalance);
   const lastSyncFn  = useServerFn(getShopifyLastSyncedAt);
 
-  const queryKey = ["shop-cash", cacheKey];
+  const queryKey = [standalone ? "shop-cash-standalone" : "shop-cash", cacheKey];
   const catsKey  = ["shop-cash-cats", cacheKey];
 
   const { data, isLoading } = useQuery({ queryKey, queryFn: () => listFn({ data: { shop_ids: shopIds } }) });
@@ -802,6 +969,18 @@ export function LgCashflowView({
     }
   };
 
+  // Sincroniza os depósitos automaticamente ao abrir a tela, sem esperar o
+  // usuário clicar no botão de refresh manual. Guarda por cacheKey pra não
+  // disparar de novo em cada re-render, nem duplicar no double-invoke do
+  // React StrictMode em dev.
+  const autoSyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (shopIds.length === 0 || autoSyncedRef.current === cacheKey) return;
+    autoSyncedRef.current = cacheKey;
+    syncPayouts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
+
   const createMut  = useMutation({ mutationFn: (v:any) => createFn({ data:v }), onSuccess: refresh });
   const deleteMut  = useMutation({ mutationFn: (id:string) => deleteFn({ data:{id} }), onSuccess: refresh });
   const updateMut  = useMutation({ mutationFn: (v:any) => updateFn({ data:v }), onSuccess: refresh });
@@ -845,9 +1024,9 @@ export function LgCashflowView({
             value={fmtMoney(receivable)}
             accent="oklch(0.6 0.13 230)"
             sub={isConsolidated && effectivePending?.connected && perShopReceivable.length > 1 ? (
-              <div className="space-y-0.5 mt-1">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1">
                 {perShopReceivable.map((p) => (
-                  <div key={p.shop_id} className="flex items-center justify-between gap-2">
+                  <div key={p.shop_id} className="flex items-center justify-between gap-1.5 min-w-0">
                     <span className="truncate">{shopNamesMap[p.shop_id] ?? p.shop_id}</span>
                     <span className="tabular-nums shrink-0">{fmtMoney(Number(p.amount ?? 0))}</span>
                   </div>
@@ -925,14 +1104,21 @@ export function LgCashflowView({
             <button onClick={() => setManageCats(true)} className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-accent">
               Gerenciar categorias
             </button>
-            <div className="h-px bg-border my-1" />
-            <button
-              onClick={handleResetCash}
-              disabled={resetMut.isPending}
-              className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-destructive/10 text-destructive disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <Trash2 className="size-3.5" /> {resetMut.isPending ? "Resetando..." : "Resetar caixa"}
-            </button>
+            {/* "Resetar caixa" apaga direto shop_cash_entries — a tabela compartilhada
+                com a loja/Grupo. Não faz sentido no modo standalone (edições isoladas),
+                então fica escondido aqui pra não contradizer a promessa de isolamento. */}
+            {!standalone && (
+              <>
+                <div className="h-px bg-border my-1" />
+                <button
+                  onClick={handleResetCash}
+                  disabled={resetMut.isPending}
+                  className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-destructive/10 text-destructive disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Trash2 className="size-3.5" /> {resetMut.isPending ? "Resetando..." : "Resetar caixa"}
+                </button>
+              </>
+            )}
           </PopoverContent>
         </Popover>
       </div>
@@ -970,7 +1156,7 @@ export function LgCashflowView({
               const weekday  = weekdayFromKey(dd.key);
               const isToday  = dd.key === todayKey;
               const isWeekend = weekday===0 || weekday===6;
-              const props = { dd, weekday, isToday, todayKey, onEdit:setEditing, onToggleReconciled:(e:DayItem) => updateMut.mutate({ id:e.id, patch:{ reconciled:!e.reconciled } }), shopNamesMap, isConsolidated };
+              const props = { dd, weekday, isToday, todayKey, onEdit:setEditing, onToggleReconciled:(e:DayItem) => updateMut.mutate({ id:e.id, patch:{ reconciled:!e.reconciled } }), shopNamesMap, isConsolidated, simplified };
               return isWeekend
                 ? <WeekendDayCell key={dd.key} {...props} />
                 : <WeekdayDayCell key={dd.key} {...props} />;
@@ -1006,10 +1192,12 @@ export function LgCashflowView({
           onClose={() => setEditing(null)}
           onSave={(patch:any) => { updateMut.mutate({ id:editing.id, patch }); setEditing(null); }}
           onDelete={() => {
-            if (editing.source === "auto" && editing.auto_kind === "order_cost") {
+            if (!standalone && editing.source === "auto" && editing.auto_kind === "order_cost") {
               // Excluir a linha não basta: o custo é recalculado a partir dos pedidos
               // pendentes e voltaria a aparecer. Um override manual em $0 impede a
               // regeneração automática (mesmo mecanismo usado para ajustar o valor).
+              // No modo standalone isso não se aplica: a exclusão fica isolada na
+              // cópia local (shop_cash_overrides), sem tocar na automação da loja.
               overrideMut.mutate({ shop_id: editing.shop_id ?? shopId, processing_date: editing.originalDate ?? editing.date, amount: 0, auto_ref_date: editing.auto_ref_date ?? undefined });
             } else {
               deleteMut.mutate(editing.id);
