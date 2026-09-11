@@ -9,6 +9,8 @@ import {
   syncOrderPaymentTasks, deleteOrders,
 } from "@/lib/shop-orders.functions";
 import { listOrdersTracking, setOrderTracking, getTrack123Integration } from "@/lib/track123.functions";
+import { listProducts } from "@/lib/products.functions";
+import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -17,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Loader2, RefreshCw, History, DollarSign, ChevronRight, CheckCircle2, Truck, Undo2, Copy, ExternalLink, Package, Clock, MapPin, AlertTriangle, PackageX, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isoTodayUS } from "@/lib/timezone";
 
 const PROCESSING_DELAY_DAYS = 7;
 
@@ -102,8 +105,8 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
   const isConsolidated = shopIds.length > 1;
   const cacheKey = shopIds.slice().sort().join(",");
   const qc = useQueryClient();
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 29); return d.toLocaleDateString("en-CA"); });
-  const [to, setTo] = useState(() => new Date().toLocaleDateString("en-CA"));
+  const [from, setFrom] = useState(() => addDays(isoTodayUS(), -29));
+  const [to, setTo] = useState(() => isoTodayUS());
   const [openCost, setOpenCost] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -124,6 +127,13 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
 
   const settings = useQuery({ queryKey: ["order-settings", cacheKey], queryFn: () => getSettingsFn({ data: { shop_id: shopId } }) });
   const orders = useQuery({ queryKey: ["orders", cacheKey, from, to], queryFn: () => listOrdersFn({ data: { shop_ids: shopIds, from, to } }) });
+
+  const listProductsFn = useServerFn(listProducts);
+  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProductsFn() });
+  const costProducts = useMemo<CostProduct[]>(
+    () => (productsQuery.data?.products ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost })),
+    [productsQuery.data]
+  );
 
   const syncPaymentTasksFn = useServerFn(syncOrderPaymentTasks);
   useQuery({
@@ -246,12 +256,13 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
   }
 
   const selectedSummary = useMemo(() => {
-    let items = 0, count = 0, pendingIds: string[] = [], paidIds: string[] = [];
+    let items = 0, count = 0, amount = 0, pendingIds: string[] = [], paidIds: string[] = [];
     const dates = new Set<string>();
     for (const g of groups) {
       for (const o of g.orders) {
         if (selectedOrders.has(o.id)) {
           items += Number(o.items_count ?? 0);
+          amount += orderLineItemsCost(o.raw?.line_items, costProducts, unitCost);
           count += 1;
           dates.add(o.order_date);
           if (o.payment_status === "pending") pendingIds.push(o.id);
@@ -259,8 +270,8 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
         }
       }
     }
-    return { items, count, amount: items * unitCost, dates: Array.from(dates).sort(), pendingIds, paidIds };
-  }, [selectedOrders, groups, unitCost]);
+    return { items, count, amount, dates: Array.from(dates).sort(), pendingIds, paidIds };
+  }, [selectedOrders, groups, unitCost, costProducts]);
 
 
   // Paid orders ready to ship (selection for shipping action)
@@ -422,7 +433,7 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
           </div>
         )}
         {visibleGroups.map((g, i) => {
-          const cost = g.items * unitCost;
+          const cost = g.orders.reduce((s, o) => s + orderLineItemsCost(o.raw?.line_items, costProducts, unitCost), 0);
           const d = localDate(g.date);
           const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
           const dayMonth = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });

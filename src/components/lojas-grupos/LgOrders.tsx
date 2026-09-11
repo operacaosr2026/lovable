@@ -3,16 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listOrders, markOrdersPaid, markOrdersShipped, recomputeRange,
-  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate,
+  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
+import { listProducts } from "@/lib/products.functions";
+import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
+import { buildSupplierMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -112,6 +115,20 @@ export function LgOrders({
     enabled:  shopIds.length > 0,
   });
 
+  const listProductsFn = useServerFn(listProducts);
+  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProductsFn() });
+  const costProducts = useMemo<CostProduct[]>(
+    () => (productsQuery.data?.products ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost })),
+    [productsQuery.data]
+  );
+
+  const listShopDomainsFn = useServerFn(listShopDomains);
+  const domainsQuery = useQuery({
+    queryKey: ["lg-shop-domains", cacheKey],
+    queryFn: () => listShopDomainsFn({ data: { shop_ids: shopIds } }),
+    enabled: shopIds.length > 0,
+  });
+
   const [costDraft, setCostDraft] = useState<Record<string, string>>({});
   const [savingCost, setSavingCost] = useState<string | null>(null);
 
@@ -190,7 +207,7 @@ export function LgOrders({
       const d = byDate.get(day)!;
       d.totalOrders++;
       d.totalItems += Number(o.items_count ?? 0);
-      d.totalCost  += (costByShop.get(o.shop_id as string) ?? 0) * Number(o.items_count ?? 0);
+      d.totalCost  += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0);
       const st = o.payment_status as string;
       if (st === "paid" || st === "shipped") d.paidCount++;
       else if (st === "pending") d.pendingCount++;
@@ -204,7 +221,7 @@ export function LgOrders({
         const dayStatus = agg.pendingCount === 0 ? "pago" : agg.paidCount === 0 ? "pendente" : "parcial";
         return { date, ...agg, dayStatus };
       });
-  }, [allOrders, costByShop]);
+  }, [allOrders, costByShop, costProducts]);
 
   const filteredGroups = useMemo(() =>
     paymentFilter === "todos" ? groups : groups.filter(g => g.dayStatus === paymentFilter),
@@ -264,6 +281,37 @@ export function LgOrders({
     }
     return m;
   }, [selected, groups]);
+
+  // Texto pro fornecedor: agrupa os pedidos selecionados por loja com o range de números.
+  const supplierMessage = useMemo(() => {
+    const byShop = new Map<string, string[]>();
+    for (const group of groups) {
+      for (const [shopId, orders] of group.byShop.entries()) {
+        for (const o of orders) {
+          if (!selected.has(o.id)) continue;
+          if (!byShop.has(shopId)) byShop.set(shopId, []);
+          byShop.get(shopId)!.push(orderLabel(o));
+        }
+      }
+    }
+    const domains = (domainsQuery.data ?? {}) as Record<string, string | null>;
+    const blocks = Array.from(byShop.entries()).map(([shopId, orderLabels]) => ({
+      shopName: shopNames[shopId] ?? shopId,
+      shopDomain: domains[shopId] ?? null,
+      orderLabels,
+    }));
+    return buildSupplierMessage(blocks);
+  }, [selected, groups, domainsQuery.data, shopNames]);
+
+  const copySupplierMessage = async () => {
+    if (!supplierMessage) return;
+    try {
+      await navigator.clipboard.writeText(supplierMessage);
+      toast.success("Mensagem copiada");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
 
   const selectionMode = useMemo(() => {
     if (selected.size === 0) return null;
@@ -400,6 +448,9 @@ export function LgOrders({
             <span className="font-medium">{selectedCount}</span> pedidos selecionados
           </span>
           <div className="flex-1" />
+          <Button size="sm" variant="outline" onClick={copySupplierMessage}>
+            <Copy className="size-4" /> Copiar mensagem pro fornecedor
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Limpar</Button>
           {selectionMode === "pending" && (
             <Button size="sm" onClick={() => setPayOpen(true)}>
@@ -526,7 +577,7 @@ export function LgOrders({
                       {/* Order rows */}
                       {orders.map((o: any) => {
                         const sel = selected.has(o.id);
-                        const cost = (costByShop.get(o.shop_id as string) ?? 0) * Number(o.items_count ?? 0);
+                        const cost = orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0);
                         return (
                           <div key={o.id} className={cn("grid grid-cols-[32px_1fr_80px_110px_120px_100px] gap-3 px-8 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors text-sm", sel && "bg-primary/5")}>
                             <Checkbox

@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, costProductsFor } from "@/lib/shop-orders.functions";
+import { orderLineItemsCost } from "@/lib/product-cost-match";
 
 const PROCESSING_DELAY_DAYS = 7;
 
@@ -369,11 +370,12 @@ async function processShop(s: any, today: string) {
     return;
   }
 
-  const { data: orders } = await supabaseAdmin.from("shop_orders").select("items_count")
+  const { data: orders } = await supabaseAdmin.from("shop_orders").select("items_count,raw")
     .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("order_date", orderDate);
   const items = (orders ?? []).reduce((x: number, o: any) => x + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(s.shop_id, s.user_id, orderDate, s.default_unit_cost);
-  const amount = items * unit;
+  const products = await costProductsFor(supabaseAdmin, s.user_id);
+  const amount = (orders ?? []).reduce((x: number, o: any) => x + orderLineItemsCost(o.raw?.line_items, products, unit), 0);
 
   // ensure category
   const { data: cat } = await supabaseAdmin.from("shop_cash_categories").select("id")
@@ -386,14 +388,14 @@ async function processShop(s: any, today: string) {
 
   if (existing) {
     await supabaseAdmin.from("shop_cash_entries").update({
-      amount, date: today, description: `${items} itens × ${unit}`,
+      amount, date: today, description: `${items} itens`,
     }).eq("id", existing.id);
   } else if (amount > 0) {
     await supabaseAdmin.from("shop_cash_entries").insert({
       user_id: s.user_id, shop_id: s.shop_id,
       kind: "expense", amount, date: today,
       category: "Custo de pedidos",
-      description: `${items} itens × ${unit}`,
+      description: `${items} itens`,
       source: "auto", auto_kind: "order_cost", auto_ref_date: orderDate,
     });
   }

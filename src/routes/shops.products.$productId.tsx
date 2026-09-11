@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
-import { ArrowLeft, Package } from "lucide-react";
+import { ArrowLeft, Package, Tag as TagIcon, X } from "lucide-react";
 import { getProduct, updateProduct, PRODUCT_STATUSES } from "@/lib/products.functions";
 import { ProductImages } from "@/components/products/ProductImages";
 import { ProductTemplates } from "@/components/products/ProductTemplates";
@@ -82,6 +82,14 @@ function CadastroTab({ product, onSave }: { product: any; onSave: (patch: any) =
   const [salePrice, setSalePrice] = useState(String(product.sale_price ?? 0));
   const [description, setDescription] = useState(product.description ?? "");
   const [status, setStatus] = useState<string>(product.status ?? "ativo");
+  const [keywords, setKeywords] = useState<string[]>(product.keywords ?? []);
+  const [keywordInput, setKeywordInput] = useState("");
+
+  const addKeyword = () => {
+    const v = keywordInput.trim();
+    if (v && !keywords.some((k) => k.toLowerCase() === v.toLowerCase())) setKeywords([...keywords, v]);
+    setKeywordInput("");
+  };
 
   const save = () => onSave({
     name: name.trim() || product.name,
@@ -91,6 +99,7 @@ function CadastroTab({ product, onSave }: { product: any; onSave: (patch: any) =
     sale_price: Number(salePrice) || 0,
     description: description.trim() || null,
     status,
+    keywords,
   });
 
   return (
@@ -109,6 +118,24 @@ function CadastroTab({ product, onSave }: { product: any; onSave: (patch: any) =
           </select>
         </Field>
       </div>
+      <Field label="Palavras-chave (para identificar este produto nos pedidos)">
+        <div className="flex flex-wrap gap-1.5 items-center px-3 py-2 rounded-lg bg-surface border border-border">
+          {keywords.map((k) => (
+            <span key={k} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted">
+              <TagIcon className="size-3" /> {k}
+              <button type="button" onClick={() => setKeywords(keywords.filter((x) => x !== k))}><X className="size-3" /></button>
+            </span>
+          ))}
+          <input
+            value={keywordInput}
+            onChange={(e) => setKeywordInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addKeyword(); } }}
+            onBlur={addKeyword}
+            placeholder="+ palavra-chave"
+            className="text-xs px-2 h-7 rounded-md bg-transparent outline-none flex-1 min-w-24"
+          />
+        </div>
+      </Field>
       <Field label="Descrição"><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm outline-none resize-none" /></Field>
       <div className="flex justify-end">
         <button onClick={save} className="h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium">Salvar</button>

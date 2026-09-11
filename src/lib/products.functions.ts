@@ -15,6 +15,7 @@ const ProductInput = z.object({
   description: z.string().max(4000).nullable().optional(),
   status: z.enum(PRODUCT_STATUSES).default("ativo"),
   main_image_url: z.string().max(2_000_000).nullable().optional(),
+  keywords: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
 });
 
 // ---------- products ----------
@@ -74,6 +75,7 @@ export const createProduct = createServerFn({ method: "POST" })
       description: data.description ?? null,
       status: data.status,
       main_image_url: data.main_image_url ?? null,
+      keywords: data.keywords,
     }).select().single();
     if (error) throw new Error(error.message);
     // create empty pricing row

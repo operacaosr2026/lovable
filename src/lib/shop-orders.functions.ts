@@ -2,6 +2,7 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
 
 export const COST_CATEGORY = "Fornecedor";
 const PROCESSING_DELAY_DAYS = 7;
@@ -225,6 +226,11 @@ async function unitCostFor(supabase: any, ownerId: string, shopId: string, date:
   return Number(fallback ?? 0);
 }
 
+export async function costProductsFor(supabase: any, ownerId: string): Promise<CostProduct[]> {
+  const { data } = await supabase.from("products").select("name,keywords,cost").eq("user_id", ownerId);
+  return (data ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost }));
+}
+
 // ---------- Settings ----------
 export const getOrderSettings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -252,6 +258,28 @@ export const getMultiOrderSettings = createServerFn({ method: "GET" })
       .eq("user_id", context.ownerId)
       .in("shop_id", data.shop_ids);
     return rows ?? [];
+  });
+
+// Loja → domínio Shopify (usado, por ex., pra identificar a loja em mensagens pro fornecedor).
+export const listShopDomains = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: settings } = await context.supabase.from("shop_order_settings")
+      .select("shop_id,shopify_store_id")
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
+    const storeIds = Array.from(new Set((settings ?? []).map((s: any) => s.shopify_store_id).filter(Boolean)));
+    let domainByStore: Record<string, string> = {};
+    if (storeIds.length) {
+      const { data: stores } = await context.supabase.from("shopify_stores")
+        .select("id,shop_domain").in("id", storeIds);
+      domainByStore = Object.fromEntries((stores ?? []).map((s: any) => [s.id, s.shop_domain]));
+    }
+    const out: Record<string, string | null> = {};
+    for (const s of settings ?? []) {
+      out[s.shop_id as string] = s.shopify_store_id ? (domainByStore[s.shopify_store_id] ?? null) : null;
+    }
+    return out;
   });
 
 export const upsertOrderSettings = createServerFn({ method: "POST" })
@@ -1184,7 +1212,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
   });
 
 // ---------- Recompute ----------
-async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any, paymentDays: number = PROCESSING_DELAY_DAYS) {
+async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any, paymentDays: number = PROCESSING_DELAY_DAYS, preloadedProducts?: CostProduct[]) {
   let settings = preloadedSettings;
   if (!settings) {
     const { data } = await context.supabase.from("shop_order_settings").select("*")
@@ -1212,12 +1240,13 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   }
 
   // sum items for orderDate — apenas pedidos pendentes (pagos já saíram via lote)
-  const { data: orders } = await context.supabase.from("shop_orders").select("items_count,payment_status")
+  const { data: orders } = await context.supabase.from("shop_orders").select("items_count,payment_status,raw")
     .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("order_date", orderDate)
     .eq("payment_status", "pending");
   const items = (orders ?? []).reduce((s: number, o: any) => s + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(context.supabase, context.ownerId, shopId, orderDate, settings.default_unit_cost);
-  const amount = items * unit;
+  const products = preloadedProducts ?? await costProductsFor(context.supabase, context.ownerId);
+  const amount = (orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.raw?.line_items, products, unit), 0);
 
   await ensureCostCategory(context.supabase, context.ownerId, shopId);
 
@@ -1227,7 +1256,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
         .eq("id", existing.id).eq("user_id", context.ownerId);
     } else {
       await context.supabase.from("shop_cash_entries").update({
-        amount, date: processingDate, description: `${items} itens × ${unit}`,
+        amount, date: processingDate, description: `${items} itens`,
       }).eq("id", existing.id).eq("user_id", context.ownerId);
     }
   } else if (amount > 0) {
@@ -1235,7 +1264,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
       user_id: context.ownerId, shop_id: shopId,
       kind: "expense", amount, date: processingDate,
       category: COST_CATEGORY,
-      description: `${items} itens × ${unit}`,
+      description: `${items} itens`,
       source: "auto", auto_kind: "order_cost", auto_ref_date: orderDate,
     });
   }
@@ -1263,12 +1292,13 @@ export const recomputeRange = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    const products = await costProductsFor(context.supabase, context.ownerId);
     const days: string[] = [];
     let cur = data.from_processing;
     while (cur <= data.to_processing && days.length < 366) { days.push(cur); cur = addDays(cur, 1); }
     const CHUNK = 10;
     for (let i = 0; i < days.length; i += CHUNK) {
-      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settings, data.payment_days)));
+      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settings, data.payment_days, products)));
     }
     return { days: days.length };
   });
@@ -1425,7 +1455,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     // Fetch pending orders only
     const { data: orders, error } = await context.supabase.from("shop_orders")
-      .select("id,order_date,items_count,payment_status")
+      .select("id,order_date,items_count,payment_status,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("id", data.order_ids).eq("payment_status", "pending");
     if (error) throw new Error(error.message);
@@ -1435,6 +1465,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
     const defaultCost = Number(settings?.default_unit_cost ?? 0);
+    const products = await costProductsFor(context.supabase, context.ownerId);
 
     // Compute totals by order_date with the cost in effect
     const dates = Array.from(new Set(orders.map((o) => o.order_date as string)));
@@ -1447,7 +1478,8 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     for (const o of orders) {
       const items = Number(o.items_count ?? 0);
       totalItems += items;
-      totalAmount += items * (costByDate.get(o.order_date as string) ?? defaultCost);
+      const unit = costByDate.get(o.order_date as string) ?? defaultCost;
+      totalAmount += orderLineItemsCost((o as any).raw?.line_items, products, unit);
     }
 
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
@@ -1635,7 +1667,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: orders, error: ordersErr } = await context.supabase.from("shop_orders")
-      .select("id,payment_batch_id,order_date,items_count")
+      .select("id,payment_batch_id,order_date,items_count,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .neq("payment_status", "pending")
       .in("id", data.order_ids);
@@ -1693,6 +1725,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
 
       await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
 
+      const products = await costProductsFor(context.supabase, context.ownerId);
       const dates = [...new Set((orders ?? []).map((o: any) => o.order_date as string).filter(Boolean))].sort() as string[];
       const costByDate = new Map<string, number>();
       for (const d of dates) {
@@ -1702,7 +1735,8 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
       for (const o of orders ?? []) {
         const items = Number(o.items_count ?? 0);
         totalItems += items;
-        totalAmount += items * (costByDate.get(o.order_date as string) ?? defaultCost);
+        const unit = costByDate.get(o.order_date as string) ?? defaultCost;
+        totalAmount += orderLineItemsCost((o as any).raw?.line_items, products, unit);
       }
 
       const batchNumber = await nextBatchNumber(context, data.shop_id);
