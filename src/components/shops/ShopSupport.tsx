@@ -17,6 +17,7 @@ import {
   PRIORITY_TAGS,
 } from "@/lib/support.functions";
 import { listShops } from "@/lib/shops.functions";
+import { formatDateTimeUS } from "@/lib/timezone";
 
 // --------- helpers ---------
 function timeAgo(iso: string) {
@@ -419,7 +420,7 @@ function ConversationView({ conversationId, onClose, statuses }: { conversationI
                 }`}>
                   <div className="whitespace-pre-wrap">{m.body_text}</div>
                   <div className={`text-[10px] mt-1 ${isOut ? "text-primary-foreground/70" : "text-muted-foreground"} text-right`}>
-                    {new Date(m.sent_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {formatDateTimeUS(m.sent_at, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </div>
               </div>

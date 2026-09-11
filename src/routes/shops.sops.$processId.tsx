@@ -48,6 +48,7 @@ import {
   createSopEdge, deleteSopEdge, updateSopProcess,
   listSopComments, addSopComment, deleteSopComment,
 } from "@/lib/sops.functions";
+import { formatDateTimeUS } from "@/lib/timezone";
 
 export const Route = createFileRoute("/shops/sops/$processId")({
   component: () => (
@@ -1007,7 +1008,7 @@ function StepPanel({ step, onClose, updStepFn, delStepFn, refresh }: any) {
             {comments.map((c) => (
               <div key={c.id} className="group rounded-lg bg-background border border-border p-2.5 text-xs">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString("pt-BR")}</span>
+                  <span className="text-[10px] text-muted-foreground">{formatDateTimeUS(c.created_at)}</span>
                   <button
                     onClick={async () => {
                       await delCommentFn({ data: { id: c.id } });

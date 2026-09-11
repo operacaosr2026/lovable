@@ -24,7 +24,7 @@ const DEFAULTS: Omit<AppSettings, "user_id"> = {
   favicon_url: null,
   primary_color: "oklch(0.58 0.22 295)",
   language: "pt-BR",
-  timezone: "America/Sao_Paulo",
+  timezone: "America/New_York",
   date_format: "DD/MM/YYYY",
   default_home: "/",
   theme: "system",

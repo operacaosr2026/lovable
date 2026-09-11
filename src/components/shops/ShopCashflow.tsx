@@ -22,12 +22,11 @@ import {
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
 } from "@/lib/shop-cash.functions";
 import { getShopifyPendingBalance, getMonthlyProfit, getShopifyPayoutLag, syncShopifyPayouts, setPayoutLagDays, getGroupShopifyPayoutLag, getGroupShopifyPendingBalance } from "@/lib/shop-orders.functions";
+import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 
 type Recurrence = "none" | "daily" | "weekly" | "monthly";
 type Entry = { id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null; source: string; auto_kind?: string | null; import_id: string | null; recurrence?: Recurrence | null; recurrence_until?: string | null; skip_weekend_rule?: boolean | null; reconciled?: boolean | null };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
-
-const BRAZIL_TIME_ZONE = "America/New_York";
 
 function dateKey(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -51,18 +50,9 @@ function addMonthsToKey(key: string, months: number) {
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0, 12)).getUTCDate();
   return dateKey(first.getUTCFullYear(), first.getUTCMonth() + 1, Math.min(day, lastDay));
 }
-function todayKeyBrazil() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: BRAZIL_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-  return dateKey(get("year"), get("month"), get("day"));
-}
+const todayKeyUS = isoTodayUS;
 function formatDateKey(key: string, options: Intl.DateTimeFormatOptions) {
-  return dateFromKey(key).toLocaleDateString("pt-BR", { ...options, timeZone: BRAZIL_TIME_ZONE });
+  return dateFromKey(key).toLocaleDateString("pt-BR", { ...options, timeZone: US_TIME_ZONE });
 }
 function weekdayFromKey(key: string) {
   return dateFromKey(key).getUTCDay();
@@ -186,7 +176,7 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
   const opening = data?.opening_balance ?? 0;
   const weekendToMonday = Boolean(data?.weekend_payouts_to_monday);
 
-  const todayKey = useMemo(() => todayKeyBrazil(), []);
+  const todayKey = useMemo(() => todayKeyUS(), []);
 
   const { monthStart, monthEnd, prevMonthStart, prevMonthEnd } = useMemo(() => {
     const { year, month } = dateKeyParts(todayKey);

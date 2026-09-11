@@ -9,6 +9,7 @@ import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { redirect } from "@tanstack/react-router";
+import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -33,7 +34,7 @@ export const Route = createFileRoute("/")({
 
 // ─── Period helpers ─────────────────────────────────────────────────────────────
 
-function isoToday() { return new Date().toLocaleDateString("en-CA"); }
+const isoToday = isoTodayUS;
 function addDays(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
 }
@@ -44,7 +45,7 @@ function getPeriodRange(period: string, custom?: { from: string; to: string }) {
   if (period === "7d")    { from = addDays(today, -6); }
   if (period === "30d")   { from = addDays(today, -29); }
   if (period === "mes")   {
-    const d = new Date(); from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; to = today;
+    from = `${today.slice(0, 7)}-01`; to = today;
   }
   if (period === "custom" && custom) { from = custom.from; to = custom.to; }
   return { from, to };
@@ -148,9 +149,9 @@ function Dashboard() {
   const shopEstorno = (cardsData as any)?.shopEstorno ?? [];
 
   const today = new Date();
-  const dateLabel = today.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabel = today.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone: US_TIME_ZONE });
   const greeting = (() => {
-    const h = today.getHours();
+    const h = Number(today.toLocaleString("en-US", { hour: "2-digit", hour12: false, timeZone: US_TIME_ZONE }));
     if (h < 12) return "Bom dia";
     if (h < 18) return "Boa tarde";
     return "Boa noite";

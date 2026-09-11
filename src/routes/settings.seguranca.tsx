@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Lock, LogOut, History, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { formatDateTimeUS } from "@/lib/timezone";
 
 export const Route = createFileRoute("/settings/seguranca")({
   component: SegurancaPage,
@@ -189,7 +190,7 @@ function SegurancaPage() {
               >
                 <div className="min-w-0">
                   <div className="font-medium">
-                    {new Date(r.created_at).toLocaleString("pt-BR")}
+                    {formatDateTimeUS(r.created_at)}
                   </div>
                   <div className="text-muted-foreground truncate max-w-md mt-0.5">
                     {r.user_agent || "Dispositivo desconhecido"}

@@ -44,6 +44,7 @@ import {
   getShopifyPendingBalance, syncShopifyPayouts,
   getGroupShopifyPendingBalance, getShopifyLastSyncedAt, setManualOverride,
 } from "@/lib/shop-orders.functions";
+import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,6 @@ function fmtLastSynced(iso: string | null) {
 
 // ─── Date helpers (same as ShopCashflow) ─────────────────────────────────────
 
-const BRAZIL_TIME_ZONE = "America/New_York";
 const WEEKDAYS_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
 function dateKey(y: number, m: number, d: number) {
@@ -95,15 +95,9 @@ function addMonthsToKey(k: string, n: number) {
   const last = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth()+1, 0, 12)).getUTCDate();
   return dateKey(f.getUTCFullYear(), f.getUTCMonth()+1, Math.min(day, last));
 }
-function todayKeyBrazil() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: BRAZIL_TIME_ZONE, year:"numeric", month:"2-digit", day:"2-digit",
-  }).formatToParts(new Date());
-  const g = (t: string) => Number(parts.find(p=>p.type===t)?.value);
-  return dateKey(g("year"), g("month"), g("day"));
-}
+const todayKeyUS = isoTodayUS;
 function formatDateKey(k: string, opts: Intl.DateTimeFormatOptions) {
-  return dateFromKey(k).toLocaleDateString("pt-BR", {...opts, timeZone: BRAZIL_TIME_ZONE});
+  return dateFromKey(k).toLocaleDateString("pt-BR", {...opts, timeZone: US_TIME_ZONE});
 }
 function weekdayFromKey(k: string) { return dateFromKey(k).getUTCDay(); }
 function isoWeekNumber(k: string): number {
@@ -901,7 +895,7 @@ export function LgCashflowView({
   const entries      = (data?.entries ?? []) as Entry[];
   const opening      = data?.opening_balance ?? 0;
   const weekendToMonday = Boolean(data?.weekend_payouts_to_monday);
-  const todayKey     = useMemo(() => todayKeyBrazil(), []);
+  const todayKey     = useMemo(() => todayKeyUS(), []);
 
   const allCats     = (catsQuery.data ?? []) as { id: string; kind: "income"|"expense"; name: string }[];
   const incomeCats  = useMemo(() => allCats.filter(c => c.kind==="income").map(c=>c.name), [allCats]);

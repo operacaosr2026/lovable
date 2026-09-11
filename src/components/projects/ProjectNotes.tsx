@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Trash2 } from "lucide-react";
 import { listProjectNotes, createProjectNote, deleteProjectNote } from "@/lib/project-notes.functions";
+import { formatDateTimeUS } from "@/lib/timezone";
 
 export function ProjectNotes({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -57,7 +58,7 @@ export function ProjectNotes({ projectId }: { projectId: string }) {
                 </button>
               </div>
               <div className="text-[11px] text-muted-foreground mt-2">
-                {new Date(n.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                {formatDateTimeUS(n.created_at, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
               </div>
             </div>
           ))}

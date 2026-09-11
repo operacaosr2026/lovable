@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { US_TIME_ZONE } from "@/lib/timezone";
 
 const META_APP_ID    = process.env["META_APP_ID"]!;
 const SUPABASE_URL   = process.env["SUPABASE_URL"]!;
@@ -462,7 +463,7 @@ const ACTIVITIES_PAGE_TITLE = "Alterações Meta Ads";
 
 function formatActivity(a: any, accountLabel?: string | null): string {
   const date = new Date((a.event_time ?? 0) * 1000).toLocaleString("pt-BR", {
-    dateStyle: "short", timeStyle: "short",
+    dateStyle: "short", timeStyle: "short", timeZone: US_TIME_ZONE,
   });
   const label = a.translated_event_type || a.event_type || "Alteração";
   const who = a.actor_name ? ` por ${a.actor_name}` : "";

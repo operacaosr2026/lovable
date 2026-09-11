@@ -10,8 +10,9 @@ import {
   listLgCardNotes, createLgCardNote, deleteLgCardNote, updateLgCardNote,
   listShopDailyAnalytics,
 } from "@/lib/lg-cards.functions";
+import { isoTodayUS } from "@/lib/timezone";
 
-function isoToday() { return new Date().toLocaleDateString("en-CA"); }
+const isoToday = isoTodayUS;
 function fmtDate(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;

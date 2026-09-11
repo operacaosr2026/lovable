@@ -17,6 +17,7 @@ import {
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { formatDateTimeUS } from "@/lib/timezone";
 
 const COLUMNS = [
   { id: "todo",  label: "Para fazer", tint: "oklch(0.97 0.012 250)", accent: "oklch(0.55 0.2 250)" },
@@ -361,7 +362,7 @@ function TaskEditor({ task, shopId, onClose, onSave, onDelete }: any) {
                 <div key={c.id} className="group flex items-start gap-2 text-sm rounded-lg bg-surface border border-border p-2">
                   <div className="flex-1">
                     <div>{c.content}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">{new Date(c.created_at).toLocaleString("pt-BR")}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{formatDateTimeUS(c.created_at)}</div>
                   </div>
                   <button onClick={() => delC.mutate(c.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="size-3" /></button>
                 </div>

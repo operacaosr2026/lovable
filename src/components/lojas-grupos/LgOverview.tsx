@@ -21,12 +21,11 @@ import {
   listLgCardGoalHistory,
 } from "@/lib/lg-overview.functions";
 import { LgNotesSection } from "@/components/lojas-grupos/LgNotesSection";
+import { isoTodayUS } from "@/lib/timezone";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isoToday() {
-  return new Date().toLocaleDateString("en-CA");
-}
+const isoToday = isoTodayUS;
 
 function formatAxisMoney(v: number) {
   const n = Math.round(v);

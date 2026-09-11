@@ -2,12 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
 
-function isoToday() {
-  return new Date().toLocaleDateString("en-CA");
-}
+const isoToday = isoTodayUS;
 
 function addDays(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z");
@@ -15,10 +14,7 @@ function addDays(iso: string, n: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function isoMonthStart() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-}
+const isoMonthStart = isoMonthStartUS;
 
 // ─── Shopify helpers (same pattern as shop-orders.functions.ts) ───────────────
 

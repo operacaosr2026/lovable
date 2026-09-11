@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { formatDateTimeUS } from "@/lib/timezone";
 
 const STATUS_OPTIONS = [
   { value: "shipped", label: "Marcar como Enviado", tone: "sky" },
@@ -180,7 +181,7 @@ export function Track123IntegrationDialog({
               <div className="rounded-lg border border-border p-3">
                 <div className="text-xs text-muted-foreground mb-0.5">Última sincronização</div>
                 <div className="font-medium">
-                  {d?.last_sync_at ? new Date(d.last_sync_at).toLocaleString("pt-BR") : "Nunca"}
+                  {d?.last_sync_at ? formatDateTimeUS(d.last_sync_at) : "Nunca"}
                 </div>
               </div>
             </div>

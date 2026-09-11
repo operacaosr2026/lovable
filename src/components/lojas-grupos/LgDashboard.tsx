@@ -22,10 +22,11 @@ import {
   getLgCurrencyRates, saveLgCurrencyRates,
 } from "@/lib/lg-cards.functions";
 import { toast } from "sonner";
+import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
-function isoToday() { return new Date().toLocaleDateString("en-CA"); }
+const isoToday = isoTodayUS;
 function addDays(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
 }
@@ -36,7 +37,7 @@ function getPeriodRange(period: string, custom?: { from: string; to: string }) {
   if (period === "7d")     { from = addDays(today, -6); }
   if (period === "30d")    { from = addDays(today, -29); }
   if (period === "mes")    {
-    const d = new Date(); from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; to = today;
+    from = `${today.slice(0, 7)}-01`; to = today;
   }
   if (period === "custom" && custom) { from = custom.from; to = custom.to; }
   const days = Math.round((new Date(to + "T00:00:00Z").getTime() - new Date(from + "T00:00:00Z").getTime()) / 86400_000) + 1;
@@ -463,7 +464,7 @@ export function LgDashboard({
         <div className="flex items-center gap-1.5">
           {dataUpdatedAt > 0 && (
             <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-              {new Date(dataUpdatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              {new Date(dataUpdatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE })}
             </span>
           )}
           <button
