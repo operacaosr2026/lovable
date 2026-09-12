@@ -1500,6 +1500,10 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
 
     let batchId: string;
     let batchNumber: number;
+    // Undoes the batch/cash-entry side effects if marking the orders as paid
+    // fails below — without this, a failed update left an orphan batch + cash
+    // entry with no order ever actually flipped to "paid" (silent data bug).
+    let rollback: () => Promise<void>;
 
     if (existingBatch) {
       batchId = existingBatch.id;
@@ -1527,6 +1531,16 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
           description: `${mergedDesc} · ${totalItems} itens · ${mergedTotalOrders} pedidos`,
         }).eq("id", existingBatch.cash_entry_id as string).eq("user_id", context.ownerId);
       if (updCashErr) throw new Error(updCashErr.message);
+
+      rollback = async () => {
+        await supabaseAdmin.from("shop_order_payment_batches").update({
+          total_amount: existingBatch.total_amount, total_items: existingBatch.total_items,
+          total_orders: existingBatch.total_orders, order_dates: existingBatch.order_dates,
+        }).eq("id", batchId).eq("user_id", context.ownerId);
+        await supabaseAdmin.from("shop_cash_entries").update({
+          amount: existingBatch.total_amount,
+        }).eq("id", existingBatch.cash_entry_id as string).eq("user_id", context.ownerId);
+      };
     } else {
       batchNumber = await nextBatchNumber(context, data.shop_id);
       const desc = sortedDates.length === 1
@@ -1569,14 +1583,25 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       await supabaseAdmin.from("shop_order_payment_batches")
         .update({ cash_entry_id: cashRow.id })
         .eq("id", batchId).eq("user_id", context.ownerId);
+
+      rollback = async () => {
+        await supabaseAdmin.from("shop_cash_entries").delete()
+          .eq("id", cashRow.id).eq("user_id", context.ownerId);
+        await supabaseAdmin.from("shop_order_payment_batches").delete()
+          .eq("id", batchId).eq("user_id", context.ownerId);
+      };
     }
 
     // Update orders → paid
-    await context.supabase.from("shop_orders").update({
+    const { error: payErr } = await context.supabase.from("shop_orders").update({
       payment_status: "paid",
       payment_batch_id: batchId,
       paid_at: data.payment_date,
     }).in("id", orders.map((o) => o.id)).eq("user_id", context.ownerId);
+    if (payErr) {
+      await rollback();
+      throw new Error(`Falha ao marcar pedidos como pagos, lote revertido: ${payErr.message}`);
+    }
 
     // Recompute affected processing days (D+7) so previsões somem/reduzam
     for (const d of dates) {
@@ -1841,10 +1866,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const { shop_ids, from, to, prev_from, prev_to } = data;
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes] = await Promise.all([
-      supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id")
+      supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,raw")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to),
-      supabase.from("shop_orders").select("revenue,items_count,shop_id")
+      supabase.from("shop_orders").select("revenue,items_count,shop_id,raw")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", prev_from).lte("order_date", prev_to),
       supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
@@ -1914,9 +1939,15 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       prevChargebacks= shopifyResults.reduce((acc, r) => acc + r.prevCbAmt, 0);
     }
 
+    // Mesmo cálculo por produto/palavra-chave usado em Pedidos e no Caixa
+    // (orderLineItemsCost); antes o dashboard usava só items_count × custo
+    // fixo da loja, divergindo do valor real assim que um produto tinha
+    // custo próprio configurado por keyword.
+    const costProducts = await costProductsFor(supabase, ownerId);
     function orderCost(o: any) {
       const shopCost = costByShop.get((o as any).shop_id);
-      return Number(o.items_count ?? 0) * (shopCost != null && shopCost > 0 ? shopCost : avgCost);
+      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      return orderLineItemsCost((o as any).raw?.line_items, costProducts, fallback);
     }
 
     // Current period
