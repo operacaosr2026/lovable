@@ -59,6 +59,8 @@ export function CaixaSimulator() {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [periodDays, setPeriodDays] = useState(15);
+  const [showPending, setShowPending] = useState(false);
+  const [weekendSupplierToMonday, setWeekendSupplierToMonday] = useState(false);
   const [openWeeks, setOpenWeeks] = useState<Set<number>>(new Set([0]));
   const toggleWeek = (idx: number) => setOpenWeeks((prev) => {
     const next = new Set(prev);
@@ -82,8 +84,8 @@ export function CaixaSimulator() {
   }) as { data: any[] };
 
   const { data: simulation, isLoading: simLoading } = useQuery({
-    queryKey: ["caixa-simulation", periodDays],
-    queryFn: () => simFn({ data: { from, to } }),
+    queryKey: ["caixa-simulation", periodDays, showPending, weekendSupplierToMonday],
+    queryFn: () => simFn({ data: { from, to, show_pending: showPending, weekend_supplier_to_monday: weekendSupplierToMonday } }),
   }) as { data: any; isLoading: boolean };
 
   const refresh = () => {
@@ -218,20 +220,40 @@ export function CaixaSimulator() {
 
       {/* Chart */}
       <div className="rounded-2xl border border-border bg-surface p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-y-2 mb-3">
           <p className="text-sm font-semibold text-foreground">Saldo projetado</p>
-          <div className="flex items-center gap-1">
-            {PERIODS.map((p) => (
-              <button
-                key={p.days}
-                onClick={() => setPeriodDays(p.days)}
-                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
-                  periodDays === p.days ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showPending}
+                onChange={(e) => setShowPending(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              <span>Mostrar pendentes</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={weekendSupplierToMonday}
+                onChange={(e) => setWeekendSupplierToMonday(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              <span>Fornecedor: Sex/Sáb/Dom → Segunda</span>
+            </label>
+            <div className="flex items-center gap-1">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.days}
+                  onClick={() => setPeriodDays(p.days)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                    periodDays === p.days ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

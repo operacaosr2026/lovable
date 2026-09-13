@@ -390,7 +390,17 @@ export function LgOrders({
     setSavingConfig(shopId);
     try {
       await updateCfgFn({ data: { card_id: cardId, shop_id: shopId, payment_days: val } });
+      // Sem isso, os lançamentos "Fornecedor" já gerados no Caixa ficavam com
+      // a data de processamento calculada pelo prazo ANTIGO até a próxima vez
+      // que essa tela de Pedidos recarregasse pedidos e recalculasse sozinha.
+      await recomputeRangeFn({ data: {
+        shop_id: shopId,
+        from_processing: addD(from, val),
+        to_processing:   addD(to,   val),
+        payment_days:    val,
+      }});
       qc.invalidateQueries({ queryKey: ["lg-card", cardId] });
+      qc.invalidateQueries({ queryKey: ["shop-cash"] });
       toast.success("Prazo de pagamento atualizado");
     } catch (e: any) {
       toast.error(e?.message ?? "Erro ao salvar");

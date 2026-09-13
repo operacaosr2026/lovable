@@ -948,11 +948,6 @@ export function LgCashflowView({
   const expanded = useMemo<DayItem[]>(() => {
     const applyShift = (item: DayItem): DayItem => {
       const isShopify  = item.source==="shopify_import"||item.source==="shopify_sync"||item.source==="shopify_pending"||item.source==="shopify_pending_sync";
-      const isOrderCost = item.source==="auto" && item.auto_kind==="order_cost";
-      if (isOrderCost && item.date < todayKey) {
-        const wd = weekdayFromKey(item.date);
-        return { ...item, date:todayKey, originalDate:item.originalDate??item.date, shiftedFromWeekday:wd };
-      }
       if (!weekendToMonday) return item;
       if (!isShopify) return item;
       if (item.skip_weekend_rule) return item;

@@ -72,6 +72,22 @@ export const deleteSimulatedExpense = createServerFn({ method: "POST" })
 
 // ─── Projection ──────────────────────────────────────────────────────────────
 
+function addDaysToDate(dateStr: string, n: number): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Sexta/Sábado/Domingo -> segunda seguinte, só pro custo de Fornecedor
+// (mesma categoria usada pelos lançamentos automáticos de custo de pedido).
+function shiftWeekendSupplierToMonday(dateStr: string): string {
+  const wd = new Date(dateStr + "T00:00:00Z").getUTCDay(); // 0=dom, 5=sex, 6=sáb
+  if (wd === 5) return addDaysToDate(dateStr, 3);
+  if (wd === 6) return addDaysToDate(dateStr, 2);
+  if (wd === 0) return addDaysToDate(dateStr, 1);
+  return dateStr;
+}
+
 // Expands a (possibly recurring) dated amount into individual occurrence
 // dates, clipped to [from, to] and to recurrenceUntil when set.
 function expandOccurrences(
@@ -111,6 +127,8 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     to:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    show_pending: z.boolean().optional().default(false),
+    weekend_supplier_to_monday: z.boolean().optional().default(false),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
@@ -120,7 +138,7 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
     const shopIds = (shops as any[]).map((s) => s.id as string);
 
     let startingBalance = 0;
-    let realFuture: { date: string; kind: string; amount: number }[] = [];
+    let realFuture: { date: string; kind: string; amount: number; category: string | null }[] = [];
     if (shopIds.length > 0) {
       const [openingRes, reconciledRes, futureRes] = await Promise.all([
         supabaseAdmin.from("shops").select("opening_balance").in("id", shopIds),
@@ -135,10 +153,12 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
 
       // "Depósito Shopify" ainda não confirmado (previsto/estimado a partir de
       // transações pendentes, source shopify_pending_sync, ou um payout real
-      // mas com status "previsto") é otimista demais pra projeção — só conta
-      // depósito já em trânsito ou agendado pelo Shopify.
+      // mas com status "previsto") é otimista demais pra projeção por padrão —
+      // só conta depósito já em trânsito ou agendado pelo Shopify, a menos que
+      // show_pending esteja ligado (mesmo toggle "Mostrar pendentes" do Caixa).
       realFuture = ((futureRes.data ?? []) as any[]).filter((e) => {
         if (e.category !== "Depósito Shopify") return true;
+        if (data.show_pending) return true;
         if (e.source === "shopify_pending_sync") return false;
         return /trânsito|agendado/i.test(e.description ?? "");
       });
@@ -153,12 +173,22 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
     const saidaByDate   = new Map<string, number>();
     for (const e of realFuture) {
       const map = e.kind === "income" ? entradaByDate : saidaByDate;
-      map.set(e.date, (map.get(e.date) ?? 0) + Number(e.amount));
+      const isSupplierCost = e.kind === "expense" && e.category === "Fornecedor";
+      const date = data.weekend_supplier_to_monday && isSupplierCost
+        ? shiftWeekendSupplierToMonday(e.date)
+        : e.date;
+      map.set(date, (map.get(date) ?? 0) + Number(e.amount));
     }
+    // Gastos simulados não têm categoria própria — reconhece "fornecedor" pela
+    // descrição pra aplicar o mesmo desvio de fim de semana que os lançamentos
+    // reais de custo de pedido (categoria "Fornecedor").
+    const isSimulatedSupplier = (description: string) => /fornecedor/i.test(description ?? "");
     for (const se of (simExpenses ?? []) as any[]) {
       const dates = expandOccurrences(se.start_date, se.recurrence, se.recurrence_until, data.from, data.to);
+      const shiftThis = data.weekend_supplier_to_monday && isSimulatedSupplier(se.description);
       for (const date of dates) {
-        saidaByDate.set(date, (saidaByDate.get(date) ?? 0) + Number(se.amount));
+        const key = shiftThis ? shiftWeekendSupplierToMonday(date) : date;
+        saidaByDate.set(key, (saidaByDate.get(key) ?? 0) + Number(se.amount));
       }
     }
 
@@ -168,9 +198,13 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
     const d = new Date(data.from + "T00:00:00Z");
     const toD = new Date(data.to + "T00:00:00Z");
     while (d <= toD) {
+      // Entradas/saídas reais já vêm filtradas a partir de amanhã (query usa
+      // .gt("date", today), já que o saldo de hoje entra em startingBalance);
+      // gastos simulados podem começar hoje, então não zeram aqui de novo —
+      // isso jogava o gasto de hoje pro dia seguinte na projeção.
       const dateStr = d.toISOString().slice(0, 10);
-      const entrada = dateStr > today ? (entradaByDate.get(dateStr) ?? 0) : 0;
-      const saida   = dateStr > today ? (saidaByDate.get(dateStr) ?? 0) : 0;
+      const entrada = entradaByDate.get(dateStr) ?? 0;
+      const saida   = saidaByDate.get(dateStr) ?? 0;
       running += entrada - saida;
       const total = Math.round(running * 100) / 100;
       series.push({ date: dateStr, saldo: total, entrada, saida });

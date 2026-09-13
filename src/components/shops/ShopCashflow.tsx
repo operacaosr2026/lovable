@@ -226,12 +226,6 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
       const isShopifyEntry = item.source === "shopify_import" || item.source === "shopify_sync" || item.source === "shopify_pending" || item.source === "shopify_pending_sync";
       const isOrderCost = item.source === "auto" && item.auto_kind === "order_cost";
 
-      // Custos de pedidos vencidos (não pagos) são transferidos para hoje.
-      if (isOrderCost && item.date < todayKey) {
-        const wd = weekdayFromKey(item.date);
-        return { ...item, date: todayKey, originalDate: item.originalDate ?? item.date, shiftedFromWeekday: wd };
-      }
-
       if (!weekendToMonday) return item;
       if (!isShopifyEntry && !isOrderCost) return item;
       if (item.skip_weekend_rule) return item;
