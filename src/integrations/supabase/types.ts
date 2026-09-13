@@ -2777,6 +2777,48 @@ export type Database = {
           },
         ]
       }
+      simulated_ad_estimates: {
+        Row: {
+          avg_ticket: number
+          conversion_rate: number
+          cpa: number
+          created_at: string | null
+          daily_spend: number
+          description: string
+          end_date: string | null
+          id: string
+          payout_lag_days: number
+          start_date: string
+          user_id: string
+        }
+        Insert: {
+          avg_ticket: number
+          conversion_rate?: number
+          cpa: number
+          created_at?: string | null
+          daily_spend: number
+          description?: string
+          end_date?: string | null
+          id?: string
+          payout_lag_days?: number
+          start_date: string
+          user_id: string
+        }
+        Update: {
+          avg_ticket?: number
+          conversion_rate?: number
+          cpa?: number
+          created_at?: string | null
+          daily_spend?: number
+          description?: string
+          end_date?: string | null
+          id?: string
+          payout_lag_days?: number
+          start_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       simulated_expenses: {
         Row: {
           amount: number

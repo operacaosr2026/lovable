@@ -70,6 +70,73 @@ export const deleteSimulatedExpense = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ─── Estimativa de vendas via Ads (investimento diário / CPA * ticket) ───────
+
+const AdEstimateInput = z.object({
+  description:      z.string().trim().min(1).max(120),
+  daily_spend:       z.number().positive(),
+  cpa:               z.number().positive(),
+  avg_ticket:        z.number().positive(),
+  conversion_rate:   z.number().positive().max(100).default(100),
+  payout_lag_days:   z.number().int().min(0).max(60).default(7),
+  start_date:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  end_date:          z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+});
+
+export const listSimulatedAdEstimates = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { data, error } = await supabaseAdmin
+      .from("simulated_ad_estimates")
+      .select("*")
+      .eq("user_id", context.ownerId)
+      .order("start_date", { ascending: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const createSimulatedAdEstimate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => AdEstimateInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: row, error } = await supabaseAdmin
+      .from("simulated_ad_estimates")
+      .insert({ user_id: context.ownerId, ...data, end_date: data.end_date ?? null })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return { id: row.id };
+  });
+
+export const updateSimulatedAdEstimate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id:    z.string().uuid(),
+    patch: AdEstimateInput.partial(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await supabaseAdmin
+      .from("simulated_ad_estimates")
+      .update(data.patch)
+      .eq("id", data.id)
+      .eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteSimulatedAdEstimate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await supabaseAdmin
+      .from("simulated_ad_estimates")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 // ─── Projection ──────────────────────────────────────────────────────────────
 
 function addDaysToDate(dateStr: string, n: number): string {
@@ -86,6 +153,25 @@ function shiftWeekendSupplierToMonday(dateStr: string): string {
   if (wd === 6) return addDaysToDate(dateStr, 2);
   if (wd === 0) return addDaysToDate(dateStr, 1);
   return dateStr;
+}
+
+// Todos os dias entre startDate e endDate (ou sem fim), clipado a [from, to] —
+// usado pelo investimento diário de Ads, que não tem opção de recorrência
+// (é sempre diário) mas pode ter data de término opcional.
+function expandDailyRange(startDate: string, endDate: string | null | undefined, from: string, to: string): string[] {
+  const dates: string[] = [];
+  const fromD = new Date(from + "T00:00:00Z");
+  const toD   = new Date(to + "T00:00:00Z");
+  const endD  = endDate ? new Date(endDate + "T00:00:00Z") : null;
+  let d = new Date(startDate + "T00:00:00Z");
+  let guard = 0;
+  while (d <= toD && guard < 2000) {
+    guard++;
+    if (endD && d > endD) break;
+    if (d >= fromD) dates.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 // Expands a (possibly recurring) dated amount into individual occurrence
@@ -169,10 +255,19 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
       .select("*")
       .eq("user_id", ownerId);
 
-    const entradaByDate = new Map<string, number>();
-    const saidaByDate   = new Map<string, number>();
+    const { data: adEstimates } = await supabaseAdmin
+      .from("simulated_ad_estimates")
+      .select("*")
+      .eq("user_id", ownerId);
+
+    // Entradas/saídas quebradas por origem, pra dar pra ver no extrato o que
+    // é real (do caixa de verdade) e o que é simulado/estimado.
+    const entradaRealByDate = new Map<string, number>();
+    const entradaAdsByDate  = new Map<string, number>();
+    const saidaRealByDate   = new Map<string, number>();
+    const saidaSimByDate    = new Map<string, number>();
     for (const e of realFuture) {
-      const map = e.kind === "income" ? entradaByDate : saidaByDate;
+      const map = e.kind === "income" ? entradaRealByDate : saidaRealByDate;
       const isSupplierCost = e.kind === "expense" && e.category === "Fornecedor";
       const date = data.weekend_supplier_to_monday && isSupplierCost
         ? shiftWeekendSupplierToMonday(e.date)
@@ -188,12 +283,36 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
       const shiftThis = data.weekend_supplier_to_monday && isSimulatedSupplier(se.description);
       for (const date of dates) {
         const key = shiftThis ? shiftWeekendSupplierToMonday(date) : date;
-        saidaByDate.set(key, (saidaByDate.get(key) ?? 0) + Number(se.amount));
+        saidaSimByDate.set(key, (saidaSimByDate.get(key) ?? 0) + Number(se.amount));
       }
     }
 
-    const series: { date: string; saldo: number; entrada: number; saida: number }[] = [];
-    const statement: { date: string; entrada: number; saida: number; total: number }[] = [];
+    // Investimento diário em Ads: só serve pra calcular vendas estimadas
+    // (investimento/cpa) que viram receita (vendas * ticket médio) projetada
+    // payout_lag_days depois — imita o atraso de repasse da loja (D+7 por
+    // padrão). O investimento em si NÃO entra como saída aqui: quem quiser
+    // simular esse gasto no caixa cadastra separadamente em "Gastos
+    // simulados" (evita contar o mesmo gasto duas vezes). Nem toda venda cai
+    // como receita (recusa, cancelamento etc.), daí a % de conversão.
+    for (const ae of (adEstimates ?? []) as any[]) {
+      const spendDates = expandDailyRange(ae.start_date, ae.end_date, data.from, data.to);
+      const salesPerDay = Number(ae.daily_spend) / Number(ae.cpa);
+      const conversionRate = Number(ae.conversion_rate ?? 100) / 100;
+      const revenuePerDay = salesPerDay * Number(ae.avg_ticket) * conversionRate;
+      for (const date of spendDates) {
+        const payoutDate = addDaysToDate(date, ae.payout_lag_days);
+        entradaAdsByDate.set(payoutDate, (entradaAdsByDate.get(payoutDate) ?? 0) + revenuePerDay);
+      }
+    }
+
+    const series: {
+      date: string; saldo: number; entrada: number; saida: number;
+      entradaReal: number; entradaAds: number; saidaReal: number; saidaSim: number;
+    }[] = [];
+    const statement: {
+      date: string; entrada: number; saida: number; total: number;
+      entradaReal: number; entradaAds: number; saidaReal: number; saidaSim: number;
+    }[] = [];
     let running = startingBalance;
     const d = new Date(data.from + "T00:00:00Z");
     const toD = new Date(data.to + "T00:00:00Z");
@@ -203,22 +322,32 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
       // gastos simulados podem começar hoje, então não zeram aqui de novo —
       // isso jogava o gasto de hoje pro dia seguinte na projeção.
       const dateStr = d.toISOString().slice(0, 10);
-      const entrada = entradaByDate.get(dateStr) ?? 0;
-      const saida   = saidaByDate.get(dateStr) ?? 0;
+      const entradaReal = entradaRealByDate.get(dateStr) ?? 0;
+      const entradaAds  = entradaAdsByDate.get(dateStr) ?? 0;
+      const saidaReal   = saidaRealByDate.get(dateStr) ?? 0;
+      const saidaSim    = saidaSimByDate.get(dateStr) ?? 0;
+      const entrada = entradaReal + entradaAds;
+      const saida   = saidaReal + saidaSim;
       running += entrada - saida;
       const total = Math.round(running * 100) / 100;
-      series.push({ date: dateStr, saldo: total, entrada, saida });
-      if (entrada > 0 || saida > 0) statement.push({ date: dateStr, entrada, saida, total });
+      const row = { date: dateStr, saldo: total, entrada, saida, entradaReal, entradaAds, saidaReal, saidaSim };
+      series.push(row);
+      if (entrada > 0 || saida > 0) statement.push({ date: dateStr, entrada, saida, total, entradaReal, entradaAds, saidaReal, saidaSim });
       d.setUTCDate(d.getUTCDate() + 1);
     }
 
     const negativeDay = series.find((s) => s.saldo < 0) ?? null;
     const simulatedTotal = (simExpenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
+    const adDailySpendTotal = (adEstimates ?? []).reduce((s: number, e: any) => s + Number(e.daily_spend), 0);
+    const adEstimatedSalesPerDay = (adEstimates ?? []).reduce((s: number, e: any) => s + Number(e.daily_spend) / Number(e.cpa), 0);
+    const adEstimatedRevenuePerDay = (adEstimates ?? []).reduce((s: number, e: any) => s + (Number(e.daily_spend) / Number(e.cpa)) * Number(e.avg_ticket) * (Number(e.conversion_rate ?? 100) / 100), 0);
 
     return {
       startingBalance, series, statement,
       negativeFrom: negativeDay?.date ?? null,
       simulatedCount: (simExpenses ?? []).length,
       simulatedTotal,
+      adEstimatesCount: (adEstimates ?? []).length,
+      adDailySpendTotal, adEstimatedSalesPerDay, adEstimatedRevenuePerDay,
     };
   });

@@ -4,11 +4,12 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical, ChevronDown } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical, ChevronDown, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   listSimulatedExpenses, createSimulatedExpense, updateSimulatedExpense, deleteSimulatedExpense,
+  listSimulatedAdEstimates, createSimulatedAdEstimate, updateSimulatedAdEstimate, deleteSimulatedAdEstimate,
   getCaixaSimulation, SIM_RECURRENCE,
 } from "@/lib/caixa-simulator.functions";
 
@@ -42,7 +43,10 @@ function fmtAxis(v: number) {
   return `${v < 0 ? "-" : ""}$${body}`;
 }
 
-type StatementRow = { date: string; entrada: number; saida: number; total: number };
+type StatementRow = {
+  date: string; entrada: number; saida: number; total: number;
+  entradaReal: number; entradaAds: number; saidaReal: number; saidaSim: number;
+};
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -78,9 +82,19 @@ export function CaixaSimulator() {
   const deleteFn = useServerFn(deleteSimulatedExpense);
   const simFn = useServerFn(getCaixaSimulation);
 
+  const listAdFn = useServerFn(listSimulatedAdEstimates);
+  const createAdFn = useServerFn(createSimulatedAdEstimate);
+  const updateAdFn = useServerFn(updateSimulatedAdEstimate);
+  const deleteAdFn = useServerFn(deleteSimulatedAdEstimate);
+
   const { data: expenses = [] } = useQuery({
     queryKey: ["simulated-expenses"],
     queryFn: () => listFn(),
+  }) as { data: any[] };
+
+  const { data: adEstimates = [] } = useQuery({
+    queryKey: ["simulated-ad-estimates"],
+    queryFn: () => listAdFn(),
   }) as { data: any[] };
 
   const { data: simulation, isLoading: simLoading } = useQuery({
@@ -143,6 +157,76 @@ export function CaixaSimulator() {
     resetForm();
   };
 
+  // ── Estimativa de vendas via Ads (investimento diário / CPA * ticket) ──────
+  const refreshAds = () => {
+    qc.invalidateQueries({ queryKey: ["simulated-ad-estimates"] });
+    qc.invalidateQueries({ queryKey: ["caixa-simulation"] });
+  };
+  const createAd = useMutation({
+    mutationFn: (input: any) => createAdFn({ data: input }),
+    onSuccess: refreshAds,
+    onError: (e: any) => toast.error(e.message ?? "Erro ao adicionar estimativa"),
+  });
+  const updateAd = useMutation({
+    mutationFn: (input: { id: string; patch: any }) => updateAdFn({ data: input }),
+    onSuccess: refreshAds,
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar estimativa"),
+  });
+  const removeAd = useMutation({
+    mutationFn: (id: string) => deleteAdFn({ data: { id } }),
+    onSuccess: refreshAds,
+  });
+
+  const [adDesc, setAdDesc] = useState("Facebook Ads");
+  const [adDailySpend, setAdDailySpend] = useState("");
+  const [adCpa, setAdCpa] = useState("");
+  const [adTicket, setAdTicket] = useState("");
+  const [adConversionRate, setAdConversionRate] = useState("100");
+  const [adLag, setAdLag] = useState("7");
+  const [adStart, setAdStart] = useState(today);
+  const [adEnd, setAdEnd] = useState("");
+  const [editingAdId, setEditingAdId] = useState<string | null>(null);
+
+  const resetAdForm = () => {
+    setAdDesc("Facebook Ads"); setAdDailySpend(""); setAdCpa(""); setAdTicket("");
+    setAdConversionRate("100"); setAdLag("7"); setAdStart(today); setAdEnd(""); setEditingAdId(null);
+  };
+
+  const startEditAd = (e: any) => {
+    setEditingAdId(e.id);
+    setAdDesc(e.description);
+    setAdDailySpend(String(e.daily_spend));
+    setAdCpa(String(e.cpa));
+    setAdTicket(String(e.avg_ticket));
+    setAdConversionRate(String(e.conversion_rate ?? 100));
+    setAdLag(String(e.payout_lag_days));
+    setAdStart(e.start_date);
+    setAdEnd(e.end_date ?? "");
+  };
+
+  const addAdEstimate = () => {
+    const dailySpend = parseFloat(adDailySpend.replace(",", "."));
+    const cpa = parseFloat(adCpa.replace(",", "."));
+    const ticket = parseFloat(adTicket.replace(",", "."));
+    const conversionRate = parseFloat(adConversionRate.replace(",", "."));
+    const lag = parseInt(adLag, 10);
+    if (!adDesc.trim() || !dailySpend || dailySpend <= 0 || !cpa || cpa <= 0 || !ticket || ticket <= 0
+      || !conversionRate || conversionRate <= 0 || conversionRate > 100 || !adStart || isNaN(lag) || lag < 0) return;
+    const payload = {
+      description: adDesc.trim(),
+      daily_spend: dailySpend,
+      cpa,
+      avg_ticket: ticket,
+      conversion_rate: conversionRate,
+      payout_lag_days: lag,
+      start_date: adStart,
+      end_date: adEnd || null,
+    };
+    if (editingAdId) updateAd.mutate({ id: editingAdId, patch: payload });
+    else createAd.mutate(payload);
+    resetAdForm();
+  };
+
   const series = simulation?.series ?? [];
   const zeroOffset = useMemo(() => {
     const values = series.map((s: any) => Number(s.saldo) || 0);
@@ -161,6 +245,8 @@ export function CaixaSimulator() {
   const weeks = useMemo(() => {
     const allDays: StatementRow[] = (series ?? []).map((s: any) => ({
       date: s.date, entrada: s.entrada, saida: s.saida, total: s.saldo,
+      entradaReal: s.entradaReal ?? 0, entradaAds: s.entradaAds ?? 0,
+      saidaReal: s.saidaReal ?? 0, saidaSim: s.saidaSim ?? 0,
     }));
     const days = allDays.slice(0, extratoWeeks * 7);
     const byWeek = new Map<number, StatementRow[]>();
@@ -389,6 +475,147 @@ export function CaixaSimulator() {
         )}
       </div>
 
+      {/* Estimativa de vendas via investimento em Ads */}
+      <div className="rounded-2xl border border-border bg-surface p-4">
+        <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1.5">
+          <Megaphone className="size-4 text-muted-foreground" /> Estimativa de vendas (Ads)
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-2">
+          <input
+            value={adDesc}
+            onChange={(e) => setAdDesc(e.target.value)}
+            placeholder="Descrição"
+            className="sm:col-span-2 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+          />
+          <input
+            value={adDailySpend}
+            onChange={(e) => setAdDailySpend(e.target.value)}
+            placeholder="Investimento/dia"
+            inputMode="decimal"
+            className="sm:col-span-2 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+          />
+          <input
+            value={adCpa}
+            onChange={(e) => setAdCpa(e.target.value)}
+            placeholder="CPA"
+            inputMode="decimal"
+            className="sm:col-span-1 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+          />
+          <input
+            value={adTicket}
+            onChange={(e) => setAdTicket(e.target.value)}
+            placeholder="Ticket médio"
+            inputMode="decimal"
+            className="sm:col-span-2 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+          />
+          <div
+            className="sm:col-span-1 h-9 flex items-center gap-1 px-2 rounded-lg bg-background border border-border focus-within:border-primary/50"
+            title="% das vendas estimadas que realmente cai como receita no caixa (nem toda venda converte — recusa, cancelamento etc.)"
+          >
+            <input
+              value={adConversionRate}
+              onChange={(e) => setAdConversionRate(e.target.value)}
+              placeholder="100"
+              inputMode="decimal"
+              className="min-w-0 flex-1 h-full text-sm outline-none bg-transparent"
+            />
+            <span className="text-xs text-muted-foreground shrink-0">%</span>
+          </div>
+          <div
+            className="sm:col-span-1 h-9 flex items-center gap-1 px-2 rounded-lg bg-background border border-border focus-within:border-primary/50"
+            title="Dias até a receita cair no caixa (prazo de repasse da loja)"
+          >
+            <span className="text-xs text-muted-foreground shrink-0">D+</span>
+            <input
+              value={adLag}
+              onChange={(e) => setAdLag(e.target.value)}
+              inputMode="numeric"
+              className="min-w-0 flex-1 h-full text-sm outline-none bg-transparent"
+            />
+          </div>
+          <input
+            type="date"
+            value={adStart}
+            onChange={(e) => setAdStart(e.target.value)}
+            title="Data de início"
+            className="sm:col-span-2 h-9 px-2 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50"
+          />
+          <div
+            className="sm:col-span-1 h-9 flex items-center gap-1 px-2 rounded-lg bg-background border border-border focus-within:border-primary/50"
+            title="Data de término (opcional — deixe em branco pra continuar até o fim do período simulado)"
+          >
+            <input
+              type="date"
+              value={adEnd}
+              onChange={(e) => setAdEnd(e.target.value)}
+              className="min-w-0 flex-1 h-full text-sm outline-none bg-transparent"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-1.5 mb-3">
+          {editingAdId && (
+            <button
+              onClick={resetAdForm}
+              title="Cancelar edição"
+              className="h-9 px-3 rounded-lg border border-border text-muted-foreground hover:text-foreground text-sm"
+            >
+              Cancelar
+            </button>
+          )}
+          <button
+            onClick={addAdEstimate}
+            disabled={createAd.isPending || updateAd.isPending}
+            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-1 disabled:opacity-50"
+          >
+            {editingAdId ? <CheckCircle2 className="size-4" /> : <Plus className="size-4" />}
+            {editingAdId ? "Salvar" : "Adicionar"}
+          </button>
+        </div>
+
+        {adEstimates.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">Nenhuma estimativa cadastrada. Informe investimento/dia, CPA e ticket médio pra projetar vendas no caixa.</p>
+        ) : (
+          <>
+            <div className="divide-y divide-border rounded-lg border border-border overflow-hidden mb-3">
+              {adEstimates.map((e: any) => {
+                const salesPerDay = Number(e.daily_spend) / Number(e.cpa);
+                const conversionRate = Number(e.conversion_rate ?? 100);
+                const revenuePerDay = salesPerDay * Number(e.avg_ticket) * (conversionRate / 100);
+                return (
+                  <div
+                    key={e.id}
+                    onClick={() => startEditAd(e)}
+                    className={`flex items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/40 ${editingAdId === e.id ? "bg-primary/5" : ""}`}
+                  >
+                    <span className="flex-1 truncate">{e.description}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {fmt(Number(e.daily_spend))}/dia · CPA {fmt(Number(e.cpa))} · ~{salesPerDay.toFixed(1)} vendas/dia
+                      {conversionRate < 100 ? ` · ${conversionRate}% cai` : ""} · D+{e.payout_lag_days}
+                    </span>
+                    <span className="font-medium text-emerald-600 shrink-0">+{fmt(revenuePerDay)}/dia</span>
+                    <button
+                      onClick={async (ev) => {
+                        ev.stopPropagation();
+                        if (await confirm(`Remover "${e.description}"?`)) {
+                          if (editingAdId === e.id) resetAdForm();
+                          removeAd.mutate(e.id);
+                        }
+                      }}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {fmt(simulation?.adDailySpendTotal ?? 0)}/dia investido → ~{(simulation?.adEstimatedSalesPerDay ?? 0).toFixed(1)} vendas/dia → {fmt(simulation?.adEstimatedRevenuePerDay ?? 0)}/dia em receita estimada
+            </p>
+          </>
+        )}
+      </div>
+
       {/* Extrato — agrupado por semana, expande pra ver os dias */}
       {weeks.length > 0 && (
         <div className="rounded-2xl border border-border bg-surface p-4">
@@ -426,8 +653,36 @@ export function CaixaSimulator() {
                         {w.days.map((s) => (
                           <tr key={s.date}>
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{shortDate(s.date)}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600 whitespace-nowrap">{s.entrada > 0 ? fmt(s.entrada) : "—"}</td>
-                            <td className="px-3 py-2 text-right text-destructive whitespace-nowrap">{s.saida > 0 ? fmt(s.saida) : "—"}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {s.entrada > 0 ? (
+                                <>
+                                  <div className="text-emerald-600">{fmt(s.entrada)}</div>
+                                  {s.entradaReal > 0 && s.entradaAds > 0 && (
+                                    <div className="text-[10px] text-muted-foreground font-normal leading-tight">
+                                      real {fmt(s.entradaReal)} · ads {fmt(s.entradaAds)}
+                                    </div>
+                                  )}
+                                  {s.entradaReal === 0 && s.entradaAds > 0 && (
+                                    <div className="text-[10px] text-sky-600 font-normal leading-tight">estimado (ads)</div>
+                                  )}
+                                </>
+                              ) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {s.saida > 0 ? (
+                                <>
+                                  <div className="text-destructive">{fmt(s.saida)}</div>
+                                  {s.saidaReal > 0 && s.saidaSim > 0 && (
+                                    <div className="text-[10px] text-muted-foreground font-normal leading-tight">
+                                      real {fmt(s.saidaReal)} · simulado {fmt(s.saidaSim)}
+                                    </div>
+                                  )}
+                                  {s.saidaReal === 0 && s.saidaSim > 0 && (
+                                    <div className="text-[10px] text-amber-600 font-normal leading-tight">simulado</div>
+                                  )}
+                                </>
+                              ) : "—"}
+                            </td>
                             <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${s.total < 0 ? "text-destructive" : "text-foreground"}`}>{fmt(s.total)}</td>
                           </tr>
                         ))}
