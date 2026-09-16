@@ -763,7 +763,11 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const since = new Date(); since.setUTCDate(since.getUTCDate() - data.since_days);
-    const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
+    const cutoff: string | null = settings.cashflow_start_date ?? null;
+    const sinceISO = cutoff && cutoff > since.toISOString().slice(0, 10)
+      ? `${cutoff}T00:00:00Z`
+      : since.toISOString();
+    const payouts = await fetchShopifyPayouts(domain, token, sinceISO);
     // Best-effort — a store without Shopify Payments enabled shouldn't fail the sync.
     try {
       await recomputePayoutLag(data.shop_id, domain, token);

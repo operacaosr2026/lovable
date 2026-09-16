@@ -112,9 +112,19 @@ async function updatePayoutLag(shopId: string, _userId: string, domain: string, 
   await recomputePayoutLag(shopId, domain, token);
 }
 
-async function syncPayoutsForShop(shopId: string, userId: string, domain: string, token: string) {
-  const payouts = await fetchPayouts(domain, token, "2026-06-15T00:00:00Z");
-  const relevant = payouts.filter((p: any) => p.id != null && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
+async function syncPayoutsForShop(shopId: string, userId: string, domain: string, token: string, cutoff: string | null) {
+  const floor = "2026-06-15";
+  const sinceISO = cutoff && cutoff > floor ? `${cutoff}T00:00:00Z` : `${floor}T00:00:00Z`;
+  const payouts = await fetchPayouts(domain, token, sinceISO);
+  // Depósitos que o usuário apagou manualmente ficam registrados aqui (ver
+  // deleteCashEntry em shop-cash.functions.ts) — sem esse filtro eles voltam
+  // a cada rodada do cron (roda 3x/dia), já que o cron não sabe que foram
+  // descartados.
+  const { data: dismissedRows } = await supabaseAdmin.from("shop_cash_dismissed_payouts")
+    .select("shopify_payout_id").eq("user_id", userId).eq("shop_id", shopId);
+  const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
+  const relevant = payouts.filter((p: any) =>
+    p.id != null && !dismissedIds.has(String(p.id)) && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
   if (!relevant.length) return 0;
 
   const { data: existing } = await supabaseAdmin.from("shop_cash_entries")
@@ -280,7 +290,7 @@ async function processShopPayoutsOnly(s: any) {
   const lagDays = s.payout_lag_days != null
     ? Number(s.payout_lag_days)
     : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
-  await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+  await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, s.cashflow_start_date ?? null);
   await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
 }
 
@@ -340,7 +350,7 @@ async function processShop(s: any, today: string) {
             }
           }
         }
-        await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+        await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, cutoff);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await syncRefundsAndChargebacks(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         const lagDays = s.payout_lag_days != null
