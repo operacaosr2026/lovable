@@ -1018,7 +1018,9 @@ export function LgCashflowView({
   const receivable = effectivePending?.connected
     ? (isConsolidated
         ? perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0)
-        : ((effectivePending as any).balance ?? effectivePending.pending ?? 0))
+        // Saldo ao vivo (não alocado a payout) + payouts já agendados com
+        // data futura — não se sobrepõem, então soma os dois.
+        : (Number((effectivePending as any).balance ?? 0) + Number(effectivePending.pending ?? 0)))
     : 0;
 
   const syncPayouts = async () => {

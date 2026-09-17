@@ -1161,8 +1161,11 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
         const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, storeId);
         const live = await fetchShopifyPaymentsBalance(domain, token);
         return {
+          // Saldo ao vivo (ainda não alocado a nenhum payout) + payouts já
+          // agendados com data futura — a Shopify remove o valor do saldo
+          // assim que ele entra num payout, então os dois não se sobrepõem.
           shop_id: shopId,
-          amount: live?.amount ?? pendingSum,
+          amount: (live?.amount ?? 0) + pendingSum,
           pending: pendingSum,
           connected: true,
           live: live != null,

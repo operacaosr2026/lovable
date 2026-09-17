@@ -360,8 +360,13 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
     ? (groupPayoutLags ?? []).filter(s => s.connected)
     : (payoutLag?.connected ? [{ shop_id: shopId, avgDays: payoutLag.avgDays, manualDays: payoutLag.manualDays, sampleSize: payoutLag.sampleSize }] : []);
 
+  const perShopReceivable = isConsolidated ? ((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[] : [];
   const receivable = effectivePending?.connected
-    ? ((effectivePending as any).balance ?? effectivePending.pending ?? 0)
+    ? (isConsolidated
+        ? perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0)
+        // Saldo ao vivo (não alocado a payout) + payouts já agendados com
+        // data futura — não se sobrepõem, então soma os dois.
+        : (Number((effectivePending as any).balance ?? 0) + Number(effectivePending.pending ?? 0)))
     : future.totalIncome;
   const forecastBalance = future.current + receivable - future.totalExpense
     - adjustments.aporteRodrigo - adjustments.aporteSergio
