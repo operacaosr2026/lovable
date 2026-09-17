@@ -551,8 +551,12 @@ function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
 // ─── Indicator (somente 2 KPIs) ───────────────────────────────────────────────
 
 function Indicator({ icon: Icon, label, value, sub, accent, negative, tooltip }: any) {
+  const tint = accent.replace(/\)\s*$/, " / 0.05)");
   const content = (
-    <div className={`rounded-2xl border p-3 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border bg-surface"} ${tooltip ? "cursor-default" : ""}`}>
+    <div
+      className={`rounded-2xl border p-3 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border"} ${tooltip ? "cursor-default" : ""}`}
+      style={negative ? undefined : { backgroundColor: tint }}
+    >
       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
         <Icon className="size-3.5" style={{ color: accent }} /> {label}
       </div>
@@ -821,7 +825,7 @@ function ManageCategories({ shopId, categories, onClose, onChange }: any) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function LgCashflowView({
-  shopIds, shopNamesMap, simplified, standalone,
+  shopIds, shopNamesMap, simplified, standalone, onManagePayoutDays,
 }: {
   shopIds:      string[];
   shopNamesMap: Record<string, string>;
@@ -829,6 +833,9 @@ export function LgCashflowView({
   // Cópia isolada: puxa os lançamentos das lojas, mas editar/excluir/conciliar
   // aqui não altera o registro compartilhado usado pela loja/Grupo.
   standalone?: boolean;
+  // Abre o painel de "Configurações de Repasse" (D+X por loja), quando o
+  // card pai (LgCaixa) fornece esse gerenciamento.
+  onManagePayoutDays?: () => void;
 }) {
   const shopId         = shopIds[0];
   const isConsolidated = shopIds.length > 1;
@@ -1213,6 +1220,11 @@ export function LgCashflowView({
             <button onClick={() => setManageCats(true)} className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-accent">
               Gerenciar categorias
             </button>
+            {onManagePayoutDays && (
+              <button onClick={onManagePayoutDays} className="w-full text-left text-xs px-2 py-2 rounded-md hover:bg-accent">
+                Configurações de Repasse
+              </button>
+            )}
             {/* "Resetar caixa" apaga direto shop_cash_entries — a tabela compartilhada
                 com a loja/Grupo. Não faz sentido no modo standalone (edições isoladas),
                 então fica escondido aqui pra não contradizer a promessa de isolamento. */}

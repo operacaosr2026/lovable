@@ -12,6 +12,14 @@ function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d);
 }
+// Prazo real de pagamento ao fornecedor (D+X), configurável por loja em
+// "Lojas e Grupos" (lg_card_shops.payment_days — ver LgOrders.tsx). Lojas
+// fora de um card de grupo, ou sem configuração, caem no padrão de 7 dias.
+export async function getShopPaymentDays(supabase: any, shopId: string): Promise<number> {
+  const { data } = await supabase.from("lg_card_shops")
+    .select("payment_days").eq("shop_id", shopId).limit(1).maybeSingle();
+  return data?.payment_days ?? PROCESSING_DELAY_DAYS;
+}
 function daysBetween(from: string, to: string) {
   const a = new Date(from + "T00:00:00Z").getTime();
   const b = new Date(to + "T00:00:00Z").getTime();
@@ -590,13 +598,14 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
     const defaultCost = Number(settings?.default_unit_cost ?? 0);
+    const paymentDays = await getShopPaymentDays(context.supabase, data.shop_id);
 
     let created = 0;
     for (const [date, items] of byDate.entries()) {
       if (existingRefs.has(date)) continue;
       const cost = await unitCostFor(context.supabase, context.ownerId, data.shop_id, date, defaultCost);
       const total = items * cost;
-      const dueAt = `${addDays(date, PROCESSING_DELAY_DAYS)}T12:00:00.000Z`;
+      const dueAt = `${addDays(date, paymentDays)}T12:00:00.000Z`;
       const dateLabel = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
       const { data: top } = await context.supabase.from("shop_tasks").select("position")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).eq("status", "todo")
@@ -723,20 +732,22 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     }).eq("id", settings.shopify_store_id).eq("user_id", context.ownerId);
 
     // Recompute processing entries that depend on the synced orders.
-    // Orders from order_date D project to processing_date D+7. Sync covers
-    // the last `since_days`, so processing dates from (today - since_days + delay)
-    // up to (today + delay) may have changed.
+    // Orders from order_date D project to processing_date D+X (D+X real,
+    // configurável por loja — ver getShopPaymentDays). Sync covers the last
+    // `since_days`, so processing dates from (today - since_days + delay) up
+    // to (today + delay) may have changed.
     const today = isoDate(new Date());
     const { data: settingsFull } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    const fromProc = addDays(today, -sinceDays + PROCESSING_DELAY_DAYS);
-    const toProc = addDays(today, PROCESSING_DELAY_DAYS);
+    const paymentDays = await getShopPaymentDays(context.supabase, data.shop_id);
+    const fromProc = addDays(today, -sinceDays + paymentDays);
+    const toProc = addDays(today, paymentDays);
     const days: string[] = [];
     let cur = fromProc;
     while (cur <= toProc && days.length < 200) { days.push(cur); cur = addDays(cur, 1); }
     const CHUNK = 10;
     for (let i = 0; i < days.length; i += CHUNK) {
-      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settingsFull)));
+      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settingsFull, paymentDays)));
     }
     return { synced: orders.length };
   });
@@ -1219,7 +1230,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
   });
 
 // ---------- Recompute ----------
-async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any, paymentDays: number = PROCESSING_DELAY_DAYS, preloadedProducts?: CostProduct[]) {
+async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any, paymentDays?: number, preloadedProducts?: CostProduct[]) {
   let settings = preloadedSettings;
   if (!settings) {
     const { data } = await context.supabase.from("shop_order_settings").select("*")
@@ -1228,7 +1239,8 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   }
   if (!settings) return { skipped: true };
 
-  const orderDate = addDays(processingDate, -paymentDays);
+  const effectivePaymentDays = paymentDays ?? await getShopPaymentDays(context.supabase, shopId);
+  const orderDate = addDays(processingDate, -effectivePaymentDays);
 
   // existing manual override?
   const { data: existing } = await context.supabase.from("shop_cash_entries").select("*")
@@ -1366,7 +1378,7 @@ export const updateUnitCost = createServerFn({ method: "POST" })
       unit_cost: data.new_cost, valid_from: data.from, valid_to: data.to, note: data.note ?? `Intervalo ${data.from}–${data.to}`,
     });
     // recompute the corresponding processing dates: order_date in [from,to] → processing = order_date + delay
-    const delay = PROCESSING_DELAY_DAYS;
+    const delay = await getShopPaymentDays(context.supabase, data.shop_id);
     const procFrom = addDays(data.from, delay);
     const procTo = addDays(data.to, delay);
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
@@ -1376,7 +1388,7 @@ export const updateUnitCost = createServerFn({ method: "POST" })
     while (cur <= procTo && days.length < 200) { days.push(cur); cur = addDays(cur, 1); }
     const CHUNK = 10;
     for (let i = 0; i < days.length; i += CHUNK) {
-      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settings)));
+      await Promise.all(days.slice(i, i + CHUNK).map((d) => recomputeForShop(context, data.shop_id, d, settings, delay)));
     }
     return { ok: true };
   });
@@ -1395,7 +1407,7 @@ export const setManualOverride = createServerFn({ method: "POST" })
     // evita recalcular um valor diferente do que gerou o registro "auto" original,
     // o que faria o override cair numa data errada e criar uma linha órfã enquanto
     // o custo automático original continuava aparecendo (e sendo recriado).
-    const orderDate = data.auto_ref_date ?? addDays(data.processing_date, -PROCESSING_DELAY_DAYS);
+    const orderDate = data.auto_ref_date ?? addDays(data.processing_date, -(await getShopPaymentDays(context.supabase, data.shop_id)));
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
     const { data: existing } = await context.supabase.from("shop_cash_entries").select("id")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
@@ -1423,7 +1435,7 @@ export const clearManualOverride = createServerFn({ method: "POST" })
     auto_ref_date: z.string().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const orderDate = data.auto_ref_date ?? addDays(data.processing_date, -PROCESSING_DELAY_DAYS);
+    const orderDate = data.auto_ref_date ?? addDays(data.processing_date, -(await getShopPaymentDays(context.supabase, data.shop_id)));
     await context.supabase.from("shop_cash_entries").delete()
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate);
@@ -1610,9 +1622,12 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       throw new Error(`Falha ao marcar pedidos como pagos, lote revertido: ${payErr.message}`);
     }
 
-    // Recompute affected processing days (D+7) so previsões somem/reduzam
-    for (const d of dates) {
-      await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
+    // Recompute affected processing days (D+X real da loja) so previsões somem/reduzam
+    {
+      const paymentDays = await getShopPaymentDays(context.supabase, data.shop_id);
+      for (const d of dates) {
+        await recomputeForShop(context, data.shop_id, addDays(d, paymentDays), settings, paymentDays);
+      }
     }
 
     // Complete any auto-generated payment tasks for these order dates
@@ -1677,8 +1692,9 @@ export const undoOrderPayment = createServerFn({ method: "POST" })
     // Recompute affected days
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    const paymentDaysUndo = await getShopPaymentDays(context.supabase, data.shop_id);
     for (const d of (batch.order_dates as string[]) ?? []) {
-      await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
+      await recomputeForShop(context, data.shop_id, addDays(d, paymentDaysUndo), settings, paymentDaysUndo);
     }
 
     // Reopen auto-generated payment tasks for these order dates
@@ -1805,8 +1821,9 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
         .in("id", (orders ?? []).map((o: any) => o.id))
         .eq("user_id", context.ownerId);
 
+      const paymentDaysFallback = await getShopPaymentDays(context.supabase, data.shop_id);
       for (const d of dates) {
-        await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
+        await recomputeForShop(context, data.shop_id, addDays(d, paymentDaysFallback), settings, paymentDaysFallback);
       }
 
       batchesCreated = 1;
@@ -1839,8 +1856,9 @@ export const deleteOrders = createServerFn({ method: "POST" })
     const dates = Array.from(new Set(orders.map((o) => o.order_date as string)));
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
+    const paymentDaysDel = await getShopPaymentDays(context.supabase, data.shop_id);
     for (const d of dates) {
-      await recomputeForShop(context, data.shop_id, addDays(d, PROCESSING_DELAY_DAYS), settings);
+      await recomputeForShop(context, data.shop_id, addDays(d, paymentDaysDel), settings, paymentDaysDel);
     }
 
     return { deleted: ids.length };

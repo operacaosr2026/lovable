@@ -294,6 +294,15 @@ async function processShopPayoutsOnly(s: any) {
   await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
 }
 
+// Prazo real de pagamento ao fornecedor (D+X), configurável por loja em
+// "Lojas e Grupos" (lg_card_shops.payment_days — ver LgOrders.tsx). Lojas
+// fora de um card de grupo, ou sem configuração, caem no padrão de 7 dias.
+async function getShopPaymentDays(shopId: string): Promise<number> {
+  const { data } = await supabaseAdmin.from("lg_card_shops")
+    .select("payment_days").eq("shop_id", shopId).limit(1).maybeSingle();
+  return data?.payment_days ?? PROCESSING_DELAY_DAYS;
+}
+
 async function processShop(s: any, today: string) {
   const cutoff: string | null = s.cashflow_start_date ?? null;
   const sinceDate = cutoff ?? addDays(today, -30);
@@ -369,7 +378,8 @@ async function processShop(s: any, today: string) {
   }
 
   // recompute today's processing
-  const orderDate = addDays(today, -PROCESSING_DELAY_DAYS);
+  const paymentDays = await getShopPaymentDays(s.shop_id);
+  const orderDate = addDays(today, -paymentDays);
   const { data: existing } = await supabaseAdmin.from("shop_cash_entries").select("*")
     .eq("user_id", s.user_id).eq("shop_id", s.shop_id)
     .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate).maybeSingle();
