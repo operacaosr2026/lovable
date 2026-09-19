@@ -3,6 +3,14 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
+import { US_TIME_ZONE } from "@/lib/timezone";
+
+// Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
+// usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
+// que pode variar dentro do mesmo grupo/card.
+function hourInTz(iso: string): number {
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone: US_TIME_ZONE, hour: "numeric", hourCycle: "h23" }).format(new Date(iso)));
+}
 
 export const COST_CATEGORY = "Fornecedor";
 const PROCESSING_DELAY_DAYS = 7;
@@ -819,6 +827,7 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
       source: "shopify_sync",
       shopify_payout_id: String(p.id),
+      shopify_payout_status: p.status,
     }));
     if (toInsert.length) {
       const { error } = await context.supabase.from("shop_cash_entries").insert(toInsert);
@@ -831,8 +840,9 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       // Se o usuário travou a data ou o valor manualmente (o depósito caiu num
       // dia diferente do previsto, ou o valor sincronizado estava errado), a
       // sincronização não sobrescreve esse campo de novo.
-      const patch: { amount?: number; description: string; date?: string } = {
+      const patch: { amount?: number; description: string; date?: string; shopify_payout_status: string } = {
         description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
+        shopify_payout_status: p.status,
       };
       if (!dateLockedIds.has(id)) patch.date = p.date;
       if (!amountLockedIds.has(id)) patch.amount = Number(p.amount ?? 0);
@@ -1000,7 +1010,9 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     const currency = paymentsBalance?.currency ?? null;
     const balance = paymentsBalance?.amount ?? null;
 
-    // Payouts já sincronizados no banco com datas reais da Shopify
+    // Payouts já sincronizados no banco com datas reais da Shopify — exclui os
+    // que já foram depositados (status "paid"): esse valor já caiu, não é mais
+    // "a receber", e contar ele de novo duplicaria com o saldo ao vivo.
     const today = new Date().toISOString().slice(0, 10);
     const { data: upcomingEntries } = await context.supabase.from("shop_cash_entries")
       .select("shopify_payout_id,date,amount")
@@ -1008,6 +1020,7 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
       .eq("source", "shopify_sync")
       .not("shopify_payout_id", "is", null)
       .gte("date", today)
+      .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid")
       .order("date", { ascending: true });
 
     const byDate = new Map<string, number>();
@@ -1144,7 +1157,10 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
       .in("shop_id", data.shop_ids)
       .eq("source", "shopify_sync")
       .not("shopify_payout_id", "is", null)
-      .gte("date", today);
+      .gte("date", today)
+      // Exclui payouts já depositados (status "paid") — esse valor já caiu e
+      // não é mais "a receber"; contar ele de novo duplicaria com o saldo ao vivo.
+      .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid");
 
     const { data: settings } = await context.supabase.from("shop_order_settings")
       .select("shop_id,shopify_store_id")
@@ -1891,7 +1907,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const { shop_ids, from, to, prev_from, prev_to } = data;
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes] = await Promise.all([
-      supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,raw")
+      supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,raw,created_at_shopify")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to),
       supabase.from("shop_orders").select("revenue,items_count,shop_id,raw")
@@ -2041,6 +2057,20 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         };
       });
 
+    // Faturamento por hora do dia (0-23h), somando todos os dias do período —
+    // mostra em que horário as vendas se concentram, não é uma série temporal.
+    const hourlyMap = new Map<number, { revenue: number; orders: number }>();
+    for (const o of orders) {
+      const h = hourInTz(o.created_at_shopify as string);
+      const prev = hourlyMap.get(h) ?? { revenue: 0, orders: 0 };
+      hourlyMap.set(h, { revenue: prev.revenue + Number(o.revenue ?? 0), orders: prev.orders + 1 });
+    }
+    const hourlyRevenue = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      revenue: Math.round((hourlyMap.get(h)?.revenue ?? 0) * 100) / 100,
+      orders: hourlyMap.get(h)?.orders ?? 0,
+    }));
+
     const goalsData = goalRes.data ?? [];
     const aggregatedGoal = goalsData.length === 0 ? null : {
       target_profit: goalsData.reduce((s: number, g: any) => s + Number(g.target_profit ?? 0), 0),
@@ -2068,6 +2098,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         ticketMedio,       ticketMedioDelta:  delta(ticketMedio, prevTicket),
       },
       chartData,
+      hourlyRevenue,
       goal: aggregatedGoal,
     };
   });
