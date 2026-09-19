@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart, Area, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
   RefreshCw, DollarSign, Percent, Shield, Megaphone,
@@ -381,6 +381,32 @@ export function LgDashboard({
   const chartData = isToday ? (chartQueryData?.chartData ?? []) : (data?.chartData ?? []);
   const chartLoading = isToday ? chartQueryLoading : isLoading;
 
+  // Faturamento por hora do dia (0h-23h): sempre olha o mês corrente inteiro,
+  // independente do período escolhido acima — o objetivo é achar o horário
+  // que mais vende ao longo do mês, não só no dia/período selecionado.
+  const monthRange = useMemo(() => getPeriodRange("mes"), []);
+  const { data: hourlyQueryData, isLoading: hourlyLoading } = useQuery({
+    queryKey: ["lg-dashboard-hourly", cacheKey, monthRange.from, monthRange.to],
+    queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: monthRange.from, to: monthRange.to, prev_from: monthRange.prevFrom, prev_to: monthRange.prevTo } }),
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
+  });
+  const hourlyChartData = useMemo(
+    () => (hourlyQueryData?.hourlyRevenue ?? []).map((h: { hour: number; revenue: number }) => ({
+      label: `${h.hour}h`,
+      revenue: h.revenue,
+    })),
+    [hourlyQueryData?.hourlyRevenue],
+  );
+  const peakHour = useMemo(
+    () => hourlyChartData.reduce(
+      (best: { label: string; revenue: number } | null, h: { label: string; revenue: number }) =>
+        !best || h.revenue > best.revenue ? h : best,
+      null,
+    ),
+    [hourlyChartData],
+  );
+
   const zeroOffsets = useMemo(() => {
     const keys = ["faturamento", "lucro", "custo", "anuncios"] as const;
     const result = {} as Record<(typeof keys)[number], number>;
@@ -657,6 +683,38 @@ export function LgDashboard({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ── Faturamento por horário ── */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <SectionLabel>Horário de vendas · mês atual</SectionLabel>
+            <p className="text-sm font-semibold text-foreground -mt-1">Faturamento por horário</p>
+          </div>
+          {peakHour && peakHour.revenue > 0 && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              Pico: <span className="font-semibold text-foreground">{peakHour.label}</span> ({fmt(peakHour.revenue)})
+            </span>
+          )}
+        </div>
+        {hourlyLoading ? (
+          <div className="h-[180px] bg-muted animate-pulse rounded-xl" />
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={hourlyChartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} interval={1} />
+              <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: "var(--color-muted)" }} />
+              <Bar dataKey="revenue" name="Faturamento" fill="var(--color-primary)" radius={[4, 4, 0, 0]}>
+                {hourlyChartData.map((h: { label: string; revenue: number }) => (
+                  <Cell key={h.label} fillOpacity={peakHour && h.label === peakHour.label ? 1 : 0.45} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* ── KPI row 2: Ads ── */}
