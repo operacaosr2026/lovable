@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, Search, Package, X, Upload } from "lucide-react";
+import { Plus, Search, Package, X, Upload, LayoutGrid, List } from "lucide-react";
 import {
   listProducts, createProduct, updateProduct, deleteProduct, PRODUCT_STATUSES,
 } from "@/lib/products.functions";
@@ -11,7 +11,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
+type ViewMode = "galeria" | "lista";
+
 export const Route = createFileRoute("/shops/products/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    view: (search.view === "lista" ? "lista" : "galeria") as ViewMode,
+  }),
   component: ProductsIndex,
 });
 
@@ -26,6 +31,8 @@ const STATUS_META: Record<string, { label: string; tint: string; accent: string 
 };
 
 function ProductsIndex() {
+  const { view } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const qc = useQueryClient();
   const list = useServerFn(listProducts);
   const createFn = useServerFn(createProduct);
@@ -90,6 +97,20 @@ function ProductsIndex() {
           <option value="all">Status</option>
           {PRODUCT_STATUSES.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
         </select>
+        <div className="flex items-center rounded-lg border border-border bg-surface p-0.5">
+          <button
+            onClick={() => navigate({ search: { view: "galeria" } })}
+            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "galeria" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <LayoutGrid className="size-3.5" /> Galeria
+          </button>
+          <button
+            onClick={() => navigate({ search: { view: "lista" } })}
+            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "lista" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <List className="size-3.5" /> Lista
+          </button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -103,7 +124,7 @@ function ProductsIndex() {
             <Plus className="size-4" /> Criar primeiro produto
           </button>
         </div>
-      ) : (
+      ) : view === "galeria" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((p) => (
             <ProductCard
@@ -113,6 +134,8 @@ function ProductsIndex() {
             />
           ))}
         </div>
+      ) : (
+        <ProductListView products={filtered} />
       )}
 
       {editorOpen && (
@@ -167,6 +190,52 @@ function ProductCard({ p, onEdit }: { p: any; onEdit: () => void }) {
         >
           editar
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ProductListView({ products }: { products: any[] }) {
+  return (
+    // Colunas em px fixo não cabem em mobile; rola horizontal em vez de cortar.
+    <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
+      <div className="min-w-[640px]">
+        <div className="grid grid-cols-[56px_1fr_140px_110px_110px_110px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+          <div />
+          <div>Produto</div>
+          <div>Nicho</div>
+          <div>Status</div>
+          <div className="text-right">Custo</div>
+          <div className="text-right">Preço de venda</div>
+        </div>
+        {products.map((p, i) => {
+          const st = STATUS_META[p.status] ?? STATUS_META.ativo;
+          return (
+            <Link
+              key={p.id}
+              to="/shops/products/$productId"
+              params={{ productId: p.id }}
+              className={`grid grid-cols-[56px_1fr_140px_110px_110px_110px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors ${i > 0 ? "border-t border-border/60" : ""}`}
+            >
+              <div className="size-9 rounded-lg bg-muted/40 overflow-hidden shrink-0 grid place-items-center">
+                {p.main_image_url ? (
+                  <img src={p.main_image_url} alt={p.name} className="w-full h-full object-cover" />
+                ) : (
+                  <Package className="size-4 text-muted-foreground" />
+                )}
+              </div>
+              <div className="text-sm font-medium truncate">{p.name}</div>
+              <div className="text-xs text-muted-foreground truncate">{p.niche || "—"}</div>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium" style={{ background: st.tint, color: st.accent }}>
+                  {st.label}
+                </span>
+              </div>
+              <div className="text-right text-sm tabular-nums">{usd(p.cost ?? 0)}</div>
+              <div className="text-right text-sm tabular-nums text-muted-foreground">{usd(p.sale_price ?? 0)}</div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
