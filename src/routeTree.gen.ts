@@ -20,7 +20,6 @@ import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
 import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
 import { Route as ShopsProductsRouteImport } from "./routes/shops.products";
 import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupos";
-import { Route as ShopsGruposRouteImport } from "./routes/shops.grupos";
 import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
 import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
 import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
@@ -31,13 +30,11 @@ import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
 import { Route as ShopsSopsIndexRouteImport } from "./routes/shops.sops.index";
 import { Route as ShopsProductsIndexRouteImport } from "./routes/shops.products.index";
 import { Route as ShopsLojasGruposIndexRouteImport } from "./routes/shops.lojas-grupos.index";
-import { Route as ShopsGruposIndexRouteImport } from "./routes/shops.grupos.index";
 import { Route as ShopsCaixaIndexRouteImport } from "./routes/shops.caixa.index";
 import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
 import { Route as ShopsSopsProcessIdRouteImport } from "./routes/shops.sops.$processId";
 import { Route as ShopsProductsProductIdRouteImport } from "./routes/shops.products.$productId";
 import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas-grupos.$cardId";
-import { Route as ShopsGruposGroupIdRouteImport } from "./routes/shops.grupos.$groupId";
 import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
@@ -100,11 +97,6 @@ const ShopsLojasGruposRoute = ShopsLojasGruposRouteImport.update({
   path: "/lojas-grupos",
   getParentRoute: () => ShopsRoute,
 } as any);
-const ShopsGruposRoute = ShopsGruposRouteImport.update({
-  id: "/grupos",
-  path: "/grupos",
-  getParentRoute: () => ShopsRoute,
-} as any);
 const ShopsCaixaRoute = ShopsCaixaRouteImport.update({
   id: "/caixa",
   path: "/caixa",
@@ -155,11 +147,6 @@ const ShopsLojasGruposIndexRoute = ShopsLojasGruposIndexRouteImport.update({
   path: "/",
   getParentRoute: () => ShopsLojasGruposRoute,
 } as any);
-const ShopsGruposIndexRoute = ShopsGruposIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => ShopsGruposRoute,
-} as any);
 const ShopsCaixaIndexRoute = ShopsCaixaIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -184,11 +171,6 @@ const ShopsLojasGruposCardIdRoute = ShopsLojasGruposCardIdRouteImport.update({
   id: "/$cardId",
   path: "/$cardId",
   getParentRoute: () => ShopsLojasGruposRoute,
-} as any);
-const ShopsGruposGroupIdRoute = ShopsGruposGroupIdRouteImport.update({
-  id: "/$groupId",
-  path: "/$groupId",
-  getParentRoute: () => ShopsGruposRoute,
 } as any);
 const ApiPublicShopifyCallbackRoute =
   ApiPublicShopifyCallbackRouteImport.update({
@@ -241,19 +223,16 @@ export interface FileRoutesByFullPath {
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
-  "/shops/grupos": typeof ShopsGruposRouteWithChildren;
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
   "/shops/products": typeof ShopsProductsRouteWithChildren;
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
-  "/shops/grupos/$groupId": typeof ShopsGruposGroupIdRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
   "/shops/banco-de-lojas/": typeof ShopsBancoDeLojasIndexRoute;
   "/shops/caixa/": typeof ShopsCaixaIndexRoute;
-  "/shops/grupos/": typeof ShopsGruposIndexRoute;
   "/shops/lojas-grupos/": typeof ShopsLojasGruposIndexRoute;
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
@@ -276,13 +255,11 @@ export interface FileRoutesByTo {
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/shops": typeof ShopsIndexRoute;
-  "/shops/grupos/$groupId": typeof ShopsGruposGroupIdRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasIndexRoute;
   "/shops/caixa": typeof ShopsCaixaIndexRoute;
-  "/shops/grupos": typeof ShopsGruposIndexRoute;
   "/shops/lojas-grupos": typeof ShopsLojasGruposIndexRoute;
   "/shops/products": typeof ShopsProductsIndexRoute;
   "/shops/sops": typeof ShopsSopsIndexRoute;
@@ -308,19 +285,16 @@ export interface FileRoutesById {
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
-  "/shops/grupos": typeof ShopsGruposRouteWithChildren;
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
   "/shops/products": typeof ShopsProductsRouteWithChildren;
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
-  "/shops/grupos/$groupId": typeof ShopsGruposGroupIdRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
   "/shops/banco-de-lojas/": typeof ShopsBancoDeLojasIndexRoute;
   "/shops/caixa/": typeof ShopsCaixaIndexRoute;
-  "/shops/grupos/": typeof ShopsGruposIndexRoute;
   "/shops/lojas-grupos/": typeof ShopsLojasGruposIndexRoute;
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
@@ -347,19 +321,16 @@ export interface FileRouteTypes {
     | "/settings/seguranca"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
-    | "/shops/grupos"
     | "/shops/lojas-grupos"
     | "/shops/products"
     | "/projects/"
     | "/settings/"
     | "/shops/"
-    | "/shops/grupos/$groupId"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
     | "/shops/banco-de-lojas/"
     | "/shops/caixa/"
-    | "/shops/grupos/"
     | "/shops/lojas-grupos/"
     | "/shops/products/"
     | "/shops/sops/"
@@ -382,13 +353,11 @@ export interface FileRouteTypes {
     | "/projects"
     | "/settings"
     | "/shops"
-    | "/shops/grupos/$groupId"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
-    | "/shops/grupos"
     | "/shops/lojas-grupos"
     | "/shops/products"
     | "/shops/sops"
@@ -413,19 +382,16 @@ export interface FileRouteTypes {
     | "/settings/seguranca"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
-    | "/shops/grupos"
     | "/shops/lojas-grupos"
     | "/shops/products"
     | "/projects/"
     | "/settings/"
     | "/shops/"
-    | "/shops/grupos/$groupId"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
     | "/shops/banco-de-lojas/"
     | "/shops/caixa/"
-    | "/shops/grupos/"
     | "/shops/lojas-grupos/"
     | "/shops/products/"
     | "/shops/sops/"
@@ -532,13 +498,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ShopsLojasGruposRouteImport;
       parentRoute: typeof ShopsRoute;
     };
-    "/shops/grupos": {
-      id: "/shops/grupos";
-      path: "/grupos";
-      fullPath: "/shops/grupos";
-      preLoaderRoute: typeof ShopsGruposRouteImport;
-      parentRoute: typeof ShopsRoute;
-    };
     "/shops/caixa": {
       id: "/shops/caixa";
       path: "/caixa";
@@ -609,13 +568,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ShopsLojasGruposIndexRouteImport;
       parentRoute: typeof ShopsLojasGruposRoute;
     };
-    "/shops/grupos/": {
-      id: "/shops/grupos/";
-      path: "/";
-      fullPath: "/shops/grupos/";
-      preLoaderRoute: typeof ShopsGruposIndexRouteImport;
-      parentRoute: typeof ShopsGruposRoute;
-    };
     "/shops/caixa/": {
       id: "/shops/caixa/";
       path: "/";
@@ -650,13 +602,6 @@ declare module "@tanstack/react-router" {
       fullPath: "/shops/lojas-grupos/$cardId";
       preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport;
       parentRoute: typeof ShopsLojasGruposRoute;
-    };
-    "/shops/grupos/$groupId": {
-      id: "/shops/grupos/$groupId";
-      path: "/$groupId";
-      fullPath: "/shops/grupos/$groupId";
-      preLoaderRoute: typeof ShopsGruposGroupIdRouteImport;
-      parentRoute: typeof ShopsGruposRoute;
     };
     "/api/public/shopify/callback": {
       id: "/api/public/shopify/callback";
@@ -758,20 +703,6 @@ const ShopsCaixaRouteWithChildren = ShopsCaixaRoute._addFileChildren(
   ShopsCaixaRouteChildren,
 );
 
-interface ShopsGruposRouteChildren {
-  ShopsGruposGroupIdRoute: typeof ShopsGruposGroupIdRoute;
-  ShopsGruposIndexRoute: typeof ShopsGruposIndexRoute;
-}
-
-const ShopsGruposRouteChildren: ShopsGruposRouteChildren = {
-  ShopsGruposGroupIdRoute: ShopsGruposGroupIdRoute,
-  ShopsGruposIndexRoute: ShopsGruposIndexRoute,
-};
-
-const ShopsGruposRouteWithChildren = ShopsGruposRoute._addFileChildren(
-  ShopsGruposRouteChildren,
-);
-
 interface ShopsLojasGruposRouteChildren {
   ShopsLojasGruposCardIdRoute: typeof ShopsLojasGruposCardIdRoute;
   ShopsLojasGruposIndexRoute: typeof ShopsLojasGruposIndexRoute;
@@ -802,7 +733,6 @@ const ShopsProductsRouteWithChildren = ShopsProductsRoute._addFileChildren(
 interface ShopsRouteChildren {
   ShopsBancoDeLojasRoute: typeof ShopsBancoDeLojasRouteWithChildren;
   ShopsCaixaRoute: typeof ShopsCaixaRouteWithChildren;
-  ShopsGruposRoute: typeof ShopsGruposRouteWithChildren;
   ShopsLojasGruposRoute: typeof ShopsLojasGruposRouteWithChildren;
   ShopsProductsRoute: typeof ShopsProductsRouteWithChildren;
   ShopsIndexRoute: typeof ShopsIndexRoute;
@@ -813,7 +743,6 @@ interface ShopsRouteChildren {
 const ShopsRouteChildren: ShopsRouteChildren = {
   ShopsBancoDeLojasRoute: ShopsBancoDeLojasRouteWithChildren,
   ShopsCaixaRoute: ShopsCaixaRouteWithChildren,
-  ShopsGruposRoute: ShopsGruposRouteWithChildren,
   ShopsLojasGruposRoute: ShopsLojasGruposRouteWithChildren,
   ShopsProductsRoute: ShopsProductsRouteWithChildren,
   ShopsIndexRoute: ShopsIndexRoute,
