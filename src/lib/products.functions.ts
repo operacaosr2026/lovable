@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { isoTodayUS } from "@/lib/timezone";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -131,6 +132,82 @@ export const upsertPricing = createServerFn({ method: "POST" })
     }, { onConflict: "product_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// ---------- sales (derivado dos pedidos, sem tabela própria) ----------
+// Não guardamos "unidades vendidas" num campo à parte: cada pedido já traz os
+// line_items brutos da Shopify em shop_orders.raw, e casamos o título de cada
+// item com o nome/palavras-chave do produto — mesmo mecanismo usado pra achar
+// o custo do produto no Caixa/Pedidos (matchLineItemCost). Evita duplicar
+// dado e ficar dessincronizado do pedido real.
+function monthsAgoISO(months: number) {
+  const today = isoTodayUS();
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - months, 1); // dia 1 do mês alvo
+  return d.toISOString().slice(0, 10);
+}
+
+export const getProductMonthlySales = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    product_id: z.string().uuid(),
+    months: z.number().int().min(1).max(60).default(12),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, ownerId } = context;
+    const { data: product, error: pErr } = await supabase
+      .from("products").select("id,name,keywords")
+      .eq("user_id", ownerId).eq("id", data.product_id).maybeSingle();
+    if (pErr) throw new Error(pErr.message);
+    if (!product) throw new Error("Produto não encontrado");
+
+    const terms = [product.name, ...((product.keywords as string[] | null) ?? [])]
+      .map((s) => (s ?? "").trim().toLowerCase())
+      .filter(Boolean);
+
+    const since = monthsAgoISO(data.months - 1);
+    const { data: orders, error } = await supabase
+      .from("shop_orders").select("order_date,raw")
+      .eq("user_id", ownerId).gte("order_date", since);
+    if (error) throw new Error(error.message);
+
+    const byMonth = new Map<string, { units: number; revenue: number; pedidos: number }>();
+    for (const o of (orders ?? []) as any[]) {
+      const lineItems = o.raw?.line_items ?? [];
+      let units = 0, revenue = 0, matched = false;
+      for (const li of lineItems) {
+        const title = ((li.title ?? li.name ?? "") as string).toLowerCase();
+        if (!terms.some((t) => title.includes(t))) continue;
+        matched = true;
+        const qty = Number(li.quantity ?? 0);
+        units += qty;
+        revenue += qty * Number(li.price ?? 0);
+      }
+      if (!matched) continue;
+      const month = String(o.order_date).slice(0, 7);
+      const entry = byMonth.get(month) ?? { units: 0, revenue: 0, pedidos: 0 };
+      entry.units += units;
+      entry.revenue += revenue;
+      entry.pedidos += 1;
+      byMonth.set(month, entry);
+    }
+
+    const months = Array.from(byMonth.entries())
+      .map(([month, v]) => ({
+        month,
+        units: v.units,
+        revenue: Math.round(v.revenue * 100) / 100,
+        pedidos: v.pedidos,
+      }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+
+    const totals = months.reduce((acc, m) => ({
+      units: acc.units + m.units,
+      revenue: Math.round((acc.revenue + m.revenue) * 100) / 100,
+      pedidos: acc.pedidos + m.pedidos,
+    }), { units: 0, revenue: 0, pedidos: 0 });
+
+    return { months, totals };
   });
 
 // ---------- images ----------

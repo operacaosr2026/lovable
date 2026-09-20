@@ -8,6 +8,7 @@ import { getProduct, updateProduct, PRODUCT_STATUSES } from "@/lib/products.func
 import { ProductImages } from "@/components/products/ProductImages";
 import { ProductTemplates } from "@/components/products/ProductTemplates";
 import { ProductCreatives } from "@/components/products/ProductCreatives";
+import { ProductSales } from "@/components/products/ProductSales";
 
 export const Route = createFileRoute("/shops/products/$productId")({
   component: ProductDetail,
@@ -18,6 +19,7 @@ const TABS = [
   { id: "imagens", label: "Imagens" },
   { id: "template", label: "Template da Página" },
   { id: "criativos", label: "Criativos" },
+  { id: "vendas", label: "Vendas" },
 ] as const;
 
 function ProductDetail() {
@@ -70,6 +72,7 @@ function ProductDetail() {
       {tab === "imagens" && <ProductImages productId={productId} />}
       {tab === "template" && <ProductTemplates productId={productId} />}
       {tab === "criativos" && <ProductCreatives productId={productId} />}
+      {tab === "vendas" && <ProductSales productId={productId} />}
     </PageShell>
   );
 }
