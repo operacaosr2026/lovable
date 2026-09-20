@@ -389,6 +389,7 @@ export function ShopCashflow({ shopIds, shops }: { shopIds: string[]; shops?: { 
               <div className="space-y-0.5">
                 <div>Vendas: {fmtMoney(monthlyProfitQuery.data.sales)}</div>
                 <div>Produto: -{fmtMoney(monthlyProfitQuery.data.productCost)}</div>
+                <div>Taxas: -{fmtMoney(monthlyProfitQuery.data.taxas ?? 0)}</div>
                 <div>Ads: -{fmtMoney(monthlyProfitQuery.data.adSpend)}</div>
               </div>
             ) : undefined}

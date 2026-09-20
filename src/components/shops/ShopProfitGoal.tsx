@@ -14,6 +14,7 @@ import {
   Link2, CheckCircle2, RefreshCw, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { isoTodayUS } from "@/lib/timezone";
 
 type Goal = {
   id?: string;
@@ -35,8 +36,8 @@ type Goal = {
 const empty = (shopId: string): Goal => ({
   shop_id: shopId,
   target_profit: 0,
-  start_date: new Date().toISOString().slice(0, 10),
-  end_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  start_date: isoTodayUS(),
+  end_date: new Date(new Date(isoTodayUS() + "T00:00:00Z").getTime() + 30 * 86400000).toISOString().slice(0, 10),
   sale_price: 0,
   supplier_cost: 0,
   fees_pct: 0,
@@ -148,7 +149,9 @@ function EmptyState({ onConfigure }: { onConfigure: () => void }) {
 
 // ---------------- calculations ----------------
 function computeMetrics(g: Goal, scaleBudget: number | null) {
-  const today = new Date();
+  // Fuso de Nova York (horário padrão do negócio), não o do navegador — senão
+  // "dias decorridos" fica errado por um dia pra quem opera fora desse fuso.
+  const today = new Date(isoTodayUS() + "T00:00:00");
   const start = new Date(g.start_date + "T00:00:00");
   const end = new Date(g.end_date + "T00:00:00");
   const msDay = 86400000;

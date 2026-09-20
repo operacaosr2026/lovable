@@ -58,6 +58,13 @@ function shopifyLocalDate(created_at: string, ianaTimezone: string | null): stri
   }
 }
 
+// Loga (sem lançar) quando um fetch paginado bate no teto de páginas antes de
+// esgotar a Shopify (`url` ainda não-vazio) — sem isso, uma loja de alto
+// volume tinha dado mais antigo do período silenciosamente descartado.
+function warnPaginationCap(fnName: string, domain: string, url: string) {
+  if (url) console.error(`[shopify-sync] ${fnName}(${domain}): atingiu o teto de páginas antes de esgotar a listagem — dado do período pode estar incompleto.`);
+}
+
 async function fetchShopifyOrders(domain: string, token: string, sinceISO: string) {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&created_at_min=${encodeURIComponent(sinceISO)}`;
@@ -70,6 +77,7 @@ async function fetchShopifyOrders(domain: string, token: string, sinceISO: strin
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchShopifyOrders", domain, url);
   return out;
 }
 
@@ -89,6 +97,7 @@ export const fetchShopifyPayouts = createServerOnlyFn(async (domain: string, tok
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchShopifyPayouts", domain, url);
   return out;
 });
 
@@ -108,6 +117,7 @@ async function fetchShopifyBalanceTransactions(domain: string, token: string, ma
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchShopifyBalanceTransactions", domain, url);
   return out;
 }
 
@@ -127,6 +137,7 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchShopifyDisputes", domain, url);
   return out;
 }
 
@@ -149,6 +160,7 @@ async function fetchShopifyRefundedOrders(domain: string, token: string, fromISO
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchShopifyRefundedOrders", domain, url);
   return out;
 }
 
@@ -584,17 +596,25 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: pending, error } = await context.supabase.from("shop_orders")
-      .select("order_date,items_count")
+      .select("order_date,items_count,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("payment_status", "pending");
     if (error) throw new Error(error.message);
     if (!pending || pending.length === 0) return { created: 0 };
 
-    const byDate = new Map<string, number>();
+    // Mesmo cálculo por produto/palavra-chave usado no lançamento real do
+    // Caixa (recomputeForShop), em vez de items_count × custo fixo da loja —
+    // senão o valor mostrado na tarefa diverge do que efetivamente entra no
+    // Caixa pra esse pedido.
+    const byDate = new Map<string, { items: number; orders: any[] }>();
     for (const o of pending) {
-      byDate.set(o.order_date as string, (byDate.get(o.order_date as string) ?? 0) + Number(o.items_count ?? 0));
+      const entry = byDate.get(o.order_date as string) ?? { items: 0, orders: [] };
+      entry.items += Number(o.items_count ?? 0);
+      entry.orders.push(o);
+      byDate.set(o.order_date as string, entry);
     }
     if (byDate.size === 0) return { created: 0 };
+    const costProducts = await costProductsFor(context.supabase, context.ownerId);
 
     const { data: existing } = await context.supabase.from("shop_tasks")
       .select("source_ref")
@@ -609,10 +629,10 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
     const paymentDays = await getShopPaymentDays(context.supabase, data.shop_id);
 
     let created = 0;
-    for (const [date, items] of byDate.entries()) {
+    for (const [date, { items, orders }] of byDate.entries()) {
       if (existingRefs.has(date)) continue;
-      const cost = await unitCostFor(context.supabase, context.ownerId, data.shop_id, date, defaultCost);
-      const total = items * cost;
+      const fallback = await unitCostFor(context.supabase, context.ownerId, data.shop_id, date, defaultCost);
+      const total = orders.reduce((s: number, o: any) => s + orderLineItemsCost(o.raw?.line_items, costProducts, fallback), 0);
       const dueAt = `${addDays(date, paymentDays)}T12:00:00.000Z`;
       const dateLabel = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
       const { data: top } = await context.supabase.from("shop_tasks").select("position")
@@ -1090,7 +1110,11 @@ export const getGroupShopifyRefundsAndChargebacks = createServerOnlyFn(async (
         .filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${toISO}T23:59:59Z`)
         .reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
       return { shop_id: s.shop_id as string, refAmt, cbAmt };
-    } catch {
+    } catch (e) {
+      // Sem log, isso caía pra 0 silenciosamente e inflava o "lucro" exibido
+      // sem nenhum indício de que a Shopify falhou (token revogado, rate
+      // limit, 5xx) em vez de a loja realmente não ter reembolso/chargeback.
+      console.error(`getGroupShopifyRefundsAndChargebacks: falhou pra shop_id=${s.shop_id}`, e);
       return { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0 };
     }
   }));
@@ -1197,7 +1221,8 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
           connected: true,
           live: live != null,
         };
-      } catch {
+      } catch (e) {
+        console.error(`getGroupShopifyPendingBalance: falha ao buscar saldo ao vivo pra shop_id=${shopId}`, e);
         return { shop_id: shopId, amount: pendingSum, pending: pendingSum, connected: true, live: false };
       }
     }));
@@ -1216,33 +1241,48 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const { supabase, ownerId } = context;
     const { shop_ids, month_start, month_end } = data;
 
-    const { data: orders, error: ordersErr } = await supabase
-      .from("shop_orders").select("revenue,order_date,items_count,shop_id")
-      .eq("user_id", ownerId).in("shop_id", shop_ids)
-      .gte("order_date", month_start).lte("order_date", month_end);
-    if (ordersErr) throw new Error(ordersErr.message);
-    const sales = (orders ?? []).reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+    const [ordersRes, settingsRes, adRes, feesRes, costProducts, refundsAndChargebacks] = await Promise.all([
+      supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,raw")
+        .eq("user_id", ownerId).in("shop_id", shop_ids)
+        .gte("order_date", month_start).lte("order_date", month_end),
+      supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
+        .eq("user_id", ownerId).in("shop_id", shop_ids),
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("kind", "expense").eq("category", "Facebook Ads")
+        .gte("date", month_start).lte("date", month_end),
+      supabase.from("shop_cash_entries").select("amount")
+        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
+        .gte("date", month_start).lte("date", month_end),
+      costProductsFor(supabase, ownerId),
+      // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
+      // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
+      getGroupShopifyRefundsAndChargebacks(ownerId, shop_ids, month_start, month_end),
+    ]);
+    if (ordersRes.error) throw new Error(ordersRes.error.message);
+    if (adRes.error) throw new Error(adRes.error.message);
 
-    const { data: settingsRows } = await supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
-      .eq("user_id", ownerId).in("shop_id", shop_ids);
-    const costByShop = new Map((settingsRows ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
+    const orders = ordersRes.data ?? [];
+    const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+    const reembolsos = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
+    const chargebacks = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
+    const sales = ordersRevenue - reembolsos - chargebacks;
+
+    const costByShop = new Map((settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
     const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
 
-    const productCost = (orders ?? []).reduce((s: number, o: any) => {
-      const items = Number(o.items_count ?? 0);
+    // Mesmo cálculo por produto/palavra-chave usado no Dashboard
+    // (orderLineItemsCost), em vez de items_count × custo fixo da loja.
+    const productCost = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id);
-      return s + items * (shopCost != null && shopCost > 0 ? shopCost : avgCost);
+      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      return s + orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
     }, 0);
 
-    const { data: adRows, error: adErr } = await supabase
-      .from("shop_cash_entries").select("amount")
-      .eq("user_id", ownerId).in("shop_id", shop_ids).eq("kind", "expense").eq("category", "Facebook Ads")
-      .gte("date", month_start).lte("date", month_end);
-    if (adErr) throw new Error(adErr.message);
-    const adSpend = (adRows ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const adSpend = (adRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
+    const taxas = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
 
-    return { sales, productCost, adSpend, profit: sales - productCost - adSpend };
+    return { sales, productCost, adSpend, taxas, profit: sales - productCost - adSpend - taxas };
   });
 
 // ---------- Recompute ----------
@@ -1969,7 +2009,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
             const cbAmt      = disputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
             const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
             return { refAmt, prevRefAmt, cbAmt, prevCbAmt };
-          } catch {
+          } catch (e) {
+            console.error(`getShopDashboardMetrics: falha ao buscar reembolso/chargeback pra shopify_store_id=${s.shopify_store_id}`, e);
             return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0 };
           }
         })

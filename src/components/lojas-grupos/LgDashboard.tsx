@@ -22,7 +22,7 @@ import {
   getLgCurrencyRates, saveLgCurrencyRates,
 } from "@/lib/lg-cards.functions";
 import { toast } from "sonner";
-import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
+import { isoTodayUS, US_TIME_ZONE, localDateKey } from "@/lib/timezone";
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -207,8 +207,8 @@ export function DateRangePicker({
               })()}
               onSelect={(range: DateRange | undefined) => {
                 if (!range?.from) { setPendingRange(undefined); return; }
-                const fromStr = range.from.toISOString().slice(0, 10);
-                const toStr   = range.to ? range.to.toISOString().slice(0, 10) : fromStr;
+                const fromStr = localDateKey(range.from);
+                const toStr   = range.to ? localDateKey(range.to) : fromStr;
                 const sameDay = fromStr === toStr;
                 setPendingRange({ from: fromStr, to: toStr });
                 if (!sameDay) apply({ from: fromStr, to: toStr });

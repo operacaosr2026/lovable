@@ -26,3 +26,14 @@ export function formatDateUS(date: Date | string | number, opts: Intl.DateTimeFo
   const d = date instanceof Date ? date : new Date(date);
   return d.toLocaleDateString("pt-BR", { ...opts, timeZone: US_TIME_ZONE });
 }
+
+// Lê o ano/mês/dia LOCAIS de um Date (ex: o dia que o usuário clicou num
+// calendário, sempre criado à meia-noite local pelo react-day-picker) como
+// "YYYY-MM-DD" — sem passar por toISOString(), que converte pra UTC e pode
+// "voltar" um dia inteiro pra quem está num fuso positivo (Europa/Ásia).
+export function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}

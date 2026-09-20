@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { isoTodayUS } from "@/lib/timezone";
 
 export const PRIORITY_TAGS = ["vip", "difficult", "high_attention", "chargeback_risk"] as const;
 
@@ -492,7 +493,7 @@ export const getSupportMetrics = createServerFn({ method: "GET" })
     let open = 0, waiting = 0, overdue = 0, resolvedToday = 0;
     const frSeconds: number[] = [];
     const volumeByShop: Record<string, number> = {};
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = isoTodayUS();
     for (const c of convs ?? []) {
       const isResolved = c.status_id && resolvedIds.has(c.status_id);
       if (!isResolved) {

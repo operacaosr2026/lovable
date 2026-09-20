@@ -16,7 +16,7 @@ import type { DateRange } from "react-day-picker";
 import { getShopDashboardMetrics, upsertOrderSettings, syncShopifyPaymentsFees } from "@/lib/shop-orders.functions";
 import { syncMetaAdsSpend } from "@/lib/meta-ads.functions";
 import { toast } from "sonner";
-import { isoTodayUS } from "@/lib/timezone";
+import { isoTodayUS, localDateKey } from "@/lib/timezone";
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -354,15 +354,15 @@ export function ShopDashboard({ shopIds, shopName }: { shopIds: string[]; shopNa
                 onSelect={(range: DateRange | undefined) => {
                   if (range?.from && range?.to) {
                     setCustomRange({
-                      from: range.from.toISOString().slice(0, 10),
-                      to:   range.to.toISOString().slice(0, 10),
+                      from: localDateKey(range.from),
+                      to:   localDateKey(range.to),
                     });
                     setCalOpen(false);
                     syncData(true);
                   } else if (range?.from) {
                     setCustomRange({
-                      from: range.from.toISOString().slice(0, 10),
-                      to:   range.from.toISOString().slice(0, 10),
+                      from: localDateKey(range.from),
+                      to:   localDateKey(range.from),
                     });
                   }
                 }}

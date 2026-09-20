@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  getLgOverviewMetrics,
   getLgAccumulatedLucro,
   getLgCardGoal,
   createLgCardGoal,
@@ -245,23 +244,12 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
   const queryClient = useQueryClient();
   const hasShops = shopIds.length > 0;
 
-  const getMetricsFn   = useServerFn(getLgOverviewMetrics);
   const getAccFn       = useServerFn(getLgAccumulatedLucro);
   const getGoalFn      = useServerFn(getLgCardGoal);
   const createGoalFn   = useServerFn(createLgCardGoal);
   const updateGoalFn   = useServerFn(updateLgCardGoal);
   const finalizeGoalFn = useServerFn(finalizeLgCardGoal);
   const getHistoryFn   = useServerFn(listLgCardGoalHistory);
-
-  // ── Main metrics query (mês, usado só pelo cálculo da Meta) ──────────────
-  const { data: metricsData, isLoading: loadingMetrics } = useQuery({
-    queryKey: ["lg-overview-metrics", shopIds.join(",")],
-    queryFn: () => getMetricsFn({ data: { shop_ids: shopIds } }),
-    enabled: hasShops,
-    staleTime: 3 * 60_000,
-    refetchInterval: 10 * 60_000,
-    refetchIntervalInBackground: true,
-  });
 
   // ── Goal query (meta ativa) ────────────────────────────────────────────────
   const { data: goalData, isLoading: loadingGoal } = useQuery({
@@ -383,7 +371,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
   // Vendas/dia = (falta pra meta ÷ dias restantes) ÷ lucro previsto por venda,
   // definido junto com a meta (em vez de derivado de dados históricos).
   const derived = useMemo(() => {
-    if (!savedGoal || !metricsData || !accData) return null;
+    if (!savedGoal || !accData) return null;
 
     const meta = Number(savedGoal.meta ?? 0);
     const lucroAcumulado = accData.lucro ?? 0;
@@ -420,7 +408,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
       vencida,
       semLucroPorVenda,
     };
-  }, [savedGoal, metricsData, accData]);
+  }, [savedGoal, accData]);
 
   // ── Gráfico: dados reais + projeção futura até o prazo ────────────────────
   const d: any = derived;
@@ -769,7 +757,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
               <div className="bg-card border border-border rounded-2xl p-6 text-center">
                 <p className="text-sm text-muted-foreground">Nenhuma meta ativa no momento.</p>
               </div>
-            ) : (loadingAcc && !accData) || loadingMetrics ? (
+            ) : loadingAcc && !accData ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[0, 1, 2].map(i => <Skeleton key={i} className="h-[150px] rounded-2xl" />)}
               </div>
