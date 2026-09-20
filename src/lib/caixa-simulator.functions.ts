@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getCaixaShops } from "@/lib/lg-cards.functions";
+import { isoTodayUS } from "@/lib/timezone";
 
 export const SIM_RECURRENCE = ["none", "daily", "weekly", "monthly"] as const;
 
@@ -218,7 +219,11 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
-    const today = new Date().toISOString().slice(0, 10);
+    // Fuso de Nova York (horário padrão do negócio), não UTC do servidor —
+    // perto da virada, UTC já mostra "amanhã" e um lançamento real datado de
+    // hoje caía num buraco: não entrava no saldo inicial (ainda não
+    // reconciliado) nem nas entradas futuras (`date > today` excluía hoje).
+    const today = isoTodayUS();
 
     const shops   = await getCaixaShops(ownerId);
     const shopIds = (shops as any[]).map((s) => s.id as string);

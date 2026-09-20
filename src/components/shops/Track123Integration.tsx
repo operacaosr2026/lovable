@@ -314,7 +314,10 @@ function EventRules({ shopId }: { shopId: string }) {
         Defina quais eventos do Track123 acionam mudanças automáticas de status. Eventos não mapeados (ou marcados como "Ignorar") apenas atualizam a timeline.
       </div>
 
-      <div className="rounded-xl border border-border overflow-hidden">
+      {/* Coluna do select (220px) não cabe em mobile; rola horizontal em vez
+          de cortar. */}
+      <div className="rounded-xl border border-border overflow-x-auto">
+        <div className="min-w-[560px]">
         {(rules.data ?? []).map((r: any) => (
           <div key={r.id} className="grid grid-cols-[auto_1fr_220px_auto] gap-3 px-3 py-2 items-center border-b border-border/50 last:border-b-0">
             <Switch checked={r.enabled} onCheckedChange={(v) => upsert.mutate({ id: r.id, event_key: r.event_key, event_label: r.event_label, target_status: r.target_status, enabled: v })} />
@@ -334,11 +337,12 @@ function EventRules({ shopId }: { shopId: string }) {
             </Button>
           </div>
         ))}
+        </div>
       </div>
 
-      <div className="rounded-xl border border-dashed border-border p-3">
+      <div className="rounded-xl border border-dashed border-border p-3 overflow-x-auto">
         <div className="text-xs font-medium mb-2">Adicionar evento manualmente</div>
-        <div className="grid grid-cols-[1fr_1fr_180px_auto] gap-2">
+        <div className="grid grid-cols-[1fr_1fr_180px_auto] gap-2 min-w-[560px]">
           <Input placeholder="event_key (snake_case)" value={newKey} onChange={(e) => setNewKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "_"))} />
           <Input placeholder="Texto do evento (ex: Accepted by carrier)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
           <select className="h-10 rounded-md border border-input bg-transparent px-2 text-sm" value={newTarget} onChange={(e) => setNewTarget(e.target.value as any)}>

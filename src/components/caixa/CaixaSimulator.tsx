@@ -12,6 +12,7 @@ import {
   listSimulatedAdEstimates, createSimulatedAdEstimate, updateSimulatedAdEstimate, deleteSimulatedAdEstimate,
   getCaixaSimulation, SIM_RECURRENCE,
 } from "@/lib/caixa-simulator.functions";
+import { isoTodayUS } from "@/lib/timezone";
 
 const RECURRENCE_LABELS: Record<(typeof SIM_RECURRENCE)[number], string> = {
   none: "Uma vez",
@@ -72,7 +73,7 @@ export function CaixaSimulator() {
     return next;
   });
 
-  const today = isoDate(new Date());
+  const today = isoTodayUS();
   const from = today;
   const to = addDays(today, periodDays);
 
