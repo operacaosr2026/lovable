@@ -479,18 +479,9 @@ export function LgOrders({
       )}
 
       {/* ── Orders list ── */}
-      <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        {/* Header */}
-        <div className="grid grid-cols-[32px_24px_140px_1fr_110px_100px_140px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <div />
-          <div />
-          <div>Data</div>
-          <div>Resumo</div>
-          <div>Processamento</div>
-          <div className="text-right">Pedidos</div>
-          <div className="text-right">Custo de Produto</div>
-        </div>
-
+      {/* Colunas em px fixo não cabem em mobile; rola horizontal em vez de
+          cortar (overflow-hidden anterior escondia colunas inteiras). */}
+      <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
         {loading && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             <RefreshCw className="size-4 animate-spin mx-auto mb-2" />
@@ -503,6 +494,19 @@ export function LgOrders({
             Nenhum pedido no período selecionado.
           </div>
         )}
+
+        {!loading && filteredGroups.length > 0 && (
+        <div className="min-w-[760px]">
+        {/* Header */}
+        <div className="grid grid-cols-[32px_24px_140px_1fr_110px_100px_140px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+          <div />
+          <div />
+          <div>Data</div>
+          <div>Resumo</div>
+          <div>Processamento</div>
+          <div className="text-right">Pedidos</div>
+          <div className="text-right">Custo de Produto</div>
+        </div>
 
         {filteredGroups.map((group, i) => {
           const isOpen = expanded.has(group.date);
@@ -628,6 +632,8 @@ export function LgOrders({
             </div>
           );
         })}
+        </div>
+        )}
       </div>
 
       {/* ── Pay dialog ── */}

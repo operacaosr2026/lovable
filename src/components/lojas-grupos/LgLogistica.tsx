@@ -319,17 +319,9 @@ export function LgLogistica({
       </div>
 
       {/* Orders table */}
-      <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_0.8fr] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <div>Pedido</div>
-          <div>Data do Pedido</div>
-          <div>Data Postado</div>
-          <div>Rastreio</div>
-          <div>Status</div>
-          <div>Obs</div>
-          <div title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do KPI</div>
-        </div>
-
+      {/* Colunas fr espremiam o cabeçalho em mobile (ex: "Fora do KPI" quebrado
+          em 3 linhas) e overflow-hidden cortava o resto; agora rola horizontal. */}
+      <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
         {isLoading && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             <RefreshCw className="size-4 animate-spin mx-auto mb-2" />
@@ -342,6 +334,18 @@ export function LgLogistica({
             Nenhum pedido no período.
           </div>
         )}
+
+        {!isLoading && sortedOrders.length > 0 && (
+        <div className="min-w-[700px]">
+        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_0.8fr] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+          <div>Pedido</div>
+          <div>Data do Pedido</div>
+          <div>Data Postado</div>
+          <div>Rastreio</div>
+          <div>Status</div>
+          <div>Obs</div>
+          <div title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do KPI</div>
+        </div>
 
         {sortedOrders.map((o: any, i: number) => (
             <div
@@ -391,6 +395,8 @@ export function LgLogistica({
               </div>
             </div>
         ))}
+        </div>
+        )}
       </div>
 
       {/* Edit modal */}

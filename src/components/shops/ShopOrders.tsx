@@ -426,12 +426,15 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
       })()}
 
       {/* List */}
-      <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+      {/* Colunas em px fixo não cabem em mobile; rola horizontal em vez de
+          cortar (overflow-hidden anterior escondia colunas inteiras). */}
+      <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
         {visibleGroups.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             Nenhum pedido no período/filtro.
           </div>
         )}
+        {visibleGroups.length > 0 && <div className="min-w-[900px]">
         {visibleGroups.map((g, i) => {
           const cost = g.orders.reduce((s, o) => s + orderLineItemsCost(o.raw?.line_items, costProducts, unitCost), 0);
           const d = localDate(g.date);
@@ -522,6 +525,7 @@ export function ShopOrders({ shopIds }: { shopIds: string[] }) {
             </div>
           );
         })}
+        </div>}
       </div>
 
       <div className="text-xs text-muted-foreground">

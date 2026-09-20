@@ -87,12 +87,16 @@ function LgCardDetail() {
   return (
     <PageShell>
       {/* Breadcrumb + header */}
-      <div className="flex items-center gap-3 mb-3">
+      {/* flex-wrap: em mobile, "Lojas e Grupos" + seletor de lojas sozinhos já
+          ocupam a largura toda, espremendo o nome do card a quase zero
+          (ex: "Route" virava "R..."); o texto some e a seleção de lojas quebra
+          pra 2ª linha em vez de disputar espaço com o nome. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
         <Link
           to="/shops/lojas-grupos"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground shrink-0"
         >
-          <ArrowLeft className="size-4" /> Lojas e Grupos
+          <ArrowLeft className="size-4" /> <span className="hidden sm:inline">Lojas e Grupos</span>
         </Link>
         <div className="flex items-center gap-2 min-w-0">
           {card.logo_url ? (
