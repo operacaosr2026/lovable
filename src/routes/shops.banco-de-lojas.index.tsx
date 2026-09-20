@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { Plus, ShoppingBag, ExternalLink, Pencil, Trash2, X, List, Layers } from "lucide-react";
 import { listShopifyStores, renameShopifyStore, deleteShopifyStore } from "@/lib/shop-orders.functions";
+import { listBoardColumns } from "@/lib/store-board.functions";
 import { ConnectStoreDialog } from "@/components/shops/ShopIntegrations";
 import { StoreBoard } from "@/components/shops/StoreBoard";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
@@ -26,6 +27,7 @@ function BancoDeLojasIndex() {
   const confirm = useConfirm();
   const listFn = useServerFn(listShopifyStores);
   const deleteFn = useServerFn(deleteShopifyStore);
+  const listColumnsFn = useServerFn(listBoardColumns);
   const [openConnect, setOpenConnect] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [connecting, setConnecting] = useState<any>(null);
@@ -34,6 +36,12 @@ function BancoDeLojasIndex() {
     queryKey: ["shopify-stores"],
     queryFn: () => listFn(),
   });
+
+  const { data: columns = [] } = useQuery({
+    queryKey: ["board-columns"],
+    queryFn: () => listColumnsFn(),
+  });
+  const columnNameById = new Map((columns as any[]).map((c) => [c.id, c.name as string]));
 
   const remove = useMutation({
     mutationFn: (id: string) => deleteFn({ data: { id } }),
@@ -100,6 +108,7 @@ function BancoDeLojasIndex() {
             <StoreCard
               key={store.id}
               store={store}
+              columnName={columnNameById.get(store.board_column_id) ?? null}
               onEdit={() => setEditing(store)}
               onDelete={() => handleDelete(store)}
             />
@@ -153,7 +162,7 @@ function BancoDeLojasIndex() {
   );
 }
 
-function StoreCard({ store, onEdit, onDelete }: { store: any; onEdit: () => void; onDelete: () => void }) {
+function StoreCard({ store, columnName, onEdit, onDelete }: { store: any; columnName: string | null; onEdit: () => void; onDelete: () => void }) {
   const domain = store.shop_domain ?? "";
   const storeUrl = domain ? `https://${domain}` : null;
 
@@ -163,7 +172,14 @@ function StoreCard({ store, onEdit, onDelete }: { store: any; onEdit: () => void
         <ShoppingBag className="size-5" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate">{store.name || domain}</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-sm font-semibold truncate">{store.name || domain}</div>
+          {columnName && (
+            <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+              {columnName}
+            </span>
+          )}
+        </div>
         {store.is_placeholder ? (
           <span className="mt-1 inline-block text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-300">
             Aguardando Shopify
