@@ -687,7 +687,7 @@ function AvgOrdersBadge({ storeId }: { storeId: string }) {
   });
   if (isLoading) return <BadgeShell icon={TrendingUp}>...</BadgeShell>;
   if (!data) return <BadgeShell icon={TrendingUp}>-</BadgeShell>;
-  return <BadgeShell icon={TrendingUp}>{data.avgPerDay.toFixed(1)} pedidos/dia</BadgeShell>;
+  return <BadgeShell icon={TrendingUp}>{Math.round(data.avgPerDay)} pedidos/dia</BadgeShell>;
 }
 
 function PayoutTimeBadge({ storeId }: { storeId: string }) {
@@ -699,7 +699,7 @@ function PayoutTimeBadge({ storeId }: { storeId: string }) {
   });
   if (isLoading) return <BadgeShell icon={Timer}>...</BadgeShell>;
   if (!data || data.avgDays == null) return <BadgeShell icon={Timer}>-</BadgeShell>;
-  return <BadgeShell icon={Timer}>{data.avgDays.toFixed(1)}d até payout</BadgeShell>;
+  return <BadgeShell icon={Timer}>{Math.round(data.avgDays)}d até payout</BadgeShell>;
 }
 
 function NoteBadge({ store }: { store: Store }) {
