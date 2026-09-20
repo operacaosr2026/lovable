@@ -2,7 +2,15 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { attachLiveShopifyNames, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, costProductsFor, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
+import { orderLineItemsCost } from "@/lib/product-cost-match";
+import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
+
+function addDaysISO(iso: string, n: number) {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 // Same as attachLiveShopifyNames, but for rows carrying a nested `shops` object
 // (as returned by PostgREST embedding, e.g. lg_card_shops.select("...,shops(id,name,...)")).
@@ -521,9 +529,10 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
       };
     }
 
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const defaultMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    // "Hoje"/"mês corrente" sempre no fuso de Nova York (horário padrão do
+    // negócio), não UTC nem o horário local do servidor.
+    const todayStr = isoTodayUS();
+    const defaultMonthStart = isoMonthStartUS();
     // Período controlado pelo seletor de datas do dashboard; sem seleção, usa
     // o mês corrente (mesmo default de antes). Faturamento/custos/anúncios
     // seguem esse intervalo.
@@ -534,17 +543,16 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     // do seletor de datas: estorno demora a acontecer depois da compra
     // (semanas), então medir só o período selecionado (ex: hoje, ou o mês
     // corrente no início do mês) deixaria a taxa artificialmente perto de 0.
-    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 30);
-    const estornoStart = estornoWindowStart.toISOString().slice(0, 10);
+    const estornoStart = addDaysISO(todayStr, -30);
 
-    const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, chargebackDisputesRes, costRes, feesRes, adsRes, reembolsosRes, chargebacksRes] = await Promise.all([
+    const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, chargebackDisputesRes, costRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
       supabaseAdmin.from("shops").select("id, name, opening_balance").in("id", shopIds),
       // "Saldo atual" no Caixa (LgCashflowView) só soma lançamentos conciliados,
       // e ignora os sincronizados automaticamente (taxas/pendências do Shopify).
       supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount")
         .in("shop_id", shopIds).eq("reconciled", true)
         .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
-      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count").in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
+      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, raw").in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
       supabaseAdmin.from("shop_orders").select("shop_id").in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
       // Taxa de estorno = chargeback real (disputa formal do banco/cartão do
       // cliente, sincronizada em shop_order_disputes) ÷ total de pedidos —
@@ -556,8 +564,11 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").in("shop_id", shopIds),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
       supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Reembolso").gte("date", from).lte("date", to),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Chargeback").gte("date", from).lte("date", to),
+      // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
+      // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
+      // "lucro" bater em todas as telas.
+      getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
+      costProductsFor(supabaseAdmin, ownerId),
     ]);
 
     const openingBalanceByShop = new Map((shopsRes.data ?? []).map((s: any) => [s.id, Number(s.opening_balance ?? 0)]));
@@ -584,9 +595,12 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
+      // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+      // em vez de items_count × custo fixo da loja.
       const shopCost = costByShop.get(sid);
-      const unit = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + Number(o.items_count ?? 0) * unit);
+      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      const cost = orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
+      custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + cost);
     }
 
     // Taxa de estorno em janela rolante de 30 dias (ver comentário acima)
@@ -609,10 +623,8 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     for (const r of (feesRes.data ?? []) as any[]) feesByShop.set(r.shop_id, (feesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
     const adsByShop = new Map<string, number>();
     for (const r of (adsRes.data ?? []) as any[]) adsByShop.set(r.shop_id, (adsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
-    const reembolsosByShop = new Map<string, number>();
-    for (const r of (reembolsosRes.data ?? []) as any[]) reembolsosByShop.set(r.shop_id, (reembolsosByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
-    const chargebacksByShop = new Map<string, number>();
-    for (const r of (chargebacksRes.data ?? []) as any[]) chargebacksByShop.set(r.shop_id, (chargebacksByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+    const reembolsosByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
+    const chargebacksByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
 
     return {
       cards: cards.map((c: any) => {
@@ -684,20 +696,21 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const patchedCardShops = await patchEmbeddedShopNames(ownerId, cardShops as any[]);
     const shopNameById = new Map(patchedCardShops.map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
 
-    const now = new Date();
-    const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    const to   = now.toISOString().slice(0, 10);
+    // "Hoje"/"mês corrente" sempre no fuso de Nova York (horário padrão do
+    // negócio), não UTC — pra não incluir/excluir um dia de pedidos perto da
+    // virada e não bater com Dashboard/Metas, que já usam esse fuso.
+    const to   = isoTodayUS();
+    const from = isoMonthStartUS();
     // Estorno demora a acontecer depois da compra (semanas), então medir só
     // pedidos feitos "este mês" deixa a taxa sempre perto de 0 no início do
     // mês. Usa uma janela rolante de 30 dias.
-    const estornoWindowStart = new Date(now); estornoWindowStart.setUTCDate(estornoWindowStart.getUTCDate() - 30);
-    const estornoFrom = estornoWindowStart.toISOString().slice(0, 10);
+    const estornoFrom = addDaysISO(to, -30);
 
     // B, C, D, E in parallel
-    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks] = await Promise.all([
+    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
       supabaseAdmin
         .from("shop_orders")
-        .select("revenue, items_count, shop_id")
+        .select("revenue, items_count, shop_id, raw")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", from)
@@ -741,6 +754,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pra "lucro" bater entre as duas telas.
       getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
+      costProductsFor(supabaseAdmin, ownerId),
     ]);
 
     const orders             = ordersRes.data ?? [];
@@ -761,10 +775,12 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const reembolsos    = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
     const chargebacks   = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
     const faturamento   = ordersRevenue - reembolsos - chargebacks;
+    // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+    // pra "lucro" bater entre as duas telas em vez de items_count × custo fixo da loja.
     const custoProduto  = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id as string);
-      const unit = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return s + Number(o.items_count ?? 0) * unit;
+      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      return s + orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
     }, 0);
     const taxas    = sumAmt(fees);
     const anuncios = sumAmt(ads);

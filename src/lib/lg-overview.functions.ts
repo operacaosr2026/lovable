@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
+import { costProductsFor, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { orderLineItemsCost } from "@/lib/product-cost-match";
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
 
@@ -175,8 +177,8 @@ export const getLgOverviewMetrics = createServerFn({ method: "GET" })
 async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
 ) {
-  const [ordersRes, adsRes, feesRes, settingsRes] = await Promise.all([
-    supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date")
+  const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
+    supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,raw")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .gte("order_date", start_date).lte("order_date", end_date),
     supabase.from("shop_cash_entries").select("amount,date")
@@ -189,6 +191,10 @@ async function computeAccumulatedLucro(
       .gte("date", start_date).lte("date", end_date),
     supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
       .eq("user_id", ownerId).in("shop_id", shop_ids),
+    costProductsFor(supabase, ownerId),
+    // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte usada
+    // pelo Dashboard e pelo card de Lojas e Grupos, pra "lucro" bater nas 3 telas.
+    getGroupShopifyRefundsAndChargebacks(ownerId, shop_ids, start_date, end_date),
   ]);
 
   const costByShop = new Map<string, number>(
@@ -200,11 +206,17 @@ async function computeAccumulatedLucro(
     : 0;
 
   const orders = ordersRes.data ?? [];
+  // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+  // em vez de items_count × custo fixo da loja.
   const orderCost = (o: any) => {
-    const c = costByShop.get(o.shop_id);
-    return Number(o.items_count ?? 0) * (c != null && c > 0 ? c : avgCost);
+    const shopCost = costByShop.get(o.shop_id);
+    const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+    return orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
   };
-  const revenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+  const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
+  const reembolsos = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
+  const chargebacks = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
+  const revenue = ordersRevenue - reembolsos - chargebacks;
   const custo = orders.reduce((s: number, o: any) => s + orderCost(o), 0);
   const anuncios = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
   const taxas = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
