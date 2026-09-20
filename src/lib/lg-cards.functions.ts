@@ -6,6 +6,20 @@ import { attachLiveShopifyNames, costProductsFor, getGroupShopifyRefundsAndCharg
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 
+// supabaseAdmin ignora RLS, então o dono de cada shop_id vindo do cliente
+// precisa ser checado à mão antes de vinculá-lo a um card — senão um usuário
+// autenticado podia colar o shop_id de outro workspace e passar a ler o
+// faturamento/lucro daquela loja pelas rotas de card (achado de segurança).
+async function assertShopsOwnedBy(ownerId: string, shopIds: string[]) {
+  const uniqueIds = Array.from(new Set(shopIds));
+  if (uniqueIds.length === 0) return;
+  const { data: owned } = await supabaseAdmin
+    .from("shops").select("id").eq("user_id", ownerId).in("id", uniqueIds);
+  const ownedSet = new Set((owned ?? []).map((s: any) => s.id as string));
+  const missing = uniqueIds.filter((id) => !ownedSet.has(id));
+  if (missing.length > 0) throw new Error("Loja não encontrada ou não pertence a este workspace.");
+}
+
 function addDaysISO(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
@@ -130,6 +144,7 @@ export const createLgCard = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     if (data.shops.length > 0) {
+      await assertShopsOwnedBy(ownerId, data.shops.map((s) => s.shop_id));
       const rows = data.shops.map((s) => ({
         card_id:      card.id,
         shop_id:      s.shop_id,
@@ -157,6 +172,16 @@ export const updateLgCard = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
+
+    // supabaseAdmin ignora RLS e um UPDATE que não casa nenhuma linha não
+    // gera erro no supabase-js — sem essa checagem, passar o id de um card de
+    // outro dono ainda seguia até o delete/insert de lg_card_shops abaixo e
+    // apagava/reescrevia os vínculos de loja daquele card alheio.
+    const { data: ownedCard } = await supabaseAdmin
+      .from("lg_cards").select("id").eq("id", data.id).eq("user_id", ownerId).maybeSingle();
+    if (!ownedCard) throw new Error("Card não encontrado.");
+
+    if (data.shops.length > 0) await assertShopsOwnedBy(ownerId, data.shops.map((s) => s.shop_id));
 
     // Shops linked before this edit — needed so we can also recompute their
     // sync state if they're being dropped from the card (or the card is
@@ -545,25 +570,30 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
     // corrente no início do mês) deixaria a taxa artificialmente perto de 0.
     const estornoStart = addDaysISO(todayStr, -30);
 
+    // supabaseAdmin ignora RLS — todo filtro de posse abaixo é manual. shopIds
+    // já vem só de cards do próprio ownerId (linhas acima), mas filtramos por
+    // user_id aqui também (defesa em profundidade, e pra não depender só do
+    // create/updateLgCard nunca deixarem um shop_id de outro dono entrar em
+    // lg_card_shops).
     const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, chargebackDisputesRes, costRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
-      supabaseAdmin.from("shops").select("id, name, opening_balance").in("id", shopIds),
+      supabaseAdmin.from("shops").select("id, name, opening_balance").eq("user_id", ownerId).in("id", shopIds),
       // "Saldo atual" no Caixa (LgCashflowView) só soma lançamentos conciliados,
       // e ignora os sincronizados automaticamente (taxas/pendências do Shopify).
       supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount")
-        .in("shop_id", shopIds).eq("reconciled", true)
+        .eq("user_id", ownerId).in("shop_id", shopIds).eq("reconciled", true)
         .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
-      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, raw").in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
-      supabaseAdmin.from("shop_orders").select("shop_id").in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
+      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
+      supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
       // Taxa de estorno = chargeback real (disputa formal do banco/cartão do
       // cliente, sincronizada em shop_order_disputes) ÷ total de pedidos —
       // mesma fonte usada em getLgCardQuickMetrics, pra bater com a tela de
       // Lojas e Grupos. Diferente de um simples cancelamento de pedido.
       supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
-        .in("shop_id", shopIds).eq("type", "chargeback")
+        .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
         .gte("initiated_at", `${estornoStart}T00:00:00Z`).lte("initiated_at", `${todayStr}T23:59:59Z`),
-      supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").in("shop_id", shopIds),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
+      supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
@@ -682,6 +712,15 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
+    // card_id vem cru do cliente; supabaseAdmin ignora RLS, então sem essa
+    // checagem qualquer usuário logado podia ler nome de loja e métricas de
+    // um card de outro dono só adivinhando o UUID.
+    const { data: ownedCard } = await supabaseAdmin
+      .from("lg_cards").select("id").eq("id", data.card_id).eq("user_id", ownerId).maybeSingle();
+    if (!ownedCard) {
+      return { lucro: 0, taxaEstorno: 0, totalPedidos: 0, totalEstornos: 0, payoutLag: [], estornoPorLoja: [] };
+    }
+
     // A) shops in this card
     const { data: cardShops } = await supabaseAdmin
       .from("lg_card_shops")
@@ -725,6 +764,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       supabaseAdmin
         .from("shop_order_disputes")
         .select("shop_id, order_external_id")
+        .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .eq("type", "chargeback")
         .gte("initiated_at", estornoFrom)

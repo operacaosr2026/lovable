@@ -21,6 +21,21 @@ const StoreEntry = z.object({
   role: z.enum(["matriz", "subloja"]),
 });
 
+// supabaseAdmin ignora RLS — sem essa checagem, um shopify_store_id de outro
+// workspace colado no input criava/atualizava um `shops` do atacante apontando
+// pra store Shopify de outro dono (nome/domínio vazado; getShopifyCreds ainda
+// bloqueia o uso real do token porque também filtra por user_id, mas o vínculo
+// nunca devia ser criado em primeiro lugar).
+async function assertShopifyStoresOwnedBy(ownerId: string, shopifyStoreIds: string[]) {
+  const uniqueIds = Array.from(new Set(shopifyStoreIds));
+  if (uniqueIds.length === 0) return;
+  const { data: owned } = await supabaseAdmin
+    .from("shopify_stores").select("id").eq("user_id", ownerId).in("id", uniqueIds);
+  const ownedSet = new Set((owned ?? []).map((s: any) => s.id as string));
+  const missing = uniqueIds.filter((id) => !ownedSet.has(id));
+  if (missing.length > 0) throw new Error("Loja Shopify não encontrada ou não pertence a este workspace.");
+}
+
 // Ensures each shopify store in a group has a corresponding internal shop record.
 // Reuses an existing `shops` mirror row for that Shopify store when one already
 // exists (e.g. one created by Lojas e Grupos, or by another group) instead of
@@ -55,6 +70,7 @@ async function syncGroupShops(
     const { data: shopifyStores } = await supabaseAdmin
       .from("shopify_stores")
       .select("id, name, shop_domain")
+      .eq("user_id", ownerId)
       .in("id", shopifyIds);
 
     for (const store of stores) {
@@ -174,6 +190,7 @@ export const createGroup = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     if (data.stores.length > 0) {
+      await assertShopifyStoresOwnedBy(context.ownerId, data.stores.map((s) => s.shopify_store_id));
       const { error: se } = await supabaseAdmin
         .from("shop_group_stores")
         .insert(data.stores.map((s) => ({ group_id: row.id, ...s })));
@@ -195,6 +212,18 @@ export const updateGroup = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ context, data }) => {
+    // supabaseAdmin ignora RLS e um UPDATE que não casa nenhuma linha não gera
+    // erro no supabase-js — sem essa checagem, o id de um grupo de outro dono
+    // ainda seguia até o delete/insert de shop_group_stores abaixo e
+    // apagava/reescrevia os vínculos de loja daquele grupo alheio.
+    const { data: ownedGroup } = await supabaseAdmin
+      .from("shop_groups").select("id").eq("id", data.id).eq("user_id", context.ownerId).maybeSingle();
+    if (!ownedGroup) throw new Error("Grupo não encontrado.");
+
+    if (data.stores !== undefined && data.stores.length > 0) {
+      await assertShopifyStoresOwnedBy(context.ownerId, data.stores.map((s) => s.shopify_store_id));
+    }
+
     const { error } = await supabaseAdmin
       .from("shop_groups")
       .update(data.patch)
