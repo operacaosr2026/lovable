@@ -11,6 +11,13 @@ function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d);
 }
 
+// Loga (sem lançar) quando um fetch paginado bate no teto de páginas antes de
+// esgotar a Shopify (`url` ainda não-vazio) — sem isso, uma loja de alto
+// volume tinha dado mais antigo do período silenciosamente descartado.
+function warnPaginationCap(fnName: string, domain: string, url: string) {
+  if (url) console.error(`[sync-shop-orders] ${fnName}(${domain}): atingiu o teto de páginas antes de esgotar a listagem — dado do período pode estar incompleto.`);
+}
+
 async function fetchOrders(domain: string, token: string, sinceISO: string) {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&created_at_min=${encodeURIComponent(sinceISO)}`;
@@ -23,6 +30,7 @@ async function fetchOrders(domain: string, token: string, sinceISO: string) {
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchOrders", domain, url);
   return out;
 }
 
@@ -61,6 +69,7 @@ async function fetchPayouts(domain: string, token: string, sinceISO: string) {
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchPayouts", domain, url);
   return out;
 }
 
@@ -79,6 +88,7 @@ async function fetchBalanceTransactions(domain: string, token: string, maxPages:
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchBalanceTransactions", domain, url);
   return out;
 }
 
@@ -102,6 +112,7 @@ async function fetchDisputes(domain: string, token: string, maxPages: number) {
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
   }
+  warnPaginationCap("fetchDisputes", domain, url);
   return out;
 }
 
@@ -421,30 +432,59 @@ async function processShop(s: any, today: string) {
   }
 }
 
+// api/ssr.js tem maxDuration=60s. Processar todas as lojas sequencialmente
+// (cada uma com várias chamadas paginadas à Shopify) pode passar disso — e
+// quando o Vercel mata a função no meio do loop, isso não é um erro
+// capturável pelo try/catch por loja, as lojas restantes simplesmente não
+// sincronizam e nada fica registrado. Corta a rodada antes do limite: as
+// lojas que sobrarem são pegas na próxima chamada (pg_cron roda a cada
+// 10min pro sync leve de pedidos, então o atraso é pequeno).
+const TIME_BUDGET_MS = 50_000;
+
+async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnly: boolean }) {
+  const unauthorized = verifyCronApiKey(request);
+  if (unauthorized) return unauthorized;
+  const start = Date.now();
+  const today = isoDate(new Date());
+  const { payoutsOnly, ordersOnly } = opts;
+  const { data: settings, error } = await supabaseAdmin
+    .from("shop_order_settings").select("*").eq("automation_enabled", true);
+  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  let processed = 0;
+  let skippedByBudget = 0;
+  const all = settings ?? [];
+  for (let idx = 0; idx < all.length; idx++) {
+    if (Date.now() - start > TIME_BUDGET_MS) {
+      skippedByBudget = all.length - idx;
+      console.error(`sync-shop-orders: orçamento de tempo (${TIME_BUDGET_MS}ms) estourado, ${skippedByBudget} loja(s) não processadas nesta rodada — pegas na próxima.`);
+      break;
+    }
+    const s = all[idx];
+    try {
+      if (payoutsOnly) await processShopPayoutsOnly(s);
+      else if (ordersOnly) await syncOrdersOnlyForShop(s, today);
+      else await processShop(s, today);
+      processed++;
+    } catch (e) { console.error("shop fail", s.shop_id, e); }
+  }
+  return new Response(JSON.stringify({ processed, skippedByBudget, today, payoutsOnly, ordersOnly }), { headers: { "Content-Type": "application/json" } });
+}
+
 export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
   server: {
     handlers: {
+      // Disparado pelo pg_cron (Postgres), que manda POST com o corpo
+      // {payouts_only|orders_only}. Ver supabase/migrations/*_sync_cron.sql.
       POST: async ({ request }) => {
-        const unauthorized = verifyCronApiKey(request);
-        if (unauthorized) return unauthorized;
-        const today = isoDate(new Date());
         const body = await request.json().catch(() => ({})) as any;
-        const payoutsOnly = Boolean(body?.payouts_only);
-        const ordersOnly  = Boolean(body?.orders_only);
-        const { data: settings, error } = await supabaseAdmin
-          .from("shop_order_settings").select("*").eq("automation_enabled", true);
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
-        let processed = 0;
-        for (const s of settings ?? []) {
-          try {
-            if (payoutsOnly) await processShopPayoutsOnly(s);
-            else if (ordersOnly) await syncOrdersOnlyForShop(s, today);
-            else await processShop(s, today);
-            processed++;
-          } catch (e) { console.error("shop fail", s.shop_id, e); }
-        }
-        return new Response(JSON.stringify({ processed, today, payoutsOnly, ordersOnly }), { headers: { "Content-Type": "application/json" } });
+        return runSync(request, { payoutsOnly: Boolean(body?.payouts_only), ordersOnly: Boolean(body?.orders_only) });
       },
+      // Vercel Cron (ver vercel.json "crons") só sabe chamar via GET, sem
+      // corpo — sem esse handler, os 2 agendamentos diários de lá nunca
+      // rodavam nada (a rota só aceitava POST). Roda a sincronização
+      // completa (sem payouts_only/orders_only) como um resync mais
+      // profundo, redundante ao pg_cron mais frequente.
+      GET: async ({ request }) => runSync(request, { payoutsOnly: false, ordersOnly: false }),
     },
   },
 });
