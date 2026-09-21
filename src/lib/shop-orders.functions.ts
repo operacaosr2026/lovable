@@ -176,6 +176,38 @@ function orderRefundAmount(o: any) {
   return Math.max(txSum, priceDiff);
 }
 
+// Mesmo total de orderRefundAmount, mas também devolve o valor quebrado por
+// dia (data da transação de reembolso) — usado nos gráficos de evolução
+// diária, que antes só descontavam reembolso/chargeback no agregado do
+// período, nunca dia a dia. A soma de byDate sempre bate com o total
+// retornado, mesmo no caso raro (pedido "void" sem transação de reembolso
+// associada) em que a diferença de preço vira um resto sem data exata — esse
+// resto cai no dia do último reembolso do pedido, ou no fim do período.
+function orderRefundAmountByDate(o: any, fallbackDate: string): { total: number; byDate: Record<string, number> } {
+  const byDate: Record<string, number> = {};
+  let txSum = 0;
+  for (const r of (o.refunds ?? [])) {
+    for (const t of (r.transactions ?? [])) {
+      if ((t.kind === "refund" || t.kind === "void") && t.status === "success") {
+        const amt = Number(t.amount ?? 0);
+        const date = String(t.processed_at || r.created_at || "").slice(0, 10) || fallbackDate;
+        byDate[date] = (byDate[date] ?? 0) + amt;
+        txSum += amt;
+      }
+    }
+  }
+  const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
+  const extra = priceDiff - txSum;
+  if (extra > 0) {
+    const lastRefundDate = (o.refunds ?? [])
+      .map((r: any) => String(r.created_at ?? "").slice(0, 10))
+      .filter(Boolean).sort().pop();
+    const date = lastRefundDate || fallbackDate;
+    byDate[date] = (byDate[date] ?? 0) + extra;
+  }
+  return { total: Math.max(txSum, priceDiff), byDate };
+}
+
 async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: string) {
   const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any&created_at_min=${encodeURIComponent(sinceISO)}`;
   const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
@@ -1098,24 +1130,37 @@ export const getGroupShopifyRefundsAndChargebacks = createServerOnlyFn(async (
     .select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", shopIds);
 
   const rows = await Promise.all((settings ?? []).map(async (s: any) => {
-    if (!s.shopify_store_id) return { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0 };
+    const empty = { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number> };
+    if (!s.shopify_store_id) return empty;
     try {
       const { domain, token } = await getShopifyCreds(supabaseAdmin, ownerId, s.shopify_store_id);
       const [refOrders, disputes] = await Promise.all([
         fetchShopifyRefundedOrders(domain, token, `${fromISO}T00:00:00Z`, `${toISO}T23:59:59Z`),
         fetchShopifyDisputes(domain, token, `${fromISO}T00:00:00Z`),
       ]);
-      const refAmt = refOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
-      const cbAmt  = disputes
-        .filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${toISO}T23:59:59Z`)
-        .reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
-      return { shop_id: s.shop_id as string, refAmt, cbAmt };
+      let refAmt = 0;
+      const refByDate: Record<string, number> = {};
+      for (const o of refOrders) {
+        const { total, byDate } = orderRefundAmountByDate(o, toISO);
+        refAmt += total;
+        for (const [d, amt] of Object.entries(byDate)) refByDate[d] = (refByDate[d] ?? 0) + amt;
+      }
+      let cbAmt = 0;
+      const cbByDate: Record<string, number> = {};
+      for (const d of disputes) {
+        if (d.type !== "chargeback" || d.initiated_at > `${toISO}T23:59:59Z`) continue;
+        const amt = Number(d.amount ?? 0);
+        cbAmt += amt;
+        const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
+        cbByDate[date] = (cbByDate[date] ?? 0) + amt;
+      }
+      return { shop_id: s.shop_id as string, refAmt, cbAmt, refByDate, cbByDate };
     } catch (e) {
       // Sem log, isso caía pra 0 silenciosamente e inflava o "lucro" exibido
       // sem nenhum indício de que a Shopify falhou (token revogado, rate
       // limit, 5xx) em vez de a loja realmente não ter reembolso/chargeback.
       console.error(`getGroupShopifyRefundsAndChargebacks: falhou pra shop_id=${s.shop_id}`, e);
-      return { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0 };
+      return empty;
     }
   }));
   return rows;
@@ -1992,6 +2037,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
 
     // Reembolsos e chargebacks — buscados ao vivo da Shopify API para o período exato
     let reembolsos = 0, prevReembolsos = 0, chargebacks = 0, prevChargebacks = 0;
+    const refundsByDate = new Map<string, number>();
+    const chargebacksByDate = new Map<string, number>();
     const shopifySettings = (settingsRes.data ?? []).filter((s: any) => s.shopify_store_id);
     if (shopifySettings.length > 0) {
       const shopifyResults = await Promise.all(
@@ -2004,14 +2051,28 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
               fetchShopifyDisputes(domain, token, `${from}T00:00:00Z`),
               fetchShopifyDisputes(domain, token, `${prev_from}T00:00:00Z`),
             ]);
-            const refAmt     = refOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
+            let refAmt = 0;
+            const refByDate: Record<string, number> = {};
+            for (const o of refOrders) {
+              const { total, byDate } = orderRefundAmountByDate(o, to);
+              refAmt += total;
+              for (const [d, amt] of Object.entries(byDate)) refByDate[d] = (refByDate[d] ?? 0) + amt;
+            }
             const prevRefAmt = refPrevOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
-            const cbAmt      = disputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
+            let cbAmt = 0;
+            const cbByDate: Record<string, number> = {};
+            for (const d of disputes) {
+              if (d.type !== "chargeback" || d.initiated_at > `${to}T23:59:59Z`) continue;
+              const amt = Number(d.amount ?? 0);
+              cbAmt += amt;
+              const date = String(d.initiated_at ?? "").slice(0, 10) || to;
+              cbByDate[date] = (cbByDate[date] ?? 0) + amt;
+            }
             const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
-            return { refAmt, prevRefAmt, cbAmt, prevCbAmt };
+            return { refAmt, prevRefAmt, cbAmt, prevCbAmt, refByDate, cbByDate };
           } catch (e) {
             console.error(`getShopDashboardMetrics: falha ao buscar reembolso/chargeback pra shopify_store_id=${s.shopify_store_id}`, e);
-            return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0 };
+            return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0, refByDate: {}, cbByDate: {} };
           }
         })
       );
@@ -2019,6 +2080,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       prevReembolsos = shopifyResults.reduce((acc, r) => acc + r.prevRefAmt, 0);
       chargebacks    = shopifyResults.reduce((acc, r) => acc + r.cbAmt, 0);
       prevChargebacks= shopifyResults.reduce((acc, r) => acc + r.prevCbAmt, 0);
+      for (const r of shopifyResults) {
+        for (const [d, amt] of Object.entries(r.refByDate)) refundsByDate.set(d, (refundsByDate.get(d) ?? 0) + amt);
+        for (const [d, amt] of Object.entries(r.cbByDate)) chargebacksByDate.set(d, (chargebacksByDate.get(d) ?? 0) + amt);
+      }
     }
 
     // Mesmo cálculo por produto/palavra-chave usado em Pedidos e no Caixa
@@ -2064,11 +2129,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       return Math.round(((curr - prev) / prev) * 100 * 10) / 10;
     }
 
-    // Daily chart data grouped by order_date. O lucro por dia desconta taxas e
-    // anúncios daquele dia (mesmas deduções do KPI "Lucro" agregado), pra não
-    // divergir do valor mostrado ao selecionar um único dia como período.
-    // Reembolsos/chargebacks (buscados ao vivo da Shopify, sem data por pedido)
-    // continuam só no agregado do período, não neste breakdown diário.
+    // Daily chart data grouped by order_date. O lucro por dia desconta taxas,
+    // anúncios e reembolso/chargeback daquele dia (mesmas deduções do KPI
+    // "Lucro" agregado), pra não divergir do valor mostrado ao selecionar um
+    // único dia como período.
     const feesByDate = new Map<string, number>();
     for (const r of (feesRes.data ?? []) as any[]) feesByDate.set(r.date, (feesByDate.get(r.date) ?? 0) + Number(r.amount ?? 0));
     const adsByDate = new Map<string, number>();
@@ -2084,16 +2148,21 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     }
     for (const d of feesByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of adsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const d of refundsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const d of chargebacksByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
 
     const chartData = Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, v]) => {
         const dayTaxas = feesByDate.get(date) ?? 0;
         const dayAnuncios = adsByDate.get(date) ?? 0;
+        const dayReembolsos = refundsByDate.get(date) ?? 0;
+        const dayChargebacks = chargebacksByDate.get(date) ?? 0;
+        const dayFaturamento = v.faturamento - dayReembolsos - dayChargebacks;
         return {
           date: date.slice(5).replace("-", "/"), // MM/DD → DD/MM display
-          faturamento: Math.round(v.faturamento * 100) / 100,
-          lucro: Math.round((v.faturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          faturamento: Math.round(dayFaturamento * 100) / 100,
+          lucro: Math.round((dayFaturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
         };
       });

@@ -81,6 +81,17 @@ async function computeAccumulatedLucro(
     const d = r.date as string;
     lucroByDate.set(d, (lucroByDate.get(d) ?? 0) - Number(r.amount ?? 0));
   }
+  // Reembolso/chargeback também descontados dia a dia (data do reembolso/da
+  // disputa) — antes só entravam no agregado do período, nunca no gráfico,
+  // então a curva "Real" terminava acima do "Lucro acumulado" mostrado ao lado.
+  for (const r of refundsAndChargebacks as any[]) {
+    for (const [d, amt] of Object.entries(r.refByDate ?? {})) {
+      lucroByDate.set(d, (lucroByDate.get(d) ?? 0) - Number(amt));
+    }
+    for (const [d, amt] of Object.entries(r.cbByDate ?? {})) {
+      lucroByDate.set(d, (lucroByDate.get(d) ?? 0) - Number(amt));
+    }
+  }
 
   const days: string[] = [];
   for (let d = start_date; d <= end_date; d = addDays(d, 1)) days.push(d);
