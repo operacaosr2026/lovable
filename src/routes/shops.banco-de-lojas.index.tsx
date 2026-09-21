@@ -42,6 +42,16 @@ function BancoDeLojasIndex() {
     queryFn: () => listColumnsFn(),
   });
   const columnNameById = new Map((columns as any[]).map((c) => [c.id, c.name as string]));
+  // Mesma ordem da Esteira: agrupado por coluna (na ordem das colunas) e,
+  // dentro da coluna, pela posição do card — lojas órfãs (sem coluna válida)
+  // caem na primeira coluna, igual ao StoreBoard.
+  const columnIndexById = new Map((columns as any[]).map((c, i) => [c.id, i]));
+  const sortedStores = [...stores].sort((a: any, b: any) => {
+    const ca = columnIndexById.get(a.board_column_id) ?? 0;
+    const cb = columnIndexById.get(b.board_column_id) ?? 0;
+    if (ca !== cb) return ca - cb;
+    return Number(a.board_position ?? 0) - Number(b.board_position ?? 0);
+  });
 
   const remove = useMutation({
     mutationFn: (id: string) => deleteFn({ data: { id } }),
@@ -104,7 +114,7 @@ function BancoDeLojasIndex() {
         <StoreBoard onEditStore={(store) => setEditing(store)} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {stores.map((store: any) => (
+          {sortedStores.map((store: any) => (
             <StoreCard
               key={store.id}
               store={store}
