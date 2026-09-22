@@ -344,6 +344,15 @@ async function processShop(s: any, today: string) {
             .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
             .in("external_id", orders.map((o: any) => String(o.id)));
           const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
+
+          // O tracking_url que a própria Shopify manda no fulfillment pode estar
+          // errado (app de rastreio configurado com o domínio de outra loja) —
+          // com um template próprio configurado pra loja, ele manda sempre,
+          // corrigindo até URLs já salvas erradas em syncs anteriores.
+          const { data: track123Integ } = await supabaseAdmin.from("track123_integrations")
+            .select("tracking_link_template").eq("shop_id", s.shop_id).maybeSingle();
+          const trackingLinkTemplate: string | null = track123Integ?.tracking_link_template ?? null;
+
           for (const o of orders) {
             const existing = dbOrderByExt.get(String(o.id));
             if (!existing) continue;
@@ -356,7 +365,9 @@ async function processShop(s: any, today: string) {
             const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
             if (!existing.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
             if (!existing.tracking_code) patch.tracking_code = String(trackingNumber);
-            if (!existing.tracking_url) {
+            if (trackingLinkTemplate) {
+              patch.tracking_url = trackingLinkTemplate.replace("[CODE]", encodeURIComponent(String(trackingNumber)));
+            } else if (!existing.tracking_url) {
               const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
               if (url) patch.tracking_url = url;
             }

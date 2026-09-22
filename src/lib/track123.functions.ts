@@ -15,7 +15,7 @@ export const getTrack123Integrations = createServerFn({ method: "POST" })
     if (!data.shop_ids.length) return [];
     const { data: rows, error } = await supabaseAdmin
       .from("track123_integrations")
-      .select("shop_id,enabled,api_key,mcp_store_uuid,last_sync_at,last_sync_status,last_sync_error")
+      .select("shop_id,enabled,api_key,mcp_store_uuid,tracking_link_template,last_sync_at,last_sync_status,last_sync_error")
       .in("shop_id", data.shop_ids);
     if (error) throw new Error(error.message);
     return (rows ?? []).map((r: any) => ({
@@ -23,6 +23,7 @@ export const getTrack123Integrations = createServerFn({ method: "POST" })
       enabled: r.enabled,
       has_key: Boolean(r.api_key),
       mcp_store_uuid: r.mcp_store_uuid,
+      tracking_link_template: r.tracking_link_template,
       last_sync_at: r.last_sync_at,
       last_sync_status: r.last_sync_status,
       last_sync_error: r.last_sync_error,
@@ -36,6 +37,7 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
       shop_id: z.string().uuid(),
       api_key: z.string().trim().min(1).optional(),
       mcp_store_uuid: z.string().trim().max(64).optional().nullable(),
+      tracking_link_template: z.string().trim().max(300).optional().nullable(),
       enabled: z.boolean().optional(),
     }).parse(d)
   )
@@ -43,6 +45,7 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
     const patch: Record<string, any> = { user_id: context.ownerId, shop_id: data.shop_id };
     if (data.api_key !== undefined) patch.api_key = data.api_key;
     if (data.mcp_store_uuid !== undefined) patch.mcp_store_uuid = data.mcp_store_uuid || null;
+    if (data.tracking_link_template !== undefined) patch.tracking_link_template = data.tracking_link_template || null;
     if (data.enabled !== undefined) patch.enabled = data.enabled;
     const { error } = await supabaseAdmin
       .from("track123_integrations")

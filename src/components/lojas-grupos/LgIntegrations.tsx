@@ -190,6 +190,7 @@ type Track123Row = {
   enabled: boolean;
   has_key: boolean;
   mcp_store_uuid: string | null;
+  tracking_link_template: string | null;
   last_sync_at: string | null;
   last_sync_status: string | null;
   last_sync_error: string | null;
@@ -202,6 +203,7 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
   const [editing, setEditing] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [storeUuidDraft, setStoreUuidDraft] = useState("");
+  const [urlTemplateDraft, setUrlTemplateDraft] = useState("");
   const [testing, setTesting] = useState(false);
 
   const enabled = row?.enabled ?? false;
@@ -213,6 +215,7 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
   const openEdit = () => {
     setApiKeyDraft("");
     setStoreUuidDraft(row?.mcp_store_uuid ?? "");
+    setUrlTemplateDraft(row?.tracking_link_template ?? "");
     setEditing(true);
   };
 
@@ -222,6 +225,7 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
         shop_id: shop.id,
         ...(apiKeyDraft.trim() ? { api_key: apiKeyDraft.trim() } : {}),
         mcp_store_uuid: storeUuidDraft.trim() || null,
+        tracking_link_template: urlTemplateDraft.trim() || null,
       },
     }),
     onSuccess: () => { setEditing(false); invalidate(); toast.success("Salvo"); },
@@ -256,7 +260,9 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
     ? { label: "Erro", cls: "bg-rose-500/10 text-rose-600 border-rose-500/20" }
     : { label: isMcp ? "Ativo · MCP" : "Ativo · Open API", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" };
 
-  const changed = apiKeyDraft.trim().length > 0 || storeUuidDraft.trim() !== (row?.mcp_store_uuid ?? "");
+  const changed = apiKeyDraft.trim().length > 0
+    || storeUuidDraft.trim() !== (row?.mcp_store_uuid ?? "")
+    || urlTemplateDraft.trim() !== (row?.tracking_link_template ?? "");
 
   return (
     <div className="px-5 py-3 space-y-1.5">
@@ -293,6 +299,13 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
             value={storeUuidDraft}
             onChange={(e) => setStoreUuidDraft(e.target.value)}
             placeholder="Store UUID do MCP (deixe em branco pra usar a Open API clássica)"
+            className="w-full h-8 rounded-lg border border-border bg-card text-foreground text-xs px-2.5 focus:outline-none focus:border-primary"
+          />
+          <input
+            type="text"
+            value={urlTemplateDraft}
+            onChange={(e) => setUrlTemplateDraft(e.target.value)}
+            placeholder="URL padrão de rastreio (use [CODE] no lugar do código — ex: https://minhaloja.com/apps/track123?nums=[CODE])"
             className="w-full h-8 rounded-lg border border-border bg-card text-foreground text-xs px-2.5 focus:outline-none focus:border-primary"
           />
           <div className="flex items-center gap-2">

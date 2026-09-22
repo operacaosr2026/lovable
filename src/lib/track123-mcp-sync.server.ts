@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { buildTrackingUrl } from "@/lib/tracking-url";
 
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // Vercel function tem maxDuration de 60s — a cada pedido custa ~1-1.5s (uma
@@ -75,6 +76,16 @@ export async function runTrack123McpSync(
   // (pedido antigo que nunca foi marcado como entregue fica preso pra sempre).
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
 
+  // O tracking_url que a Shopify manda no fulfillment pode estar errado (app
+  // Track123 configurado com o domínio de outra loja) — quando a loja tem um
+  // template próprio configurado, ele manda em vez de confiar nesse valor.
+  const { data: integRow } = await supabase
+    .from("track123_integrations")
+    .select("tracking_link_template")
+    .eq("shop_id", shopId)
+    .maybeSingle();
+  const trackingLinkTemplate = integRow?.tracking_link_template ?? null;
+
   // Mais antigo primeiro dentro da janela: são esses que importam pro sync
   // (candidatos a "+7 dias sem atualização" / "+28 dias sem entrega") — pedido
   // recente já está fresco por definição, pode esperar a próxima rodada.
@@ -130,6 +141,8 @@ export async function runTrack123McpSync(
       if (target === "shipped" && o.delivery_status !== "shipped") orderUpdate.shipped_at = nowDate;
       else if (target === "delivered") orderUpdate.delivered_at = nowDate;
       else if (target === "problem") orderUpdate.problem_at = nowDate;
+      const builtUrl = buildTrackingUrl(trackingLinkTemplate, fulfillment.tracking_number);
+      if (builtUrl) orderUpdate.tracking_url = builtUrl;
       if (Object.keys(orderUpdate).length) {
         await supabase.from("shop_orders").update(orderUpdate).eq("id", o.id);
       }
