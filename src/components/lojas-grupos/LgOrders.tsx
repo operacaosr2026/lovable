@@ -19,11 +19,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { isoTodayUS } from "@/lib/timezone";
 
 function fmtMoney(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
-function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function localDate(date: string) { return new Date(date + "T00:00:00"); }
 function fmtDayMonth(date: string) { return localDate(date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); }
 // order_number já vem com "#" do Shopify (ex: "#WV1145") — não duplica o prefixo.
@@ -60,12 +60,12 @@ export function LgOrders({
   const [period, setPeriod]           = useState("30d");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const { from, to } = (() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoTodayUS();
     const addD  = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
     if (period === "hoje")   return { from: today, to: today };
     if (period === "ontem")  { const y = addD(today, -1); return { from: y, to: y }; }
     if (period === "7d")     return { from: addD(today, -6), to: today };
-    if (period === "mes")    { const d = new Date(); return { from: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`, to: today }; }
+    if (period === "mes")    { return { from: `${today.slice(0, 7)}-01`, to: today }; }
     if (period === "custom" && customRange) return customRange;
     return { from: addD(today, -29), to: today };
   })();
@@ -73,9 +73,9 @@ export function LgOrders({
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
-  const [payDate, setPayDate]     = useState(() => isoDate(new Date()));
+  const [payDate, setPayDate]     = useState(() => isoTodayUS());
   const [reDateOpen, setReDateOpen] = useState(false);
-  const [reDate, setReDate]       = useState(() => isoDate(new Date()));
+  const [reDate, setReDate]       = useState(() => isoTodayUS());
   const [configOpen, setConfigOpen] = useState(false);
 
   const listOrdersFn      = useServerFn(listOrders);
