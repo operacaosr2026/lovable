@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock } from "lucide-react";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ function inBucket(o: any, key: string): boolean {
   if (key === "shipped")   return s === "shipped" || s === "in_transit";
   if (key === "delivered") return s === "delivered";
   if (key === "problem")   return s === "problem" || s === "returned";
+  if (key === "waiting_customer") return s === "waiting_customer";
   return true;
 }
 function fmtShortDate(iso: string | null | undefined) {
@@ -41,6 +42,18 @@ function daysSince(iso: string | null | undefined, nowMs: number): number | null
   if (!iso) return null;
   return (nowMs - new Date(iso).getTime()) / 86_400_000;
 }
+// O Track123 (MCP e Open API) às vezes erra a transportadora detectada pra um
+// código de rastreio, e quando erra fica preso nela — nunca encontra os
+// eventos reais (que estão sob a transportadora certa). Prefixos abaixo são
+// casos conhecidos onde a detecção automática deles falha.
+const KNOWN_CARRIER_PREFIXES: Record<string, string> = {
+  ZS: "China Post",
+};
+function knownCarrierHint(trackingCode: string | null | undefined): string | null {
+  if (!trackingCode) return null;
+  const prefix = trackingCode.trim().slice(0, 2).toUpperCase();
+  return KNOWN_CARRIER_PREFIXES[prefix] ?? null;
+}
 // Motivo extra (além do que o badge de status já mostra) pra sinalizar um pedido
 // parado: enviado há +7 dias sem atualização, ou pedido feito há +28 dias e ainda
 // sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro.
@@ -50,7 +63,12 @@ function attentionReason(o: any, nowMs: number): string | null {
     // last_event_at (Track123) reflete o último evento real de rastreio; sem
     // integração ativa, cai pra shipped_at (data da postagem) como referência.
     const d = daysSince(o.last_event_at ?? o.shipped_at, nowMs);
-    if (d != null && d >= 7) return `${Math.floor(d)}d sem atualização`;
+    if (d != null && d >= 7) {
+      const hint = knownCarrierHint(o.tracking_code);
+      return hint
+        ? `${Math.floor(d)}d sem atualização (provável ${hint} — confira manualmente)`
+        : `${Math.floor(d)}d sem atualização`;
+    }
   }
   if (status !== "delivered" && status !== "returned") {
     const d = daysSince(o.order_date, nowMs);
@@ -62,16 +80,17 @@ function attentionReason(o: any, nowMs: number): string | null {
 // atualização de rastreio há +7 dias, ou feito há +28 dias e ainda não entregue.
 function needsAttention(o: any, nowMs: number): boolean {
   const status = o.delivery_status ?? "pending_shipment";
-  return status === "pending_shipment" || status === "problem" || attentionReason(o, nowMs) != null;
+  return status === "pending_shipment" || status === "problem" || status === "waiting_customer" || attentionReason(o, nowMs) != null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Package }> = {
-  pending_shipment: { label: "Pendente envio", color: "amber",   icon: Package },
-  shipped:          { label: "Enviado",         color: "blue",    icon: Truck },
-  in_transit:       { label: "Em trânsito",     color: "blue",    icon: Truck },
-  delivered:        { label: "Entregue",         color: "emerald", icon: CheckCircle2 },
-  returned:         { label: "Devolvido",        color: "rose",    icon: AlertTriangle },
-  problem:          { label: "Problema",         color: "rose",    icon: AlertTriangle },
+  pending_shipment: { label: "Pendente envio",   color: "amber",   icon: Package },
+  shipped:          { label: "Enviado",           color: "blue",    icon: Truck },
+  in_transit:       { label: "Em trânsito",       color: "blue",    icon: Truck },
+  delivered:        { label: "Entregue",           color: "emerald", icon: CheckCircle2 },
+  returned:         { label: "Devolvido",          color: "rose",    icon: AlertTriangle },
+  problem:          { label: "Problema",           color: "rose",    icon: AlertTriangle },
+  waiting_customer: { label: "Esperando cliente",  color: "violet",  icon: Hourglass },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -83,6 +102,7 @@ function StatusBadge({ status }: { status: string }) {
       cfg.color === "blue"    && "bg-blue-500/10 text-blue-600 border-blue-500/20",
       cfg.color === "emerald" && "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
       cfg.color === "rose"    && "bg-rose-500/10 text-rose-600 border-rose-500/20",
+      cfg.color === "violet"  && "bg-violet-500/10 text-violet-600 border-violet-500/20",
       cfg.color === "gray"    && "bg-muted text-muted-foreground border-border",
     )}>
       {cfg.label}
@@ -179,7 +199,7 @@ export function LgLogistica({
   const cacheKey = shopIds.slice().sort().join(",");
   const qc = useQueryClient();
 
-  const [period, setPeriod]           = useState("ano");
+  const [period, setPeriod]           = useState("30d");
   const [statusFilter, setStatusFilter] = useState<string>("atencao");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
@@ -235,6 +255,7 @@ export function LgLogistica({
     problem:   kpiOrders.filter((o) => inBucket(o, "problem")).length,
   };
   const attentionCount = kpiOrders.filter((o) => needsAttention(o, nowMs)).length;
+  const waitingCustomerCount = kpiOrders.filter((o) => inBucket(o, "waiting_customer")).length;
 
   // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
   const postingDurations = kpiOrders
@@ -257,15 +278,19 @@ export function LgLogistica({
   const visibleOrders = statusFilter === "todos" ? allOrders
     : statusFilter === "atencao" ? allOrders.filter((o) => needsAttention(o, nowMs))
     : allOrders.filter((o) => inBucket(o, statusFilter));
+  // "Precisa de atenção": mais antigo primeiro (é o que precisa de ação
+  // primeiro). Nos outros filtros, mais recente primeiro.
   const sortedOrders = [...visibleOrders].sort((a, b) => {
-    const dateCmp = (b.order_date as string).localeCompare(a.order_date as string);
+    const dateCmp = statusFilter === "atencao"
+      ? (a.order_date as string).localeCompare(b.order_date as string)
+      : (b.order_date as string).localeCompare(a.order_date as string);
     return dateCmp !== 0 ? dateCmp : orderNum(b) - orderNum(a);
   });
 
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <button
           onClick={() => setStatusFilter(statusFilter === "atencao" ? "todos" : "atencao")}
           className={cn(
@@ -279,27 +304,21 @@ export function LgLogistica({
           <p className="text-xl font-bold text-foreground">{attentionCount}</p>
           <p className="text-xs text-muted-foreground">Precisa de atenção</p>
         </button>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left">
-          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-indigo-500/10">
-            <Clock className="size-4 text-indigo-600" />
-          </div>
-          <p className="text-xl font-bold text-foreground">
-            {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground">Tempo médio de postagem</p>
-        </div>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+        <button
+          onClick={() => setStatusFilter(statusFilter === "waiting_customer" ? "todos" : "waiting_customer")}
+          className={cn(
+            "rounded-xl border p-3 text-left transition-all",
+            statusFilter === "waiting_customer" ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
+          )}
+        >
           <div className="size-7 rounded-lg grid place-items-center mb-2 bg-violet-500/10">
-            <Clock className="size-4 text-violet-600" />
+            <Hourglass className="size-4 text-violet-600" />
           </div>
-          <p className="text-xl font-bold text-foreground">
-            {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground">Tempo médio de entrega</p>
-        </div>
+          <p className="text-xl font-bold text-foreground">{waitingCustomerCount}</p>
+          <p className="text-xs text-muted-foreground">Esperando o cliente</p>
+        </button>
         {([
           { key: "pending",   label: "Pendente envio", color: "amber",   icon: Package },
-          { key: "problem",   label: "Com problema",   color: "rose",    icon: AlertTriangle },
           { key: "shipped",   label: "Em trânsito",    color: "blue",    icon: Truck },
           { key: "delivered", label: "Entregues",       color: "emerald", icon: CheckCircle2 },
         ] as const).map(({ key, label, color, icon: Icon }) => (
@@ -330,6 +349,24 @@ export function LgLogistica({
             <p className="text-xs text-muted-foreground">{label}</p>
           </button>
         ))}
+        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-indigo-500/10">
+            <Clock className="size-4 text-indigo-600" />
+          </div>
+          <p className="text-xl font-bold text-foreground">
+            {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">Tempo médio de postagem</p>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-violet-500/10">
+            <Clock className="size-4 text-violet-600" />
+          </div>
+          <p className="text-xl font-bold text-foreground">
+            {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">Tempo médio de entrega</p>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -381,22 +418,23 @@ export function LgLogistica({
         )}
 
         {!isLoading && sortedOrders.length > 0 && (
-        <div className="min-w-[700px]">
-        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_0.8fr] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <div className="min-w-[840px]">
+        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <div>Pedido</div>
           <div>Data do Pedido</div>
           <div>Data Postado</div>
           <div>Rastreio</div>
           <div>Status</div>
           <div>Obs</div>
-          <div title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do KPI</div>
+          <div className="text-center">Aguarda cliente</div>
+          <div className="text-center" title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do KPI</div>
         </div>
 
         {sortedOrders.map((o: any, i: number) => (
             <div
               key={o.id}
               className={cn(
-                "grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_0.8fr] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                "grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
                 o.kpi_excluded && "opacity-50",
               )}
@@ -432,7 +470,19 @@ export function LgLogistica({
                 )}
               </div>
               <div className="text-xs text-muted-foreground truncate">{o.logistics_note || "—"}</div>
-              <div onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={o.delivery_status === "waiting_customer"}
+                  onChange={(e) => toggleKpi.mutate({
+                    order_id: o.id,
+                    delivery_status: e.target.checked ? "waiting_customer" : (o.shipped_at ? "shipped" : "pending_shipment"),
+                  })}
+                  title="Marca o pedido como esperando resposta do cliente (endereço, troca de tamanho, confirmação...)"
+                  className="size-4 rounded border-border accent-primary cursor-pointer"
+                />
+              </div>
+              <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={!!o.kpi_excluded}

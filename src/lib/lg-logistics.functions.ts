@@ -48,11 +48,11 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     const withEffectiveStatus = (rows ?? []).map((o: any) => {
       let status = o.delivery_status;
       if (o.delivered_at) status = "delivered";
-      else if (o.problem_at) status = "problem";
+      else if (o.problem_at && status !== "waiting_customer") status = "problem";
       else if (!status || status === "pending_shipment") status = o.shipped_at ? "shipped" : "pending_shipment";
 
       let note = o.logistics_note;
-      if (status !== "delivered" && status !== "problem" && status !== "returned") {
+      if (status !== "delivered" && status !== "problem" && status !== "returned" && status !== "waiting_customer") {
         const daysSinceOrder = (nowMs - new Date(o.order_date).getTime()) / 86_400_000;
         if (daysSinceOrder >= 20) {
           status = "problem";
