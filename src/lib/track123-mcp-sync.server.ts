@@ -2,11 +2,14 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
-// Vercel function tem maxDuration de 60s — a cada pedido custa ~1-1.5s (uma
-// chamada por pedido, sem endpoint de lote no MCP), então limitamos por rodada.
-// Pedidos mais "parados" (sem sync/evento recente) entram primeiro; o resto
-// pega na próxima rodada do cron.
-const MAX_ORDERS_PER_RUN = 35;
+// Sem limite de quantidade — processa todos os pedidos em aberto dentro dos
+// últimos 30 dias. Vercel function tem maxDuration de 60s e cada pedido custa
+// ~1-1.5s (uma chamada por pedido, sem endpoint de lote no MCP), então corta
+// por tempo (não por contagem) antes do limite, sempre gravando o status
+// final — o que não coube nessa rodada pega na próxima do cron. Processa os
+// mais "parados" (sem sync/evento recente) primeiro, pra rotacionar de forma
+// justa quando a loja tem mais pedidos abertos do que dá pra checar em 60s.
+const SYNC_TIME_BUDGET_MS = 50_000;
 
 async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumber: string) {
   const r = await fetch(MCP_URL, {
@@ -89,19 +92,41 @@ export async function runTrack123McpSync(
     .maybeSingle();
   const trackingLinkTemplate = integRow?.tracking_link_template ?? null;
 
-  // Mais antigo primeiro dentro da janela: são esses que importam pro sync
-  // (candidatos a "+7 dias sem atualização" / "+28 dias sem entrega") — pedido
-  // recente já está fresco por definição, pode esperar a próxima rodada.
-  const { data: orders, error: ordersError } = await supabase
+  // Todos os pedidos em aberto dentro da janela de 30 dias — sem limite de
+  // quantidade (só o corte por tempo lá no loop, se a loja tiver muitos).
+  const { data: candidates, error: ordersError } = await supabase
     .from("shop_orders")
     .select("id,user_id,order_number,delivery_status,tracking_code,shipped_at")
     .eq("shop_id", shopId)
     .not("order_number", "is", null)
     .not("delivery_status", "in", "(delivered,returned)")
     .gte("order_date", since)
-    .order("order_date", { ascending: true })
-    .limit(MAX_ORDERS_PER_RUN);
+    .order("order_date", { ascending: true });
   if (ordersError) throw new Error(ordersError.message);
+
+  // Prioriza quem faz mais tempo que não é reconferido (em vez de sempre os
+  // "mais antigos por data do pedido"). Só importa de verdade quando o corte
+  // por tempo abaixo não dá conta de todos numa rodada só — senão um pedido
+  // genuinamente parado ocupa sempre as primeiras posições e os outros nunca
+  // rotacionam pra serem checados de novo (foi o que aconteceu com um pedido
+  // já entregue no Track123 há dias que continuou "pendente" aqui).
+  let orders = candidates ?? [];
+  if (orders.length) {
+    const ids = orders.map((o: any) => o.id);
+    const { data: trackingRows } = await supabase
+      .from("shop_order_tracking")
+      .select("order_id,updated_at")
+      .in("order_id", ids);
+    const lastCheckedAt = new Map((trackingRows ?? []).map((t: any) => [t.order_id, t.updated_at as string]));
+    orders = [...orders].sort((a: any, b: any) => {
+      const ta = lastCheckedAt.get(a.id);
+      const tb = lastCheckedAt.get(b.id);
+      if (!ta && !tb) return 0;
+      if (!ta) return -1;
+      if (!tb) return 1;
+      return ta.localeCompare(tb);
+    });
+  }
 
   const { data: rules } = await supabase
     .from("track123_event_rules")
@@ -111,10 +136,14 @@ export async function runTrack123McpSync(
   const matchRule = buildRuleMatcher(rules ?? []);
 
   let updated = 0;
+  let attempted = 0;
   let lastError: string | null = null;
   const total = orders?.length ?? 0;
+  const startedAt = Date.now();
 
   for (const o of orders ?? []) {
+    if (Date.now() - startedAt > SYNC_TIME_BUDGET_MS) break;
+    attempted++;
     const num = String(o.order_number).replace(/^#/, "");
     try {
       const data = await mcpCallOrderByNumber(apiKey, storeUuid, num);
@@ -163,12 +192,13 @@ export async function runTrack123McpSync(
     }
   }
 
-  const status = total === 0 ? "ok" : updated === 0 ? "error" : "ok";
+  const status = total === 0 ? "ok" : updated === 0 && attempted > 0 ? "error" : "ok";
+  const cutShort = attempted < total ? ` (parou por tempo, resto pega na próxima rodada)` : "";
   const errorMsg = total === 0
     ? "Nenhum pedido em aberto pra sincronizar."
     : lastError
-      ? `${updated}/${total} sincronizados via MCP. Último erro: ${lastError}`
-      : `${updated}/${total} sincronizados via MCP.`;
+      ? `${updated}/${attempted} de ${total} sincronizados via MCP${cutShort}. Último erro: ${lastError}`
+      : `${updated}/${attempted} de ${total} sincronizados via MCP${cutShort}.`;
 
   await supabaseAdmin.from("track123_integrations")
     .update({ last_sync_at: new Date().toISOString(), last_sync_status: status, last_sync_error: errorMsg })
