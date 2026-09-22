@@ -10,6 +10,9 @@ const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // mais "parados" (sem sync/evento recente) primeiro, pra rotacionar de forma
 // justa quando a loja tem mais pedidos abertos do que dá pra checar em 60s.
 const SYNC_TIME_BUDGET_MS = 50_000;
+// Chamadas simultâneas por lote — valor conservador pra não levar rate limit
+// do Track123. Com isso, ~8x mais pedidos cabem no mesmo orçamento de tempo.
+const MCP_CONCURRENCY = 8;
 
 async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumber: string) {
   const r = await fetch(MCP_URL, {
@@ -141,14 +144,13 @@ export async function runTrack123McpSync(
   const total = orders?.length ?? 0;
   const startedAt = Date.now();
 
-  for (const o of orders ?? []) {
-    if (Date.now() - startedAt > SYNC_TIME_BUDGET_MS) break;
+  async function processOrder(o: any) {
     attempted++;
     const num = String(o.order_number).replace(/^#/, "");
     try {
       const data = await mcpCallOrderByNumber(apiKey, storeUuid, num);
       const fulfillment = data?.order?.fulfillments?.[0];
-      if (!fulfillment) continue;
+      if (!fulfillment) return;
 
       const lastLabel: string | null = fulfillment.last_event ?? null;
       const lastAt: string | null = fulfillment.last_event_time ?? null;
@@ -164,7 +166,6 @@ export async function runTrack123McpSync(
         last_event_label: lastLabel,
         timeline: fulfillment.tracking_details ?? [],
       };
-      await supabase.from("shop_order_tracking").upsert(trackingUpdate, { onConflict: "order_id" });
 
       // "pending_shipment" (etiqueta criada, rastreio só com "info recebida")
       // não seta shipped_at aqui — quem decide se isso já conta como "enviado"
@@ -183,13 +184,32 @@ export async function runTrack123McpSync(
       // Espelha o código pra shop_orders (é o que a aba Rastreamento lê) — sem
       // sobrescrever um valor já salvo (ex: ajuste manual).
       if (fulfillment.tracking_number && !o.tracking_code) orderUpdate.tracking_code = String(fulfillment.tracking_number);
-      if (Object.keys(orderUpdate).length) {
-        await supabase.from("shop_orders").update(orderUpdate).eq("id", o.id);
-      }
+
+      // As duas escritas não dependem uma da outra (tabelas diferentes, sem
+      // ler o resultado uma da outra) — rodam em paralelo pra não somar as
+      // duas latências de rede em série dentro de cada pedido.
+      await Promise.all([
+        supabase.from("shop_order_tracking").upsert(trackingUpdate, { onConflict: "order_id" }),
+        Object.keys(orderUpdate).length
+          ? supabase.from("shop_orders").update(orderUpdate).eq("id", o.id)
+          : Promise.resolve(),
+      ]);
       updated++;
     } catch (e: any) {
       lastError = `#${num}: ${String(e?.message ?? e).slice(0, 150)}`;
     }
+  }
+
+  // Chamadas em paralelo (lotes de MCP_CONCURRENCY) em vez de uma por vez —
+  // o MCP não tem endpoint de lote, mas nada impede várias chamadas HTTP
+  // simultâneas. Isso multiplica quantos pedidos cabem nos mesmos 50s de
+  // orçamento, reduzindo o tempo até um pedido "parado" ser reconferido.
+  // Lote moderado pra não estourar rate limit do Track123.
+  const queue = [...(orders ?? [])];
+  while (queue.length) {
+    if (Date.now() - startedAt > SYNC_TIME_BUDGET_MS) break;
+    const batch = queue.splice(0, MCP_CONCURRENCY);
+    await Promise.all(batch.map(processOrder));
   }
 
   const status = total === 0 ? "ok" : updated === 0 && attempted > 0 ? "error" : "ok";
