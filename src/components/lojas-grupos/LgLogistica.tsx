@@ -37,6 +37,33 @@ function fmtShortDate(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
+function daysSince(iso: string | null | undefined, nowMs: number): number | null {
+  if (!iso) return null;
+  return (nowMs - new Date(iso).getTime()) / 86_400_000;
+}
+// Motivo extra (além do que o badge de status já mostra) pra sinalizar um pedido
+// parado: enviado há +7 dias sem atualização, ou pedido feito há +28 dias e ainda
+// sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro.
+function attentionReason(o: any, nowMs: number): string | null {
+  const status = o.delivery_status ?? "pending_shipment";
+  if (status === "shipped" || status === "in_transit") {
+    // last_event_at (Track123) reflete o último evento real de rastreio; sem
+    // integração ativa, cai pra shipped_at (data da postagem) como referência.
+    const d = daysSince(o.last_event_at ?? o.shipped_at, nowMs);
+    if (d != null && d >= 7) return `${Math.floor(d)}d sem atualização`;
+  }
+  if (status !== "delivered" && status !== "returned") {
+    const d = daysSince(o.order_date, nowMs);
+    if (d != null && d >= 28) return `${Math.floor(d)}d sem entrega`;
+  }
+  return null;
+}
+// Precisa de atenção: pendente de envio, marcado como problema, parado sem
+// atualização de rastreio há +7 dias, ou feito há +28 dias e ainda não entregue.
+function needsAttention(o: any, nowMs: number): boolean {
+  const status = o.delivery_status ?? "pending_shipment";
+  return status === "pending_shipment" || status === "problem" || attentionReason(o, nowMs) != null;
+}
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Package }> = {
   pending_shipment: { label: "Pendente envio", color: "amber",   icon: Package },
@@ -153,12 +180,14 @@ export function LgLogistica({
   const qc = useQueryClient();
 
   const [period, setPeriod]           = useState("ano");
-  const [statusFilter, setStatusFilter] = useState<string>("todos");
+  const [statusFilter, setStatusFilter] = useState<string>("atencao");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
   const today = isoDate(new Date());
+  const nowMs = Date.now();
   const from = (() => {
     if (period === "7d")  return addD(today, -6);
+    if (period === "30d") return addD(today, -29);
     if (period === "mes") { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`; }
     return `${new Date().getFullYear()}-01-01`;
   })();
@@ -205,6 +234,7 @@ export function LgLogistica({
     delivered: kpiOrders.filter((o) => inBucket(o, "delivered")).length,
     problem:   kpiOrders.filter((o) => inBucket(o, "problem")).length,
   };
+  const attentionCount = kpiOrders.filter((o) => needsAttention(o, nowMs)).length;
 
   // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
   const postingDurations = kpiOrders
@@ -224,7 +254,9 @@ export function LgLogistica({
     ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
     : null;
 
-  const visibleOrders = statusFilter === "todos" ? allOrders : allOrders.filter((o) => inBucket(o, statusFilter));
+  const visibleOrders = statusFilter === "todos" ? allOrders
+    : statusFilter === "atencao" ? allOrders.filter((o) => needsAttention(o, nowMs))
+    : allOrders.filter((o) => inBucket(o, statusFilter));
   const sortedOrders = [...visibleOrders].sort((a, b) => {
     const dateCmp = (b.order_date as string).localeCompare(a.order_date as string);
     return dateCmp !== 0 ? dateCmp : orderNum(b) - orderNum(a);
@@ -233,7 +265,20 @@ export function LgLogistica({
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <button
+          onClick={() => setStatusFilter(statusFilter === "atencao" ? "todos" : "atencao")}
+          className={cn(
+            "rounded-xl border p-3 text-left transition-all",
+            statusFilter === "atencao" ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
+          )}
+        >
+          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-rose-500/10">
+            <AlertTriangle className="size-4 text-rose-600" />
+          </div>
+          <p className="text-xl font-bold text-foreground">{attentionCount}</p>
+          <p className="text-xs text-muted-foreground">Precisa de atenção</p>
+        </button>
         <div className="rounded-xl border border-border bg-surface p-3 text-left">
           <div className="size-7 rounded-lg grid place-items-center mb-2 bg-indigo-500/10">
             <Clock className="size-4 text-indigo-600" />
@@ -290,7 +335,7 @@ export function LgLogistica({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-xl border border-border overflow-hidden text-xs h-8">
-          {(["7d", "mes", "ano"] as const).map((p, i, arr) => (
+          {(["7d", "30d", "mes", "ano"] as const).map((p, i, arr) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
@@ -300,7 +345,7 @@ export function LgLogistica({
                 period === p ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {p === "7d" ? "7 dias" : p === "mes" ? "Este mês" : "Este ano"}
+              {p === "7d" ? "7 dias" : p === "30d" ? "Últimos 30 dias" : p === "mes" ? "Este mês" : "Este ano"}
             </button>
           ))}
         </div>
@@ -382,6 +427,9 @@ export function LgLogistica({
               </div>
               <div>
                 <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
+                {attentionReason(o, nowMs) && (
+                  <p className="text-[10px] text-rose-600 mt-0.5">{attentionReason(o, nowMs)}</p>
+                )}
               </div>
               <div className="text-xs text-muted-foreground truncate">{o.logistics_note || "—"}</div>
               <div onClick={(e) => e.stopPropagation()}>

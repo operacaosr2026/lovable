@@ -23,6 +23,19 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       .order("order_date", { ascending: false });
     if (error) throw new Error(error.message);
 
+    // Data do último evento real de rastreio (Track123), quando o pedido tem
+    // integração ativa — mais confiável que shipped_at pra saber se o rastreio
+    // "parou" de andar, já que shipped_at não muda depois da postagem.
+    const orderIds = (rows ?? []).map((o: any) => o.id);
+    const lastEventMap = new Map<string, string | null>();
+    if (orderIds.length) {
+      const { data: trackingRows } = await supabaseAdmin
+        .from("shop_order_tracking")
+        .select("order_id,last_event_at")
+        .in("order_id", orderIds);
+      for (const t of trackingRows ?? []) lastEventMap.set(t.order_id, t.last_event_at);
+    }
+
     // O status pode ter sido atualizado automaticamente (Track123) via shipped_at/
     // delivered_at/problem_at sem que a coluna delivery_status tenha sido tocada —
     // aqui reconciliamos as duas fontes pra refletir o que já foi detectado.
@@ -46,7 +59,7 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
           if (!note) note = "tempo de entrega demorado";
         }
       }
-      return { ...o, delivery_status: status, logistics_note: note };
+      return { ...o, delivery_status: status, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null };
     });
 
     return withEffectiveStatus;
