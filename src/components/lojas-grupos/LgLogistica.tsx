@@ -43,6 +43,14 @@ function daysSince(iso: string | null | undefined, nowMs: number): number | null
   if (!iso) return null;
   return (nowMs - new Date(iso).getTime()) / 86_400_000;
 }
+// Dias desde a postagem: se já entregue, é o tempo final (postagem → entrega).
+// Se ainda não, é o tempo corrido até agora (ainda contando).
+function deliveryTimeLabel(o: any, nowMs: number): string {
+  if (!o.shipped_at) return "—";
+  const end = o.delivered_at ? new Date(o.delivered_at).getTime() : nowMs;
+  const d = daysSince(o.shipped_at, end);
+  return d != null ? `${Math.floor(d)}d` : "—";
+}
 // Dias úteis (seg-sex) entre a data do pedido e agora — não conta a data do
 // pedido em si, só os dias que já se passaram desde então.
 function businessDaysSince(iso: string | null | undefined, nowMs: number): number {
@@ -465,11 +473,12 @@ export function LgLogistica({
         )}
 
         {!isLoading && sortedOrders.length > 0 && (
-        <div className="min-w-[840px]">
-        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <div className="min-w-[960px]">
+        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <div>Pedido</div>
           <div className="text-center">Data do Pedido</div>
           <div className="text-center">Data Postado</div>
+          <div className="text-center">Tempo de entrega</div>
           <div>Rastreio</div>
           <div>Status</div>
           <div>Obs</div>
@@ -481,7 +490,7 @@ export function LgLogistica({
             <div
               key={o.id}
               className={cn(
-                "grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                "grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
               )}
               onClick={() => setEditingOrder(o)}
@@ -492,6 +501,7 @@ export function LgLogistica({
               </div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.order_date)}</div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
+              <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
               <div className="text-xs truncate">
                 {o.tracking_url ? (
                   <a
