@@ -10,7 +10,7 @@
  *
  * ShopCashflow.tsx NÃO foi modificado.
  */
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -1050,17 +1050,9 @@ export function LgCashflowView({
     }
   };
 
-  // Sincroniza os depósitos automaticamente ao abrir a tela, sem esperar o
-  // usuário clicar no botão de refresh manual. Guarda por cacheKey pra não
-  // disparar de novo em cada re-render, nem duplicar no double-invoke do
-  // React StrictMode em dev.
-  const autoSyncedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (shopIds.length === 0 || autoSyncedRef.current === cacheKey) return;
-    autoSyncedRef.current = cacheKey;
-    syncPayouts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey]);
+  // Não sincroniza mais automaticamente a cada vez que a tela abre — o cron
+  // (sync-shop-orders, 2x/dia) já mantém os depósitos em dia. Sync sob
+  // demanda continua disponível no botão de refresh manual.
 
   const createMut  = useMutation({ mutationFn: (v:any) => createFn({ data:v }), onSuccess: refresh });
   const deleteMut  = useMutation({ mutationFn: (id:string) => deleteFn({ data:{id} }), onSuccess: refresh });
