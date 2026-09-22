@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
-import { syncTrack123ForShops } from "@/lib/track123.functions";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass } from "lucide-react";
+import { syncTrack123ForShops, getTrack123Integrations } from "@/lib/track123.functions";
+import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,16 @@ function inBucket(o: any, key: string): boolean {
 function fmtShortDate(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+// Tempo relativo pro "sincronizado há Xh" ao lado do botão Atualizar.
+function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return "nunca";
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (min < 1) return "agora mesmo";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h}h`;
+  return `há ${Math.floor(h / 24)}d`;
 }
 function daysSince(iso: string | null | undefined, nowMs: number): number | null {
   if (!iso) return null;
@@ -213,30 +224,43 @@ export function LgLogistica({
   const qc = useQueryClient();
 
   const [period, setPeriod]           = useState("30d");
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const [statusFilter, setStatusFilter] = useState<string>("atencao");
   const [shopFilter, setShopFilter]   = useState<string>("todas");
   const [search, setSearch]           = useState("");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
-  const today = isoDate(new Date());
   const nowMs = Date.now();
-  const from = (() => {
-    if (period === "7d")  return addD(today, -6);
-    if (period === "30d") return addD(today, -29);
-    if (period === "mes") { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`; }
-    return `${new Date().getFullYear()}-01-01`;
+  const { from, to } = (() => {
+    const today = isoDate(new Date());
+    if (period === "hoje")   return { from: today, to: today };
+    if (period === "ontem")  { const y = addD(today, -1); return { from: y, to: y }; }
+    if (period === "7d")     return { from: addD(today, -6), to: today };
+    if (period === "mes")    return { from: `${today.slice(0, 7)}-01`, to: today };
+    if (period === "custom" && customRange) return customRange;
+    return { from: addD(today, -29), to: today };
   })();
 
   const listFn   = useServerFn(listLogisticsOrders);
   const updateFn = useServerFn(updateOrderLogistics);
   const syncFn   = useServerFn(syncTrack123ForShops);
+  const integrationsFn = useServerFn(getTrack123Integrations);
 
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ["lg-logistics", cacheKey, from, today],
-    queryFn: () => listFn({ data: { shop_ids: shopIds, from, to: today } }),
+    queryKey: ["lg-logistics", cacheKey, from, to],
+    queryFn: () => listFn({ data: { shop_ids: shopIds, from, to } }),
     enabled: shopIds.length > 0,
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: true,
+  });
+
+  // Data/hora do último sync do Track123 (por loja) — mostrado ao lado do
+  // botão Atualizar pra dar visibilidade de quão "fresco" é o rastreio.
+  const { data: integrations = [] } = useQuery({
+    queryKey: ["lg-logistics-integrations", cacheKey],
+    queryFn: () => integrationsFn({ data: { shop_ids: shopIds } }),
+    enabled: shopIds.length > 0,
+    refetchInterval: 60_000,
   });
 
   // Botão "Atualizar": além de reler o banco, busca rastreio novo no Track123
@@ -248,6 +272,7 @@ export function LgLogistica({
       else if (r.errors.length) toast.error(`${r.synced}/${r.total} lojas sincronizadas · ${r.errors[0]}`);
       else toast.success(`${r.synced}/${r.total} loja(s) sincronizada(s)`);
       qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["lg-logistics-integrations", cacheKey] });
     },
     onError: (e: any) => toast.error(e?.message ?? "Erro ao sincronizar"),
   });
@@ -255,6 +280,11 @@ export function LgLogistica({
   const shopNames: Record<string, string> = {};
   for (const s of shops) shopNames[s.id] = s.name;
   const isConsolidated = shopIds.length > 1;
+
+  const scopedIntegrations = shopFilter === "todas" ? integrations : (integrations as any[]).filter((i) => i.shop_id === shopFilter);
+  const lastSyncAt = (scopedIntegrations as any[]).reduce((max: string | null, i) => (
+    i.last_sync_at && (!max || i.last_sync_at > max) ? i.last_sync_at : max
+  ), null as string | null);
 
   const save = useMutation({
     mutationFn: (vars: any) => updateFn({ data: vars }),
@@ -288,6 +318,13 @@ export function LgLogistica({
   };
   const attentionCount = shopScopedOrders.filter((o) => needsAttention(o, nowMs)).length;
   const waitingCustomerCount = shopScopedOrders.filter((o) => inBucket(o, "waiting_customer")).length;
+
+  // Breakdown por loja do total de pedidos — só faz sentido mostrar quando a
+  // visão está consolidada (várias lojas) e nenhum filtro de loja específica
+  // já recortou o total sozinho.
+  const perStoreCounts = [...shopIds]
+    .sort((a, b) => (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true }))
+    .map((id) => ({ id, name: shopNames[id] ?? id, count: allOrders.filter((o) => o.shop_id === id).length }));
 
   const kpiOrders = shopScopedOrders.filter((o) => !o.kpi_excluded);
 
@@ -326,7 +363,7 @@ export function LgLogistica({
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <button
           onClick={() => setStatusFilter(statusFilter === "atencao" ? "todos" : "atencao")}
           className={cn(
@@ -334,10 +371,12 @@ export function LgLogistica({
             statusFilter === "atencao" ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
           )}
         >
-          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-rose-500/10">
-            <AlertTriangle className="size-4 text-rose-600" />
+          <div className="flex items-center gap-2 mb-1">
+            <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-rose-500/10">
+              <AlertTriangle className="size-4 text-rose-600" />
+            </div>
+            <p className="text-xl font-bold text-foreground">{attentionCount}</p>
           </div>
-          <p className="text-xl font-bold text-foreground">{attentionCount}</p>
           <p className="text-xs text-muted-foreground">Precisa de atenção</p>
         </button>
         <button
@@ -347,10 +386,12 @@ export function LgLogistica({
             statusFilter === "waiting_customer" ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
           )}
         >
-          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-violet-500/10">
-            <Hourglass className="size-4 text-violet-600" />
+          <div className="flex items-center gap-2 mb-1">
+            <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-violet-500/10">
+              <Hourglass className="size-4 text-violet-600" />
+            </div>
+            <p className="text-xl font-bold text-foreground">{waitingCustomerCount}</p>
           </div>
-          <p className="text-xl font-bold text-foreground">{waitingCustomerCount}</p>
           <p className="text-xs text-muted-foreground">Esperando o cliente</p>
         </button>
         {([
@@ -366,60 +407,74 @@ export function LgLogistica({
               statusFilter === key ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
             )}
           >
-            <div className={cn(
-              "size-7 rounded-lg grid place-items-center mb-2",
-              color === "amber"   && "bg-amber-500/10",
-              color === "blue"    && "bg-blue-500/10",
-              color === "emerald" && "bg-emerald-500/10",
-            )}>
-              <Icon className={cn(
-                "size-4",
-                color === "amber"   && "text-amber-600",
-                color === "blue"    && "text-blue-600",
-                color === "emerald" && "text-emerald-600",
-              )} />
+            <div className="flex items-center gap-2 mb-1">
+              <div className={cn(
+                "size-7 rounded-lg grid place-items-center shrink-0",
+                color === "amber"   && "bg-amber-500/10",
+                color === "blue"    && "bg-blue-500/10",
+                color === "emerald" && "bg-emerald-500/10",
+              )}>
+                <Icon className={cn(
+                  "size-4",
+                  color === "amber"   && "text-amber-600",
+                  color === "blue"    && "text-blue-600",
+                  color === "emerald" && "text-emerald-600",
+                )} />
+              </div>
+              <p className="text-xl font-bold text-foreground">
+                {kpis[key]}
+                {key === "delivered" && (
+                  <span className="text-xs font-normal text-muted-foreground"> / {shopScopedOrders.length}</span>
+                )}
+              </p>
             </div>
-            <p className="text-xl font-bold text-foreground">{kpis[key]}</p>
             <p className="text-xs text-muted-foreground">{label}</p>
           </button>
         ))}
-        <div className="rounded-xl border border-border bg-surface p-3 text-left">
-          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-indigo-500/10">
-            <Clock className="size-4 text-indigo-600" />
+        <div
+          className="rounded-xl border border-border bg-surface p-3 text-left"
+          title={isConsolidated && shopFilter === "todas"
+            ? perStoreCounts.map((s) => `${s.name}: ${s.count}`).join("\n")
+            : undefined}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-slate-500/10">
+              <Layers className="size-4 text-slate-600" />
+            </div>
+            <p className="text-xl font-bold text-foreground">{shopScopedOrders.length}</p>
           </div>
-          <p className="text-xl font-bold text-foreground">
-            {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground">Tempo médio postagem</p>
+          <p className="text-xs text-muted-foreground">Total de pedidos</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-3 text-left">
-          <div className="size-7 rounded-lg grid place-items-center mb-2 bg-violet-500/10">
-            <Clock className="size-4 text-violet-600" />
+          <div className="flex items-center gap-2 mb-1">
+            <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-indigo-500/10">
+              <Clock className="size-4 text-indigo-600" />
+            </div>
+            <p className="text-xl font-bold text-foreground">
+              {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
+            </p>
           </div>
-          <p className="text-xl font-bold text-foreground">
-            {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground">Tempo médio entrega</p>
+          <p className="text-xs text-muted-foreground">TM Postagem</p>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-violet-500/10">
+              <Clock className="size-4 text-violet-600" />
+            </div>
+            <p className="text-xl font-bold text-foreground">
+              {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">TM Entrega</p>
         </div>
       </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center rounded-xl border border-border overflow-hidden text-xs h-8">
-          {(["7d", "30d", "mes", "ano"] as const).map((p, i, arr) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={cn(
-                "px-3 h-full transition-colors",
-                i < arr.length - 1 && "border-r border-border",
-                period === p ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {p === "7d" ? "7 dias" : p === "30d" ? "Últimos 30 dias" : p === "mes" ? "Este mês" : "Este ano"}
-            </button>
-          ))}
-        </div>
+        <DateRangePicker
+          period={period} setPeriod={setPeriod}
+          customRange={customRange} setCustomRange={setCustomRange}
+        />
         <Button
           size="sm" variant="outline"
           onClick={() => sync.mutate()}
@@ -428,6 +483,12 @@ export function LgLogistica({
         >
           <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
         </Button>
+        <span
+          className="text-xs text-muted-foreground"
+          title={lastSyncAt ? new Date(lastSyncAt).toLocaleString("pt-BR") : undefined}
+        >
+          Sincronizado {timeAgo(lastSyncAt)}
+        </span>
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
