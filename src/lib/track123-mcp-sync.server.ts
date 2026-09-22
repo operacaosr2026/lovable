@@ -55,12 +55,15 @@ function buildRuleMatcher(rules: { event_key: string; event_label: string; targe
 // Sem regra configurada pro evento, cai numa inferência simples a partir do
 // transit_status que o próprio Track123 já normaliza.
 function inferStatus(transitStatus: string | null | undefined, hasTrackingNumber: boolean): string | null {
-  const ts = (transitStatus ?? "").toLowerCase();
+  // Sem espaço/case pra pegar tanto "InfoReceived" quanto "Info received" (o
+  // Track123 já mandou os dois formatos pra esse mesmo status).
+  const ts = (transitStatus ?? "").toLowerCase().replace(/\s+/g, "");
   if (ts.includes("delivered")) return "delivered";
   if (ts.includes("exception") || ts.includes("failed") || ts.includes("problem") || ts.includes("undelivered")) return "problem";
-  // "Pending" = etiqueta criada mas ainda não saiu do CD — não é "shipped" de
-  // verdade ainda, mesmo já tendo tracking_number.
-  if (ts.includes("pending")) return null;
+  // "Pending"/"InfoReceived" = etiqueta criada e a transportadora só recebeu a
+  // info eletrônica do envio, mas ainda não pegou o pacote de verdade — não é
+  // "shipped" de verdade ainda, mesmo já tendo tracking_number.
+  if (ts.includes("pending") || ts.includes("inforeceived")) return "pending_shipment";
   if (hasTrackingNumber) return "shipped";
   return null;
 }
@@ -91,7 +94,7 @@ export async function runTrack123McpSync(
   // recente já está fresco por definição, pode esperar a próxima rodada.
   const { data: orders, error: ordersError } = await supabase
     .from("shop_orders")
-    .select("id,user_id,order_number,delivery_status")
+    .select("id,user_id,order_number,delivery_status,tracking_code,shipped_at")
     .eq("shop_id", shopId)
     .not("order_number", "is", null)
     .not("delivery_status", "in", "(delivered,returned)")
@@ -134,15 +137,23 @@ export async function runTrack123McpSync(
       };
       await supabase.from("shop_order_tracking").upsert(trackingUpdate, { onConflict: "order_id" });
 
+      // "pending_shipment" (etiqueta criada, rastreio só com "info recebida")
+      // não seta shipped_at aqui — quem decide se isso já conta como "enviado"
+      // pro usuário é o Shopify (fulfillment criado) ou o próprio usuário na
+      // tela; o status exibido é recalculado na leitura a partir do rastreio
+      // real (ver lg-logistics.functions.ts), sem precisar reescrever nada aqui.
       const target = matchRule(lastLabel) ?? matchRule(fulfillment.transit_status)
         ?? inferStatus(fulfillment.transit_status, Boolean(fulfillment.tracking_number));
       const nowDate = new Date().toISOString().slice(0, 10);
-      const orderUpdate: Record<string, string> = {};
+      const orderUpdate: Record<string, string | null> = {};
       if (target === "shipped" && o.delivery_status !== "shipped") orderUpdate.shipped_at = nowDate;
       else if (target === "delivered") orderUpdate.delivered_at = nowDate;
       else if (target === "problem") orderUpdate.problem_at = nowDate;
       const builtUrl = buildTrackingUrl(trackingLinkTemplate, fulfillment.tracking_number);
       if (builtUrl) orderUpdate.tracking_url = builtUrl;
+      // Espelha o código pra shop_orders (é o que a aba Rastreamento lê) — sem
+      // sobrescrever um valor já salvo (ex: ajuste manual).
+      if (fulfillment.tracking_number && !o.tracking_code) orderUpdate.tracking_code = String(fulfillment.tracking_number);
       if (Object.keys(orderUpdate).length) {
         await supabase.from("shop_orders").update(orderUpdate).eq("id", o.id);
       }

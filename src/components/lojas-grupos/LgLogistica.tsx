@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
+import { syncTrack123ForShops } from "@/lib/track123.functions";
 import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,45 +43,49 @@ function daysSince(iso: string | null | undefined, nowMs: number): number | null
   if (!iso) return null;
   return (nowMs - new Date(iso).getTime()) / 86_400_000;
 }
-// O Track123 (MCP e Open API) às vezes erra a transportadora detectada pra um
-// código de rastreio, e quando erra fica preso nela — nunca encontra os
-// eventos reais (que estão sob a transportadora certa). Prefixos abaixo são
-// casos conhecidos onde a detecção automática deles falha.
-const KNOWN_CARRIER_PREFIXES: Record<string, string> = {
-  ZS: "China Post",
-};
-function knownCarrierHint(trackingCode: string | null | undefined): string | null {
-  if (!trackingCode) return null;
-  const prefix = trackingCode.trim().slice(0, 2).toUpperCase();
-  return KNOWN_CARRIER_PREFIXES[prefix] ?? null;
+// Dias úteis (seg-sex) entre a data do pedido e agora — não conta a data do
+// pedido em si, só os dias que já se passaram desde então.
+function businessDaysSince(iso: string | null | undefined, nowMs: number): number {
+  if (!iso) return 0;
+  const cur = new Date(iso + "T00:00:00Z");
+  const now = new Date(nowMs);
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let count = 0;
+  while (cur < end) {
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const day = cur.getUTCDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
 }
 // Motivo extra (além do que o badge de status já mostra) pra sinalizar um pedido
 // parado: enviado há +7 dias sem atualização, ou pedido feito há +28 dias e ainda
-// sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro.
+// sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro,
+// nem "esperando cliente" — a ação nesse caso já não é da loja.
 function attentionReason(o: any, nowMs: number): string | null {
   const status = o.delivery_status ?? "pending_shipment";
+  if (status === "waiting_customer") return null;
   if (status === "shipped" || status === "in_transit") {
     // last_event_at (Track123) reflete o último evento real de rastreio; sem
     // integração ativa, cai pra shipped_at (data da postagem) como referência.
     const d = daysSince(o.last_event_at ?? o.shipped_at, nowMs);
-    if (d != null && d >= 7) {
-      const hint = knownCarrierHint(o.tracking_code);
-      return hint
-        ? `${Math.floor(d)}d sem atualização (provável ${hint} — confira manualmente)`
-        : `${Math.floor(d)}d sem atualização`;
-    }
+    if (d != null && d >= 7) return `${Math.floor(d)}d sem atualização`;
   }
   if (status !== "delivered" && status !== "returned") {
     const d = daysSince(o.order_date, nowMs);
-    if (d != null && d >= 28) return `${Math.floor(d)}d sem entrega`;
+    if (d != null && d >= 25) return `${Math.floor(d)}d sem entrega`;
   }
   return null;
 }
-// Precisa de atenção: pendente de envio, marcado como problema, parado sem
-// atualização de rastreio há +7 dias, ou feito há +28 dias e ainda não entregue.
+// Precisa de atenção: pendente de envio há mais de 3 dias úteis, marcado como
+// problema, parado sem atualização de rastreio há +7 dias, ou feito há +25
+// dias e ainda não entregue. "Esperando cliente" fica de fora — a bola já não
+// está com a loja. Pendente de envio recente (até 3 dias úteis) é normal, não
+// precisa aparecer aqui ainda.
 function needsAttention(o: any, nowMs: number): boolean {
   const status = o.delivery_status ?? "pending_shipment";
-  return status === "pending_shipment" || status === "problem" || status === "waiting_customer" || attentionReason(o, nowMs) != null;
+  if (status === "pending_shipment") return businessDaysSince(o.order_date, nowMs) > 3;
+  return status === "problem" || attentionReason(o, nowMs) != null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Package }> = {
@@ -201,6 +206,8 @@ export function LgLogistica({
 
   const [period, setPeriod]           = useState("30d");
   const [statusFilter, setStatusFilter] = useState<string>("atencao");
+  const [shopFilter, setShopFilter]   = useState<string>("todas");
+  const [search, setSearch]           = useState("");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
   const today = isoDate(new Date());
@@ -214,6 +221,7 @@ export function LgLogistica({
 
   const listFn   = useServerFn(listLogisticsOrders);
   const updateFn = useServerFn(updateOrderLogistics);
+  const syncFn   = useServerFn(syncTrack123ForShops);
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["lg-logistics", cacheKey, from, today],
@@ -221,6 +229,19 @@ export function LgLogistica({
     enabled: shopIds.length > 0,
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: true,
+  });
+
+  // Botão "Atualizar": além de reler o banco, busca rastreio novo no Track123
+  // agora (as lojas sem integração configurada são só ignoradas).
+  const sync = useMutation({
+    mutationFn: () => syncFn({ data: { shop_ids: shopIds } }),
+    onSuccess: (r: any) => {
+      if (r.total === 0) toast.info("Nenhuma loja com integração Track123 ativa");
+      else if (r.errors.length) toast.error(`${r.synced}/${r.total} lojas sincronizadas · ${r.errors[0]}`);
+      else toast.success(`${r.synced}/${r.total} loja(s) sincronizada(s)`);
+      qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao sincronizar"),
   });
 
   const shopNames: Record<string, string> = {};
@@ -243,19 +264,24 @@ export function LgLogistica({
     onError: (e: any) => toast.error(e.message),
   });
 
-  // KPIs — pedidos marcados como "fora do KPI" (problema causado pelo cliente,
-  // ex: endereço/tamanho errado) não entram nas contagens nem nas médias, senão
-  // distorcem os números. Eles continuam listados normalmente na tabela.
+  // Contagens (cards de status + "precisa de atenção") sempre com todos os
+  // pedidos do período — "fora do KPI" não deve sumir da contagem, só não deve
+  // distorcer as médias de tempo abaixo (ex: pedido parado esperando cliente
+  // infla o tempo médio de postagem/entrega sem ser culpa da loja). Já o filtro
+  // de loja recorta os KPIs também: quando uma loja específica está selecionada,
+  // os cards mostram só os números dela.
   const allOrders = orders as any[];
-  const kpiOrders = allOrders.filter((o) => !o.kpi_excluded);
+  const shopScopedOrders = shopFilter === "todas" ? allOrders : allOrders.filter((o) => o.shop_id === shopFilter);
   const kpis = {
-    pending:   kpiOrders.filter((o) => inBucket(o, "pending")).length,
-    shipped:   kpiOrders.filter((o) => inBucket(o, "shipped")).length,
-    delivered: kpiOrders.filter((o) => inBucket(o, "delivered")).length,
-    problem:   kpiOrders.filter((o) => inBucket(o, "problem")).length,
+    pending:   shopScopedOrders.filter((o) => inBucket(o, "pending")).length,
+    shipped:   shopScopedOrders.filter((o) => inBucket(o, "shipped")).length,
+    delivered: shopScopedOrders.filter((o) => inBucket(o, "delivered")).length,
+    problem:   shopScopedOrders.filter((o) => inBucket(o, "problem")).length,
   };
-  const attentionCount = kpiOrders.filter((o) => needsAttention(o, nowMs)).length;
-  const waitingCustomerCount = kpiOrders.filter((o) => inBucket(o, "waiting_customer")).length;
+  const attentionCount = shopScopedOrders.filter((o) => needsAttention(o, nowMs)).length;
+  const waitingCustomerCount = shopScopedOrders.filter((o) => inBucket(o, "waiting_customer")).length;
+
+  const kpiOrders = shopScopedOrders.filter((o) => !o.kpi_excluded);
 
   // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
   const postingDurations = kpiOrders
@@ -275,22 +301,24 @@ export function LgLogistica({
     ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
     : null;
 
-  const visibleOrders = statusFilter === "todos" ? allOrders
+  const byStatus = statusFilter === "todos" ? allOrders
     : statusFilter === "atencao" ? allOrders.filter((o) => needsAttention(o, nowMs))
     : allOrders.filter((o) => inBucket(o, statusFilter));
-  // "Precisa de atenção": mais antigo primeiro (é o que precisa de ação
-  // primeiro). Nos outros filtros, mais recente primeiro.
+  const byShop = shopFilter === "todas" ? byStatus : byStatus.filter((o) => o.shop_id === shopFilter);
+  const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
+  const visibleOrders = !searchTerm ? byShop
+    : byShop.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
+  // Sempre por data do pedido, do mais antigo pro mais novo — é o que
+  // precisa de ação primeiro.
   const sortedOrders = [...visibleOrders].sort((a, b) => {
-    const dateCmp = statusFilter === "atencao"
-      ? (a.order_date as string).localeCompare(b.order_date as string)
-      : (b.order_date as string).localeCompare(a.order_date as string);
-    return dateCmp !== 0 ? dateCmp : orderNum(b) - orderNum(a);
+    const dateCmp = (a.order_date as string).localeCompare(b.order_date as string);
+    return dateCmp !== 0 ? dateCmp : orderNum(a) - orderNum(b);
   });
 
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <button
           onClick={() => setStatusFilter(statusFilter === "atencao" ? "todos" : "atencao")}
           className={cn(
@@ -335,14 +363,12 @@ export function LgLogistica({
               color === "amber"   && "bg-amber-500/10",
               color === "blue"    && "bg-blue-500/10",
               color === "emerald" && "bg-emerald-500/10",
-              color === "rose"    && "bg-rose-500/10",
             )}>
               <Icon className={cn(
                 "size-4",
                 color === "amber"   && "text-amber-600",
                 color === "blue"    && "text-blue-600",
                 color === "emerald" && "text-emerald-600",
-                color === "rose"    && "text-rose-600",
               )} />
             </div>
             <p className="text-xl font-bold text-foreground">{kpis[key]}</p>
@@ -356,7 +382,7 @@ export function LgLogistica({
           <p className="text-xl font-bold text-foreground">
             {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
           </p>
-          <p className="text-xs text-muted-foreground">Tempo médio de postagem</p>
+          <p className="text-xs text-muted-foreground">Tempo médio postagem</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-3 text-left">
           <div className="size-7 rounded-lg grid place-items-center mb-2 bg-violet-500/10">
@@ -365,7 +391,7 @@ export function LgLogistica({
           <p className="text-xl font-bold text-foreground">
             {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
           </p>
-          <p className="text-xs text-muted-foreground">Tempo médio de entrega</p>
+          <p className="text-xs text-muted-foreground">Tempo médio entrega</p>
         </div>
       </div>
 
@@ -388,13 +414,34 @@ export function LgLogistica({
         </div>
         <Button
           size="sm" variant="outline"
-          onClick={() => qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] })}
-          disabled={isLoading}
+          onClick={() => sync.mutate()}
+          disabled={isLoading || sync.isPending}
+          title="Busca rastreio novo no Track123 e recarrega os pedidos"
         >
-          <RefreshCw className={cn("size-4", isLoading && "animate-spin")} /> Atualizar
+          <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
         </Button>
-        {statusFilter !== "todos" && (
-          <Button size="sm" variant="ghost" onClick={() => setStatusFilter("todos")}>
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar pedido (ex: WV1307)"
+          className="h-8 w-44 text-xs"
+        />
+        {isConsolidated && (
+          <select
+            value={shopFilter}
+            onChange={(e) => setShopFilter(e.target.value)}
+            className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-foreground"
+          >
+            <option value="todas">Todas as lojas</option>
+            {[...shopIds]
+              .sort((a, b) => (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true }))
+              .map((id) => (
+                <option key={id} value={id}>{shopNames[id] ?? id}</option>
+              ))}
+          </select>
+        )}
+        {(statusFilter !== "todos" || shopFilter !== "todas" || search) && (
+          <Button size="sm" variant="ghost" onClick={() => { setStatusFilter("todos"); setShopFilter("todas"); setSearch(""); }}>
             Limpar filtro
           </Button>
         )}
@@ -421,8 +468,8 @@ export function LgLogistica({
         <div className="min-w-[840px]">
         <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <div>Pedido</div>
-          <div>Data do Pedido</div>
-          <div>Data Postado</div>
+          <div className="text-center">Data do Pedido</div>
+          <div className="text-center">Data Postado</div>
           <div>Rastreio</div>
           <div>Status</div>
           <div>Obs</div>
@@ -436,7 +483,6 @@ export function LgLogistica({
               className={cn(
                 "grid grid-cols-[1.2fr_0.9fr_0.9fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
-                o.kpi_excluded && "opacity-50",
               )}
               onClick={() => setEditingOrder(o)}
             >
@@ -444,8 +490,8 @@ export function LgLogistica({
                 <p className="font-medium text-foreground truncate">{orderLabel(o)}</p>
                 {isConsolidated && <p className="text-[10px] font-medium text-primary truncate">{shopNames[o.shop_id] ?? ""}</p>}
               </div>
-              <div className="text-xs text-muted-foreground">{fmtShortDate(o.order_date)}</div>
-              <div className="text-xs text-muted-foreground">{fmtShortDate(o.shipped_at)}</div>
+              <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.order_date)}</div>
+              <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs truncate">
                 {o.tracking_url ? (
                   <a

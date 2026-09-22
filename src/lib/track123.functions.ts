@@ -54,6 +54,40 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Roda o sync pra todas as lojas (do filtro/grupo aberto na tela) que têm
+// integração Track123 habilitada — usado pelo botão "Atualizar" da aba
+// Rastreamento pra forçar uma busca de rastreio na hora, em vez de só reler o
+// que já está no banco. Lojas sem integração são ignoradas silenciosamente.
+export const syncTrack123ForShops = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: unknown) => z.object({ shop_ids: z.array(z.string().uuid()) }).parse(d))
+  .handler(async ({ data }: any) => {
+    if (!data.shop_ids.length) return { synced: 0, total: 0, errors: [] as string[] };
+    const { data: integrations, error } = await supabaseAdmin
+      .from("track123_integrations")
+      .select("shop_id,api_key,mcp_store_uuid")
+      .in("shop_id", data.shop_ids)
+      .eq("enabled", true)
+      .not("api_key", "is", null);
+    if (error) throw new Error(error.message);
+
+    let synced = 0;
+    const errors: string[] = [];
+    for (const integ of integrations ?? []) {
+      try {
+        if (integ.mcp_store_uuid) {
+          await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin);
+        } else {
+          await runTrack123Sync(integ.shop_id, integ.api_key, supabaseAdmin);
+        }
+        synced++;
+      } catch (e: any) {
+        errors.push(String(e?.message ?? e));
+      }
+    }
+    return { synced, total: (integrations ?? []).length, errors };
+  });
+
 // Roda o sync pra uma única loja na hora (ignora o filtro de loja/grupo ativo do
 // cron — se o usuário pediu explicitamente, testa mesmo assim). Usa MCP quando a
 // loja tem Store UUID salvo, senão cai pra Open API clássica.

@@ -237,7 +237,9 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
               {shops.length === 1 ? "Loja" : `Lojas (${shops.length})`}
             </div>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-              {shops.slice(0, 6).map((s: any) => (
+              {[...shops]
+                .sort((a: any, b: any) => (a.shops?.name ?? "").localeCompare(b.shops?.name ?? "", "pt-BR", { numeric: true }))
+                .slice(0, 6).map((s: any) => (
                 <div key={s.id} className="text-xs truncate flex items-center gap-1.5">
                   <Store className="size-3 text-muted-foreground shrink-0" />
                   <span className="truncate">{s.shops?.name ?? s.shop_id}</span>
@@ -275,7 +277,9 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
                     <span />
                     <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium text-right">Estorno</span>
                     <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium text-right">Repasse</span>
-                    {metrics.payoutLag.map((p: any) => {
+                    {[...metrics.payoutLag]
+                      .sort((a: any, b: any) => (a.shopName ?? "").localeCompare(b.shopName ?? "", "pt-BR", { numeric: true }))
+                      .map((p: any) => {
                       const e = metrics.estornoPorLoja.find((x: any) => x.shop_id === p.shop_id);
                       return (
                         <Fragment key={p.shop_id}>
