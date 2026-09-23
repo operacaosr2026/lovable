@@ -5,18 +5,37 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runTrack123Sync } from "@/lib/track123-sync.server";
 import { runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
 
+// supabaseAdmin ignora RLS: sem esse filtro, qualquer usuário logado podia ler,
+// sobrescrever (api_key, link de rastreio) ou disparar sync da integração de
+// uma loja de outro workspace só passando o shop_id dela.
+async function filterOwnedShopIds(ownerId: string, shopIds: string[]): Promise<string[]> {
+  const unique = Array.from(new Set(shopIds));
+  if (!unique.length) return [];
+  const { data, error } = await supabaseAdmin
+    .from("shops").select("id").eq("user_id", ownerId).in("id", unique);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((s: any) => s.id as string);
+}
+
+async function assertShopOwnedBy(ownerId: string, shopId: string) {
+  const owned = await filterOwnedShopIds(ownerId, [shopId]);
+  if (!owned.length) throw new Error("Loja não encontrada ou não pertence a este workspace.");
+}
+
 // A api_key nunca volta pro cliente — só um booleano indicando se já tem uma salva.
 // mcp_store_uuid não é segredo por si só (só funciona junto com a api_key), então
 // esse volta em texto puro pra facilitar conferir/editar.
 export const getTrack123Integrations = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d: unknown) => z.object({ shop_ids: z.array(z.string().uuid()) }).parse(d))
-  .handler(async ({ data }: any) => {
-    if (!data.shop_ids.length) return [];
+  .handler(async ({ context, data }: any) => {
+    const shopIds = await filterOwnedShopIds(context.ownerId, data.shop_ids);
+    if (!shopIds.length) return [];
     const { data: rows, error } = await supabaseAdmin
       .from("track123_integrations")
       .select("shop_id,enabled,api_key,mcp_store_uuid,tracking_link_template,last_sync_at,last_sync_status,last_sync_error")
-      .in("shop_id", data.shop_ids);
+      .eq("user_id", context.ownerId)
+      .in("shop_id", shopIds);
     if (error) throw new Error(error.message);
     return (rows ?? []).map((r: any) => ({
       shop_id: r.shop_id,
@@ -42,6 +61,7 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ context, data }: any) => {
+    await assertShopOwnedBy(context.ownerId, data.shop_id);
     const patch: Record<string, any> = { user_id: context.ownerId, shop_id: data.shop_id };
     if (data.api_key !== undefined) patch.api_key = data.api_key;
     if (data.mcp_store_uuid !== undefined) patch.mcp_store_uuid = data.mcp_store_uuid || null;
@@ -61,22 +81,29 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
 export const syncTrack123ForShops = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d: unknown) => z.object({ shop_ids: z.array(z.string().uuid()) }).parse(d))
-  .handler(async ({ data }: any) => {
-    if (!data.shop_ids.length) return { synced: 0, total: 0, errors: [] as string[] };
+  .handler(async ({ context, data }: any) => {
+    const shopIds = await filterOwnedShopIds(context.ownerId, data.shop_ids);
+    if (!shopIds.length) return { synced: 0, total: 0, errors: [] as string[] };
     const { data: integrations, error } = await supabaseAdmin
       .from("track123_integrations")
-      .select("shop_id,api_key,mcp_store_uuid")
-      .in("shop_id", data.shop_ids)
+      .select("shop_id,api_key,mcp_store_uuid,last_sync_at")
+      .eq("user_id", context.ownerId)
+      .in("shop_id", shopIds)
       .eq("enabled", true)
       .not("api_key", "is", null);
     if (error) throw new Error(error.message);
 
+    // Mesmo prazo compartilhado do cron (função com limite de 60s).
+    const deadline = Date.now() + 50_000;
+    const queue = [...(integrations ?? [])]
+      .sort((a: any, b: any) => (a.last_sync_at ?? "").localeCompare(b.last_sync_at ?? ""));
     let synced = 0;
     const errors: string[] = [];
-    for (const integ of integrations ?? []) {
+    for (const integ of queue) {
+      if (Date.now() > deadline - 5_000) break;
       try {
         if (integ.mcp_store_uuid) {
-          await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin);
+          await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin, { deadline });
         } else {
           await runTrack123Sync(integ.shop_id, integ.api_key, supabaseAdmin);
         }
@@ -94,10 +121,12 @@ export const syncTrack123ForShops = createServerFn({ method: "POST" })
 export const testTrack123Sync = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d: unknown) => z.object({ shop_id: z.string().uuid() }).parse(d))
-  .handler(async ({ data }: any) => {
+  .handler(async ({ context, data }: any) => {
+    await assertShopOwnedBy(context.ownerId, data.shop_id);
     const { data: integ, error } = await supabaseAdmin
       .from("track123_integrations")
       .select("api_key,mcp_store_uuid")
+      .eq("user_id", context.ownerId)
       .eq("shop_id", data.shop_id)
       .maybeSingle();
     if (error) throw new Error(error.message);

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import type { TablesUpdate } from "@/integrations/supabase/types";
+import { selectAll } from "@/lib/select-all";
 
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // Sem limite de quantidade — processa todos os pedidos em aberto dentro dos
@@ -14,6 +15,8 @@ const SYNC_TIME_BUDGET_MS = 50_000;
 // Chamadas simultâneas por lote — valor conservador pra não levar rate limit
 // do Track123. Com isso, ~8x mais pedidos cabem no mesmo orçamento de tempo.
 const MCP_CONCURRENCY = 8;
+// Uma chamada travada não pode consumir sozinha o orçamento da rodada inteira.
+const MCP_REQUEST_TIMEOUT_MS = 15_000;
 
 async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumber: string) {
   const r = await fetch(MCP_URL, {
@@ -24,6 +27,7 @@ async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumb
       "X-Api-Key": apiKey,
       "X-Store-Uuid": storeUuid,
     },
+    signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -80,7 +84,13 @@ export async function runTrack123McpSync(
   apiKey: string,
   storeUuid: string,
   supabase: typeof supabaseAdmin,
+  // Prazo absoluto (Date.now()) compartilhado quando várias lojas rodam na mesma
+  // chamada (cron / botão "Atualizar") — antes cada loja tinha 50s próprios e a
+  // função (limite de 60s na Vercel) morria na 2ª loja, deixando as demais sem
+  // sync por horas.
+  opts: { deadline?: number } = {},
 ) {
+  const deadline = opts.deadline ?? Date.now() + SYNC_TIME_BUDGET_MS;
   // Só últimos 30 dias — pedido mais antigo que isso não interessa mais pro
   // usuário, e sem esse corte a fila de pedidos "em aberto" nunca esvazia
   // (pedido antigo que nunca foi marcado como entregue fica preso pra sempre).
@@ -98,17 +108,20 @@ export async function runTrack123McpSync(
 
   // Todos os pedidos em aberto dentro da janela de 30 dias — sem limite de
   // quantidade (só o corte por tempo lá no loop, se a loja tiver muitos).
-  const { data: candidates, error: ordersError } = await supabase
+  const { data: candidates, error: ordersError } = await selectAll(supabase
     .from("shop_orders")
-    .select("id,user_id,order_number,delivery_status,tracking_code,shipped_at")
+    .select("id,user_id,order_number,delivery_status,tracking_code,shipped_at,delivered_at,problem_at")
     .eq("shop_id", shopId)
     .not("order_number", "is", null)
     // NULL NOT IN (...) é NULL em SQL (não TRUE) — .not("in") sozinho excluiria
     // silenciosamente todo pedido com delivery_status nulo (nunca chegou a ser
     // marcado como "pending_shipment"/etc).
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
+    // Entregue = fim da linha. Sem isso o pedido seguia na fila por 30 dias,
+    // gastando chamada ao MCP (e orçamento de tempo) a cada rodada.
+    .is("delivered_at", null)
     .gte("order_date", since)
-    .order("order_date", { ascending: true });
+    .order("order_date", { ascending: true }));
   if (ordersError) throw new Error(ordersError.message);
 
   // Prioriza quem faz mais tempo que não é reconferido (em vez de sempre os
@@ -120,10 +133,10 @@ export async function runTrack123McpSync(
   let orders = candidates ?? [];
   if (orders.length) {
     const ids = orders.map((o: any) => o.id);
-    const { data: trackingRows } = await supabase
+    const { data: trackingRows } = await selectAll(supabase
       .from("shop_order_tracking")
       .select("order_id,updated_at")
-      .in("order_id", ids);
+      .in("order_id", ids));
     const lastCheckedAt = new Map((trackingRows ?? []).map((t: any) => [t.order_id, t.updated_at as string]));
     orders = [...orders].sort((a: any, b: any) => {
       const ta = lastCheckedAt.get(a.id);
@@ -146,7 +159,6 @@ export async function runTrack123McpSync(
   let attempted = 0;
   let lastError: string | null = null;
   const total = orders?.length ?? 0;
-  const startedAt = Date.now();
 
   async function processOrder(o: any) {
     attempted++;
@@ -179,10 +191,17 @@ export async function runTrack123McpSync(
       const target = matchRule(lastLabel) ?? matchRule(fulfillment.transit_status)
         ?? inferStatus(fulfillment.transit_status, Boolean(fulfillment.tracking_number));
       const nowDate = new Date().toISOString().slice(0, 10);
+      // Data do evento real do Track123 (não a data desta rodada) — e só na
+      // primeira vez: regravar a cada rodada empurrava delivered_at pra "hoje"
+      // todo dia e inflava o KPI "Tempo de entrega".
+      const eventDate = lastAt && /^\d{4}-\d{2}-\d{2}/.test(lastAt) ? lastAt.slice(0, 10) : nowDate;
       const orderUpdate: TablesUpdate<"shop_orders"> = {};
-      if (target === "shipped" && o.delivery_status !== "shipped") orderUpdate.shipped_at = nowDate;
-      else if (target === "delivered") orderUpdate.delivered_at = nowDate;
-      else if (target === "problem") orderUpdate.problem_at = nowDate;
+      if (target === "shipped" && o.delivery_status !== "shipped" && !o.shipped_at) orderUpdate.shipped_at = nowDate;
+      else if (target === "delivered") {
+        orderUpdate.delivered_at = eventDate;
+        orderUpdate.delivery_status = "delivered";
+      }
+      else if (target === "problem" && !o.problem_at) orderUpdate.problem_at = eventDate;
       const builtUrl = buildTrackingUrl(trackingLinkTemplate, fulfillment.tracking_number);
       if (builtUrl) orderUpdate.tracking_url = builtUrl;
       // Espelha o código pra shop_orders (é o que a aba Rastreamento lê) — sem
@@ -211,7 +230,7 @@ export async function runTrack123McpSync(
   // Lote moderado pra não estourar rate limit do Track123.
   const queue = [...(orders ?? [])];
   while (queue.length) {
-    if (Date.now() - startedAt > SYNC_TIME_BUDGET_MS) break;
+    if (Date.now() > deadline) break;
     const batch = queue.splice(0, MCP_CONCURRENCY);
     await Promise.all(batch.map(processOrder));
   }

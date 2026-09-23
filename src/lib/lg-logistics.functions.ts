@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { selectAll } from "@/lib/select-all";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -16,7 +17,7 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     // Pedido reembolsado ou cancelado no Shopify não é mais problema de
     // logística/rastreio — sai da aba inteira (não só dos KPIs, como o "fora
     // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
-    const { data: rows, error } = await supabaseAdmin
+    const { data: rows, error } = await selectAll(supabaseAdmin
       .from("shop_orders")
       .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded")
       .eq("user_id", context.ownerId)
@@ -28,7 +29,7 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       // nulo (ex: sincronizado pelo botão manual, que não grava essa coluna).
       .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
       .filter("raw->>cancelled_at", "is", null)
-      .order("order_date", { ascending: false });
+      .order("order_date", { ascending: false }));
     if (error) throw new Error(error.message);
 
     // Data do último evento real de rastreio (Track123), quando o pedido tem
@@ -38,10 +39,10 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     const lastEventMap = new Map<string, string | null>();
     const lastLabelMap = new Map<string, string | null>();
     if (orderIds.length) {
-      const { data: trackingRows } = await supabaseAdmin
+      const { data: trackingRows } = await selectAll(supabaseAdmin
         .from("shop_order_tracking")
         .select("order_id,last_event_at,last_event_label,tracking_status")
-        .in("order_id", orderIds);
+        .in("order_id", orderIds));
       for (const t of trackingRows ?? []) {
         lastEventMap.set(t.order_id, t.last_event_at);
         lastLabelMap.set(t.order_id, t.tracking_status ?? t.last_event_label);

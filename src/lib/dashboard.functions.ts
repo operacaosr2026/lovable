@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
+import { selectAll } from "@/lib/select-all";
 
 /* ==================== READ ==================== */
 
@@ -38,7 +39,7 @@ export const getDashboard = createServerFn({ method: "GET" })
               .eq("user_id", ownerId).neq("status", "done")
               .gte("due_at", todayStart).lte("due_at", todayEnd);
             if (Array.isArray(shopFilter)) q = q.in("shop_id", shopFilter);
-            return q;
+            return selectAll(q);
           })(),
     ]);
 

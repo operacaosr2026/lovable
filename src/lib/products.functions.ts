@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -166,9 +167,9 @@ export const getProductMonthlySales = createServerFn({ method: "GET" })
       .filter(Boolean);
 
     const since = monthsAgoISO(data.months - 1);
-    const { data: orders, error } = await supabase
+    const { data: orders, error } = await selectAll(supabase
       .from("shop_orders").select("order_date,raw")
-      .eq("user_id", ownerId).gte("order_date", since);
+      .eq("user_id", ownerId).gte("order_date", since));
     if (error) throw new Error(error.message);
 
     const byMonth = new Map<string, { units: number; revenue: number; pedidos: number }>();

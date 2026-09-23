@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getCaixaShops } from "@/lib/lg-cards.functions";
 import { isoTodayUS } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 
 export const SIM_RECURRENCE = ["none", "daily", "weekly", "monthly"] as const;
 
@@ -233,11 +234,11 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
     if (shopIds.length > 0) {
       const [openingRes, reconciledRes, futureRes] = await Promise.all([
         supabaseAdmin.from("shops").select("opening_balance").in("id", shopIds),
-        supabaseAdmin.from("shop_cash_entries").select("kind, amount")
+        selectAll(supabaseAdmin.from("shop_cash_entries").select("kind, amount")
           .in("shop_id", shopIds).eq("reconciled", true)
-          .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
-        supabaseAdmin.from("shop_cash_entries").select("date, kind, amount, category, source, description")
-          .in("shop_id", shopIds).gt("date", today).gte("date", data.from).lte("date", data.to),
+          .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync")),
+        selectAll(supabaseAdmin.from("shop_cash_entries").select("date, kind, amount, category, source, description")
+          .in("shop_id", shopIds).gt("date", today).gte("date", data.from).lte("date", data.to)),
       ]);
       startingBalance = (openingRes.data ?? []).reduce((s, r: any) => s + Number(r.opening_balance ?? 0), 0)
         + (reconciledRes.data ?? []).reduce((s, r: any) => s + (r.kind === "income" ? Number(r.amount) : -Number(r.amount)), 0);

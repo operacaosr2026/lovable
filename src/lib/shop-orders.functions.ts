@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
 import { US_TIME_ZONE } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
 // usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
@@ -615,10 +616,10 @@ export const listOrders = createServerFn({ method: "GET" })
     to: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: rows, error } = await context.supabase.from("shop_orders").select("*")
+    const { data: rows, error } = await selectAll(context.supabase.from("shop_orders").select("*")
       .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
       .gte("order_date", data.from).lte("order_date", data.to)
-      .order("created_at_shopify", { ascending: false });
+      .order("created_at_shopify", { ascending: false }));
     if (error) throw new Error(error.message);
     return rows ?? [];
   });
@@ -627,10 +628,10 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: pending, error } = await context.supabase.from("shop_orders")
+    const { data: pending, error } = await selectAll(context.supabase.from("shop_orders")
       .select("order_date,items_count,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .eq("payment_status", "pending");
+      .eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
     if (!pending || pending.length === 0) return { created: 0 };
 
@@ -648,11 +649,11 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
     if (byDate.size === 0) return { created: 0 };
     const costProducts = await costProductsFor(context.supabase, context.ownerId);
 
-    const { data: existing } = await context.supabase.from("shop_tasks")
+    const { data: existing } = await selectAll(context.supabase.from("shop_tasks")
       .select("source_ref")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("source", "order_payment")
-      .in("source_ref", Array.from(byDate.keys()));
+      .in("source_ref", Array.from(byDate.keys())));
     const existingRefs = new Set((existing ?? []).map((r: any) => r.source_ref));
 
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
@@ -728,17 +729,17 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
 
       // Auto-pull tracking from Shopify fulfillments
-      const { data: dbOrders } = await context.supabase.from("shop_orders")
+      const { data: dbOrders } = await selectAll(context.supabase.from("shop_orders")
         .select("id,external_id")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .eq("source", "shopify")
-        .in("external_id", orders.map((o: any) => String(o.id)));
+        .in("external_id", orders.map((o: any) => String(o.id))));
       const orderIdByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r.id]));
 
-      const { data: existingLogistics } = await context.supabase.from("shop_orders")
+      const { data: existingLogistics } = await selectAll(context.supabase.from("shop_orders")
         .select("id,carrier,tracking_code,tracking_url,delivery_status")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-        .in("id", Array.from(orderIdByExt.values()));
+        .in("id", Array.from(orderIdByExt.values())));
       const existingById = new Map((existingLogistics ?? []).map((r: any) => [r.id, r]));
 
       const trackingRows: any[] = [];
@@ -862,10 +863,10 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
 
     if (!relevant.length) return { synced: 0 };
 
-    const { data: existing } = await context.supabase.from("shop_cash_entries")
+    const { data: existing } = await selectAll(context.supabase.from("shop_cash_entries")
       .select("id,shopify_payout_id,date_locked,amount_locked")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("shopify_payout_id", relevant.map((p: any) => String(p.id)));
+      .in("shopify_payout_id", relevant.map((p: any) => String(p.id))));
     const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
     const dateLockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked).map((r: any) => r.id));
     const amountLockedIds = new Set((existing ?? []).filter((r: any) => r.amount_locked).map((r: any) => r.id));
@@ -1013,10 +1014,10 @@ export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
     if (!feeTxs.length) return { synced: 0, total_found: 0 };
 
     const extIds = feeTxs.map((t: any) => `shopify_fee_${t.id}`);
-    const { data: existing } = await supabase.from("shop_cash_entries")
+    const { data: existing } = await selectAll(supabase.from("shop_cash_entries")
       .select("id,mercury_transaction_id,date")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id)
-      .in("mercury_transaction_id", extIds);
+      .in("mercury_transaction_id", extIds));
     const existingById = new Map((existing ?? []).map((r: any) => [r.mercury_transaction_id, r]));
 
     const toInsert: any[] = [];
@@ -1067,14 +1068,14 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     // que já foram depositados (status "paid"): esse valor já caiu, não é mais
     // "a receber", e contar ele de novo duplicaria com o saldo ao vivo.
     const today = new Date().toISOString().slice(0, 10);
-    const { data: upcomingEntries } = await context.supabase.from("shop_cash_entries")
+    const { data: upcomingEntries } = await selectAll(context.supabase.from("shop_cash_entries")
       .select("shopify_payout_id,date,amount")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("source", "shopify_sync")
       .not("shopify_payout_id", "is", null)
       .gte("date", today)
       .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid")
-      .order("date", { ascending: true });
+      .order("date", { ascending: true }));
 
     const byDate = new Map<string, number>();
     for (const e of upcomingEntries ?? []) {
@@ -1221,7 +1222,7 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const today = new Date().toISOString().slice(0, 10);
-    const { data: entries } = await context.supabase.from("shop_cash_entries")
+    const { data: entries } = await selectAll(context.supabase.from("shop_cash_entries")
       .select("shop_id,amount")
       .eq("user_id", context.ownerId)
       .in("shop_id", data.shop_ids)
@@ -1230,7 +1231,7 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
       .gte("date", today)
       // Exclui payouts já depositados (status "paid") — esse valor já caiu e
       // não é mais "a receber"; contar ele de novo duplicaria com o saldo ao vivo.
-      .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid");
+      .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid"));
 
     const { data: settings } = await context.supabase.from("shop_order_settings")
       .select("shop_id,shopify_store_id")
@@ -1288,17 +1289,17 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const { shop_ids, month_start, month_end } = data;
 
     const [ordersRes, settingsRes, adRes, feesRes, costProducts, refundsAndChargebacks] = await Promise.all([
-      supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,raw")
+      selectAll(supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,raw")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", month_start).lte("order_date", month_end),
+        .gte("order_date", month_start).lte("order_date", month_end)),
       supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
         .eq("user_id", ownerId).in("shop_id", shop_ids),
-      supabase.from("shop_cash_entries").select("amount")
+      selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("kind", "expense").eq("category", "Facebook Ads")
-        .gte("date", month_start).lte("date", month_end),
-      supabase.from("shop_cash_entries").select("amount")
+        .gte("date", month_start).lte("date", month_end)),
+      selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", month_start).lte("date", month_end),
+        .gte("date", month_start).lte("date", month_end)),
       costProductsFor(supabase, ownerId),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
@@ -1575,10 +1576,10 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     // Fetch pending orders only
-    const { data: orders, error } = await context.supabase.from("shop_orders")
+    const { data: orders, error } = await selectAll(context.supabase.from("shop_orders")
       .select("id,order_date,items_count,payment_status,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("id", data.order_ids).eq("payment_status", "pending");
+      .in("id", data.order_ids).eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
     if (!orders || orders.length === 0) throw new Error("Nenhum pedido pendente selecionado");
 
@@ -1816,11 +1817,11 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
     payment_date: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: orders, error: ordersErr } = await context.supabase.from("shop_orders")
+    const { data: orders, error: ordersErr } = await selectAll(context.supabase.from("shop_orders")
       .select("id,payment_batch_id,order_date,items_count,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .neq("payment_status", "pending")
-      .in("id", data.order_ids);
+      .in("id", data.order_ids));
     if (ordersErr) throw new Error(`Erro ao buscar pedidos: ${ordersErr.message}`);
 
     const { error: paidAtErr } = await context.supabase.from("shop_orders")
@@ -1836,11 +1837,11 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
 
     let allBatchIds = [...directBatchIds];
     if (orderDates.length > 0) {
-      const { data: batchesByDate } = await context.supabase
+      const { data: batchesByDate } = await selectAll(context.supabase
         .from("shop_order_payment_batches")
         .select("id")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-        .overlaps("order_dates", orderDates);
+        .overlaps("order_dates", orderDates));
       const extraIds = (batchesByDate ?? []).map((b: any) => b.id).filter((id: string) => !allBatchIds.includes(id));
       allBatchIds = [...allBatchIds, ...extraIds];
     }
@@ -1941,10 +1942,10 @@ export const deleteOrders = createServerFn({ method: "POST" })
     order_ids: z.array(z.string().uuid()).min(1).max(2000),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: orders, error } = await context.supabase.from("shop_orders")
+    const { data: orders, error } = await selectAll(context.supabase.from("shop_orders")
       .select("id,order_date,payment_status")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("id", data.order_ids).neq("payment_status", "shipped");
+      .in("id", data.order_ids).neq("payment_status", "shipped"));
     if (error) throw new Error(error.message);
     if (!orders || orders.length === 0) throw new Error("Nenhum pedido elegível para exclusão (pedidos enviados não podem ser excluídos)");
 
@@ -1993,32 +1994,32 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const { shop_ids, from, to, prev_from, prev_to } = data;
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes] = await Promise.all([
-      supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,raw,created_at_shopify")
+      selectAll(supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,raw,created_at_shopify")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", from).lte("order_date", to),
-      supabase.from("shop_orders").select("revenue,items_count,shop_id,raw")
+        .gte("order_date", from).lte("order_date", to)),
+      selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,raw")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", prev_from).lte("order_date", prev_to),
+        .gte("order_date", prev_from).lte("order_date", prev_to)),
       supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
         .eq("user_id", ownerId).in("shop_id", shop_ids),
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
         .in("shop_id", shop_ids),
       // Taxas Shopify Payments no período
-      supabase.from("shop_cash_entries").select("amount,date")
+      selectAll(supabase.from("shop_cash_entries").select("amount,date")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", from).lte("date", to),
-      supabase.from("shop_cash_entries").select("amount")
+        .gte("date", from).lte("date", to)),
+      selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", prev_from).lte("date", prev_to),
+        .gte("date", prev_from).lte("date", prev_to)),
       // Gastos de anúncios Meta Ads — apenas entradas auto-sincronizadas (não mistura com caixa manual)
-      supabase.from("shop_cash_entries").select("amount,date")
+      selectAll(supabase.from("shop_cash_entries").select("amount,date")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .eq("auto_kind", "meta_ads_spend")
-        .gte("date", from).lte("date", to),
-      supabase.from("shop_cash_entries").select("amount")
+        .gte("date", from).lte("date", to)),
+      selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .eq("auto_kind", "meta_ads_spend")
-        .gte("date", prev_from).lte("date", prev_to),
+        .gte("date", prev_from).lte("date", prev_to)),
     ]);
 
     const orders = ordersRes.data ?? [];

@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { US_TIME_ZONE } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 
 const META_APP_ID    = process.env["META_APP_ID"]!;
 const SUPABASE_URL   = process.env["SUPABASE_URL"]!;
@@ -594,9 +595,9 @@ export const getMetaAdsMetrics = createServerFn({ method: "POST" })
     const since30 = addDays(today, -30);
     const since7 = addDays(today, -7);
 
-    const { data: rows } = await supabase.from("shop_cash_entries")
+    const { data: rows } = await selectAll(supabase.from("shop_cash_entries")
       .select("amount,date").eq("shop_id", data.shop_id)
-      .eq("auto_kind", "meta_ads_spend").gte("date", since30);
+      .eq("auto_kind", "meta_ads_spend").gte("date", since30));
 
     let spend7 = 0, spend30 = 0;
     for (const r of rows ?? []) {

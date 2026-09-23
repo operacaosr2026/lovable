@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { selectAll } from "@/lib/select-all";
 
 export const CASH_KINDS = ["income", "expense"] as const;
 export const EXPENSE_CATEGORIES = [
@@ -23,11 +24,11 @@ export const listShopCash = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const [entries, imports, shops] = await Promise.all([
-      context.supabase.from("shop_cash_entries").select("*")
+      selectAll(context.supabase.from("shop_cash_entries").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .neq("source", "shopify_fees_sync")
         .neq("source", "shopify_auto_sync")
-        .order("date", { ascending: true }),
+        .order("date", { ascending: true })),
       context.supabase.from("shop_cash_imports").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .order("created_at", { ascending: false }),

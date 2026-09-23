@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { isoTodayUS } from "@/lib/timezone";
 import { costProductsFor, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
+import { selectAll } from "@/lib/select-all";
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
 
@@ -21,17 +22,17 @@ async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
 ) {
   const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
-    supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,raw")
+    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,raw")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
-      .gte("order_date", start_date).lte("order_date", end_date),
-    supabase.from("shop_cash_entries").select("amount,date")
+      .gte("order_date", start_date).lte("order_date", end_date)),
+    selectAll(supabase.from("shop_cash_entries").select("amount,date")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
-      .gte("date", start_date).lte("date", end_date),
-    supabase.from("shop_cash_entries").select("amount,date")
+      .gte("date", start_date).lte("date", end_date)),
+    selectAll(supabase.from("shop_cash_entries").select("amount,date")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .eq("category", "Taxas Shopify")
-      .gte("date", start_date).lte("date", end_date),
+      .gte("date", start_date).lte("date", end_date)),
     supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
       .eq("user_id", ownerId).in("shop_id", shop_ids),
     costProductsFor(supabase, ownerId),

@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { getInvitationByToken } from "@/lib/members.functions";
+import { getInvitationByToken, acceptInvitation } from "@/lib/members.functions";
 import { useAuth } from "@/lib/auth";
 import { Sparkles } from "lucide-react";
 
@@ -12,8 +12,9 @@ export const Route = createFileRoute("/invite/$token")({
 function InvitePage() {
   const { token } = Route.useParams();
   const navigate = useNavigate();
-  const { signUpWithPassword, user } = useAuth();
+  const { signInWithPassword, user } = useAuth();
   const fetchInvite = useServerFn(getInvitationByToken);
+  const acceptFn = useServerFn(acceptInvitation);
 
   const [invite, setInvite] = useState<any>(null);
   const [loadingInvite, setLoadingInvite] = useState(true);
@@ -21,7 +22,6 @@ function InvitePage() {
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInvite({ data: { token } })
@@ -43,15 +43,9 @@ function InvitePage() {
     setBusy(true);
     setError(null);
     try {
-      const { needsConfirmation } = await signUpWithPassword(invite.email, password, {
-        fullName,
-        inviteToken: token,
-      });
-      if (needsConfirmation) {
-        setInfo("Confira seu email para confirmar a conta. Depois faça login.");
-      } else {
-        navigate({ to: "/" });
-      }
+      const { email } = await acceptFn({ data: { token, password, full_name: fullName || undefined } });
+      await signInWithPassword(email, password);
+      navigate({ to: "/" });
     } catch (err: any) {
       setError(err?.message ?? "Erro ao criar conta");
     } finally {
@@ -99,7 +93,6 @@ function InvitePage() {
             </button>
           </form>
           {error && <p className="text-xs text-destructive mt-3 text-center">{error}</p>}
-          {info && <p className="text-xs text-emerald-600 mt-3 text-center">{info}</p>}
         </div>
       </div>
     </div>

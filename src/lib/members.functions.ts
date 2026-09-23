@@ -242,3 +242,42 @@ export const getInvitationByToken = createServerFn({ method: "GET" })
       },
     };
   });
+
+// ---------- Accept invitation (server-side account creation) ----------
+// Cria a conta pelo Admin API em vez de supabase.auth.signUp no navegador — assim
+// o cadastro público pode ficar desligado no Supabase (Auth → "Allow new users to
+// sign up") sem quebrar o convite. O vínculo com o workspace continua sendo feito
+// pelo trigger handle_new_user a partir do invite_token no user_metadata.
+export const acceptInvitation = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      token: z.string().min(10),
+      password: z.string().min(8).max(200),
+      full_name: z.string().trim().max(120).optional(),
+    }).parse(input)
+  )
+  .handler(async ({ data }) => {
+    const { data: invite, error } = await supabaseAdmin
+      .from("member_invitations")
+      .select("email,status,expires_at")
+      .eq("token", data.token)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!invite || invite.status !== "pending") throw new Error("Convite inválido ou já utilizado.");
+    if (new Date(invite.expires_at).getTime() < Date.now()) throw new Error("Convite expirado. Peça um novo ao administrador.");
+
+    const { error: createErr } = await supabaseAdmin.auth.admin.createUser({
+      email: invite.email,
+      password: data.password,
+      email_confirm: true,
+      user_metadata: {
+        ...(data.full_name ? { full_name: data.full_name } : {}),
+        invite_token: data.token,
+      },
+    });
+    if (createErr) {
+      if (/already/i.test(createErr.message)) throw new Error("Já existe uma conta com esse e-mail. Faça login.");
+      throw new Error(createErr.message);
+    }
+    return { email: invite.email as string };
+  });

@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
 
         const { data: integrations, error } = await supabaseAdmin
           .from("track123_integrations")
-          .select("shop_id,api_key,mcp_store_uuid")
+          .select("shop_id,api_key,mcp_store_uuid,last_sync_at")
           .eq("enabled", true)
           .or("api_key.not.is.null,mcp_store_uuid.not.is.null");
         if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
@@ -38,9 +38,18 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
             .map((s: any) => s.id)
         );
 
+        // Um prazo só pra rodada inteira (a função tem 60s na Vercel) e lojas há
+        // mais tempo sem sync primeiro — antes cada loja tinha 50s próprios, a
+        // função morria na 2ª e as do fim da lista ficavam horas sem atualizar.
+        const deadline = Date.now() + 50_000;
+        const queue = (integrations ?? [])
+          .filter((i) => activeShopIds.has(i.shop_id))
+          .sort((a, b) => (a.last_sync_at ?? "").localeCompare(b.last_sync_at ?? ""));
+
         let processed = 0;
-        for (const integ of integrations ?? []) {
-          if (!activeShopIds.has(integ.shop_id)) continue;
+        let skippedByBudget = 0;
+        for (const integ of queue) {
+          if (Date.now() > deadline - 5_000) { skippedByBudget++; continue; }
           try {
             // Preferimos o MCP quando a loja tem Store UUID configurado — é o
             // método que sabemos que funciona quando a Open API clássica não
@@ -48,7 +57,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
             // MCP exige X-Api-Key + X-Store-Uuid juntos (mesma checagem do sync manual
             // em track123.functions.ts); só o UUID sem key falharia toda rodada.
             if (integ.mcp_store_uuid && integ.api_key) {
-              await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin);
+              await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin, { deadline });
             } else if (integ.api_key) {
               await runTrack123Sync(integ.shop_id, integ.api_key, supabaseAdmin);
             } else {
@@ -59,7 +68,8 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
             console.error("track123 sync fail", integ.shop_id, e);
           }
         }
-        return new Response(JSON.stringify({ processed }), { headers: { "Content-Type": "application/json" } });
+        if (skippedByBudget) console.error(`sync-track123: orçamento de tempo esgotado, ${skippedByBudget} loja(s) ficam pra próxima rodada.`);
+        return new Response(JSON.stringify({ processed, skippedByBudget }), { headers: { "Content-Type": "application/json" } });
       },
     },
   },

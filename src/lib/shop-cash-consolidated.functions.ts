@@ -13,6 +13,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { CASH_KINDS, RECURRENCES } from "@/lib/shop-cash.functions";
+import { selectAll } from "@/lib/select-all";
 
 async function findOrCreateOverride(supabase: any, ownerId: string, id: string) {
   // `id` pode ser o id do próprio override (edição de algo criado direto
@@ -61,11 +62,11 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const [entriesRes, overridesRes, importsRes, shopsRes] = await Promise.all([
-      context.supabase.from("shop_cash_entries").select("*")
+      selectAll(context.supabase.from("shop_cash_entries").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .neq("source", "shopify_fees_sync")
         .neq("source", "shopify_auto_sync")
-        .order("date", { ascending: true }),
+        .order("date", { ascending: true })),
       context.supabase.from("shop_cash_overrides").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids),
       context.supabase.from("shop_cash_imports").select("*")

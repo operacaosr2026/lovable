@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { attachLiveShopifyNames, costProductsFor, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 
 // supabaseAdmin ignora RLS, então o dono de cada shop_id vindo do cliente
 // precisa ser checado à mão antes de vinculá-lo a um card — senão um usuário
@@ -586,25 +587,25 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       costProducts,
     ] = await Promise.all([
       supabaseAdmin.from("shops").select("id, name").eq("user_id", ownerId).in("id", shopIds),
-      supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
-      supabaseAdmin.from("shop_orders").select("shop_id, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo),
-      supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
-      supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevEstornoStart).lte("order_date", prevEstornoEnd),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevEstornoStart).lte("order_date", prevEstornoEnd)),
       // Taxa de estorno = chargeback real (disputa formal do banco/cartão do
       // cliente, sincronizada em shop_order_disputes) ÷ total de pedidos —
       // mesma fonte usada em getLgCardQuickMetrics, pra bater com a tela de
       // Lojas e Grupos. Diferente de um simples cancelamento de pedido.
-      supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
+      selectAll(supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
         .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
-        .gte("initiated_at", `${estornoStart}T00:00:00Z`).lte("initiated_at", `${todayStr}T23:59:59Z`),
-      supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
+        .gte("initiated_at", `${estornoStart}T00:00:00Z`).lte("initiated_at", `${todayStr}T23:59:59Z`)),
+      selectAll(supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
         .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
-        .gte("initiated_at", `${prevEstornoStart}T00:00:00Z`).lte("initiated_at", `${prevEstornoEnd}T23:59:59Z`),
+        .gte("initiated_at", `${prevEstornoStart}T00:00:00Z`).lte("initiated_at", `${prevEstornoEnd}T23:59:59Z`)),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", prevFrom).lte("date", prevTo),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", prevFrom).lte("date", prevTo),
+      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to)),
+      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", prevFrom).lte("date", prevTo)),
+      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to)),
+      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", prevFrom).lte("date", prevTo)),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
@@ -832,42 +833,42 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
 
     // B, C, D, E in parallel
     const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
-      supabaseAdmin
+      selectAll(supabaseAdmin
         .from("shop_orders")
         .select("revenue, items_count, shop_id, raw")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", from)
-        .lte("order_date", to),
-      supabaseAdmin
+        .lte("order_date", to)),
+      selectAll(supabaseAdmin
         .from("shop_orders")
         .select("shop_id")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", estornoFrom)
-        .lte("order_date", to),
-      supabaseAdmin
+        .lte("order_date", to)),
+      selectAll(supabaseAdmin
         .from("shop_order_disputes")
         .select("shop_id, order_external_id")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .eq("type", "chargeback")
         .gte("initiated_at", estornoFrom)
-        .lte("initiated_at", to),
+        .lte("initiated_at", to)),
       supabaseAdmin
         .from("shop_order_settings")
         .select("shop_id, default_unit_cost, payout_lag_avg_days, payout_lag_days")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds),
-      supabaseAdmin
+      selectAll(supabaseAdmin
         .from("shop_cash_entries")
         .select("amount")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .eq("category", "Taxas Shopify")
         .gte("date", from)
-        .lte("date", to),
-      supabaseAdmin
+        .lte("date", to)),
+      selectAll(supabaseAdmin
         .from("shop_cash_entries")
         .select("amount")
         .eq("user_id", ownerId)
@@ -875,7 +876,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .eq("category", "Facebook Ads")
         .eq("auto_kind", "meta_ads_spend")
         .gte("date", from)
-        .lte("date", to),
+        .lte("date", to)),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pra "lucro" bater entre as duas telas.
       getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
@@ -979,14 +980,14 @@ export const listShopDailyAnalytics = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
-    const { data: rows, error } = await supabaseAdmin
+    const { data: rows, error } = await selectAll(supabaseAdmin
       .from("shop_daily_analytics")
       .select("date, sessions")
       .eq("shop_id", data.shop_id)
       .eq("user_id", ownerId)
       .gte("date", data.from)
       .lte("date", data.to)
-      .order("date", { ascending: true });
+      .order("date", { ascending: true }));
 
     if (error) throw new Error(error.message);
     return rows ?? [];

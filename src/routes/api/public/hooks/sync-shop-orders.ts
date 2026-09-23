@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
+import { selectAll } from "@/lib/select-all";
 
 const PROCESSING_DELAY_DAYS = 7;
 
@@ -138,10 +139,10 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
     p.id != null && !dismissedIds.has(String(p.id)) && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
   if (!relevant.length) return 0;
 
-  const { data: existing } = await supabaseAdmin.from("shop_cash_entries")
+  const { data: existing } = await selectAll(supabaseAdmin.from("shop_cash_entries")
     .select("id,shopify_payout_id")
     .eq("user_id", userId).eq("shop_id", shopId)
-    .in("shopify_payout_id", relevant.map((p: any) => String(p.id)));
+    .in("shopify_payout_id", relevant.map((p: any) => String(p.id))));
   const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
 
   const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
@@ -299,10 +300,10 @@ async function syncOrdersOnlyForShop(s: any, today: string) {
       // (lido pela aba Rastreamento) — igual ao processShop completo. Sem isso,
       // um pedido só ganha código de rastreio na sincronização completa (2x/dia),
       // não nesse ciclo leve que roda a cada poucos minutos.
-      const { data: dbOrders } = await supabaseAdmin.from("shop_orders")
+      const { data: dbOrders } = await selectAll(supabaseAdmin.from("shop_orders")
         .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
         .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
-        .in("external_id", orders.map((o: any) => String(o.id)));
+        .in("external_id", orders.map((o: any) => String(o.id))));
       const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
 
       const { data: track123Integ } = await supabaseAdmin.from("track123_integrations")
@@ -393,10 +394,10 @@ async function processShop(s: any, today: string) {
 
           // Espelha transportadora/código/link de rastreio do Shopify em shop_orders
           // (lido pela aba Rastreamento), sem sobrescrever ajustes manuais.
-          const { data: dbOrders } = await supabaseAdmin.from("shop_orders")
+          const { data: dbOrders } = await selectAll(supabaseAdmin.from("shop_orders")
             .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
             .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
-            .in("external_id", orders.map((o: any) => String(o.id)));
+            .in("external_id", orders.map((o: any) => String(o.id))));
           const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
 
           // O tracking_url que a própria Shopify manda no fulfillment pode estar

@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
 import { COST_CATEGORY, attachLiveShopifyNames, recomputeShopAutomation, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 
 export const SHOP_STATUSES = ["ativa", "pausada", "arquivada"] as const;
 
@@ -39,16 +40,16 @@ export const listShops = createServerFn({ method: "GET" })
       const monthEnd = todayStr;
       const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: monthOrders }, { data: costRows }, { data: adRows }, { data: feeRows }, refundsAndChargebacks] = await Promise.all([
         supabase.from("shop_products").select("shop_id").in("shop_id", ids),
-        supabase.from("shop_tasks").select("shop_id,status").in("shop_id", ids).neq("status", "done"),
+        selectAll(supabase.from("shop_tasks").select("shop_id,status").in("shop_id", ids).neq("status", "done")),
         supabase.from("shop_routines").select("shop_id,due_at").in("shop_id", ids),
-        supabase.from("shop_cash_entries").select("shop_id,kind,amount,date").in("shop_id", ids).lte("date", todayStr),
-        supabase.from("shop_orders").select("shop_id,revenue").in("shop_id", ids).gte("order_date", monthStart).lte("order_date", monthEnd),
-        supabase.from("shop_cash_entries").select("shop_id,amount,auto_ref_date,date").in("shop_id", ids).eq("kind", "expense").eq("category", COST_CATEGORY)
-          .or(`and(auto_ref_date.gte.${monthStart},auto_ref_date.lte.${monthEnd}),and(auto_ref_date.is.null,date.gte.${monthStart},date.lte.${monthEnd})`),
-        supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Facebook Ads")
-          .gte("date", monthStart).lte("date", monthEnd),
-        supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Taxas Shopify")
-          .gte("date", monthStart).lte("date", monthEnd),
+        selectAll(supabase.from("shop_cash_entries").select("shop_id,kind,amount,date").in("shop_id", ids).lte("date", todayStr)),
+        selectAll(supabase.from("shop_orders").select("shop_id,revenue").in("shop_id", ids).gte("order_date", monthStart).lte("order_date", monthEnd)),
+        selectAll(supabase.from("shop_cash_entries").select("shop_id,amount,auto_ref_date,date").in("shop_id", ids).eq("kind", "expense").eq("category", COST_CATEGORY)
+          .or(`and(auto_ref_date.gte.${monthStart},auto_ref_date.lte.${monthEnd}),and(auto_ref_date.is.null,date.gte.${monthStart},date.lte.${monthEnd})`)),
+        selectAll(supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Facebook Ads")
+          .gte("date", monthStart).lte("date", monthEnd)),
+        selectAll(supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Taxas Shopify")
+          .gte("date", monthStart).lte("date", monthEnd)),
         // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
         // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
         getGroupShopifyRefundsAndChargebacks(ownerId, ids, monthStart, monthEnd),
