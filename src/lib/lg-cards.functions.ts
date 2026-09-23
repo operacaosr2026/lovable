@@ -507,9 +507,27 @@ export const saveLgCurrencyRates = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// ─── Overview de todos os cards (usado no Dashboard) ──────────────────────────
+// ─── Overview do Dashboard (home) ──────────────────────────────────────────────
 
-export const listLgCardsOverview = createServerFn({ method: "GET" })
+const emptyDashboardOverview = {
+  totals: {
+    faturamento: 0, faturamentoDelta: 0,
+    anuncios: 0, anunciosDelta: 0,
+    custoProduto: 0, custoProdutoDelta: 0,
+    lucro: 0, lucroDelta: 0,
+    taxaEstorno: 0, taxaEstornoDeltaPP: 0,
+    pedidos: 0, pedidosDelta: 0,
+  },
+  chartData: [] as { date: string; faturamento: number; anuncios: number; custo: number; lucro: number }[],
+  shopBreakdown: [] as { shop_id: string; shop_name: string; faturamento: number; taxaEstorno: number; totalPedidos: number; totalEstornos: number }[],
+};
+
+function dashboardDelta(curr: number, prev: number) {
+  if (prev === 0) return 0;
+  return Math.round(((curr - prev) / prev) * 100 * 10) / 10;
+}
+
+export const getDashboardOverview = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     from: z.string().optional(),
@@ -520,70 +538,58 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
 
     const { data: cards, error } = await supabaseAdmin
       .from("lg_cards")
-      .select("id, name, logo_url")
+      .select("id")
       .eq("user_id", ownerId)
-      .eq("status", "ativo")
-      .order("created_at", { ascending: false });
+      .eq("status", "ativo");
     if (error) throw new Error(error.message);
-    if (!cards?.length) return { cards: [], shopEstorno: [] };
+    if (!cards?.length) return emptyDashboardOverview;
 
     const cardIds = cards.map((c: any) => c.id);
-    const cardNameById = new Map(cards.map((c: any) => [c.id, c.name as string]));
     const { data: cardShops } = await supabaseAdmin
       .from("lg_card_shops")
-      .select("card_id, shop_id")
+      .select("shop_id")
       .in("card_id", cardIds);
-
-    const shopIdsByCard = new Map<string, string[]>();
-    const cardIdByShop = new Map<string, string>();
-    const allShopIds = new Set<string>();
-    for (const cs of (cardShops ?? []) as any[]) {
-      allShopIds.add(cs.shop_id);
-      if (!shopIdsByCard.has(cs.card_id)) shopIdsByCard.set(cs.card_id, []);
-      shopIdsByCard.get(cs.card_id)!.push(cs.shop_id);
-      cardIdByShop.set(cs.shop_id, cs.card_id);
-    }
-    const shopIds = Array.from(allShopIds);
-    if (!shopIds.length) {
-      return {
-        cards: cards.map((c: any) => ({
-          ...c, saldo: 0, lucroMes: 0, taxaEstorno: 0,
-          faturamentoMes: 0, custoProdutoMes: 0, anunciosMes: 0, taxasMes: 0, margemMes: 0,
-        })),
-        shopEstorno: [],
-      };
-    }
+    const shopIds = Array.from(new Set((cardShops ?? []).map((cs: any) => cs.shop_id as string)));
+    if (!shopIds.length) return emptyDashboardOverview;
 
     // "Hoje"/"mês corrente" sempre no fuso de Nova York (horário padrão do
     // negócio), não UTC nem o horário local do servidor.
     const todayStr = isoTodayUS();
     const defaultMonthStart = isoMonthStartUS();
-    // Período controlado pelo seletor de datas do dashboard; sem seleção, usa
-    // o mês corrente (mesmo default de antes). Faturamento/custos/anúncios
-    // seguem esse intervalo.
     const from = data?.from ?? defaultMonthStart;
     const to = data?.to ?? todayStr;
 
+    // "vs mês anterior": mesma quantidade de dias, imediatamente anterior a `from`.
+    const days = Math.round((new Date(to + "T00:00:00Z").getTime() - new Date(from + "T00:00:00Z").getTime()) / 86_400_000) + 1;
+    const prevTo = addDaysISO(from, -1);
+    const prevFrom = addDaysISO(prevTo, -(days - 1));
+
     // Taxa de estorno é sempre uma janela rolante fixa de 30 dias, independente
     // do seletor de datas: estorno demora a acontecer depois da compra
-    // (semanas), então medir só o período selecionado (ex: hoje, ou o mês
-    // corrente no início do mês) deixaria a taxa artificialmente perto de 0.
+    // (semanas), então medir só o período selecionado deixaria a taxa
+    // artificialmente perto de 0. O delta compara com os 30 dias anteriores.
     const estornoStart = addDaysISO(todayStr, -30);
+    const prevEstornoEnd = addDaysISO(estornoStart, -1);
+    const prevEstornoStart = addDaysISO(prevEstornoEnd, -29);
 
     // supabaseAdmin ignora RLS — todo filtro de posse abaixo é manual. shopIds
     // já vem só de cards do próprio ownerId (linhas acima), mas filtramos por
     // user_id aqui também (defesa em profundidade, e pra não depender só do
     // create/updateLgCard nunca deixarem um shop_id de outro dono entrar em
     // lg_card_shops).
-    const [shopsRes, cashRes, monthOrdersRes, estornoOrdersRes, chargebackDisputesRes, costRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
-      supabaseAdmin.from("shops").select("id, name, opening_balance").eq("user_id", ownerId).in("id", shopIds),
-      // "Saldo atual" no Caixa (LgCashflowView) só soma lançamentos conciliados,
-      // e ignora os sincronizados automaticamente (taxas/pendências do Shopify).
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, kind, amount")
-        .eq("user_id", ownerId).in("shop_id", shopIds).eq("reconciled", true)
-        .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync"),
-      supabaseAdmin.from("shop_orders").select("shop_id, revenue, items_count, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
+    const [
+      shopsRes, monthOrdersRes, prevOrdersRes,
+      estornoOrdersRes, prevEstornoOrdersRes,
+      chargebackDisputesRes, prevChargebackDisputesRes,
+      costRes, feesRes, prevFeesRes, adsRes, prevAdsRes,
+      refundsAndChargebacks, prevRefundsAndChargebacks,
+      costProducts,
+    ] = await Promise.all([
+      supabaseAdmin.from("shops").select("id, name").eq("user_id", ownerId).in("id", shopIds),
+      supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to),
+      supabaseAdmin.from("shop_orders").select("shop_id, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo),
       supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr),
+      supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevEstornoStart).lte("order_date", prevEstornoEnd),
       // Taxa de estorno = chargeback real (disputa formal do banco/cartão do
       // cliente, sincronizada em shop_order_disputes) ÷ total de pedidos —
       // mesma fonte usada em getLgCardQuickMetrics, pra bater com a tela de
@@ -591,17 +597,22 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
       supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
         .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
         .gte("initiated_at", `${estornoStart}T00:00:00Z`).lte("initiated_at", `${todayStr}T23:59:59Z`),
+      supabaseAdmin.from("shop_order_disputes").select("shop_id, order_external_id")
+        .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
+        .gte("initiated_at", `${prevEstornoStart}T00:00:00Z`).lte("initiated_at", `${prevEstornoEnd}T23:59:59Z`),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
-      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", prevFrom).lte("date", prevTo),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to),
+      supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", prevFrom).lte("date", prevTo),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
       getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
+      getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
       costProductsFor(supabaseAdmin, ownerId),
     ]);
 
-    const openingBalanceByShop = new Map((shopsRes.data ?? []).map((s: any) => [s.id, Number(s.opening_balance ?? 0)]));
     // Nome exibido segue o vínculo ao vivo com a Shopify (shopify_store_id),
     // não o nome interno cadastrado em `shops` — evita mostrar um nome antigo
     // quando a loja Shopify já foi renomeada.
@@ -610,35 +621,76 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
       (shopsRes.data ?? []).map((s: any) => ({ id: s.id as string, name: s.name as string })),
     );
     const shopNameById = new Map(shopsWithLiveNames.map((s) => [s.id, s.name]));
-    const cashByShop = new Map<string, number>();
-    for (const e of (cashRes.data ?? []) as any[]) {
-      const amt = Number(e.amount ?? 0);
-      cashByShop.set(e.shop_id, (cashByShop.get(e.shop_id) ?? 0) + (e.kind === "income" ? amt : -amt));
-    }
 
     const costByShop = new Map((costRes.data ?? []).map((s: any) => [s.shop_id, Number(s.default_unit_cost ?? 0)]));
     const configuredCosts = Array.from(costByShop.values()).filter((c) => c > 0);
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
+    // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+    // em vez de items_count × custo fixo da loja.
+    function costFor(shopId: string, rawLineItems: any) {
+      const shopCost = costByShop.get(shopId);
+      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
+      return orderLineItemsCost(rawLineItems, costProducts, fallback);
+    }
 
+    // Período atual — por loja e por dia (a série diária vira o gráfico principal)
     const revenueByShop = new Map<string, number>();
     const custoByShop = new Map<string, number>();
+    const byDate = new Map<string, { faturamento: number; custo: number }>();
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
-      revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
-      // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
-      // em vez de items_count × custo fixo da loja.
-      const shopCost = costByShop.get(sid);
-      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      const cost = orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
+      const rev = Number(o.revenue ?? 0);
+      const cost = costFor(sid, o.raw?.line_items);
+      revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + rev);
       custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + cost);
+      const d = o.order_date as string;
+      const prevDay = byDate.get(d) ?? { faturamento: 0, custo: 0 };
+      byDate.set(d, { faturamento: prevDay.faturamento + rev, custo: prevDay.custo + cost });
     }
+    const pedidos = (monthOrdersRes.data ?? []).length;
+
+    // Período anterior — só totais por loja, não precisa de série diária
+    const prevRevenueByShop = new Map<string, number>();
+    const prevCustoByShop = new Map<string, number>();
+    for (const o of (prevOrdersRes.data ?? []) as any[]) {
+      const sid = o.shop_id as string;
+      prevRevenueByShop.set(sid, (prevRevenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
+      prevCustoByShop.set(sid, (prevCustoByShop.get(sid) ?? 0) + costFor(sid, o.raw?.line_items));
+    }
+    const prevPedidos = (prevOrdersRes.data ?? []).length;
+
+    const feesByShop = new Map<string, number>();
+    const feesByDate = new Map<string, number>();
+    for (const r of (feesRes.data ?? []) as any[]) {
+      feesByShop.set(r.shop_id, (feesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+      feesByDate.set(r.date, (feesByDate.get(r.date) ?? 0) + Number(r.amount ?? 0));
+    }
+    const prevFeesByShop = new Map<string, number>();
+    for (const r of (prevFeesRes.data ?? []) as any[]) prevFeesByShop.set(r.shop_id, (prevFeesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+
+    const adsByShop = new Map<string, number>();
+    const adsByDate = new Map<string, number>();
+    for (const r of (adsRes.data ?? []) as any[]) {
+      adsByShop.set(r.shop_id, (adsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+      adsByDate.set(r.date, (adsByDate.get(r.date) ?? 0) + Number(r.amount ?? 0));
+    }
+    const prevAdsByShop = new Map<string, number>();
+    for (const r of (prevAdsRes.data ?? []) as any[]) prevAdsByShop.set(r.shop_id, (prevAdsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+
+    const reembolsosByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
+    const chargebacksByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
+    const refundsByDate = new Map<string, number>();
+    const chargebacksByDate = new Map<string, number>();
+    for (const r of refundsAndChargebacks as any[]) {
+      for (const [d, amt] of Object.entries(r.refByDate ?? {})) refundsByDate.set(d, (refundsByDate.get(d) ?? 0) + (amt as number));
+      for (const [d, amt] of Object.entries(r.cbByDate ?? {})) chargebacksByDate.set(d, (chargebacksByDate.get(d) ?? 0) + (amt as number));
+    }
+    const prevReembolsosByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
+    const prevChargebacksByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
 
     // Taxa de estorno em janela rolante de 30 dias (ver comentário acima)
     const totalOrdersByShop = new Map<string, number>();
-    for (const o of (estornoOrdersRes.data ?? []) as any[]) {
-      const sid = o.shop_id as string;
-      totalOrdersByShop.set(sid, (totalOrdersByShop.get(sid) ?? 0) + 1);
-    }
+    for (const o of (estornoOrdersRes.data ?? []) as any[]) totalOrdersByShop.set(o.shop_id, (totalOrdersByShop.get(o.shop_id) ?? 0) + 1);
     const estornosPorLojaSet = new Map<string, Set<string>>();
     for (const d of (chargebackDisputesRes.data ?? []) as any[]) {
       if (d.order_external_id == null) continue;
@@ -649,58 +701,91 @@ export const listLgCardsOverview = createServerFn({ method: "GET" })
       Array.from(estornosPorLojaSet.entries()).map(([shopId, set]) => [shopId, set.size]),
     );
 
-    const feesByShop = new Map<string, number>();
-    for (const r of (feesRes.data ?? []) as any[]) feesByShop.set(r.shop_id, (feesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
-    const adsByShop = new Map<string, number>();
-    for (const r of (adsRes.data ?? []) as any[]) adsByShop.set(r.shop_id, (adsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
-    const reembolsosByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
-    const chargebacksByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
+    const prevTotalOrdersByShop = new Map<string, number>();
+    for (const o of (prevEstornoOrdersRes.data ?? []) as any[]) prevTotalOrdersByShop.set(o.shop_id, (prevTotalOrdersByShop.get(o.shop_id) ?? 0) + 1);
+    const prevEstornosPorLojaSet = new Map<string, Set<string>>();
+    for (const d of (prevChargebackDisputesRes.data ?? []) as any[]) {
+      if (d.order_external_id == null) continue;
+      if (!prevEstornosPorLojaSet.has(d.shop_id)) prevEstornosPorLojaSet.set(d.shop_id, new Set());
+      prevEstornosPorLojaSet.get(d.shop_id)!.add(d.order_external_id);
+    }
+    const prevTotalEstornosByShop = new Map<string, number>(
+      Array.from(prevEstornosPorLojaSet.entries()).map(([shopId, set]) => [shopId, set.size]),
+    );
+
+    // ── Totais globais (soma de todas as lojas dos grupos ativos) + delta ──
+    let faturamento = 0, custoProduto = 0, anuncios = 0, taxas = 0;
+    let prevFaturamento = 0, prevCustoProduto = 0, prevAnuncios = 0, prevTaxas = 0;
+    let totalPedidosEstorno = 0, totalEstornosEstorno = 0;
+    let prevTotalPedidosEstorno = 0, prevTotalEstornosEstorno = 0;
+    for (const id of shopIds) {
+      faturamento += (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
+      custoProduto += custoByShop.get(id) ?? 0;
+      taxas += feesByShop.get(id) ?? 0;
+      anuncios += adsByShop.get(id) ?? 0;
+      prevFaturamento += (prevRevenueByShop.get(id) ?? 0) - (prevReembolsosByShop.get(id) ?? 0) - (prevChargebacksByShop.get(id) ?? 0);
+      prevCustoProduto += prevCustoByShop.get(id) ?? 0;
+      prevTaxas += prevFeesByShop.get(id) ?? 0;
+      prevAnuncios += prevAdsByShop.get(id) ?? 0;
+      totalPedidosEstorno += totalOrdersByShop.get(id) ?? 0;
+      totalEstornosEstorno += totalEstornosByShop.get(id) ?? 0;
+      prevTotalPedidosEstorno += prevTotalOrdersByShop.get(id) ?? 0;
+      prevTotalEstornosEstorno += prevTotalEstornosByShop.get(id) ?? 0;
+    }
+    const lucro = faturamento - custoProduto - taxas - anuncios;
+    const prevLucro = prevFaturamento - prevCustoProduto - prevTaxas - prevAnuncios;
+    const taxaEstorno = totalPedidosEstorno > 0 ? totalEstornosEstorno / totalPedidosEstorno : 0;
+    const prevTaxaEstorno = prevTotalPedidosEstorno > 0 ? prevTotalEstornosEstorno / prevTotalPedidosEstorno : 0;
+
+    // ── Série diária pro gráfico principal (Faturamento / Ads / Lucro) ──
+    for (const d of feesByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const d of adsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const d of refundsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const d of chargebacksByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+
+    const chartData = Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => {
+        const dayTaxas = feesByDate.get(date) ?? 0;
+        const dayAnuncios = adsByDate.get(date) ?? 0;
+        const dayReembolsos = refundsByDate.get(date) ?? 0;
+        const dayChargebacks = chargebacksByDate.get(date) ?? 0;
+        const dayFaturamento = v.faturamento - dayReembolsos - dayChargebacks;
+        return {
+          date: `${date.slice(8, 10)}/${date.slice(5, 7)}`, // YYYY-MM-DD → DD/MM
+          faturamento: Math.round(dayFaturamento * 100) / 100,
+          anuncios: Math.round(dayAnuncios * 100) / 100,
+          custo: Math.round(v.custo * 100) / 100,
+          lucro: Math.round((dayFaturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+        };
+      });
+
+    // ── Breakdown por loja pra rosca "Composição do faturamento" e o ranking ──
+    const shopBreakdown = shopIds.map((sid) => {
+      const totalPedidos = totalOrdersByShop.get(sid) ?? 0;
+      const totalEstornos = totalEstornosByShop.get(sid) ?? 0;
+      return {
+        shop_id: sid,
+        shop_name: shopNameById.get(sid) ?? sid,
+        faturamento: (revenueByShop.get(sid) ?? 0) - (reembolsosByShop.get(sid) ?? 0) - (chargebacksByShop.get(sid) ?? 0),
+        taxaEstorno: totalPedidos > 0 ? totalEstornos / totalPedidos : 0,
+        totalPedidos,
+        totalEstornos,
+      };
+    });
 
     return {
-      cards: cards.map((c: any) => {
-        const ids = shopIdsByCard.get(c.id) ?? [];
-        let saldo = 0, lucroMes = 0, totalPedidos = 0, totalEstornos = 0;
-        let faturamentoMes = 0, custoProdutoMes = 0, anunciosMes = 0, taxasMes = 0;
-        for (const id of ids) {
-          saldo += (openingBalanceByShop.get(id) ?? 0) + (cashByShop.get(id) ?? 0);
-          const faturamento = (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
-          const custoProduto = custoByShop.get(id) ?? 0;
-          const taxas = feesByShop.get(id) ?? 0;
-          const anuncios = adsByShop.get(id) ?? 0;
-          lucroMes += faturamento - custoProduto - taxas - anuncios;
-          faturamentoMes += faturamento;
-          custoProdutoMes += custoProduto;
-          anunciosMes += anuncios;
-          taxasMes += taxas;
-          totalPedidos += totalOrdersByShop.get(id) ?? 0;
-          totalEstornos += totalEstornosByShop.get(id) ?? 0;
-        }
-        return {
-          ...c,
-          saldo,
-          lucroMes,
-          taxaEstorno: totalPedidos > 0 ? totalEstornos / totalPedidos : 0,
-          faturamentoMes,
-          custoProdutoMes,
-          anunciosMes,
-          taxasMes,
-          margemMes: faturamentoMes > 0 ? lucroMes / faturamentoMes : 0,
-        };
-      }),
-      shopEstorno: shopIds.map((sid) => {
-        const totalPedidos = totalOrdersByShop.get(sid) ?? 0;
-        const totalEstornos = totalEstornosByShop.get(sid) ?? 0;
-        const cardId = cardIdByShop.get(sid) ?? null;
-        return {
-          shop_id: sid,
-          shop_name: shopNameById.get(sid) ?? sid,
-          card_id: cardId,
-          card_name: cardId ? (cardNameById.get(cardId) ?? null) : null,
-          totalPedidos,
-          totalEstornos,
-          taxaEstorno: totalPedidos > 0 ? totalEstornos / totalPedidos : 0,
-        };
-      }),
+      totals: {
+        faturamento,   faturamentoDelta:   dashboardDelta(faturamento, prevFaturamento),
+        anuncios,      anunciosDelta:      dashboardDelta(anuncios, prevAnuncios),
+        custoProduto,  custoProdutoDelta:  dashboardDelta(custoProduto, prevCustoProduto),
+        lucro,         lucroDelta:         dashboardDelta(lucro, prevLucro),
+        // Pontos percentuais, não delta relativo — cair de 2% pra 1% é "-1 p.p.", não "-50%".
+        taxaEstorno,   taxaEstornoDeltaPP: Math.round((taxaEstorno - prevTaxaEstorno) * 1000) / 10,
+        pedidos,       pedidosDelta:       dashboardDelta(pedidos, prevPedidos),
+      },
+      chartData,
+      shopBreakdown,
     };
   });
 
