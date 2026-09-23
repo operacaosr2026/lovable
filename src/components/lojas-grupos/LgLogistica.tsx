@@ -54,12 +54,13 @@ function daysSince(iso: string | null | undefined, nowMs: number): number | null
   if (!iso) return null;
   return (nowMs - new Date(iso).getTime()) / 86_400_000;
 }
-// Dias desde a postagem: se já entregue, é o tempo final (postagem → entrega).
-// Se ainda não, é o tempo corrido até agora (ainda contando).
-function deliveryTimeLabel(o: any, nowMs: number): string {
-  if (!o.shipped_at) return "—";
-  const end = o.delivered_at ? new Date(o.delivered_at).getTime() : nowMs;
-  const d = daysSince(o.shipped_at, end);
+// Tempo de entrega: só faz sentido depois que o pedido foi realmente
+// entregue (postagem → entrega). Enquanto isso não acontece, mostra "—" em
+// vez de um contador correndo — isso é o "Xd sem entrega" do alerta, não o
+// tempo de entrega.
+function deliveryTimeLabel(o: any, _nowMs: number): string {
+  if (!o.shipped_at || !o.delivered_at) return "—";
+  const d = daysSince(o.shipped_at, new Date(o.delivered_at).getTime());
   return d != null ? `${Math.floor(d)}d` : "—";
 }
 // Dias úteis (seg-sex) entre a data do pedido e agora — não conta a data do
@@ -310,14 +311,20 @@ export function LgLogistica({
   // os cards mostram só os números dela.
   const allOrders = orders as any[];
   const shopScopedOrders = shopFilter === "todas" ? allOrders : allOrders.filter((o) => o.shop_id === shopFilter);
+  // Buscando um pedido, os KPIs também recortam pra só ele — mostra em qual
+  // card ele está (ex: "Em trânsito"), em vez de continuar contando todo o
+  // período como se a busca não existisse.
+  const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
+  const kpiScopedOrders = !searchTerm ? shopScopedOrders
+    : shopScopedOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
   const kpis = {
-    pending:   shopScopedOrders.filter((o) => inBucket(o, "pending")).length,
-    shipped:   shopScopedOrders.filter((o) => inBucket(o, "shipped")).length,
-    delivered: shopScopedOrders.filter((o) => inBucket(o, "delivered")).length,
-    problem:   shopScopedOrders.filter((o) => inBucket(o, "problem")).length,
+    pending:   kpiScopedOrders.filter((o) => inBucket(o, "pending")).length,
+    shipped:   kpiScopedOrders.filter((o) => inBucket(o, "shipped")).length,
+    delivered: kpiScopedOrders.filter((o) => inBucket(o, "delivered")).length,
+    problem:   kpiScopedOrders.filter((o) => inBucket(o, "problem")).length,
   };
-  const attentionCount = shopScopedOrders.filter((o) => needsAttention(o, nowMs)).length;
-  const waitingCustomerCount = shopScopedOrders.filter((o) => inBucket(o, "waiting_customer")).length;
+  const attentionCount = kpiScopedOrders.filter((o) => needsAttention(o, nowMs)).length;
+  const waitingCustomerCount = kpiScopedOrders.filter((o) => inBucket(o, "waiting_customer")).length;
 
   // Breakdown por loja do total de pedidos — só faz sentido mostrar quando a
   // visão está consolidada (várias lojas) e nenhum filtro de loja específica
@@ -326,7 +333,7 @@ export function LgLogistica({
     .sort((a, b) => (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true }))
     .map((id) => ({ id, name: shopNames[id] ?? id, count: allOrders.filter((o) => o.shop_id === id).length }));
 
-  const kpiOrders = shopScopedOrders.filter((o) => !o.kpi_excluded);
+  const kpiOrders = kpiScopedOrders.filter((o) => !o.kpi_excluded);
 
   // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
   const postingDurations = kpiOrders
@@ -346,7 +353,6 @@ export function LgLogistica({
     ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
     : null;
 
-  const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
   // Buscar pedido ignora os filtros de status e loja — é pra achar o pedido
   // onde quer que ele esteja (ex: já entregue, numa loja fora do filtro
   // atual), não só dentro do recorte ativo. O status/loja de cada linha
@@ -428,7 +434,7 @@ export function LgLogistica({
               <p className="text-xl font-bold text-foreground">
                 {kpis[key]}
                 {key === "delivered" && (
-                  <span className="text-xs font-normal text-muted-foreground"> / {shopScopedOrders.length}</span>
+                  <span className="text-xs font-normal text-muted-foreground"> / {kpiScopedOrders.length}</span>
                 )}
               </p>
             </div>
@@ -445,7 +451,7 @@ export function LgLogistica({
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-slate-500/10">
               <Layers className="size-4 text-slate-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">{shopScopedOrders.length}</p>
+            <p className="text-xl font-bold text-foreground">{kpiScopedOrders.length}</p>
           </div>
           <p className="text-xs text-muted-foreground">Total de pedidos</p>
         </div>
