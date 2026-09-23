@@ -102,7 +102,10 @@ export async function runTrack123McpSync(
     .select("id,user_id,order_number,delivery_status,tracking_code,shipped_at")
     .eq("shop_id", shopId)
     .not("order_number", "is", null)
-    .not("delivery_status", "in", "(delivered,returned)")
+    // NULL NOT IN (...) é NULL em SQL (não TRUE) — .not("in") sozinho excluiria
+    // silenciosamente todo pedido com delivery_status nulo (nunca chegou a ser
+    // marcado como "pending_shipment"/etc).
+    .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
     .gte("order_date", since)
     .order("order_date", { ascending: true });
   if (ordersError) throw new Error(ordersError.message);
