@@ -39,8 +39,6 @@ import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/publi
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
-import { Route as ApiPublicHooksMailPollStatusInboxIdRouteImport } from "./routes/api/public/hooks/mail.poll-status.$inboxId";
-import { Route as ApiPublicHooksMailInboundInboxIdRouteImport } from "./routes/api/public/hooks/mail.inbound.$inboxId";
 
 const ShopsRoute = ShopsRouteImport.update({
   id: "/shops",
@@ -196,18 +194,6 @@ const ApiPublicHooksTrack123ShopIdSecretRoute =
     path: "/api/public/hooks/track123/$shopId/$secret",
     getParentRoute: () => rootRouteImport,
   } as any);
-const ApiPublicHooksMailPollStatusInboxIdRoute =
-  ApiPublicHooksMailPollStatusInboxIdRouteImport.update({
-    id: "/api/public/hooks/mail/poll-status/$inboxId",
-    path: "/api/public/hooks/mail/poll-status/$inboxId",
-    getParentRoute: () => rootRouteImport,
-  } as any);
-const ApiPublicHooksMailInboundInboxIdRoute =
-  ApiPublicHooksMailInboundInboxIdRouteImport.update({
-    id: "/api/public/hooks/mail/inbound/$inboxId",
-    path: "/api/public/hooks/mail/inbound/$inboxId",
-    getParentRoute: () => rootRouteImport,
-  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
@@ -239,8 +225,6 @@ export interface FileRoutesByFullPath {
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
-  "/api/public/hooks/mail/inbound/$inboxId": typeof ApiPublicHooksMailInboundInboxIdRoute;
-  "/api/public/hooks/mail/poll-status/$inboxId": typeof ApiPublicHooksMailPollStatusInboxIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesByTo {
@@ -266,8 +250,6 @@ export interface FileRoutesByTo {
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
-  "/api/public/hooks/mail/inbound/$inboxId": typeof ApiPublicHooksMailInboundInboxIdRoute;
-  "/api/public/hooks/mail/poll-status/$inboxId": typeof ApiPublicHooksMailPollStatusInboxIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesById {
@@ -301,8 +283,6 @@ export interface FileRoutesById {
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
-  "/api/public/hooks/mail/inbound/$inboxId": typeof ApiPublicHooksMailInboundInboxIdRoute;
-  "/api/public/hooks/mail/poll-status/$inboxId": typeof ApiPublicHooksMailPollStatusInboxIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRouteTypes {
@@ -337,8 +317,6 @@ export interface FileRouteTypes {
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
-    | "/api/public/hooks/mail/inbound/$inboxId"
-    | "/api/public/hooks/mail/poll-status/$inboxId"
     | "/api/public/hooks/track123/$shopId/$secret";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -364,8 +342,6 @@ export interface FileRouteTypes {
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
-    | "/api/public/hooks/mail/inbound/$inboxId"
-    | "/api/public/hooks/mail/poll-status/$inboxId"
     | "/api/public/hooks/track123/$shopId/$secret";
   id:
     | "__root__"
@@ -398,8 +374,6 @@ export interface FileRouteTypes {
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
-    | "/api/public/hooks/mail/inbound/$inboxId"
-    | "/api/public/hooks/mail/poll-status/$inboxId"
     | "/api/public/hooks/track123/$shopId/$secret";
   fileRoutesById: FileRoutesById;
 }
@@ -414,8 +388,6 @@ export interface RootRouteChildren {
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute;
-  ApiPublicHooksMailInboundInboxIdRoute: typeof ApiPublicHooksMailInboundInboxIdRoute;
-  ApiPublicHooksMailPollStatusInboxIdRoute: typeof ApiPublicHooksMailPollStatusInboxIdRoute;
   ApiPublicHooksTrack123ShopIdSecretRoute: typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 
@@ -631,20 +603,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksTrack123ShopIdSecretRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/api/public/hooks/mail/poll-status/$inboxId": {
-      id: "/api/public/hooks/mail/poll-status/$inboxId";
-      path: "/api/public/hooks/mail/poll-status/$inboxId";
-      fullPath: "/api/public/hooks/mail/poll-status/$inboxId";
-      preLoaderRoute: typeof ApiPublicHooksMailPollStatusInboxIdRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/public/hooks/mail/inbound/$inboxId": {
-      id: "/api/public/hooks/mail/inbound/$inboxId";
-      path: "/api/public/hooks/mail/inbound/$inboxId";
-      fullPath: "/api/public/hooks/mail/inbound/$inboxId";
-      preLoaderRoute: typeof ApiPublicHooksMailInboundInboxIdRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
   }
 }
 
@@ -763,9 +721,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
-  ApiPublicHooksMailInboundInboxIdRoute: ApiPublicHooksMailInboundInboxIdRoute,
-  ApiPublicHooksMailPollStatusInboxIdRoute:
-    ApiPublicHooksMailPollStatusInboxIdRoute,
   ApiPublicHooksTrack123ShopIdSecretRoute:
     ApiPublicHooksTrack123ShopIdSecretRoute,
 };

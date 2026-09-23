@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { timingSafeEqualString } from "@/lib/cron-auth";
+import { applyTrackingTargetToOrder, isOlderEvent } from "@/lib/track123-sync.server";
 
 /**
  * Track123 webhook receiver (secret in path).
@@ -80,43 +81,37 @@ export const Route = createFileRoute("/api/public/hooks/track123/$shopId/$secret
 
           const { data: tracking } = await supabaseAdmin
             .from("shop_order_tracking")
-            .select("id,order_id,timeline")
+            .select("id,order_id,timeline,last_event_at,shipped_at,delivered_at,problem_at")
             .eq("shop_id", shopId)
             .eq("tracking_number", trackingNumber)
             .maybeSingle();
 
           if (!tracking) continue;
 
+          // Webhook atrasado/reentregue com evento mais antigo que o já gravado:
+          // ignora, pra não voltar o pedido pra um status anterior.
+          if (isOlderEvent(lastAt, tracking.last_event_at)) { processed++; continue; }
+
           const target = matchRule(lastLabel) ?? matchRule(it?.status);
 
           const update: any = {
-            carrier: it?.courierCode ?? it?.carrierCode ?? null,
             tracking_status: it?.status ?? null,
             last_event_at: lastAt,
             last_event_label: lastLabel,
             timeline: events.length ? events : tracking.timeline,
           };
+          const carrier = it?.courierCode ?? it?.carrierCode;
+          if (carrier) update.carrier = carrier;
 
-          const nowDate = new Date().toISOString().slice(0, 10);
-          const orderUpdate: { payment_status?: string; shipped_at?: string; delivered_at?: string; problem_at?: string } = {};
-
-          if (target === "shipped") {
-            update.shipped_at = new Date().toISOString();
-            orderUpdate.payment_status = "shipped";
-            orderUpdate.shipped_at = nowDate;
-          } else if (target === "delivered") {
-            update.delivered_at = new Date().toISOString();
-            orderUpdate.delivered_at = nowDate;
-            orderUpdate.payment_status = "shipped";
-          } else if (target === "problem") {
-            update.problem_at = new Date().toISOString();
-            orderUpdate.problem_at = nowDate;
-          }
+          // Datas só na primeira vez — o mesmo webhook chegando 2, 5, 10 vezes
+          // não pode ficar empurrando a data pra "agora".
+          const nowIso = new Date().toISOString();
+          if (target === "shipped" && !tracking.shipped_at) update.shipped_at = nowIso;
+          else if (target === "delivered" && !tracking.delivered_at) update.delivered_at = lastAt ?? nowIso;
+          else if (target === "problem" && !tracking.problem_at) update.problem_at = lastAt ?? nowIso;
 
           await supabaseAdmin.from("shop_order_tracking").update(update).eq("id", tracking.id);
-          if (Object.keys(orderUpdate).length) {
-            await supabaseAdmin.from("shop_orders").update(orderUpdate).eq("id", tracking.order_id);
-          }
+          await applyTrackingTargetToOrder(supabaseAdmin, tracking.order_id, target, lastAt);
           processed++;
         }
 

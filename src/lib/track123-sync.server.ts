@@ -2,10 +2,44 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
+// Aplica em shop_orders o status que veio do rastreio. Regras (iguais ao sync
+// via MCP):
+//  - nunca mexe em payment_status — isso é o pagamento ao FORNECEDOR (pendente
+//    → pago → enviado), não logística; marcar "shipped" aqui fazia pedido não
+//    pago aparecer como "Pago" e sumir do custo pendente;
+//  - só preenche datas vazias (filtro .is(null)), pra reprocessar o mesmo
+//    evento — webhook repetido, sync de novo — não empurrar a data pra "hoje";
+//  - entrega usa a data do evento real e marca delivery_status = delivered.
+export async function applyTrackingTargetToOrder(
+  supabase: typeof supabaseAdmin,
+  orderId: string,
+  target: string | null,
+  eventAt: string | null,
+) {
+  const nowDate = new Date().toISOString().slice(0, 10);
+  const eventDate = eventAt && /^\d{4}-\d{2}-\d{2}/.test(eventAt) ? eventAt.slice(0, 10) : nowDate;
+  if (target === "shipped") {
+    await supabase.from("shop_orders").update({ shipped_at: nowDate }).eq("id", orderId).is("shipped_at", null);
+  } else if (target === "delivered") {
+    await supabase.from("shop_orders").update({ delivered_at: eventDate, delivery_status: "delivered" })
+      .eq("id", orderId).is("delivered_at", null);
+  } else if (target === "problem") {
+    await supabase.from("shop_orders").update({ problem_at: eventDate }).eq("id", orderId).is("problem_at", null);
+  }
+}
+
+// Evento mais antigo que o já gravado = chegou fora de ordem (webhook atrasado
+// ou reentregue) — não pode sobrescrever um status mais novo.
+export function isOlderEvent(incoming: string | null | undefined, stored: string | null | undefined): boolean {
+  if (!incoming || !stored) return false;
+  const a = Date.parse(incoming), b = Date.parse(stored);
+  return Number.isFinite(a) && Number.isFinite(b) && a < b;
+}
+
 export async function runTrack123Sync(shopId: string, apiKey: string, supabase: typeof supabaseAdmin) {
     // Get tracking numbers from existing tracking rows
     const { data: trackings } = await supabase.from("shop_order_tracking")
-      .select("id,order_id,tracking_number,timeline").eq("shop_id", shopId)
+      .select("id,order_id,tracking_number,timeline,last_event_at,shipped_at,delivered_at,problem_at").eq("shop_id", shopId)
       .not("tracking_number", "is", null).limit(1000);
 
     const { data: rules } = await supabase.from("track123_event_rules")
@@ -101,34 +135,24 @@ export async function runTrack123Sync(shopId: string, apiKey: string, supabase: 
       const lastLabel: string | null = last?.eventDetail ?? null;
       const lastAt: string | null = last?.eventTime ?? last?.eventTimeZeroUTC ?? null;
 
+      if (isOlderEvent(lastAt, t.last_event_at)) { updated++; continue; }
+
       const update: any = {
-        carrier: logistics.courierCode ?? null,
         tracking_status: item.transitStatus ?? null,
         last_event_at: lastAt,
         last_event_label: lastLabel,
         timeline: events.length ? events : t.timeline,
       };
+      if (logistics.courierCode) update.carrier = logistics.courierCode;
 
       const target = matchRule(lastLabel) ?? matchRule(item.transitStatus) ?? matchRule(item.transitSubStatus);
-      const nowDate = new Date().toISOString().slice(0, 10);
-      const orderUpdate: { payment_status?: string; shipped_at?: string; delivered_at?: string; problem_at?: string } = {};
-      if (target === "shipped") {
-        update.shipped_at = new Date().toISOString();
-        orderUpdate.payment_status = "shipped";
-        orderUpdate.shipped_at = nowDate;
-      } else if (target === "delivered") {
-        update.delivered_at = new Date().toISOString();
-        orderUpdate.delivered_at = nowDate;
-        orderUpdate.payment_status = "shipped";
-      } else if (target === "problem") {
-        update.problem_at = new Date().toISOString();
-        orderUpdate.problem_at = nowDate;
-      }
+      const nowIso = new Date().toISOString();
+      if (target === "shipped" && !t.shipped_at) update.shipped_at = nowIso;
+      else if (target === "delivered" && !t.delivered_at) update.delivered_at = lastAt ?? nowIso;
+      else if (target === "problem" && !t.problem_at) update.problem_at = lastAt ?? nowIso;
 
       await supabase.from("shop_order_tracking").update(update).eq("id", t.id);
-      if (Object.keys(orderUpdate).length) {
-        await supabase.from("shop_orders").update(orderUpdate).eq("id", t.order_id);
-      }
+      await applyTrackingTargetToOrder(supabase, t.order_id, target, lastAt);
       updated++;
     }
 
