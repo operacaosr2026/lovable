@@ -351,14 +351,14 @@ export function CaixaSimulator() {
             <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="sim-grad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset={`${Math.min(5, zeroOffset * 100)}%`} stopColor="var(--color-primary)" stopOpacity={0.25} />
-                  <stop offset={`${zeroOffset * 100}%`} stopColor="var(--color-primary)" stopOpacity={0} />
-                  <stop offset={`${zeroOffset * 100}%`} stopColor="var(--color-destructive)" stopOpacity={0} />
-                  <stop offset={`${Math.max(95, zeroOffset * 100)}%`} stopColor="var(--color-destructive)" stopOpacity={0.25} />
+                  <stop offset={`${Math.min(5, zeroOffset * 100)}%`} stopColor={zeroOffset <= 0 ? "var(--color-destructive)" : "var(--color-primary)"} stopOpacity={0.25} />
+                  <stop offset={`${zeroOffset * 100}%`} stopColor={zeroOffset <= 0 ? "var(--color-destructive)" : "var(--color-primary)"} stopOpacity={0} />
+                  <stop offset={`${zeroOffset * 100}%`} stopColor={zeroOffset >= 1 ? "var(--color-primary)" : "var(--color-destructive)"} stopOpacity={0} />
+                  <stop offset={`${Math.max(95, zeroOffset * 100)}%`} stopColor={zeroOffset >= 1 ? "var(--color-primary)" : "var(--color-destructive)"} stopOpacity={0.25} />
                 </linearGradient>
                 <linearGradient id="sim-stroke" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset={`${zeroOffset * 100}%`} stopColor="var(--color-primary)" />
-                  <stop offset={`${zeroOffset * 100}%`} stopColor="var(--color-destructive)" />
+                  <stop offset={`${zeroOffset * 100}%`} stopColor={zeroOffset <= 0 ? "var(--color-destructive)" : "var(--color-primary)"} />
+                  <stop offset={`${zeroOffset * 100}%`} stopColor={zeroOffset >= 1 ? "var(--color-primary)" : "var(--color-destructive)"} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />

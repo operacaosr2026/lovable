@@ -166,6 +166,7 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none; /* pull-to-refresh proprio (PullToRefresh) */
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
     text-rendering: optimizeLegibility;

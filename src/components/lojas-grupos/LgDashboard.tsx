@@ -433,6 +433,9 @@ export function LgDashboard({
       );
       qc.invalidateQueries({ queryKey: ["lg-dashboard", cacheKey] });
       qc.invalidateQueries({ queryKey: ["lg-note-metrics"] });
+      // "Lucro mês" do card na listagem de Lojas e Grupos lê as mesmas tabelas;
+      // sem isso ele voltava mostrando o valor de antes do sync (cache de 5 min).
+      qc.invalidateQueries({ queryKey: ["lg-card-metrics", cardId] });
       const total = results.flat().reduce((s, r: any) => s + (r?.synced ?? 0), 0);
       if (!silent)
         toast.success(total > 0 ? `${total} lançamentos sincronizados` : "Tudo já sincronizado");
@@ -609,25 +612,30 @@ export function LgDashboard({
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   {CHART_LINES.map(({ key, color }) => {
-                    const neg = "var(--color-destructive)";
                     const off = zeroOffsets[key] * 100;
+                    // Série sem valor negativo (ou só negativo) = cor única. Senão o
+                    // traço (2px) vaza pra fora da bounding box do path, cai no
+                    // "pad" da última stop e pinta de vermelho a borda do ponto mais baixo.
+                    const neg = off >= 100 ? color : "var(--color-destructive)";
+                    const pos = off <= 0 ? neg : color;
                     const p1 = Math.min(5, off);
                     const p3 = Math.max(95, off);
                     return (
                       <linearGradient key={key} id={`lg-grad-${key}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset={`${p1}%`}  stopColor={color} stopOpacity={0.25} />
-                        <stop offset={`${off}%`} stopColor={color} stopOpacity={0} />
+                        <stop offset={`${p1}%`}  stopColor={pos} stopOpacity={0.25} />
+                        <stop offset={`${off}%`} stopColor={pos} stopOpacity={0} />
                         <stop offset={`${off}%`} stopColor={neg}   stopOpacity={0} />
                         <stop offset={`${p3}%`}  stopColor={neg}   stopOpacity={0.25} />
                       </linearGradient>
                     );
                   })}
                   {CHART_LINES.map(({ key, color }) => {
-                    const neg = "var(--color-destructive)";
                     const off = zeroOffsets[key] * 100;
+                    const neg = off >= 100 ? color : "var(--color-destructive)";
+                    const pos = off <= 0 ? neg : color;
                     return (
                       <linearGradient key={key} id={`lg-stroke-${key}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset={`${off}%`} stopColor={color} />
+                        <stop offset={`${off}%`} stopColor={pos} />
                         <stop offset={`${off}%`} stopColor={neg} />
                       </linearGradient>
                     );
@@ -640,7 +648,7 @@ export function LgDashboard({
                 {CHART_LINES.map(({ key, color }) =>
                   activeLines[key] && (
                     <Area key={key} type="monotone" dataKey={key} stroke={`url(#lg-stroke-${key})`} strokeWidth={2}
-                      fill={`url(#lg-grad-${key})`} dot={false} activeDot={{ r: 4, fill: color }} />
+                      fill={`url(#lg-grad-${key})`} dot={false} activeDot={{ r: 4, fill: color, stroke: "var(--color-card)", strokeWidth: 2 }} />
                   )
                 )}
               </AreaChart>

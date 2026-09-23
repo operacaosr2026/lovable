@@ -10,6 +10,7 @@ import type { Section } from "@/lib/members.functions";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { PullToRefresh } from "@/components/PullToRefresh";
 
 type NavItem = {
   to: string;
@@ -311,6 +312,7 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
+      <PullToRefresh />
       {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}
       {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
       {!sidebarHidden && (
