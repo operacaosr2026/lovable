@@ -346,13 +346,17 @@ export function LgLogistica({
     ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
     : null;
 
+  const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
+  // Buscar pedido ignora os filtros de status e loja — é pra achar o pedido
+  // onde quer que ele esteja (ex: já entregue, numa loja fora do filtro
+  // atual), não só dentro do recorte ativo. O status/loja de cada linha
+  // continuam visíveis na tabela pra mostrar onde ele foi encontrado.
   const byStatus = statusFilter === "todos" ? allOrders
     : statusFilter === "atencao" ? allOrders.filter((o) => needsAttention(o, nowMs))
     : allOrders.filter((o) => inBucket(o, statusFilter));
   const byShop = shopFilter === "todas" ? byStatus : byStatus.filter((o) => o.shop_id === shopFilter);
-  const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
   const visibleOrders = !searchTerm ? byShop
-    : byShop.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
+    : allOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
   // Sempre por data do pedido, do mais antigo pro mais novo — é o que
   // precisa de ação primeiro.
   const sortedOrders = [...visibleOrders].sort((a, b) => {
@@ -475,20 +479,6 @@ export function LgLogistica({
           period={period} setPeriod={setPeriod}
           customRange={customRange} setCustomRange={setCustomRange}
         />
-        <Button
-          size="sm" variant="outline"
-          onClick={() => sync.mutate()}
-          disabled={isLoading || sync.isPending}
-          title="Busca rastreio novo no Track123 e recarrega os pedidos"
-        >
-          <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
-        </Button>
-        <span
-          className="text-xs text-muted-foreground"
-          title={lastSyncAt ? new Date(lastSyncAt).toLocaleString("pt-BR") : undefined}
-        >
-          Sincronizado {timeAgo(lastSyncAt)}
-        </span>
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -509,6 +499,20 @@ export function LgLogistica({
               ))}
           </select>
         )}
+        <Button
+          size="sm" variant="outline"
+          onClick={() => sync.mutate()}
+          disabled={isLoading || sync.isPending}
+          title="Busca rastreio novo no Track123 e recarrega os pedidos"
+        >
+          <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
+        </Button>
+        <span
+          className="text-xs text-muted-foreground"
+          title={lastSyncAt ? new Date(lastSyncAt).toLocaleString("pt-BR") : undefined}
+        >
+          Sincronizado {timeAgo(lastSyncAt)}
+        </span>
         {(statusFilter !== "todos" || shopFilter !== "todas" || search) && (
           <Button size="sm" variant="ghost" onClick={() => { setStatusFilter("todos"); setShopFilter("todas"); setSearch(""); }}>
             Limpar filtro
@@ -535,7 +539,7 @@ export function LgLogistica({
 
         {!isLoading && sortedOrders.length > 0 && (
         <div className="min-w-[960px]">
-        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
           <div>Pedido</div>
           <div className="text-center">Data do Pedido</div>
           <div className="text-center">Data Postado</div>
