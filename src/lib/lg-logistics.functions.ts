@@ -52,9 +52,14 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     // enquanto o rastreio real (Track123) só mostrar "info recebida", o status
     // exibido continua "pendente envio". Calculado na leitura (não grava nada)
     // pra não brigar com o sync do Shopify, que roda em outro job.
+    // Mesmo critério do inferStatus (track123-mcp-sync.server.ts): "Pending" e
+    // "InfoReceived" são o mesmo caso (etiqueta criada, transportadora ainda
+    // sem nenhum registro real do pacote), só com textos diferentes conforme
+    // a transportadora/Track123 retorna.
     function isInfoReceivedOnly(label: string | null | undefined): boolean {
       if (!label) return false;
-      return label.toLowerCase().replace(/\s+/g, "").includes("inforeceived");
+      const t = label.toLowerCase().replace(/\s+/g, "");
+      return t.includes("inforeceived") || t.includes("pending");
     }
 
     // O status pode ter sido atualizado automaticamente (Track123) via shipped_at/
