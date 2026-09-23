@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import type { TablesUpdate } from "@/integrations/supabase/types";
 
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // Sem limite de quantidade — processa todos os pedidos em aberto dentro dos
@@ -178,7 +179,7 @@ export async function runTrack123McpSync(
       const target = matchRule(lastLabel) ?? matchRule(fulfillment.transit_status)
         ?? inferStatus(fulfillment.transit_status, Boolean(fulfillment.tracking_number));
       const nowDate = new Date().toISOString().slice(0, 10);
-      const orderUpdate: Record<string, string | null> = {};
+      const orderUpdate: TablesUpdate<"shop_orders"> = {};
       if (target === "shipped" && o.delivery_status !== "shipped") orderUpdate.shipped_at = nowDate;
       else if (target === "delivered") orderUpdate.delivered_at = nowDate;
       else if (target === "problem") orderUpdate.problem_at = nowDate;

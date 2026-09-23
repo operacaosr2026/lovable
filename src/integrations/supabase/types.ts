@@ -3730,6 +3730,7 @@ export type Database = {
           last_sync_at: string | null;
           last_sync_error: string | null;
           last_sync_status: string | null;
+          mcp_store_uuid: string | null;
           shop_id: string;
           token: string | null;
           tracking_link_template: string;
@@ -3745,6 +3746,7 @@ export type Database = {
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           last_sync_status?: string | null;
+          mcp_store_uuid?: string | null;
           shop_id: string;
           token?: string | null;
           tracking_link_template?: string;
@@ -3760,6 +3762,7 @@ export type Database = {
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           last_sync_status?: string | null;
+          mcp_store_uuid?: string | null;
           shop_id?: string;
           token?: string | null;
           tracking_link_template?: string;

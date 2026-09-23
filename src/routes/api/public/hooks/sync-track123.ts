@@ -45,7 +45,9 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
             // Preferimos o MCP quando a loja tem Store UUID configurado — é o
             // método que sabemos que funciona quando a Open API clássica não
             // está disponível pra essa loja (ver track123-mcp-sync.server.ts).
-            if (integ.mcp_store_uuid) {
+            // MCP exige X-Api-Key + X-Store-Uuid juntos (mesma checagem do sync manual
+            // em track123.functions.ts); só o UUID sem key falharia toda rodada.
+            if (integ.mcp_store_uuid && integ.api_key) {
               await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin);
             } else if (integ.api_key) {
               await runTrack123Sync(integ.shop_id, integ.api_key, supabaseAdmin);
