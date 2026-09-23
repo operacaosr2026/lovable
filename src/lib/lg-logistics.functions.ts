@@ -23,7 +23,10 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       .in("shop_id", data.shop_ids)
       .gte("order_date", data.from)
       .lte("order_date", data.to)
-      .not("shopify_financial_status", "in", "(refunded,partially_refunded,voided)")
+      // NULL NOT IN (...) é NULL em SQL (não TRUE) — usar .not("in") sozinho
+      // descartava silenciosamente todo pedido com shopify_financial_status
+      // nulo (ex: sincronizado pelo botão manual, que não grava essa coluna).
+      .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
       .filter("raw->>cancelled_at", "is", null)
       .order("order_date", { ascending: false });
     if (error) throw new Error(error.message);

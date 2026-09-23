@@ -270,7 +270,14 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
 async function syncOrdersOnlyForShop(s: any, today: string) {
   if (!s.shopify_store_id) return;
   const cutoff: string | null = s.cashflow_start_date ?? null;
-  const sinceDate = cutoff ?? addDays(today, -30);
+  // cashflow_start_date é o início do controle financeiro (Caixa), não deve
+  // limitar a sincronização de pedidos em si — senão qualquer loja com o
+  // corte configurado há menos de 30 dias fica com shop_orders incompleto
+  // pros últimos 30 dias (Rastreamento, Dashboard etc. leem essa tabela
+  // direto). Sempre busca pelo menos os últimos 30 dias; cutoff só estende
+  // pra mais longe no passado.
+  const rolling30 = addDays(today, -30);
+  const sinceDate = cutoff && cutoff < rolling30 ? cutoff : rolling30;
   const { data: store } = await supabaseAdmin.from("shopify_stores").select("*")
     .eq("id", s.shopify_store_id).maybeSingle();
   if (!store?.access_token || !store?.shop_domain) return;
@@ -316,7 +323,12 @@ async function getShopPaymentDays(shopId: string): Promise<number> {
 
 async function processShop(s: any, today: string) {
   const cutoff: string | null = s.cashflow_start_date ?? null;
-  const sinceDate = cutoff ?? addDays(today, -30);
+  // Mesmo raciocínio de syncOrdersOnlyForShop: nunca sincronizar pedidos por
+  // uma janela menor que 30 dias, mesmo que cashflow_start_date seja mais
+  // recente — outras telas (Rastreamento, Dashboard) dependem de shop_orders
+  // ter os últimos 30 dias completos.
+  const rolling30 = addDays(today, -30);
+  const sinceDate = cutoff && cutoff < rolling30 ? cutoff : rolling30;
 
   // sync orders from the configured cashflow cutoff date (fallback: last 30 days)
   if (s.shopify_store_id) {

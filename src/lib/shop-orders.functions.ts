@@ -720,6 +720,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
           revenue: Number(o.total_price ?? 0),
           currency: o.currency ?? null,
           raw: o,
+          shopify_financial_status: o.financial_status ?? null,
         };
       });
       const { error } = await context.supabase.from("shop_orders")
