@@ -573,7 +573,7 @@ const SHOP_BADGE_TONES = [
 function KpiSparkline({ data, color, id }: { data: { key: string; v: number }[]; color: string; id: string }) {
   if (data.length < 2) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 opacity-90">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 opacity-80">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 6, right: 14, left: 0, bottom: 0 }}>
           <defs>
@@ -585,7 +585,7 @@ function KpiSparkline({ data, color, id }: { data: { key: string; v: number }[];
           <Area
             type="monotone" dataKey="v" stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false}
             dot={(p: any) => p.index === data.length - 1
-              ? <circle key="last" cx={p.cx} cy={p.cy} r={4.5} fill={color} stroke="white" strokeWidth={2} />
+              ? <circle key="last" cx={p.cx} cy={p.cy} r={3} fill={color} stroke="white" strokeWidth={1.5} />
               : <g key={p.index} />}
           />
         </AreaChart>
@@ -595,14 +595,15 @@ function KpiSparkline({ data, color, id }: { data: { key: string; v: number }[];
 }
 
 function KpiChange({ current, base, label }: { current: number; base: number | null; label: string }) {
-  if (base == null) return null;
+  // Sem saldo lá atrás (Caixa recém-iniciado) a comparação não diz nada.
+  if (base == null || base <= 0) return null;
   const diff = current - base;
   const up = diff >= 0;
-  const text = base > 0 ? `${up ? "+" : ""}${((diff / base) * 100).toFixed(1)}%` : `${up ? "+" : "-"}${fmtMoneyGrouped(Math.abs(diff))}`;
+  const text = `${up ? "+" : ""}${((diff / base) * 100).toFixed(1)}%`;
   const Arrow = up ? ArrowUp : ArrowDown;
   return (
-    <div className="flex items-center gap-1.5 text-xs">
-      <Arrow className={`size-3.5 ${up ? "text-emerald-600" : "text-rose-600"}`} />
+    <div className="flex items-center gap-1 text-[11px]">
+      <Arrow className={`size-3 ${up ? "text-emerald-600" : "text-rose-600"}`} />
       <span className={`font-semibold ${up ? "text-emerald-600" : "text-rose-600"}`}>{text}</span>
       <span className="text-muted-foreground">{label}</span>
     </div>
@@ -615,18 +616,18 @@ function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, ch
 }) {
   const t = KPI_TONES[tone];
   return (
-    <div className={`relative overflow-hidden rounded-2xl border p-4 ${negative ? "border-rose-500/30 bg-rose-500/5" : t.card} ${spark && spark.length > 1 ? "min-h-[170px]" : ""}`}>
-      <div className="relative z-10 flex items-start gap-3">
-        <div className={`grid size-10 shrink-0 place-items-center rounded-xl text-white shadow-sm ${t.tile}`}>
-          <Icon className="size-5" />
+    <div className={`relative overflow-hidden rounded-2xl border p-3 ${negative ? "border-rose-500/30 bg-rose-500/5" : t.card}`}>
+      <div className="relative z-10 flex items-center gap-2.5">
+        <div className={`grid size-8 shrink-0 place-items-center rounded-lg text-white shadow-sm ${t.tile}`}>
+          <Icon className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold leading-tight">{title}</div>
-          <div className="text-xs text-muted-foreground">{subtitle}</div>
+          <div className="text-xs font-semibold leading-tight">{title}</div>
+          <div className="text-[11px] text-muted-foreground leading-tight">{subtitle}</div>
         </div>
-        {badge && <span className="shrink-0 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">{badge}</span>}
+        {badge && <span className="shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-600 dark:text-violet-400">{badge}</span>}
       </div>
-      <div className={`relative z-10 mt-3 text-[28px] font-bold leading-none tracking-tight tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
+      <div className={`relative z-10 mt-2 text-xl font-bold leading-none tracking-tight tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
       {children && <div className="relative z-10 mt-2">{children}</div>}
       {spark && sparkId && <KpiSparkline data={spark} color={t.line} id={sparkId} />}
     </div>
@@ -1220,10 +1221,10 @@ export function LgCashflowView({
             badge={isConsolidated && perShopReceivable.length > 1 ? `${perShopReceivable.length} lojas` : undefined}
           >
             {isConsolidated && effectivePending?.connected && perShopReceivable.length > 1 && (
-              <div className="divide-y divide-border/70">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                 {perShopReceivable.map((p, i) => (
-                  <div key={p.shop_id} className="flex items-center gap-2.5 py-1.5 text-sm">
-                    <span className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold ${SHOP_BADGE_TONES[i % SHOP_BADGE_TONES.length]}`}>{i + 1}</span>
+                  <div key={p.shop_id} className="flex items-center gap-1.5 min-w-0 text-[11px]">
+                    <span className={`grid size-3.5 shrink-0 place-items-center rounded-full text-[8px] font-semibold ${SHOP_BADGE_TONES[i % SHOP_BADGE_TONES.length]}`}>{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate text-muted-foreground">{shopNamesMap[p.shop_id] ?? p.shop_id}</span>
                     <span className="shrink-0 font-medium tabular-nums">{fmtMoneyGrouped(Number(p.amount ?? 0))}</span>
                   </div>
@@ -1236,12 +1237,12 @@ export function LgCashflowView({
             value={fmtMoneyGrouped(future + receivable)} negative={future + receivable < 0}
           >
             {future + receivable > 0 && future >= 0 && (
-              <div className="mt-3 space-y-2">
-                <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+              <div className="mt-1 space-y-1.5">
+                <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
                   <div className="bg-blue-600" style={{ width: `${(future / (future + receivable)) * 100}%` }} />
                   <div className="bg-violet-500" style={{ width: `${(receivable / (future + receivable)) * 100}%` }} />
                 </div>
-                <div className="flex justify-between gap-2 text-xs">
+                <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-[11px]">
                   <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-blue-600" /><span className="text-muted-foreground">Disponível</span> <span className="font-medium tabular-nums">{fmtMoneyGrouped(future)}</span></span>
                   <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-500" /><span className="text-muted-foreground">A receber</span> <span className="font-medium tabular-nums">{fmtMoneyGrouped(receivable)}</span></span>
                 </div>
