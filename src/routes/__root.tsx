@@ -143,6 +143,9 @@ function AuthGate() {
   const { user, loading } = useAuth();
   const location = useLocation();
   const isLogin = location.pathname === "/login";
+  // Link de convite precisa abrir sem login — é nele que o convidado cria a conta.
+  // Antes caía no redirect pro /login e o convidado nunca via a tela de senha.
+  const isInvite = location.pathname.startsWith("/invite/");
 
   if (loading) {
     return (
@@ -152,7 +155,7 @@ function AuthGate() {
     );
   }
 
-  if (!user && !isLogin) {
+  if (!user && !isLogin && !isInvite) {
     const here = location.pathname + location.search;
     const safeRedirect = here && !here.startsWith("/login") ? here : undefined;
     return <Navigate to="/login" search={safeRedirect ? { redirect: safeRedirect } : {}} />;
@@ -163,6 +166,6 @@ function AuthGate() {
     const dest = stored && !stored.startsWith("/login") ? stored : "/";
     return <Navigate to={dest} />;
   }
-  if (isLogin) return <Outlet />;
+  if (isLogin || isInvite) return <Outlet />;
   return <AppLayout />;
 }

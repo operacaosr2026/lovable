@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { selectAll } from "@/lib/select-all";
+import { selectAll, selectAllIn } from "@/lib/select-all";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -39,10 +39,10 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     const lastEventMap = new Map<string, string | null>();
     const lastLabelMap = new Map<string, string | null>();
     if (orderIds.length) {
-      const { data: trackingRows } = await selectAll(supabaseAdmin
+      const { data: trackingRows } = await selectAllIn<any>(orderIds, (ids) => supabaseAdmin
         .from("shop_order_tracking")
         .select("order_id,last_event_at,last_event_label,tracking_status")
-        .in("order_id", orderIds));
+        .in("order_id", ids));
       for (const t of trackingRows ?? []) {
         lastEventMap.set(t.order_id, t.last_event_at);
         lastLabelMap.set(t.order_id, t.tracking_status ?? t.last_event_label);

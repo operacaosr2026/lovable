@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
-import { selectAll } from "@/lib/select-all";
+import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
@@ -302,10 +302,10 @@ async function syncOrdersOnlyForShop(s: any, today: string) {
       // (lido pela aba Rastreamento) — igual ao processShop completo. Sem isso,
       // um pedido só ganha código de rastreio na sincronização completa (2x/dia),
       // não nesse ciclo leve que roda a cada poucos minutos.
-      const { data: dbOrders } = await selectAll(supabaseAdmin.from("shop_orders")
+      const { data: dbOrders } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => supabaseAdmin.from("shop_orders")
         .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
         .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
-        .in("external_id", orders.map((o: any) => String(o.id))));
+        .in("external_id", ext));
       const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
 
       const { data: track123Integ } = await supabaseAdmin.from("track123_integrations")
@@ -396,10 +396,10 @@ async function processShop(s: any, today: string) {
 
           // Espelha transportadora/código/link de rastreio do Shopify em shop_orders
           // (lido pela aba Rastreamento), sem sobrescrever ajustes manuais.
-          const { data: dbOrders } = await selectAll(supabaseAdmin.from("shop_orders")
+          const { data: dbOrders } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => supabaseAdmin.from("shop_orders")
             .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
             .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
-            .in("external_id", orders.map((o: any) => String(o.id))));
+            .in("external_id", ext));
           const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
 
           // O tracking_url que a própria Shopify manda no fulfillment pode estar

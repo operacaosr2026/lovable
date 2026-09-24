@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { selectAll } from "@/lib/select-all";
+import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
@@ -731,17 +731,17 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
 
       // Auto-pull tracking from Shopify fulfillments
-      const { data: dbOrders } = await selectAll(context.supabase.from("shop_orders")
+      const { data: dbOrders } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => context.supabase.from("shop_orders")
         .select("id,external_id")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .eq("source", "shopify")
-        .in("external_id", orders.map((o: any) => String(o.id))));
+        .in("external_id", ext));
       const orderIdByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r.id]));
 
-      const { data: existingLogistics } = await selectAll(context.supabase.from("shop_orders")
+      const { data: existingLogistics } = await selectAllIn<any>(Array.from(orderIdByExt.values()) as string[], (ids) => context.supabase.from("shop_orders")
         .select("id,carrier,tracking_code,tracking_url,delivery_status")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-        .in("id", Array.from(orderIdByExt.values())));
+        .in("id", ids));
       const existingById = new Map((existingLogistics ?? []).map((r: any) => [r.id, r]));
 
       const trackingRows: any[] = [];
@@ -1592,10 +1592,10 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     // Fetch pending orders only
-    const { data: orders, error } = await selectAll(context.supabase.from("shop_orders")
+    const { data: orders, error } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
       .select("id,order_date,items_count,payment_status,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("id", data.order_ids).eq("payment_status", "pending"));
+      .in("id", ids).eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
     if (!orders || orders.length === 0) throw new Error("Nenhum pedido pendente selecionado");
 
@@ -1730,15 +1730,26 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       };
     }
 
-    // Update orders → paid
-    const { error: payErr } = await context.supabase.from("shop_orders").update({
-      payment_status: "paid",
-      payment_batch_id: batchId,
-      paid_at: data.payment_date,
-    }).in("id", orders.map((o) => o.id)).eq("user_id", context.ownerId);
-    if (payErr) {
-      await rollback();
-      throw new Error(`Falha ao marcar pedidos como pagos, lote revertido: ${payErr.message}`);
+    // Update orders → paid (em lotes de IDs — ver chunk em select-all.ts). Se um
+    // lote falhar, os que já tinham sido marcados voltam pra pendente junto com
+    // o rollback do lote de pagamento.
+    const paidSoFar: string[] = [];
+    for (const ids of chunk(orders.map((o: any) => o.id as string))) {
+      const { error: payErr } = await context.supabase.from("shop_orders").update({
+        payment_status: "paid",
+        payment_batch_id: batchId,
+        paid_at: data.payment_date,
+      }).in("id", ids).eq("user_id", context.ownerId);
+      if (payErr) {
+        for (const done of chunk(paidSoFar)) {
+          await context.supabase.from("shop_orders")
+            .update({ payment_status: "pending", payment_batch_id: null, paid_at: null })
+            .in("id", done).eq("user_id", context.ownerId).eq("payment_batch_id", batchId);
+        }
+        await rollback();
+        throw new Error(`Falha ao marcar pedidos como pagos, lote revertido: ${payErr.message}`);
+      }
+      paidSoFar.push(...ids);
     }
 
     // Recompute affected processing days (D+X real da loja) so previsões somem/reduzam
@@ -1771,13 +1782,15 @@ export const markOrdersShipped = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     // Only paid orders can ship
-    const { error } = await context.supabase.from("shop_orders").update({
-      payment_status: "shipped",
-      shipped_at: data.shipped_date,
-    }).in("id", data.order_ids)
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("payment_status", ["paid"]);
-    if (error) throw new Error(error.message);
+    for (const ids of chunk(data.order_ids)) {
+      const { error } = await context.supabase.from("shop_orders").update({
+        payment_status: "shipped",
+        shipped_at: data.shipped_date,
+      }).in("id", ids)
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .in("payment_status", ["paid"]);
+      if (error) throw new Error(error.message);
+    }
     return { ok: true };
   });
 
@@ -1833,19 +1846,21 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
     payment_date: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: orders, error: ordersErr } = await selectAll(context.supabase.from("shop_orders")
+    const { data: orders, error: ordersErr } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
       .select("id,payment_batch_id,order_date,items_count,raw")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .neq("payment_status", "pending")
-      .in("id", data.order_ids));
+      .in("id", ids));
     if (ordersErr) throw new Error(`Erro ao buscar pedidos: ${ordersErr.message}`);
 
-    const { error: paidAtErr } = await context.supabase.from("shop_orders")
-      .update({ paid_at: data.payment_date })
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .neq("payment_status", "pending")
-      .in("id", data.order_ids);
-    if (paidAtErr) throw new Error(`Erro ao atualizar paid_at: ${paidAtErr.message}`);
+    for (const ids of chunk(data.order_ids)) {
+      const { error: paidAtErr } = await context.supabase.from("shop_orders")
+        .update({ paid_at: data.payment_date })
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .neq("payment_status", "pending")
+        .in("id", ids);
+      if (paidAtErr) throw new Error(`Erro ao atualizar paid_at: ${paidAtErr.message}`);
+    }
 
     // Collect batch IDs: first from payment_batch_id on orders, then by order_dates overlap
     const directBatchIds = [...new Set((orders ?? []).map((o: any) => o.payment_batch_id).filter(Boolean))];
@@ -1935,10 +1950,12 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
       await supabaseAdmin.from("shop_order_payment_batches")
         .update({ cash_entry_id: cashRow.id }).eq("id", batch.id).eq("user_id", context.ownerId);
 
-      await supabaseAdmin.from("shop_orders")
-        .update({ payment_batch_id: batch.id })
-        .in("id", (orders ?? []).map((o: any) => o.id))
-        .eq("user_id", context.ownerId);
+      for (const ids of chunk((orders ?? []).map((o: any) => o.id as string))) {
+        await supabaseAdmin.from("shop_orders")
+          .update({ payment_batch_id: batch.id })
+          .in("id", ids)
+          .eq("user_id", context.ownerId);
+      }
 
       const paymentDaysFallback = await getShopPaymentDays(context.supabase, data.shop_id);
       for (const d of dates) {
@@ -1958,19 +1975,19 @@ export const deleteOrders = createServerFn({ method: "POST" })
     order_ids: z.array(z.string().uuid()).min(1).max(2000),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: orders, error } = await selectAll(context.supabase.from("shop_orders")
+    const { data: orders, error } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
       .select("id,order_date,payment_status")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("id", data.order_ids).neq("payment_status", "shipped"));
+      .in("id", ids).neq("payment_status", "shipped"));
     if (error) throw new Error(error.message);
     if (!orders || orders.length === 0) throw new Error("Nenhum pedido elegível para exclusão (pedidos enviados não podem ser excluídos)");
 
-    const ids = orders.map((o) => o.id);
-    await context.supabase.from("shop_order_tracking").delete()
-      .eq("user_id", context.ownerId).in("order_id", ids);
-    const { error: delErr } = await context.supabase.from("shop_orders").delete()
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).in("id", ids);
-    if (delErr) throw new Error(delErr.message);
+    // O rastreio sai junto (FK shop_order_tracking.order_id ON DELETE CASCADE).
+    for (const ids of chunk(orders.map((o: any) => o.id as string))) {
+      const { error: delErr } = await context.supabase.from("shop_orders").delete()
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).in("id", ids);
+      if (delErr) throw new Error(delErr.message);
+    }
 
     const dates = Array.from(new Set(orders.map((o) => o.order_date as string)));
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
@@ -1980,7 +1997,7 @@ export const deleteOrders = createServerFn({ method: "POST" })
       await recomputeForShop(context, data.shop_id, addDays(d, paymentDaysDel), settings, paymentDaysDel);
     }
 
-    return { deleted: ids.length };
+    return { deleted: orders.length };
   });
 
 export const listPaymentBatches = createServerFn({ method: "GET" })

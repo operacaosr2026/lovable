@@ -23,3 +23,29 @@ export async function selectAll<T = any>(
     if (rows.length < PAGE_SIZE) return { data: out, error: null };
   }
 }
+
+// Filtro .in() com muitos valores vira uma URL enorme, e o gateway do Supabase
+// recusa a partir de ~400 UUIDs ("Bad Request") — medido em 24/09/2026. O erro
+// costumava ser ignorado, então a tela ficava sem os dados calada (ex.: aba
+// Rastreamento sem o rastreio real quando o período passa de ~400 pedidos).
+export const IN_CHUNK_SIZE = 200;
+
+export function chunk<T>(values: T[], size = IN_CHUNK_SIZE): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
+}
+
+// Como selectAll, mas divide `values` em lotes e monta uma consulta por lote.
+export async function selectAllIn<T = any, V = string>(
+  values: V[],
+  build: (chunkValues: V[]) => any,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const out: T[] = [];
+  for (const c of chunk(values)) {
+    const { data, error } = await selectAll<T>(build(c));
+    if (error) return { data: out, error };
+    out.push(...data);
+  }
+  return { data: out, error: null };
+}

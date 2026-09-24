@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import type { TablesUpdate } from "@/integrations/supabase/types";
-import { selectAll } from "@/lib/select-all";
+import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
@@ -133,10 +133,10 @@ export async function runTrack123McpSync(
   let orders = candidates ?? [];
   if (orders.length) {
     const ids = orders.map((o: any) => o.id);
-    const { data: trackingRows } = await selectAll(supabase
+    const { data: trackingRows } = await selectAllIn<any>(ids, (c) => supabase
       .from("shop_order_tracking")
       .select("order_id,updated_at")
-      .in("order_id", ids));
+      .in("order_id", c));
     const lastCheckedAt = new Map((trackingRows ?? []).map((t: any) => [t.order_id, t.updated_at as string]));
     orders = [...orders].sort((a: any, b: any) => {
       const ta = lastCheckedAt.get(a.id);
