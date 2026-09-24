@@ -558,7 +558,10 @@ async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boo
   return changed;
 }
 
-async function runCostsSync(request: Request) {
+// Anúncios e taxas rodam em jobs separados do pg_cron: anúncios junto com o
+// sync leve de pedidos (:00, :10...) pro lucro já sair com os dois; taxas nos
+// minutos intercalados (:05, :15...). Ver *_costs_sync_cron.sql.
+async function runCostsSync(request: Request, only: { ads: boolean; fees: boolean }) {
   const unauthorized = verifyCronApiKey(request);
   if (unauthorized) return unauthorized;
   const start = Date.now();
@@ -581,6 +584,10 @@ async function runCostsSync(request: Request) {
     cur.hasMeta = true;
     shops.set(key, cur);
   }
+  for (const s of shops.values()) {
+    s.hasShopify = s.hasShopify && only.fees;
+    s.hasMeta = s.hasMeta && only.ads;
+  }
   const all = [...shops.values()].filter((s) => (s.hasShopify || s.hasMeta) && !(s.storeId && pausedStores.has(s.storeId)));
 
   // Mesmo rodízio de runSync: se o orçamento estourar, a próxima rodada começa
@@ -602,7 +609,7 @@ async function runCostsSync(request: Request) {
     processed += batch.length;
   }
   await Promise.all([...changedOwners].map((owner) => broadcast(owner, "orders")));
-  return new Response(JSON.stringify({ processed, skippedByBudget, costsOnly: true }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ processed, skippedByBudget, costsOnly: true, ...only }), { headers: { "Content-Type": "application/json" } });
 }
 
 async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnly: boolean }) {
@@ -656,7 +663,11 @@ export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
       // {payouts_only|orders_only|costs_only}. Ver supabase/migrations/*_sync_cron.sql.
       POST: async ({ request }) => {
         const body = await request.json().catch(() => ({})) as any;
-        if (body?.costs_only) return runCostsSync(request);
+        // costs_only: "ads" | "fees" | true (os dois).
+        if (body?.costs_only) {
+          const kind = body.costs_only;
+          return runCostsSync(request, { ads: kind !== "fees", fees: kind !== "ads" });
+        }
         return runSync(request, { payoutsOnly: Boolean(body?.payouts_only), ordersOnly: Boolean(body?.orders_only) });
       },
       // Vercel Cron (ver vercel.json "crons") só sabe chamar via GET, sem
