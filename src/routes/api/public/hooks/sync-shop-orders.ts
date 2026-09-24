@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag, costProductsFor } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop } from "@/lib/shop-orders.functions";
+import { syncMetaAdsSpendForShop } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 
@@ -533,6 +534,77 @@ async function processShop(s: any, today: string) {
 // 10min pro sync leve de pedidos, então o atraso é pequeno).
 const TIME_BUDGET_MS = 50_000;
 
+// Custos do dia (gasto Meta Ads + taxas Shopify Payments). Sem isso, eles só
+// entravam no banco quando alguém abria o Dashboard de Lojas e Grupos — até lá
+// o lucro de todas as telas (Dashboard, "Lucro mês", Caixa, Metas) aparecia
+// inflado e caía de repente quando o sync da tela terminava.
+const COSTS_CONCURRENCY = 4;
+
+async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boolean, hasMeta: boolean) {
+  let changed = false;
+  if (hasShopify) {
+    try {
+      const r: any = await syncShopifyFeesForShop(supabaseAdmin, ownerId, { shop_id: shopId, pages: 2 });
+      if ((r?.synced ?? 0) > 0 || (r?.updated ?? 0) > 0) changed = true;
+    } catch (e) { console.error("costs: fees fail", shopId, e); }
+  }
+  if (hasMeta) {
+    try {
+      // Hoje + 2 dias pra trás: a Meta ainda ajusta o gasto de ontem.
+      const r = await syncMetaAdsSpendForShop(ownerId, { shop_id: shopId, since_days: 2 });
+      if (r.synced > 0) changed = true;
+    } catch (e) { console.error("costs: meta fail", shopId, e); }
+  }
+  return changed;
+}
+
+async function runCostsSync(request: Request) {
+  const unauthorized = verifyCronApiKey(request);
+  if (unauthorized) return unauthorized;
+  const start = Date.now();
+  const pausedStores = await getPausedShopifyStoreIds();
+
+  // Uma entrada por (dono, loja): taxas se tem Shopify vinculada, Meta se tem
+  // conta de anúncios ativa.
+  const [{ data: settings }, { data: metaAccounts }] = await Promise.all([
+    supabaseAdmin.from("shop_order_settings").select("user_id,shop_id,shopify_store_id"),
+    supabaseAdmin.from("shop_meta_ad_accounts").select("user_id,shop_id").eq("enabled", true),
+  ]);
+  const shops = new Map<string, { ownerId: string; shopId: string; hasShopify: boolean; hasMeta: boolean; storeId: string | null }>();
+  for (const s of (settings ?? []) as any[]) {
+    if (!s.user_id || !s.shop_id) continue;
+    shops.set(`${s.user_id}:${s.shop_id}`, { ownerId: s.user_id, shopId: s.shop_id, hasShopify: Boolean(s.shopify_store_id), hasMeta: false, storeId: s.shopify_store_id ?? null });
+  }
+  for (const a of (metaAccounts ?? []) as any[]) {
+    const key = `${a.user_id}:${a.shop_id}`;
+    const cur = shops.get(key) ?? { ownerId: a.user_id, shopId: a.shop_id, hasShopify: false, hasMeta: false, storeId: null };
+    cur.hasMeta = true;
+    shops.set(key, cur);
+  }
+  const all = [...shops.values()].filter((s) => (s.hasShopify || s.hasMeta) && !(s.storeId && pausedStores.has(s.storeId)));
+
+  // Mesmo rodízio de runSync: se o orçamento estourar, a próxima rodada começa
+  // de outro ponto e ninguém fica sempre de fora.
+  const startIdx = all.length ? Math.floor(Date.now() / (10 * 60_000)) % all.length : 0;
+  const ordered = all.map((_, i) => all[(startIdx + i) % all.length]);
+  let processed = 0;
+  let skippedByBudget = 0;
+  const changedOwners = new Set<string>();
+  for (let i = 0; i < ordered.length; i += COSTS_CONCURRENCY) {
+    if (Date.now() - start > TIME_BUDGET_MS) {
+      skippedByBudget = ordered.length - i;
+      console.error(`sync-shop-orders(costs): orçamento de tempo estourado, ${skippedByBudget} loja(s) ficam pra próxima rodada.`);
+      break;
+    }
+    const batch = ordered.slice(i, i + COSTS_CONCURRENCY);
+    const results = await Promise.all(batch.map((s) => syncCostsForShop(s.ownerId, s.shopId, s.hasShopify, s.hasMeta)));
+    batch.forEach((s, j) => { if (results[j]) changedOwners.add(s.ownerId); });
+    processed += batch.length;
+  }
+  await Promise.all([...changedOwners].map((owner) => broadcast(owner, "orders")));
+  return new Response(JSON.stringify({ processed, skippedByBudget, costsOnly: true }), { headers: { "Content-Type": "application/json" } });
+}
+
 async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnly: boolean }) {
   const unauthorized = verifyCronApiKey(request);
   if (unauthorized) return unauthorized;
@@ -581,9 +653,10 @@ export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
   server: {
     handlers: {
       // Disparado pelo pg_cron (Postgres), que manda POST com o corpo
-      // {payouts_only|orders_only}. Ver supabase/migrations/*_sync_cron.sql.
+      // {payouts_only|orders_only|costs_only}. Ver supabase/migrations/*_sync_cron.sql.
       POST: async ({ request }) => {
         const body = await request.json().catch(() => ({})) as any;
+        if (body?.costs_only) return runCostsSync(request);
         return runSync(request, { payoutsOnly: Boolean(body?.payouts_only), ordersOnly: Boolean(body?.orders_only) });
       },
       // Vercel Cron (ver vercel.json "crons") só sabe chamar via GET, sem

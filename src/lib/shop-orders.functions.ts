@@ -1000,14 +1000,12 @@ async function ensureCategory(supabase: any, ownerId: string, shopId: string, ki
   }
 }
 
-export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
-    pages: z.number().int().min(1).max(20).default(8),
-  }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase, ownerId } = context;
+// Núcleo do sync de taxas — usado pelo Dashboard (abaixo) e pelo cron de custos
+// (sync-shop-orders, modo costs_only), que passa supabaseAdmin e poucas páginas
+// (as taxas novas vêm no topo da listagem).
+export const syncShopifyFeesForShop = createServerOnlyFn(async (
+  supabase: any, ownerId: string, data: { shop_id: string; pages: number },
+) => {
     const { data: settings } = await supabase.from("shop_order_settings").select("*")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
@@ -1053,7 +1051,15 @@ export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
     }
 
     return { synced: toInsert.length, updated: toUpdate.length, total_found: feeTxs.length };
-  });
+});
+
+export const syncShopifyPaymentsFees = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    shop_id: z.string().uuid(),
+    pages: z.number().int().min(1).max(20).default(8),
+  }).parse(d))
+  .handler(async ({ context, data }) => syncShopifyFeesForShop(context.supabase, context.ownerId, data));
 
 export const getShopifyPendingBalance = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])

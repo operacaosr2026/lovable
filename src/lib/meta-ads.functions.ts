@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
@@ -334,18 +334,13 @@ export const testMetaAdsConnection = createServerFn({ method: "POST" })
     }
   });
 
-export const syncMetaAdsSpend = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d: { shop_id: string; since_days?: number; from_date?: string; to_date?: string }) =>
-    z.object({
-      shop_id:    z.string().uuid(),
-      since_days: z.number().int().min(1).max(365).optional(),
-      from_date:  z.string().optional(),
-      to_date:    z.string().optional(),
-    }).parse(d)
-  )
-  .handler(async ({ data, context }) => {
-    const { ownerId } = context;
+// Núcleo do sync de gasto — usado pelo botão/abertura do Dashboard (abaixo) e
+// pelo cron de custos (sync-shop-orders, modo costs_only), pra que o lucro já
+// venha com o anúncio do dia descontado quando alguém abre a tela.
+export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
+  ownerId: string,
+  data: { shop_id: string; since_days?: number; from_date?: string; to_date?: string },
+) => {
     const { data: tokenRow } = await supabaseAdmin.from("shop_meta_tokens")
       .select("access_token").eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!tokenRow?.access_token) throw new Error("Integração não configurada");
@@ -463,7 +458,19 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
 
     const totalSpend = rows.reduce((s, r) => s + r.amount, 0);
     return { synced: rows.length, totalSpend, errors };
-  });
+});
+
+export const syncMetaAdsSpend = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: { shop_id: string; since_days?: number; from_date?: string; to_date?: string }) =>
+    z.object({
+      shop_id:    z.string().uuid(),
+      since_days: z.number().int().min(1).max(365).optional(),
+      from_date:  z.string().optional(),
+      to_date:    z.string().optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data, context }) => syncMetaAdsSpendForShop(context.ownerId, data));
 
 // ===== Activities (change log) -> Diário =====
 
