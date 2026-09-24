@@ -1265,20 +1265,22 @@ export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof
     const context = { supabase, ownerId };
     const data = { shop_ids: shopIds };
     const today = new Date().toISOString().slice(0, 10);
-    const { data: entries } = await selectAll(context.supabase.from("shop_cash_entries")
-      .select("shop_id,amount")
-      .eq("user_id", context.ownerId)
-      .in("shop_id", data.shop_ids)
-      .eq("source", "shopify_sync")
-      .not("shopify_payout_id", "is", null)
-      .gte("date", today)
-      // Exclui payouts já depositados (status "paid") — esse valor já caiu e
-      // não é mais "a receber"; contar ele de novo duplicaria com o saldo ao vivo.
-      .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid"));
-
-    const { data: settings } = await context.supabase.from("shop_order_settings")
-      .select("shop_id,shopify_store_id")
-      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
+    // As duas consultas em paralelo (antes uma esperava a outra).
+    const [{ data: entries }, { data: settings }] = await Promise.all([
+      selectAll(context.supabase.from("shop_cash_entries")
+        .select("shop_id,amount")
+        .eq("user_id", context.ownerId)
+        .in("shop_id", data.shop_ids)
+        .eq("source", "shopify_sync")
+        .not("shopify_payout_id", "is", null)
+        .gte("date", today)
+        // Exclui payouts já depositados (status "paid") — esse valor já caiu e
+        // não é mais "a receber"; contar ele de novo duplicaria com o saldo ao vivo.
+        .or("shopify_payout_status.is.null,shopify_payout_status.neq.paid")),
+      context.supabase.from("shop_order_settings")
+        .select("shop_id,shopify_store_id")
+        .eq("user_id", context.ownerId).in("shop_id", data.shop_ids),
+    ]);
 
     const connectedIds = new Set((settings ?? []).filter(s => s.shopify_store_id).map(s => s.shop_id));
     const connected = connectedIds.size > 0;
