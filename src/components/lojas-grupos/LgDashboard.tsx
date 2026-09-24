@@ -343,17 +343,25 @@ export function LgDashboard({
   const syncAdsFn    = useServerFn(syncMetaAdsSpend);
   const qc           = useQueryClient();
 
-  // Load saved currency rates
+  // Cotações salvas do card (lg_card_currency_rates). Raramente mudam: busca uma
+  // vez por sessão (staleTime infinito) em vez de a cada abertura do Dashboard;
+  // ao salvar, o cache é atualizado junto.
+  const ratesQuery = useQuery({
+    queryKey: ["lg-currency-rates", cardId],
+    queryFn: () => getRatesFn({ data: { card_id: cardId } }),
+    staleTime: Infinity,
+  });
   useEffect(() => {
-    getRatesFn({ data: { card_id: cardId } }).then((r) => {
-      if (r) { setBrlRate(Number(r.brl_rate)); setEurRate(Number(r.eur_rate)); }
-    }).catch(() => null);
-  }, [cardId]);
+    const r = ratesQuery.data;
+    if (r) { setBrlRate(Number(r.brl_rate)); setEurRate(Number(r.eur_rate)); }
+  }, [ratesQuery.data]);
 
   const saveRates = (brl: number, eur: number) => {
     if (rateDebounce.current) clearTimeout(rateDebounce.current);
     rateDebounce.current = setTimeout(() => {
-      saveRatesFn({ data: { card_id: cardId, brl_rate: brl, eur_rate: eur } }).catch(() => null);
+      saveRatesFn({ data: { card_id: cardId, brl_rate: brl, eur_rate: eur } })
+        .then(() => qc.setQueryData(["lg-currency-rates", cardId], { brl_rate: brl, eur_rate: eur }))
+        .catch(() => null);
     }, 1000);
   };
 

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
@@ -549,13 +549,18 @@ const TIME_BUDGET_MS = 50_000;
 // inflado e caía de repente quando o sync da tela terminava.
 const COSTS_CONCURRENCY = 4;
 
-async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boolean, hasMeta: boolean) {
+async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boolean, hasMeta: boolean, storeId: string | null) {
   let changed = false;
   if (hasShopify) {
     try {
       const r: any = await syncShopifyFeesForShop(supabaseAdmin, ownerId, { shop_id: shopId, pages: 2 });
       if ((r?.synced ?? 0) > 0 || (r?.updated ?? 0) > 0) changed = true;
     } catch (e) { console.error("costs: fees fail", shopId, e); }
+    // Saldo da Shopify Payments guardado: o "A receber" do Caixa só lê (getStoreBalances).
+    if (storeId) {
+      try { await refreshStoreBalance(ownerId, storeId); }
+      catch (e) { console.error("costs: balance fail", shopId, e); }
+    }
   }
   if (hasMeta) {
     try {
@@ -613,7 +618,7 @@ async function runCostsSync(request: Request, only: { ads: boolean; fees: boolea
       break;
     }
     const batch = ordered.slice(i, i + COSTS_CONCURRENCY);
-    const results = await Promise.all(batch.map((s) => syncCostsForShop(s.ownerId, s.shopId, s.hasShopify, s.hasMeta)));
+    const results = await Promise.all(batch.map((s) => syncCostsForShop(s.ownerId, s.shopId, s.hasShopify, s.hasMeta, s.storeId)));
     batch.forEach((s, j) => { if (results[j]) changedOwners.add(s.ownerId); });
     processed += batch.length;
   }

@@ -2718,6 +2718,12 @@ export type Database = {
       };
       shopify_stores: {
         Row: {
+          board_avg_orders: number | null;
+          board_metrics_at: string | null;
+          board_payout_days: number | null;
+          payments_balance: number | null;
+          payments_balance_at: string | null;
+          payments_balance_currency: string | null;
           access_token: string | null;
           board_column_id: string | null;
           board_note: string | null;
@@ -2741,6 +2747,12 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          board_avg_orders?: number | null;
+          board_metrics_at?: string | null;
+          board_payout_days?: number | null;
+          payments_balance?: number | null;
+          payments_balance_at?: string | null;
+          payments_balance_currency?: string | null;
           access_token?: string | null;
           board_column_id?: string | null;
           board_note?: string | null;
@@ -2764,6 +2776,12 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          board_avg_orders?: number | null;
+          board_metrics_at?: string | null;
+          board_payout_days?: number | null;
+          payments_balance?: number | null;
+          payments_balance_at?: string | null;
+          payments_balance_currency?: string | null;
           access_token?: string | null;
           board_column_id?: string | null;
           board_note?: string | null;

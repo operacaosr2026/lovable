@@ -203,6 +203,50 @@ export const fetchShopifyPaymentsBalance = createServerOnlyFn(async (domain: str
   return { amount: total, currency: balances[0]?.currency ?? null };
 });
 
+// Saldo da Shopify Payments guardado em shopify_stores (payments_balance*),
+// pras telas não chamarem a Shopify na abertura: o cron de taxas atualiza de
+// 10 em 10 min (lojas ativas) e o diário todas as lojas. Valor faltando ou
+// mais velho que maxAgeMs (cron parado) é buscado na Shopify na hora e gravado.
+export const BALANCE_MAX_AGE_MS = 30 * 60_000;
+
+export const refreshStoreBalance = createServerOnlyFn(async (ownerId: string, storeId: string) => {
+  const { domain, token } = await getShopifyCreds(supabaseAdmin, ownerId, storeId);
+  const balance = await fetchShopifyPaymentsBalance(domain, token);
+  const amount = balance?.amount ?? 0;
+  const currency = balance?.currency ?? null;
+  await supabaseAdmin.from("shopify_stores")
+    .update({ payments_balance: amount, payments_balance_currency: currency, payments_balance_at: new Date().toISOString() })
+    .eq("id", storeId).eq("user_id", ownerId);
+  // live: false quando a loja não tem Shopify Payments (a Shopify devolve vazio).
+  return { amount, currency, live: balance != null };
+});
+
+export const getStoreBalances = createServerOnlyFn(async (ownerId: string, storeIds: string[], maxAgeMs: number = BALANCE_MAX_AGE_MS) => {
+  const out = new Map<string, { amount: number; currency: string | null; live: boolean }>();
+  if (!storeIds.length) return out;
+  const { data: rows } = await supabaseAdmin.from("shopify_stores")
+    .select("id,payments_balance,payments_balance_currency,payments_balance_at")
+    .eq("user_id", ownerId).in("id", storeIds);
+  const now = Date.now();
+  await Promise.all(storeIds.map(async (id) => {
+    const r = ((rows ?? []) as any[]).find((x) => x.id === id);
+    const fresh = r?.payments_balance_at && now - new Date(r.payments_balance_at).getTime() < maxAgeMs;
+    if (fresh && r.payments_balance != null) {
+      out.set(id, { amount: Number(r.payments_balance), currency: r.payments_balance_currency ?? null, live: true });
+      return;
+    }
+    try {
+      out.set(id, await refreshStoreBalance(ownerId, id));
+    } catch (e) {
+      console.error("getStoreBalances: Shopify falhou", id, e);
+      // Shopify fora: melhor o último valor guardado do que nada.
+      if (r?.payments_balance != null) out.set(id, { amount: Number(r.payments_balance), currency: r.payments_balance_currency ?? null, live: false });
+      else throw e;
+    }
+  }));
+  return out;
+});
+
 // Computes and stores the average payout lag (days between a charge landing
 // and the payout that includes it) for a shop, from live Shopify data. Shared
 // by the "Sincronizar" button (syncShopifyPayouts) and the daily cron
@@ -1054,8 +1098,9 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) return { connected: false, pending: 0, balance: null, currency: null };
 
-    const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
-    const paymentsBalance = await fetchShopifyPaymentsBalance(domain, token);
+    // Saldo guardado (cron de 10 em 10 min) em vez de chamar a Shopify a cada abertura.
+    const stored = (await getStoreBalances(context.ownerId, [settings.shopify_store_id])).get(settings.shopify_store_id);
+    const paymentsBalance = stored?.live ? stored : null;
     const currency = paymentsBalance?.currency ?? null;
     const balance = paymentsBalance?.amount ?? null;
 
@@ -1265,13 +1310,21 @@ export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof
     // real-time); fall back to the synced-payouts sum when Payments isn't
     // enabled for that store or the call fails.
     const settingsByShop = new Map((settings ?? []).map((s) => [s.shop_id as string, s.shopify_store_id as string | null]));
+    // Saldo guardado (atualizado de 10 em 10 min pelo cron) em vez de 1 chamada
+    // à Shopify por loja a cada abertura do Caixa.
+    const storeIds = [...new Set([...settingsByShop.values()].filter(Boolean) as string[])];
+    const balances = await getStoreBalances(context.ownerId, storeIds).catch((e) => {
+      console.error("computeShopsReceivable: saldo indisponível", e);
+      return new Map<string, { amount: number; currency: string | null; live: boolean }>();
+    });
     const perShop = await Promise.all(data.shop_ids.map(async (shopId) => {
       const pendingSum = byShop.get(shopId) ?? 0;
       const storeId = settingsByShop.get(shopId);
       if (!storeId) return { shop_id: shopId, amount: 0, pending: pendingSum, connected: false, live: false };
       try {
-        const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, storeId);
-        const live = await fetchShopifyPaymentsBalance(domain, token);
+        const b = balances.get(storeId);
+        if (!b) throw new Error("saldo indisponível");
+        const live = b.live ? b : null;
         return {
           // Saldo ao vivo (ainda não alocado a nenhum payout) + payouts já
           // agendados com data futura — a Shopify remove o valor do saldo
