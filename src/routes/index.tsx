@@ -512,8 +512,8 @@ function Dashboard() {
         <div className="bg-card border border-border rounded-2xl p-5 min-w-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2.5">
-              <div className="size-8 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
-                <BarChart3 className="size-4" />
+              <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
+                <BarChart3 className="size-4.5" />
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">{activeTabCfg.label}</p>
@@ -576,8 +576,8 @@ function Dashboard() {
         {/* Composição do faturamento */}
         <div className="bg-card border border-border rounded-2xl p-5 min-w-0">
           <div className="flex items-center gap-2.5 mb-4">
-            <div className="size-8 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
-              <PieChartIcon className="size-4" />
+            <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
+              <PieChartIcon className="size-4.5" />
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">Composição do faturamento</p>
