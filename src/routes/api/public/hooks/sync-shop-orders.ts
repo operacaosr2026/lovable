@@ -145,10 +145,11 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   if (!relevant.length) return 0;
 
   const { data: existing } = await selectAll(supabaseAdmin.from("shop_cash_entries")
-    .select("id,shopify_payout_id")
+    .select("id,shopify_payout_id,date_locked,amount_locked,reconciled")
     .eq("user_id", userId).eq("shop_id", shopId)
     .in("shopify_payout_id", relevant.map((p: any) => String(p.id))));
   const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
+  const existingRow = new Map((existing ?? []).map((r: any) => [r.id as string, r]));
 
   const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
     user_id: userId, shop_id: shopId,
@@ -165,11 +166,18 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   for (const p of relevant) {
     const id = existingById.get(String(p.id));
     if (!id) continue;
-    await supabaseAdmin.from("shop_cash_entries").update({
-      amount: Number(p.amount ?? 0),
-      date: p.date,
+    // Ajuste manual prevalece sobre a Shopify: data/valor mudados à mão (o
+    // depósito caiu noutro dia, conferido no banco) ficam travados, e depósito
+    // conciliado não muda mais. Antes o sync automático ignorava isso e desfazia
+    // os ajustes a cada hora (o botão manual já respeitava).
+    const row = existingRow.get(id);
+    const patch: { description: string; shopify_payout_status: string; date?: string; amount?: number } = {
       description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
-    }).eq("id", id);
+      shopify_payout_status: p.status,
+    };
+    if (!row?.date_locked && !row?.reconciled) patch.date = p.date;
+    if (!row?.amount_locked && !row?.reconciled) patch.amount = Number(p.amount ?? 0);
+    await supabaseAdmin.from("shop_cash_entries").update(patch).eq("id", id);
   }
 
   return relevant.length;

@@ -867,12 +867,13 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     if (!relevant.length) return { synced: 0 };
 
     const { data: existing } = await selectAll(context.supabase.from("shop_cash_entries")
-      .select("id,shopify_payout_id,date_locked,amount_locked")
+      .select("id,shopify_payout_id,date_locked,amount_locked,reconciled")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("shopify_payout_id", relevant.map((p: any) => String(p.id))));
     const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
-    const dateLockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked).map((r: any) => r.id));
-    const amountLockedIds = new Set((existing ?? []).filter((r: any) => r.amount_locked).map((r: any) => r.id));
+    // Conciliado também não muda (o valor/data já foram conferidos no banco).
+    const dateLockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked || r.reconciled).map((r: any) => r.id));
+    const amountLockedIds = new Set((existing ?? []).filter((r: any) => r.amount_locked || r.reconciled).map((r: any) => r.id));
 
     const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
       user_id: context.ownerId,
