@@ -1751,6 +1751,9 @@ export type Database = {
       shop_meta_ad_accounts: {
         Row: {
           account_name: string | null;
+          billing_seen_tx: string[];
+          billing_started_at: string | null;
+          billing_synced_until: string | null;
           ad_account_id: string;
           created_at: string | null;
           currency: string | null;
@@ -1767,6 +1770,9 @@ export type Database = {
         };
         Insert: {
           account_name?: string | null;
+          billing_seen_tx?: string[];
+          billing_started_at?: string | null;
+          billing_synced_until?: string | null;
           ad_account_id: string;
           created_at?: string | null;
           currency?: string | null;
@@ -1783,6 +1789,9 @@ export type Database = {
         };
         Update: {
           account_name?: string | null;
+          billing_seen_tx?: string[];
+          billing_started_at?: string | null;
+          billing_synced_until?: string | null;
           ad_account_id?: string;
           created_at?: string | null;
           currency?: string | null;

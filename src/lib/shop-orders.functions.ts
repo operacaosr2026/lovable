@@ -1320,6 +1320,9 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
         .eq("user_id", ownerId).in("shop_id", shop_ids),
       selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("kind", "expense").eq("category", "Facebook Ads")
+        // Cobrança do cartão (meta_billing_charge) é saída de caixa, não gasto
+        // de anúncio — o gasto já está nas entradas diárias (meta_ads_spend).
+        .or("auto_kind.is.null,auto_kind.neq.meta_billing_charge")
         .gte("date", month_start).lte("date", month_end)),
       selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")

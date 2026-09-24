@@ -47,6 +47,7 @@ export const listShops = createServerFn({ method: "GET" })
         selectAll(supabase.from("shop_cash_entries").select("shop_id,amount,auto_ref_date,date").in("shop_id", ids).eq("kind", "expense").eq("category", COST_CATEGORY)
           .or(`and(auto_ref_date.gte.${monthStart},auto_ref_date.lte.${monthEnd}),and(auto_ref_date.is.null,date.gte.${monthStart},date.lte.${monthEnd})`)),
         selectAll(supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Facebook Ads")
+          .or("auto_kind.is.null,auto_kind.neq.meta_billing_charge")
           .gte("date", monthStart).lte("date", monthEnd)),
         selectAll(supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Taxas Shopify")
           .gte("date", monthStart).lte("date", monthEnd)),

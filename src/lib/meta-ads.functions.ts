@@ -460,6 +460,154 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
     return { synced: rows.length, totalSpend, errors };
 });
 
+// ===== Cobranças do cartão (billing) -> Caixa =====
+//
+// O gasto diário (acima) é competência — alimenta o lucro, mas não é dinheiro
+// saindo. O que sai do caixa são as cobranças que a Meta faz no cartão ao bater
+// o limite de cobrança; elas vêm das "activities" da conta
+// (ad_account_billing_charge, valor em centavos).
+//
+// Por linha de shop_meta_ad_accounts: billing_started_at é o ponto de partida
+// (conta nova começa do momento em que é vista — o que passou, passou),
+// billing_synced_until a última leitura e billing_seen_tx as cobranças já
+// lançadas. Uma cobrança entra uma vez só: lançamento apagado ou editado no
+// Caixa nunca volta nem é sobrescrito.
+const BILLING_SOURCE = "meta_billing_sync";
+const BILLING_AUTO_KIND = "meta_billing_charge";
+
+function splitCentsEvenly(total: number, n: number): number[] {
+  const cents = Math.round(total * 100);
+  const base = Math.floor(cents / n);
+  const remainder = cents - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
+}
+
+// Toda cobrança vai pra "Todas as lojas" do grupo (card de Lojas e Grupos) que
+// contém as lojas da conta — dividida igual entre elas, como o lançamento
+// manual — mesmo quando a conta é de uma loja só. Loja em mais de um grupo
+// (ex.: card só dela + card da operação): usa o grupo com mais lojas. Sem
+// grupo em comum, divide entre as próprias lojas da conta.
+async function billingTargetShops(shopIds: string[]): Promise<string[]> {
+  const { data: mine } = await supabaseAdmin.from("lg_card_shops").select("card_id").in("shop_id", shopIds);
+  const cardIds = [...new Set(((mine ?? []) as any[]).map((r) => r.card_id as string))];
+  if (!cardIds.length) return shopIds;
+  const { data: all } = await supabaseAdmin.from("lg_card_shops").select("card_id,shop_id").in("card_id", cardIds);
+  const byCard = new Map<string, Set<string>>();
+  for (const r of (all ?? []) as any[]) {
+    if (!byCard.has(r.card_id)) byCard.set(r.card_id, new Set());
+    byCard.get(r.card_id)!.add(r.shop_id);
+  }
+  const best = [...byCard.entries()]
+    .filter(([, set]) => shopIds.every((id) => set.has(id)))
+    .sort(([a, sa], [b, sb]) => sb.size - sa.size || a.localeCompare(b))[0];
+  return best ? [...best[1]].sort() : shopIds;
+}
+
+async function ensureAdsCategory(ownerId: string, shopId: string) {
+  const { data } = await supabaseAdmin.from("shop_cash_categories").select("id")
+    .eq("user_id", ownerId).eq("shop_id", shopId).eq("kind", "expense").eq("name", SPEND_CATEGORY).maybeSingle();
+  if (!data) {
+    await supabaseAdmin.from("shop_cash_categories").insert({
+      user_id: ownerId, shop_id: shopId, kind: "expense", name: SPEND_CATEGORY, position: 999,
+    });
+  }
+}
+
+export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string) => {
+  const { data: rows } = await supabaseAdmin.from("shop_meta_ad_accounts")
+    .select("id,shop_id,ad_account_id,billing_started_at,billing_synced_until,billing_seen_tx")
+    .eq("user_id", ownerId).eq("enabled", true);
+  const byAccount = new Map<string, any[]>();
+  for (const r of (rows ?? []) as any[]) {
+    if (!byAccount.has(r.ad_account_id)) byAccount.set(r.ad_account_id, []);
+    byAccount.get(r.ad_account_id)!.push(r);
+  }
+
+  let inserted = 0;
+  for (const [adAccountId, accRows] of byAccount) {
+    const shopIds = [...new Set(accRows.map((r) => r.shop_id as string))];
+    const now = new Date().toISOString();
+
+    // Primeira vez que a conta é vista: só marca o ponto de partida.
+    const starts = accRows.map((r) => r.billing_started_at as string | null).filter(Boolean) as string[];
+    if (!starts.length) {
+      await supabaseAdmin.from("shop_meta_ad_accounts")
+        .update({ billing_started_at: now, billing_synced_until: now }).in("id", accRows.map((r) => r.id));
+      continue;
+    }
+    const firstSeen = new Date(starts.sort()[0]).toISOString();
+    const lastRead = accRows.map((r) => r.billing_synced_until as string | null).filter(Boolean).sort()[0] ?? firstSeen;
+    const seenTx = new Set(accRows.flatMap((r) => (r.billing_seen_tx ?? []) as string[]));
+
+    const { data: tokens } = await supabaseAdmin.from("shop_meta_tokens")
+      .select("access_token").eq("user_id", ownerId).in("shop_id", shopIds);
+    const accessToken = ((tokens ?? []) as any[]).find((t) => t.access_token)?.access_token;
+    if (!accessToken) continue;
+
+    // Folga de 6h pra trás: a Meta às vezes publica a activity com atraso.
+    // billing_seen_tx impede lançamento em dobro.
+    const since = Math.floor(Math.max(new Date(firstSeen).getTime(), new Date(lastRead).getTime() - 6 * 3600_000) / 1000);
+    let url = `${META_GRAPH_API_BASE}/${adAccountId}/activities?since=${since}&limit=100&fields=event_time,event_type,extra_data&access_token=${encodeURIComponent(accessToken)}`;
+    const charges: { txId: string; time: string; amount: number }[] = [];
+    let failed = false;
+    for (let page = 0; page < 10 && url; page++) {
+      const res = await fetchWithRetry(url);
+      const json: any = await res.json();
+      if (!res.ok || json.error) { console.error("meta billing", adAccountId, json?.error?.message ?? res.status); failed = true; break; }
+      for (const ev of (json.data ?? []) as any[]) {
+        if (ev.event_type !== "ad_account_billing_charge") continue;
+        let extra: any = {};
+        try { extra = typeof ev.extra_data === "string" ? JSON.parse(ev.extra_data) : (ev.extra_data ?? {}); } catch { /* ignora */ }
+        const cents = Number(extra.new_value);
+        if (!extra.transaction_id || !(cents > 0)) continue;
+        // Cobrança anterior à conta ser vista pela primeira vez: o que passou, passou.
+        if (new Date(ev.event_time).toISOString() < firstSeen) continue;
+        if (seenTx.has(String(extra.transaction_id))) continue;
+        charges.push({ txId: String(extra.transaction_id), time: ev.event_time, amount: cents / 100 });
+      }
+      url = json.paging?.next ?? "";
+    }
+    // Falhou no meio: não avança o cursor, tenta de novo na próxima rodada.
+    if (failed) continue;
+
+    if (charges.length) {
+      const targets = await billingTargetShops(shopIds);
+      const extIds = charges.flatMap((c) => targets.map((shopId) => `meta_charge_${c.txId}_${shopId}`));
+      const { data: existing } = await supabaseAdmin.from("shop_cash_entries")
+        .select("mercury_transaction_id").eq("user_id", ownerId).in("mercury_transaction_id", extIds);
+      const seen = new Set(((existing ?? []) as any[]).map((r) => r.mercury_transaction_id));
+      const toInsert: any[] = [];
+      for (const c of charges) {
+        const date = new Date(c.time).toLocaleDateString("en-CA", { timeZone: US_TIME_ZONE });
+        const shares = splitCentsEvenly(c.amount, targets.length);
+        targets.forEach((shopId, i) => {
+          const extId = `meta_charge_${c.txId}_${shopId}`;
+          if (seen.has(extId) || shares[i] <= 0) return;
+          toInsert.push({
+            user_id: ownerId, shop_id: shopId, kind: "expense", amount: shares[i], date,
+            category: SPEND_CATEGORY,
+            description: targets.length > 1
+              ? `Cobrança Meta Ads ${adAccountId} — $${c.amount.toFixed(2)} dividido entre ${targets.length} lojas`
+              : `Cobrança Meta Ads ${adAccountId}`,
+            source: BILLING_SOURCE, auto_kind: BILLING_AUTO_KIND, mercury_transaction_id: extId,
+          });
+        });
+      }
+      if (toInsert.length) {
+        await Promise.all([...new Set(toInsert.map((r) => r.shop_id as string))].map((id) => ensureAdsCategory(ownerId, id)));
+        const { error } = await supabaseAdmin.from("shop_cash_entries").insert(toInsert);
+        if (error) { console.error("meta billing insert", adAccountId, error.message); continue; }
+        inserted += toInsert.length;
+      }
+    }
+    const nextSeen = [...seenTx, ...charges.map((c) => c.txId)].slice(-300);
+    await supabaseAdmin.from("shop_meta_ad_accounts")
+      .update({ billing_started_at: firstSeen, billing_synced_until: now, billing_seen_tx: nextSeen })
+      .in("id", accRows.map((r) => r.id));
+  }
+  return { inserted };
+});
+
 export const syncMetaAdsSpend = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d: { shop_id: string; since_days?: number; from_date?: string; to_date?: string }) =>

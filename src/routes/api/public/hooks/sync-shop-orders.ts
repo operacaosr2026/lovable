@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop } from "@/lib/shop-orders.functions";
-import { syncMetaAdsSpendForShop } from "@/lib/meta-ads.functions";
+import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 
@@ -608,8 +608,20 @@ async function runCostsSync(request: Request, only: { ads: boolean; fees: boolea
     batch.forEach((s, j) => { if (results[j]) changedOwners.add(s.ownerId); });
     processed += batch.length;
   }
+  // Cobranças do cartão da Meta viram saída no Caixa (por conta de anúncio,
+  // não por loja — ver syncMetaBillingCharges).
+  let billingInserted = 0;
+  if (only.ads && Date.now() - start < TIME_BUDGET_MS) {
+    const owners = [...new Set(((metaAccounts ?? []) as any[]).map((a) => a.user_id as string))];
+    for (const owner of owners) {
+      try {
+        const r = await syncMetaBillingCharges(owner);
+        if (r.inserted > 0) { billingInserted += r.inserted; changedOwners.add(owner); }
+      } catch (e) { console.error("costs: meta billing fail", owner, e); }
+    }
+  }
   await Promise.all([...changedOwners].map((owner) => broadcast(owner, "orders")));
-  return new Response(JSON.stringify({ processed, skippedByBudget, costsOnly: true, ...only }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ processed, skippedByBudget, billingInserted, costsOnly: true, ...only }), { headers: { "Content-Type": "application/json" } });
 }
 
 async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnly: boolean }) {
