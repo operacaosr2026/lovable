@@ -1241,10 +1241,12 @@ export const getGroupShopifyPayoutLag = createServerFn({ method: "GET" })
     }));
   });
 
-export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
-  .handler(async ({ context, data }) => {
+// "A receber" por loja (saldo ao vivo da Shopify Payments + payouts agendados).
+// Usado pelo card do Caixa (abaixo) e pela foto diária do caixa
+// (caixa-snapshot.server.ts), que passa supabaseAdmin.
+export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof supabaseAdmin, ownerId: string, shopIds: string[]) => {
+    const context = { supabase, ownerId };
+    const data = { shop_ids: shopIds };
     const today = new Date().toISOString().slice(0, 10);
     const { data: entries } = await selectAll(context.supabase.from("shop_cash_entries")
       .select("shop_id,amount")
@@ -1299,7 +1301,12 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
     }));
 
     return { connected, pending, perShop };
-  });
+});
+
+export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ context, data }) => computeShopsReceivable(context.supabase, context.ownerId, data.shop_ids));
 
 export const getMonthlyProfit = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])

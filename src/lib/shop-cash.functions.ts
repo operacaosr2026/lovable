@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { selectAll } from "@/lib/select-all";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const CASH_KINDS = ["income", "expense"] as const;
 export const EXPENSE_CATEGORIES = [
@@ -336,4 +337,25 @@ export const resetShopCash = createServerFn({ method: "POST" })
       .delete().eq("user_id", uid).eq("shop_id", data.shop_id);
     if (e2.error) throw new Error(e2.error.message);
     return { ok: true };
+  });
+
+// Fotos diárias do caixa (caixa-snapshot.server.ts) somadas por dia, pras
+// lojas selecionadas — gráfico do "Saldo total" no Caixa.
+export const getCaixaSnapshots = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1), from: z.string() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: rows, error } = await selectAll(supabaseAdmin.from("caixa_daily_snapshots")
+      .select("date,saldo,receivable")
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids).gte("date", data.from)
+      .order("date", { ascending: true }));
+    if (error) throw new Error(error.message);
+    const byDate = new Map<string, { saldo: number; receivable: number }>();
+    for (const r of (rows ?? []) as any[]) {
+      const cur = byDate.get(r.date) ?? { saldo: 0, receivable: 0 };
+      cur.saldo += Number(r.saldo ?? 0);
+      cur.receivable += Number(r.receivable ?? 0);
+      byDate.set(r.date, cur);
+    }
+    return [...byDate.entries()].map(([date, v]) => ({ date, ...v }));
   });

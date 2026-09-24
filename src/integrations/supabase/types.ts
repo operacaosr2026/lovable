@@ -8,6 +8,33 @@ export type Database = {
   };
   public: {
     Tables: {
+      caixa_daily_snapshots: {
+        Row: {
+          created_at: string;
+          date: string;
+          receivable: number;
+          saldo: number;
+          shop_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          date: string;
+          receivable: number;
+          saldo: number;
+          shop_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          date?: string;
+          receivable?: number;
+          saldo?: number;
+          shop_id?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       app_notifications: {
         Row: {
           body: string | null;

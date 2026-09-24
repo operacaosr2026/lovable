@@ -36,6 +36,7 @@ import {
   listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
   setOpeningBalance, setWeekendRule, resetShopCash,
   listCashCategories, createCashCategory, renameCashCategory, deleteCashCategory,
+  getCaixaSnapshots,
 } from "@/lib/shop-cash.functions";
 import {
   listShopCashConsolidated, createConsolidatedCashEntry,
@@ -921,6 +922,7 @@ export function LgCashflowView({
   const pendingFn   = useServerFn(getShopifyPendingBalance);
   const syncPaysFn  = useServerFn(syncShopifyPayouts);
   const groupPendFn = useServerFn(getGroupShopifyPendingBalance);
+  const snapshotsFn = useServerFn(getCaixaSnapshots);
   const lastSyncFn  = useServerFn(getShopifyLastSyncedAt);
 
   const queryKey = [standalone ? "shop-cash-standalone" : "shop-cash", cacheKey];
@@ -1111,12 +1113,25 @@ export function LgCashflowView({
         : (Number((effectivePending as any).balance ?? 0) + Number(effectivePending.pending ?? 0)))
     : 0;
 
-  // O "a receber" de dias passados não fica guardado: o gráfico do Saldo total
-  // é a curva do saldo somada ao a receber de hoje (termina no valor real).
-  const saldoTotalHistory = useMemo(
-    () => saldoHistory.map((p) => ({ key: p.key, v: p.v + receivable })),
-    [saldoHistory, receivable],
-  );
+  // Gráfico do Saldo total: fotos diárias gravadas no fim de cada dia
+  // (caixa-snapshot.server.ts) + o valor ao vivo de hoje. Enquanto não houver
+  // nenhuma foto, usa a curva do saldo somada ao a receber de hoje.
+  const snapshotsFrom = addDaysToKey(todayKey, -30);
+  const snapshotsQuery = useQuery({
+    queryKey: ["caixa-snapshots", cacheKey, snapshotsFrom],
+    queryFn:  () => snapshotsFn({ data: { shop_ids: shopIds, from: snapshotsFrom } }),
+    staleTime: 60 * 60_000,
+  });
+  const saldoTotalHistory = useMemo(() => {
+    const snaps = (snapshotsQuery.data ?? []).filter((r) => r.date < todayKey);
+    if (!snaps.length) return { points: saldoHistory.map((p) => ({ key: p.key, v: p.v + receivable })), real: false };
+    const points = snaps.map((r) => ({ key: r.date, v: r.saldo + r.receivable }));
+    points.push({ key: todayKey, v: future + receivable });
+    return { points, real: true };
+  }, [snapshotsQuery.data, saldoHistory, receivable, future, todayKey]);
+  const saldoTotalSince = saldoTotalHistory.real && saldoTotalHistory.points[0].key > snapshotsFrom
+    ? `desde ${saldoTotalHistory.points[0].key.slice(8, 10)}/${saldoTotalHistory.points[0].key.slice(5, 7)}`
+    : "em relação a 30 dias atrás";
 
   const syncPayouts = async () => {
     setSyncing(true);
@@ -1242,8 +1257,12 @@ export function LgCashflowView({
           <KpiCard
             icon={Database} tone="green" title="Saldo total" subtitle="Disponível + A receber"
             value={fmtMoneyGrouped(future + receivable)} negative={future + receivable < 0}
-            spark={saldoTotalHistory} sparkId="caixa-kpi-total"
-          />
+            spark={saldoTotalHistory.points} sparkId="caixa-kpi-total"
+          >
+            {saldoTotalHistory.real && saldoTotalHistory.points.length > 1 && (
+              <KpiChange current={future + receivable} base={saldoTotalHistory.points[0].v} label={saldoTotalSince} />
+            )}
+          </KpiCard>
         </div>
       </TooltipProvider>
 
