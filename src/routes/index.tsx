@@ -308,8 +308,8 @@ function MiniTrend({ data, color, kind, fmt, gradId }: {
   );
 }
 
-function OpsTile({ icon: Icon, accent, label, sub, value, hint, loading, onClick, trend, kind = "area", fmt }: {
-  icon: typeof TrendingUp; accent: MetricAccent; label: string; sub: string; value: string | number;
+function OpsTile({ icon: Icon, accent, label, value, hint, loading, onClick, trend, kind = "area", fmt }: {
+  icon: typeof TrendingUp; accent: MetricAccent; label: string; value: string | number;
   hint?: string; loading?: boolean; onClick?: () => void;
   trend: TrendDatum[]; kind?: "area" | "bar"; fmt: (v: number) => string;
 }) {
@@ -323,12 +323,12 @@ function OpsTile({ icon: Icon, accent, label, sub, value, hint, loading, onClick
       <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${METRIC_ACCENTS[accent].chip}`}>
         <Icon className="size-5" />
       </div>
-      <div className="min-w-0 w-[118px] shrink-0">
+      <div className="min-w-0 w-[96px] shrink-0">
         {loading
           ? <div className="h-6 w-12 bg-muted animate-pulse rounded" />
           : <p className="text-xl font-bold leading-tight tabular-nums">{value}</p>}
         <p className="text-xs font-medium text-foreground leading-tight truncate">{label}</p>
-        <p className={`text-[10px] leading-tight truncate ${hint ? "text-destructive font-medium" : "text-muted-foreground"}`}>{hint ?? sub}</p>
+        {hint && <p className="text-[10px] leading-tight truncate text-destructive font-medium">{hint}</p>}
         {delta != null && !loading && (
           <span className={`inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${good ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"}`}
             title="Comparado a 7 dias atrás">
@@ -497,7 +497,7 @@ function Dashboard() {
       </div>
 
       {/* ── Gráfico principal · Composição ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,390px)] gap-4 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,290px)] gap-4 items-stretch">
         <div className="bg-card border border-border rounded-2xl p-5 min-w-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2.5">
@@ -506,7 +506,6 @@ function Dashboard() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground leading-tight">{activeTabCfg.label}</p>
-                <p className="text-[11px] text-muted-foreground leading-tight">Acompanhe sua evolução diária de vendas</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -561,7 +560,6 @@ function Dashboard() {
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground leading-tight">Composição do faturamento</p>
-              <p className="text-[11px] text-muted-foreground leading-tight">Visão geral da sua receita</p>
             </div>
           </div>
 
@@ -603,20 +601,20 @@ function Dashboard() {
 
         {/* Operação: tarefas + indicadores do Rastreamento (com evolução de 7 dias) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5 min-w-0">
-          <OpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes" sub="Em aberto"
+          <OpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes"
             value={openTasks.length} hint={overdueTasks ? `${overdueTasks} atrasada${overdueTasks === 1 ? "" : "s"}` : undefined}
             loading={tasksLoading} onClick={() => navigate({ to: "/tarefas" })}
             trend={tasksTrend} kind="bar" fmt={(v) => String(v)} />
-          <OpsTile icon={AlertTriangle} accent="destructive" label="Precisa de atenção" sub="Pedidos e alertas"
+          <OpsTile icon={AlertTriangle} accent="destructive" label="Precisa de atenção"
             value={opsKpis.attention} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
             trend={opsTrend.map((p) => ({ label: p.label, value: p.attention }))} fmt={(v) => String(v)} />
-          <OpsTile icon={Package} accent="warning" label="Pendente envio" sub="Aguardando separação"
+          <OpsTile icon={Package} accent="warning" label="Pendente envio"
             value={opsKpis.pending} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
             trend={opsTrend.map((p) => ({ label: p.label, value: p.pending }))} kind="bar" fmt={(v) => String(v)} />
-          <OpsTile icon={Clock} accent="info" label="TM Postagem" sub="Tempo médio"
+          <OpsTile icon={Clock} accent="info" label="TM Postagem"
             value={fmtDays(opsKpis.avgPostingDays)} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
             trend={opsTrend.map((p) => ({ label: p.label, value: p.avgPostingDays }))} fmt={(v) => `${v.toFixed(1)}d`} />
-          <OpsTile icon={Truck} accent="success" label="TM Entrega" sub="Tempo médio"
+          <OpsTile icon={Truck} accent="success" label="TM Entrega"
             value={fmtDays(opsKpis.avgDeliveryDays)} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
             trend={opsTrend.map((p) => ({ label: p.label, value: p.avgDeliveryDays }))} fmt={(v) => `${v.toFixed(1)}d`} />
         </div>
