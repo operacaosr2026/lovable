@@ -206,6 +206,22 @@ function DashTooltip({ active, payload, label }: any) {
   );
 }
 
+// Tooltip do donut da Composição: loja, faturamento e participação.
+function DonutTooltip({ active, payload, total }: any) {
+  if (!active || !payload?.length) return null;
+  const s = payload[0].payload;
+  const pct = total > 0 ? (s.faturamento / total) * 100 : 0;
+  return (
+    <div className="rounded-xl bg-card border border-border p-2.5 shadow-lg text-xs">
+      <p className="flex items-center gap-1.5 font-medium text-foreground mb-0.5">
+        <span className="size-2 rounded-full shrink-0" style={{ background: s.color }} />{s.shop_name}
+      </p>
+      <p className="font-semibold text-foreground tabular-nums">{fmtMoney(s.faturamento)}</p>
+      <p className="text-muted-foreground tabular-nums">{pct.toFixed(1)}% do total</p>
+    </div>
+  );
+}
+
 // ─── Breakdown por loja: top 4 + "Outros" quando há mais de 5 lojas ────────────
 
 type ShopBreakdownRow = { shop_id: string; shop_name: string; faturamento: number; taxaEstorno: number; totalPedidos: number; totalEstornos: number };
@@ -574,8 +590,8 @@ function Dashboard() {
         </div>
 
         {/* Composição do faturamento */}
-        <div className="bg-card border border-border rounded-2xl p-5 min-w-0">
-          <div className="flex items-center gap-2.5 mb-4">
+        <div className="bg-card border border-border rounded-2xl p-5 min-w-0 flex flex-col">
+          <div className="flex items-center gap-2.5 mb-3">
             <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
               <PieChartIcon className="size-4.5" />
             </div>
@@ -585,30 +601,40 @@ function Dashboard() {
           </div>
 
           {isLoading ? (
-            <div className="h-[136px] bg-muted animate-pulse rounded-xl" />
+            <div className="flex-1 min-h-[200px] bg-muted animate-pulse rounded-xl" />
           ) : slices.length === 0 ? (
             <p className="text-xs text-muted-foreground py-8 text-center">Sem faturamento no período.</p>
           ) : (
             <>
-              <div className="relative h-[136px]">
+              {/* Donut ocupa o espaço livre do card (a linha é tão alta quanto a coluna de indicadores) */}
+              <div className="relative flex-1 min-h-[200px] max-h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius={40} outerRadius={58} paddingAngle={2} strokeWidth={0}>
+                    <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius="64%" outerRadius="94%" paddingAngle={2} strokeWidth={0}>
                       {slices.map((s) => <Cell key={s.shop_id} fill={s.color} />)}
                     </Pie>
+                    <Tooltip content={<DonutTooltip total={donutTotal} />} wrapperStyle={{ zIndex: 10 }} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="absolute inset-0 grid place-items-center pointer-events-none px-4">
-                  <div className="text-center">
-                    <p className="text-lg font-bold text-foreground truncate">{fmtMoney(donutTotal)}</p>
+                <div className="absolute inset-0 grid place-items-center pointer-events-none px-6">
+                  <div className="text-center min-w-0">
+                    <p className="text-lg font-bold text-foreground truncate tabular-nums">{fmtMoney(donutTotal)}</p>
                     <p className="text-[10px] text-muted-foreground">Total</p>
+                    {/* Comparativo com o período anterior de mesmo tamanho ("Este mês" → mês anterior) */}
+                    <span className={`inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${
+                      totals.faturamentoDelta >= 0 ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"
+                    }`}>
+                      {totals.faturamentoDelta >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+                      {totals.faturamentoDelta >= 0 ? "+" : ""}{Number(totals.faturamentoDelta).toFixed(1)}%
+                    </span>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">{period === "mes" ? "vs mês anterior" : "vs período anterior"}</p>
                   </div>
                 </div>
               </div>
-              <div className="mt-4 space-y-1.5">
+              <div className="mt-4 space-y-2.5">
                 {slices.map((s) => (
                   <div key={s.shop_id} className="flex items-center gap-2 text-xs">
-                    <span className="size-2 rounded-full shrink-0" style={{ background: s.color }} />
+                    <span className="size-2.5 rounded-full shrink-0" style={{ background: s.color }} />
                     <span className="text-foreground truncate flex-1">{s.shop_name}</span>
                     <span className="text-muted-foreground font-medium tabular-nums shrink-0">
                       {donutTotal > 0 ? ((s.faturamento / donutTotal) * 100).toFixed(1) : "0.0"}%
