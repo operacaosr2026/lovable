@@ -7,9 +7,27 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Chaves geradas por refreshSystemNotifications (recalculadas a cada leitura).
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
-const MANAGED_PREFIXES = ["meta_token:", "meta_account:", "shopify_sync:", "track123:"];
+const MANAGED_PREFIXES = ["meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:"];
 
 const TRACK123_STALE_HOURS = 4;   // cron roda de hora em hora
+
+// Motivos de disputa da Shopify Payments em português.
+const DISPUTE_REASON_PT: Record<string, string> = {
+  product_unacceptable: "produto diferente do anunciado ou com defeito",
+  product_not_received: "produto não recebido",
+  fraudulent: "compra não autorizada (fraude)",
+  unrecognized: "cobrança não reconhecida",
+  duplicate: "cobrança duplicada",
+  subscription_canceled: "assinatura cancelada",
+  credit_not_processed: "reembolso não processado",
+  incorrect_account_details: "dados de conta incorretos",
+  insufficient_funds: "saldo insuficiente",
+  bank_cannot_process: "banco não conseguiu processar",
+  debit_not_authorized: "débito não autorizado",
+  customer_initiated: "aberta pelo cliente",
+  general: "motivo geral",
+  noncompliant: "não conformidade",
+};
 const META_TOKEN_WARN_DAYS = 7;
 
 // Abre (ou reabre, se estava resolvida) a notificação do problema `key`. Se ela
@@ -73,7 +91,7 @@ export async function refreshSystemNotifications(ownerId: string) {
       supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name,last_sync_status,last_sync_error")
         .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("enabled", true),
       storeIds.length
-        ? supabaseAdmin.from("shopify_stores").select("id,name,last_sync_status,last_sync_error")
+        ? supabaseAdmin.from("shopify_stores").select("id,name,shop_domain,last_sync_status,last_sync_error")
             .eq("user_id", ownerId).in("id", storeIds)
         : Promise.resolve({ data: [] as any[] }),
       supabaseAdmin.from("track123_integrations").select("shop_id,last_sync_at,last_sync_status,last_sync_error")
@@ -134,6 +152,41 @@ export async function refreshSystemNotifications(ownerId: string) {
         body: String(st.last_sync_error ?? "Falha ao sincronizar com a Shopify.").slice(0, 240),
         link: shopId ? linkFor(shopId, "integracoes") : null,
       });
+    }
+
+    // Disputa (chargeback/inquiry) aguardando resposta: se passar do prazo sem
+    // resposta, a Shopify decide contra a loja (inquiry vira chargeback,
+    // chargeback é perdido). Some sozinha quando o status muda na Shopify
+    // (sync completo de hora em hora).
+    const { data: disputes } = await supabaseAdmin.from("shop_order_disputes")
+      .select("shop_id,shopify_dispute_id,order_external_id,type,reason,amount,currency,evidence_due_by")
+      .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("status", "needs_response");
+    if (disputes?.length) {
+      const extIds = disputes.map((d: any) => d.order_external_id).filter(Boolean) as string[];
+      const { data: orderRows } = extIds.length
+        ? await supabaseAdmin.from("shop_orders").select("shop_id,external_id,order_number")
+            .in("shop_id", activeShopIds).in("external_id", extIds)
+        : { data: [] as any[] };
+      const orderNumber = new Map((orderRows ?? []).map((o: any) => [`${o.shop_id}:${o.external_id}`, o.order_number as string]));
+      const domainByShop = new Map<string, string>();
+      for (const st of (storesRes.data ?? []) as any[]) {
+        const shopId = (settings ?? []).find((s: any) => s.shopify_store_id === st.id)?.shop_id;
+        if (shopId && st.shop_domain) domainByShop.set(shopId, st.shop_domain);
+      }
+      for (const d of disputes as any[]) {
+        const num = orderNumber.get(`${d.shop_id}:${d.order_external_id}`);
+        const isChargeback = d.type === "chargeback";
+        const money = `${d.currency === "USD" || !d.currency ? "US$" : d.currency} ${Number(d.amount ?? 0).toFixed(2).replace(".", ",")}`;
+        const due = d.evidence_due_by ? `responder até ${fmtDateBR(d.evidence_due_by)}` : "responda o quanto antes";
+        const daysLeft = d.evidence_due_by ? (Date.parse(d.evidence_due_by) - Date.now()) / 86_400_000 : null;
+        const domain = domainByShop.get(d.shop_id);
+        want.set(`dispute:${d.shopify_dispute_id}`, {
+          level: isChargeback || (daysLeft != null && daysLeft <= 3) ? "error" : "warning",
+          title: `${isChargeback ? "Chargeback" : "Inquiry"} aguardando resposta — ${num ?? "pedido"} (${name(d.shop_id)})`,
+          body: `${money} · ${DISPUTE_REASON_PT[d.reason] ?? d.reason ?? "sem motivo informado"} · ${due}. Responda pela página do pedido na Shopify.`,
+          link: domain && d.order_external_id ? `https://${domain}/admin/orders/${d.order_external_id}` : null,
+        });
+      }
     }
 
     for (const t of (trackRes.data ?? []) as any[]) {

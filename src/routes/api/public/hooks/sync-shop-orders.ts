@@ -221,6 +221,7 @@ async function syncRefundsAndChargebacks(shopId: string, userId: string, domain:
       currency: d.currency ?? null,
       initiated_at: String(d.initiated_at).slice(0, 10),
       finalized_on: d.finalized_on ? String(d.finalized_on).slice(0, 10) : null,
+      evidence_due_by: d.evidence_due_by ?? null,
     }));
     await supabaseAdmin.from("shop_order_disputes")
       .upsert(disputeRows as any[], { onConflict: "shop_id,shopify_dispute_id" });

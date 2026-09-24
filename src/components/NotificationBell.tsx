@@ -112,7 +112,9 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                     onClick={() => {
                       if (!n.link) return;
                       setOpen(false);
-                      navigate({ href: n.link });
+                      // Link externo (ex.: pedido no admin da Shopify) abre em nova aba.
+                      if (/^https?:\/\//.test(n.link)) window.open(n.link, "_blank", "noopener,noreferrer");
+                      else navigate({ href: n.link });
                     }}
                   >
                     <p className="text-xs font-semibold text-foreground leading-snug pr-5">{n.title}</p>

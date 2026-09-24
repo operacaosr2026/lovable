@@ -1852,6 +1852,7 @@ export type Database = {
           amount: number;
           created_at: string;
           currency: string | null;
+          evidence_due_by: string | null;
           finalized_on: string | null;
           id: string;
           initiated_at: string;
@@ -1868,6 +1869,7 @@ export type Database = {
           amount?: number;
           created_at?: string;
           currency?: string | null;
+          evidence_due_by?: string | null;
           finalized_on?: string | null;
           id?: string;
           initiated_at: string;
@@ -1884,6 +1886,7 @@ export type Database = {
           amount?: number;
           created_at?: string;
           currency?: string | null;
+          evidence_due_by?: string | null;
           finalized_on?: string | null;
           id?: string;
           initiated_at?: string;
