@@ -8,7 +8,7 @@ import {
   Settings, Target, FileText, ArrowUp, ArrowDown, Minus, Loader2, X, Check,
 } from "lucide-react";
 import { toast } from "sonner";
-import { PageShell } from "@/components/PageHeader";
+import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { isoTodayUS } from "@/lib/timezone";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -241,24 +241,17 @@ function TasksPage() {
 
   return (
     <PageShell>
-      {/* ── Cabeçalho ── */}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3.5 min-w-0">
-          <div className="size-12 rounded-2xl gradient-primary grid place-items-center text-white shrink-0 shadow-sm">
-            <CheckSquare className="size-6" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight leading-tight">Tarefas</h1>
-            <p className="text-xs md:text-sm text-muted-foreground">Organize, acompanhe e conclua suas tarefas</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setEditing("new")}
-          className="h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center gap-2 shrink-0 hover:opacity-90"
-        >
-          <Plus className="size-4" /> <span className="hidden sm:inline">Nova Tarefa</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Tarefas"
+        actions={
+          <button
+            onClick={() => setEditing("new")}
+            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
+          >
+            <Plus className="size-4" /> Nova tarefa
+          </button>
+        }
+      />
 
       {/* ── Indicadores ── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
