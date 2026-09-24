@@ -487,15 +487,12 @@ export function LgDashboard({
       {(() => {
         const topBar = (
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-success animate-pulse" />
-          {fmtDate(from)}{from !== to ? ` → ${fmtDate(to)}` : ""}
-        </div>
-
         <div className="flex items-center gap-1.5">
+          {/* Só a hora da última atualização — o período já aparece no seletor ao lado. */}
           {dataUpdatedAt > 0 && (
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-              {new Date(dataUpdatedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE })}
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground whitespace-nowrap">
+              <span className="size-1.5 rounded-full bg-success animate-pulse" />
+              Atualizado às {new Date(dataUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE })}
             </span>
           )}
           <button
