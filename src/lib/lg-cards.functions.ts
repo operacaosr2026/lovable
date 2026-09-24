@@ -2,6 +2,7 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { computeEstornoByShop } from "@/lib/estorno-daily.server";
 import { attachLiveShopifyNames, costProductsFor, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
@@ -822,13 +823,9 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     // virada e não bater com Dashboard/Metas, que já usam esse fuso.
     const to   = isoTodayUS();
     const from = isoMonthStartUS();
-    // Estorno demora a acontecer depois da compra (semanas), então medir só
-    // pedidos feitos "este mês" deixa a taxa sempre perto de 0 no início do
-    // mês. Usa uma janela rolante de 30 dias.
-    const estornoFrom = addDaysISO(to, -30);
 
     // B, C, D, E in parallel
-    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts, patchedCardShops] = await Promise.all([
+    const [ordersRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts, patchedCardShops] = await Promise.all([
       selectAll(supabaseAdmin
         .from("shop_orders")
         .select("revenue, items_count, shop_id, line_items:raw->line_items")
@@ -836,24 +833,9 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .in("shop_id", shopIds)
         .gte("order_date", from)
         .lte("order_date", to)),
-      selectAll(supabaseAdmin
-        .from("shop_orders")
-        .select("shop_id")
-        .eq("user_id", ownerId)
-        .in("shop_id", shopIds)
-        .gte("order_date", estornoFrom)
-        .lte("order_date", to)),
-      selectAll(supabaseAdmin
-        .from("shop_order_disputes")
-        .select("shop_id, order_external_id")
-        .eq("user_id", ownerId)
-        .in("shop_id", shopIds)
-        .eq("type", "chargeback")
-        .gte("initiated_at", estornoFrom)
-        .lte("initiated_at", to)),
       supabaseAdmin
         .from("shop_order_settings")
-        .select("shop_id, default_unit_cost, payout_lag_avg_days, payout_lag_days")
+        .select("shop_id, default_unit_cost, payout_lag_avg_days, payout_lag_days, chargeback_orders_30d, chargeback_count_30d, chargeback_stats_at")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds),
       selectAll(supabaseAdmin
@@ -882,8 +864,6 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const shopNameById = new Map((patchedCardShops as any[]).map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
 
     const orders             = ordersRes.data ?? [];
-    const estornoOrders      = estornoOrdersRes.data ?? [];
-    const chargebackDisputes = chargebackDisputesRes.data ?? [];
     const settings           = settingsRes.data ?? [];
     const fees        = feesRes.data ?? [];
     const ads         = adsRes.data ?? [];
@@ -910,30 +890,25 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const anuncios = sumAmt(ads);
     const lucro    = faturamento - custoProduto - taxas - anuncios;
 
-    // Taxa de estorno — igual à fórmula do Shopify: pedidos com chargeback
-    // real (shop_order_disputes, sincronizado do endpoint de disputas) sobre
-    // total de pedidos, numa janela de 30 dias (ver comentário acima).
-    const totalPedidos  = estornoOrders.length;
-    const totalEstornos = new Set(
-      chargebackDisputes.map((d: any) => d.order_external_id).filter((id: any) => id != null)
-    ).size;
-    const taxaEstorno   = totalPedidos > 0 ? totalEstornos / totalPedidos : 0;
+    // Taxa de estorno (30 dias) por loja: calculada 1x por dia à meia-noite
+    // (estorno-daily.server.ts) e guardada em shop_order_settings — aqui só lê.
+    // Enquanto alguma loja ainda não tiver o valor guardado, calcula na hora.
+    const allStored = shopIds.every((id) => settings.some((s: any) => s.shop_id === id && s.chargeback_stats_at));
+    const estornoStats = allStored
+      ? new Map(settings.map((s: any) => [s.shop_id as string, { pedidos: Number(s.chargeback_orders_30d ?? 0), estornos: Number(s.chargeback_count_30d ?? 0) }]))
+      : await computeEstornoByShop(ownerId, shopIds, to);
+    let totalPedidos = 0, totalEstornos = 0;
+    for (const id of shopIds) {
+      totalPedidos  += estornoStats.get(id)?.pedidos ?? 0;
+      totalEstornos += estornoStats.get(id)?.estornos ?? 0;
+    }
+    const taxaEstorno = totalPedidos > 0 ? totalEstornos / totalPedidos : 0;
 
     // Mesma taxa, mas por loja — cada uma tem um mix de produto/público
     // diferente, então a taxa agregada do card esconde lojas com estorno alto.
-    const pedidosPorLoja = new Map<string, number>();
-    for (const o of estornoOrders as any[]) {
-      pedidosPorLoja.set(o.shop_id, (pedidosPorLoja.get(o.shop_id) ?? 0) + 1);
-    }
-    const estornosPorLojaSet = new Map<string, Set<string>>();
-    for (const d of chargebackDisputes as any[]) {
-      if (d.order_external_id == null) continue;
-      if (!estornosPorLojaSet.has(d.shop_id)) estornosPorLojaSet.set(d.shop_id, new Set());
-      estornosPorLojaSet.get(d.shop_id)!.add(d.order_external_id);
-    }
     const estornoPorLoja = shopIds.map((shopId) => {
-      const pedidos  = pedidosPorLoja.get(shopId) ?? 0;
-      const estornos = estornosPorLojaSet.get(shopId)?.size ?? 0;
+      const pedidos  = estornoStats.get(shopId)?.pedidos ?? 0;
+      const estornos = estornoStats.get(shopId)?.estornos ?? 0;
       return {
         shop_id: shopId,
         shopName: shopNameById.get(shopId) ?? shopId,

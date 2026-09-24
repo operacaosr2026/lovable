@@ -1987,6 +1987,9 @@ export type Database = {
       };
       shop_order_settings: {
         Row: {
+          chargeback_count_30d: number | null;
+          chargeback_orders_30d: number | null;
+          chargeback_stats_at: string | null;
           automation_enabled: boolean;
           cashflow_start_date: string | null;
           created_at: string;
@@ -2003,6 +2006,9 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          chargeback_count_30d?: number | null;
+          chargeback_orders_30d?: number | null;
+          chargeback_stats_at?: string | null;
           automation_enabled?: boolean;
           cashflow_start_date?: string | null;
           created_at?: string;
@@ -2019,6 +2025,9 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          chargeback_count_30d?: number | null;
+          chargeback_orders_30d?: number | null;
+          chargeback_stats_at?: string | null;
           automation_enabled?: boolean;
           cashflow_start_date?: string | null;
           created_at?: string;

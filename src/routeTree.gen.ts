@@ -39,6 +39,7 @@ import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas
 import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
+import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
 import { Route as ApiPublicHooksCaixaSnapshotRouteImport } from "./routes/api/public/hooks/caixa-snapshot";
 import { Route as ApiPublicHooksShopifyStoreIdRouteImport } from "./routes/api/public/hooks/shopify.$storeId";
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
@@ -196,6 +197,12 @@ const ApiPublicHooksSyncShopOrdersRoute =
     path: "/api/public/hooks/sync-shop-orders",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksEstornoDailyRoute =
+  ApiPublicHooksEstornoDailyRouteImport.update({
+    id: "/api/public/hooks/estorno-daily",
+    path: "/api/public/hooks/estorno-daily",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicHooksCaixaSnapshotRoute =
   ApiPublicHooksCaixaSnapshotRouteImport.update({
     id: "/api/public/hooks/caixa-snapshot",
@@ -244,6 +251,7 @@ export interface FileRoutesByFullPath {
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
@@ -272,6 +280,7 @@ export interface FileRoutesByTo {
   "/shops/products": typeof ShopsProductsIndexRoute;
   "/shops/sops": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
@@ -308,6 +317,7 @@ export interface FileRoutesById {
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
@@ -345,6 +355,7 @@ export interface FileRouteTypes {
     | "/shops/products/"
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
@@ -373,6 +384,7 @@ export interface FileRouteTypes {
     | "/shops/products"
     | "/shops/sops"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
@@ -408,6 +420,7 @@ export interface FileRouteTypes {
     | "/shops/products/"
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
@@ -425,6 +438,7 @@ export interface RootRouteChildren {
   TarefasRoute: typeof TarefasRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
+  ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute;
@@ -644,6 +658,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/api/public/hooks/estorno-daily": {
+      id: "/api/public/hooks/estorno-daily";
+      path: "/api/public/hooks/estorno-daily";
+      fullPath: "/api/public/hooks/estorno-daily";
+      preLoaderRoute: typeof ApiPublicHooksEstornoDailyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/hooks/caixa-snapshot": {
       id: "/api/public/hooks/caixa-snapshot";
       path: "/api/public/hooks/caixa-snapshot";
@@ -782,6 +803,7 @@ const rootRouteChildren: RootRouteChildren = {
   TarefasRoute: TarefasRoute,
   InviteTokenRoute: InviteTokenRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
+  ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
