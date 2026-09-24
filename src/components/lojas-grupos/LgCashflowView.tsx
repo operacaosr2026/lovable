@@ -1111,6 +1111,13 @@ export function LgCashflowView({
         : (Number((effectivePending as any).balance ?? 0) + Number(effectivePending.pending ?? 0)))
     : 0;
 
+  // O "a receber" de dias passados não fica guardado: o gráfico do Saldo total
+  // é a curva do saldo somada ao a receber de hoje (termina no valor real).
+  const saldoTotalHistory = useMemo(
+    () => saldoHistory.map((p) => ({ key: p.key, v: p.v + receivable })),
+    [saldoHistory, receivable],
+  );
+
   const syncPayouts = async () => {
     setSyncing(true);
     try {
@@ -1235,20 +1242,8 @@ export function LgCashflowView({
           <KpiCard
             icon={Database} tone="green" title="Saldo total" subtitle="Disponível + A receber"
             value={fmtMoneyGrouped(future + receivable)} negative={future + receivable < 0}
-          >
-            {future + receivable > 0 && future >= 0 && (
-              <div className="mt-1 space-y-1.5">
-                <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="bg-blue-600" style={{ width: `${(future / (future + receivable)) * 100}%` }} />
-                  <div className="bg-violet-500" style={{ width: `${(receivable / (future + receivable)) * 100}%` }} />
-                </div>
-                <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-[11px]">
-                  <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-blue-600" /><span className="text-muted-foreground">Disponível</span> <span className="font-medium tabular-nums">{fmtMoneyGrouped(future)}</span></span>
-                  <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-500" /><span className="text-muted-foreground">A receber</span> <span className="font-medium tabular-nums">{fmtMoneyGrouped(receivable)}</span></span>
-                </div>
-              </div>
-            )}
-          </KpiCard>
+            spark={saldoTotalHistory} sparkId="caixa-kpi-total"
+          />
         </div>
       </TooltipProvider>
 
