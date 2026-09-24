@@ -8,6 +8,7 @@ import { selectAll, selectAllIn } from "@/lib/select-all";
 import { fetchWithRetry } from "@/lib/http";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { ensureShopifyWebhooks } from "@/lib/shopify-webhooks.server";
+import { orderDateFor } from "@/lib/order-date";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -293,7 +294,7 @@ async function syncOrdersOnlyForShop(s: any, today: string) {
         user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
         external_id: String(o.id), order_number: o.name ?? null,
         created_at_shopify: o.created_at,
-        order_date: (o.created_at as string).slice(0, 10),
+        order_date: orderDateFor(o.created_at as string),
         items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
         revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
         shopify_financial_status: o.financial_status ?? null,
@@ -389,7 +390,7 @@ async function processShop(s: any, today: string) {
             user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
             external_id: String(o.id), order_number: o.name ?? null,
             created_at_shopify: o.created_at,
-            order_date: (o.created_at as string).slice(0, 10),
+            order_date: orderDateFor(o.created_at as string),
             items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
             revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
             shopify_financial_status: o.financial_status ?? null,

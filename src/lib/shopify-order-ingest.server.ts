@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
+import { orderDateFor } from "@/lib/order-date";
 
 // Grava em shop_orders um pedido que chegou pelo webhook da Shopify — mesmos
 // campos e mesma regra de rastreio do sync de 10 em 10 min (sync-shop-orders
@@ -18,7 +19,7 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
 
   const changedOwners = new Set<string>();
   const externalId = String(o.id);
-  const orderDate = (o.created_at as string).slice(0, 10);
+  const orderDate = orderDateFor(o.created_at as string);
   const financial = o.financial_status ?? null;
   const cancelledAt = o.cancelled_at ?? null;
 

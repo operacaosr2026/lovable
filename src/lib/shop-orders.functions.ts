@@ -8,6 +8,7 @@ import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
+import { orderDateFor } from "@/lib/order-date";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
 // usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
 // que pode variar dentro do mesmo grupo/card.
@@ -702,7 +703,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
-    const { domain, token, ianaTimezone } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
+    const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
     const todayForSince = isoDate(new Date());
     const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
     const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
@@ -718,7 +719,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
           external_id: String(o.id),
           order_number: o.name ?? null,
           created_at_shopify: o.created_at,
-          order_date: shopifyLocalDate(o.created_at as string, ianaTimezone),
+          order_date: orderDateFor(o.created_at as string),
           items_count: items,
           revenue: Number(o.total_price ?? 0),
           currency: o.currency ?? null,
