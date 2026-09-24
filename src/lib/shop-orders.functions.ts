@@ -2056,38 +2056,93 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     to: z.string(),
     prev_from: z.string(),
     prev_to: z.string(),
+    // "full": KPIs + gráficos. "chart": só o gráfico diário (sem período
+    // anterior). "hourly": só o faturamento por hora (sem custos, sem Shopify
+    // ao vivo). O Dashboard de Lojas e Grupos pede os 3 ao abrir; os 2 gráficos
+    // não precisam do resto, que era a parte cara (Shopify ao vivo x4 por loja).
+    scope: z.enum(["full", "chart", "hourly"]).default("full"),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { supabase, ownerId } = context;
-    const { shop_ids, from, to, prev_from, prev_to } = data;
+    const { shop_ids, from, to, prev_from, prev_to, scope } = data;
+    const withPrev = scope === "full";
+    const withCosts = scope !== "hourly";
+    const empty = Promise.resolve({ data: [] as any[], error: null });
 
-    const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes] = await Promise.all([
-      selectAll(supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,line_items:raw->line_items,created_at_shopify")
+    const settingsPromise = supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
+      .eq("user_id", ownerId).in("shop_id", shop_ids);
+
+    // Reembolsos e chargebacks — buscados ao vivo da Shopify API para o período
+    // exato. Começa assim que as configurações chegam, em paralelo com as
+    // consultas ao banco (antes só começava depois de todas terminarem).
+    const shopifyPromise = !withCosts ? Promise.resolve([] as any[]) : settingsPromise.then(({ data: settingsRows }) => Promise.all(
+      ((settingsRows ?? []) as any[]).filter((s) => s.shopify_store_id).map(async (s: any) => {
+        try {
+          const { domain, token } = await getShopifyCreds(supabase, ownerId, s.shopify_store_id);
+          const [refOrders, refPrevOrders, disputes, prevDisputes] = await Promise.all([
+            fetchShopifyRefundedOrders(domain, token, `${from}T00:00:00Z`, `${to}T23:59:59Z`),
+            withPrev ? fetchShopifyRefundedOrders(domain, token, `${prev_from}T00:00:00Z`, `${prev_to}T23:59:59Z`) : Promise.resolve([] as any[]),
+            fetchShopifyDisputes(domain, token, `${from}T00:00:00Z`),
+            withPrev ? fetchShopifyDisputes(domain, token, `${prev_from}T00:00:00Z`) : Promise.resolve([] as any[]),
+          ]);
+          let refAmt = 0;
+          const refByDate: Record<string, number> = {};
+          for (const o of refOrders) {
+            const { total, byDate } = orderRefundAmountByDate(o, to);
+            refAmt += total;
+            for (const [d, amt] of Object.entries(byDate)) refByDate[d] = (refByDate[d] ?? 0) + amt;
+          }
+          const prevRefAmt = refPrevOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
+          let cbAmt = 0;
+          const cbByDate: Record<string, number> = {};
+          for (const d of disputes) {
+            if (d.type !== "chargeback" || d.initiated_at > `${to}T23:59:59Z`) continue;
+            const amt = Number(d.amount ?? 0);
+            cbAmt += amt;
+            const date = String(d.initiated_at ?? "").slice(0, 10) || to;
+            cbByDate[date] = (cbByDate[date] ?? 0) + amt;
+          }
+          const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
+          await resolveNotification(ownerId, `shopify_refunds:${s.shopify_store_id}`);
+          return { refAmt, prevRefAmt, cbAmt, prevCbAmt, refByDate, cbByDate };
+        } catch (e) {
+          console.error(`getShopDashboardMetrics: falha ao buscar reembolso/chargeback pra shopify_store_id=${s.shopify_store_id}`, e);
+          await notifyRefundsFailed(ownerId, s.shopify_store_id).catch(() => {});
+          return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number> };
+        }
+      }),
+    ));
+
+    const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes, shopifyResults, costProducts] = await Promise.all([
+      selectAll(supabase.from("shop_orders").select(withCosts
+          ? "revenue,items_count,order_date,shop_id,line_items:raw->line_items,created_at_shopify"
+          : "revenue,items_count,order_date,shop_id,created_at_shopify")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to)),
-      selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,line_items:raw->line_items")
+      withPrev ? selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,line_items:raw->line_items")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", prev_from).lte("order_date", prev_to)),
-      supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
-        .eq("user_id", ownerId).in("shop_id", shop_ids),
+        .gte("order_date", prev_from).lte("order_date", prev_to)) : empty,
+      settingsPromise,
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
         .in("shop_id", shop_ids),
       // Taxas Shopify Payments no período
-      selectAll(supabase.from("shop_cash_entries").select("amount,date")
+      withCosts ? selectAll(supabase.from("shop_cash_entries").select("amount,date")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", from).lte("date", to)),
-      selectAll(supabase.from("shop_cash_entries").select("amount")
+        .gte("date", from).lte("date", to)) : empty,
+      withPrev ? selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", prev_from).lte("date", prev_to)),
+        .gte("date", prev_from).lte("date", prev_to)) : empty,
       // Gastos de anúncios Meta Ads — apenas entradas auto-sincronizadas (não mistura com caixa manual)
-      selectAll(supabase.from("shop_cash_entries").select("amount,date")
+      withCosts ? selectAll(supabase.from("shop_cash_entries").select("amount,date")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .eq("auto_kind", "meta_ads_spend")
-        .gte("date", from).lte("date", to)),
-      selectAll(supabase.from("shop_cash_entries").select("amount")
+        .gte("date", from).lte("date", to)) : empty,
+      withPrev ? selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
         .eq("auto_kind", "meta_ads_spend")
-        .gte("date", prev_from).lte("date", prev_to)),
+        .gte("date", prev_from).lte("date", prev_to)) : empty,
+      shopifyPromise,
+      withCosts ? costProductsFor(supabase, ownerId) : Promise.resolve([] as CostProduct[]),
     ]);
 
     const orders = ordersRes.data ?? [];
@@ -2105,64 +2160,21 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const anuncios     = sumAmounts(adsRes.data);
     const prevAnuncios = sumAmounts(prevAdsRes.data);
 
-    // Reembolsos e chargebacks — buscados ao vivo da Shopify API para o período exato
-    let reembolsos = 0, prevReembolsos = 0, chargebacks = 0, prevChargebacks = 0;
+    const reembolsos      = shopifyResults.reduce((acc: number, r: any) => acc + r.refAmt, 0);
+    const prevReembolsos  = shopifyResults.reduce((acc: number, r: any) => acc + r.prevRefAmt, 0);
+    const chargebacks     = shopifyResults.reduce((acc: number, r: any) => acc + r.cbAmt, 0);
+    const prevChargebacks = shopifyResults.reduce((acc: number, r: any) => acc + r.prevCbAmt, 0);
     const refundsByDate = new Map<string, number>();
     const chargebacksByDate = new Map<string, number>();
-    const shopifySettings = (settingsRes.data ?? []).filter((s: any) => s.shopify_store_id);
-    if (shopifySettings.length > 0) {
-      const shopifyResults = await Promise.all(
-        shopifySettings.map(async (s: any) => {
-          try {
-            const { domain, token } = await getShopifyCreds(supabase, ownerId, s.shopify_store_id);
-            const [refOrders, refPrevOrders, disputes, prevDisputes] = await Promise.all([
-              fetchShopifyRefundedOrders(domain, token, `${from}T00:00:00Z`, `${to}T23:59:59Z`),
-              fetchShopifyRefundedOrders(domain, token, `${prev_from}T00:00:00Z`, `${prev_to}T23:59:59Z`),
-              fetchShopifyDisputes(domain, token, `${from}T00:00:00Z`),
-              fetchShopifyDisputes(domain, token, `${prev_from}T00:00:00Z`),
-            ]);
-            let refAmt = 0;
-            const refByDate: Record<string, number> = {};
-            for (const o of refOrders) {
-              const { total, byDate } = orderRefundAmountByDate(o, to);
-              refAmt += total;
-              for (const [d, amt] of Object.entries(byDate)) refByDate[d] = (refByDate[d] ?? 0) + amt;
-            }
-            const prevRefAmt = refPrevOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
-            let cbAmt = 0;
-            const cbByDate: Record<string, number> = {};
-            for (const d of disputes) {
-              if (d.type !== "chargeback" || d.initiated_at > `${to}T23:59:59Z`) continue;
-              const amt = Number(d.amount ?? 0);
-              cbAmt += amt;
-              const date = String(d.initiated_at ?? "").slice(0, 10) || to;
-              cbByDate[date] = (cbByDate[date] ?? 0) + amt;
-            }
-            const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
-            await resolveNotification(ownerId, `shopify_refunds:${s.shopify_store_id}`);
-            return { refAmt, prevRefAmt, cbAmt, prevCbAmt, refByDate, cbByDate };
-          } catch (e) {
-            console.error(`getShopDashboardMetrics: falha ao buscar reembolso/chargeback pra shopify_store_id=${s.shopify_store_id}`, e);
-            await notifyRefundsFailed(ownerId, s.shopify_store_id).catch(() => {});
-            return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0, refByDate: {}, cbByDate: {} };
-          }
-        })
-      );
-      reembolsos     = shopifyResults.reduce((acc, r) => acc + r.refAmt, 0);
-      prevReembolsos = shopifyResults.reduce((acc, r) => acc + r.prevRefAmt, 0);
-      chargebacks    = shopifyResults.reduce((acc, r) => acc + r.cbAmt, 0);
-      prevChargebacks= shopifyResults.reduce((acc, r) => acc + r.prevCbAmt, 0);
-      for (const r of shopifyResults) {
-        for (const [d, amt] of Object.entries(r.refByDate)) refundsByDate.set(d, (refundsByDate.get(d) ?? 0) + amt);
-        for (const [d, amt] of Object.entries(r.cbByDate)) chargebacksByDate.set(d, (chargebacksByDate.get(d) ?? 0) + amt);
-      }
+    for (const r of shopifyResults as any[]) {
+      for (const [d, amt] of Object.entries(r.refByDate as Record<string, number>)) refundsByDate.set(d, (refundsByDate.get(d) ?? 0) + amt);
+      for (const [d, amt] of Object.entries(r.cbByDate as Record<string, number>)) chargebacksByDate.set(d, (chargebacksByDate.get(d) ?? 0) + amt);
     }
 
     // Mesmo cálculo por produto/palavra-chave usado em Pedidos e no Caixa
     // (orderLineItemsCost); antes o dashboard usava só items_count × custo
     // fixo da loja, divergindo do valor real assim que um produto tinha
     // custo próprio configurado por keyword.
-    const costProducts = await costProductsFor(supabase, ownerId);
     function orderCost(o: any) {
       const shopCost = costByShop.get((o as any).shop_id);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;

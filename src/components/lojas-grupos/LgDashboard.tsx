@@ -376,7 +376,7 @@ export function LgDashboard({
   );
   const { data: chartQueryData, isLoading: chartQueryLoading } = useQuery({
     queryKey: ["lg-dashboard-chart", cacheKey, chartRange.from, chartRange.to],
-    queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: chartRange.from, to: chartRange.to, prev_from: chartRange.prevFrom, prev_to: chartRange.prevTo } }),
+    queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: chartRange.from, to: chartRange.to, prev_from: chartRange.prevFrom, prev_to: chartRange.prevTo, scope: "chart" } }),
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: false,
     enabled: isToday,
@@ -390,7 +390,7 @@ export function LgDashboard({
   const monthRange = useMemo(() => getPeriodRange("mes"), []);
   const { data: hourlyQueryData, isLoading: hourlyLoading } = useQuery({
     queryKey: ["lg-dashboard-hourly", cacheKey, monthRange.from, monthRange.to],
-    queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: monthRange.from, to: monthRange.to, prev_from: monthRange.prevFrom, prev_to: monthRange.prevTo } }),
+    queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: monthRange.from, to: monthRange.to, prev_from: monthRange.prevFrom, prev_to: monthRange.prevTo, scope: "hourly" } }),
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: false,
   });
@@ -449,15 +449,11 @@ export function LgDashboard({
     }
   };
 
-  // Sync silencioso ao entrar na tela — sem isso, o card mostra dados já
-  // salvos no banco (parecendo "atualizado") mas taxas/anúncios só chegam
-  // de fato do Shopify/Meta Ads quando o usuário aperta o refresh manual.
-  const autoSyncedKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (autoSyncedKeyRef.current === cacheKey) return;
-    autoSyncedKeyRef.current = cacheKey;
-    syncData(true);
-  }, [cacheKey]);
+  // Sem sync automático ao entrar na tela: pedidos chegam pelo webhook da
+  // Shopify e o cron (sync-shop-orders, costs_only) atualiza anúncios e taxas
+  // de 10 em 10 min. O sync daqui disputava a Shopify com o carregamento e
+  // fazia o lucro mudar segundos depois de aparecer. Continua no botão de
+  // refresh manual.
 
   const m   = data?.metrics;
   const fmt = (n: number) => fmtCurrency(n, currency, currencyRate);
