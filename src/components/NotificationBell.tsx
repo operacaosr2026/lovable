@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, AlertCircle, AlertTriangle, Info, X, CheckCheck } from "lucide-react";
+import { Bell, AlertCircle, AlertTriangle, Info, X, CheckCheck, Plus, Check, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { listNotifications, markNotificationsRead, dismissNotification } from "@/lib/notifications.functions";
+import { listNotifications, markNotificationsRead, dismissNotification, createTaskFromNotification } from "@/lib/notifications.functions";
 
 type Notification = {
   id: string;
@@ -14,6 +15,7 @@ type Notification = {
   link: string | null;
   created_at: string;
   read_at: string | null;
+  has_task: boolean;
 };
 
 const LEVEL_STYLE: Record<string, { icon: typeof Info; cls: string }> = {
@@ -41,6 +43,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
   const listFn = useServerFn(listNotifications);
   const readFn = useServerFn(markNotificationsRead);
   const dismissFn = useServerFn(dismissNotification);
+  const toTaskFn = useServerFn(createTaskFromNotification);
   const [open, setOpen] = useState(false);
 
   const { data: items = [] } = useQuery({
@@ -62,6 +65,20 @@ export function NotificationBell({ className = "" }: { className?: string }) {
       qc.setQueryData<Notification[]>(["notifications"], (prev) => (prev ?? []).filter((n) => n.id !== id));
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
+  // Notificação → tarefa, já preenchida (ver createTaskFromNotification).
+  const toTask = useMutation({
+    mutationFn: (id: string) => toTaskFn({ data: { id } }),
+    onSuccess: (r) => {
+      qc.setQueryData<Notification[]>(["notifications"], (prev) => (prev ?? []).map((n) => n.id === toTask.variables ? { ...n, has_task: true } : n));
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success(r.created ? "Tarefa criada" : "Essa notificação já está em Tarefas", {
+        action: { label: "Ver", onClick: () => navigate({ to: "/tarefas" }) },
+      });
+    },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao criar tarefa"),
   });
 
   const onOpenChange = (o: boolean) => {
@@ -119,8 +136,27 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                   >
                     <p className="text-xs font-semibold text-foreground leading-snug pr-5">{n.title}</p>
                     {n.body && <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{n.body}</p>}
-                    <p className="text-[10px] text-muted-foreground/70 mt-1.5">{timeAgo(n.created_at)}</p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-1.5 pr-24">{timeAgo(n.created_at)}</p>
                   </button>
+                  <div className="absolute bottom-2.5 right-3">
+                    {n.has_task ? (
+                      <button
+                        onClick={() => { setOpen(false); navigate({ to: "/tarefas" }); }}
+                        className="h-6 px-2 rounded-md text-[10px] font-semibold text-success bg-success/10 flex items-center gap-1 hover:bg-success/15"
+                      >
+                        <Check className="size-3" /> Tarefa criada
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => toTask.mutate(n.id)}
+                        disabled={toTask.isPending}
+                        className="h-6 px-2 rounded-md text-[10px] font-semibold text-primary bg-primary/10 flex items-center gap-1 hover:bg-primary/15 disabled:opacity-60"
+                      >
+                        {toTask.isPending && toTask.variables === n.id ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                        Criar tarefa
+                      </button>
+                    )}
+                  </div>
                   <button
                     onClick={() => dismiss.mutate(n.id)}
                     title="Dispensar"

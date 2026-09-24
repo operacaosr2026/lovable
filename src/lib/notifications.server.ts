@@ -52,9 +52,20 @@ export async function raiseNotification(ownerId: string, key: string, n: Notific
 }
 
 export async function resolveNotification(ownerId: string, key: string) {
-  await supabaseAdmin.from("app_notifications")
+  const { data: resolved } = await supabaseAdmin.from("app_notifications")
     .update({ resolved_at: new Date().toISOString() })
-    .eq("user_id", ownerId).eq("key", key).is("resolved_at", null);
+    .eq("user_id", ownerId).eq("key", key).is("resolved_at", null)
+    .select("key");
+  if (resolved?.length) await completeLinkedTasks(ownerId, [key]);
+}
+
+// Tarefa criada a partir de uma notificação (tasks.source_key) é concluída
+// sozinha quando o problema dela é resolvido — ex.: disputa respondida.
+export async function completeLinkedTasks(ownerId: string, keys: string[]) {
+  if (!keys.length) return;
+  await supabaseAdmin.from("tasks")
+    .update({ status: "concluida", completed_at: new Date().toISOString() })
+    .eq("user_id", ownerId).in("source_key", keys).neq("status", "concluida");
 }
 
 function hoursSince(iso: string | null | undefined): number {
@@ -224,9 +235,9 @@ export async function refreshSystemNotifications(ownerId: string) {
   }
 
   const toResolve = (current ?? [])
-    .filter((n: any) => !n.resolved_at && MANAGED_PREFIXES.some((p) => n.key.startsWith(p)) && !want.has(n.key))
-    .map((n: any) => n.id as string);
+    .filter((n: any) => !n.resolved_at && MANAGED_PREFIXES.some((p) => n.key.startsWith(p)) && !want.has(n.key));
   if (toResolve.length) {
-    await supabaseAdmin.from("app_notifications").update({ resolved_at: now }).in("id", toResolve);
+    await supabaseAdmin.from("app_notifications").update({ resolved_at: now }).in("id", toResolve.map((n: any) => n.id as string));
+    await completeLinkedTasks(ownerId, toResolve.map((n: any) => n.key as string));
   }
 }
