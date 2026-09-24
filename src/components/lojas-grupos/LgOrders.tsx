@@ -71,7 +71,6 @@ export function LgOrders({
     if (period === "custom" && customRange) return customRange;
     return { from: addD(today, -29), to: today };
   })();
-  const [paymentFilter, setPaymentFilter] = useState<"todos"|"pendente"|"pago"|"parcial">("pendente");
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
@@ -237,8 +236,9 @@ export function LgOrders({
   }, [allOrders, costByShop, costProducts, shops]);
 
   const filteredGroups = useMemo(() =>
-    paymentFilter === "todos" ? groups : groups.filter(g => g.dayStatus === paymentFilter),
-  [groups, paymentFilter]);
+    // Só dias com pedido a pagar: não pagos e parciais (sem filtro na tela).
+    groups.filter(g => g.dayStatus !== "pago"),
+  [groups]);
 
   const toggleDay = (date: string, checked: boolean) => {
     const group = groups.find((g) => g.date === date);
@@ -442,22 +442,6 @@ export function LgOrders({
           <RefreshCw className={cn("size-4", loading && "animate-spin")} />
           Atualizar
         </Button>
-        <div className="flex items-center rounded-xl border border-border overflow-hidden text-xs h-8">
-          {(["pendente","pago","parcial","todos"] as const).map((f, idx, arr) => (
-            <button key={f}
-              onClick={() => setPaymentFilter(f)}
-              className={cn(
-                "px-3 h-full transition-colors",
-                idx < arr.length - 1 && "border-r border-border",
-                paymentFilter === f
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {f === "pendente" ? "Não pago" : f === "pago" ? "Pago" : f === "parcial" ? "Parcial" : "Todos"}
-            </button>
-          ))}
-        </div>
         <div className="flex-1" />
         <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)}>
           <Settings2 className="size-4" /> Configurações
@@ -504,7 +488,7 @@ export function LgOrders({
 
         {!loading && filteredGroups.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            Nenhum pedido no período selecionado.
+            {groups.length === 0 ? "Nenhum pedido no período selecionado." : "Todos os pedidos do período estão pagos."}
           </div>
         )}
 
