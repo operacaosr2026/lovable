@@ -611,6 +611,13 @@ export const connectShopifyStore = createServerFn({ method: "POST" })
   });
 
 // ---------- Orders ----------
+const ORDER_LIST_COLUMNS = [
+  "id", "user_id", "shop_id", "source", "external_id", "order_number", "created_at_shopify", "order_date",
+  "items_count", "revenue", "currency", "payment_status", "payment_batch_id", "paid_at", "shipped_at",
+  "delivered_at", "problem_at", "created_at", "updated_at", "connection_id", "carrier", "tracking_code",
+  "tracking_url", "delivery_status", "shopify_financial_status", "logistics_note", "kpi_excluded",
+].join(",");
+
 export const listOrders = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -619,12 +626,22 @@ export const listOrders = createServerFn({ method: "GET" })
     to: z.string(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: rows, error } = await selectAll(context.supabase.from("shop_orders").select("*")
+    // Sem o `raw` inteiro (pedido completo da Shopify, ~9 KB cada — 90% do
+    // tráfego): a aba Pedidos só usa os produtos (título/quantidade) e o
+    // financial_status. Devolve `raw` enxuto no mesmo formato.
+    const { data: rows, error } = await selectAll(context.supabase.from("shop_orders")
+      .select(`${ORDER_LIST_COLUMNS},line_items:raw->line_items,raw_financial_status:raw->>financial_status`)
       .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
       .gte("order_date", data.from).lte("order_date", data.to)
       .order("created_at_shopify", { ascending: false }));
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, ...o }) => ({
+      ...o,
+      raw: {
+        financial_status: raw_financial_status ?? null,
+        line_items: ((line_items ?? []) as any[]).map((li) => ({ title: li?.title ?? null, name: li?.name ?? null, quantity: li?.quantity ?? 0 })),
+      },
+    }));
   });
 
 export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
