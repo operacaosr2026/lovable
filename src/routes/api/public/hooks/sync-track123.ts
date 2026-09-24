@@ -4,6 +4,7 @@ import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runTrack123Sync } from "@/lib/track123-sync.server";
 import { runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
+import { broadcast } from "@/lib/realtime.server";
 
 export const Route = createFileRoute("/api/public/hooks/sync-track123")({
   server: {
@@ -14,7 +15,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
 
         const { data: integrations, error } = await supabaseAdmin
           .from("track123_integrations")
-          .select("shop_id,api_key,mcp_store_uuid,last_sync_at")
+          .select("shop_id,user_id,api_key,mcp_store_uuid,last_sync_at")
           .eq("enabled", true)
           .or("api_key.not.is.null,mcp_store_uuid.not.is.null");
         if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
@@ -73,6 +74,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
               continue;
             }
             processed++;
+            await broadcast(integ.user_id, "orders", { shop_id: integ.shop_id });
           } catch (e) {
             console.error("track123 sync fail", integ.shop_id, e);
           }

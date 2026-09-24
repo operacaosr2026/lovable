@@ -7,6 +7,7 @@ import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
+import { ensureShopifyWebhooks } from "@/lib/shopify-webhooks.server";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -439,6 +440,9 @@ async function processShop(s: any, today: string) {
             }
           }
         }
+        // Webhooks de pedido (tempo real): cria os que faltarem. Falha aqui não
+        // derruba o sync — o de 10 em 10 min continua cobrindo.
+        await ensureShopifyWebhooks(store as any).catch((e) => console.error("ensureShopifyWebhooks", s.shopify_store_id, e));
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, cutoff);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         await syncRefundsAndChargebacks(s.shop_id, s.user_id, store.shop_domain, store.access_token);

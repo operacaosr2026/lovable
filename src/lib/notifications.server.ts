@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
+import { broadcast } from "@/lib/realtime.server";
 
 export type NotificationLevel = "info" | "warning" | "error";
 type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
@@ -42,10 +43,12 @@ export async function raiseNotification(ownerId: string, key: string, n: Notific
     // Duas chamadas simultâneas podem tentar inserir a mesma chave — o índice
     // único barra a segunda, e tudo bem.
     await supabaseAdmin.from("app_notifications").insert({ user_id: ownerId, key, ...fields });
+    await broadcast(ownerId, "notifications");
   } else if (existing.resolved_at) {
     await supabaseAdmin.from("app_notifications")
       .update({ ...fields, created_at: now, resolved_at: null, read_at: null, dismissed_at: null })
       .eq("id", existing.id);
+    await broadcast(ownerId, "notifications");
   } else {
     await supabaseAdmin.from("app_notifications").update(fields).eq("id", existing.id);
   }
@@ -56,16 +59,21 @@ export async function resolveNotification(ownerId: string, key: string) {
     .update({ resolved_at: new Date().toISOString() })
     .eq("user_id", ownerId).eq("key", key).is("resolved_at", null)
     .select("key");
-  if (resolved?.length) await completeLinkedTasks(ownerId, [key]);
+  if (resolved?.length) {
+    await completeLinkedTasks(ownerId, [key]);
+    await broadcast(ownerId, "notifications");
+  }
 }
 
 // Tarefa criada a partir de uma notificação (tasks.source_key) é concluída
 // sozinha quando o problema dela é resolvido — ex.: disputa respondida.
 export async function completeLinkedTasks(ownerId: string, keys: string[]) {
   if (!keys.length) return;
-  await supabaseAdmin.from("tasks")
+  const { data: done } = await supabaseAdmin.from("tasks")
     .update({ status: "concluida", completed_at: new Date().toISOString() })
-    .eq("user_id", ownerId).in("source_key", keys).neq("status", "concluida");
+    .eq("user_id", ownerId).in("source_key", keys).neq("status", "concluida")
+    .select("id");
+  if (done?.length) await broadcast(ownerId, "tasks");
 }
 
 function hoursSince(iso: string | null | undefined): number {
@@ -238,6 +246,7 @@ export async function refreshSystemNotifications(ownerId: string) {
     .filter((n: any) => !n.resolved_at && MANAGED_PREFIXES.some((p) => n.key.startsWith(p)) && !want.has(n.key));
   if (toResolve.length) {
     await supabaseAdmin.from("app_notifications").update({ resolved_at: now }).in("id", toResolve.map((n: any) => n.id as string));
+    await broadcast(ownerId, "notifications");
     await completeLinkedTasks(ownerId, toResolve.map((n: any) => n.key as string));
   }
 }

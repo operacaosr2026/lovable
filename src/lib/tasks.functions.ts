@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import type { TablesUpdate } from "@/integrations/supabase/types";
+import { broadcast } from "@/lib/realtime.server";
 
 export const TASK_AREAS = [
   "pedidos", "marketing", "lojas", "fornecedores", "analise",
@@ -92,6 +93,7 @@ export const createTask = createServerFn({ method: "POST" })
       completed_at: data.status === "concluida" ? new Date().toISOString() : null,
     }).select(TASK_COLUMNS).single();
     if (error) throw new Error(error.message);
+    await broadcast(context.ownerId, "tasks");
     return row as Task;
   });
 
@@ -114,6 +116,7 @@ export const updateTask = createServerFn({ method: "POST" })
       .select(TASK_COLUMNS).maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Tarefa não encontrada.");
+    await broadcast(context.ownerId, "tasks");
     return row as Task;
   });
 
@@ -123,5 +126,6 @@ export const deleteTask = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { error } = await supabaseAdmin.from("tasks").delete().eq("id", data.id).eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
+    await broadcast(context.ownerId, "tasks");
     return { ok: true };
   });

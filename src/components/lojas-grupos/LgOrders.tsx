@@ -91,7 +91,7 @@ export function LgOrders({
     queryKey: ["lg-orders", cacheKey, from, to],
     queryFn:  () => listOrdersFn({ data: { shop_ids: shopIds, from, to } }),
     refetchInterval: 10 * 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   // Quando os pedidos carregam, gera automaticamente as previsões de custo no caixa

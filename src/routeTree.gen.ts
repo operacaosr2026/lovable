@@ -39,6 +39,7 @@ import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas
 import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
+import { Route as ApiPublicHooksShopifyStoreIdRouteImport } from "./routes/api/public/hooks/shopify.$storeId";
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
 
 const TarefasRoute = TarefasRouteImport.update({
@@ -194,6 +195,12 @@ const ApiPublicHooksSyncShopOrdersRoute =
     path: "/api/public/hooks/sync-shop-orders",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksShopifyStoreIdRoute =
+  ApiPublicHooksShopifyStoreIdRouteImport.update({
+    id: "/api/public/hooks/shopify/$storeId",
+    path: "/api/public/hooks/shopify/$storeId",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicHooksTrack123ShopIdSecretRoute =
   ApiPublicHooksTrack123ShopIdSecretRouteImport.update({
     id: "/api/public/hooks/track123/$shopId/$secret",
@@ -232,6 +239,7 @@ export interface FileRoutesByFullPath {
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesByTo {
@@ -258,6 +266,7 @@ export interface FileRoutesByTo {
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesById {
@@ -292,6 +301,7 @@ export interface FileRoutesById {
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRouteTypes {
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
+    | "/api/public/hooks/shopify/$storeId"
     | "/api/public/hooks/track123/$shopId/$secret";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -353,6 +364,7 @@ export interface FileRouteTypes {
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
+    | "/api/public/hooks/shopify/$storeId"
     | "/api/public/hooks/track123/$shopId/$secret";
   id:
     | "__root__"
@@ -386,6 +398,7 @@ export interface FileRouteTypes {
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/shopify/callback"
+    | "/api/public/hooks/shopify/$storeId"
     | "/api/public/hooks/track123/$shopId/$secret";
   fileRoutesById: FileRoutesById;
 }
@@ -401,6 +414,7 @@ export interface RootRouteChildren {
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute;
+  ApiPublicHooksShopifyStoreIdRoute: typeof ApiPublicHooksShopifyStoreIdRoute;
   ApiPublicHooksTrack123ShopIdSecretRoute: typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 
@@ -616,6 +630,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/api/public/hooks/shopify/$storeId": {
+      id: "/api/public/hooks/shopify/$storeId";
+      path: "/api/public/hooks/shopify/$storeId";
+      fullPath: "/api/public/hooks/shopify/$storeId";
+      preLoaderRoute: typeof ApiPublicHooksShopifyStoreIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/hooks/track123/$shopId/$secret": {
       id: "/api/public/hooks/track123/$shopId/$secret";
       path: "/api/public/hooks/track123/$shopId/$secret";
@@ -742,6 +763,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
+  ApiPublicHooksShopifyStoreIdRoute: ApiPublicHooksShopifyStoreIdRoute,
   ApiPublicHooksTrack123ShopIdSecretRoute:
     ApiPublicHooksTrack123ShopIdSecretRoute,
 };

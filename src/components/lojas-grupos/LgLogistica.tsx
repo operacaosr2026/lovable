@@ -252,7 +252,7 @@ export function LgLogistica({
     queryFn: () => listFn({ data: { shop_ids: shopIds, from, to } }),
     enabled: shopIds.length > 0,
     refetchInterval: 10 * 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   // Data/hora do último sync do Track123 (por loja) — mostrado ao lado do

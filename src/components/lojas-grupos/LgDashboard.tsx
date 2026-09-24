@@ -360,7 +360,7 @@ export function LgDashboard({
     queryKey: ["lg-dashboard", cacheKey, from, to],
     queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from, to, prev_from: prevFrom, prev_to: prevTo } }),
     refetchInterval: 10 * 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   // Gráfico "Evolução": quando o período é "Hoje" (1 dia só), mostra os últimos
@@ -375,7 +375,7 @@ export function LgDashboard({
     queryKey: ["lg-dashboard-chart", cacheKey, chartRange.from, chartRange.to],
     queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: chartRange.from, to: chartRange.to, prev_from: chartRange.prevFrom, prev_to: chartRange.prevTo } }),
     refetchInterval: 10 * 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     enabled: isToday,
   });
   const chartData = isToday ? (chartQueryData?.chartData ?? []) : (data?.chartData ?? []);
@@ -389,7 +389,7 @@ export function LgDashboard({
     queryKey: ["lg-dashboard-hourly", cacheKey, monthRange.from, monthRange.to],
     queryFn:  () => getMetrics({ data: { shop_ids: shopIds, from: monthRange.from, to: monthRange.to, prev_from: monthRange.prevFrom, prev_to: monthRange.prevTo } }),
     refetchInterval: 10 * 60_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
   const hourlyChartData = useMemo(
     () => (hourlyQueryData?.hourlyRevenue ?? []).map((h: { hour: number; revenue: number }) => ({

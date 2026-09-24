@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
 import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
+import { broadcast } from "@/lib/realtime.server";
 
 export const listNotifications = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -51,6 +52,7 @@ export const dismissNotification = createServerFn({ method: "POST" })
       .update({ dismissed_at: now, read_at: now })
       .eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
+    await broadcast(context.ownerId, "notifications");
     return { ok: true };
   });
 
@@ -64,6 +66,7 @@ export const dismissAllNotifications = createServerFn({ method: "POST" })
       .update({ dismissed_at: now, read_at: now })
       .eq("user_id", context.ownerId).is("resolved_at", null).is("dismissed_at", null);
     if (error) throw new Error(error.message);
+    await broadcast(context.ownerId, "notifications");
     return { ok: true };
   });
 
@@ -127,5 +130,6 @@ export const createTaskFromNotification = createServerFn({ method: "POST" })
       source_key: n.key,
     }).select("id").single();
     if (insErr) throw new Error(insErr.message);
+    await Promise.all([broadcast(ownerId, "tasks"), broadcast(ownerId, "notifications")]);
     return { id: task.id as string, created: true };
   });

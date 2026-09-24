@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 
 type NavItem = {
   to: string;
@@ -212,7 +213,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 export function AppLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { user, signOut } = useAuth();
-  const { role, canAccessSection } = useMyAccess();
+  const { role, canAccessSection, ownerId } = useMyAccess();
+  // Tempo real: pedido novo, tarefa, aviso do sino → telas abertas atualizam sozinhas.
+  useRealtimeSync(ownerId);
 
   const visibleNavItems = navItems.filter((item) => !item.section || canAccessSection(item.section));
   const [mobileOpen, setMobileOpen] = useState(false);
