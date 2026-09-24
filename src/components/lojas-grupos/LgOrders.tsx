@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -98,8 +98,16 @@ export function LgOrders({
 
   // Quando os pedidos carregam, gera automaticamente as previsões de custo no caixa
   // para cada loja, projetadas para order_date + payment_days (D+N configurado).
+  // Uma vez por abertura/período/prazo: antes rodava de novo a cada recarga da
+  // lista (foco na janela, tempo real, a cada 10 min) — 1 recálculo por loja
+  // por dia do período, com várias leituras e gravações cada, disputando o
+  // banco com o carregamento da tela sem mudar nada entre uma e outra.
+  const recomputedKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!ordersQuery.data) return;
+    const key = `${cacheKey}|${from}|${to}|${shops.map((s) => `${s.id}:${s.payment_days ?? 7}`).join(",")}`;
+    if (recomputedKeyRef.current === key) return;
+    recomputedKeyRef.current = key;
     for (const shop of shops) {
       const days = shop.payment_days ?? 7;
       recomputeRangeFn({ data: {
