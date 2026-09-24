@@ -181,7 +181,7 @@ function DashKpiCard({
       ) : null}
 
       {shopRows && shopRows.length > 0 && (
-        <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
+        <div className="mt-3 pt-3 border-t border-border space-y-1">
           {shopRows.map((r) => (
             <div key={r.shop_id} className="flex items-center justify-between gap-2 text-[11px]">
               <span className="text-muted-foreground truncate">{r.shop_name}</span>
@@ -517,7 +517,6 @@ function Dashboard() {
           icon={RotateCcw} accent="destructive" loading={isLoading} invert
           label="Taxa de estorno" value={fmtPct(totals.taxaEstorno)}
           delta={totals.taxaEstornoDeltaPP} deltaUnit=" p.p."
-          periodNote="Últimos 30 dias (fixo)"
           shopRows={estornoByShop}
           chartData={chartData}
         />
