@@ -131,6 +131,49 @@ function KpiCard({ icon: Icon, cls, label, value, hint }: { icon: typeof ListTod
 
 const pct = (n: number, total: number) => (total ? `${((n / total) * 100).toFixed(1).replace(".", ",")}%` : "0%");
 
+// Resumo do celular: total, % concluídas, barra por status e os 4 números.
+function MobileTaskSummary({ counts }: { counts: { todas: number; pendente: number; em_andamento: number; concluida: number; atrasada: number } }) {
+  const total = counts.todas;
+  const share = (n: number) => (total ? (n / total) * 100 : 0);
+  const items = [
+    { label: "Concluídas", value: counts.concluida, dot: "bg-success" },
+    { label: "Em andamento", value: counts.em_andamento, dot: "bg-info" },
+    { label: "Pendentes", value: counts.pendente, dot: "bg-warning" },
+    { label: "Atrasadas", value: counts.atrasada, dot: "bg-destructive" },
+  ];
+  return (
+    <div className="sm:hidden rounded-2xl border border-border bg-card p-4 mb-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="size-11 rounded-xl grid place-items-center shrink-0 bg-primary/10 text-primary">
+          <ListTodo className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted-foreground">Total de tarefas</p>
+          <p className="text-2xl font-bold tracking-tight leading-tight">{total}</p>
+        </div>
+        <p className="text-xs text-muted-foreground self-end mb-1">{pct(counts.concluida, total)} concluídas</p>
+      </div>
+      <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-muted">
+        <div className="bg-success" style={{ width: `${share(counts.concluida)}%` }} />
+        <div className="bg-info" style={{ width: `${share(counts.em_andamento)}%` }} />
+        <div className="bg-warning" style={{ width: `${share(counts.pendente)}%` }} />
+      </div>
+      <div className="mt-3 grid grid-cols-4 gap-1">
+        {items.map((it) => (
+          <div key={it.label} className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className={`size-2 rounded-full shrink-0 ${it.dot}`} />
+              <span className="text-base font-bold leading-none">{it.value}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1 truncate">{it.label}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 function TasksPage() {
@@ -241,20 +284,37 @@ function TasksPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Tarefas"
-        actions={
-          <button
-            onClick={() => setEditing("new")}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
-          >
-            <Plus className="size-4" /> Nova tarefa
-          </button>
-        }
-      />
+      {/* Celular: título + botão na mesma linha e um card só de resumo. */}
+      <div className="sm:hidden flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight leading-tight">Tarefas</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Organize e acompanhe suas atividades</p>
+        </div>
+        <button
+          onClick={() => setEditing("new")}
+          className="h-10 px-4 shrink-0 rounded-xl bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 shadow-sm"
+        >
+          <Plus className="size-4" /> Nova tarefa
+        </button>
+      </div>
+      <MobileTaskSummary counts={counts} />
+
+      <div className="hidden sm:block">
+        <PageHeader
+          title="Tarefas"
+          actions={
+            <button
+              onClick={() => setEditing("new")}
+              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
+            >
+              <Plus className="size-4" /> Nova tarefa
+            </button>
+          }
+        />
+      </div>
 
       {/* ── Indicadores ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <KpiCard icon={ListTodo} cls="bg-primary/10 text-primary" label="Total" value={counts.todas} hint="tarefas" />
         <KpiCard icon={CircleCheck} cls="bg-success/15 text-success" label="Concluídas" value={counts.concluida} hint={pct(counts.concluida, counts.todas)} />
         <KpiCard icon={Clock} cls="bg-info/10 text-info" label="Em andamento" value={counts.em_andamento} hint={pct(counts.em_andamento, counts.todas)} />
