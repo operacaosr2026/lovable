@@ -6,6 +6,7 @@ import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
+import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -519,7 +520,10 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   let processed = 0;
   let skippedByBudget = 0;
-  const all = settings ?? [];
+  // Lojas em coluna do Banco de Lojas com "Pausar sincronização" (Em Hold,
+  // Com Retenção, Cemitério...) ficam de fora de todos os modos do cron.
+  const pausedStores = await getPausedShopifyStoreIds();
+  const all = (settings ?? []).filter((s: any) => !s.shopify_store_id || !pausedStores.has(s.shopify_store_id));
   // Rodízio: sem isso, toda rodada começa do índice 0 e, se o orçamento de
   // tempo estourar antes do fim, são sempre as MESMAS lojas do início da
   // lista que rodam e as do fim ficam sem sincronizar pedidos indefinidamente

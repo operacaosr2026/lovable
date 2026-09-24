@@ -3112,6 +3112,7 @@ export type Database = {
           id: string;
           name: string;
           position: number;
+          sync_paused: boolean;
           updated_at: string | null;
           user_id: string;
         };
@@ -3122,6 +3123,7 @@ export type Database = {
           id?: string;
           name: string;
           position?: number;
+          sync_paused?: boolean;
           updated_at?: string | null;
           user_id: string;
         };
@@ -3132,6 +3134,7 @@ export type Database = {
           id?: string;
           name?: string;
           position?: number;
+          sync_paused?: boolean;
           updated_at?: string | null;
           user_id?: string;
         };

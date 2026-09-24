@@ -14,7 +14,7 @@ import { GripVertical, Plus, ShoppingBag, ExternalLink, Pencil, X, Trash2, Check
 import { toast } from "sonner";
 import {
   listBoardColumns, createBoardColumn, renameBoardColumn, deleteBoardColumn,
-  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setStoreBoardNote,
+  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setBoardColumnSyncPaused, setStoreBoardNote,
   type BOARD_COLUMN_FEATURES,
 } from "@/lib/store-board.functions";
 import { listShopifyStores, createPlaceholderStore } from "@/lib/shop-orders.functions";
@@ -34,7 +34,7 @@ type Store = {
   is_placeholder: boolean;
 };
 type ColumnFeature = (typeof BOARD_COLUMN_FEATURES)[number];
-type Column = { id: string; name: string; position: number; features: ColumnFeature[]; excluded_from_caixa: boolean };
+type Column = { id: string; name: string; position: number; features: ColumnFeature[]; excluded_from_caixa: boolean; sync_paused: boolean };
 
 const FEATURE_LABELS: Record<ColumnFeature, string> = {
   hold: "Em Hold",
@@ -56,6 +56,7 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   const moveStoresFn = useServerFn(moveBoardStores);
   const setFeaturesFn = useServerFn(setBoardColumnFeatures);
   const setExcludedFn = useServerFn(setBoardColumnExcludedFromCaixa);
+  const setSyncPausedFn = useServerFn(setBoardColumnSyncPaused);
   const confirm = useConfirm();
 
   const { data: columnsData } = useQuery({ queryKey: ["board-columns"], queryFn: () => listColumnsFn() });
@@ -129,6 +130,9 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   const setExcluded = useMutation({
     mutationFn: (input: { id: string; excluded: boolean }) => setExcludedFn({ data: input }),
   });
+  const setSyncPaused = useMutation({
+    mutationFn: (input: { id: string; paused: boolean }) => setSyncPausedFn({ data: input }),
+  });
 
   const setColumnFeaturesLocal = (id: string, features: ColumnFeature[]) => {
     const prevColumns = columns;
@@ -146,15 +150,23 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
     });
   };
 
+  const setColumnSyncPausedLocal = (id: string, paused: boolean) => {
+    const prevColumns = columns;
+    setColumns((prev) => prev.map((c) => (c.id === id ? { ...c, sync_paused: paused } : c)));
+    setSyncPaused.mutate({ id, paused }, {
+      onError: (e: any) => { toast.error(e.message); setColumns(prevColumns); },
+    });
+  };
+
   // Optimistic column edits: update local state immediately, let the request
   // reconcile in the background instead of waiting on invalidate+refetch.
   const addColumn = (name: string) => {
     const tempId = `temp-${crypto.randomUUID()}`;
-    setColumns((prev) => [...prev, { id: tempId, name, position: prev.length, features: [], excluded_from_caixa: false }]);
+    setColumns((prev) => [...prev, { id: tempId, name, position: prev.length, features: [], excluded_from_caixa: false, sync_paused: false }]);
     setBoard((prev) => ({ ...prev, [tempId]: [] }));
     createColumn.mutate(name, {
       onSuccess: (row: any) => {
-        setColumns((prev) => prev.map((c) => (c.id === tempId ? { id: row.id, name: row.name, position: row.position, features: row.features, excluded_from_caixa: row.excluded_from_caixa } : c)));
+        setColumns((prev) => prev.map((c) => (c.id === tempId ? { id: row.id, name: row.name, position: row.position, features: row.features, excluded_from_caixa: row.excluded_from_caixa, sync_paused: row.sync_paused ?? false } : c)));
         setBoard((prev) => {
           const { [tempId]: items, ...rest } = prev;
           const settled = items ?? [];
@@ -305,6 +317,7 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
               onRename={(name) => renameColumnLocal(col.id, name)}
               onFeaturesChange={(features) => setColumnFeaturesLocal(col.id, features)}
               onExcludedFromCaixaChange={(excluded) => setColumnExcludedFromCaixaLocal(col.id, excluded)}
+              onSyncPausedChange={(paused) => setColumnSyncPausedLocal(col.id, paused)}
               onDelete={async () => {
                 if ((board[col.id] ?? []).length > 0) {
                   toast.error("Mova ou remova as lojas desta coluna antes de excluí-la.");
@@ -331,7 +344,7 @@ export function StoreBoard({ onEditStore }: { onEditStore: (store: any) => void 
   );
 }
 
-function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeaturesChange, onExcludedFromCaixaChange, onDelete }: {
+function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeaturesChange, onExcludedFromCaixaChange, onSyncPausedChange, onDelete }: {
   column: Column;
   stores: Store[];
   onEditStore: (store: any) => void;
@@ -339,6 +352,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
   onRename: (name: string) => void;
   onFeaturesChange: (features: ColumnFeature[]) => void;
   onExcludedFromCaixaChange: (excluded: boolean) => void;
+  onSyncPausedChange: (paused: boolean) => void;
   onDelete: () => void;
 }) {
   const isPending = column.id.startsWith("temp-");
@@ -436,6 +450,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
                 {[
                   ...column.features.map((f) => FEATURE_LABELS[f]),
                   ...(column.excluded_from_caixa ? ["Fora do Caixa"] : []),
+                  ...(column.sync_paused ? ["Sync pausado"] : []),
                 ].join(", ") || "Sem função"}
               </span>
               <ChevronDown className="size-3 shrink-0" />
@@ -464,6 +479,13 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
               onCheckedChange={(checked) => onExcludedFromCaixaChange(checked)}
             >
               Excluir do Caixa
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={column.sync_paused}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(checked) => onSyncPausedChange(checked)}
+            >
+              Pausar sincronização
             </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>

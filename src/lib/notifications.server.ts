@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 
 export type NotificationLevel = "info" | "warning" | "error";
 type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
@@ -52,8 +53,11 @@ function fmtDateBR(iso: string): string {
 // atenção nas lojas ativas (automação ligada) do workspace. Só consultas no
 // banco — nada de chamada externa —, então pode rodar a cada abertura do sino.
 export async function refreshSystemNotifications(ownerId: string) {
-  const { data: settings } = await supabaseAdmin.from("shop_order_settings")
+  const { data: allSettings } = await supabaseAdmin.from("shop_order_settings")
     .select("shop_id,shopify_store_id").eq("user_id", ownerId).eq("automation_enabled", true);
+  // Loja com sync pausado (coluna do Banco de Lojas) não gera aviso.
+  const pausedStores = await getPausedShopifyStoreIds(ownerId);
+  const settings = (allSettings ?? []).filter((s: any) => !s.shopify_store_id || !pausedStores.has(s.shopify_store_id));
   const activeShopIds = (settings ?? []).map((s: any) => s.shop_id as string);
 
   const want = new Map<string, NotificationInput>();

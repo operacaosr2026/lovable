@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runTrack123Sync } from "@/lib/track123-sync.server";
 import { runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
+import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 
 export const Route = createFileRoute("/api/public/hooks/sync-track123")({
   server: {
@@ -42,8 +43,16 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
         // mais tempo sem sync primeiro — antes cada loja tinha 50s próprios, a
         // função morria na 2ª e as do fim da lista ficavam horas sem atualizar.
         const deadline = Date.now() + 50_000;
+        // Loja em coluna com "Pausar sincronização" no Banco de Lojas fica de fora.
+        const pausedStores = await getPausedShopifyStoreIds();
+        const { data: storeLinks } = shopIds.length
+          ? await supabaseAdmin.from("shop_order_settings").select("shop_id,shopify_store_id").in("shop_id", shopIds)
+          : { data: [] as any[] };
+        const pausedShopIds = new Set((storeLinks ?? [])
+          .filter((l: any) => l.shopify_store_id && pausedStores.has(l.shopify_store_id))
+          .map((l: any) => l.shop_id as string));
         const queue = (integrations ?? [])
-          .filter((i) => activeShopIds.has(i.shop_id))
+          .filter((i) => activeShopIds.has(i.shop_id) && !pausedShopIds.has(i.shop_id))
           .sort((a, b) => (a.last_sync_at ?? "").localeCompare(b.last_sync_at ?? ""));
 
         let processed = 0;
