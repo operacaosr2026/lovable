@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
@@ -371,9 +371,7 @@ async function processShopPayoutsOnly(s: any) {
   const { data: store } = await supabaseAdmin.from("shopify_stores").select("*")
     .eq("id", s.shopify_store_id).maybeSingle();
   if (!store?.access_token || !store?.shop_domain) return;
-  const lagDays = s.payout_lag_days != null
-    ? Number(s.payout_lag_days)
-    : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
+  const lagDays = payoutLagDaysFor(s, store.board_payout_days);
   await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, s.cashflow_start_date ?? null);
   await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
   await markCashSynced(s.shop_id);
@@ -474,9 +472,7 @@ async function processShop(s: any, today: string) {
           await notifyRefundsFailed(s.user_id, s.shopify_store_id).catch(() => {});
           throw e;
         }
-        const lagDays = s.payout_lag_days != null
-          ? Number(s.payout_lag_days)
-          : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
+        const lagDays = payoutLagDaysFor(s, store.board_payout_days);
         await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
         await markCashSynced(s.shop_id);
         await supabaseAdmin.from("shopify_stores").update({

@@ -247,6 +247,24 @@ export const getStoreBalances = createServerOnlyFn(async (ownerId: string, store
   return out;
 });
 
+// Dias entre a venda e o repasse, pra estimar no Caixa quando cai o dinheiro
+// de vendas que a Shopify ainda não colocou em nenhum payout. Ordem:
+//  1. ajuste manual da loja (payout_lag_days);
+//  2. média dos últimos 3 payouts — o mesmo número do badge "dias até payout"
+//     do Banco de Lojas e do "Repasse" do card (shopify_stores.board_payout_days);
+//  3. média de todos os payouts (payout_lag_avg_days), enquanto a loja não tem o 2;
+//  4. 7 dias.
+// Arredondamento: ,5 pra cima sobe, abaixo de ,5 desce.
+export function payoutLagDaysFor(
+  settings: { payout_lag_days?: number | null; payout_lag_avg_days?: number | null },
+  boardPayoutDays: number | null | undefined,
+): number {
+  if (settings.payout_lag_days != null) return Number(settings.payout_lag_days);
+  if (boardPayoutDays != null) return Math.round(Number(boardPayoutDays));
+  if (settings.payout_lag_avg_days != null) return Math.round(Number(settings.payout_lag_avg_days));
+  return 7;
+}
+
 // Computes and stores the average payout lag (days between a charge landing
 // and the payout that includes it) for a shop, from live Shopify data. Shared
 // by the "Sincronizar" button (syncShopifyPayouts) and the daily cron
@@ -939,13 +957,10 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
 
     // ---------- Transações pendentes ----------
     // Usa payout_id da transação para buscar a data real do payout quando disponível.
-    // Para transações sem payout ainda, estima com o período manual (payout_lag_days),
-    // fallback para o lag calculado automaticamente, ou D+7 se nenhum disponível.
-    const lagDays = settings.payout_lag_days != null
-      ? Number(settings.payout_lag_days)
-      : settings.payout_lag_avg_days != null
-        ? Math.round(Number(settings.payout_lag_avg_days))
-        : 7;
+    // Para transações sem payout ainda, estima com payoutLagDaysFor.
+    const { data: storeLag } = await supabaseAdmin.from("shopify_stores")
+      .select("board_payout_days").eq("id", settings.shopify_store_id).eq("user_id", context.ownerId).maybeSingle();
+    const lagDays = payoutLagDaysFor(settings, storeLag?.board_payout_days);
 
     // Mapa payout_id → date a partir dos payouts já buscados
     const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
