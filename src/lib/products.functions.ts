@@ -168,13 +168,13 @@ export const getProductMonthlySales = createServerFn({ method: "GET" })
 
     const since = monthsAgoISO(data.months - 1);
     const { data: orders, error } = await selectAll(supabase
-      .from("shop_orders").select("order_date,raw")
+      .from("shop_orders").select("order_date,line_items:raw->line_items")
       .eq("user_id", ownerId).gte("order_date", since));
     if (error) throw new Error(error.message);
 
     const byMonth = new Map<string, { units: number; revenue: number; pedidos: number }>();
     for (const o of (orders ?? []) as any[]) {
-      const lineItems = o.raw?.line_items ?? [];
+      const lineItems = o.line_items ?? [];
       let units = 0, revenue = 0, matched = false;
       for (const li of lineItems) {
         const title = ((li.title ?? li.name ?? "") as string).toLowerCase();

@@ -269,15 +269,17 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
   });
 
   // ── Histórico de metas (todas, ativa + encerradas) ─────────────────────────
+  // ── Subabas: Definir Meta / Histórico / Diário de Operação ────────────────
+  const [subTab, setSubTab] = useState<"definir" | "historico" | "diario">("definir");
+
+  // Só carrega ao abrir a subaba: recalcula o lucro de cada meta (pedidos +
+  // Shopify ao vivo) e pesava a abertura da aba Metas.
   const { data: historyData, isLoading: loadingHistory } = useQuery({
     queryKey: ["lg-goal-history", card.id, shopIds.join(",")],
     queryFn: () => getHistoryFn({ data: { card_id: card.id, shop_ids: shopIds } }),
-    enabled: hasShops,
+    enabled: hasShops && subTab === "historico",
     staleTime: 60_000,
   });
-
-  // ── Subabas: Definir Meta / Histórico / Diário de Operação ────────────────
-  const [subTab, setSubTab] = useState<"definir" | "historico" | "diario">("definir");
 
   // ── Nova meta (widget do canto) ─────────────────────────────────────────────
   const [newGoalOpen, setNewGoalOpen] = useState(false);

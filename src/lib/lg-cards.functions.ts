@@ -591,8 +591,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       costProducts,
     ] = await Promise.all([
       supabaseAdmin.from("shops").select("id, name").eq("user_id", ownerId).in("id", shopIds),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, revenue, raw").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, revenue, line_items:raw->line_items").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr)),
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevEstornoStart).lte("order_date", prevEstornoEnd)),
       // Taxa de estorno = chargeback real (disputa formal do banco/cartão do
@@ -645,7 +645,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       const rev = Number(o.revenue ?? 0);
-      const cost = costFor(sid, o.raw?.line_items);
+      const cost = costFor(sid, o.line_items);
       revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + rev);
       custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + cost);
       const d = o.order_date as string;
@@ -660,7 +660,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     for (const o of (prevOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       prevRevenueByShop.set(sid, (prevRevenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
-      prevCustoByShop.set(sid, (prevCustoByShop.get(sid) ?? 0) + costFor(sid, o.raw?.line_items));
+      prevCustoByShop.set(sid, (prevCustoByShop.get(sid) ?? 0) + costFor(sid, o.line_items));
     }
     const prevPedidos = (prevOrdersRes.data ?? []).length;
 
@@ -841,7 +841,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
       selectAll(supabaseAdmin
         .from("shop_orders")
-        .select("revenue, items_count, shop_id, raw")
+        .select("revenue, items_count, shop_id, line_items:raw->line_items")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", from)
@@ -912,7 +912,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const custoProduto  = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id as string);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return s + orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
+      return s + orderLineItemsCost(o.line_items, costProducts, fallback);
     }, 0);
     const taxas    = sumAmt(fees);
     const anuncios = sumAmt(ads);

@@ -494,12 +494,12 @@ async function processShop(s: any, today: string) {
     return;
   }
 
-  const { data: orders } = await supabaseAdmin.from("shop_orders").select("items_count,raw")
+  const { data: orders } = await supabaseAdmin.from("shop_orders").select("items_count,line_items:raw->line_items")
     .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("order_date", orderDate);
   const items = (orders ?? []).reduce((x: number, o: any) => x + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(s.shop_id, s.user_id, orderDate, s.default_unit_cost);
   const products = await costProductsFor(supabaseAdmin, s.user_id);
-  const amount = (orders ?? []).reduce((x: number, o: any) => x + orderLineItemsCost(o.raw?.line_items, products, unit), 0);
+  const amount = (orders ?? []).reduce((x: number, o: any) => x + orderLineItemsCost(o.line_items, products, unit), 0);
 
   // ensure category
   const { data: cat } = await supabaseAdmin.from("shop_cash_categories").select("id")

@@ -22,7 +22,9 @@ async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
 ) {
   const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
-    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,raw")
+    // Só os produtos do pedido (raw->line_items), não o pedido inteiro da
+    // Shopify (~9 KB cada): 4 MB -> 0,5 MB num mês de 440 pedidos.
+    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,line_items:raw->line_items")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .gte("order_date", start_date).lte("order_date", end_date)),
     selectAll(supabase.from("shop_cash_entries").select("amount,date")
@@ -55,7 +57,7 @@ async function computeAccumulatedLucro(
   const orderCost = (o: any) => {
     const shopCost = costByShop.get(o.shop_id);
     const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-    return orderLineItemsCost(o.raw?.line_items, costProducts, fallback);
+    return orderLineItemsCost(o.line_items, costProducts, fallback);
   };
   const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
   const reembolsos = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
