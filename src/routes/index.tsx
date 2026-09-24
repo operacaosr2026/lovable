@@ -201,7 +201,7 @@ function DashTooltip({ active, payload, label }: any) {
   return (
     <div className="rounded-xl bg-card border border-border p-3 shadow-lg text-xs">
       <p className="text-muted-foreground mb-1 font-medium">{label}</p>
-      <p className="font-semibold text-foreground">{fmtMoney(payload[0].value)}</p>
+      <p className={`font-semibold ${Number(payload[0].value) < 0 ? "text-destructive" : "text-foreground"}`}>{fmtMoney(payload[0].value)}</p>
     </div>
   );
 }
@@ -427,6 +427,17 @@ function Dashboard() {
 
   const activeTabCfg = CHART_TABS.find((t) => t.key === activeTab)!;
   const activeColor = METRIC_ACCENTS[activeTabCfg.accent].solid;
+  // Parte abaixo de zero (ex.: dia com lucro negativo) em vermelho. Posição do
+  // zero dentro da altura da linha (0 = topo, 1 = base); sem valor negativo,
+  // cor única — senão a borda do traço vaza da bounding box e pinta de vermelho.
+  const negColor = "var(--color-destructive)";
+  const zeroOffset = useMemo(() => {
+    const values = chartData.map((d) => Number(d[activeTab]) || 0);
+    const max = Math.max(0, ...values), min = Math.min(0, ...values);
+    return max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
+  }, [chartData, activeTab]);
+  const posStop = zeroOffset <= 0 ? negColor : activeColor;
+  const negStop = zeroOffset >= 1 ? activeColor : negColor;
 
   return (
     <PageShell>
@@ -537,15 +548,25 @@ function Dashboard() {
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dash-main-grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={activeColor} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={activeColor} stopOpacity={0} />
+                    <stop offset={`${Math.min(5, zeroOffset * 100)}%`} stopColor={posStop} stopOpacity={0.3} />
+                    <stop offset={`${zeroOffset * 100}%`} stopColor={posStop} stopOpacity={0} />
+                    <stop offset={`${zeroOffset * 100}%`} stopColor={negStop} stopOpacity={0} />
+                    <stop offset={`${Math.max(95, zeroOffset * 100)}%`} stopColor={negStop} stopOpacity={0.3} />
+                  </linearGradient>
+                  <linearGradient id="dash-main-stroke" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset={`${zeroOffset * 100}%`} stopColor={posStop} />
+                    <stop offset={`${zeroOffset * 100}%`} stopColor={negStop} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
                 <Tooltip content={<DashTooltip />} cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }} />
-                <Area type="monotone" dataKey={activeTab} stroke={activeColor} strokeWidth={2} fill="url(#dash-main-grad)" dot={false} activeDot={{ r: 4, fill: activeColor }} />
+                <Area type="monotone" dataKey={activeTab} stroke="url(#dash-main-stroke)" strokeWidth={2} fill="url(#dash-main-grad)" dot={false}
+                  activeDot={(p: any) => (
+                    <circle key={`ad-${p.index}`} cx={p.cx} cy={p.cy} r={4} stroke="var(--color-card)" strokeWidth={2}
+                      fill={Number(p.payload?.[activeTab]) < 0 ? negColor : activeColor} />
+                  )} />
               </AreaChart>
             </ResponsiveContainer>
             </div>
