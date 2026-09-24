@@ -92,3 +92,73 @@ export function computeLogisticsKpis(orders: any[], nowMs: number) {
     avgDeliveryDays: avg(deliveryDurations),
   };
 }
+
+// ─── Evolução dos últimos dias (mini-gráficos do Dashboard) ──────────────────
+// O Rastreamento só guarda o estado ATUAL de cada pedido, então cada dia passado
+// é reconstruído pelas datas que o pedido já tem: feito (order_date), postado
+// (shipped_at), entregue (delivered_at), problema (problem_at). O último ponto
+// é sempre o valor atual (mesmo do número grande), não a reconstrução.
+const WEEKDAY_LETTER = ["D", "S", "T", "Q", "Q", "S", "S"];
+const addDaysIso = (iso: string, n: number) => {
+  const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+};
+const dayOf = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : null);
+// Um pedido nunca esteve mais adiantado no passado do que está hoje (ex.: tem
+// data de postagem, mas o rastreio só mostra "info recebida" → hoje conta como
+// pendente de envio; nos dias anteriores também).
+const STATUS_RANK: Record<string, number> = {
+  pending_shipment: 0, shipped: 1, in_transit: 1, waiting_customer: 1, problem: 2, returned: 2, delivered: 3,
+};
+
+export type LogisticsTrendPoint = {
+  date: string; label: string;
+  attention: number; pending: number;
+  avgPostingDays: number | null; avgDeliveryDays: number | null;
+};
+
+export function computeLogisticsTrend(orders: any[], nowMs: number, today: string, days = 7): LogisticsTrendPoint[] {
+  const dates = Array.from({ length: days }, (_, i) => addDaysIso(today, i - (days - 1)));
+  const kpiOrders = orders.filter((o) => !o.kpi_excluded);
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+  const points = dates.map((d) => {
+    const endMs = Date.parse(`${d}T23:59:59Z`);
+    const asOf = orders
+      .filter((o) => o.order_date && o.order_date <= d)
+      .map((o) => {
+        const delivered = dayOf(o.delivered_at), shipped = dayOf(o.shipped_at), problem = dayOf(o.problem_at);
+        let status = "pending_shipment";
+        if (delivered && delivered <= d) status = "delivered";
+        else if (problem && problem <= d) status = "problem";
+        else if (shipped && shipped <= d) status = "shipped";
+        const current = o.delivery_status ?? "pending_shipment";
+        if ((STATUS_RANK[status] ?? 0) > (STATUS_RANK[current] ?? 0)) status = current;
+        const lastEvent = dayOf(o.last_event_at);
+        return { ...o, delivery_status: status, last_event_at: lastEvent && lastEvent <= d ? o.last_event_at : null };
+      });
+    const posting = kpiOrders
+      .filter((o) => o.order_date && dayOf(o.shipped_at) && dayOf(o.shipped_at)! <= d)
+      .map((o) => (new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()) / 86_400_000)
+      .filter((x) => x >= 0);
+    const delivery = kpiOrders
+      .filter((o) => dayOf(o.shipped_at) && dayOf(o.delivered_at) && dayOf(o.delivered_at)! <= d)
+      .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
+      .filter((x) => x >= 0);
+    return {
+      date: d,
+      label: WEEKDAY_LETTER[new Date(`${d}T12:00:00Z`).getUTCDay()],
+      attention: asOf.filter((o) => needsAttention(o, endMs)).length,
+      pending: asOf.filter((o) => inBucket(o, "pending")).length,
+      avgPostingDays: avg(posting),
+      avgDeliveryDays: avg(delivery),
+    };
+  });
+
+  const current = computeLogisticsKpis(orders, nowMs);
+  points[points.length - 1] = {
+    ...points[points.length - 1],
+    attention: current.attention, pending: current.pending,
+    avgPostingDays: current.avgPostingDays, avgDeliveryDays: current.avgDeliveryDays,
+  };
+  return points;
+}

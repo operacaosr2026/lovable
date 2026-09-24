@@ -7,16 +7,16 @@ import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
   ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
-  CheckSquare, AlertTriangle, Clock, Truck,
+  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight,
 } from "lucide-react";
 import {
-  AreaChart, Area, PieChart, Pie, Cell,
+  AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, LabelList,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { getDashboardOverview } from "@/lib/lg-cards.functions";
 import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
-import { computeLogisticsKpis } from "@/lib/logistics-kpis";
+import { computeLogisticsKpis, computeLogisticsTrend } from "@/lib/logistics-kpis";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -247,27 +247,98 @@ const CHART_TABS: { key: keyof DailyPoint; label: string; accent: MetricAccent }
   { key: "anuncios",    label: "Gasto com Ads",  accent: "info" },
 ];
 
-// ─── Indicador compacto (coluna ao lado do gráfico) ────────────────────────────
+// ─── Indicador com mini-gráfico (coluna ao lado do gráfico) ────────────────────
 
-function OpsTile({ icon: Icon, accent, label, value, hint, loading, onClick }: {
-  icon: typeof TrendingUp; accent: MetricAccent; label: string; value: string | number;
-  hint?: string; loading?: boolean; onClick?: () => void;
+type TrendDatum = { label: string; value: number | null };
+
+// Variação do valor de hoje contra 7 dias atrás. Nesses indicadores, cair é
+// bom (menos pendências, entrega mais rápida) → verde; subir → vermelho.
+function trendDelta(data: TrendDatum[]): number | null {
+  const first = data.find((d) => d.value != null)?.value ?? null;
+  const last = data[data.length - 1]?.value ?? null;
+  if (first == null || last == null || first === 0) return null;
+  return ((last - first) / first) * 100;
+}
+
+function MiniTrend({ data, color, kind, fmt, gradId }: {
+  data: TrendDatum[]; color: string; kind: "area" | "bar"; fmt: (v: number) => string; gradId: string;
 }) {
+  const last = data.length - 1;
+  const axis = (
+    <XAxis dataKey="label" axisLine={false} tickLine={false} interval={0} height={14}
+      tick={{ fontSize: 9, fill: "var(--color-muted-foreground)" }} />
+  );
+  const lastLabel = (props: any) => {
+    const { x, y, width, index, value, cx, cy } = props;
+    if (index !== last || value == null) return <g key={`l-${index}`} />;
+    const px = cx ?? x + (width ?? 0) / 2;
+    const py = cy ?? y;
+    return <text key={`l-${index}`} x={px} y={py - 6} textAnchor="middle" fontSize={10} fontWeight={700} fill={color}>{fmt(value)}</text>;
+  };
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      {kind === "bar" ? (
+        <BarChart data={data} margin={{ top: 14, right: 4, left: 4, bottom: 0 }}>
+          {axis}
+          <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+            {data.map((_, i) => <Cell key={i} fill={color} fillOpacity={i === last ? 1 : 0.3} />)}
+            <LabelList dataKey="value" content={lastLabel} />
+          </Bar>
+        </BarChart>
+      ) : (
+        <AreaChart data={data} margin={{ top: 14, right: 12, left: 4, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {axis}
+          <Area type="monotone" dataKey="value" stroke={color} strokeWidth={1.75} fill={`url(#${gradId})`}
+            connectNulls isAnimationActive={false}
+            dot={(p: any) => p.index === last && p.value != null
+              ? <g key={`d-${p.index}`}><circle cx={p.cx} cy={p.cy} r={3} fill={color} />{lastLabel(p)}</g>
+              : <g key={`d-${p.index}`} />} />
+        </AreaChart>
+      )}
+    </ResponsiveContainer>
+  );
+}
+
+function OpsTile({ icon: Icon, accent, label, sub, value, hint, loading, onClick, trend, kind = "area", fmt }: {
+  icon: typeof TrendingUp; accent: MetricAccent; label: string; sub: string; value: string | number;
+  hint?: string; loading?: boolean; onClick?: () => void;
+  trend: TrendDatum[]; kind?: "area" | "bar"; fmt: (v: number) => string;
+}) {
+  const delta = trendDelta(trend);
+  const good = delta != null && delta <= 0;
   return (
     <button
       onClick={onClick}
-      className="bg-card border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 text-left hover:border-primary/30 transition-colors min-w-0 h-full"
+      className="group bg-card border border-border rounded-2xl p-3 flex items-center gap-3 text-left hover:border-primary/30 transition-colors min-w-0 h-full"
     >
-      <div className={`size-8 rounded-lg grid place-items-center shrink-0 ${METRIC_ACCENTS[accent].chip}`}>
-        <Icon className="size-4" />
+      <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${METRIC_ACCENTS[accent].chip}`}>
+        <Icon className="size-5" />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 w-[118px] shrink-0">
         {loading
-          ? <div className="h-5 w-10 bg-muted animate-pulse rounded" />
-          : <p className="text-lg font-bold leading-tight tabular-nums">{value}</p>}
-        <p className="text-[11px] text-muted-foreground leading-tight truncate">{label}</p>
-        {hint && <p className="text-[10px] text-destructive font-medium leading-tight truncate">{hint}</p>}
+          ? <div className="h-6 w-12 bg-muted animate-pulse rounded" />
+          : <p className="text-xl font-bold leading-tight tabular-nums">{value}</p>}
+        <p className="text-xs font-medium text-foreground leading-tight truncate">{label}</p>
+        <p className={`text-[10px] leading-tight truncate ${hint ? "text-destructive font-medium" : "text-muted-foreground"}`}>{hint ?? sub}</p>
+        {delta != null && !loading && (
+          <span className={`inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${good ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"}`}
+            title="Comparado a 7 dias atrás">
+            {delta > 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+            {delta > 0 ? "+" : ""}{delta.toFixed(0)}%
+            <span className="font-normal text-muted-foreground ml-0.5">7d</span>
+          </span>
+        )}
       </div>
+      <div className="flex-1 min-w-0 h-[68px]">
+        {!loading && <MiniTrend data={trend} color={METRIC_ACCENTS[accent].solid} kind={kind} fmt={fmt} gradId={`ops-${label.replace(/\W/g, "")}`} />}
+      </div>
+      <ChevronRight className="size-4 text-muted-foreground/60 group-hover:text-foreground shrink-0" />
     </button>
   );
 }
@@ -312,6 +383,15 @@ function Dashboard() {
     enabled: !!session,
   });
   const opsKpis = useMemo(() => computeLogisticsKpis(logisticsOrders as any[], Date.now()), [logisticsOrders]);
+  const opsTrend = useMemo(() => computeLogisticsTrend(logisticsOrders as any[], Date.now(), isoTodayUS()), [logisticsOrders]);
+  const tasksTrend = useMemo(() => opsTrend.map((p, i) => ({
+    label: p.label,
+    // Tarefas em aberto no fim de cada dia (criada até o dia e ainda não concluída nele);
+    // o último ponto é o valor atual.
+    value: i === opsTrend.length - 1
+      ? allTasks.filter((t) => t.status !== "concluida").length
+      : allTasks.filter((t) => t.created_at.slice(0, 10) <= p.date && (!t.completed_at || t.completed_at.slice(0, 10) > p.date)).length,
+  })), [opsTrend, allTasks]);
   const openTasks = allTasks.filter((t) => t.status !== "concluida");
   const todayUS = isoTodayUS();
   const overdueTasks = openTasks.filter((t) => t.due_date && t.due_date < todayUS).length;
@@ -414,8 +494,8 @@ function Dashboard() {
       </div>
 
       {/* ── Gráfico principal · Composição ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)_minmax(170px,0.6fr)] gap-4 items-stretch">
-        <div className="bg-card border border-border rounded-2xl p-5 min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,390px)] gap-4 items-stretch">
+        <div className="bg-card border border-border rounded-2xl p-5 min-w-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2.5">
               <div className="size-8 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0">
@@ -448,9 +528,10 @@ function Dashboard() {
           </div>
 
           {isLoading ? (
-            <div className="h-[240px] bg-muted animate-pulse rounded-xl" />
+            <div className="flex-1 min-h-[240px] bg-muted animate-pulse rounded-xl" />
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
+            <div className="flex-1 min-h-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dash-main-grad" x1="0" y1="0" x2="0" y2="1">
@@ -465,6 +546,7 @@ function Dashboard() {
                 <Area type="monotone" dataKey={activeTab} stroke={activeColor} strokeWidth={2} fill="url(#dash-main-grad)" dot={false} activeDot={{ r: 4, fill: activeColor }} />
               </AreaChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
 
@@ -516,19 +598,24 @@ function Dashboard() {
           )}
         </div>
 
-        {/* Operação: tarefas + indicadores do Rastreamento */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-1 lg:grid-rows-5 gap-2 min-w-0">
-          <OpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes" value={openTasks.length}
-            hint={overdueTasks ? `${overdueTasks} atrasada${overdueTasks === 1 ? "" : "s"}` : undefined}
-            loading={tasksLoading} onClick={() => navigate({ to: "/tarefas" })} />
-          <OpsTile icon={AlertTriangle} accent="destructive" label="Precisa de atenção" value={opsKpis.attention}
-            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
-          <OpsTile icon={Package} accent="warning" label="Pendente envio" value={opsKpis.pending}
-            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
-          <OpsTile icon={Clock} accent="info" label="TM Postagem" value={fmtDays(opsKpis.avgPostingDays)}
-            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
-          <OpsTile icon={Truck} accent="success" label="TM Entrega" value={fmtDays(opsKpis.avgDeliveryDays)}
-            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+        {/* Operação: tarefas + indicadores do Rastreamento (com evolução de 7 dias) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5 min-w-0">
+          <OpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes" sub="Em aberto"
+            value={openTasks.length} hint={overdueTasks ? `${overdueTasks} atrasada${overdueTasks === 1 ? "" : "s"}` : undefined}
+            loading={tasksLoading} onClick={() => navigate({ to: "/tarefas" })}
+            trend={tasksTrend} kind="bar" fmt={(v) => String(v)} />
+          <OpsTile icon={AlertTriangle} accent="destructive" label="Precisa de atenção" sub="Pedidos e alertas"
+            value={opsKpis.attention} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.attention }))} fmt={(v) => String(v)} />
+          <OpsTile icon={Package} accent="warning" label="Pendente envio" sub="Aguardando separação"
+            value={opsKpis.pending} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.pending }))} kind="bar" fmt={(v) => String(v)} />
+          <OpsTile icon={Clock} accent="info" label="TM Postagem" sub="Tempo médio"
+            value={fmtDays(opsKpis.avgPostingDays)} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.avgPostingDays }))} fmt={(v) => `${v.toFixed(1)}d`} />
+          <OpsTile icon={Truck} accent="success" label="TM Entrega" sub="Tempo médio"
+            value={fmtDays(opsKpis.avgDeliveryDays)} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.avgDeliveryDays }))} fmt={(v) => `${v.toFixed(1)}d`} />
         </div>
       </div>
     </PageShell>
