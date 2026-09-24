@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis } from "@/lib/logistics-kpis";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -26,16 +27,6 @@ function orderNum(o: any): number {
   const m = String(o.order_number ?? "").match(/(\d+)/);
   return m ? parseInt(m[1], 10) : 0;
 }
-// Agrupa os status brutos do Shopify/Track123 nos 4 buckets exibidos nos cards de KPI.
-function inBucket(o: any, key: string): boolean {
-  const s = o.delivery_status;
-  if (key === "pending")   return s === "pending_shipment" || !s;
-  if (key === "shipped")   return s === "shipped" || s === "in_transit";
-  if (key === "delivered") return s === "delivered";
-  if (key === "problem")   return s === "problem" || s === "returned";
-  if (key === "waiting_customer") return s === "waiting_customer";
-  return true;
-}
 function fmtShortDate(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -50,10 +41,6 @@ function timeAgo(iso: string | null | undefined): string {
   if (h < 24) return `há ${h}h`;
   return `há ${Math.floor(h / 24)}d`;
 }
-function daysSince(iso: string | null | undefined, nowMs: number): number | null {
-  if (!iso) return null;
-  return (nowMs - new Date(iso).getTime()) / 86_400_000;
-}
 // Tempo de entrega: só faz sentido depois que o pedido foi realmente
 // entregue (postagem → entrega). Enquanto isso não acontece, mostra "—" em
 // vez de um contador correndo — isso é o "Xd sem entrega" do alerta, não o
@@ -63,51 +50,6 @@ function deliveryTimeLabel(o: any, _nowMs: number): string {
   const d = daysSince(o.shipped_at, new Date(o.delivered_at).getTime());
   return d != null ? `${Math.floor(d)}d` : "—";
 }
-// Dias úteis (seg-sex) entre a data do pedido e agora — não conta a data do
-// pedido em si, só os dias que já se passaram desde então.
-function businessDaysSince(iso: string | null | undefined, nowMs: number): number {
-  if (!iso) return 0;
-  const cur = new Date(iso + "T00:00:00Z");
-  const now = new Date(nowMs);
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let count = 0;
-  while (cur < end) {
-    cur.setUTCDate(cur.getUTCDate() + 1);
-    const day = cur.getUTCDay();
-    if (day !== 0 && day !== 6) count++;
-  }
-  return count;
-}
-// Motivo extra (além do que o badge de status já mostra) pra sinalizar um pedido
-// parado: enviado há +7 dias sem atualização, ou pedido feito há +28 dias e ainda
-// sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro,
-// nem "esperando cliente" — a ação nesse caso já não é da loja.
-function attentionReason(o: any, nowMs: number): string | null {
-  const status = o.delivery_status ?? "pending_shipment";
-  if (status === "waiting_customer") return null;
-  if (status === "shipped" || status === "in_transit") {
-    // last_event_at (Track123) reflete o último evento real de rastreio; sem
-    // integração ativa, cai pra shipped_at (data da postagem) como referência.
-    const d = daysSince(o.last_event_at ?? o.shipped_at, nowMs);
-    if (d != null && d >= 7) return `${Math.floor(d)}d sem atualização`;
-  }
-  if (status !== "delivered" && status !== "returned") {
-    const d = daysSince(o.order_date, nowMs);
-    if (d != null && d >= 25) return `${Math.floor(d)}d sem entrega`;
-  }
-  return null;
-}
-// Precisa de atenção: pendente de envio há mais de 3 dias úteis, marcado como
-// problema, parado sem atualização de rastreio há +7 dias, ou feito há +25
-// dias e ainda não entregue. "Esperando cliente" fica de fora — a bola já não
-// está com a loja. Pendente de envio recente (até 3 dias úteis) é normal, não
-// precisa aparecer aqui ainda.
-function needsAttention(o: any, nowMs: number): boolean {
-  const status = o.delivery_status ?? "pending_shipment";
-  if (status === "pending_shipment") return businessDaysSince(o.order_date, nowMs) > 3;
-  return status === "problem" || attentionReason(o, nowMs) != null;
-}
-
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Package }> = {
   pending_shipment: { label: "Pendente envio",   color: "amber",   icon: Package },
   shipped:          { label: "Enviado",           color: "blue",    icon: Truck },
@@ -317,14 +259,11 @@ export function LgLogistica({
   const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
   const kpiScopedOrders = !searchTerm ? shopScopedOrders
     : shopScopedOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
-  const kpis = {
-    pending:   kpiScopedOrders.filter((o) => inBucket(o, "pending")).length,
-    shipped:   kpiScopedOrders.filter((o) => inBucket(o, "shipped")).length,
-    delivered: kpiScopedOrders.filter((o) => inBucket(o, "delivered")).length,
-    problem:   kpiScopedOrders.filter((o) => inBucket(o, "problem")).length,
-  };
-  const attentionCount = kpiScopedOrders.filter((o) => needsAttention(o, nowMs)).length;
-  const waitingCustomerCount = kpiScopedOrders.filter((o) => inBucket(o, "waiting_customer")).length;
+  // Mesma conta do Dashboard (ver logistics-kpis.ts).
+  const shared = computeLogisticsKpis(kpiScopedOrders, nowMs);
+  const kpis = { pending: shared.pending, shipped: shared.shipped, delivered: shared.delivered, problem: shared.problem };
+  const attentionCount = shared.attention;
+  const waitingCustomerCount = shared.waitingCustomer;
 
   // Breakdown por loja do total de pedidos — só faz sentido mostrar quando a
   // visão está consolidada (várias lojas) e nenhum filtro de loja específica
@@ -333,25 +272,8 @@ export function LgLogistica({
     .sort((a, b) => (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true }))
     .map((id) => ({ id, name: shopNames[id] ?? id, count: allOrders.filter((o) => o.shop_id === id).length }));
 
-  const kpiOrders = kpiScopedOrders.filter((o) => !o.kpi_excluded);
-
-  // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
-  const postingDurations = kpiOrders
-    .filter((o) => o.order_date && o.shipped_at)
-    .map((o) => (new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()) / 86_400_000)
-    .filter((d) => d >= 0);
-  const avgPostingDays = postingDurations.length
-    ? postingDurations.reduce((a, b) => a + b, 0) / postingDurations.length
-    : null;
-
-  // Tempo médio de entrega: dias entre postagem (shipped_at) e entrega (delivered_at)
-  const deliveryDurations = kpiOrders
-    .filter((o) => o.shipped_at && o.delivered_at)
-    .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
-    .filter((d) => d >= 0);
-  const avgDeliveryDays = deliveryDurations.length
-    ? deliveryDurations.reduce((a, b) => a + b, 0) / deliveryDurations.length
-    : null;
+  const avgPostingDays = shared.avgPostingDays;
+  const avgDeliveryDays = shared.avgDeliveryDays;
 
   // Buscar pedido ignora os filtros de status e loja — é pra achar o pedido
   // onde quer que ele esteja (ex: já entregue, numa loja fora do filtro

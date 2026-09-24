@@ -521,6 +521,10 @@ const emptyDashboardOverview = {
   },
   chartData: [] as { date: string; faturamento: number; anuncios: number; custo: number; lucro: number }[],
   shopBreakdown: [] as { shop_id: string; shop_name: string; faturamento: number; taxaEstorno: number; totalPedidos: number; totalEstornos: number }[],
+  // Lojas/cards do Dashboard — usados pelos indicadores de logística e tarefas
+  // ao lado do gráfico (mesma busca da aba Rastreamento).
+  shopIds: [] as string[],
+  cardIds: [] as string[],
 };
 
 function dashboardDelta(curr: number, prev: number) {
@@ -787,6 +791,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       },
       chartData,
       shopBreakdown,
+      shopIds,
+      cardIds,
     };
   });
 

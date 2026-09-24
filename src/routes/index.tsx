@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageHeader";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -7,12 +7,16 @@ import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
   ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
+  CheckSquare, AlertTriangle, Clock, Truck,
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { getDashboardOverview } from "@/lib/lg-cards.functions";
+import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
+import { listTasks } from "@/lib/tasks.functions";
+import { computeLogisticsKpis } from "@/lib/logistics-kpis";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -243,6 +247,33 @@ const CHART_TABS: { key: keyof DailyPoint; label: string; accent: MetricAccent }
   { key: "anuncios",    label: "Gasto com Ads",  accent: "info" },
 ];
 
+// ─── Indicador compacto (coluna ao lado do gráfico) ────────────────────────────
+
+function OpsTile({ icon: Icon, accent, label, value, hint, loading, onClick }: {
+  icon: typeof TrendingUp; accent: MetricAccent; label: string; value: string | number;
+  hint?: string; loading?: boolean; onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-card border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 text-left hover:border-primary/30 transition-colors min-w-0 h-full"
+    >
+      <div className={`size-8 rounded-lg grid place-items-center shrink-0 ${METRIC_ACCENTS[accent].chip}`}>
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0">
+        {loading
+          ? <div className="h-5 w-10 bg-muted animate-pulse rounded" />
+          : <p className="text-lg font-bold leading-tight tabular-nums">{value}</p>}
+        <p className="text-[11px] text-muted-foreground leading-tight truncate">{label}</p>
+        {hint && <p className="text-[10px] text-destructive font-medium leading-tight truncate">{hint}</p>}
+      </div>
+    </button>
+  );
+}
+
+const fmtDays = (d: number | null) => (d == null ? "—" : `${d.toFixed(1)}d`);
+
 // ─── Dashboard ──────────────────────────────────────────────────────────────────
 
 function Dashboard() {
@@ -261,6 +292,31 @@ function Dashboard() {
     queryFn: () => getDashboardOverviewFn({ data: { from, to } }),
     enabled: !!session,
   });
+
+  // Indicadores de operação ao lado do gráfico — mesmos pedidos e mesma conta
+  // da aba Rastreamento (listLogisticsOrders + computeLogisticsKpis), no
+  // período selecionado aqui; tarefas pendentes vêm da aba Tarefas.
+  const navigate = useNavigate();
+  const listLogisticsFn = useServerFn(listLogisticsOrders);
+  const listTasksFn = useServerFn(listTasks);
+  const opsShopIds: string[] = (data as any)?.shopIds ?? [];
+  const opsCardIds: string[] = (data as any)?.cardIds ?? [];
+  const { data: logisticsOrders = [], isLoading: logisticsLoading } = useQuery({
+    queryKey: ["lg-logistics", "dashboard", opsShopIds.join(","), from, to],
+    queryFn: () => listLogisticsFn({ data: { shop_ids: opsShopIds, from, to } }),
+    enabled: !!session && opsShopIds.length > 0,
+  });
+  const { data: allTasks = [], isLoading: tasksLoading } = useQuery({
+    queryKey: ["tasks"],
+    queryFn: () => listTasksFn(),
+    enabled: !!session,
+  });
+  const opsKpis = useMemo(() => computeLogisticsKpis(logisticsOrders as any[], Date.now()), [logisticsOrders]);
+  const openTasks = allTasks.filter((t) => t.status !== "concluida");
+  const todayUS = isoTodayUS();
+  const overdueTasks = openTasks.filter((t) => t.due_date && t.due_date < todayUS).length;
+  const logisticsHref = opsCardIds.length === 1 ? `/shops/lojas-grupos/${opsCardIds[0]}?tab=logistica` : "/shops/lojas-grupos";
+  const opsLoading = isLoading || logisticsLoading;
   const totals = (data as any)?.totals ?? {
     faturamento: 0, faturamentoDelta: 0, anuncios: 0, anunciosDelta: 0,
     custoProduto: 0, custoProdutoDelta: 0, lucro: 0, lucroDelta: 0,
@@ -358,7 +414,7 @@ function Dashboard() {
       </div>
 
       {/* ── Gráfico principal · Composição ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)_minmax(170px,0.6fr)] gap-4 items-stretch">
         <div className="bg-card border border-border rounded-2xl p-5 min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2.5">
@@ -392,9 +448,9 @@ function Dashboard() {
           </div>
 
           {isLoading ? (
-            <div className="h-[260px] bg-muted animate-pulse rounded-xl" />
+            <div className="h-[240px] bg-muted animate-pulse rounded-xl" />
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dash-main-grad" x1="0" y1="0" x2="0" y2="1">
@@ -425,15 +481,15 @@ function Dashboard() {
           </div>
 
           {isLoading ? (
-            <div className="h-[150px] bg-muted animate-pulse rounded-xl" />
+            <div className="h-[136px] bg-muted animate-pulse rounded-xl" />
           ) : slices.length === 0 ? (
             <p className="text-xs text-muted-foreground py-8 text-center">Sem faturamento no período.</p>
           ) : (
             <>
-              <div className="relative h-[150px]">
+              <div className="relative h-[136px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius={44} outerRadius={64} paddingAngle={2} strokeWidth={0}>
+                    <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius={40} outerRadius={58} paddingAngle={2} strokeWidth={0}>
                       {slices.map((s) => <Cell key={s.shop_id} fill={s.color} />)}
                     </Pie>
                   </PieChart>
@@ -458,6 +514,21 @@ function Dashboard() {
               </div>
             </>
           )}
+        </div>
+
+        {/* Operação: tarefas + indicadores do Rastreamento */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-1 lg:grid-rows-5 gap-2 min-w-0">
+          <OpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes" value={openTasks.length}
+            hint={overdueTasks ? `${overdueTasks} atrasada${overdueTasks === 1 ? "" : "s"}` : undefined}
+            loading={tasksLoading} onClick={() => navigate({ to: "/tarefas" })} />
+          <OpsTile icon={AlertTriangle} accent="destructive" label="Precisa de atenção" value={opsKpis.attention}
+            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+          <OpsTile icon={Package} accent="warning" label="Pendente envio" value={opsKpis.pending}
+            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+          <OpsTile icon={Clock} accent="info" label="TM Postagem" value={fmtDays(opsKpis.avgPostingDays)}
+            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+          <OpsTile icon={Truck} accent="success" label="TM Entrega" value={fmtDays(opsKpis.avgDeliveryDays)}
+            loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
         </div>
       </div>
     </PageShell>
