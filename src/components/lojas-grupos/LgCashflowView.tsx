@@ -595,11 +595,11 @@ function KpiSparkline({ data, color, id }: { data: { key: string; v: number }[];
 }
 
 function KpiChange({ current, base, label }: { current: number; base: number | null; label: string }) {
-  // Sem saldo lá atrás (Caixa recém-iniciado) a comparação não diz nada.
-  if (base == null || base <= 0) return null;
+  if (base == null) return null;
   const diff = current - base;
   const up = diff >= 0;
-  const text = `${up ? "+" : ""}${((diff / base) * 100).toFixed(1)}%`;
+  // Sem saldo positivo lá atrás (Caixa recém-iniciado), % não existe: mostra a diferença em $.
+  const text = base > 0 ? `${up ? "+" : ""}${((diff / base) * 100).toFixed(1)}%` : `${up ? "+" : "-"}${fmtMoneyGrouped(Math.abs(diff))}`;
   const Arrow = up ? ArrowUp : ArrowDown;
   return (
     <div className="flex items-center gap-1 text-[11px]">
