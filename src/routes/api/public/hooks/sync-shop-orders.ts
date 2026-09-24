@@ -9,6 +9,7 @@ import { fetchWithRetry } from "@/lib/http";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { ensureShopifyWebhooks } from "@/lib/shopify-webhooks.server";
 import { orderDateFor } from "@/lib/order-date";
+import { broadcast } from "@/lib/realtime.server";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -230,6 +231,13 @@ async function syncRefundsAndChargebacks(shopId: string, userId: string, domain:
   }
 }
 
+// "Sincronizado há ..." do Caixa lê shop_order_settings.last_synced_at, que só
+// o botão manual gravava — o sync automático atualizava os depósitos mas o
+// rótulo ficava parado no último clique.
+async function markCashSynced(shopId: string) {
+  await supabaseAdmin.from("shop_order_settings").update({ last_synced_at: new Date().toISOString() }).eq("shop_id", shopId);
+}
+
 async function syncPendingTransactionsForShop(shopId: string, userId: string, domain: string, token: string, lagDays: number) {
   const since = new Date(); since.setUTCDate(since.getUTCDate() - 14);
   const payouts = await fetchPayouts(domain, token, since.toISOString());
@@ -358,6 +366,7 @@ async function processShopPayoutsOnly(s: any) {
     : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
   await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, s.cashflow_start_date ?? null);
   await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
+  await markCashSynced(s.shop_id);
 }
 
 // Prazo real de pagamento ao fornecedor (D+X), configurável por loja em
@@ -451,6 +460,7 @@ async function processShop(s: any, today: string) {
           ? Number(s.payout_lag_days)
           : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;
         await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
+        await markCashSynced(s.shop_id);
         await supabaseAdmin.from("shopify_stores").update({
           last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
         }).eq("id", s.shopify_store_id);
@@ -526,6 +536,7 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   let processed = 0;
   let skippedByBudget = 0;
+  const syncedOwners = new Set<string>();
   // Lojas em coluna do Banco de Lojas com "Pausar sincronização" (Em Hold,
   // Com Retenção, Cemitério...) ficam de fora de todos os modos do cron.
   const pausedStores = await getPausedShopifyStoreIds();
@@ -549,8 +560,12 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
       else if (ordersOnly) await syncOrdersOnlyForShop(s, today);
       else await processShop(s, today);
       processed++;
+      if (!ordersOnly && s.user_id) syncedOwners.add(s.user_id);
     } catch (e) { console.error("shop fail", s.shop_id, e); }
   }
+  // Caixa/Dashboard abertos recarregam sozinhos depois do sync completo (1x por
+  // hora). O leve de 10 em 10 min não avisa: pedido novo já chega pelo webhook.
+  await Promise.all([...syncedOwners].map((owner) => broadcast(owner, "orders")));
   return new Response(JSON.stringify({ processed, skippedByBudget, today, payoutsOnly, ordersOnly }), { headers: { "Content-Type": "application/json" } });
 }
 

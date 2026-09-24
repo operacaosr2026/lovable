@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 const ORDER_QUERY_KEYS = [
   "dashboard-overview", "lg-dashboard", "lg-dashboard-hourly", "lg-dashboard-chart", "lg-dash-breakdown",
   "lg-card-metrics", "lg-orders", "lg-logistics", "lg-acc-lucro", "lg-card-goal", "lg-goal-history",
-  "lg-note-metrics", "shop-cash", "shop-cash-pending", "shop-group-cash-pending", "caixa-simulation",
+  "lg-note-metrics", "shop-cash", "shop-cash-standalone", "shop-cash-pending", "shop-cash-last-synced", "shop-group-cash-pending", "caixa-simulation",
   "product-sales", "store-avg-orders",
 ];
 const KEYS_BY_EVENT: Record<string, string[]> = {

@@ -1050,9 +1050,10 @@ export function LgCashflowView({
     }
   };
 
-  // Não sincroniza mais automaticamente a cada vez que a tela abre — o cron
-  // (sync-shop-orders, 2x/dia) já mantém os depósitos em dia. Sync sob
-  // demanda continua disponível no botão de refresh manual.
+  // Não sincroniza a cada vez que a tela abre — o sync completo automático
+  // (sync-shop-orders, de hora em hora) mantém os depósitos em dia, grava o
+  // "Sincronizado há ..." e avisa esta tela pelo tempo real (useRealtimeSync).
+  // Sync sob demanda continua no botão de refresh manual.
 
   const createMut  = useMutation({ mutationFn: (v:any) => createFn({ data:v }), onSuccess: refresh });
   const deleteMut  = useMutation({ mutationFn: (id:string) => deleteFn({ data:{id} }), onSuccess: refresh });
