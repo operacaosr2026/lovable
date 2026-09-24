@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
+import { Route as TarefasRouteImport } from "./routes/tarefas";
 import { Route as ShopsRouteImport } from "./routes/shops";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ProjectsRouteImport } from "./routes/projects";
@@ -40,6 +41,11 @@ import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/pub
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
 
+const TarefasRoute = TarefasRouteImport.update({
+  id: "/tarefas",
+  path: "/tarefas",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ShopsRoute = ShopsRouteImport.update({
   id: "/shops",
   path: "/shops",
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   "/projects": typeof ProjectsRouteWithChildren;
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
+  "/tarefas": typeof TarefasRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/geral": typeof SettingsGeralRoute;
@@ -231,6 +238,7 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
+  "/tarefas": typeof TarefasRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/geral": typeof SettingsGeralRoute;
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   "/projects": typeof ProjectsRouteWithChildren;
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
+  "/tarefas": typeof TarefasRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/geral": typeof SettingsGeralRoute;
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/settings"
     | "/shops"
+    | "/tarefas"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/geral"
@@ -323,6 +333,7 @@ export interface FileRouteTypes {
     | "/"
     | "/gratitude"
     | "/login"
+    | "/tarefas"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/geral"
@@ -351,6 +362,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/settings"
     | "/shops"
+    | "/tarefas"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/geral"
@@ -384,6 +396,7 @@ export interface RootRouteChildren {
   ProjectsRoute: typeof ProjectsRouteWithChildren;
   SettingsRoute: typeof SettingsRouteWithChildren;
   ShopsRoute: typeof ShopsRouteWithChildren;
+  TarefasRoute: typeof TarefasRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
@@ -393,6 +406,13 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/tarefas": {
+      id: "/tarefas";
+      path: "/tarefas";
+      fullPath: "/tarefas";
+      preLoaderRoute: typeof TarefasRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/shops": {
       id: "/shops";
       path: "/shops";
@@ -717,6 +737,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsRoute: ProjectsRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,
+  TarefasRoute: TarefasRoute,
   InviteTokenRoute: InviteTokenRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
