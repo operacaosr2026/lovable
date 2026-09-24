@@ -54,6 +54,19 @@ export const dismissNotification = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// "Limpar" do sino: dispensa tudo que está na lista. Cada aviso só volta se o
+// problema for resolvido e acontecer de novo. Tarefas já criadas não mudam.
+export const dismissAllNotifications = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const now = new Date().toISOString();
+    const { error } = await supabaseAdmin.from("app_notifications")
+      .update({ dismissed_at: now, read_at: now })
+      .eq("user_id", context.ownerId).is("resolved_at", null).is("dismissed_at", null);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 // ---------- Notificação → tarefa ----------
 
 // Data (YYYY-MM-DD) no fuso de Nova York, igual ao resto do sistema.

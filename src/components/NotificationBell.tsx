@@ -5,7 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Bell, AlertCircle, AlertTriangle, Info, X, CheckCheck, Plus, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { listNotifications, markNotificationsRead, dismissNotification, createTaskFromNotification } from "@/lib/notifications.functions";
+import { listNotifications, dismissNotification, dismissAllNotifications, createTaskFromNotification } from "@/lib/notifications.functions";
 
 type Notification = {
   id: string;
@@ -41,8 +41,8 @@ export function NotificationBell({ className = "" }: { className?: string }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const listFn = useServerFn(listNotifications);
-  const readFn = useServerFn(markNotificationsRead);
   const dismissFn = useServerFn(dismissNotification);
+  const dismissAllFn = useServerFn(dismissAllNotifications);
   const toTaskFn = useServerFn(createTaskFromNotification);
   const [open, setOpen] = useState(false);
 
@@ -53,12 +53,9 @@ export function NotificationBell({ className = "" }: { className?: string }) {
     refetchOnWindowFocus: true,
     staleTime: 60_000,
   });
-  const unread = items.filter((n) => !n.read_at);
-
-  const markRead = useMutation({
-    mutationFn: (ids: string[]) => readFn({ data: { ids } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
-  });
+  // O número do sino é tudo que está na lista — só some com "Limpar", dispensando
+  // um por um, ou quando o problema é resolvido.
+  const count = items.length;
   const dismiss = useMutation({
     mutationFn: (id: string) => dismissFn({ data: { id } }),
     onMutate: (id) => {
@@ -81,24 +78,24 @@ export function NotificationBell({ className = "" }: { className?: string }) {
     onError: (e: any) => toast.error(e.message ?? "Erro ao criar tarefa"),
   });
 
-  const onOpenChange = (o: boolean) => {
-    setOpen(o);
-    // Abriu o sino = viu tudo que está na lista; o contador zera.
-    if (o && unread.length) markRead.mutate(unread.map((n) => n.id));
-  };
+  const clearAll = useMutation({
+    mutationFn: () => dismissAllFn(),
+    onMutate: () => { qc.setQueryData<Notification[]>(["notifications"], []); },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          aria-label={unread.length ? `${unread.length} notificações não lidas` : "Notificações"}
+          aria-label={count ? `${count} notificações` : "Notificações"}
           title="Notificações"
           className={`relative size-8 rounded-lg grid place-items-center text-sidebar-fg-muted hover:text-sidebar-fg hover:bg-sidebar-hover-bg transition-colors shrink-0 ${className}`}
         >
           <Bell className="size-4" />
-          {unread.length > 0 && (
+          {count > 0 && (
             <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold grid place-items-center leading-none">
-              {unread.length > 9 ? "9+" : unread.length}
+              {count > 9 ? "9+" : count}
             </span>
           )}
         </button>
@@ -106,7 +103,18 @@ export function NotificationBell({ className = "" }: { className?: string }) {
       <PopoverContent align="start" sideOffset={8} className="w-[340px] max-w-[calc(100vw-24px)] p-0 overflow-hidden rounded-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <span className="text-sm font-semibold">Notificações</span>
-          {items.length > 0 && <span className="text-[11px] text-muted-foreground">{items.length} aberta{items.length === 1 ? "" : "s"}</span>}
+          {count > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">{count} aberta{count === 1 ? "" : "s"}</span>
+              <button
+                onClick={() => clearAll.mutate()}
+                disabled={clearAll.isPending}
+                className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+              >
+                Limpar
+              </button>
+            </div>
+          )}
         </div>
         <div className="max-h-[420px] overflow-y-auto scrollbar-thin">
           {items.length === 0 ? (
