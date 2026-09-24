@@ -799,28 +799,23 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
-    // card_id vem cru do cliente; supabaseAdmin ignora RLS, então sem essa
-    // checagem qualquer usuário logado podia ler nome de loja e métricas de
-    // um card de outro dono só adivinhando o UUID.
-    const { data: ownedCard } = await supabaseAdmin
-      .from("lg_cards").select("id").eq("id", data.card_id).eq("user_id", ownerId).maybeSingle();
-    if (!ownedCard) {
-      return { lucro: 0, taxaEstorno: 0, totalPedidos: 0, totalEstornos: 0, payoutLag: [], estornoPorLoja: [] };
-    }
-
-    // A) shops in this card
+    // A) lojas do card — o join com lg_cards filtrado por user_id é a checagem
+    // de dono: card_id vem cru do cliente e supabaseAdmin ignora RLS, então sem
+    // ela qualquer usuário logado podia ler nome de loja e métricas de um card
+    // de outro dono só adivinhando o UUID. (Antes eram 2 consultas em fila.)
     const { data: cardShops } = await supabaseAdmin
       .from("lg_card_shops")
-      .select("shop_id, shops(id, name)")
-      .eq("card_id", data.card_id);
+      .select("shop_id, shops(id, name), lg_cards!inner(user_id)")
+      .eq("card_id", data.card_id)
+      .eq("lg_cards.user_id", ownerId);
 
     if (!cardShops?.length) {
       return { lucro: 0, taxaEstorno: 0, totalPedidos: 0, totalEstornos: 0, payoutLag: [], estornoPorLoja: [] };
     }
 
     const shopIds = cardShops.map((s: any) => s.shop_id as string);
-    const patchedCardShops = await patchEmbeddedShopNames(ownerId, cardShops as any[]);
-    const shopNameById = new Map(patchedCardShops.map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
+    // Nomes ao vivo da Shopify em paralelo com as métricas (antes vinham antes).
+    const namesPromise = patchEmbeddedShopNames(ownerId, cardShops as any[]);
 
     // "Hoje"/"mês corrente" sempre no fuso de Nova York (horário padrão do
     // negócio), não UTC — pra não incluir/excluir um dia de pedidos perto da
@@ -833,7 +828,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const estornoFrom = addDaysISO(to, -30);
 
     // B, C, D, E in parallel
-    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts] = await Promise.all([
+    const [ordersRes, estornoOrdersRes, chargebackDisputesRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts, patchedCardShops] = await Promise.all([
       selectAll(supabaseAdmin
         .from("shop_orders")
         .select("revenue, items_count, shop_id, line_items:raw->line_items")
@@ -882,7 +877,9 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       // usada pelo Dashboard, pra "lucro" bater entre as duas telas.
       getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
       costProductsFor(supabaseAdmin, ownerId),
+      namesPromise,
     ]);
+    const shopNameById = new Map((patchedCardShops as any[]).map((s: any) => [s.shop_id as string, (s.shops as any)?.name as string ?? s.shop_id]));
 
     const orders             = ordersRes.data ?? [];
     const estornoOrders      = estornoOrdersRes.data ?? [];
