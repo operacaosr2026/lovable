@@ -835,7 +835,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .lte("order_date", to)),
       supabaseAdmin
         .from("shop_order_settings")
-        .select("shop_id, default_unit_cost, payout_lag_avg_days, payout_lag_days, chargeback_orders_30d, chargeback_count_30d, chargeback_stats_at")
+        .select("shop_id, shopify_store_id, default_unit_cost, payout_lag_avg_days, payout_lag_days, chargeback_orders_30d, chargeback_count_30d, chargeback_stats_at")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds),
       selectAll(supabaseAdmin
@@ -918,21 +918,32 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       };
     });
 
-    // Payout lag por shop — D+X real, sincronizado dos payouts do Shopify
-    // (payout_lag_days = ajuste manual do usuário; payout_lag_avg_days = média
-    // calculada a partir dos payouts reais). Não usar shop_order_payment_batches
-    // aqui: aquilo é o registro de quando o custo do produto foi pago (COGS),
-    // sem relação com o depósito que o Shopify faz na conta do lojista.
+    // Repasse (D+X) por loja — mesmo número do badge "dias até payout" do
+    // Banco de Lojas: média dos últimos 3 payouts, calculada 1x por dia
+    // (shopify_stores.board_payout_days, store-metrics.server.ts). payout_lag_days
+    // (ajuste manual do usuário) tem prioridade; payout_lag_avg_days (média de
+    // todos os payouts) fica de reserva enquanto a loja ainda não tem o do dia.
+    // Não usar shop_order_payment_batches aqui: aquilo é o registro de quando o
+    // custo do produto foi pago (COGS), sem relação com o depósito da Shopify.
+    // Arredondamento: ,5 pra cima sobe, abaixo de ,5 desce (Math.round).
     const settingsByShop = new Map(settings.map((s: any) => [s.shop_id as string, s]));
+    const storeIds = [...new Set(settings.map((s: any) => s.shopify_store_id).filter(Boolean))] as string[];
+    const { data: storeRows } = storeIds.length
+      ? await supabaseAdmin.from("shopify_stores").select("id,board_payout_days").eq("user_id", ownerId).in("id", storeIds)
+      : { data: [] as any[] };
+    const boardDaysByStore = new Map(((storeRows ?? []) as any[]).map((r) => [r.id as string, r.board_payout_days as number | null]));
 
     const payoutLag = shopIds.map((shopId) => {
       const shopName = shopNameById.get(shopId) ?? shopId;
       const s = settingsByShop.get(shopId);
+      const boardDays = s?.shopify_store_id ? boardDaysByStore.get(s.shopify_store_id) : null;
       const days = s?.payout_lag_days != null
         ? Math.round(Number(s.payout_lag_days))
-        : s?.payout_lag_avg_days != null
-          ? Math.round(Number(s.payout_lag_avg_days))
-          : null;
+        : boardDays != null
+          ? Math.round(Number(boardDays))
+          : s?.payout_lag_avg_days != null
+            ? Math.round(Number(s.payout_lag_avg_days))
+            : null;
       return { shop_id: shopId, shopName, days };
     });
 
