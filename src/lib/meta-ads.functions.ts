@@ -437,6 +437,14 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       auto_ref_date: date,
     }));
 
+    // Alguma conta falhou: o total por dia ficaria só com as contas que
+    // responderam — gravar por cima trocaria o gasto completo por um menor e
+    // inflaria o lucro. Mantém o que já está gravado; a conta com erro já foi
+    // marcada (last_sync_status) e aparece no sino de notificações.
+    if (errors.length > 0) {
+      throw new Error(`Gasto de Ads não atualizado (mantido o último valor completo) — ${errors.join("; ")}`);
+    }
+
     // Only delete dates the API actually returned — preserves existing entries for dates
     // not in the response (e.g. today's data not yet available in Meta's pipeline).
     const rowDates = [...spendByDate.keys()];
@@ -452,8 +460,6 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       const { error } = await supabaseAdmin.from("shop_cash_entries").insert(rows);
       if (error) throw new Error(error.message);
     }
-
-    if (errors.length === accounts.length) throw new Error(errors.join("; "));
 
     const totalSpend = rows.reduce((s, r) => s + r.amount, 0);
     return { synced: rows.length, totalSpend, errors };
