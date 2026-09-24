@@ -2257,6 +2257,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
           faturamento: Math.round(dayFaturamento * 100) / 100,
           lucro: Math.round((dayFaturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
+          // Linha "Ads" do gráfico Evolução (antes não vinha e a linha ficava vazia).
+          anuncios: Math.round(dayAnuncios * 100) / 100,
         };
       });
 
