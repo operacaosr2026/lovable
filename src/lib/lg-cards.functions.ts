@@ -541,19 +541,14 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
 
-    const { data: cards, error } = await supabaseAdmin
-      .from("lg_cards")
-      .select("id")
-      .eq("user_id", ownerId)
-      .eq("status", "ativo");
-    if (error) throw new Error(error.message);
-    if (!cards?.length) return emptyDashboardOverview;
-
-    const cardIds = cards.map((c: any) => c.id);
-    const { data: cardShops } = await supabaseAdmin
+    // Lojas dos grupos ativos numa consulta só (antes: grupos, depois lojas).
+    const { data: cardShops, error } = await supabaseAdmin
       .from("lg_card_shops")
-      .select("shop_id")
-      .in("card_id", cardIds);
+      .select("card_id,shop_id,lg_cards!inner(user_id,status)")
+      .eq("lg_cards.user_id", ownerId)
+      .eq("lg_cards.status", "ativo");
+    if (error) throw new Error(error.message);
+    const cardIds = Array.from(new Set((cardShops ?? []).map((cs: any) => cs.card_id as string)));
     const shopIds = Array.from(new Set((cardShops ?? []).map((cs: any) => cs.shop_id as string)));
     if (!shopIds.length) return emptyDashboardOverview;
 
@@ -583,14 +578,21 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     // create/updateLgCard nunca deixarem um shop_id de outro dono entrar em
     // lg_card_shops).
     const [
-      shopsRes, monthOrdersRes, prevOrdersRes,
+      shopsWithLiveNames, monthOrdersRes, prevOrdersRes,
       estornoOrdersRes, prevEstornoOrdersRes,
       chargebackDisputesRes, prevChargebackDisputesRes,
       costRes, feesRes, prevFeesRes, adsRes, prevAdsRes,
       refundsAndChargebacks, prevRefundsAndChargebacks,
       costProducts,
     ] = await Promise.all([
-      supabaseAdmin.from("shops").select("id, name").eq("user_id", ownerId).in("id", shopIds),
+      // Nome exibido segue o vínculo ao vivo com a Shopify (shopify_store_id),
+      // não o nome interno cadastrado em `shops` — evita mostrar um nome antigo
+      // quando a loja Shopify já foi renomeada. Em paralelo com o resto.
+      supabaseAdmin.from("shops").select("id, name").eq("user_id", ownerId).in("id", shopIds)
+        .then((shopsRes) => attachLiveShopifyNames(
+          ownerId,
+          (shopsRes.data ?? []).map((s: any) => ({ id: s.id as string, name: s.name as string })),
+        )),
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id, revenue, line_items:raw->line_items").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", estornoStart).lte("order_date", todayStr)),
@@ -618,13 +620,6 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       costProductsFor(supabaseAdmin, ownerId),
     ]);
 
-    // Nome exibido segue o vínculo ao vivo com a Shopify (shopify_store_id),
-    // não o nome interno cadastrado em `shops` — evita mostrar um nome antigo
-    // quando a loja Shopify já foi renomeada.
-    const shopsWithLiveNames = await attachLiveShopifyNames(
-      ownerId,
-      (shopsRes.data ?? []).map((s: any) => ({ id: s.id as string, name: s.name as string })),
-    );
     const shopNameById = new Map(shopsWithLiveNames.map((s) => [s.id, s.name]));
 
     const costByShop = new Map((costRes.data ?? []).map((s: any) => [s.shop_id, Number(s.default_unit_cost ?? 0)]));
