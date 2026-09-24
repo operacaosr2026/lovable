@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -308,9 +309,11 @@ function BreakdownDialog({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function LgDashboard({
-  cardId, shopIds, cardName, shopNamesMap, isConsolidated,
+  cardId, shopIds, shopNamesMap, isConsolidated, actionsSlot,
 }: {
   cardId: string;
+  /** Linha das abas do grupo: data, sincronizar, período e moeda vão pra lá. */
+  actionsSlot?: HTMLElement | null;
   shopIds: string[];
   cardName: string;
   shopNamesMap: Record<string, string>;
@@ -480,18 +483,10 @@ export function LgDashboard({
   return (
     <div className="space-y-4">
 
-      {/* ── Top bar ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-2 mr-auto">
-          <div className="size-7 rounded-full bg-primary grid place-items-center text-primary-foreground text-xs font-bold">
-            {cardName?.[0]?.toUpperCase()}
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Dashboard</p>
-            <p className="text-sm font-semibold text-foreground leading-tight">{cardName}</p>
-          </div>
-        </div>
-
+      {/* ── Top bar: na linha das abas (actionsSlot) quando disponível ── */}
+      {(() => {
+        const topBar = (
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="size-1.5 rounded-full bg-success animate-pulse" />
           {fmtDate(from)}{from !== to ? ` → ${fmtDate(to)}` : ""}
@@ -554,6 +549,9 @@ export function LgDashboard({
           )}
         </div>
       </div>
+        );
+        return actionsSlot ? createPortal(topBar, actionsSlot) : topBar;
+      })()}
 
       {/* ── KPI row 1 ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

@@ -54,6 +54,8 @@ function LgCardDetail() {
   const effectiveShopIds = selectedShopIds.length > 0 ? selectedShopIds : allShopIds;
   const allSelected      = selectedShopIds.length === 0 || selectedShopIds.length === allShopIds.length;
 
+  // Espaço à direita da linha das abas onde o Dashboard põe seus controles.
+  const [tabActionsEl, setTabActionsEl] = useState<HTMLDivElement | null>(null);
   const setTab = (t: Tab) =>
     navigate({ search: (prev: any) => ({ ...prev, tab: t }), replace: true });
 
@@ -176,14 +178,17 @@ function LgCardDetail() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto">
-        <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
-        <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Target}>Metas</TabBtn>
-        <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
-        <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
-        <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>
-        <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>
+      {/* Tabs — à direita, os controles da aba ativa (Dashboard: data, sincronizar, período, moeda) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 border-b border-border">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
+          <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Target}>Metas</TabBtn>
+          <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
+          <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
+          <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>
+          <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>
+        </div>
+        <div ref={setTabActionsEl} className="ml-auto pb-1.5 empty:hidden" />
       </div>
 
       {/* Content — only render when there are shops or for overview/integrations */}
@@ -197,6 +202,7 @@ function LgCardDetail() {
           cardName={card.name}
           shopNamesMap={shopNamesMap}
           isConsolidated={effectiveShopIds.length > 1}
+          actionsSlot={tabActionsEl}
         />
       )}
       {tab === "caixa" && allShopIds.length > 0 && (
