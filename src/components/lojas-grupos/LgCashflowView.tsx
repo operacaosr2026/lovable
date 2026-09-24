@@ -2,7 +2,7 @@
  * LgCashflowView — visual idêntica ao ShopCashflow, com as seguintes diferenças:
  *   • Cores por tipo de payout: pendente=vermelho, agendado=amarelo, depositado=azul,
  *     saídas=cinza, entrada manual=azul
- *   • Apenas 2 KPIs: Saldo atual + A receber (Shopify)
+ *   • 3 KPIs: Saldo atual + A receber (Shopify) + Saldo total
  *   • Date picker igual ao dashboard (dropdown de período + calendário range com bug fix)
  *   • Tag de loja em cada chip (modo consolidado)
  *   • Scroll horizontal com barra visível
@@ -20,8 +20,9 @@ import {
 } from "@dnd-kit/core";
 import {
   Plus, Trash2, ChevronDown, X, Wallet, TrendingUp,
-  Repeat, Pencil, Check, RefreshCw,
+  Repeat, Pencil, Check, RefreshCw, Database, ArrowUp, ArrowDown,
 } from "lucide-react";
+import { ResponsiveContainer, AreaChart, Area } from "recharts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -548,28 +549,87 @@ function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
   );
 }
 
-// ─── Indicator (somente 2 KPIs) ───────────────────────────────────────────────
+// ─── KPIs do topo (Saldo atual / A receber / Saldo total) ─────────────────────
 
-function Indicator({ icon: Icon, label, value, sub, accent, negative, tooltip }: any) {
-  const tint = accent.replace(/\)\s*$/, " / 0.05)");
-  const content = (
-    <div
-      className={`rounded-2xl border p-3 ${negative ? "border-rose-500/30 bg-rose-500/5" : "border-border"} ${tooltip ? "cursor-default" : ""}`}
-      style={negative ? undefined : { backgroundColor: tint }}
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-        <Icon className="size-3.5" style={{ color: accent }} /> {label}
-      </div>
-      <div className={`text-lg font-semibold tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
-      {sub && <div className="text-[10px] text-muted-foreground/70 leading-tight mt-0.5">{sub}</div>}
+function fmtMoneyGrouped(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const KPI_TONES = {
+  blue:   { tile: "bg-blue-600",    card: "bg-blue-500/[0.05] border-blue-500/15",       line: "#3b6fe8" },
+  violet: { tile: "bg-violet-500",  card: "bg-violet-500/[0.05] border-violet-500/15",   line: "#8b5cf6" },
+  green:  { tile: "bg-emerald-500", card: "bg-emerald-500/[0.06] border-emerald-500/20", line: "#22b35e" },
+} as const;
+
+// Cores dos números da lista "A receber" (por posição da loja no grupo).
+const SHOP_BADGE_TONES = [
+  "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  "bg-amber-500/20 text-amber-600 dark:text-amber-400",
+  "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+  "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+];
+
+function KpiSparkline({ data, color, id }: { data: { key: string; v: number }[]; color: string; id: string }) {
+  if (data.length < 2) return null;
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 opacity-90">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 6, right: 14, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone" dataKey="v" stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false}
+            dot={(p: any) => p.index === data.length - 1
+              ? <circle key="last" cx={p.cx} cy={p.cy} r={4.5} fill={color} stroke="white" strokeWidth={2} />
+              : <g key={p.index} />}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
-  if (!tooltip) return content;
+}
+
+function KpiChange({ current, base, label }: { current: number; base: number | null; label: string }) {
+  if (base == null) return null;
+  const diff = current - base;
+  const up = diff >= 0;
+  const text = base > 0 ? `${up ? "+" : ""}${((diff / base) * 100).toFixed(1)}%` : `${up ? "+" : "-"}${fmtMoneyGrouped(Math.abs(diff))}`;
+  const Arrow = up ? ArrowUp : ArrowDown;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{content}</TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
+    <div className="flex items-center gap-1.5 text-xs">
+      <Arrow className={`size-3.5 ${up ? "text-emerald-600" : "text-rose-600"}`} />
+      <span className={`font-semibold ${up ? "text-emerald-600" : "text-rose-600"}`}>{text}</span>
+      <span className="text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, children, spark, sparkId }: {
+  icon: any; tone: keyof typeof KPI_TONES; title: string; subtitle: string; value: string; negative?: boolean;
+  badge?: string; children?: React.ReactNode; spark?: { key: string; v: number }[]; sparkId?: string;
+}) {
+  const t = KPI_TONES[tone];
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border p-4 ${negative ? "border-rose-500/30 bg-rose-500/5" : t.card} ${spark && spark.length > 1 ? "min-h-[170px]" : ""}`}>
+      <div className="relative z-10 flex items-start gap-3">
+        <div className={`grid size-10 shrink-0 place-items-center rounded-xl text-white shadow-sm ${t.tile}`}>
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold leading-tight">{title}</div>
+          <div className="text-xs text-muted-foreground">{subtitle}</div>
+        </div>
+        {badge && <span className="shrink-0 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-xs font-semibold text-violet-600 dark:text-violet-400">{badge}</span>}
+      </div>
+      <div className={`relative z-10 mt-3 text-[28px] font-bold leading-none tracking-tight tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
+      {children && <div className="relative z-10 mt-2">{children}</div>}
+      {spark && sparkId && <KpiSparkline data={spark} color={t.line} id={sparkId} />}
+    </div>
   );
 }
 
@@ -1020,6 +1080,26 @@ export function LgCashflowView({
     return acc;
   }, [expanded, opening]);
 
+  // Saldo atual dia a dia nos últimos 30 dias (mesma regra do KPI: só
+  // lançamentos conciliados), pro gráfico e a variação do card.
+  const saldoHistory = useMemo(() => {
+    const start = addDaysToKey(todayKey, -30);
+    let acc = opening;
+    const byDate = new Map<string, number>();
+    for (const e of expanded) {
+      if (e.virtual || !e.reconciled) continue;
+      const v = e.kind==="income" ? Number(e.amount) : -Number(e.amount);
+      if (e.date < start) acc += v;
+      else if (e.date <= todayKey) byDate.set(e.date, (byDate.get(e.date) ?? 0) + v);
+    }
+    const out: { key: string; v: number }[] = [];
+    for (let k = start; k <= todayKey; k = addDaysToKey(k, 1)) {
+      acc += byDate.get(k) ?? 0;
+      out.push({ key: k, v: acc });
+    }
+    return out;
+  }, [expanded, opening, todayKey]);
+
   const effectivePending = isConsolidated ? groupPendQuery.data : pendingQuery.data;
   const perShopReceivable = isConsolidated ? ((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[] : [];
   const receivable = effectivePending?.connected
@@ -1124,25 +1204,50 @@ export function LgCashflowView({
     <div className="space-y-5">
       {/* ── 3 KPIs ── */}
       <TooltipProvider delayDuration={150}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Indicator icon={Wallet} label="Saldo atual" value={fmtMoney(future)} accent="oklch(0.55 0.15 250)" negative={future < 0} />
-          <Indicator
-            icon={TrendingUp}
-            label={effectivePending?.connected ? "A receber (Shopify)" : "Entradas previstas (30d)"}
-            value={fmtMoney(receivable)}
-            accent="oklch(0.6 0.13 230)"
-            sub={isConsolidated && effectivePending?.connected && perShopReceivable.length > 1 ? (
-              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1">
-                {perShopReceivable.map((p) => (
-                  <div key={p.shop_id} className="flex items-center justify-between gap-1.5 min-w-0">
-                    <span className="truncate">{shopNamesMap[p.shop_id] ?? p.shop_id}</span>
-                    <span className="tabular-nums shrink-0">{fmtMoney(Number(p.amount ?? 0))}</span>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <KpiCard
+            icon={Wallet} tone="blue" title="Saldo atual" subtitle="Disponível na conta"
+            value={fmtMoneyGrouped(future)} negative={future < 0}
+            spark={saldoHistory} sparkId="caixa-kpi-saldo"
+          >
+            <KpiChange current={future} base={saldoHistory.length ? saldoHistory[0].v : null} label="em relação a 30 dias atrás" />
+          </KpiCard>
+          <KpiCard
+            icon={TrendingUp} tone="violet"
+            title={effectivePending?.connected ? "A receber (Shopify)" : "Entradas previstas (30d)"}
+            subtitle={effectivePending?.connected ? "Pedidos aguardando repasse" : "Entradas lançadas nos próximos 30 dias"}
+            value={fmtMoneyGrouped(receivable)}
+            badge={isConsolidated && perShopReceivable.length > 1 ? `${perShopReceivable.length} lojas` : undefined}
+          >
+            {isConsolidated && effectivePending?.connected && perShopReceivable.length > 1 && (
+              <div className="divide-y divide-border/70">
+                {perShopReceivable.map((p, i) => (
+                  <div key={p.shop_id} className="flex items-center gap-2.5 py-1.5 text-sm">
+                    <span className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold ${SHOP_BADGE_TONES[i % SHOP_BADGE_TONES.length]}`}>{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{shopNamesMap[p.shop_id] ?? p.shop_id}</span>
+                    <span className="shrink-0 font-medium tabular-nums">{fmtMoneyGrouped(Number(p.amount ?? 0))}</span>
                   </div>
                 ))}
               </div>
-            ) : undefined}
-          />
-          <Indicator icon={Wallet} label="Saldo total" value={fmtMoney(future + receivable)} accent="oklch(0.55 0.15 160)" negative={future + receivable < 0} />
+            )}
+          </KpiCard>
+          <KpiCard
+            icon={Database} tone="green" title="Saldo total" subtitle="Disponível + A receber"
+            value={fmtMoneyGrouped(future + receivable)} negative={future + receivable < 0}
+          >
+            {future + receivable > 0 && future >= 0 && (
+              <div className="mt-3 space-y-2">
+                <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="bg-blue-600" style={{ width: `${(future / (future + receivable)) * 100}%` }} />
+                  <div className="bg-violet-500" style={{ width: `${(receivable / (future + receivable)) * 100}%` }} />
+                </div>
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-blue-600" /><span className="text-muted-foreground">Disponível</span> <span className="font-medium tabular-nums">{fmtMoneyGrouped(future)}</span></span>
+                  <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-500" /><span className="text-muted-foreground">A receber</span> <span className="font-medium tabular-nums">{fmtMoneyGrouped(receivable)}</span></span>
+                </div>
+              </div>
+            )}
+          </KpiCard>
         </div>
       </TooltipProvider>
 
