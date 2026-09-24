@@ -550,6 +550,18 @@ function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
   );
 }
 
+// Último "A receber" visto neste navegador, pra abrir o card na hora.
+const RECEIVABLE_CACHE_PREFIX = "caixa-a-receber:";
+function readCachedReceivable(key: string): any {
+  try {
+    const raw = localStorage.getItem(RECEIVABLE_CACHE_PREFIX + key);
+    return raw ? JSON.parse(raw) : undefined;
+  } catch { return undefined; }
+}
+function writeCachedReceivable(key: string, value: unknown) {
+  try { localStorage.setItem(RECEIVABLE_CACHE_PREFIX + key, JSON.stringify(value)); } catch { /* sem storage: só não guarda */ }
+}
+
 // ─── KPIs do topo (Saldo atual / A receber / Saldo total) ─────────────────────
 
 function fmtMoneyGrouped(n: number) {
@@ -940,6 +952,14 @@ export function LgCashflowView({
     queryFn:  () => groupPendFn({ data: { shop_ids: shopIds } }),
     enabled:  isConsolidated,
   });
+  // "A receber" consulta a Shopify ao vivo (~1 s). Enquanto a resposta não
+  // chega, o card mostra o último valor visto neste navegador. Lido depois de
+  // montar (não no 1º render) pra não divergir do HTML vindo do servidor.
+  const receivableCacheKey = `${isConsolidated ? "group" : "single"}:${cacheKey}`;
+  const [cachedPending, setCachedPending] = useState<any>(undefined);
+  useEffect(() => { setCachedPending(readCachedReceivable(receivableCacheKey)); }, [receivableCacheKey]);
+  const livePending = isConsolidated ? groupPendQuery.data : pendingQuery.data;
+  useEffect(() => { if (livePending) writeCachedReceivable(receivableCacheKey, livePending); }, [livePending, receivableCacheKey]);
   const lastSyncQuery = useQuery({
     queryKey: ["shop-cash-last-synced", cacheKey],
     queryFn:  () => lastSyncFn({ data: { shop_ids: shopIds } }),
@@ -1103,7 +1123,7 @@ export function LgCashflowView({
     return out;
   }, [expanded, opening, todayKey]);
 
-  const effectivePending = isConsolidated ? groupPendQuery.data : pendingQuery.data;
+  const effectivePending = livePending ?? cachedPending;
   const perShopReceivable = isConsolidated ? ((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[] : [];
   const receivable = effectivePending?.connected
     ? (isConsolidated
