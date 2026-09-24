@@ -269,8 +269,11 @@ function MiniTrend({ data, color, kind, fmt, gradId }: {
       tick={{ fontSize: 9, fill: "var(--color-muted-foreground)" }} />
   );
   const lastLabel = (props: any) => {
-    const { x, y, width, index, value, cx, cy } = props;
-    if (index !== last || value == null) return <g key={`l-${index}`} />;
+    const { x, y, width, index, cx, cy } = props;
+    // Na Area o "value" vem como [base, valor]; o número certo está no dado do ponto.
+    const raw = props.payload?.value ?? (Array.isArray(props.value) ? props.value[props.value.length - 1] : props.value);
+    const value = raw == null ? null : Number(raw);
+    if (index !== last || value == null || !Number.isFinite(value)) return <g key={`l-${index}`} />;
     const px = cx ?? x + (width ?? 0) / 2;
     const py = cy ?? y;
     return <text key={`l-${index}`} x={px} y={py - 6} textAnchor="middle" fontSize={10} fontWeight={700} fill={color}>{fmt(value)}</text>;
@@ -296,7 +299,7 @@ function MiniTrend({ data, color, kind, fmt, gradId }: {
           {axis}
           <Area type="monotone" dataKey="value" stroke={color} strokeWidth={1.75} fill={`url(#${gradId})`}
             connectNulls isAnimationActive={false}
-            dot={(p: any) => p.index === last && p.value != null
+            dot={(p: any) => p.index === last && p.payload?.value != null
               ? <g key={`d-${p.index}`}><circle cx={p.cx} cy={p.cy} r={3} fill={color} />{lastLabel(p)}</g>
               : <g key={`d-${p.index}`} />} />
         </AreaChart>
