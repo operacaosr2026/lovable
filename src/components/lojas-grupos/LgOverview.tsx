@@ -395,9 +395,17 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
       vendasPorDia = Math.round(lucroNecessarioPorDia / lucroPorVenda);
     }
 
+    // Depois de batida a meta, os cards passam a mostrar o ritmo real do
+    // período (em vez de "quanto falta"), pra acompanhar quanto vai passar dela.
+    const diasComDados = Math.max(1, (accData.chartData ?? []).length);
+    const vendasMediaReal = (accData.pedidos ?? 0) / diasComDados;
+    const lucroMedioReal = lucroAcumulado / diasComDados;
+
     return {
       lucroAcumulado,
       vendasPorDia,
+      vendasMediaReal,
+      lucroMedioReal,
       lucroNecessarioPorDia,
       projecaoFinal,
       percentProjecao,
@@ -422,7 +430,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
     // ponte: repete o último valor real como início da linha projetada, pra elas se conectarem
     points[points.length - 1] = { ...points[points.length - 1], lucroProjetado: lastValue };
 
-    if (!d.vencida && !d.batida && d.diasRestantes > 0) {
+    if (!d.vencida && d.diasRestantes > 0) {
       const mediaDia = accData?.mediaUltimos3 ?? 0;
       let cum = lastValue;
       let cur = isoToday();
@@ -768,6 +776,9 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                   {/* Progresso da meta */}
                   {(() => {
                     const clampedPercent = Math.min(100, Math.max(0, d.percentAtingida));
+                    // O número continua contando depois de 100% (quanto passou da meta);
+                    // só a barra/marcador ficam limitados ao tamanho da barra.
+                    const shownPercent = Math.max(0, d.percentAtingida);
                     const stateColor: "success" | "destructive" | "primary" = d.batida ? "success" : d.vencida ? "destructive" : "primary";
                     const textCls = stateColor === "success" ? "text-success" : stateColor === "destructive" ? "text-destructive" : "text-primary";
                     const bgSoftCls = stateColor === "success" ? "bg-success/10" : stateColor === "destructive" ? "bg-destructive/10" : "bg-primary/10";
@@ -792,7 +803,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
 
                         <div>
                           <p className={cn("text-3xl font-extrabold leading-none", textCls)}>
-                            {clampedPercent.toFixed(1)}%
+                            {shownPercent.toFixed(1)}%
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">da meta atingida</p>
                         </div>
@@ -802,7 +813,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                             className={cn("absolute top-0 -translate-x-1/2 rounded-full text-white text-[10px] font-bold px-2 py-0.5 whitespace-nowrap", bgSolidCls)}
                             style={{ left: `${clampedPercent}%` }}
                           >
-                            {clampedPercent.toFixed(1)}%
+                            {shownPercent.toFixed(1)}%
                             <span className={cn("absolute left-1/2 -bottom-1 -translate-x-1/2 size-1.5 rotate-45", bgSolidCls)} />
                           </div>
                           <div className="h-1.5 rounded-full bg-muted overflow-hidden">
@@ -843,8 +854,8 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                     icon={<ShoppingCart className="size-5" />}
                     accent="primary"
                     label="Vendas por dia"
-                    value={d.vencida || d.batida ? "—" : String(d.vendasPorDia)}
-                    sub={d.semLucroPorVenda && !d.vencida && !d.batida ? "Defina o lucro por venda" : "Média diária"}
+                    value={d.batida ? d.vendasMediaReal.toFixed(1).replace(".", ",") : d.vencida ? "—" : String(d.vendasPorDia)}
+                    sub={d.batida ? "Média real no período" : d.semLucroPorVenda && !d.vencida ? "Defina o lucro por venda" : "Média diária"}
                     trendIcon={<TrendingUp className="size-4" />}
                     footerIcon={<BarChart3 className="size-3.5" />}
                     footer={<><span className="font-bold text-primary">{accData?.pedidosOntem ?? 0}</span> vendas ontem</>}
@@ -852,9 +863,9 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                   <StatCard
                     icon={<Wallet className="size-5" />}
                     accent="success"
-                    label="Lucro necessário/dia"
-                    value={d.vencida || d.batida ? "—" : fmtMoney(d.lucroNecessarioPorDia)}
-                    sub="Para bater a meta"
+                    label={d.batida ? "Lucro médio/dia" : "Lucro necessário/dia"}
+                    value={d.batida ? fmtMoney(d.lucroMedioReal) : d.vencida ? "—" : fmtMoney(d.lucroNecessarioPorDia)}
+                    sub={d.batida ? "Meta batida — média no período" : "Para bater a meta"}
                     trendIcon={<Target className="size-4" />}
                     footerIcon={<DollarSign className="size-3.5" />}
                     footer={<><span className="font-bold text-success">{fmtMoney(accData?.lucroOntem ?? 0)}</span> ontem</>}
@@ -1034,8 +1045,13 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                           label="Lucro acumulado" value={fmtMoney(d.lucroAcumulado)} valueClass="text-primary" />
                         <SummaryRow icon={<Flag className="size-3.5" />} iconCls="bg-success/10 text-success"
                           label="Meta" value={fmtMoney(d.meta)} valueClass="text-success" />
-                        <SummaryRow icon={<Target className="size-3.5" />} iconCls="bg-amber-500/10 text-amber-600"
-                          label="Falta para a meta" value={fmtMoney(Math.max(0, d.meta - d.lucroAcumulado))} valueClass="text-amber-600" />
+                        {d.batida ? (
+                          <SummaryRow icon={<TrendingUp className="size-3.5" />} iconCls="bg-success/10 text-success"
+                            label="Acima da meta" value={`+${fmtMoney(d.lucroAcumulado - d.meta)}`} valueClass="text-success" />
+                        ) : (
+                          <SummaryRow icon={<Target className="size-3.5" />} iconCls="bg-amber-500/10 text-amber-600"
+                            label="Falta para a meta" value={fmtMoney(Math.max(0, d.meta - d.lucroAcumulado))} valueClass="text-amber-600" />
+                        )}
                       </div>
                     </div>
                   </div>
