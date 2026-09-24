@@ -8,6 +8,56 @@
 -- isso ele é localizado pelo nome da função, não pelo nome do gatilho.
 -- Rodar tudo de uma vez: se algum passo falhar, nada é aplicado.
 
+-- 0) handle_new_user em produção (editada direto no banco, diferente da versão
+--    das migrations) grava os status de suporte no cadastro. Mesma função,
+--    sem esses dois INSERTs — senão apagar as tabelas quebraria o cadastro.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_invite_token text;
+  v_invite RECORD;
+BEGIN
+  INSERT INTO public.profiles (id, full_name, avatar_url)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+    NEW.raw_user_meta_data->>'avatar_url'
+  );
+
+  v_invite_token := NEW.raw_user_meta_data->>'invite_token';
+
+  IF v_invite_token IS NOT NULL THEN
+    SELECT * INTO v_invite FROM public.member_invitations
+    WHERE token = v_invite_token AND status = 'pending' AND expires_at > now()
+    LIMIT 1;
+
+    IF FOUND THEN
+      INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'member') ON CONFLICT (user_id) DO NOTHING;
+      INSERT INTO public.workspace_members (owner_id, member_id) VALUES (v_invite.owner_id, NEW.id) ON CONFLICT DO NOTHING;
+      INSERT INTO public.member_permissions (owner_id, member_id, section, resource_id)
+        SELECT v_invite.owner_id, NEW.id, (p->>'section')::text, NULLIF(p->>'resource_id','')::uuid
+        FROM jsonb_array_elements(v_invite.permissions) p ON CONFLICT DO NOTHING;
+      UPDATE public.member_invitations SET status = 'accepted', accepted_by = NEW.id WHERE id = v_invite.id;
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  -- Admin signup
+  INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'admin') ON CONFLICT (user_id) DO NOTHING;
+
+  INSERT INTO public.stores (user_id, name, color, position) VALUES
+    (NEW.id, 'Walkesty',    'oklch(0.6 0.22 285)',  0),
+    (NEW.id, 'The Ravien',  'oklch(0.62 0.14 155)', 1),
+    (NEW.id, 'The Kickest', 'oklch(0.7 0.14 75)',   2);
+
+  RETURN NEW;
+END;
+$function$;
+
 -- 1) Trava: se outra função ainda usa as tabelas de suporte (ex.: uma versão
 --    do handle_new_user que grava nelas), apagar as tabelas quebraria o
 --    cadastro — aborta sem mudar nada.
