@@ -1,11 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageHeader";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
-  ArrowUpRight, ArrowDownRight, BarChart3, Layers, Tag,
+  ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
 } from "lucide-react";
 import {
@@ -305,17 +305,6 @@ function Dashboard() {
           <div className="flex items-center gap-1.5">
             {isFetching && <div className="size-3.5 rounded-full border-2 border-border border-t-primary animate-spin" />}
             <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
-          </div>
-          <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1">
-            <Link to="/" className="flex items-center gap-1.5 text-xs font-medium px-2.5 sm:px-3 h-7 rounded-lg bg-primary text-primary-foreground">
-              <BarChart3 className="size-3.5 shrink-0" /> <span className="hidden sm:inline">Visão geral</span>
-            </Link>
-            <Link to="/shops/lojas-grupos" className="flex items-center gap-1.5 text-xs font-medium px-2.5 sm:px-3 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-              <Layers className="size-3.5 shrink-0" /> <span className="hidden sm:inline">Lojas</span>
-            </Link>
-            <Link to="/shops/products" search={{ view: "galeria" }} className="flex items-center gap-1.5 text-xs font-medium px-2.5 sm:px-3 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-              <Tag className="size-3.5 shrink-0" /> <span className="hidden sm:inline">Produtos</span>
-            </Link>
           </div>
         </div>
       </div>
