@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban,
-  Search, LogOut, Package, Menu, Network, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare,
+  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -27,7 +27,6 @@ const navItems: NavItem[] = [
   { to: "/shops/caixa", label: "Caixa", icon: Wallet, section: "shops" },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "shops" },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "shops" },
-  { to: "/shops/sops", label: "SOPs & Processos", icon: Network, section: "sops" },
   { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
 ];
 
@@ -44,7 +43,6 @@ const ALL_PAGES = [
   { to: "/shops/caixa", label: "Caixa", icon: Wallet },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
-  { to: "/shops/sops", label: "SOPs & Processos", icon: Network },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
