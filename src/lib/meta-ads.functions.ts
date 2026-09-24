@@ -578,7 +578,8 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
       const seen = new Set(((existing ?? []) as any[]).map((r) => r.mercury_transaction_id));
       const toInsert: any[] = [];
       for (const c of charges) {
-        const date = new Date(c.time).toLocaleDateString("en-CA", { timeZone: US_TIME_ZONE });
+        // Data em UTC — é como a Meta mostra a cobrança no faturamento.
+        const date = new Date(c.time).toISOString().slice(0, 10);
         const shares = splitCentsEvenly(c.amount, targets.length);
         targets.forEach((shopId, i) => {
           const extId = `meta_charge_${c.txId}_${shopId}`;

@@ -10,9 +10,9 @@ ALTER TABLE public.shop_meta_ad_accounts
   ADD COLUMN IF NOT EXISTS billing_synced_until timestamptz,
   ADD COLUMN IF NOT EXISTS billing_seen_tx      text[] NOT NULL DEFAULT '{}';
 
--- Contas já conectadas: a partir de hoje (24/09/2026, 0h de Nova York — o
--- mesmo fuso do "hoje" do Caixa). Contas conectadas depois começam no
--- momento em que o cron as vê pela primeira vez.
+-- Contas já conectadas: a partir de hoje (24/09/2026, 0h UTC — a Meta mostra
+-- as cobranças em UTC, e a data do lançamento também é a UTC). Contas
+-- conectadas depois começam no momento em que o cron as vê pela primeira vez.
 UPDATE public.shop_meta_ad_accounts
-SET billing_started_at = '2026-09-24 00:00:00 America/New_York'::timestamptz
+SET billing_started_at = '2026-09-24 00:00:00+00'::timestamptz
 WHERE billing_started_at IS NULL;
