@@ -505,7 +505,7 @@ function Dashboard() {
                 <BarChart3 className="size-4" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-foreground leading-tight">{activeTabCfg.label}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">{activeTabCfg.label}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -559,7 +559,7 @@ function Dashboard() {
               <PieChartIcon className="size-4" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground leading-tight">Composição do faturamento</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">Composição do faturamento</p>
             </div>
           </div>
 
