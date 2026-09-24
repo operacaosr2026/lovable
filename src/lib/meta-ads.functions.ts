@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { US_TIME_ZONE } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
+import { fetchWithRetry } from "@/lib/http";
 const META_APP_ID    = process.env["META_APP_ID"]!;
 const SUPABASE_URL   = process.env["SUPABASE_URL"]!;
 const CALLBACK_URI   = `${SUPABASE_URL}/functions/v1/meta-oauth-callback`;
@@ -155,7 +156,7 @@ export const getMetaCampaigns = createServerFn({ method: "GET" })
 
     if (!tokenRow?.access_token) throw new Error("Conta Meta não conectada");
 
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://graph.facebook.com/v19.0/${data.ad_account_id}/campaigns` +
       `?fields=id,name,status,objective&limit=100&access_token=${tokenRow.access_token}`
     );
@@ -306,7 +307,7 @@ export const testMetaAdsConnection = createServerFn({ method: "POST" })
 
     try {
       const url = `${META_GRAPH_API_BASE}/${row.ad_account_id}?fields=name,currency,account_status&access_token=${encodeURIComponent(row.access_token)}`;
-      const r = await fetch(url);
+      const r = await fetchWithRetry(url);
       const json: any = await r.json();
       if (!r.ok || json.error) {
         const msg = json?.error?.message || `Falha (${r.status})`;
@@ -367,7 +368,7 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       // Fetch first ad account's timezone to compute "today" in local time
       let timezoneOffset = 0;
       try {
-        const tzRes = await fetch(
+        const tzRes = await fetchWithRetry(
           `${META_GRAPH_API_BASE}/${accounts[0].ad_account_id}?fields=timezone_offset_hours_utc&access_token=${encodeURIComponent(accessToken)}`
         );
         const tzJson: any = await tzRes.json();
@@ -393,7 +394,7 @@ export const syncMetaAdsSpend = createServerFn({ method: "POST" })
       const url = `${META_GRAPH_API_BASE}/${account.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&access_token=${encodeURIComponent(accessToken)}`;
 
       try {
-        const r = await fetch(url);
+        const r = await fetchWithRetry(url);
         const json: any = await r.json();
         if (!r.ok || json.error) {
           const msg = json?.error?.message || `Falha (${r.status})`;
@@ -514,7 +515,7 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
         : Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
 
       const url = `${META_GRAPH_API_BASE}/${account.ad_account_id}/activities?since=${since}&limit=100&fields=event_time,event_type,translated_event_type,extra_data,actor_name,object_name,object_type&access_token=${encodeURIComponent(tokenRow.access_token)}`;
-      const r = await fetch(url);
+      const r = await fetchWithRetry(url);
       const json: any = await r.json();
       if (!r.ok || json.error) continue; // não aborta as demais contas
 

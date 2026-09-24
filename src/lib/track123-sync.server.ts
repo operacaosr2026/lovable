@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { fetchWithRetry } from "@/lib/http";
 
 const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
@@ -80,7 +81,7 @@ export async function runTrack123Sync(shopId: string, apiKey: string, supabase: 
       for (let i = 0; i < numbers.length; i += 25) {
         const chunk = numbers.slice(i, i + 25);
         try {
-          const r = await fetch(`${TRACK123_API_BASE}/track/import`, {
+          const r = await fetchWithRetry(`${TRACK123_API_BASE}/track/import`, {
             method: "POST",
             headers: track123Headers,
             body: JSON.stringify(chunk.map((n) => ({ trackNo: n }))),
@@ -98,7 +99,7 @@ export async function runTrack123Sync(shopId: string, apiKey: string, supabase: 
       for (let i = 0; i < numbers.length; i += 100) {
         const chunk = numbers.slice(i, i + 100);
         try {
-          const r = await fetch(`${TRACK123_API_BASE}/track/query`, {
+          const r = await fetchWithRetry(`${TRACK123_API_BASE}/track/query`, {
             method: "POST",
             headers: track123Headers,
             body: JSON.stringify({ trackNoInfos: chunk.map((trackNo) => ({ trackNo })), queryPageSize: 100 }),

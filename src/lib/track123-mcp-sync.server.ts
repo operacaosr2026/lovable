@@ -3,6 +3,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { selectAll } from "@/lib/select-all";
 
+import { fetchWithRetry } from "@/lib/http";
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // Sem limite de quantidade — processa todos os pedidos em aberto dentro dos
 // últimos 30 dias. Vercel function tem maxDuration de 60s e cada pedido custa
@@ -19,7 +20,7 @@ const MCP_CONCURRENCY = 8;
 const MCP_REQUEST_TIMEOUT_MS = 15_000;
 
 async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumber: string) {
-  const r = await fetch(MCP_URL, {
+  const r = await fetchWithRetry(MCP_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -27,14 +28,13 @@ async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumb
       "X-Api-Key": apiKey,
       "X-Store-Uuid": storeUuid,
     },
-    signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
       params: { name: "get_order_details_by_number", arguments: { order_number: orderNumber } },
     }),
-  });
+  }, { timeoutMs: MCP_REQUEST_TIMEOUT_MS, retries: 1 });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const json: any = await r.json();
   if (json?.error) throw new Error(json.error.message ?? "Erro MCP");

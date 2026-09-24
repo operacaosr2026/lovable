@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncMirrorShop } from "@/lib/shop-orders.functions";
 import crypto from "crypto";
+import { fetchWithRetry } from "@/lib/http";
 
 function htmlMessage(title: string, message: string, ok: boolean) {
   return new Response(
@@ -57,11 +58,12 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
         }
         if (!verifyHmac(q, clientSecret)) return htmlMessage("Erro", "HMAC inválido", false);
 
-        const tokRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
+        const tokRes = await fetchWithRetry(`https://${shop}/admin/oauth/access_token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
-        });
+        // `code` do OAuth é de uso único — sem nova tentativa, só tempo limite.
+        }, { retries: 0 });
         if (!tokRes.ok) {
           const txt = await tokRes.text();
           return htmlMessage("Erro", `Falha ao obter token (${tokRes.status}): ${txt.slice(0, 120)}`, false);

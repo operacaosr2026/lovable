@@ -8,6 +8,51 @@ export type Database = {
   };
   public: {
     Tables: {
+      app_notifications: {
+        Row: {
+          body: string | null;
+          created_at: string;
+          dismissed_at: string | null;
+          id: string;
+          key: string;
+          level: string;
+          link: string | null;
+          read_at: string | null;
+          resolved_at: string | null;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          body?: string | null;
+          created_at?: string;
+          dismissed_at?: string | null;
+          id?: string;
+          key: string;
+          level?: string;
+          link?: string | null;
+          read_at?: string | null;
+          resolved_at?: string | null;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          body?: string | null;
+          created_at?: string;
+          dismissed_at?: string | null;
+          id?: string;
+          key?: string;
+          level?: string;
+          link?: string | null;
+          read_at?: string | null;
+          resolved_at?: string | null;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       app_settings: {
         Row: {
           app_name: string;

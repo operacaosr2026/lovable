@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PullToRefresh } from "@/components/PullToRefresh";
+import { NotificationBell } from "@/components/NotificationBell";
 
 type NavItem = {
   to: string;
@@ -269,6 +270,7 @@ export function AppLayout() {
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
           <img src="/logo.png" alt="SRX" className="h-7 w-auto shrink-0" />
           <div className="flex-1 min-w-0" />
+          <NotificationBell className="hidden md:grid" />
           <button
             onClick={() => setSidebarHidden(true)}
             title="Esconder menu"
@@ -322,13 +324,18 @@ export function AppLayout() {
       )}
 
       {sidebarHidden && (
-        <button
-          onClick={() => setSidebarHidden(false)}
-          title="Mostrar menu"
-          className="hidden md:grid fixed left-3 top-3 z-30 size-9 place-items-center rounded-lg border border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-muted shadow-sm transition-colors"
-        >
-          <PanelLeftOpen className="size-4" />
-        </button>
+        <div className="hidden md:flex fixed left-3 top-3 z-30 items-center gap-1.5">
+          <button
+            onClick={() => setSidebarHidden(false)}
+            title="Mostrar menu"
+            className="size-9 grid place-items-center rounded-lg border border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-muted shadow-sm transition-colors"
+          >
+            <PanelLeftOpen className="size-4" />
+          </button>
+          <div className="rounded-lg border border-border bg-surface shadow-sm">
+            <NotificationBell className="size-9" />
+          </div>
+        </div>
       )}
 
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 h-14 border-b border-border bg-background/95 backdrop-blur flex items-center justify-between px-4">
@@ -345,7 +352,8 @@ export function AppLayout() {
             {navContent(() => setMobileOpen(false))}
           </SheetContent>
         </Sheet>
-        <Link to="/" className="flex items-center gap-2">
+        <NotificationBell className="size-9 -ml-1 mr-auto text-foreground" />
+        <Link to="/" className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
           <img src="/logo.png" alt="SRX" className="h-6 w-auto" />
         </Link>
         <button

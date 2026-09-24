@@ -5,6 +5,7 @@ import { recomputePayoutLag, costProductsFor } from "@/lib/shop-orders.functions
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
 
+import { fetchWithRetry } from "@/lib/http";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -23,7 +24,7 @@ async function fetchOrders(domain: string, token: string, sinceISO: string) {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&created_at_min=${encodeURIComponent(sinceISO)}`;
   for (let i = 0; i < 20 && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) throw new Error(`Shopify ${res.status}`);
     const json: any = await res.json();
     out.push(...(json.orders ?? []));
@@ -59,7 +60,7 @@ async function fetchPayouts(domain: string, token: string, sinceISO: string) {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/payouts.json?limit=250&date_min=${encodeURIComponent(sinceISO.slice(0, 10))}`;
   for (let i = 0; i < 20 && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       if (res.status === 404 || res.status === 403) return [];
       throw new Error(`Shopify payouts ${res.status}`);
@@ -78,7 +79,7 @@ async function fetchBalanceTransactions(domain: string, token: string, maxPages:
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?limit=250`;
   for (let i = 0; i < maxPages && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       if (res.status === 404 || res.status === 403) return [];
       throw new Error(`Shopify balance transactions ${res.status}`);
@@ -101,7 +102,7 @@ async function fetchDisputes(domain: string, token: string, maxPages: number) {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250`;
   for (let i = 0; i < maxPages && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       if (res.status === 403) { console.warn(`disputes 403 (escopo read_shopify_payments_disputes ausente?) — ${domain}`); return []; }
       if (res.status === 404) return [];

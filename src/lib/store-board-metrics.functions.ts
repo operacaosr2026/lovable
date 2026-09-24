@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import {
   getShopifyCreds, fetchShopifyPayouts, fetchShopifyPaymentsBalance,
 } from "@/lib/shop-orders.functions";
+import { fetchWithRetry } from "@/lib/http";
 
 const StoreIdInput = z.object({ shopify_store_id: z.string().uuid() });
 
@@ -26,7 +27,7 @@ function last7DaysRange() {
 async function fetchShopifyOrdersCountRange(domain: string, token: string, fromISO: string, toISO: string) {
   const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any` +
     `&created_at_min=${encodeURIComponent(fromISO)}&created_at_max=${encodeURIComponent(toISO)}`;
-  const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+  const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
   if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
   const json: any = await res.json();
   return Number(json.count ?? 0);
@@ -45,7 +46,7 @@ export const getStoreAvgDailyOrders = createServerFn({ method: "GET" })
 
 async function fetchShopifyBalanceTransactionsForPayout(domain: string, token: string, payoutId: string | number) {
   const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?payout_id=${payoutId}&limit=250`;
-  const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+  const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
   if (!res.ok) {
     if (res.status === 404 || res.status === 403) return [];
     throw new Error(`Shopify ${res.status}: ${await res.text()}`);

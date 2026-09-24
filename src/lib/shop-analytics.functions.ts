@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { fetchWithRetry } from "@/lib/http";
 
 export const syncShopifyVisitors = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -49,7 +50,7 @@ export const syncShopifyVisitors = createServerFn({ method: "POST" })
 
     let resp: Response;
     try {
-      resp = await fetch(`https://${shop_domain}/admin/api/2024-01/graphql.json`, {
+      resp = await fetchWithRetry(`https://${shop_domain}/admin/api/2024-01/graphql.json`, {
         method:  "POST",
         headers: {
           "X-Shopify-Access-Token": access_token,

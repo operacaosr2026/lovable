@@ -6,6 +6,8 @@ import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
 import { US_TIME_ZONE } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
+import { fetchWithRetry } from "@/lib/http";
+import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
 // usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
 // que pode variar dentro do mesmo grupo/card.
@@ -70,7 +72,7 @@ async function fetchShopifyOrders(domain: string, token: string, sinceISO: strin
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&created_at_min=${encodeURIComponent(sinceISO)}`;
   for (let i = 0; i < 20 && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     const json: any = await res.json();
     out.push(...(json.orders ?? []));
@@ -86,7 +88,7 @@ export const fetchShopifyPayouts = createServerOnlyFn(async (domain: string, tok
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/payouts.json?limit=250&date_min=${encodeURIComponent(sinceISO.slice(0, 10))}`;
   for (let i = 0; i < 20 && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
       if (res.status === 404 || res.status === 403) return [];
@@ -106,7 +108,7 @@ async function fetchShopifyBalanceTransactions(domain: string, token: string, ma
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?limit=250`;
   for (let i = 0; i < maxPages && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
       if (res.status === 404 || res.status === 403) return [];
@@ -126,7 +128,7 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250&initiated_at_min=${encodeURIComponent(sinceISO)}`;
   for (let i = 0; i < 20 && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
       if (res.status === 404 || res.status === 403) return [];
@@ -150,7 +152,7 @@ async function fetchShopifyRefundedOrders(domain: string, token: string, fromISO
     + `&created_at_max=${encodeURIComponent(toISO)}`
     + `&fields=id,total_price,current_total_price,refunds`;
   for (let i = 0; i < 20 && url; i++) {
-    const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) {
       if (res.status === 404 || res.status === 403) return [];
       throw new Error(`Shopify ${res.status}: ${await res.text()}`);
@@ -211,7 +213,7 @@ function orderRefundAmountByDate(o: any, fallbackDate: string): { total: number;
 
 async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: string) {
   const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any&created_at_min=${encodeURIComponent(sinceISO)}`;
-  const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+  const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
   if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
   const json: any = await res.json();
   return Number(json.count ?? 0);
@@ -219,7 +221,7 @@ async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: 
 
 export const fetchShopifyPaymentsBalance = createServerOnlyFn(async (domain: string, token: string) => {
   const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance.json`;
-  const res = await fetch(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+  const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
   if (!res.ok) {
     // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
     if (res.status === 404 || res.status === 403) return null;
@@ -567,7 +569,7 @@ export const connectShopifyStore = createServerFn({ method: "POST" })
     if (!domain.includes(".")) domain = `${domain}.myshopify.com`;
 
     // Validate credentials and fetch store metadata (including timezone)
-    const res = await fetch(`https://${domain}/admin/api/2024-10/shop.json`, {
+    const res = await fetchWithRetry(`https://${domain}/admin/api/2024-10/shop.json`, {
       headers: { "X-Shopify-Access-Token": data.access_token, "Content-Type": "application/json" },
     });
     if (!res.ok) {
@@ -1125,6 +1127,18 @@ export const getShopifyChargebackRate = createServerFn({ method: "GET" })
 // exato — mesma lógica usada pelo Dashboard (getShopDashboardMetrics), para
 // que "lucro" bata entre as duas telas em vez de depender do cache em
 // shop_cash_entries (populado pelo sync em background, que pode estar atrasado).
+// Reembolso/chargeback que não carregou vira 0 no cálculo — o faturamento e o
+// lucro exibidos ficam maiores que o real. Sem esse aviso, isso passava calado.
+async function notifyRefundsFailed(ownerId: string, shopifyStoreId: string) {
+  const { data: store } = await supabaseAdmin.from("shopify_stores")
+    .select("name").eq("id", shopifyStoreId).eq("user_id", ownerId).maybeSingle();
+  await raiseNotification(ownerId, `shopify_refunds:${shopifyStoreId}`, {
+    level: "error",
+    title: `Reembolsos não carregaram — ${store?.name ?? "loja Shopify"}`,
+    body: "A Shopify não respondeu ao buscar reembolsos e chargebacks. O faturamento e o lucro exibidos podem estar maiores que o real até a próxima atualização que der certo.",
+  });
+}
+
 export const getGroupShopifyRefundsAndChargebacks = createServerOnlyFn(async (
   ownerId: string, shopIds: string[], fromISO: string, toISO: string,
 ) => {
@@ -1156,12 +1170,14 @@ export const getGroupShopifyRefundsAndChargebacks = createServerOnlyFn(async (
         const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
         cbByDate[date] = (cbByDate[date] ?? 0) + amt;
       }
+      await resolveNotification(ownerId, `shopify_refunds:${s.shopify_store_id}`);
       return { shop_id: s.shop_id as string, refAmt, cbAmt, refByDate, cbByDate };
     } catch (e) {
       // Sem log, isso caía pra 0 silenciosamente e inflava o "lucro" exibido
       // sem nenhum indício de que a Shopify falhou (token revogado, rate
       // limit, 5xx) em vez de a loja realmente não ter reembolso/chargeback.
       console.error(`getGroupShopifyRefundsAndChargebacks: falhou pra shop_id=${s.shop_id}`, e);
+      await notifyRefundsFailed(ownerId, s.shopify_store_id).catch(() => {});
       return empty;
     }
   }));
@@ -2071,9 +2087,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
               cbByDate[date] = (cbByDate[date] ?? 0) + amt;
             }
             const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
+            await resolveNotification(ownerId, `shopify_refunds:${s.shopify_store_id}`);
             return { refAmt, prevRefAmt, cbAmt, prevCbAmt, refByDate, cbByDate };
           } catch (e) {
             console.error(`getShopDashboardMetrics: falha ao buscar reembolso/chargeback pra shopify_store_id=${s.shopify_store_id}`, e);
+            await notifyRefundsFailed(ownerId, s.shopify_store_id).catch(() => {});
             return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0, refByDate: {}, cbByDate: {} };
           }
         })
