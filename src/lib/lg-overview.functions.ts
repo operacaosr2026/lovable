@@ -268,3 +268,64 @@ export const listLgCardGoalHistory = createServerFn({ method: "GET" })
 
     return { goals };
   });
+
+// ─── Histórico de metas por mês (Dashboard principal, aba "Metas") ────────────
+//
+// Uma barra por mês: soma das metas de todos os grupos (ativos e arquivados)
+// com início naquele mês × lucro realizado no período de cada meta — mesma
+// conta da aba Metas do grupo (computeAccumulatedLucro). Por grupo e mês vale
+// a meta que não foi encerrada (ou a mais recente, se todas foram). Meta de
+// grupo apagado fica de fora: não dá pra saber de quais lojas era o lucro.
+export const getGoalsHistoryOverview = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { supabase, ownerId } = context;
+    const today = isoToday();
+
+    const [{ data: goals, error }, { data: cardShops }] = await Promise.all([
+      supabase.from("lg_card_goals").select("card_id,meta,start_date,prazo,closed_at,created_at")
+        .eq("user_id", ownerId).order("created_at", { ascending: true }),
+      supabase.from("lg_card_shops").select("card_id,shop_id,lg_cards!inner(user_id)")
+        .eq("lg_cards.user_id", ownerId),
+    ]);
+    if (error) throw new Error(error.message);
+
+    const shopsByCard = new Map<string, string[]>();
+    for (const r of (cardShops ?? []) as any[]) {
+      if (!shopsByCard.has(r.card_id)) shopsByCard.set(r.card_id, []);
+      shopsByCard.get(r.card_id)!.push(r.shop_id);
+    }
+
+    // Uma meta por grupo e mês.
+    const chosen = new Map<string, any>();
+    for (const g of (goals ?? []) as any[]) {
+      if (!shopsByCard.get(g.card_id)?.length) continue;
+      if (g.start_date > today) continue;
+      const key = `${g.card_id}|${String(g.start_date).slice(0, 7)}`;
+      const cur = chosen.get(key);
+      if (!cur || (cur.closed_at && !g.closed_at) || (!!cur.closed_at === !!g.closed_at && g.created_at > cur.created_at)) {
+        chosen.set(key, g);
+      }
+    }
+
+    const byMonth = new Map<string, { meta: number; realizado: number }>();
+    await Promise.all([...chosen.values()].map(async (g: any) => {
+      const closedDate = g.closed_at ? String(g.closed_at).slice(0, 10) : null;
+      let end = g.prazo < today ? g.prazo : today;
+      if (closedDate && closedDate < end) end = closedDate;
+      const { lucro } = await computeAccumulatedLucro(supabase, ownerId, shopsByCard.get(g.card_id)!, g.start_date, end);
+      const month = String(g.start_date).slice(0, 7);
+      const cur = byMonth.get(month) ?? { meta: 0, realizado: 0 };
+      cur.meta += Number(g.meta ?? 0);
+      cur.realizado += lucro;
+      byMonth.set(month, cur);
+    }));
+
+    const months = [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({
+      month,
+      meta: Math.round(v.meta * 100) / 100,
+      realizado: Math.round(v.realizado * 100) / 100,
+      atingida: v.meta > 0 && v.realizado >= v.meta,
+    }));
+    return { months, atingidas: months.filter((m) => m.atingida).length, total: months.length };
+  });

@@ -7,13 +7,14 @@ import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
   ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
-  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight,
+  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target,
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, LabelList,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { getDashboardOverview } from "@/lib/lg-cards.functions";
+import { getGoalsHistoryOverview } from "@/lib/lg-overview.functions";
 import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
 import { computeLogisticsKpis, computeLogisticsTrend } from "@/lib/logistics-kpis";
@@ -257,11 +258,109 @@ function buildShopSlices(shopBreakdown: ShopBreakdownRow[]): ShopSlice[] {
 
 // ─── Abas do gráfico principal ──────────────────────────────────────────────────
 
-const CHART_TABS: { key: keyof DailyPoint; label: string; accent: MetricAccent }[] = [
+type ChartTabKey = "metas" | "lucro" | "faturamento" | "anuncios";
+
+const CHART_TABS: { key: ChartTabKey; label: string; accent: MetricAccent }[] = [
+  { key: "metas",       label: "Metas",          accent: "primary" },
   { key: "lucro",       label: "Lucro",          accent: "success" },
   { key: "faturamento", label: "Faturamento",    accent: "primary" },
   { key: "anuncios",    label: "Gasto com Ads",  accent: "info" },
 ];
+
+// ─── Aba "Metas": histórico de metas por mês ───────────────────────────────────
+
+const MONTH_ABBR = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const fmtK = (n: number) => {
+  const abs = Math.abs(n);
+  const s = abs >= 1000 ? `$${(abs / 1000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, "")}k` : `$${Math.round(abs)}`;
+  return n < 0 ? `-${s}` : s;
+};
+
+type GoalsHistory = { months: { month: string; meta: number; realizado: number; atingida: boolean }[]; atingidas: number; total: number };
+
+// Barra clara da meta com a linha tracejada "meta do mês" no topo.
+function MetaBarShape(props: any) {
+  const { x, y, width, height } = props;
+  if (!width || height == null) return null;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={Math.max(0, height)} rx={6} fill="var(--color-primary)" fillOpacity={0.14} />
+      <line x1={x - 3} x2={x + width + 3} y1={y} y2={y} stroke="var(--color-primary)" strokeWidth={2.5} strokeDasharray="6 4" />
+    </g>
+  );
+}
+
+function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
+  if (loading) return <div className="flex-1 min-h-[240px] bg-muted animate-pulse rounded-xl" />;
+  const months = (data?.months ?? []).map((m) => ({
+    ...m,
+    label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month,
+  }));
+  const total = data?.total ?? 0;
+  const atingidas = data?.atingidas ?? 0;
+  const pctAtingidas = total ? (atingidas / total) * 100 : 0;
+  const BAR = 38;
+  return (
+    <div className="flex-1 min-h-[240px] flex flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <p className="text-base font-bold text-foreground">Histórico de metas</p>
+        {total > 0 && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span><span className="font-semibold text-foreground">{atingidas}/{total}</span> metas atingidas</span>
+            <span className="inline-flex items-center gap-1 rounded-lg bg-success/15 text-success font-semibold px-2 py-1">
+              <Target className="size-3.5" /> {pctAtingidas.toFixed(1).replace(".", ",")}%
+            </span>
+          </div>
+        )}
+      </div>
+      {months.length === 0 ? (
+        <p className="flex-1 grid place-items-center text-xs text-muted-foreground py-8">Nenhuma meta cadastrada ainda.</p>
+      ) : (
+        <>
+          <div className="flex-1 min-h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={months} margin={{ top: 24, right: 8, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                <Tooltip
+                  cursor={{ fill: "var(--color-muted)", opacity: 0.4 }}
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const p = payload[0].payload;
+                    return (
+                      <div className="rounded-xl border border-border bg-card px-3 py-2 shadow-md text-xs">
+                        <p className="font-semibold text-foreground mb-1">{p.label}</p>
+                        <p className="text-muted-foreground">Realizado: <span className="font-semibold text-foreground">{fmtMoney(p.realizado)}</span></p>
+                        <p className="text-muted-foreground">Meta: <span className="font-semibold text-foreground">{fmtMoney(p.meta)}</span></p>
+                        <p className={p.atingida ? "text-success font-semibold mt-1" : "text-muted-foreground mt-1"}>
+                          {p.meta > 0 ? `${((p.realizado / p.meta) * 100).toFixed(1)}% da meta` : ""}
+                        </p>
+                      </div>
+                    );
+                  }}
+                />
+                <Bar dataKey="meta" barSize={BAR} shape={<MetaBarShape />} isAnimationActive={false}>
+                  <LabelList dataKey="meta" position="top" offset={8} formatter={(v: any) => fmtK(Number(v))}
+                    style={{ fill: "var(--color-primary)", fontSize: 11, fontWeight: 700 }} />
+                </Bar>
+                <Bar dataKey="realizado" barSize={BAR} radius={[6, 6, 0, 0]} fill="var(--color-primary)" isAnimationActive={false}>
+                  <LabelList dataKey="realizado" position="insideTop" offset={10} formatter={(v: any) => fmtK(Number(v))}
+                    style={{ fill: "#fff", fontSize: 10, fontWeight: 600 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-primary" /> Realizado</span>
+            <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-primary/15" /> Meta</span>
+            <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-primary" /> Meta do mês</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── Indicador com mini-gráfico (coluna ao lado do gráfico) ────────────────────
 
@@ -375,7 +474,14 @@ function Dashboard() {
   const { from, to } = useMemo(() => getPeriodRange(period, customRange), [period, customRange]);
   const nDias = useMemo(() => daysBetween(from, to), [from, to]);
 
-  const [activeTab, setActiveTab] = useState<keyof DailyPoint>("lucro");
+  // "Metas" vem primeiro e já selecionada.
+  const [activeTab, setActiveTab] = useState<ChartTabKey>("metas");
+  const goalsHistoryFn = useServerFn(getGoalsHistoryOverview);
+  const goalsHistory = useQuery({
+    queryKey: ["goals-history-overview"],
+    queryFn: () => goalsHistoryFn(),
+    enabled: activeTab === "metas",
+  });
 
   const { data, isFetching, isLoading } = useQuery({
     queryKey: ["dashboard-overview", from, to],
@@ -448,6 +554,7 @@ function Dashboard() {
   // cor única — senão a borda do traço vaza da bounding box e pinta de vermelho.
   const negColor = "var(--color-destructive)";
   const zeroOffset = useMemo(() => {
+    if (activeTab === "metas") return 1;
     const values = chartData.map((d) => Number(d[activeTab]) || 0);
     const max = Math.max(0, ...values), min = Math.min(0, ...values);
     return max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
@@ -531,7 +638,7 @@ function Dashboard() {
                 <BarChart3 className="size-4.5" />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">{activeTabCfg.label}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">{activeTab === "metas" ? "Lucro" : activeTabCfg.label}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -547,15 +654,18 @@ function Dashboard() {
                 </button>
               ))}
               <div className="relative">
-                <select disabled value="diario" className="appearance-none bg-card border border-border text-foreground text-xs rounded-xl px-3 pr-7 h-7 opacity-70">
+                <select disabled value={activeTab === "metas" ? "mensal" : "diario"} className="appearance-none bg-card border border-border text-foreground text-xs rounded-xl px-3 pr-7 h-7 opacity-70">
                   <option value="diario">Diário</option>
+                  <option value="mensal">Mensal</option>
                 </select>
                 <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
           </div>
 
-          {isLoading ? (
+          {activeTab === "metas" ? (
+            <GoalsHistoryChart data={goalsHistory.data} loading={goalsHistory.isLoading} />
+          ) : isLoading ? (
             <div className="flex-1 min-h-[240px] bg-muted animate-pulse rounded-xl" />
           ) : (
             <div className="flex-1 min-h-[240px]">
