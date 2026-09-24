@@ -30,6 +30,14 @@ function addDaysISO(iso: string, n: number) {
 
 // Same as attachLiveShopifyNames, but for rows carrying a nested `shops` object
 // (as returned by PostgREST embedding, e.g. lg_card_shops.select("...,shops(id,name,...)")).
+// Lojas sempre na mesma sequência em todas as telas do grupo (Loja 1, Loja 2…
+// Loja 10): ordem pelo nome, com números em ordem natural. Sem isso vinham na
+// ordem em que o banco devolvesse.
+const shopNameCollator = new Intl.Collator("pt-BR", { numeric: true, sensitivity: "base" });
+function sortByShopName<T>(rows: T[], nameOf: (r: T) => string | null | undefined): T[] {
+  return [...rows].sort((a, b) => shopNameCollator.compare(nameOf(a) ?? "", nameOf(b) ?? ""));
+}
+
 async function patchEmbeddedShopNames<T extends { shops: { id: string; name: string } | null }>(
   ownerId: string,
   rows: T[],
@@ -82,7 +90,7 @@ export const listLgCards = createServerFn({ method: "GET" })
         .from("lg_card_shops")
         .select("card_id, shop_id, payout_days, payment_days, shops(id, name, status)")
         .in("card_id", cardIds);
-      shops = await patchEmbeddedShopNames(ownerId, data ?? []);
+      shops = sortByShopName(await patchEmbeddedShopNames(ownerId, data ?? []), (s: any) => s.shops?.name);
     }
 
     const shopsByCard: Record<string, any[]> = {};
@@ -121,7 +129,8 @@ export const getLgCard = createServerFn({ method: "GET" })
       .select("id, shop_id, payout_days, payment_days, shops(id, name, status, country)")
       .eq("card_id", data.id);
 
-    return { card, shops: await patchEmbeddedShopNames(ownerId, cardShops ?? []) };
+    const named = await patchEmbeddedShopNames(ownerId, cardShops ?? []);
+    return { card, shops: sortByShopName(named, (s: any) => s.shops?.name) };
   });
 
 // ─── Create ──────────────────────────────────────────────────────────────────
@@ -947,7 +956,11 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       return { shop_id: shopId, shopName, days };
     });
 
-    return { lucro, taxaEstorno, totalPedidos, totalEstornos, payoutLag, estornoPorLoja };
+    return {
+      lucro, taxaEstorno, totalPedidos, totalEstornos,
+      payoutLag: sortByShopName(payoutLag, (r) => r.shopName),
+      estornoPorLoja: sortByShopName(estornoPorLoja, (r) => r.shopName),
+    };
   });
 
 // ─── Daily analytics ──────────────────────────────────────────────────────────

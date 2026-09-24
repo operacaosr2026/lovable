@@ -1124,7 +1124,11 @@ export function LgCashflowView({
   }, [expanded, opening, todayKey]);
 
   const effectivePending = livePending ?? cachedPending;
-  const perShopReceivable = isConsolidated ? ((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[] : [];
+  // Mesma sequência das lojas em todo o grupo (Loja 1, Loja 2… Loja 10).
+  const perShopReceivable = isConsolidated
+    ? [...(((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[])]
+        .sort((a, b) => (shopNamesMap[a.shop_id] ?? "").localeCompare(shopNamesMap[b.shop_id] ?? "", "pt-BR", { numeric: true, sensitivity: "base" }))
+    : [];
   const receivable = effectivePending?.connected
     ? (isConsolidated
         ? perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0)

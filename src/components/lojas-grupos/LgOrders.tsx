@@ -229,9 +229,12 @@ export function LgOrders({
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([date, agg]) => {
         const dayStatus = agg.pendingCount === 0 ? "pago" : agg.paidCount === 0 ? "pendente" : "parcial";
-        return { date, ...agg, dayStatus };
+        // Lojas dentro do dia na mesma sequência do grupo (Loja 1, Loja 2…).
+        const byShop = new Map([...agg.byShop.entries()].sort(([a], [b]) =>
+          (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true, sensitivity: "base" })));
+        return { date, ...agg, byShop, dayStatus };
       });
-  }, [allOrders, costByShop, costProducts]);
+  }, [allOrders, costByShop, costProducts, shops]);
 
   const filteredGroups = useMemo(() =>
     paymentFilter === "todos" ? groups : groups.filter(g => g.dayStatus === paymentFilter),
