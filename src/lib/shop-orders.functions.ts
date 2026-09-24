@@ -145,41 +145,9 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
   return out;
 }
 
-async function fetchShopifyRefundedOrders(domain: string, token: string, fromISO: string, toISO: string) {
-  const out: any[] = [];
-  let url = `https://${domain}/admin/api/2024-10/orders.json`
-    + `?status=any&financial_status=refunded%2Cpartially_refunded&limit=250`
-    + `&created_at_min=${encodeURIComponent(fromISO)}`
-    + `&created_at_max=${encodeURIComponent(toISO)}`
-    + `&fields=id,total_price,current_total_price,refunds`;
-  for (let i = 0; i < 20 && url; i++) {
-    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-    if (!res.ok) {
-      if (res.status === 404 || res.status === 403) return [];
-      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
-    }
-    const json: any = await res.json();
-    out.push(...(json.orders ?? []));
-    const link = res.headers.get("link") || res.headers.get("Link") || "";
-    const m = link.match(/<([^>]+)>;\s*rel="next"/);
-    url = m ? m[1] : "";
-  }
-  warnPaginationCap("fetchShopifyRefundedOrders", domain, url);
-  return out;
-}
-
 // Pedidos void (pré-captura) têm total_price=$0 mas têm transações kind="void"
 // no refunds[]. Usamos o maior entre: soma de transações reais e a diferença
 // de preço.
-function orderRefundAmount(o: any) {
-  const txSum = (o.refunds ?? [])
-    .flatMap((r: any) => r.transactions ?? [])
-    .filter((t: any) => (t.kind === "refund" || t.kind === "void") && t.status === "success")
-    .reduce((s: number, t: any) => s + Number(t.amount ?? 0), 0);
-  const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
-  return Math.max(txSum, priceDiff);
-}
-
 // Mesmo total de orderRefundAmount, mas também devolve o valor quebrado por
 // dia (data da transação de reembolso) — usado nos gráficos de evolução
 // diária, que antes só descontavam reembolso/chargeback no agregado do
@@ -1148,13 +1116,10 @@ export const getShopifyChargebackRate = createServerFn({ method: "GET" })
 // pedido apenas reembolsado que segue aberto/fechado normalmente. Chamada
 // server-to-server (não é um endpoint de cliente), pensada pra ser usada por
 // outras server functions que já sabem quais shop_ids consultar.
-// Reembolsos e chargebacks ao vivo da Shopify API, por loja, para um período
-// exato — mesma lógica usada pelo Dashboard (getShopDashboardMetrics), para
-// que "lucro" bata entre as duas telas em vez de depender do cache em
-// shop_cash_entries (populado pelo sync em background, que pode estar atrasado).
-// Reembolso/chargeback que não carregou vira 0 no cálculo — o faturamento e o
-// lucro exibidos ficam maiores que o real. Sem esse aviso, isso passava calado.
-async function notifyRefundsFailed(ownerId: string, shopifyStoreId: string) {
+// Chamado pelo sync completo de hora em hora (sync-shop-orders) quando a
+// Shopify não responde ao buscar reembolsos/disputas: sem isso o chargeback
+// ficaria sem atualizar em silêncio e o lucro exibido maior que o real.
+export const notifyRefundsFailed = createServerOnlyFn(async (ownerId: string, shopifyStoreId: string) => {
   const { data: store } = await supabaseAdmin.from("shopify_stores")
     .select("name").eq("id", shopifyStoreId).eq("user_id", ownerId).maybeSingle();
   await raiseNotification(ownerId, `shopify_refunds:${shopifyStoreId}`, {
@@ -1162,51 +1127,55 @@ async function notifyRefundsFailed(ownerId: string, shopifyStoreId: string) {
     title: `Reembolsos não carregaram — ${store?.name ?? "loja Shopify"}`,
     body: "A Shopify não respondeu ao buscar reembolsos e chargebacks. O faturamento e o lucro exibidos podem estar maiores que o real até a próxima atualização que der certo.",
   });
-}
+});
 
-export const getGroupShopifyRefundsAndChargebacks = createServerOnlyFn(async (
+// Reembolsos e chargebacks do período, por loja — lidos do NOSSO banco, sem
+// chamar a Shopify na abertura das telas (era a parte mais lenta do lucro).
+//  - Reembolsos: pedidos criados no período (horário UTC, igual ao filtro
+//    created_at_min/max que a Shopify usava) com status reembolsado/parcial;
+//    o valor sai dos reembolsos gravados no próprio pedido (raw.refunds, mesma
+//    regra de orderRefundAmountByDate). O webhook orders/updated regrava o
+//    pedido a cada reembolso e o sync de 10 em 10 min regrava os últimos 30 dias.
+//  - Chargebacks: shop_order_disputes (sincronizado pelo cron de 10 em 10 min),
+//    tipo chargeback, aberto dentro do período.
+// Mesmo formato de retorno da versão antiga ao vivo, então o cálculo do lucro
+// não muda.
+export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   ownerId: string, shopIds: string[], fromISO: string, toISO: string,
 ) => {
-  const { data: settings } = await supabaseAdmin.from("shop_order_settings")
-    .select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", shopIds);
+  const [refundOrders, disputes] = await Promise.all([
+    selectAll(supabaseAdmin.from("shop_orders")
+      .select("shop_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
+      .eq("user_id", ownerId).in("shop_id", shopIds)
+      .gte("created_at_shopify", `${fromISO}T00:00:00Z`).lte("created_at_shopify", `${toISO}T23:59:59Z`)
+      .in("shopify_financial_status", ["refunded", "partially_refunded"])),
+    selectAll(supabaseAdmin.from("shop_order_disputes")
+      .select("shop_id,amount,initiated_at")
+      .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
+      .gte("initiated_at", fromISO).lte("initiated_at", toISO)),
+  ]);
+  if (refundOrders.error) throw new Error(refundOrders.error.message);
+  if (disputes.error) throw new Error(disputes.error.message);
 
-  const rows = await Promise.all((settings ?? []).map(async (s: any) => {
-    const empty = { shop_id: s.shop_id as string, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number> };
-    if (!s.shopify_store_id) return empty;
-    try {
-      const { domain, token } = await getShopifyCreds(supabaseAdmin, ownerId, s.shopify_store_id);
-      const [refOrders, disputes] = await Promise.all([
-        fetchShopifyRefundedOrders(domain, token, `${fromISO}T00:00:00Z`, `${toISO}T23:59:59Z`),
-        fetchShopifyDisputes(domain, token, `${fromISO}T00:00:00Z`),
-      ]);
-      let refAmt = 0;
-      const refByDate: Record<string, number> = {};
-      for (const o of refOrders) {
-        const { total, byDate } = orderRefundAmountByDate(o, toISO);
-        refAmt += total;
-        for (const [d, amt] of Object.entries(byDate)) refByDate[d] = (refByDate[d] ?? 0) + amt;
-      }
-      let cbAmt = 0;
-      const cbByDate: Record<string, number> = {};
-      for (const d of disputes) {
-        if (d.type !== "chargeback" || d.initiated_at > `${toISO}T23:59:59Z`) continue;
-        const amt = Number(d.amount ?? 0);
-        cbAmt += amt;
-        const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
-        cbByDate[date] = (cbByDate[date] ?? 0) + amt;
-      }
-      await resolveNotification(ownerId, `shopify_refunds:${s.shopify_store_id}`);
-      return { shop_id: s.shop_id as string, refAmt, cbAmt, refByDate, cbByDate };
-    } catch (e) {
-      // Sem log, isso caía pra 0 silenciosamente e inflava o "lucro" exibido
-      // sem nenhum indício de que a Shopify falhou (token revogado, rate
-      // limit, 5xx) em vez de a loja realmente não ter reembolso/chargeback.
-      console.error(`getGroupShopifyRefundsAndChargebacks: falhou pra shop_id=${s.shop_id}`, e);
-      await notifyRefundsFailed(ownerId, s.shopify_store_id).catch(() => {});
-      return empty;
-    }
-  }));
-  return rows;
+  const byShop = new Map(shopIds.map((id) => [id, {
+    shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number>,
+  }]));
+  for (const o of (refundOrders.data ?? []) as any[]) {
+    const row = byShop.get(o.shop_id);
+    if (!row) continue;
+    const { total, byDate } = orderRefundAmountByDate(o, toISO);
+    row.refAmt += total;
+    for (const [d, amt] of Object.entries(byDate)) row.refByDate[d] = (row.refByDate[d] ?? 0) + amt;
+  }
+  for (const d of (disputes.data ?? []) as any[]) {
+    const row = byShop.get(d.shop_id);
+    if (!row) continue;
+    const amt = Number(d.amount ?? 0);
+    row.cbAmt += amt;
+    const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
+    row.cbByDate[date] = (row.cbByDate[date] ?? 0) + amt;
+  }
+  return [...byShop.values()];
 });
 
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
@@ -1356,7 +1325,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
       costProductsFor(supabase, ownerId),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
-      getGroupShopifyRefundsAndChargebacks(ownerId, shop_ids, month_start, month_end),
+      getGroupRefundsAndChargebacks(ownerId, shop_ids, month_start, month_end),
     ]);
     if (ordersRes.error) throw new Error(ordersRes.error.message);
     if (adRes.error) throw new Error(adRes.error.message);
@@ -2074,46 +2043,16 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const settingsPromise = supabase.from("shop_order_settings").select("shop_id,default_unit_cost,shopify_store_id")
       .eq("user_id", ownerId).in("shop_id", shop_ids);
 
-    // Reembolsos e chargebacks — buscados ao vivo da Shopify API para o período
-    // exato. Começa assim que as configurações chegam, em paralelo com as
-    // consultas ao banco (antes só começava depois de todas terminarem).
-    const shopifyPromise = !withCosts ? Promise.resolve([] as any[]) : settingsPromise.then(({ data: settingsRows }) => Promise.all(
-      ((settingsRows ?? []) as any[]).filter((s) => s.shopify_store_id).map(async (s: any) => {
-        try {
-          const { domain, token } = await getShopifyCreds(supabase, ownerId, s.shopify_store_id);
-          const [refOrders, refPrevOrders, disputes, prevDisputes] = await Promise.all([
-            fetchShopifyRefundedOrders(domain, token, `${from}T00:00:00Z`, `${to}T23:59:59Z`),
-            withPrev ? fetchShopifyRefundedOrders(domain, token, `${prev_from}T00:00:00Z`, `${prev_to}T23:59:59Z`) : Promise.resolve([] as any[]),
-            fetchShopifyDisputes(domain, token, `${from}T00:00:00Z`),
-            withPrev ? fetchShopifyDisputes(domain, token, `${prev_from}T00:00:00Z`) : Promise.resolve([] as any[]),
-          ]);
-          let refAmt = 0;
-          const refByDate: Record<string, number> = {};
-          for (const o of refOrders) {
-            const { total, byDate } = orderRefundAmountByDate(o, to);
-            refAmt += total;
-            for (const [d, amt] of Object.entries(byDate)) refByDate[d] = (refByDate[d] ?? 0) + amt;
-          }
-          const prevRefAmt = refPrevOrders.reduce((acc: number, o: any) => acc + orderRefundAmount(o), 0);
-          let cbAmt = 0;
-          const cbByDate: Record<string, number> = {};
-          for (const d of disputes) {
-            if (d.type !== "chargeback" || d.initiated_at > `${to}T23:59:59Z`) continue;
-            const amt = Number(d.amount ?? 0);
-            cbAmt += amt;
-            const date = String(d.initiated_at ?? "").slice(0, 10) || to;
-            cbByDate[date] = (cbByDate[date] ?? 0) + amt;
-          }
-          const prevCbAmt  = prevDisputes.filter((d: any) => d.type === "chargeback" && d.initiated_at <= `${prev_to}T23:59:59Z`).reduce((acc: number, d: any) => acc + Number(d.amount ?? 0), 0);
-          await resolveNotification(ownerId, `shopify_refunds:${s.shopify_store_id}`);
-          return { refAmt, prevRefAmt, cbAmt, prevCbAmt, refByDate, cbByDate };
-        } catch (e) {
-          console.error(`getShopDashboardMetrics: falha ao buscar reembolso/chargeback pra shopify_store_id=${s.shopify_store_id}`, e);
-          await notifyRefundsFailed(ownerId, s.shopify_store_id).catch(() => {});
-          return { refAmt: 0, prevRefAmt: 0, cbAmt: 0, prevCbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number> };
-        }
-      }),
-    ));
+    // Reembolsos e chargebacks do período (e do anterior, pros deltas), lidos do
+    // banco — ver getGroupRefundsAndChargebacks. Antes: 4 chamadas ao vivo à
+    // Shopify por loja a cada abertura.
+    const shopifyPromise = !withCosts ? Promise.resolve([] as any[]) : Promise.all([
+      getGroupRefundsAndChargebacks(ownerId, shop_ids, from, to),
+      withPrev ? getGroupRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve([] as any[]),
+    ]).then(([curr, prev]) => curr.map((c: any) => {
+      const p = (prev as any[]).find((x) => x.shop_id === c.shop_id);
+      return { refAmt: c.refAmt, prevRefAmt: p?.refAmt ?? 0, cbAmt: c.cbAmt, prevCbAmt: p?.cbAmt ?? 0, refByDate: c.refByDate, cbByDate: c.cbByDate };
+    }));
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes, shopifyResults, costProducts] = await Promise.all([
       selectAll(supabase.from("shop_orders").select(withCosts

@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed } from "@/lib/shop-orders.functions";
+import { resolveNotification } from "@/lib/notifications.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll, selectAllIn } from "@/lib/select-all";
@@ -464,7 +465,15 @@ async function processShop(s: any, today: string) {
         await ensureShopifyWebhooks(store as any).catch((e) => console.error("ensureShopifyWebhooks", s.shopify_store_id, e));
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, cutoff);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
-        await syncRefundsAndChargebacks(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+        // As telas leem chargeback/reembolso do banco (getGroupRefundsAndChargebacks):
+        // se a Shopify falhar aqui, o aviso do sino avisa que o lucro pode estar alto.
+        try {
+          await syncRefundsAndChargebacks(s.shop_id, s.user_id, store.shop_domain, store.access_token);
+          await resolveNotification(s.user_id, `shopify_refunds:${s.shopify_store_id}`);
+        } catch (e) {
+          await notifyRefundsFailed(s.user_id, s.shopify_store_id).catch(() => {});
+          throw e;
+        }
         const lagDays = s.payout_lag_days != null
           ? Number(s.payout_lag_days)
           : s.payout_lag_avg_days != null ? Math.round(Number(s.payout_lag_avg_days)) : 7;

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { computeEstornoByShop } from "@/lib/estorno-daily.server";
-import { attachLiveShopifyNames, costProductsFor, getGroupShopifyRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, costProductsFor, getGroupRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
@@ -616,8 +616,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
-      getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
-      getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
+      getGroupRefundsAndChargebacks(ownerId, shopIds, from, to),
+      getGroupRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
       costProductsFor(supabaseAdmin, ownerId),
     ]);
 
@@ -857,7 +857,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .lte("date", to)),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pra "lucro" bater entre as duas telas.
-      getGroupShopifyRefundsAndChargebacks(ownerId, shopIds, from, to),
+      getGroupRefundsAndChargebacks(ownerId, shopIds, from, to),
       costProductsFor(supabaseAdmin, ownerId),
       namesPromise,
     ]);

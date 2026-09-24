@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
-import { COST_CATEGORY, attachLiveShopifyNames, recomputeShopAutomation, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { COST_CATEGORY, attachLiveShopifyNames, recomputeShopAutomation, getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
@@ -53,7 +53,7 @@ export const listShops = createServerFn({ method: "GET" })
           .gte("date", monthStart).lte("date", monthEnd)),
         // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
         // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
-        getGroupShopifyRefundsAndChargebacks(ownerId, ids, monthStart, monthEnd),
+        getGroupRefundsAndChargebacks(ownerId, ids, monthStart, monthEnd),
       ]);
       const today = new Date(`${todayStr}T23:59:59`);
       const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0, monthProfit: 0 });

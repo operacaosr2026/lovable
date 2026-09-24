@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
-import { costProductsFor, getGroupShopifyRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { costProductsFor, getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
 
@@ -38,9 +38,9 @@ async function computeAccumulatedLucro(
     supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
       .eq("user_id", ownerId).in("shop_id", shop_ids),
     costProductsFor(supabase, ownerId),
-    // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte usada
-    // pelo Dashboard e pelo card de Lojas e Grupos, pra "lucro" bater nas 3 telas.
-    getGroupShopifyRefundsAndChargebacks(ownerId, shop_ids, start_date, end_date),
+    // Reembolsos/chargebacks do banco (getGroupRefundsAndChargebacks) — mesma
+    // fonte do Dashboard e do card de Lojas e Grupos, pra "lucro" bater nas telas.
+    getGroupRefundsAndChargebacks(ownerId, shop_ids, start_date, end_date),
   ]);
 
   const costByShop = new Map<string, number>(
