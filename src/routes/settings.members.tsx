@@ -21,8 +21,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings/members")({
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/login" });
+    // Sessão local, igual às outras rotas — ver settings.tsx.
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.user) throw redirect({ to: "/login" });
   },
   component: MembersPage,
 });

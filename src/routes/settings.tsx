@@ -4,8 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: async ({ location }) => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
+    // Sessão local (sem ida ao servidor do Supabase a cada navegação), igual às
+    // outras rotas (requireAuth). Quem valida o login de verdade é o servidor,
+    // em cada busca de dados.
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.user) {
       const here = location.href ?? location.pathname;
       const safeRedirect = here && !here.startsWith("/login") ? here : undefined;
       throw redirect({ to: "/login", search: safeRedirect ? { redirect: safeRedirect } : {} });
