@@ -57,13 +57,15 @@ export function LgOrders({
   const qc       = useQueryClient();
   const isConsolidated = shopIds.length > 1;
 
-  const [period, setPeriod]           = useState("30d");
+  // Padrão 5 dias: pagamento ao fornecedor é diário, e 30 dias pesava a abertura da aba.
+  const [period, setPeriod]           = useState("5d");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const { from, to } = (() => {
     const today = isoTodayUS();
     const addD  = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
     if (period === "hoje")   return { from: today, to: today };
     if (period === "ontem")  { const y = addD(today, -1); return { from: y, to: y }; }
+    if (period === "5d")     return { from: addD(today, -4), to: today };
     if (period === "7d")     return { from: addD(today, -6), to: today };
     if (period === "mes")    { return { from: `${today.slice(0, 7)}-01`, to: today }; }
     if (period === "custom" && customRange) return customRange;
@@ -416,7 +418,7 @@ export function LgOrders({
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker
-          period={period} setPeriod={setPeriod}
+          period={period} setPeriod={setPeriod} withLast5Days
           customRange={customRange} setCustomRange={setCustomRange}
           onApply={() => qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] })}
         />
