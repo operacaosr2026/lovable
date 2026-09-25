@@ -289,17 +289,52 @@ const pctTone = (pct: number) =>
   : pct >= 70 ? { bg: "#f59e0b", text: "#d97706" }
   : { bg: "var(--color-destructive)", text: "var(--color-destructive)" };
 
+// Pixel (y) de um valor dentro da mesma barra: a barra da meta vai da base
+// (y + height) até o topo (y), então 1 unidade = height / meta pixels.
+function valueToY(props: any, value: number) {
+  const { y, height, payload } = props;
+  const base = y + height;
+  return base - (value / payload.meta) * height;
+}
+
+const overlaps = (a: [number, number], b: [number, number]) => a[0] < b[1] && b[0] < a[1];
+
 // Meta do mês: linha tracejada (mais larga que a barra) + etiqueta com o valor.
+// A etiqueta tenta ficar acima da linha; se bater no valor da barra, na
+// projeção ou no selo de %, vai pra baixo da linha e, se ainda bater, pro lado.
 function MetaLineShape(props: any) {
-  const { x, y, width, payload } = props;
-  if (!width || y == null || !payload?.meta) return null;
+  const { x, y, width, height, payload } = props;
+  if (!width || y == null || !payload?.meta || !height) return null;
   const label = `$${Math.round(payload.meta).toLocaleString("en-US")}`;
   const w = Math.max(44, label.length * 6.4 + 12);
+
+  // Faixas ocupadas (em pixels) pelo que já está desenhado na coluna.
+  const realTop = valueToY(props, Math.max(0, payload.realizado));
+  const totalTop = valueToY(props, payload.topo);
+  const busy: [number, number][] = [[totalTop - 24, totalTop - 3]];            // selo de %
+  if (payload.realizado > 0) {
+    // Valor do realizado — mesma regra do RealizadoShape: desce pra baixo da
+    // linha quando ela passa por ele.
+    const moved = y > realTop + 2 && y < realTop + 24;
+    const top = moved ? y + 3 : realTop + 3;
+    busy.push([top, top + 18]);
+  }
+  if (payload.projExtra > 0) busy.push([totalTop + 3, totalTop + 21]);        // valor da projeção
+
+  const above: [number, number] = [y - 22, y - 5];
+  const below: [number, number] = [y + 5, y + 22];
+  const free = (r: [number, number]) => !busy.some((b) => overlaps(r, b));
+  const pos = free(above) ? "above" : free(below) ? "below" : "side";
+
+  const box = pos === "side"
+    ? { x: x + width + 14, y: y - 8.5, tx: x + width + 14 + w / 2, ty: y + 3.5 }
+    : { x: x + width / 2 - w / 2, y: pos === "above" ? y - 22 : y + 5, tx: x + width / 2, ty: pos === "above" ? y - 10 : y + 17 };
   return (
     <g>
       <line x1={x - 12} x2={x + width + 12} y1={y} y2={y} stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="6 4" />
-      <rect x={x + width / 2 - w / 2} y={y - 22} width={w} height={17} rx={5} fill="var(--color-primary)" fillOpacity={0.1} />
-      <text x={x + width / 2} y={y - 10} textAnchor="middle" fontSize={10} fontWeight={600} fill="var(--color-primary)">{label}</text>
+      <rect x={box.x} y={box.y} width={w} height={17} rx={5} fill="var(--color-card)" />
+      <rect x={box.x} y={box.y} width={w} height={17} rx={5} fill="var(--color-primary)" fillOpacity={0.12} />
+      <text x={box.tx} y={box.ty} textAnchor="middle" fontSize={10} fontWeight={600} fill="var(--color-primary)">{label}</text>
     </g>
   );
 }
@@ -328,9 +363,14 @@ function RealizadoShape(props: any) {
         </linearGradient>
       </defs>
       <path d={`M${x},${y + height} L${x},${y + top} Q${x},${y} ${x + top},${y} L${x + width - top},${y} Q${x + width},${y} ${x + width},${y + top} L${x + width},${y + height} Z`} fill={`url(#${gid})`} />
-      {height > 22 && (
-        <text x={x + width / 2} y={y + 16} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#fff">{fmtK(payload.realizado)}</text>
-      )}
+      {height > 22 && (() => {
+        // Se a linha da meta passa pelo valor, ele desce pra baixo da linha.
+        const metaY = payload.meta > 0 && payload.realizado > 0 ? y + height - (payload.meta / payload.realizado) * height : null;
+        let ty = y + 16;
+        if (metaY != null && metaY > y + 2 && metaY < y + 24) ty = metaY + 15;
+        if (ty > y + height - 4) return null;
+        return <text x={x + width / 2} y={ty} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#fff">{fmtK(payload.realizado)}</text>;
+      })()}
     </g>
   );
 }
