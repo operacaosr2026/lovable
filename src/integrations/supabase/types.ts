@@ -463,6 +463,39 @@ export type Database = {
           },
         ];
       };
+      lg_card_note_attachments: {
+        Row: {
+          created_at: string;
+          file_name: string;
+          file_path: string;
+          id: string;
+          mime_type: string | null;
+          note_id: string;
+          size_bytes: number | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          file_name: string;
+          file_path: string;
+          id?: string;
+          mime_type?: string | null;
+          note_id: string;
+          size_bytes?: number | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          file_name?: string;
+          file_path?: string;
+          id?: string;
+          mime_type?: string | null;
+          note_id?: string;
+          size_bytes?: number | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       lg_card_notes: {
         Row: {
           card_id: string;

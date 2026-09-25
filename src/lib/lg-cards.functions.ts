@@ -320,7 +320,71 @@ export const listLgCardNotes = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false });
 
     if (error) throw new Error(error.message);
-    return notes ?? [];
+
+    // Anexos de cada nota, com link temporário (1h) gerado aqui — o arquivo fica
+    // na pasta de quem enviou, então o link precisa sair do servidor pra toda a
+    // equipe conseguir abrir.
+    const noteIds = (notes ?? []).map((n: any) => n.id as string);
+    const byNote = new Map<string, any[]>();
+    if (noteIds.length) {
+      const { data: atts } = await supabaseAdmin.from("lg_card_note_attachments")
+        .select("id,note_id,file_name,file_path,mime_type,size_bytes,created_at")
+        .eq("user_id", ownerId).in("note_id", noteIds).order("created_at", { ascending: true });
+      const list = (atts ?? []) as any[];
+      if (list.length) {
+        const { data: signed } = await supabaseAdmin.storage.from(NOTE_ATTACHMENT_BUCKET)
+          .createSignedUrls(list.map((a) => a.file_path), 60 * 60);
+        list.forEach((a, i) => {
+          const row = { ...a, url: signed?.[i]?.signedUrl ?? null };
+          if (!byNote.has(a.note_id)) byNote.set(a.note_id, []);
+          byNote.get(a.note_id)!.push(row);
+        });
+      }
+    }
+    return (notes ?? []).map((n: any) => ({ ...n, attachments: byNote.get(n.id) ?? [] }));
+  });
+
+// ─── Anexos das notas ─────────────────────────────────────────────────────────
+
+export const NOTE_ATTACHMENT_BUCKET = "project-attachments";
+
+// O navegador sobe o arquivo direto pro storage (pasta <userId>/lg-notes/<noteId>/)
+// e depois registra aqui.
+export const addLgCardNoteAttachment = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    note_id:    z.string().uuid(),
+    file_name:  z.string().min(1).max(300),
+    file_path:  z.string().min(1).max(500),
+    mime_type:  z.string().max(150).nullable().optional(),
+    size_bytes: z.number().int().nonnegative().nullable().optional(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId, userId } = context;
+    const { data: note } = await supabaseAdmin.from("lg_card_notes").select("id")
+      .eq("id", data.note_id).eq("user_id", ownerId).maybeSingle();
+    if (!note) throw new Error("Nota não encontrada.");
+    if (!data.file_path.startsWith(`${userId}/lg-notes/${data.note_id}/`)) throw new Error("Caminho de arquivo inválido.");
+    const { error } = await supabaseAdmin.from("lg_card_note_attachments").insert({
+      user_id: ownerId, note_id: data.note_id, file_name: data.file_name, file_path: data.file_path,
+      mime_type: data.mime_type ?? null, size_bytes: data.size_bytes ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteLgCardNoteAttachment = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { ownerId } = context;
+    const { data: row } = await supabaseAdmin.from("lg_card_note_attachments").select("file_path")
+      .eq("id", data.id).eq("user_id", ownerId).maybeSingle();
+    if (!row) throw new Error("Anexo não encontrado.");
+    await supabaseAdmin.storage.from(NOTE_ATTACHMENT_BUCKET).remove([row.file_path]);
+    const { error } = await supabaseAdmin.from("lg_card_note_attachments").delete().eq("id", data.id).eq("user_id", ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const createLgCardNote = createServerFn({ method: "POST" })
@@ -328,7 +392,8 @@ export const createLgCardNote = createServerFn({ method: "POST" })
   .inputValidator((d: { card_id: string; content: string; note_date: string }) =>
     z.object({
       card_id:   z.string().uuid(),
-      content:   z.string().trim().min(1),
+      // Pode ser vazio quando a nota é só um anexo.
+      content:   z.string().trim(),
       note_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     }).parse(d)
   )
@@ -350,6 +415,11 @@ export const deleteLgCardNote = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
+
+    // Arquivos dos anexos saem do storage (as linhas vão junto pelo cascade).
+    const { data: atts } = await supabaseAdmin.from("lg_card_note_attachments").select("file_path")
+      .eq("note_id", data.id).eq("user_id", ownerId);
+    if (atts?.length) await supabaseAdmin.storage.from(NOTE_ATTACHMENT_BUCKET).remove(atts.map((a: any) => a.file_path));
 
     const { error } = await supabaseAdmin
       .from("lg_card_notes")
@@ -465,7 +535,7 @@ export const updateLgCardNote = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; content: string; visitors?: number | null }) =>
     z.object({
       id:       z.string().uuid(),
-      content:  z.string().trim().min(1),
+      content:  z.string().trim(),
       visitors: z.number().int().min(0).nullable().optional(),
     }).parse(d)
   )
