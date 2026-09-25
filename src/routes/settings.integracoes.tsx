@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Store, Megaphone, Truck, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Store, Megaphone, Truck, RefreshCw, ChevronDown } from "lucide-react";
 import { getIntegrationsStatus, type IntegrationRow, type IntegrationHealth } from "@/lib/integrations-status.functions";
 import { formatDateTimeUS } from "@/lib/timezone";
 
@@ -31,26 +32,33 @@ function Section({ icon: Icon, title, desc, rows, loading }: {
   icon: any; title: string; desc: string; rows?: IntegrationRow[]; loading: boolean;
 }) {
   const problems = (rows ?? []).filter((r) => r.health === "erro" || r.health === "atencao").length;
+  // Começa fechada; abre sozinha se tiver conexão com problema.
+  const [open, setOpen] = useState(false);
+  useEffect(() => { if (problems > 0) setOpen(true); }, [problems]);
   return (
     <section className="premium-card p-6">
-      <div className="flex items-center justify-between gap-3 mb-1">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 text-left">
         <div className="flex items-center gap-2">
           <Icon className="size-4 text-primary" />
           <h2 className="text-sm font-semibold">{title}</h2>
+          {!loading && rows && <span className="text-xs text-muted-foreground">· {rows.length}</span>}
         </div>
-        {!loading && problems > 0 && (
-          <span className="text-[11px] px-2 py-1 rounded-full font-medium bg-destructive/10 text-destructive">
-            {problems} com problema
-          </span>
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground mb-4">{desc}</p>
-      {loading ? (
-        <div className="space-y-2">{[0, 1].map((i) => <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />)}</div>
+        <div className="flex items-center gap-2">
+          {!loading && problems > 0 && (
+            <span className="text-[11px] px-2 py-1 rounded-full font-medium bg-destructive/10 text-destructive">
+              {problems} com problema
+            </span>
+          )}
+          <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        </div>
+      </button>
+      <p className="text-xs text-muted-foreground mt-1">{desc}</p>
+      {!open ? null : loading ? (
+        <div className="space-y-2 mt-4">{[0, 1].map((i) => <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />)}</div>
       ) : !rows?.length ? (
-        <p className="text-xs text-muted-foreground py-3">Nenhuma conexão cadastrada.</p>
+        <p className="text-xs text-muted-foreground py-3 mt-1">Nenhuma conexão cadastrada.</p>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border overflow-hidden mt-4">
           {rows.map((r, i) => (
             <div key={r.id} className={`flex items-start justify-between gap-3 px-4 py-3 ${i > 0 ? "border-t border-border" : ""}`}>
               <div className="min-w-0">
