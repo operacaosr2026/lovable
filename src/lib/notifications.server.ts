@@ -66,8 +66,8 @@ export async function resolveNotification(ownerId: string, key: string) {
 }
 
 // Tarefa criada a partir de uma notificação (tasks.source_key) é concluída
-// sozinha quando o problema dela é resolvido — ex.: disputa respondida. Quem
-// criou a tarefa recebe um aviso dizendo que ela foi concluída automaticamente.
+// sozinha quando o problema dela é resolvido — ex.: disputa respondida. A equipe
+// toda recebe um aviso dizendo que ela foi concluída automaticamente.
 export async function completeLinkedTasks(ownerId: string, keys: string[]) {
   if (!keys.length) return;
   const { data: done } = await supabaseAdmin.from("tasks")
@@ -76,7 +76,7 @@ export async function completeLinkedTasks(ownerId: string, keys: string[]) {
     .select("id,title,created_by");
   if (!done?.length) return;
   for (const t of done as any[]) {
-    await notifyTaskDone(ownerId, t, {
+    await notifyTaskDone(ownerId, { id: t.id, created_by: null }, {
       title: `Tarefa concluída automaticamente: ${t.title}`,
       body: "O problema que gerou a tarefa foi resolvido (ex.: disputa encerrada na Shopify).",
     });
@@ -84,8 +84,8 @@ export async function completeLinkedTasks(ownerId: string, keys: string[]) {
   await broadcast(ownerId, "tasks");
 }
 
-// Aviso informativo de tarefa concluída, só pra quem criou a tarefa (sem
-// criador conhecido, vai pra equipe toda). Não vira tarefa; a pessoa dispensa.
+// Aviso informativo de tarefa concluída, só pra quem criou a tarefa (created_by
+// nulo = equipe toda). Não vira tarefa; a pessoa dispensa.
 export async function notifyTaskDone(ownerId: string, task: { id: string; created_by?: string | null }, n: { title: string; body?: string | null }) {
   const now = new Date().toISOString();
   await supabaseAdmin.from("app_notifications").insert({
