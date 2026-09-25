@@ -38,9 +38,9 @@ function Section({ icon: Icon, title, desc, rows, loading }: {
           <Icon className="size-4 text-primary" />
           <h2 className="text-sm font-semibold">{title}</h2>
         </div>
-        {!loading && rows && rows.length > 0 && (
-          <span className={`text-[11px] px-2 py-1 rounded-full font-medium ${problems ? "bg-destructive/10 text-destructive" : "bg-success/15 text-success"}`}>
-            {problems ? `${problems} com problema` : "Tudo certo"}
+        {!loading && problems > 0 && (
+          <span className="text-[11px] px-2 py-1 rounded-full font-medium bg-destructive/10 text-destructive">
+            {problems} com problema
           </span>
         )}
       </div>
