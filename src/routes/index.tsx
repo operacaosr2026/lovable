@@ -800,13 +800,6 @@ function Dashboard() {
                   {t.label}
                 </button>
               ))}
-              <div className="relative">
-                <select disabled value={activeTab === "metas" ? "mensal" : "diario"} className="appearance-none bg-card border border-border text-foreground text-xs rounded-xl px-3 pr-7 h-7 opacity-70">
-                  <option value="diario">Diário</option>
-                  <option value="mensal">Mensal</option>
-                </select>
-                <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
             </div>
           </div>
 
