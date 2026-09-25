@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { Settings as SettingsIcon, Users, Shield } from "lucide-react";
+import { Settings as SettingsIcon, Users, Shield, Plug } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/settings")({
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/settings")({
 const nav = [
   { to: "/settings/members", label: "Membros", icon: Users, desc: "Convites, permissões e acessos" },
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
+  { to: "/settings/integracoes", label: "Integrações", icon: Plug, desc: "Shopify, Meta Ads e Track123" },
 ];
 
 function SettingsLayout() {

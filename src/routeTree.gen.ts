@@ -26,6 +26,7 @@ import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
 import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
 import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
 import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
+import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
 import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
 import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
@@ -128,6 +129,11 @@ const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
 const SettingsMembersRoute = SettingsMembersRouteImport.update({
   id: "/members",
   path: "/members",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsIntegracoesRoute = SettingsIntegracoesRouteImport.update({
+  id: "/integracoes",
+  path: "/integracoes",
   getParentRoute: () => SettingsRoute,
 } as any);
 const SettingsGeralRoute = SettingsGeralRouteImport.update({
@@ -240,6 +246,7 @@ export interface FileRoutesByFullPath {
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/geral": typeof SettingsGeralRoute;
+  "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
@@ -274,6 +281,7 @@ export interface FileRoutesByTo {
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/geral": typeof SettingsGeralRoute;
+  "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/projects": typeof ProjectsIndexRoute;
@@ -308,6 +316,7 @@ export interface FileRoutesById {
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/geral": typeof SettingsGeralRoute;
+  "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
@@ -347,6 +356,7 @@ export interface FileRouteTypes {
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/geral"
+    | "/settings/integracoes"
     | "/settings/members"
     | "/settings/seguranca"
     | "/shops/banco-de-lojas"
@@ -381,6 +391,7 @@ export interface FileRouteTypes {
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/geral"
+    | "/settings/integracoes"
     | "/settings/members"
     | "/settings/seguranca"
     | "/projects"
@@ -414,6 +425,7 @@ export interface FileRouteTypes {
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/geral"
+    | "/settings/integracoes"
     | "/settings/members"
     | "/settings/seguranca"
     | "/shops/banco-de-lojas"
@@ -580,6 +592,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsMembersRouteImport;
       parentRoute: typeof SettingsRoute;
     };
+    "/settings/integracoes": {
+      id: "/settings/integracoes";
+      path: "/integracoes";
+      fullPath: "/settings/integracoes";
+      preLoaderRoute: typeof SettingsIntegracoesRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/settings/geral": {
       id: "/settings/geral";
       path: "/geral";
@@ -725,6 +744,7 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 
 interface SettingsRouteChildren {
   SettingsGeralRoute: typeof SettingsGeralRoute;
+  SettingsIntegracoesRoute: typeof SettingsIntegracoesRoute;
   SettingsMembersRoute: typeof SettingsMembersRoute;
   SettingsSegurancaRoute: typeof SettingsSegurancaRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
@@ -732,6 +752,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGeralRoute: SettingsGeralRoute,
+  SettingsIntegracoesRoute: SettingsIntegracoesRoute,
   SettingsMembersRoute: SettingsMembersRoute,
   SettingsSegurancaRoute: SettingsSegurancaRoute,
   SettingsIndexRoute: SettingsIndexRoute,
