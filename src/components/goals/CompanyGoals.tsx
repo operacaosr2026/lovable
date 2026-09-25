@@ -276,18 +276,16 @@ function PlanStat({ icon: Icon, tone, label, value, sub, children }: {
   );
 }
 
-// ─── Planejamento: meta deste mês e dos próximos (12 + os adicionados) ──────────
+// ─── Planejamento: mês atual + meses com meta + meses adicionados ──────────────
+// "Adicionar mês" põe o mês seguinte ao último da lista; o X tira o mês da
+// lista (apagando a meta, se tiver). O mês atual sempre aparece.
 function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading: boolean; onSaved: () => Promise<void> }) {
   const current = `${isoToday().slice(0, 7)}-01`;
-  const [extraMonths, setExtraMonths] = useState(0);
+  const [addedMonths, setAddedMonths] = useState<string[]>([]);
   const byMonth = new Map(goals.map((g) => [g.month, g]));
-  const lastSaved = goals.reduce((max, g) => (g.month > max ? g.month : max), current);
-  const baseCount = 12 + extraMonths;
-  const count = Math.max(baseCount, (() => {
-    // Metas já salvas além da janela também aparecem.
-    let n = 0; while (addMonths(current, n) <= lastSaved) n++; return n;
-  })());
-  const months = Array.from({ length: count }, (_, i) => addMonths(current, i));
+  const months = [...new Set([current, ...goals.filter((g) => g.month >= current).map((g) => g.month), ...addedMonths])].sort();
+  const addMonth = () => setAddedMonths((prev) => [...prev, addMonths(months[months.length - 1], 1)]);
+  const dropAdded = (m: string) => setAddedMonths((prev) => prev.filter((x) => x !== m));
   // Sugestão pra mês vazio: a última meta definida.
   const last = [...goals].filter((g) => g.month <= current).pop() ?? goals[0];
 
@@ -301,8 +299,8 @@ function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading:
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <PlanStat icon={BarChart3} tone="violet" label="Total de metas" value={`${months.length} meses`}
-          sub={`${fmtMonthShort(months[0])} → ${fmtMonthShort(months[months.length - 1])}`} />
+        <PlanStat icon={BarChart3} tone="violet" label="Total de metas" value={`${months.length} ${months.length === 1 ? "mês" : "meses"}`}
+          sub={months.length === 1 ? fmtMonthShort(months[0]) : `${fmtMonthShort(months[0])} → ${fmtMonthShort(months[months.length - 1])}`} />
         <PlanStat icon={Target} tone="green" label="Meta total do período" value={fmtUsdInt(totalMeta)}
           sub={planned.length ? `${fmtUsdInt(totalMeta / planned.length)}/mês em média` : "Nenhum mês planejado"} />
         <PlanStat icon={TrendingUp} tone="blue" label="Mês atual" value={currentGoal ? fmtUsdInt(currentGoal.meta) : "—"}
@@ -323,7 +321,7 @@ function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading:
             <p className="text-base font-bold text-foreground">Metas dos próximos meses</p>
           </div>
           <button
-            onClick={() => setExtraMonths((n) => n + 1)}
+            onClick={addMonth}
             className="h-10 px-4 rounded-xl bg-primary/80 text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary transition-colors"
           >
             <Plus className="size-4" /> Adicionar mês
@@ -334,7 +332,8 @@ function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading:
         </div>
         <div className="space-y-2">
           {months.map((m) => (
-            <PlanRow key={m} month={m} isCurrent={m === current} goal={byMonth.get(m)} suggestion={last} onSaved={onSaved} />
+            <PlanRow key={m} month={m} isCurrent={m === current} goal={byMonth.get(m)} suggestion={last} onSaved={onSaved}
+              onRemoved={() => dropAdded(m)} />
           ))}
         </div>
       </div>
@@ -342,8 +341,8 @@ function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading:
   );
 }
 
-function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
-  month: string; isCurrent: boolean; goal?: PlanGoal; suggestion?: PlanGoal; onSaved: () => Promise<void>;
+function PlanRow({ month, isCurrent, goal, suggestion, onSaved, onRemoved }: {
+  month: string; isCurrent: boolean; goal?: PlanGoal; suggestion?: PlanGoal; onSaved: () => Promise<void>; onRemoved: () => void;
 }) {
   const upsertFn = useServerFn(upsertCompanyGoal);
   const deleteFn = useServerFn(deleteCompanyGoal);
@@ -365,16 +364,20 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
     } finally { setSaving(false); }
   }
 
+  // Tira o mês da lista; se tiver meta salva, apaga a meta (o mês atual fica na lista).
   async function remove() {
-    if (!window.confirm(`Remover a meta de ${fmtMonthPt(month)}?`)) return;
+    if (!goal) { setMeta(""); onRemoved(); return; }
+    const msg = isCurrent ? `Apagar a meta de ${fmtMonthPt(month)}?` : `Excluir ${fmtMonthPt(month)} e a meta dele?`;
+    if (!window.confirm(msg)) return;
     setSaving(true);
     try {
       await deleteFn({ data: { month: month.slice(0, 7) } });
       setMeta("");
+      onRemoved();
       await onSaved();
-      toast.success("Meta removida");
+      toast.success(isCurrent ? "Meta removida" : "Mês excluído");
     } catch (e: any) {
-      toast.error(e?.message ?? "Erro ao remover meta");
+      toast.error(e?.message ?? "Erro ao excluir");
     } finally { setSaving(false); }
   }
 
@@ -418,8 +421,8 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
         </p>
       </div>
       <div className="flex items-center justify-end md:justify-center gap-2">
-        {goal && (
-          <button onClick={remove} disabled={saving} title="Remover meta"
+        {(goal || !isCurrent) && (
+          <button onClick={remove} disabled={saving} title={isCurrent ? "Apagar meta" : "Excluir mês"}
             className="size-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/40 grid place-items-center transition-colors disabled:opacity-50">
             <X className="size-3.5" />
           </button>
