@@ -18,6 +18,15 @@ export const SECTIONS = [
   "caixa",
   "banco_lojas",
   "lojas_grupos",
+  // Sino de notificações.
+  "notificacoes",
+  // Subabas de Lojas e Grupos (grupo aberto).
+  "lg_dashboard",
+  "lg_diario",
+  "lg_caixa",
+  "lg_pedidos",
+  "lg_rastreamento",
+  "lg_integracoes",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 

@@ -42,10 +42,20 @@ const SECTION_LABELS: Record<Section, string> = {
   caixa: "Caixa",
   banco_lojas: "Banco de Lojas",
   lojas_grupos: "Lojas e Grupos",
+  notificacoes: "Notificações (sino)",
+  lg_dashboard: "Dashboard",
+  lg_diario: "Diário",
+  lg_caixa: "Caixa",
+  lg_pedidos: "Pedidos",
+  lg_rastreamento: "Rastreamento",
+  lg_integracoes: "Integrações",
 };
 
+// Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
+const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
+
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "metas", "tarefas", "produtos", "caixa", "banco_lojas", "lojas_grupos"];
+const TAB_SECTIONS: Section[] = ["dashboard", "metas", "tarefas", "produtos", "caixa", "banco_lojas", "lojas_grupos", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
@@ -237,10 +247,18 @@ function PermissionsForm({
     }
   };
 
-  const allTabs = TAB_SECTIONS.every((t) => has(t, null));
+  const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS];
+  const allTabs = ALL_TABS.every((t) => has(t, null));
   const setAllTabs = (on: boolean) => {
-    const rest = value.filter((p) => !TAB_SECTIONS.includes(p.section));
-    onChange(on ? [...rest, ...TAB_SECTIONS.map((t) => ({ section: t, resource_id: null }))] : rest);
+    const rest = value.filter((p) => !ALL_TABS.includes(p.section));
+    onChange(on ? [...rest, ...ALL_TABS.map((t) => ({ section: t, resource_id: null }))] : rest);
+  };
+  // Marcar Lojas e Grupos libera todas as subabas; desmarcar tira todas.
+  const toggleTab = (t: Section) => {
+    if (t !== "lojas_grupos") return toggle(t, null);
+    const on = !has("lojas_grupos", null);
+    const rest = value.filter((p) => p.section !== "lojas_grupos" && !LG_SUBTABS.includes(p.section));
+    onChange(on ? [...rest, { section: "lojas_grupos", resource_id: null }, ...LG_SUBTABS.map((st) => ({ section: st, resource_id: null }))] : rest);
   };
 
   return (
@@ -255,11 +273,24 @@ function PermissionsForm({
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
           {TAB_SECTIONS.map((t) => (
             <label key={t} className="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="checkbox" checked={has(t, null)} onChange={() => toggle(t, null)} className="size-3.5 accent-primary" />
+              <input type="checkbox" checked={has(t, null)} onChange={() => toggleTab(t)} className="size-3.5 accent-primary" />
               <span>{SECTION_LABELS[t]}</span>
             </label>
           ))}
         </div>
+        {has("lojas_grupos", null) && (
+          <div className="mt-3 ml-1 pl-3 border-l-2 border-primary/20">
+            <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Subabas de Lojas e Grupos</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {LG_SUBTABS.map((t) => (
+                <label key={t} className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={has(t, null)} onChange={() => toggle(t, null)} className="size-3.5 accent-primary" />
+                  <span>{SECTION_LABELS[t]}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <p className="text-[10px] text-muted-foreground mt-2">Projetos e as lojas visíveis ficam abaixo.</p>
       </div>
       {VISIBLE_SECTIONS.map((section) => {

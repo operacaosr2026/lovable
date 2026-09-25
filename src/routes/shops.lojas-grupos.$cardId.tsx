@@ -8,6 +8,8 @@ import {
   LayoutDashboard, Wallet, ShoppingBag, Plug, StickyNote, Truck,
 } from "lucide-react";
 import { getLgCard } from "@/lib/lg-cards.functions";
+import { useMyAccess } from "@/hooks/useMyAccess";
+import type { Section } from "@/lib/members.functions";
 import { LgNotesSection }  from "@/components/lojas-grupos/LgNotesSection";
 import { LgDashboard }     from "@/components/lojas-grupos/LgDashboard";
 import { LgCaixa }         from "@/components/lojas-grupos/LgCaixa";
@@ -17,6 +19,11 @@ import { LgLogistica }     from "@/components/lojas-grupos/LgLogistica";
 
 type Tab = "overview" | "dashboard" | "caixa" | "pedidos" | "logistica" | "integracoes";
 const VALID_TABS: Tab[] = ["dashboard", "overview", "caixa", "pedidos", "logistica", "integracoes"];
+// Permissão de cada subaba (Configurações > Membros); admin vê todas.
+const TAB_SECTION: Record<Tab, Section> = {
+  dashboard: "lg_dashboard", overview: "lg_diario", caixa: "lg_caixa",
+  pedidos: "lg_pedidos", logistica: "lg_rastreamento", integracoes: "lg_integracoes",
+};
 
 const COUNTRIES: Record<string, string> = {
   US: "🇺🇸", CA: "🇨🇦", GB: "🇬🇧", BE: "🇧🇪", CH: "🇨🇭", AU: "🇦🇺",
@@ -31,7 +38,12 @@ export const Route = createFileRoute("/shops/lojas-grupos/$cardId")({
 
 function LgCardDetail() {
   const { cardId } = Route.useParams();
-  const { tab }    = Route.useSearch();
+  const { tab: requestedTab } = Route.useSearch();
+  const { canAccessSection, isLoading: accessLoading } = useMyAccess();
+  // Subaba pedida sem permissão (ou link antigo) → primeira subaba liberada.
+  // Enquanto as permissões carregam, não esconde nada.
+  const allowedTabs = accessLoading ? VALID_TABS : VALID_TABS.filter((t) => canAccessSection(TAB_SECTION[t]));
+  const tab: Tab | null = allowedTabs.includes(requestedTab) ? requestedTab : (allowedTabs[0] ?? null);
   const navigate   = Route.useNavigate();
   const getCardFn  = useServerFn(getLgCard);
 
@@ -181,15 +193,21 @@ function LgCardDetail() {
       {/* Tabs — à direita, os controles da aba ativa (Dashboard: data, sincronizar, período, moeda) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 border-b border-border">
         <div className="flex items-center gap-1 overflow-x-auto">
-          <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
-          <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={StickyNote}>Diário</TabBtn>
-          <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
-          <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
-          <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>
-          <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>
+          {allowedTabs.includes("dashboard") && <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>}
+          {allowedTabs.includes("overview") && <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={StickyNote}>Diário</TabBtn>}
+          {allowedTabs.includes("caixa") && <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>}
+          {allowedTabs.includes("pedidos") && <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>}
+          {allowedTabs.includes("logistica") && <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>}
+          {allowedTabs.includes("integracoes") && <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>}
         </div>
         <div ref={setTabActionsEl} className="ml-auto pb-1.5 empty:hidden" />
       </div>
+
+      {!tab && (
+        <div className="bg-card border border-border rounded-2xl p-6 text-center text-sm text-muted-foreground">
+          Você não tem acesso a nenhuma subaba deste grupo. Fale com o administrador.
+        </div>
+      )}
 
       {/* Content — only render when there are shops or for overview/integrations */}
       {tab === "overview" && (

@@ -304,7 +304,7 @@ export function AppLayout() {
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
           <img src="/logo.png" alt="SRX" className="h-7 w-auto shrink-0" />
           <div className="flex-1 min-w-0" />
-          <NotificationBell className="hidden md:grid" />
+          {canAccessSection("notificacoes") && <NotificationBell className="hidden md:grid" />}
           <button
             onClick={() => setSidebarHidden(true)}
             title="Esconder menu"
@@ -367,7 +367,7 @@ export function AppLayout() {
             <PanelLeftOpen className="size-4" />
           </button>
           <div className="rounded-lg border border-border bg-surface shadow-sm">
-            <NotificationBell className="size-9" />
+            {canAccessSection("notificacoes") && <NotificationBell className="size-9" />}
           </div>
         </div>
       )}
@@ -386,7 +386,7 @@ export function AppLayout() {
             {navContent(() => setMobileOpen(false))}
           </SheetContent>
         </Sheet>
-        <NotificationBell className="size-9 -ml-1 mr-auto text-foreground" />
+        {canAccessSection("notificacoes") && <NotificationBell className="size-9 -ml-1 mr-auto text-foreground" />}
         <Link to="/" className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
           <img src="/logo.png" alt="SRX" className="h-6 w-auto" />
         </Link>
