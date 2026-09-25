@@ -44,13 +44,13 @@ export const upsertCompanyGoal = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({
     month: MonthInput,
     meta: z.number().positive(),
-    lucro_por_venda: z.number().positive().nullable(),
+    lucro_por_venda: z.number().positive().nullable().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     assertNotPast(data.month);
     const { error } = await supabaseAdmin.from("company_goals").upsert({
       user_id: context.ownerId, month: `${data.month}-01`,
-      meta: data.meta, lucro_por_venda: data.lucro_por_venda, updated_at: new Date().toISOString(),
+      meta: data.meta, updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,month" });
     if (error) throw new Error(error.message);
     return { ok: true };

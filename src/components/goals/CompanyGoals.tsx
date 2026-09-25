@@ -236,7 +236,8 @@ function SummaryRow({
 
 const MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 function fmtMonthPt(monthStart: string) {
-  return `${MONTHS_PT[Number(monthStart.slice(5, 7)) - 1]} de ${monthStart.slice(0, 4)}`;
+  const name = MONTHS_PT[Number(monthStart.slice(5, 7)) - 1] ?? "";
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} de ${monthStart.slice(0, 4)}`;
 }
 function addMonths(monthStart: string, n: number) {
   const d = new Date(`${monthStart}T00:00:00Z`);
@@ -266,8 +267,8 @@ function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading:
           <p className="text-xs text-muted-foreground">Lucro de todas as lojas dos grupos ativos. Meses já fechados ficam no Histórico.</p>
         </div>
       </div>
-      <div className="hidden sm:grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>Mês</span><span>Meta de lucro (USD)</span><span>Lucro por venda (USD)</span><span className="w-[152px]" />
+      <div className="hidden sm:grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-3 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span>Mês</span><span>Meta de lucro (USD)</span><span className="w-[152px]" />
       </div>
       <div className="space-y-2">
         {months.map((m) => (
@@ -284,18 +285,15 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
   const upsertFn = useServerFn(upsertCompanyGoal);
   const deleteFn = useServerFn(deleteCompanyGoal);
   const [meta, setMeta] = useState(goal ? String(goal.meta) : "");
-  const [lpv, setLpv] = useState(goal?.lucro_por_venda != null ? String(goal.lucro_por_venda) : "");
   const [saving, setSaving] = useState(false);
-  const dirty = meta !== (goal ? String(goal.meta) : "") || lpv !== (goal?.lucro_por_venda != null ? String(goal.lucro_por_venda) : "");
+  const dirty = meta !== (goal ? String(goal.meta) : "");
 
   async function save() {
     const metaN = parseFloat(meta);
-    const lpvN = lpv.trim() ? parseFloat(lpv) : null;
     if (!metaN || metaN <= 0) { toast.error("Informe um valor de meta válido"); return; }
-    if (lpvN != null && !(lpvN > 0)) { toast.error("Lucro por venda inválido"); return; }
     setSaving(true);
     try {
-      await upsertFn({ data: { month: month.slice(0, 7), meta: metaN, lucro_por_venda: lpvN } });
+      await upsertFn({ data: { month: month.slice(0, 7), meta: metaN } });
       await onSaved();
       toast.success(`Meta de ${fmtMonthPt(month)} salva`);
     } catch (e: any) {
@@ -308,7 +306,7 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
     setSaving(true);
     try {
       await deleteFn({ data: { month: month.slice(0, 7) } });
-      setMeta(""); setLpv("");
+      setMeta("");
       await onSaved();
       toast.success("Meta removida");
     } catch (e: any) {
@@ -319,18 +317,16 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
   const inputCls = "h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30";
   return (
     <div className={cn(
-      "grid grid-cols-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3",
+      "grid grid-cols-1 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3",
       isCurrent ? "border-primary/40 bg-primary/5" : "border-border",
     )}>
-      <div className="col-span-2 sm:col-span-1 flex items-center gap-2 min-w-0">
-        <span className="text-sm font-semibold text-foreground capitalize truncate">{fmtMonthPt(month)}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-sm font-semibold text-foreground truncate">{fmtMonthPt(month)}</span>
         {isCurrent && <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-primary/10 text-primary shrink-0">Mês atual</span>}
       </div>
       <input type="number" min="0" step="100" value={meta} onChange={(e) => setMeta(e.target.value)}
         placeholder={suggestion ? String(suggestion.meta) : "ex: 10000"} className={inputCls} aria-label="Meta de lucro" />
-      <input type="number" min="0" step="1" value={lpv} onChange={(e) => setLpv(e.target.value)}
-        placeholder={suggestion?.lucro_por_venda != null ? String(suggestion.lucro_por_venda) : "ex: 30"} className={inputCls} aria-label="Lucro por venda" />
-      <div className="col-span-2 sm:col-span-1 flex items-center justify-end gap-2 sm:w-[152px]">
+      <div className="flex items-center justify-end gap-2 sm:w-[152px]">
         {goal && (
           <button onClick={remove} disabled={saving} title="Remover meta"
             className="size-9 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 grid place-items-center transition-colors disabled:opacity-50">
@@ -416,7 +412,9 @@ export function CompanyGoals() {
     const percentProjecao = meta > 0 ? (projecaoFinal / meta) * 100 : 0;
     const lucroNecessarioPorDia = diasRestantes > 0 ? lucroRestante / diasRestantes : 0;
 
-    const lucroPorVenda = Number(savedGoal.lucro_por_venda ?? 0);
+    // Lucro médio por venda real do mês (lucro acumulado ÷ pedidos) — não é
+    // mais preenchido no planejamento.
+    const lucroPorVenda = (accData.pedidos ?? 0) > 0 ? lucroAcumulado / accData.pedidos : 0;
     const semLucroPorVenda = lucroPorVenda <= 0;
 
     let vendasPorDia = 0;
@@ -494,24 +492,6 @@ export function CompanyGoals() {
               <SubTabBtn active={subTab === "planejamento"} onClick={() => setSubTab("planejamento")} icon={<CalendarClock className="size-3.5" />}>
                 Planejamento
               </SubTabBtn>
-            </div>
-            {/* Canto: meta do mês (clique leva ao Planejamento pra editar) */}
-            <div className="flex items-center gap-2 mb-2">
-              {savedGoal ? (
-                <button
-                  onClick={() => setSubTab("planejamento")}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
-                >
-                  {fmtMoney(Number(savedGoal.meta))} · {fmtDatePt(savedGoal.start_date)} → {fmtDatePt(savedGoal.prazo)}
-                </button>
-              ) : !loadingGoal && (
-                <button
-                  onClick={() => setSubTab("planejamento")}
-                  className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-primary/90 transition-colors"
-                >
-                  <Plus className="size-3.5" /> Definir meta do mês
-                </button>
-              )}
             </div>
           </div>
 
@@ -636,7 +616,7 @@ export function CompanyGoals() {
                         </div>
                         <div>
                           <p className="text-sm font-bold text-foreground">{fmtMoney(g.meta)}</p>
-                          <p className="text-xs text-muted-foreground capitalize">{fmtMonthPt(g.month)}</p>
+                          <p className="text-xs text-muted-foreground">{fmtMonthPt(g.month)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -768,7 +748,7 @@ export function CompanyGoals() {
                     accent="primary"
                     label="Vendas por dia"
                     value={d.batida ? d.vendasMediaReal.toFixed(1).replace(".", ",") : d.vencida ? "—" : String(d.vendasPorDia)}
-                    sub={d.batida ? "Média real no período" : d.semLucroPorVenda && !d.vencida ? "Defina o lucro por venda" : "Média diária"}
+                    sub={d.batida ? "Média real no período" : d.semLucroPorVenda && !d.vencida ? "Sem vendas no mês ainda" : "Média diária"}
                     trendIcon={<TrendingUp className="size-4" />}
                     footerIcon={<BarChart3 className="size-3.5" />}
                     footer={<><span className="font-bold text-primary">{accData?.pedidosOntem ?? 0}</span> vendas ontem</>}
