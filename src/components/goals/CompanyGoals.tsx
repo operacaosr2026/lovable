@@ -482,7 +482,7 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
   const current = `${today.slice(0, 7)}-01`;
   const withResult = goals.filter((g) => g.realizado != null);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
-  const years = [...new Set(withResult.map((g) => g.month.slice(0, 4)))].sort().reverse();
+  const years = [...new Set(goals.map((g) => g.month.slice(0, 4)))].sort().reverse();
   const [year, setYear] = useState<string | null>(null);
   const activeYear = year ?? years[0] ?? today.slice(0, 4);
 
@@ -510,7 +510,8 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
   const { pct } = goalProgress(sel);
   const pctTempo = (diasDecorridos / totalDias) * 100;
   const falta = sel.meta - realizado;
-  const rows = [...withResult].filter((g) => g.month.startsWith(activeYear)).reverse();
+  // Tabela: meses com resultado + os planejados (futuros, status "Planejada").
+  const rows = [...goals].filter((g) => g.month.startsWith(activeYear)).reverse();
 
   return (
     <div className="space-y-4">
@@ -610,18 +611,19 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
           {rows.map((g) => {
             const pr = goalProgress(g);
             const active = g.month === sel.month;
+            const futura = g.realizado == null;
             return (
-              <button key={g.month} onClick={() => setSelectedMonth(g.month)}
+              <button key={g.month} onClick={() => { if (!futura) setSelectedMonth(g.month); }} disabled={futura}
                 className={cn(
                   "w-full text-left grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,2fr)_minmax(0,1fr)_20px] items-center gap-3 md:gap-4 rounded-xl border p-3 transition-colors",
-                  active ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/30",
+                  active ? "border-primary/40 bg-primary/5" : futura ? "border-border cursor-default" : "border-border hover:border-primary/30",
                 )}>
                 <span className="col-span-2 md:col-span-1 flex items-center gap-3 min-w-0">
                   <span className="size-9 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><BarChart3 className="size-4" /></span>
                   <span className={cn("text-sm truncate", active ? "font-bold text-foreground" : "font-medium text-foreground")}>{fmtMonthPt(g.month)}</span>
                 </span>
                 <span className="text-sm text-foreground tabular-nums"><span className="md:hidden text-muted-foreground">Meta </span>{fmtMoney(g.meta)}</span>
-                <span className={cn("text-sm font-bold tabular-nums", (g.realizado ?? 0) >= g.meta ? "text-success" : g.status === "nao_batida" ? "text-destructive" : "text-foreground")}>{fmtMoney(g.realizado ?? 0)}</span>
+                <span className={cn("text-sm font-bold tabular-nums", futura ? "text-muted-foreground" : (g.realizado ?? 0) >= g.meta ? "text-success" : g.status === "nao_batida" ? "text-destructive" : "text-foreground")}>{futura ? "—" : fmtMoney(g.realizado ?? 0)}</span>
                 <span className="col-span-2 md:col-span-1 flex items-center gap-3 min-w-0">
                   <span className="h-2 rounded-full bg-muted overflow-hidden flex-1"><span className={cn("block h-full rounded-full", pr.bar)} style={{ width: `${Math.max(0, Math.min(100, pr.pct))}%` }} /></span>
                   <span className="text-xs text-foreground w-12 text-right tabular-nums">{pr.pct.toFixed(1)}%</span>
@@ -631,7 +633,7 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
                     <span className="size-1.5 rounded-full bg-current" />{STATUS_LABEL[g.status]}
                   </span>
                 </span>
-                <ChevronRight className="hidden md:block size-4 text-muted-foreground justify-self-end" />
+                {futura ? <span /> : <ChevronRight className="hidden md:block size-4 text-muted-foreground justify-self-end" />}
               </button>
             );
           })}
