@@ -60,6 +60,9 @@ export type CompanyGoalRow = {
   meta: number;
   lucro_por_venda: number | null;
   realizado: number | null; // null = mês futuro
+  // Só no mês atual: lucro previsto no fim do mês no ritmo atual — mesma conta da
+  // aba Atual (lucro até hoje + média dos últimos 3 dias fechados × dias restantes).
+  projecao: number | null;
   status: "futura" | "em_andamento" | "batida" | "nao_batida";
 };
 
@@ -75,12 +78,25 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
   return Promise.all(((rows ?? []) as any[]).map(async (r) => {
     const meta = Number(r.meta);
     let realizado: number | null = null;
+    let projecao: number | null = null;
     if (r.month < current) realizado = Number(r.realizado_final ?? 0);
-    else if (r.month === current) realizado = await lucroDoMes(ownerId, await companyShopIdsForMonth(ownerId, current), current, today);
+    else if (r.month === current) {
+      const shops = await companyShopIdsForMonth(ownerId, current);
+      if (shops.length) {
+        const acc = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, current, today);
+        const end = monthEndOf(current);
+        const diasRestantes = Math.max(0, Math.round((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000));
+        realizado = acc.lucro;
+        projecao = acc.lucro + (acc.mediaUltimos3 ?? 0) * diasRestantes;
+      } else {
+        realizado = 0;
+        projecao = 0;
+      }
+    }
     const status: CompanyGoalRow["status"] = realizado == null ? "futura"
       : r.month === current ? "em_andamento"
       : realizado >= meta ? "batida" : "nao_batida";
-    return { month: r.month, meta, lucro_por_venda: r.lucro_por_venda != null ? Number(r.lucro_por_venda) : null, realizado, status };
+    return { month: r.month, meta, lucro_por_venda: r.lucro_por_venda != null ? Number(r.lucro_por_venda) : null, realizado, projecao, status };
   }));
 }
 

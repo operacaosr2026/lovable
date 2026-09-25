@@ -270,46 +270,120 @@ const CHART_TABS: { key: ChartTabKey; label: string; accent: MetricAccent }[] = 
 // ─── Aba "Metas": histórico de metas por mês ───────────────────────────────────
 
 const MONTH_ABBR = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MONTH_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const fmtK = (n: number) => {
   const abs = Math.abs(n);
-  const s = abs >= 1000 ? `$${(abs / 1000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, "")}k` : `$${Math.round(abs)}`;
+  const s = abs >= 1000 ? `$${(abs / 1000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, "").replace(".", ",")}k` : `$${Math.round(abs)}`;
   return n < 0 ? `-${s}` : s;
 };
 
-type GoalsHistory = { months: { month: string; meta: number; realizado: number; atingida: boolean }[]; atingidas: number; total: number };
+type GoalsHistory = {
+  months: { month: string; meta: number; realizado: number; projecao: number | null; atingida: boolean; atual: boolean }[];
+  atingidas: number;
+  total: number;
+};
 
-// Barra clara da meta com a linha tracejada "meta do mês" no topo.
-function MetaBarShape(props: any) {
-  const { x, y, width, height } = props;
-  if (!width || height == null) return null;
+// Cor do selo de %: verde ≥ 100%, laranja 70–99%, vermelho < 70%.
+const pctTone = (pct: number) =>
+  pct >= 100 ? { bg: "var(--color-success)", text: "var(--color-success)" }
+  : pct >= 70 ? { bg: "#f59e0b", text: "#d97706" }
+  : { bg: "var(--color-destructive)", text: "var(--color-destructive)" };
+
+// Meta do mês: linha tracejada (mais larga que a barra) + etiqueta com o valor.
+function MetaLineShape(props: any) {
+  const { x, y, width, payload } = props;
+  if (!width || y == null || !payload?.meta) return null;
+  const label = `$${Math.round(payload.meta).toLocaleString("en-US")}`;
+  const w = Math.max(44, label.length * 6.4 + 12);
   return (
     <g>
-      <rect x={x} y={y} width={width} height={Math.max(0, height)} rx={6} fill="var(--color-primary)" fillOpacity={0.14} />
-      <line x1={x - 3} x2={x + width + 3} y1={y} y2={y} stroke="var(--color-primary)" strokeWidth={2.5} strokeDasharray="6 4" />
+      <line x1={x - 12} x2={x + width + 12} y1={y} y2={y} stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="6 4" />
+      <rect x={x + width / 2 - w / 2} y={y - 22} width={w} height={17} rx={5} fill="var(--color-primary)" fillOpacity={0.1} />
+      <text x={x + width / 2} y={y - 10} textAnchor="middle" fontSize={10} fontWeight={600} fill="var(--color-primary)">{label}</text>
+    </g>
+  );
+}
+
+// Lucro realizado: barra roxa com degradê e o valor dentro.
+function RealizadoShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width || height == null || height <= 0) return null;
+  const top = payload?.projExtra > 0 ? 0 : 6;
+  return (
+    <g>
+      <defs>
+        <linearGradient id="goal-bar-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={1} />
+          <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.45} />
+        </linearGradient>
+      </defs>
+      <path d={`M${x},${y + height} L${x},${y + top} Q${x},${y} ${x + top},${y} L${x + width - top},${y} Q${x + width},${y} ${x + width},${y + top} L${x + width},${y + height} Z`} fill="url(#goal-bar-grad)" />
+      {height > 22 && (
+        <text x={x + width / 2} y={y + 16} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#fff">{fmtK(payload.realizado)}</text>
+      )}
+    </g>
+  );
+}
+
+// Projeção do mês atual: caixa tracejada em cima do realizado até o valor previsto,
+// com o valor dentro e o selo de % projetado acima.
+function ProjecaoShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width || !height || height <= 0) return null;
+  return (
+    <g>
+      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 1} rx={6} fill="var(--color-primary)" fillOpacity={0.1}
+        stroke="var(--color-primary)" strokeOpacity={0.6} strokeWidth={1.5} strokeDasharray="5 4" />
+      {height > 20 && (
+        <text x={x + width / 2} y={y + 16} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="var(--color-primary)">{fmtK(payload.projecao)}</text>
+      )}
+    </g>
+  );
+}
+
+// Selo de % acima da barra (realizado; no mês atual, o % projetado).
+function PctPill(props: any) {
+  const { x, y, width, index, data } = props;
+  const d = data?.[index];
+  if (!d || !d.meta || x == null || y == null) return null;
+  const pct = d.pctShown;
+  const tone = pctTone(pct);
+  const label = `${Math.round(pct)}%`;
+  const w = label.length * 7 + 14;
+  const cx = x + width / 2;
+  return (
+    <g>
+      <rect x={cx - w / 2} y={y - 22} width={w} height={17} rx={8.5} fill={tone.bg} fillOpacity={0.15} />
+      <text x={cx} y={y - 10} textAnchor="middle" fontSize={10} fontWeight={700} fill={tone.text}>{label}</text>
     </g>
   );
 }
 
 function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
   if (loading) return <div className="flex-1 min-h-[240px] bg-muted animate-pulse rounded-xl" />;
-  const months = (data?.months ?? []).map((m) => ({
-    ...m,
-    label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month,
-  }));
+  const months = (data?.months ?? []).map((m) => {
+    const projExtra = m.atual && m.projecao != null ? Math.max(0, m.projecao - m.realizado) : 0;
+    const pctShown = m.meta > 0 ? ((m.atual && m.projecao != null ? m.projecao : m.realizado) / m.meta) * 100 : 0;
+    return { ...m, label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month, projExtra, pctShown, topo: Math.max(0, m.realizado) + projExtra };
+  });
   const total = data?.total ?? 0;
   const atingidas = data?.atingidas ?? 0;
   const pctAtingidas = total ? (atingidas / total) * 100 : 0;
-  const BAR = 38;
+  const atual = months.find((m) => m.atual);
+  const yMax = Math.max(0, ...months.map((m) => Math.max(m.meta, m.topo))) * 1.28 || 1000;
+  const BAR = 44;
   return (
     <div className="flex-1 min-h-[240px] flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <p className="text-base font-bold text-foreground">Histórico de metas</p>
         {total > 0 && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span><span className="font-semibold text-foreground">{atingidas}/{total}</span> metas atingidas</span>
-            <span className="inline-flex items-center gap-1 rounded-lg bg-success/15 text-success font-semibold px-2 py-1">
-              <Target className="size-3.5" /> {pctAtingidas.toFixed(1).replace(".", ",")}%
-            </span>
+          <div className="flex items-center gap-2.5 rounded-xl border border-border px-2.5 py-1.5">
+            <span className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><Target className="size-3.5" /></span>
+            <div className="min-w-[110px]">
+              <p className="text-[11px] text-muted-foreground leading-none"><span className="font-semibold text-foreground">{atingidas}/{total}</span> metas atingidas</p>
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-1"><div className="h-full rounded-full bg-primary" style={{ width: `${pctAtingidas}%` }} /></div>
+            </div>
+            <span className="rounded-lg bg-success/15 text-success text-xs font-bold px-2 py-1">{pctAtingidas.toFixed(1).replace(".", ",")}%</span>
           </div>
         )}
       </div>
@@ -317,45 +391,70 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
         <p className="flex-1 grid place-items-center text-xs text-muted-foreground py-8">Nenhuma meta cadastrada ainda.</p>
       ) : (
         <>
-          <div className="flex-1 min-h-[220px]">
+          <div className="flex-1 min-h-[170px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={months} margin={{ top: 24, right: 8, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="20%">
+              <BarChart data={months} margin={{ top: 26, right: 14, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="22%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                <YAxis domain={[0, yMax]} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
                 <Tooltip
                   cursor={{ fill: "var(--color-muted)", opacity: 0.4 }}
                   content={({ active, payload }: any) => {
                     if (!active || !payload?.length) return null;
                     const p = payload[0].payload;
                     return (
-                      <div className="rounded-xl border border-border bg-card px-3 py-2 shadow-md text-xs">
-                        <p className="font-semibold text-foreground mb-1">{p.label}</p>
+                      <div className="rounded-xl border border-border bg-card px-3 py-2 shadow-md text-xs space-y-0.5">
+                        <p className="font-semibold text-foreground mb-1">{MONTH_FULL[Number(p.month.slice(5, 7)) - 1]} {p.month.slice(0, 4)}</p>
                         <p className="text-muted-foreground">Realizado: <span className="font-semibold text-foreground">{fmtMoney(p.realizado)}</span></p>
+                        {p.atual && p.projecao != null && <p className="text-muted-foreground">Projeção: <span className="font-semibold text-foreground">{fmtMoney(p.projecao)}</span></p>}
                         <p className="text-muted-foreground">Meta: <span className="font-semibold text-foreground">{fmtMoney(p.meta)}</span></p>
-                        <p className={p.atingida ? "text-success font-semibold mt-1" : "text-muted-foreground mt-1"}>
-                          {p.meta > 0 ? `${((p.realizado / p.meta) * 100).toFixed(1)}% da meta` : ""}
-                        </p>
+                        <p className="font-semibold" style={{ color: pctTone(p.pctShown).text }}>{Math.round(p.pctShown)}% da meta{p.atual ? " (projetado)" : ""}</p>
                       </div>
                     );
                   }}
                 />
-                <Bar dataKey="meta" barSize={BAR} shape={<MetaBarShape />} isAnimationActive={false}>
-                  <LabelList dataKey="meta" position="top" offset={8} formatter={(v: any) => fmtK(Number(v))}
-                    style={{ fill: "var(--color-primary)", fontSize: 11, fontWeight: 700 }} />
-                </Bar>
-                <Bar dataKey="realizado" barSize={BAR} radius={[6, 6, 0, 0]} fill="var(--color-primary)" isAnimationActive={false}>
-                  <LabelList dataKey="realizado" position="insideTop" offset={10} formatter={(v: any) => fmtK(Number(v))}
-                    style={{ fill: "#fff", fontSize: 10, fontWeight: 600 }} />
+                <Bar dataKey="realizado" stackId="lucro" barSize={BAR} shape={<RealizadoShape />} isAnimationActive={false} />
+                <Bar dataKey="projExtra" stackId="lucro" barSize={BAR} shape={<ProjecaoShape />} isAnimationActive={false} />
+                {/* Meta por cima das barras (a linha aparece mesmo quando o lucro passa dela) */}
+                <Bar dataKey="meta" barSize={BAR} shape={<MetaLineShape />} isAnimationActive={false} />
+                {/* Camada invisível só pro selo de % no topo (realizado + projeção) */}
+                <Bar dataKey="topo" barSize={BAR} shape={() => <g />} isAnimationActive={false}>
+                  <LabelList dataKey="topo" content={<PctPill data={months} />} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-primary" /> Realizado</span>
-            <span className="flex items-center gap-1.5"><span className="size-3 rounded-full bg-primary/15" /> Meta</span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-primary" /> Lucro realizado</span>
             <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-primary" /> Meta do mês</span>
+            <span className="flex items-center gap-1.5"><span className="size-3 rounded-[3px] border border-dashed border-primary bg-primary/10" /> Projeção do mês</span>
+            <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-success" /> ≥ 100%</span>
+            <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-amber-500" /> 70–99%</span>
+            <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-destructive" /> &lt; 70%</span>
           </div>
+          {atual && (
+            <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-xl border border-border px-3 py-2">
+              <div className="flex items-center gap-2 min-w-0 col-span-2 sm:col-span-1">
+                <span className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><CalendarDays className="size-3.5" /></span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-foreground truncate">{MONTH_FULL[Number(atual.month.slice(5, 7)) - 1]} de {atual.month.slice(0, 4)}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">Meta: {fmtMoney(atual.meta)}</p>
+                </div>
+              </div>
+              <div className="min-w-0 sm:border-l sm:border-border sm:pl-3">
+                <p className="text-sm font-bold text-foreground tabular-nums">{fmtK(atual.realizado)}</p>
+                <p className="text-[10px] text-muted-foreground">Realizado até hoje</p>
+              </div>
+              <div className="min-w-0 border-l border-border pl-3">
+                <p className="text-sm font-bold text-foreground tabular-nums">{atual.projecao != null ? fmtK(atual.projecao) : "—"}</p>
+                <p className="text-[10px] text-muted-foreground">Projeção no mês</p>
+              </div>
+              <div className="min-w-0 border-l border-border pl-3">
+                <p className="text-sm font-bold tabular-nums" style={{ color: pctTone(atual.pctShown).text }}>{Math.round(atual.pctShown)}%</p>
+                <p className="text-[10px] text-muted-foreground">Projeção da meta</p>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -483,7 +582,8 @@ function Dashboard() {
     queryFn: async (): Promise<GoalsHistory> => {
       const { goals } = await goalsHistoryFn();
       const months = goals.filter((g) => g.realizado != null).map((g) => ({
-        month: g.month.slice(0, 7), meta: g.meta, realizado: g.realizado ?? 0, atingida: g.meta > 0 && (g.realizado ?? 0) >= g.meta,
+        month: g.month.slice(0, 7), meta: g.meta, realizado: g.realizado ?? 0, projecao: g.projecao ?? null,
+        atingida: g.meta > 0 && (g.realizado ?? 0) >= g.meta, atual: g.status === "em_andamento",
       }));
       return { months, atingidas: months.filter((m) => m.atingida).length, total: months.length };
     },
