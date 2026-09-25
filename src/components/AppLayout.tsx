@@ -53,6 +53,7 @@ const ALL_PAGES = [
 function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const [name, setName] = useState((user?.user_metadata?.full_name as string) || (user?.user_metadata?.name as string) || "");
+  const [currentPwd, setCurrentPwd] = useState("");
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [saving, setSaving] = useState(false);
@@ -66,8 +67,14 @@ function ProfileDialog({ onClose }: { onClose: () => void }) {
   const onSave = async () => {
     if (pwd && pwd.length < 8) return toast.error("Senha deve ter ao menos 8 caracteres");
     if (pwd && pwd !== pwd2) return toast.error("As senhas não coincidem");
+    if (pwd && !currentPwd) return toast.error("Informe a senha atual para trocar a senha");
     setSaving(true);
     try {
+      // Trocar a senha exige a senha atual (igual a Configurações > Segurança).
+      if (pwd) {
+        const check = await supabase.auth.signInWithPassword({ email: user?.email ?? "", password: currentPwd });
+        if (check.error) throw new Error("Senha atual incorreta");
+      }
       const authUpdate: { data?: { full_name: string }; password?: string } = {};
       if (name.trim()) authUpdate.data = { full_name: name.trim() };
       if (pwd) authUpdate.password = pwd;
@@ -125,9 +132,18 @@ function ProfileDialog({ onClose }: { onClose: () => void }) {
               <div className="space-y-2">
                 <input
                   type="password"
+                  value={currentPwd}
+                  onChange={(e) => setCurrentPwd(e.target.value)}
+                  placeholder="Senha atual"
+                  autoComplete="current-password"
+                  className="w-full h-10 px-3.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-primary"
+                />
+                <input
+                  type="password"
                   value={pwd}
                   onChange={(e) => setPwd(e.target.value)}
                   placeholder="Nova senha"
+                  autoComplete="new-password"
                   className="w-full h-10 px-3.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-primary"
                 />
                 <input

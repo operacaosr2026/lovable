@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { recordLogin } from "@/lib/security.functions";
 
 type AuthContextValue = {
   session: Session | null;
@@ -23,19 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+    // O histórico de login é gravado em signInWithPassword/signUp (recordLogin),
+    // não aqui: "SIGNED_IN" também dispara ao recarregar a página ou voltar pra aba.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setLoading(false);
-      if (event === "SIGNED_IN" && s?.user) {
-        supabase
-          .from("login_history")
-          .insert({
-            user_id: s.user.id,
-            user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
-            ip: null,
-          })
-          .then(() => {});
-      }
     });
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -57,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithPassword = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    recordLogin().catch(() => {});
   };
 
   const signUpWithPassword = async (
@@ -76,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     });
     if (error) throw error;
+    if (data.session) recordLogin().catch(() => {});
     return { needsConfirmation: !data.session };
   };
 

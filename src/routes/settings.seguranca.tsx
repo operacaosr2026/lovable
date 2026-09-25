@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { Lock, LogOut, History, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDateTimeUS } from "@/lib/timezone";
+import { describeUserAgent } from "@/lib/user-agent";
 
 export const Route = createFileRoute("/settings/seguranca")({
   component: SegurancaPage,
@@ -16,6 +17,7 @@ type LoginRow = { id: string; ip: string | null; user_agent: string | null; crea
 function SegurancaPage() {
   const { user, signOut } = useAuth();
   const qc = useQueryClient();
+  const [currentPwd, setCurrentPwd] = useState("");
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [changing, setChanging] = useState(false);
@@ -47,13 +49,19 @@ function SegurancaPage() {
   });
 
   const onChangePassword = async () => {
+    if (!currentPwd) return toast.error("Informe a senha atual");
     if (pwd.length < 8) return toast.error("Senha deve ter ao menos 8 caracteres");
     if (pwd !== pwd2) return toast.error("As senhas não coincidem");
     setChanging(true);
     try {
+      // Confere a senha atual antes de trocar: sem isso, qualquer um com a
+      // sessão aberta no computador conseguia trocar a senha.
+      const check = await supabase.auth.signInWithPassword({ email: user?.email ?? "", password: currentPwd });
+      if (check.error) throw new Error("Senha atual incorreta");
       const { error } = await supabase.auth.updateUser({ password: pwd });
       if (error) throw error;
       toast.success("Senha alterada");
+      setCurrentPwd("");
       setPwd("");
       setPwd2("");
     } catch (err: any) {
@@ -91,10 +99,19 @@ function SegurancaPage() {
           <h2 className="text-sm font-semibold">Alterar senha</h2>
         </div>
         <p className="text-xs text-muted-foreground mb-4">Mínimo de 8 caracteres.</p>
-        <div className="grid md:grid-cols-2 gap-3 max-w-xl">
+        <div className="grid md:grid-cols-3 gap-3 max-w-3xl">
+          <input
+            type="password"
+            placeholder="Senha atual"
+            autoComplete="current-password"
+            className="settings-input"
+            value={currentPwd}
+            onChange={(e) => setCurrentPwd(e.target.value)}
+          />
           <input
             type="password"
             placeholder="Nova senha"
+            autoComplete="new-password"
             className="settings-input"
             value={pwd}
             onChange={(e) => setPwd(e.target.value)}
@@ -109,7 +126,7 @@ function SegurancaPage() {
         </div>
         <button
           onClick={onChangePassword}
-          disabled={changing || !pwd}
+          disabled={changing || !pwd || !currentPwd}
           className="mt-4 inline-flex items-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
         >
           {changing && <Loader2 className="size-3.5 animate-spin" />}
@@ -133,7 +150,7 @@ function SegurancaPage() {
               <div className="text-sm font-medium">Sessão atual</div>
               <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-md">{user?.email}</div>
               <div className="text-[11px] text-muted-foreground mt-1 truncate max-w-md">
-                {typeof navigator !== "undefined" ? navigator.userAgent : ""}
+                {typeof navigator !== "undefined" ? describeUserAgent(navigator.userAgent) : ""}
               </div>
             </div>
             <span className="text-[11px] px-2 py-1 rounded-full bg-success/15 text-success font-medium">Ativa</span>
@@ -193,7 +210,7 @@ function SegurancaPage() {
                     {formatDateTimeUS(r.created_at)}
                   </div>
                   <div className="text-muted-foreground truncate max-w-md mt-0.5">
-                    {r.user_agent || "Dispositivo desconhecido"}
+                    {describeUserAgent(r.user_agent)}
                   </div>
                 </div>
                 <div className="text-muted-foreground text-[11px] shrink-0 ml-3">{r.ip || "—"}</div>
