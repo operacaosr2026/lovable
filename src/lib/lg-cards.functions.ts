@@ -189,8 +189,16 @@ export const updateLgCard = createServerFn({ method: "POST" })
     // outro dono ainda seguia até o delete/insert de lg_card_shops abaixo e
     // apagava/reescrevia os vínculos de loja daquele card alheio.
     const { data: ownedCard } = await supabaseAdmin
-      .from("lg_cards").select("id").eq("id", data.id).eq("user_id", ownerId).maybeSingle();
+      .from("lg_cards").select("id,status").eq("id", data.id).eq("user_id", ownerId).maybeSingle();
     if (!ownedCard) throw new Error("Card não encontrado.");
+
+    // Metas da empresa: grupo que deixa de ser ativo continua contando no mês
+    // em que saiu (company-goals.server.ts) — guarda quando isso aconteceu.
+    const patch: typeof data.patch & { inactive_since?: string | null } = { ...data.patch };
+    if (data.patch.status && data.patch.status !== ownedCard.status) {
+      if (data.patch.status === "ativo") patch.inactive_since = null;
+      else if (ownedCard.status === "ativo") patch.inactive_since = new Date().toISOString();
+    }
 
     if (data.shops.length > 0) await assertShopsOwnedBy(ownerId, data.shops.map((s) => s.shop_id));
 
@@ -205,7 +213,7 @@ export const updateLgCard = createServerFn({ method: "POST" })
 
     const { error } = await supabaseAdmin
       .from("lg_cards")
-      .update(data.patch)
+      .update(patch)
       .eq("id", data.id)
       .eq("user_id", ownerId);
 

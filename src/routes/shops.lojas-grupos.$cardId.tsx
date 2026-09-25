@@ -5,10 +5,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
   ArrowLeft, Layers, MapPin, Store, ChevronDown,
-  LayoutDashboard, Wallet, ShoppingBag, Plug, Target, Truck,
+  LayoutDashboard, Wallet, ShoppingBag, Plug, StickyNote, Truck,
 } from "lucide-react";
 import { getLgCard } from "@/lib/lg-cards.functions";
-import { LgOverview }      from "@/components/lojas-grupos/LgOverview";
+import { LgNotesSection }  from "@/components/lojas-grupos/LgNotesSection";
 import { LgDashboard }     from "@/components/lojas-grupos/LgDashboard";
 import { LgCaixa }         from "@/components/lojas-grupos/LgCaixa";
 import { LgOrders }        from "@/components/lojas-grupos/LgOrders";
@@ -182,7 +182,7 @@ function LgCardDetail() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 border-b border-border">
         <div className="flex items-center gap-1 overflow-x-auto">
           <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>
-          <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={Target}>Metas</TabBtn>
+          <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={StickyNote}>Diário</TabBtn>
           <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>
           <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>
           <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>
@@ -193,7 +193,8 @@ function LgCardDetail() {
 
       {/* Content — only render when there are shops or for overview/integrations */}
       {tab === "overview" && (
-        <LgOverview card={card} shopIds={allShopIds} />
+        // Metas agora são da empresa (menu Metas); aqui fica só o Diário de Operação.
+        <LgNotesSection cardId={card.id} shopIds={allShopIds} matrizShopId={card.matriz_shop_id ?? null} />
       )}
       {tab === "dashboard" && allShopIds.length > 0 && (
         <LgDashboard

@@ -14,7 +14,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { getDashboardOverview } from "@/lib/lg-cards.functions";
-import { getGoalsHistoryOverview } from "@/lib/lg-overview.functions";
+import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
 import { computeLogisticsKpis, computeLogisticsTrend } from "@/lib/logistics-kpis";
@@ -476,10 +476,17 @@ function Dashboard() {
 
   // "Metas" vem primeiro e já selecionada.
   const [activeTab, setActiveTab] = useState<ChartTabKey>("metas");
-  const goalsHistoryFn = useServerFn(getGoalsHistoryOverview);
+  // Metas da empresa (página Metas): meses com realizado (fechados + o atual).
+  const goalsHistoryFn = useServerFn(listCompanyGoals);
   const goalsHistory = useQuery({
     queryKey: ["goals-history-overview"],
-    queryFn: () => goalsHistoryFn(),
+    queryFn: async (): Promise<GoalsHistory> => {
+      const { goals } = await goalsHistoryFn();
+      const months = goals.filter((g) => g.realizado != null).map((g) => ({
+        month: g.month.slice(0, 7), meta: g.meta, realizado: g.realizado ?? 0, atingida: g.meta > 0 && (g.realizado ?? 0) >= g.meta,
+      }));
+      return { months, atingidas: months.filter((m) => m.atingida).length, total: months.length };
+    },
     enabled: activeTab === "metas",
   });
 

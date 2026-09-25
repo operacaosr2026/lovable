@@ -8,6 +8,45 @@ export type Database = {
   };
   public: {
     Tables: {
+      company_goals: {
+        Row: {
+          created_at: string;
+          frozen_at: string | null;
+          id: string;
+          lucro_por_venda: number | null;
+          meta: number;
+          month: string;
+          realizado_final: number | null;
+          shop_ids_final: string[] | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          frozen_at?: string | null;
+          id?: string;
+          lucro_por_venda?: number | null;
+          meta: number;
+          month: string;
+          realizado_final?: number | null;
+          shop_ids_final?: string[] | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          frozen_at?: string | null;
+          id?: string;
+          lucro_por_venda?: number | null;
+          meta?: number;
+          month?: string;
+          realizado_final?: number | null;
+          shop_ids_final?: string[] | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       caixa_daily_snapshots: {
         Row: {
           created_at: string;
@@ -503,6 +542,7 @@ export type Database = {
       };
       lg_cards: {
         Row: {
+          inactive_since: string | null;
           country: string | null;
           created_at: string | null;
           description: string | null;
@@ -515,6 +555,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          inactive_since?: string | null;
           country?: string | null;
           created_at?: string | null;
           description?: string | null;
@@ -527,6 +568,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          inactive_since?: string | null;
           country?: string | null;
           created_at?: string | null;
           description?: string | null;

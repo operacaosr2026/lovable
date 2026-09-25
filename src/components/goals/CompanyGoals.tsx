@@ -10,16 +10,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { getLgAccumulatedLucro } from "@/lib/lg-overview.functions";
 import {
-  getLgAccumulatedLucro,
-  getLgCardGoal,
-  createLgCardGoal,
-  updateLgCardGoal,
-  finalizeLgCardGoal,
-  listLgCardGoalHistory,
-} from "@/lib/lg-overview.functions";
-import { LgNotesSection } from "@/components/lojas-grupos/LgNotesSection";
+  getCompanyGoalCurrent, listCompanyGoals, upsertCompanyGoal, deleteCompanyGoal,
+} from "@/lib/company-goals.functions";
 import { isoTodayUS } from "@/lib/timezone";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -240,27 +234,144 @@ function SummaryRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) {
+const MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+function fmtMonthPt(monthStart: string) {
+  return `${MONTHS_PT[Number(monthStart.slice(5, 7)) - 1]} de ${monthStart.slice(0, 4)}`;
+}
+function addMonths(monthStart: string, n: number) {
+  const d = new Date(`${monthStart}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+type PlanGoal = { month: string; meta: number; lucro_por_venda: number | null; realizado: number | null; status: string };
+
+// ─── Planejamento: meta deste mês e dos próximos 11 ───────────────────────────
+function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading: boolean; onSaved: () => Promise<void> }) {
+  const current = `${isoToday().slice(0, 7)}-01`;
+  const byMonth = new Map(goals.map((g) => [g.month, g]));
+  const months = Array.from({ length: 12 }, (_, i) => addMonths(current, i));
+  for (const g of goals) if (g.month > months[months.length - 1]) months.push(g.month);
+  // Sugestão pra mês vazio: a última meta definida.
+  const last = [...goals].filter((g) => g.month <= current).pop() ?? goals[0];
+
+  if (loading) {
+    return <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>;
+  }
+  return (
+    <div className="bg-card border border-border rounded-3xl p-5">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <div>
+          <p className="text-sm font-bold text-foreground">Metas dos próximos meses</p>
+          <p className="text-xs text-muted-foreground">Lucro de todas as lojas dos grupos ativos. Meses já fechados ficam no Histórico.</p>
+        </div>
+      </div>
+      <div className="hidden sm:grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span>Mês</span><span>Meta de lucro (USD)</span><span>Lucro por venda (USD)</span><span className="w-[152px]" />
+      </div>
+      <div className="space-y-2">
+        {months.map((m) => (
+          <PlanRow key={m} month={m} isCurrent={m === current} goal={byMonth.get(m)} suggestion={last} onSaved={onSaved} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
+  month: string; isCurrent: boolean; goal?: PlanGoal; suggestion?: PlanGoal; onSaved: () => Promise<void>;
+}) {
+  const upsertFn = useServerFn(upsertCompanyGoal);
+  const deleteFn = useServerFn(deleteCompanyGoal);
+  const [meta, setMeta] = useState(goal ? String(goal.meta) : "");
+  const [lpv, setLpv] = useState(goal?.lucro_por_venda != null ? String(goal.lucro_por_venda) : "");
+  const [saving, setSaving] = useState(false);
+  const dirty = meta !== (goal ? String(goal.meta) : "") || lpv !== (goal?.lucro_por_venda != null ? String(goal.lucro_por_venda) : "");
+
+  async function save() {
+    const metaN = parseFloat(meta);
+    const lpvN = lpv.trim() ? parseFloat(lpv) : null;
+    if (!metaN || metaN <= 0) { toast.error("Informe um valor de meta válido"); return; }
+    if (lpvN != null && !(lpvN > 0)) { toast.error("Lucro por venda inválido"); return; }
+    setSaving(true);
+    try {
+      await upsertFn({ data: { month: month.slice(0, 7), meta: metaN, lucro_por_venda: lpvN } });
+      await onSaved();
+      toast.success(`Meta de ${fmtMonthPt(month)} salva`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao salvar meta");
+    } finally { setSaving(false); }
+  }
+
+  async function remove() {
+    if (!window.confirm(`Remover a meta de ${fmtMonthPt(month)}?`)) return;
+    setSaving(true);
+    try {
+      await deleteFn({ data: { month: month.slice(0, 7) } });
+      setMeta(""); setLpv("");
+      await onSaved();
+      toast.success("Meta removida");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao remover meta");
+    } finally { setSaving(false); }
+  }
+
+  const inputCls = "h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30";
+  return (
+    <div className={cn(
+      "grid grid-cols-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3",
+      isCurrent ? "border-primary/40 bg-primary/5" : "border-border",
+    )}>
+      <div className="col-span-2 sm:col-span-1 flex items-center gap-2 min-w-0">
+        <span className="text-sm font-semibold text-foreground capitalize truncate">{fmtMonthPt(month)}</span>
+        {isCurrent && <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-primary/10 text-primary shrink-0">Mês atual</span>}
+      </div>
+      <input type="number" min="0" step="100" value={meta} onChange={(e) => setMeta(e.target.value)}
+        placeholder={suggestion ? String(suggestion.meta) : "ex: 10000"} className={inputCls} aria-label="Meta de lucro" />
+      <input type="number" min="0" step="1" value={lpv} onChange={(e) => setLpv(e.target.value)}
+        placeholder={suggestion?.lucro_por_venda != null ? String(suggestion.lucro_por_venda) : "ex: 30"} className={inputCls} aria-label="Lucro por venda" />
+      <div className="col-span-2 sm:col-span-1 flex items-center justify-end gap-2 sm:w-[152px]">
+        {goal && (
+          <button onClick={remove} disabled={saving} title="Remover meta"
+            className="size-9 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 grid place-items-center transition-colors disabled:opacity-50">
+            <X className="size-3.5" />
+          </button>
+        )}
+        <button onClick={save} disabled={saving || !dirty}
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors">
+          {saving ? "Salvando..." : goal ? "Salvar" : "Definir"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Página "Metas" (menu lateral): meta da empresa por mês, medindo o lucro das
+// lojas dos grupos ativos (company-goals.server.ts). Atual = mês corrente,
+// Histórico = meses anteriores (realizado congelado), Planejamento = definir
+// as metas deste mês e dos próximos.
+export function CompanyGoals() {
   const queryClient = useQueryClient();
-  const hasShops = shopIds.length > 0;
 
-  const getAccFn       = useServerFn(getLgAccumulatedLucro);
-  const getGoalFn      = useServerFn(getLgCardGoal);
-  const createGoalFn   = useServerFn(createLgCardGoal);
-  const updateGoalFn   = useServerFn(updateLgCardGoal);
-  const finalizeGoalFn = useServerFn(finalizeLgCardGoal);
-  const getHistoryFn   = useServerFn(listLgCardGoalHistory);
+  const getAccFn     = useServerFn(getLgAccumulatedLucro);
+  const getCurrentFn = useServerFn(getCompanyGoalCurrent);
+  const listGoalsFn  = useServerFn(listCompanyGoals);
 
-  // ── Goal query (meta ativa) ────────────────────────────────────────────────
-  const { data: goalData, isLoading: loadingGoal } = useQuery({
-    queryKey: ["lg-card-goal", card.id],
-    queryFn: () => getGoalFn({ data: { card_id: card.id } }),
-    staleTime: 60_000,
+  const [subTab, setSubTab] = useState<"atual" | "historico" | "planejamento">("atual");
+
+  // ── Meta do mês atual + lojas que contam nela ──────────────────────────────
+  const { data: current, isLoading: loadingGoal } = useQuery({
+    queryKey: ["company-goal-current"],
+    queryFn: () => getCurrentFn(),
   });
+  const shopIds = current?.shopIds ?? [];
+  const hasShops = shopIds.length > 0;
+  // Mesmo formato da meta antiga (início/fim = mês fechado), pro resto da tela não mudar.
+  const savedGoal: any = current?.goal
+    ? { ...current.goal, start_date: current.monthStart, prazo: current.monthEnd }
+    : null;
 
-  const savedGoal = goalData?.goal as any ?? null;
-
-  // ── Accumulated lucro (from goal start_date) ──────────────────────────────
+  // ── Lucro acumulado do mês (mesma conta da aba Metas antiga) ─────────────────
   const { data: accData, isLoading: loadingAcc } = useQuery({
     queryKey: ["lg-acc-lucro", shopIds.join(","), savedGoal?.start_date],
     queryFn: () => getAccFn({ data: { shop_ids: shopIds, start_date: savedGoal.start_date } }),
@@ -268,105 +379,21 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
     staleTime: 3 * 60_000,
   });
 
-  // ── Histórico de metas (todas, ativa + encerradas) ─────────────────────────
-  // ── Subabas: Definir Meta / Histórico / Diário de Operação ────────────────
-  const [subTab, setSubTab] = useState<"definir" | "historico" | "diario">("definir");
-
-  // Só carrega ao abrir a subaba: recalcula o lucro de cada meta (pedidos +
-  // Shopify ao vivo) e pesava a abertura da aba Metas.
-  const { data: historyData, isLoading: loadingHistory } = useQuery({
-    queryKey: ["lg-goal-history", card.id, shopIds.join(",")],
-    queryFn: () => getHistoryFn({ data: { card_id: card.id, shop_ids: shopIds } }),
-    enabled: hasShops && subTab === "historico",
-    staleTime: 60_000,
+  // ── Todas as metas (histórico e planejamento) ──────────────────────────────
+  const { data: goalsData, isLoading: loadingHistory } = useQuery({
+    queryKey: ["company-goals"],
+    queryFn: () => listGoalsFn(),
+    enabled: subTab !== "atual",
   });
-
-  // ── Nova meta (widget do canto) ─────────────────────────────────────────────
-  const [newGoalOpen, setNewGoalOpen] = useState(false);
-  const [newMetaInput, setNewMetaInput] = useState("");
-  const [newStartInput, setNewStartInput] = useState(isoToday());
-  const [newPrazoInput, setNewPrazoInput] = useState("");
-  const [newLucroPorVendaInput, setNewLucroPorVendaInput] = useState("");
-  const [creatingGoal, setCreatingGoal] = useState(false);
-
-  // ── Editar meta ativa (clicando no pill do canto) ───────────────────────────
-  const [editGoalOpen, setEditGoalOpen] = useState(false);
-  const [editMetaInput, setEditMetaInput] = useState("");
-  const [editStartInput, setEditStartInput] = useState("");
-  const [editPrazoInput, setEditPrazoInput] = useState("");
-  const [editLucroPorVendaInput, setEditLucroPorVendaInput] = useState("");
-  const [savingEditGoal, setSavingEditGoal] = useState(false);
-
-  function openEditGoal() {
-    if (!savedGoal) return;
-    setEditMetaInput(String(savedGoal.meta ?? ""));
-    setEditStartInput(savedGoal.start_date ?? "");
-    setEditPrazoInput(savedGoal.prazo ?? "");
-    setEditLucroPorVendaInput(String(savedGoal.lucro_por_venda ?? ""));
-    setEditGoalOpen(true);
-  }
+  const allGoals = goalsData?.goals ?? [];
 
   async function refreshGoalQueries() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["lg-card-goal", card.id] }),
+      queryClient.invalidateQueries({ queryKey: ["company-goal-current"] }),
+      queryClient.invalidateQueries({ queryKey: ["company-goals"] }),
       queryClient.invalidateQueries({ queryKey: ["lg-acc-lucro"] }),
-      queryClient.invalidateQueries({ queryKey: ["lg-goal-history", card.id] }),
+      queryClient.invalidateQueries({ queryKey: ["goals-history-overview"] }),
     ]);
-  }
-
-  async function handleCreateGoal() {
-    const meta = parseFloat(newMetaInput);
-    const lucroPorVenda = parseFloat(newLucroPorVendaInput);
-    if (!meta || meta <= 0) { toast.error("Informe um valor de meta válido"); return; }
-    if (!newStartInput || !newPrazoInput) { toast.error("Informe início e fim"); return; }
-    if (!lucroPorVenda || lucroPorVenda <= 0) { toast.error("Informe o lucro previsto por venda"); return; }
-    setCreatingGoal(true);
-    try {
-      await createGoalFn({ data: { card_id: card.id, meta, start_date: newStartInput, prazo: newPrazoInput, lucro_por_venda: lucroPorVenda } });
-      await refreshGoalQueries();
-      toast.success("Meta criada");
-      setNewGoalOpen(false);
-      setNewMetaInput("");
-      setNewPrazoInput("");
-      setNewLucroPorVendaInput("");
-      setSubTab("historico");
-    } catch (e: any) {
-      toast.error(e.message ?? "Erro ao criar meta");
-    } finally {
-      setCreatingGoal(false);
-    }
-  }
-
-  async function handleUpdateGoal() {
-    if (!savedGoal) return;
-    const meta = parseFloat(editMetaInput);
-    const lucroPorVenda = parseFloat(editLucroPorVendaInput);
-    if (!meta || meta <= 0) { toast.error("Informe um valor de meta válido"); return; }
-    if (!editStartInput || !editPrazoInput) { toast.error("Informe início e fim"); return; }
-    if (!lucroPorVenda || lucroPorVenda <= 0) { toast.error("Informe o lucro previsto por venda"); return; }
-    setSavingEditGoal(true);
-    try {
-      await updateGoalFn({ data: { id: savedGoal.id, meta, start_date: editStartInput, prazo: editPrazoInput, lucro_por_venda: lucroPorVenda } });
-      await refreshGoalQueries();
-      toast.success("Meta atualizada");
-      setEditGoalOpen(false);
-    } catch (e: any) {
-      toast.error(e.message ?? "Erro ao atualizar meta");
-    } finally {
-      setSavingEditGoal(false);
-    }
-  }
-
-  async function handleFinalizeGoal() {
-    if (!savedGoal) return;
-    if (!window.confirm("Finalizar a meta atual agora? O resultado (batida ou não) fica registrado no histórico e não pode ser desfeito.")) return;
-    try {
-      await finalizeGoalFn({ data: { id: savedGoal.id } });
-      await refreshGoalQueries();
-      toast.success("Meta finalizada");
-    } catch (e: any) {
-      toast.error(e.message ?? "Erro ao finalizar meta");
-    }
   }
 
   // ── Derived meta calculations ─────────────────────────────────────────────
@@ -451,155 +478,39 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
 
   return (
     <div className="space-y-4">
-      {!hasShops ? (
-        <p className="text-xs text-muted-foreground">Nenhuma loja vinculada a este card.</p>
+      {!loadingGoal && !hasShops ? (
+        <p className="text-xs text-muted-foreground">Nenhum grupo ativo com lojas — a meta da empresa soma o lucro das lojas dos grupos ativos.</p>
       ) : (
         <>
           {/* ── Subabas ──────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between flex-wrap gap-3 border-b border-border">
             <div className="flex items-center gap-1">
-              <SubTabBtn active={subTab === "definir"} onClick={() => setSubTab("definir")} icon={<Target className="size-3.5" />}>
+              <SubTabBtn active={subTab === "atual"} onClick={() => setSubTab("atual")} icon={<Target className="size-3.5" />}>
                 Atual
               </SubTabBtn>
               <SubTabBtn active={subTab === "historico"} onClick={() => setSubTab("historico")} icon={<TrendingUp className="size-3.5" />}>
                 Histórico
               </SubTabBtn>
-              <SubTabBtn active={subTab === "diario"} onClick={() => setSubTab("diario")} icon={<StickyNote className="size-3.5" />}>
-                Diário de Operação
+              <SubTabBtn active={subTab === "planejamento"} onClick={() => setSubTab("planejamento")} icon={<CalendarClock className="size-3.5" />}>
+                Planejamento
               </SubTabBtn>
             </div>
-            {/* Widget do canto: meta ativa (com botão finalizar) ou criar nova meta */}
+            {/* Canto: meta do mês (clique leva ao Planejamento pra editar) */}
             <div className="flex items-center gap-2 mb-2">
               {savedGoal ? (
-                <div className="flex items-center gap-2">
-                  <Popover open={editGoalOpen} onOpenChange={(o) => (o ? openEditGoal() : setEditGoalOpen(false))}>
-                    <PopoverTrigger asChild>
-                      <button className="text-xs px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors">
-                        {fmtMoney(Number(savedGoal.meta))} · {fmtDatePt(savedGoal.start_date)} → {fmtDatePt(savedGoal.prazo)}
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-72 space-y-3">
-                      <p className="text-sm font-semibold text-foreground">Editar meta</p>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs text-muted-foreground">Início</label>
-                        <input
-                          type="date"
-                          value={editStartInput}
-                          onChange={e => setEditStartInput(e.target.value)}
-                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs text-muted-foreground">Fim</label>
-                        <input
-                          type="date"
-                          value={editPrazoInput}
-                          min={editStartInput}
-                          onChange={e => setEditPrazoInput(e.target.value)}
-                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs text-muted-foreground">Valor (USD)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="100"
-                          value={editMetaInput}
-                          onChange={e => setEditMetaInput(e.target.value)}
-                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs text-muted-foreground">Lucro previsto por venda (USD)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="ex: 30"
-                          value={editLucroPorVendaInput}
-                          onChange={e => setEditLucroPorVendaInput(e.target.value)}
-                          className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
-                      </div>
-                      <button
-                        onClick={handleUpdateGoal}
-                        disabled={savingEditGoal}
-                        className="w-full h-9 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                      >
-                        {savingEditGoal ? "Salvando..." : "Salvar alterações"}
-                      </button>
-                    </PopoverContent>
-                  </Popover>
-                  <button
-                    onClick={handleFinalizeGoal}
-                    title="Finalizar meta"
-                    className="size-8 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 grid place-items-center transition-colors"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <Popover open={newGoalOpen} onOpenChange={setNewGoalOpen}>
-                  <PopoverTrigger asChild>
-                    <button className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-primary/90 transition-colors">
-                      <Plus className="size-3.5" /> Nova meta
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 space-y-3">
-                    <p className="text-sm font-semibold text-foreground">Definir nova meta</p>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted-foreground">Início</label>
-                      <input
-                        type="date"
-                        value={newStartInput}
-                        onChange={e => setNewStartInput(e.target.value)}
-                        className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted-foreground">Fim</label>
-                      <input
-                        type="date"
-                        value={newPrazoInput}
-                        min={newStartInput}
-                        onChange={e => setNewPrazoInput(e.target.value)}
-                        className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted-foreground">Valor (USD)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="100"
-                        placeholder="ex: 5000"
-                        value={newMetaInput}
-                        onChange={e => setNewMetaInput(e.target.value)}
-                        className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted-foreground">Lucro previsto por venda (USD)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        placeholder="ex: 30"
-                        value={newLucroPorVendaInput}
-                        onChange={e => setNewLucroPorVendaInput(e.target.value)}
-                        className="h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-                    <button
-                      onClick={handleCreateGoal}
-                      disabled={creatingGoal}
-                      className="w-full h-9 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                      {creatingGoal ? "Criando..." : "Criar meta"}
-                    </button>
-                  </PopoverContent>
-                </Popover>
+                <button
+                  onClick={() => setSubTab("planejamento")}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+                >
+                  {fmtMoney(Number(savedGoal.meta))} · {fmtDatePt(savedGoal.start_date)} → {fmtDatePt(savedGoal.prazo)}
+                </button>
+              ) : !loadingGoal && (
+                <button
+                  onClick={() => setSubTab("planejamento")}
+                  className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-primary/90 transition-colors"
+                >
+                  <Plus className="size-3.5" /> Definir meta do mês
+                </button>
               )}
             </div>
           </div>
@@ -613,7 +524,7 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                 <Skeleton className="h-24 w-full rounded-xl" />
               ) : !savedGoal ? (
                 <p className="text-sm text-muted-foreground">
-                  Nenhuma meta ativa no momento. Use o botão "Nova meta" no canto superior direito para começar uma.
+                  Nenhuma meta para este mês. Defina na aba Planejamento.
                 </p>
               ) : (() => {
                 const diasDecorridos = Math.max(0, daysBetween(savedGoal.start_date, isoToday()));
@@ -627,15 +538,9 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
                         <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
                           <Target className="size-4" />
                         </div>
-                        <span className="text-sm font-bold text-foreground">Meta ativa</span>
+                        <span className="text-sm font-bold text-foreground">Meta do mês</span>
                         <span className="text-xs font-semibold rounded-full px-2.5 py-1 bg-primary/10 text-primary">Em andamento</span>
                       </div>
-                      <button
-                        onClick={handleFinalizeGoal}
-                        className="h-9 px-4 rounded-lg border border-destructive/30 text-destructive text-sm font-medium hover:bg-destructive/10 transition-colors flex items-center gap-1.5"
-                      >
-                        <Flag className="size-3.5" /> Finalizar meta
-                      </button>
                     </div>
 
                     <div className="border-t border-border" />
@@ -714,36 +619,36 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
 
             {/* Metas anteriores */}
             <div className="bg-card border border-border rounded-3xl p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Metas anteriores</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Metas por mês</p>
               {loadingHistory ? (
                 <div className="space-y-2">
                   {[0, 1].map(i => <Skeleton key={i} className="h-14 rounded-xl" />)}
                 </div>
-              ) : !(historyData as any)?.goals?.length ? (
+              ) : !allGoals.some((g) => g.realizado != null) ? (
                 <p className="text-xs text-muted-foreground text-center py-4">Nenhuma meta registrada ainda.</p>
               ) : (
                 <div className="space-y-2">
-                  {(historyData as any).goals.map((g: any) => (
-                    <div key={g.id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3.5">
+                  {[...allGoals].filter((g) => g.realizado != null).reverse().map((g) => (
+                    <div key={g.month} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3.5">
                       <div className="flex items-center gap-3">
                         <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
                           <TrendingUp className="size-4" />
                         </div>
                         <div>
                           <p className="text-sm font-bold text-foreground">{fmtMoney(g.meta)}</p>
-                          <p className="text-xs text-muted-foreground">{fmtDatePt(g.start_date)} → {fmtDatePt(g.prazo)}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{fmtMonthPt(g.month)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <p className="text-sm font-bold text-foreground">{fmtMoney(g.lucro)}</p>
+                          <p className="text-sm font-bold text-foreground">{fmtMoney(g.realizado ?? 0)}</p>
                           <span className={cn(
                             "text-[10px] font-semibold rounded-full px-2 py-0.5",
-                            g.status === "ativa" ? "bg-primary/10 text-primary"
+                            g.status === "em_andamento" ? "bg-primary/10 text-primary"
                             : g.status === "batida" ? "bg-success/10 text-success"
                             : "bg-destructive/10 text-destructive"
                           )}>
-                            {g.status === "ativa" ? "Em andamento" : g.status === "batida" ? "Batida" : "Não batida"}
+                            {g.status === "em_andamento" ? "Em andamento" : g.status === "batida" ? "Batida" : "Não batida"}
                           </span>
                         </div>
                         <ChevronRight className="size-4 text-muted-foreground shrink-0" />
@@ -757,15 +662,21 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
           )}
 
           {/* ── Definir Meta: dashboard rico da meta ativa ──────────────────── */}
-          {subTab === "definir" && (
+          {subTab === "atual" && (
             <>
             {loadingGoal ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-[150px] rounded-2xl" />)}
               </div>
             ) : !savedGoal ? (
-              <div className="bg-card border border-border rounded-2xl p-6 text-center">
-                <p className="text-sm text-muted-foreground">Nenhuma meta ativa no momento.</p>
+              <div className="bg-card border border-border rounded-2xl p-6 text-center space-y-3">
+                <p className="text-sm text-muted-foreground">Nenhuma meta para este mês.</p>
+                <button
+                  onClick={() => setSubTab("planejamento")}
+                  className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                >
+                  Definir no Planejamento
+                </button>
               </div>
             ) : loadingAcc && !accData ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1064,9 +975,9 @@ export function LgOverview({ card, shopIds }: { card: any; shopIds: string[] }) 
             </>
           )}
 
-          {/* ── Diário de Operação ───────────────────────────────────────────── */}
-          {subTab === "diario" && (
-            <LgNotesSection cardId={card.id} shopIds={shopIds} matrizShopId={card.matriz_shop_id ?? null} />
+          {/* ── Planejamento: meta deste mês e dos próximos ─────────────────── */}
+          {subTab === "planejamento" && (
+            <GoalPlanning goals={allGoals} loading={loadingHistory} onSaved={refreshGoalQueries} />
           )}
         </>
       )}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, FolderKanban,
+  LayoutDashboard, FolderKanban, Target,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +23,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/metas", label: "Metas", icon: Target },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/shops/products", label: "Produtos", icon: Package, section: "shops" },
   { to: "/shops/caixa", label: "Caixa", icon: Wallet, section: "shops" },
@@ -37,6 +38,7 @@ const adminNav: NavItem[] = [
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/metas", label: "Metas", icon: Target },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },

@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 // Rastreamento, Caixa, Metas...). Recarregadas quando chega o sinal "orders".
 const ORDER_QUERY_KEYS = [
   "dashboard-overview", "lg-dashboard", "lg-dashboard-hourly", "lg-dashboard-chart", "lg-dash-breakdown",
-  "lg-card-metrics", "lg-orders", "lg-logistics", "lg-acc-lucro", "lg-card-goal", "lg-goal-history",
+  "lg-card-metrics", "lg-orders", "lg-logistics", "lg-acc-lucro", "company-goal-current", "company-goals",
   "lg-note-metrics", "shop-cash", "shop-cash-standalone", "shop-cash-pending", "shop-cash-last-synced", "shop-group-cash-pending", "caixa-simulation",
   "product-sales", "store-avg-orders", "goals-history-overview",
 ];
