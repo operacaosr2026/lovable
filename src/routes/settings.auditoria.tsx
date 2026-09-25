@@ -52,7 +52,7 @@ function AuditRow({ row }: { row: any }) {
       >
         <span className="text-muted-foreground tabular-nums">{formatDateTimeUS(row.created_at)}</span>
         <span className="font-medium text-foreground truncate">{row.label}</span>
-        <span className="text-muted-foreground truncate">{row.actor_email ?? row.actor_id}</span>
+        <span className="text-muted-foreground truncate" title={row.actor_email ?? undefined}>{row.actor_name ?? row.actor_email}</span>
         {hasData ? <ChevronDown className={`size-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} /> : <span />}
       </button>
       {open && hasData && (
@@ -113,7 +113,7 @@ function AuditoriaPage() {
           </form>
           <select value={actorId} onChange={(e) => resetPage(setActorId)(e.target.value)} className={`${FILTER} w-52 px-3`}>
             <option value="">Todas as pessoas</option>
-            {(data?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.email}</option>)}
+            {(data?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             De
