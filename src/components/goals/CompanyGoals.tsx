@@ -497,14 +497,15 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
     );
   }
 
-  const sel = withResult.find((g) => g.month === selectedMonth)
-    ?? withResult.find((g) => g.month === current)
+  const sel = goals.find((g) => g.month === selectedMonth)
+    ?? goals.find((g) => g.month === current)
     ?? withResult[withResult.length - 1];
+  const isFutureSel = sel.realizado == null;
   const monthEnd = (() => { const d = new Date(`${sel.month}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0); return d.toISOString().slice(0, 10); })();
   // Mesma contagem da aba Atual ("23 de 29 dias").
   const totalDias = Math.max(1, daysBetween(sel.month, monthEnd));
   const isCurrentSel = sel.month === current;
-  const diasDecorridos = isCurrentSel ? Math.min(totalDias, Math.max(0, daysBetween(sel.month, today))) : totalDias;
+  const diasDecorridos = isFutureSel ? 0 : isCurrentSel ? Math.min(totalDias, Math.max(0, daysBetween(sel.month, today))) : totalDias;
   const diasRestantes = totalDias - diasDecorridos;
   const realizado = sel.realizado ?? 0;
   const { pct } = goalProgress(sel);
@@ -531,7 +532,7 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
                 className="appearance-none bg-transparent text-lg font-bold text-foreground pr-6 cursor-pointer focus:outline-none"
                 aria-label="Escolher mês"
               >
-                {[...withResult].reverse().map((g) => <option key={g.month} value={g.month}>{fmtMonthPt(g.month)}</option>)}
+                {[...goals].reverse().map((g) => <option key={g.month} value={g.month}>{fmtMonthPt(g.month)}</option>)}
               </select>
               <ChevronDown className="size-4 text-primary absolute right-0 pointer-events-none" />
             </div>
@@ -543,8 +544,8 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
 
           <div className="space-y-3 min-w-0">
             <div>
-              <p className="text-xs text-muted-foreground">{isCurrentSel ? "Lucro atual" : "Lucro do mês"}</p>
-              <p className={cn("text-3xl font-bold tabular-nums leading-tight", realizado >= sel.meta ? "text-success" : sel.status === "nao_batida" ? "text-destructive" : "text-foreground")}>{fmtMoney(realizado)}</p>
+              <p className="text-xs text-muted-foreground">{isFutureSel ? "Lucro do mês" : isCurrentSel ? "Lucro atual" : "Lucro do mês"}</p>
+              <p className={cn("text-3xl font-bold tabular-nums leading-tight", isFutureSel ? "text-muted-foreground" : realizado >= sel.meta ? "text-success" : sel.status === "nao_batida" ? "text-destructive" : "text-foreground")}>{isFutureSel ? "—" : fmtMoney(realizado)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{falta > 0 ? "Faltam" : "Acima da meta"}</p>
@@ -613,10 +614,10 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
             const active = g.month === sel.month;
             const futura = g.realizado == null;
             return (
-              <button key={g.month} onClick={() => { if (!futura) setSelectedMonth(g.month); }} disabled={futura}
+              <button key={g.month} onClick={() => setSelectedMonth(g.month)}
                 className={cn(
                   "w-full text-left grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,2fr)_minmax(0,1fr)_20px] items-center gap-3 md:gap-4 rounded-xl border p-3 transition-colors",
-                  active ? "border-primary/40 bg-primary/5" : futura ? "border-border cursor-default" : "border-border hover:border-primary/30",
+                  active ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/30",
                 )}>
                 <span className="col-span-2 md:col-span-1 flex items-center gap-3 min-w-0">
                   <span className="size-9 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><BarChart3 className="size-4" /></span>
@@ -633,7 +634,7 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
                     <span className="size-1.5 rounded-full bg-current" />{STATUS_LABEL[g.status]}
                   </span>
                 </span>
-                {futura ? <span /> : <ChevronRight className="hidden md:block size-4 text-muted-foreground justify-self-end" />}
+                <ChevronRight className="hidden md:block size-4 text-muted-foreground justify-self-end" />
               </button>
             );
           })}
