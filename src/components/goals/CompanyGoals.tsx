@@ -321,7 +321,6 @@ function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading:
         <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
           <div>
             <p className="text-base font-bold text-foreground">Metas dos próximos meses</p>
-            <p className="text-xs text-muted-foreground">Lucro de todas as lojas dos grupos ativos. Meses já fechados ficam no Histórico.</p>
           </div>
           <button
             onClick={() => setExtraMonths((n) => n + 1)}
@@ -591,7 +590,6 @@ function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }
         <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
           <div>
             <p className="text-base font-bold text-foreground">Metas por mês</p>
-            <p className="text-xs text-muted-foreground">Histórico de metas e resultados de lucro.</p>
           </div>
           <div className="relative">
             <Calendar className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
