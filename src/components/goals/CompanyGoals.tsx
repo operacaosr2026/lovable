@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   ShoppingCart, TrendingUp, Wallet, BarChart3, DollarSign, Flag, CheckCircle2, AlertTriangle,
-  Target, TrendingDown, Minus, StickyNote, Plus, X, Calendar, CalendarCheck, CalendarClock, ChevronRight,
+  Target, TrendingDown, Minus, StickyNote, Plus, X, Calendar, CalendarCheck, CalendarClock, ChevronRight, Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -247,33 +247,97 @@ function addMonths(monthStart: string, n: number) {
 
 type PlanGoal = { month: string; meta: number; lucro_por_venda: number | null; realizado: number | null; status: string };
 
-// ─── Planejamento: meta deste mês e dos próximos 11 ───────────────────────────
+const fmtUsdInt = (n: number) => `US$ ${Math.round(n).toLocaleString("pt-BR")}`;
+const MONTHS_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const fmtMonthShort = (m: string) => `${MONTHS_SHORT[Number(m.slice(5, 7)) - 1]}/${m.slice(0, 4)}`;
+// Campo de meta no formato 10.000 (só inteiros).
+const fmtMetaInput = (digits: string) => (digits ? Number(digits).toLocaleString("pt-BR") : "");
+const onlyDigits = (v: string) => v.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+
+function PlanStat({ icon: Icon, tone, label, value, sub, children }: {
+  icon: any; tone: "violet" | "green" | "blue" | "amber"; label: string; value: string; sub?: string; children?: React.ReactNode;
+}) {
+  const tones = {
+    violet: { card: "bg-violet-500/[0.06] border-violet-500/15", tile: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
+    green:  { card: "bg-emerald-500/[0.06] border-emerald-500/15", tile: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
+    blue:   { card: "bg-blue-500/[0.06] border-blue-500/15", tile: "bg-blue-500/15 text-blue-600 dark:text-blue-400" },
+    amber:  { card: "bg-amber-500/[0.07] border-amber-500/20", tile: "bg-amber-500/20 text-amber-600 dark:text-amber-400" },
+  }[tone];
+  return (
+    <div className={cn("rounded-2xl border p-4 flex items-start gap-3", tones.card)}>
+      <div className={cn("size-11 rounded-xl grid place-items-center shrink-0", tones.tile)}><Icon className="size-5" /></div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-xl font-bold tracking-tight leading-tight text-foreground">{value}</p>
+        {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── Planejamento: meta deste mês e dos próximos (12 + os adicionados) ──────────
 function GoalPlanning({ goals, loading, onSaved }: { goals: PlanGoal[]; loading: boolean; onSaved: () => Promise<void> }) {
   const current = `${isoToday().slice(0, 7)}-01`;
+  const [extraMonths, setExtraMonths] = useState(0);
   const byMonth = new Map(goals.map((g) => [g.month, g]));
-  const months = Array.from({ length: 12 }, (_, i) => addMonths(current, i));
-  for (const g of goals) if (g.month > months[months.length - 1]) months.push(g.month);
+  const lastSaved = goals.reduce((max, g) => (g.month > max ? g.month : max), current);
+  const baseCount = 12 + extraMonths;
+  const count = Math.max(baseCount, (() => {
+    // Metas já salvas além da janela também aparecem.
+    let n = 0; while (addMonths(current, n) <= lastSaved) n++; return n;
+  })());
+  const months = Array.from({ length: count }, (_, i) => addMonths(current, i));
   // Sugestão pra mês vazio: a última meta definida.
   const last = [...goals].filter((g) => g.month <= current).pop() ?? goals[0];
+
+  const planned = months.filter((m) => byMonth.has(m));
+  const totalMeta = planned.reduce((sum, m) => sum + (byMonth.get(m)?.meta ?? 0), 0);
+  const currentGoal = byMonth.get(current);
 
   if (loading) {
     return <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>;
   }
   return (
-    <div className="bg-card border border-border rounded-3xl p-5">
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-        <div>
-          <p className="text-sm font-bold text-foreground">Metas dos próximos meses</p>
-          <p className="text-xs text-muted-foreground">Lucro de todas as lojas dos grupos ativos. Meses já fechados ficam no Histórico.</p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <PlanStat icon={BarChart3} tone="violet" label="Total de metas" value={`${months.length} meses`}
+          sub={`${fmtMonthShort(months[0])} → ${fmtMonthShort(months[months.length - 1])}`} />
+        <PlanStat icon={Target} tone="green" label="Meta total do período" value={fmtUsdInt(totalMeta)}
+          sub={planned.length ? `${fmtUsdInt(totalMeta / planned.length)}/mês em média` : "Nenhum mês planejado"} />
+        <PlanStat icon={TrendingUp} tone="blue" label="Mês atual" value={currentGoal ? fmtUsdInt(currentGoal.meta) : "—"}
+          sub={fmtMonthPt(current)} />
+        <PlanStat icon={Trophy} tone="amber" label="Meses planejados" value={`${planned.length} / ${months.length}`}>
+          <div className="flex items-center gap-2 mt-1.5">
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden flex-1">
+              <div className="h-full rounded-full bg-amber-500" style={{ width: `${(planned.length / months.length) * 100}%` }} />
+            </div>
+            <span className="text-[11px] text-muted-foreground">{Math.round((planned.length / months.length) * 100)}%</span>
+          </div>
+        </PlanStat>
+      </div>
+
+      <div className="bg-card border border-border rounded-3xl p-5">
+        <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
+          <div>
+            <p className="text-base font-bold text-foreground">Metas dos próximos meses</p>
+            <p className="text-xs text-muted-foreground">Lucro de todas as lojas dos grupos ativos. Meses já fechados ficam no Histórico.</p>
+          </div>
+          <button
+            onClick={() => setExtraMonths((n) => n + 1)}
+            className="h-10 px-4 rounded-xl bg-primary/80 text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary transition-colors"
+          >
+            <Plus className="size-4" /> Adicionar mês
+          </button>
         </div>
-      </div>
-      <div className="hidden sm:grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-3 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>Mês</span><span>Meta de lucro (USD)</span><span className="w-[152px]" />
-      </div>
-      <div className="space-y-2">
-        {months.map((m) => (
-          <PlanRow key={m} month={m} isCurrent={m === current} goal={byMonth.get(m)} suggestion={last} onSaved={onSaved} />
-        ))}
+        <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.3fr)_152px] gap-4 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span>Mês</span><span>Meta de lucro (USD)</span><span>Progresso</span><span className="text-center">Ações</span>
+        </div>
+        <div className="space-y-2">
+          {months.map((m) => (
+            <PlanRow key={m} month={m} isCurrent={m === current} goal={byMonth.get(m)} suggestion={last} onSaved={onSaved} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -284,12 +348,13 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
 }) {
   const upsertFn = useServerFn(upsertCompanyGoal);
   const deleteFn = useServerFn(deleteCompanyGoal);
-  const [meta, setMeta] = useState(goal ? String(goal.meta) : "");
+  const saved = goal ? String(Math.round(goal.meta)) : "";
+  const [meta, setMeta] = useState(saved);
   const [saving, setSaving] = useState(false);
-  const dirty = meta !== (goal ? String(goal.meta) : "");
+  const dirty = meta !== saved;
 
   async function save() {
-    const metaN = parseFloat(meta);
+    const metaN = Number(meta);
     if (!metaN || metaN <= 0) { toast.error("Informe um valor de meta válido"); return; }
     setSaving(true);
     try {
@@ -314,27 +379,58 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
     } finally { setSaving(false); }
   }
 
-  const inputCls = "h-9 rounded-lg border border-border bg-background px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/30";
+  // Progresso: realizado do mês (só o atual tem; meses futuros começam em 0).
+  const alvo = goal?.meta ?? (Number(meta) || 0);
+  const realizado = goal?.realizado ?? 0;
+  const pctProg = alvo > 0 ? Math.max(0, Math.min(100, (realizado / alvo) * 100)) : 0;
+
   return (
     <div className={cn(
-      "grid grid-cols-1 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3",
+      "grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.3fr)_152px] items-center gap-3 md:gap-4 rounded-xl border p-3",
       isCurrent ? "border-primary/40 bg-primary/5" : "border-border",
     )}>
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={cn("size-9 rounded-lg grid place-items-center shrink-0", isCurrent ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>
+          <Calendar className="size-4" />
+        </div>
         <span className="text-sm font-semibold text-foreground truncate">{fmtMonthPt(month)}</span>
         {isCurrent && <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-primary/10 text-primary shrink-0">Mês atual</span>}
       </div>
-      <input type="number" min="0" step="100" value={meta} onChange={(e) => setMeta(e.target.value)}
-        placeholder={suggestion ? String(suggestion.meta) : "ex: 10000"} className={inputCls} aria-label="Meta de lucro" />
-      <div className="flex items-center justify-end gap-2 sm:w-[152px]">
+      <div className="relative">
+        <input
+          type="text" inputMode="numeric" value={fmtMetaInput(meta)}
+          onChange={(e) => setMeta(onlyDigits(e.target.value))}
+          onKeyDown={(e) => { if (e.key === "Enter" && dirty) save(); }}
+          placeholder={suggestion ? fmtMetaInput(String(Math.round(suggestion.meta))) : "10.000"}
+          aria-label={`Meta de ${fmtMonthPt(month)}`}
+          className="h-10 w-full rounded-lg border border-border bg-background pl-3 pr-12 text-sm font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground pointer-events-none">USD</span>
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-3">
+          <div className="h-2 rounded-full bg-muted overflow-hidden flex-1">
+            <div className={cn("h-full rounded-full", pctProg >= 100 ? "bg-success" : "bg-primary")} style={{ width: `${pctProg}%` }} />
+          </div>
+          <span className="text-xs font-semibold text-foreground w-10 text-right tabular-nums">{Math.round(pctProg)}%</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">
+          <span className="font-semibold text-foreground">{fmtUsdInt(realizado)}</span> de {fmtUsdInt(alvo)}
+        </p>
+      </div>
+      <div className="flex items-center justify-end md:justify-center gap-2">
         {goal && (
           <button onClick={remove} disabled={saving} title="Remover meta"
-            className="size-9 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 grid place-items-center transition-colors disabled:opacity-50">
+            className="size-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/40 grid place-items-center transition-colors disabled:opacity-50">
             <X className="size-3.5" />
           </button>
         )}
         <button onClick={save} disabled={saving || !dirty}
-          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors">
+          className={cn(
+            "h-9 px-4 rounded-lg text-sm font-medium transition-colors disabled:cursor-default",
+            goal ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                 : "bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-60",
+          )}>
           {saving ? "Salvando..." : goal ? "Salvar" : "Definir"}
         </button>
       </div>

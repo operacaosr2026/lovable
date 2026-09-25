@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PageShell, PageHeader } from "@/components/PageHeader";
+import { PageShell } from "@/components/PageHeader";
 import { CompanyGoals } from "@/components/goals/CompanyGoals";
 import { requireAuth } from "@/lib/route-guards";
 
@@ -12,7 +12,10 @@ export const Route = createFileRoute("/metas")({
 function MetasPage() {
   return (
     <PageShell>
-      <PageHeader title="Metas" />
+      <div className="mb-5 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Metas</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Defina suas metas mensais e acompanhe o progresso</p>
+      </div>
       <CompanyGoals />
     </PageShell>
   );
