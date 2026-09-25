@@ -366,27 +366,11 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
     const pctShown = m.meta > 0 ? ((m.atual && m.projecao != null ? m.projecao : m.realizado) / m.meta) * 100 : 0;
     return { ...m, label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month, projExtra, pctShown, topo: Math.max(0, m.realizado) + projExtra };
   });
-  const total = data?.total ?? 0;
-  const atingidas = data?.atingidas ?? 0;
-  const pctAtingidas = total ? (atingidas / total) * 100 : 0;
   const atual = months.find((m) => m.atual);
   const yMax = Math.max(0, ...months.map((m) => Math.max(m.meta, m.topo))) * 1.28 || 1000;
   const BAR = 44;
   return (
     <div className="flex-1 min-h-[240px] flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <p className="text-base font-bold text-foreground">Histórico de metas</p>
-        {total > 0 && (
-          <div className="flex items-center gap-2.5 rounded-xl border border-border px-2.5 py-1.5">
-            <span className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><Target className="size-3.5" /></span>
-            <div className="min-w-[110px]">
-              <p className="text-[11px] text-muted-foreground leading-none"><span className="font-semibold text-foreground">{atingidas}/{total}</span> metas atingidas</p>
-              <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-1"><div className="h-full rounded-full bg-primary" style={{ width: `${pctAtingidas}%` }} /></div>
-            </div>
-            <span className="rounded-lg bg-success/15 text-success text-xs font-bold px-2 py-1">{pctAtingidas.toFixed(1).replace(".", ",")}%</span>
-          </div>
-        )}
-      </div>
       {months.length === 0 ? (
         <p className="flex-1 grid place-items-center text-xs text-muted-foreground py-8">Nenhuma meta cadastrada ainda.</p>
       ) : (
