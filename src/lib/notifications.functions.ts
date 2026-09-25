@@ -101,9 +101,18 @@ export const createTaskFromNotification = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!n) throw new Error("Notificação não encontrada.");
 
+    // Com a tarefa criada, o aviso sai do sino (a tarefa vira o lembrete). Fica
+    // dispensado — não volta sozinho enquanto o problema continuar.
+    const dismiss = () => supabaseAdmin.from("app_notifications")
+      .update({ dismissed_at: new Date().toISOString(), read_at: new Date().toISOString() }).eq("user_id", ownerId).eq("id", data.id);
+
     const { data: existing } = await supabaseAdmin.from("tasks").select("id")
       .eq("user_id", ownerId).eq("source_key", n.key).neq("status", "concluida").limit(1).maybeSingle();
-    if (existing) return { id: existing.id as string, created: false };
+    if (existing) {
+      await dismiss();
+      await broadcast(ownerId, "notifications");
+      return { id: existing.id as string, created: false };
+    }
 
     let due = isoTodayUS();
     if (n.key.startsWith("dispute:")) {
@@ -130,6 +139,7 @@ export const createTaskFromNotification = createServerFn({ method: "POST" })
       source_key: n.key,
     }).select("id").single();
     if (insErr) throw new Error(insErr.message);
+    await dismiss();
     await Promise.all([broadcast(ownerId, "tasks"), broadcast(ownerId, "notifications")]);
     return { id: task.id as string, created: true };
   });
