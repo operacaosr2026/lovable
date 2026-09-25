@@ -100,5 +100,8 @@ export const getIntegrationsStatus = createServerFn({ method: "GET" })
       note: !t.enabled ? "Integração desligada" : isShopPaused(t.shop_id) ? "Loja pausada no Banco de Lojas" : null,
     }));
 
-    return { shopify, meta, track123 };
+    // Ordem alfabética, com números em ordem natural (Loja 1, Loja 2… Loja 10).
+    const byName = (a: IntegrationRow, b: IntegrationRow) =>
+      a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" });
+    return { shopify: shopify.sort(byName), meta: meta.sort(byName), track123: track123.sort(byName) };
   });
