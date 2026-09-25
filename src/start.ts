@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 import { renderErrorPage } from "./lib/error-page";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import { auditMiddleware } from "@/lib/audit-middleware";
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
@@ -20,7 +21,7 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
 });
 
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth],
+  functionMiddleware: [attachSupabaseAuth, auditMiddleware],
   requestMiddleware: [errorMiddleware],
   serverFns: {
     fetch: async (url, init) => {

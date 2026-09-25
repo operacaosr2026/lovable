@@ -28,6 +28,7 @@ import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguran
 import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
 import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
 import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
+import { Route as SettingsAuditoriaRouteImport } from "./routes/settings.auditoria";
 import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
 import { Route as ShopsSopsIndexRouteImport } from "./routes/shops.sops.index";
@@ -141,6 +142,11 @@ const SettingsGeralRoute = SettingsGeralRouteImport.update({
   path: "/geral",
   getParentRoute: () => SettingsRoute,
 } as any);
+const SettingsAuditoriaRoute = SettingsAuditoriaRouteImport.update({
+  id: "/auditoria",
+  path: "/auditoria",
+  getParentRoute: () => SettingsRoute,
+} as any);
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   id: "/$projectId",
   path: "/$projectId",
@@ -245,6 +251,7 @@ export interface FileRoutesByFullPath {
   "/tarefas": typeof TarefasRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
+  "/settings/auditoria": typeof SettingsAuditoriaRoute;
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
@@ -280,6 +287,7 @@ export interface FileRoutesByTo {
   "/tarefas": typeof TarefasRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
+  "/settings/auditoria": typeof SettingsAuditoriaRoute;
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
@@ -315,6 +323,7 @@ export interface FileRoutesById {
   "/tarefas": typeof TarefasRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
+  "/settings/auditoria": typeof SettingsAuditoriaRoute;
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
@@ -355,6 +364,7 @@ export interface FileRouteTypes {
     | "/tarefas"
     | "/invite/$token"
     | "/projects/$projectId"
+    | "/settings/auditoria"
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
@@ -390,6 +400,7 @@ export interface FileRouteTypes {
     | "/tarefas"
     | "/invite/$token"
     | "/projects/$projectId"
+    | "/settings/auditoria"
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
@@ -424,6 +435,7 @@ export interface FileRouteTypes {
     | "/tarefas"
     | "/invite/$token"
     | "/projects/$projectId"
+    | "/settings/auditoria"
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
@@ -606,6 +618,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsGeralRouteImport;
       parentRoute: typeof SettingsRoute;
     };
+    "/settings/auditoria": {
+      id: "/settings/auditoria";
+      path: "/auditoria";
+      fullPath: "/settings/auditoria";
+      preLoaderRoute: typeof SettingsAuditoriaRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/projects/$projectId": {
       id: "/projects/$projectId";
       path: "/$projectId";
@@ -743,6 +762,7 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 );
 
 interface SettingsRouteChildren {
+  SettingsAuditoriaRoute: typeof SettingsAuditoriaRoute;
   SettingsGeralRoute: typeof SettingsGeralRoute;
   SettingsIntegracoesRoute: typeof SettingsIntegracoesRoute;
   SettingsMembersRoute: typeof SettingsMembersRoute;
@@ -751,6 +771,7 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAuditoriaRoute: SettingsAuditoriaRoute,
   SettingsGeralRoute: SettingsGeralRoute,
   SettingsIntegracoesRoute: SettingsIntegracoesRoute,
   SettingsMembersRoute: SettingsMembersRoute,

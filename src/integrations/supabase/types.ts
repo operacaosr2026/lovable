@@ -8,6 +8,39 @@ export type Database = {
   };
   public: {
     Tables: {
+      audit_log: {
+        Row: {
+          action: string;
+          actor_email: string | null;
+          actor_id: string;
+          created_at: string;
+          data: Json | null;
+          id: string;
+          label: string;
+          owner_id: string;
+        };
+        Insert: {
+          action: string;
+          actor_email?: string | null;
+          actor_id: string;
+          created_at?: string;
+          data?: Json | null;
+          id?: string;
+          label: string;
+          owner_id: string;
+        };
+        Update: {
+          action?: string;
+          actor_email?: string | null;
+          actor_id?: string;
+          created_at?: string;
+          data?: Json | null;
+          id?: string;
+          label?: string;
+          owner_id?: string;
+        };
+        Relationships: [];
+      };
       company_goals: {
         Row: {
           created_at: string;
