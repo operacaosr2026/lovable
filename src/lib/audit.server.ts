@@ -75,20 +75,29 @@ const LABELS: Record<string, string> = {
 
 export function shouldAudit(name: string) { return !SKIP.has(name); }
 
-// Dados enviados, sem senha/token e com textos/listas longos cortados.
+// Dados enviados, sem senha/token, sem códigos internos (ids — lista de ids
+// vira só a contagem) e com textos/listas longos cortados.
 const SECRET_KEY = /pass|token|secret|api_?key|authorization/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DROP = Symbol("drop");
 function sanitize(v: unknown, depth = 0): unknown {
   if (v == null || typeof v === "number" || typeof v === "boolean") return v;
-  if (typeof v === "string") return v.length > 500 ? `${v.slice(0, 500)}…` : v;
+  if (typeof v === "string") {
+    if (UUID.test(v)) return DROP;
+    return v.length > 500 ? `${v.slice(0, 500)}…` : v;
+  }
   if (depth > 4) return "…";
   if (Array.isArray(v)) {
-    const head = v.slice(0, 20).map((x) => sanitize(x, depth + 1));
+    if (v.length && v.every((x) => typeof x === "string" && UUID.test(x))) return v.length;
+    const head = v.slice(0, 20).map((x) => sanitize(x, depth + 1)).filter((x) => x !== DROP);
     return v.length > 20 ? [...head, `… +${v.length - 20} itens`] : head;
   }
   if (typeof v === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      out[k] = SECRET_KEY.test(k) ? "[oculto]" : sanitize(val, depth + 1);
+      if (SECRET_KEY.test(k)) { out[k] = "[oculto]"; continue; }
+      const clean = sanitize(val, depth + 1);
+      if (clean !== DROP) out[k] = clean;
     }
     return out;
   }
@@ -122,7 +131,10 @@ export async function recordAudit(name: string, data: unknown, authHeader: strin
     actor_email: actor.email,
     action: name,
     label: LABELS[name] ?? name,
-    data: sanitize(data) as any,
+    data: (() => {
+      const clean = sanitize(data);
+      return clean === DROP || (clean && typeof clean === "object" && !Object.keys(clean).length) ? null : clean;
+    })() as any,
   });
   if (error) console.error("audit_log insert", name, error.message);
 }

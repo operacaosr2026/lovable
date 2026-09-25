@@ -10,9 +10,40 @@ export const Route = createFileRoute("/settings/auditoria")({
   component: AuditoriaPage,
 });
 
+// Dados da ação pra leitura: sem códigos internos (ids); lista de ids vira contagem.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FIELD_LABELS: Record<string, string> = {
+  meta: "Meta", month: "Mês", content: "Texto", amount: "Valor", date: "Data", note_date: "Data da nota",
+  payment_date: "Data de pagamento", name: "Nome", title: "Título", description: "Descrição", category: "Categoria",
+  kind: "Tipo", status: "Status", email: "E-mail", role: "Papel", file_name: "Arquivo", new_cost: "Novo custo",
+  brl_rate: "Cotação BRL", eur_rate: "Cotação EUR", days: "Dias", reconciled: "Conciliado", recurrence: "Repetição",
+  order_ids: "Pedidos", ids: "Itens", features: "Mostrar na coluna", visitors: "Visitantes",
+};
+function readableFields(data: any): [string, string][] {
+  if (!data || typeof data !== "object") return [];
+  const out: [string, string][] = [];
+  const walk = (obj: any, prefix = "") => {
+    for (const [k, v] of Object.entries(obj)) {
+      const key = FIELD_LABELS[k] ?? (prefix ? `${prefix} › ${k}` : k).replace(/_/g, " ");
+      if (v == null || v === "") continue;
+      if (typeof v === "string" && UUID.test(v)) continue;
+      if (Array.isArray(v)) {
+        if (v.length && v.every((x) => typeof x === "string" && UUID.test(x))) { out.push([key, `${v.length}`]); continue; }
+        out.push([key, v.map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x))).join(", ")]);
+        continue;
+      }
+      if (typeof v === "object") { walk(v, key); continue; }
+      out.push([key, typeof v === "boolean" ? (v ? "sim" : "não") : String(v)]);
+    }
+  };
+  walk(data);
+  return out;
+}
+
 function AuditRow({ row }: { row: any }) {
   const [open, setOpen] = useState(false);
-  const hasData = row.data && Object.keys(row.data).length > 0;
+  const fields = readableFields(row.data);
+  const hasData = fields.length > 0;
   return (
     <div className="border-t border-border first:border-t-0">
       <button
@@ -25,9 +56,14 @@ function AuditRow({ row }: { row: any }) {
         {hasData ? <ChevronDown className={`size-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} /> : <span />}
       </button>
       {open && hasData && (
-        <pre className="mx-4 mb-3 rounded-lg bg-muted/50 border border-border p-3 text-[11px] text-foreground overflow-x-auto whitespace-pre-wrap break-all">
-          {JSON.stringify(row.data, null, 2)}
-        </pre>
+        <dl className="mx-4 mb-3 rounded-lg bg-muted/50 border border-border p-3 grid grid-cols-[minmax(0,160px)_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
+          {fields.map(([k, v], i) => (
+            <div key={i} className="contents">
+              <dt className="text-muted-foreground capitalize truncate">{k}</dt>
+              <dd className="text-foreground break-words">{v}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </div>
   );
