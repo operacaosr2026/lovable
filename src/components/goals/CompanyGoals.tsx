@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   ShoppingCart, TrendingUp, Wallet, BarChart3, DollarSign, Flag, CheckCircle2, AlertTriangle,
-  Target, TrendingDown, Minus, StickyNote, Plus, X, Calendar, CalendarCheck, CalendarClock, ChevronRight, Trophy,
+  Target, TrendingDown, Minus, StickyNote, Plus, X, Calendar, CalendarCheck, CalendarClock, ChevronRight, Trophy, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -438,6 +438,208 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved }: {
   );
 }
 
+// ─── Histórico ─────────────────────────────────────────────────────────────────
+
+const STATUS_LABEL: Record<string, string> = { em_andamento: "Em andamento", batida: "Batida", nao_batida: "Não batida", futura: "Planejada" };
+const STATUS_PILL: Record<string, string> = {
+  em_andamento: "bg-success/10 text-success",
+  batida: "bg-success/10 text-success",
+  nao_batida: "bg-destructive/10 text-destructive",
+  futura: "bg-muted text-muted-foreground",
+};
+
+function goalProgress(g: PlanGoal) {
+  const pct = g.meta > 0 ? ((g.realizado ?? 0) / g.meta) * 100 : 0;
+  const bar = pct >= 100 ? "bg-success" : g.status === "nao_batida" ? "bg-destructive" : "bg-primary";
+  const text = pct >= 100 ? "text-success" : g.status === "nao_batida" ? "text-destructive" : "text-primary";
+  return { pct, bar, text };
+}
+
+function GoalRing({ pct }: { pct: number }) {
+  const r = 52, c = 2 * Math.PI * r;
+  const shown = Math.max(0, Math.min(100, pct));
+  return (
+    <div className="relative size-[132px] shrink-0">
+      <svg viewBox="0 0 132 132" className="size-full -rotate-90">
+        <circle cx="66" cy="66" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="14" />
+        <circle cx="66" cy="66" r={r} fill="none" stroke={pct >= 100 ? "var(--color-success)" : "var(--color-primary)"} strokeWidth="14"
+          strokeLinecap="round" strokeDasharray={`${(shown / 100) * c} ${c}`} />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-center">
+        <div>
+          <p className="text-2xl font-bold text-foreground leading-none tabular-nums">{pct.toFixed(1)}%</p>
+          <p className="text-[11px] text-muted-foreground mt-1">da meta</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GoalHistory({ goals, loading }: { goals: PlanGoal[]; loading: boolean }) {
+  const today = isoToday();
+  const current = `${today.slice(0, 7)}-01`;
+  const withResult = goals.filter((g) => g.realizado != null);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const years = [...new Set(withResult.map((g) => g.month.slice(0, 4)))].sort().reverse();
+  const [year, setYear] = useState<string | null>(null);
+  const activeYear = year ?? years[0] ?? today.slice(0, 4);
+
+  if (loading) {
+    return <div className="space-y-3"><Skeleton className="h-56 rounded-3xl" /><Skeleton className="h-48 rounded-3xl" /></div>;
+  }
+  if (!withResult.length) {
+    return (
+      <div className="bg-card border border-border rounded-3xl p-6 text-center">
+        <p className="text-sm text-muted-foreground">Nenhuma meta registrada ainda. Defina na aba Planejamento.</p>
+      </div>
+    );
+  }
+
+  const sel = withResult.find((g) => g.month === selectedMonth)
+    ?? withResult.find((g) => g.month === current)
+    ?? withResult[withResult.length - 1];
+  const monthEnd = (() => { const d = new Date(`${sel.month}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0); return d.toISOString().slice(0, 10); })();
+  // Mesma contagem da aba Atual ("23 de 29 dias").
+  const totalDias = Math.max(1, daysBetween(sel.month, monthEnd));
+  const isCurrentSel = sel.month === current;
+  const diasDecorridos = isCurrentSel ? Math.min(totalDias, Math.max(0, daysBetween(sel.month, today))) : totalDias;
+  const diasRestantes = totalDias - diasDecorridos;
+  const realizado = sel.realizado ?? 0;
+  const { pct } = goalProgress(sel);
+  const pctTempo = (diasDecorridos / totalDias) * 100;
+  const falta = sel.meta - realizado;
+  const rows = [...withResult].filter((g) => g.month.startsWith(activeYear)).reverse();
+
+  return (
+    <div className="space-y-4">
+      {/* Mês em destaque */}
+      <div className="bg-card border border-border rounded-3xl p-5 sm:p-6 relative overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_auto_minmax(0,1fr)_minmax(0,1.2fr)] gap-6 items-center">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Target className="size-4" /></div>
+              <span className="text-sm font-bold text-foreground">Meta do mês</span>
+              <span className={cn("text-[11px] font-semibold rounded-full px-2.5 py-0.5", STATUS_PILL[sel.status])}>{STATUS_LABEL[sel.status]}</span>
+            </div>
+            <div className="relative inline-flex items-center">
+              <select
+                value={sel.month}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="appearance-none bg-transparent text-lg font-bold text-foreground pr-6 cursor-pointer focus:outline-none"
+                aria-label="Escolher mês"
+              >
+                {[...withResult].reverse().map((g) => <option key={g.month} value={g.month}>{fmtMonthPt(g.month)}</option>)}
+              </select>
+              <ChevronDown className="size-4 text-primary absolute right-0 pointer-events-none" />
+            </div>
+            <p className="text-4xl font-extrabold text-foreground leading-none mt-1 tabular-nums">{fmtMoney(sel.meta)}</p>
+            <p className="text-sm text-muted-foreground mt-1.5">meta de lucro</p>
+          </div>
+
+          <GoalRing pct={pct} />
+
+          <div className="space-y-3 min-w-0">
+            <div>
+              <p className="text-xs text-muted-foreground">{isCurrentSel ? "Lucro atual" : "Lucro do mês"}</p>
+              <p className={cn("text-3xl font-bold tabular-nums leading-tight", realizado >= sel.meta ? "text-success" : sel.status === "nao_batida" ? "text-destructive" : "text-foreground")}>{fmtMoney(realizado)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">{falta > 0 ? "Faltam" : "Acima da meta"}</p>
+              <p className="text-lg font-bold text-foreground tabular-nums leading-tight">{fmtMoney(Math.abs(falta))}</p>
+              <p className="text-[11px] text-muted-foreground">{falta > 0 ? "para a meta" : "além da meta"}</p>
+            </div>
+          </div>
+
+          <div className="min-w-0 lg:border-l lg:border-border lg:pl-6 space-y-4 relative">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Calendar className="size-4" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">Período da meta</p>
+                <p className="text-sm font-bold text-foreground">{fmtDatePt(sel.month)} → {fmtDatePt(monthEnd)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div><p className="text-xl font-bold text-foreground tabular-nums">{diasDecorridos}</p><p className="text-[11px] text-muted-foreground">Dias decorridos</p></div>
+              <div className="w-px h-9 bg-border" />
+              <div><p className="text-xl font-bold text-foreground tabular-nums">{diasRestantes}</p><p className="text-[11px] text-muted-foreground">Dias restantes</p></div>
+            </div>
+            {/* enfeite: barrinhas subindo */}
+            <div className="hidden xl:flex items-end gap-2 absolute right-0 top-0 opacity-70 pointer-events-none" aria-hidden>
+              {[28, 42, 58].map((h) => <div key={h} className="w-5 rounded-t-md bg-gradient-to-t from-primary/10 to-primary/40" style={{ height: h }} />)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          <div className="grid grid-cols-[110px_minmax(0,1fr)_56px] sm:grid-cols-[140px_minmax(0,1fr)_64px_150px] items-center gap-3 text-xs">
+            <span className="text-muted-foreground">Progresso no período</span>
+            <div className="h-2.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${pctTempo}%` }} /></div>
+            <span className="font-bold text-primary text-right tabular-nums">{pctTempo.toFixed(1)}%</span>
+            <span className="hidden sm:block text-muted-foreground text-right">{diasDecorridos} de {totalDias} dias</span>
+          </div>
+          <div className="grid grid-cols-[110px_minmax(0,1fr)_56px] sm:grid-cols-[140px_minmax(0,1fr)_64px_150px] items-center gap-3 text-xs">
+            <span className="text-muted-foreground">Lucro vs Meta</span>
+            <div className="h-2.5 rounded-full bg-muted overflow-hidden"><div className={cn("h-full rounded-full", goalProgress(sel).bar)} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></div>
+            <span className={cn("font-bold text-right tabular-nums", goalProgress(sel).text)}>{pct.toFixed(1)}%</span>
+            <span className="hidden sm:block text-muted-foreground text-right tabular-nums">{fmtMoney(realizado)} de {fmtMoney(sel.meta)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Todos os meses */}
+      <div className="bg-card border border-border rounded-3xl p-5">
+        <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
+          <div>
+            <p className="text-base font-bold text-foreground">Metas por mês</p>
+            <p className="text-xs text-muted-foreground">Histórico de metas e resultados de lucro.</p>
+          </div>
+          <div className="relative">
+            <Calendar className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <select value={activeYear} onChange={(e) => setYear(e.target.value)} aria-label="Ano"
+              className="appearance-none h-9 rounded-xl border border-border bg-card pl-8 pr-8 text-sm font-semibold text-foreground cursor-pointer focus:outline-none">
+              {(years.length ? years : [activeYear]).map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <ChevronDown className="size-3.5 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+        <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,2fr)_minmax(0,1fr)_20px] gap-4 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span>Mês</span><span>Meta (USD)</span><span>Lucro (USD)</span><span>Progresso</span><span>Status</span><span />
+        </div>
+        <div className="space-y-2">
+          {rows.map((g) => {
+            const pr = goalProgress(g);
+            const active = g.month === sel.month;
+            return (
+              <button key={g.month} onClick={() => setSelectedMonth(g.month)}
+                className={cn(
+                  "w-full text-left grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,2fr)_minmax(0,1fr)_20px] items-center gap-3 md:gap-4 rounded-xl border p-3 transition-colors",
+                  active ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/30",
+                )}>
+                <span className="col-span-2 md:col-span-1 flex items-center gap-3 min-w-0">
+                  <span className="size-9 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><BarChart3 className="size-4" /></span>
+                  <span className={cn("text-sm truncate", active ? "font-bold text-foreground" : "font-medium text-foreground")}>{fmtMonthPt(g.month)}</span>
+                </span>
+                <span className="text-sm text-foreground tabular-nums"><span className="md:hidden text-muted-foreground">Meta </span>{fmtMoney(g.meta)}</span>
+                <span className={cn("text-sm font-bold tabular-nums", (g.realizado ?? 0) >= g.meta ? "text-success" : g.status === "nao_batida" ? "text-destructive" : "text-foreground")}>{fmtMoney(g.realizado ?? 0)}</span>
+                <span className="col-span-2 md:col-span-1 flex items-center gap-3 min-w-0">
+                  <span className="h-2 rounded-full bg-muted overflow-hidden flex-1"><span className={cn("block h-full rounded-full", pr.bar)} style={{ width: `${Math.max(0, Math.min(100, pr.pct))}%` }} /></span>
+                  <span className="text-xs text-foreground w-12 text-right tabular-nums">{pr.pct.toFixed(1)}%</span>
+                </span>
+                <span>
+                  <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-full px-2.5 py-1", STATUS_PILL[g.status])}>
+                    <span className="size-1.5 rounded-full bg-current" />{STATUS_LABEL[g.status]}
+                  </span>
+                </span>
+                <ChevronRight className="hidden md:block size-4 text-muted-foreground justify-self-end" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Página "Metas" (menu lateral): meta da empresa por mês, medindo o lucro das
 // lojas dos grupos ativos (company-goals.server.ts). Atual = mês corrente,
 // Histórico = meses anteriores (realizado congelado), Planejamento = definir
@@ -591,150 +793,9 @@ export function CompanyGoals() {
             </div>
           </div>
 
-          {/* ── Histórico: detalhes (leitura) da meta ativa + metas anteriores */}
+          {/* ── Histórico: mês escolhido em destaque + tabela de todos os meses ── */}
           {subTab === "historico" && (
-            <>
-            {/* Meta ativa */}
-            <div className="bg-card border border-border rounded-3xl p-5 flex flex-col gap-4">
-              {loadingGoal ? (
-                <Skeleton className="h-24 w-full rounded-xl" />
-              ) : !savedGoal ? (
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma meta para este mês. Defina na aba Planejamento.
-                </p>
-              ) : (() => {
-                const diasDecorridos = Math.max(0, daysBetween(savedGoal.start_date, isoToday()));
-                const diasRestantes = Math.max(0, daysBetween(isoToday(), savedGoal.prazo));
-                const totalDias = Math.max(1, daysBetween(savedGoal.start_date, savedGoal.prazo));
-                const pctTempo = Math.min(100, (diasDecorridos / totalDias) * 100);
-                return (
-                  <>
-                    <div className="flex items-center justify-between flex-wrap gap-3">
-                      <div className="flex items-center gap-2">
-                        <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
-                          <Target className="size-4" />
-                        </div>
-                        <span className="text-sm font-bold text-foreground">Meta do mês</span>
-                        <span className="text-xs font-semibold rounded-full px-2.5 py-1 bg-primary/10 text-primary">Em andamento</span>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-border" />
-
-                    <div className="flex items-center gap-6 flex-wrap">
-                      <div className="flex-1 flex items-center justify-center text-center">
-                        <div>
-                          <p className="text-4xl font-extrabold text-foreground leading-none">{fmtMoney(Number(savedGoal.meta))}</p>
-                          <p className="text-sm text-muted-foreground mt-1.5">meta de lucro ativa</p>
-                        </div>
-                      </div>
-                      <div className="w-px h-10 bg-border hidden sm:block" />
-                      <div className="flex-1 flex items-center justify-center gap-3">
-                        <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
-                          <Calendar className="size-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-0.5">Período da meta</p>
-                          <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                            {fmtDatePt(savedGoal.start_date)} <span className="text-muted-foreground font-normal">→</span> {fmtDatePt(savedGoal.prazo)}
-                          </p>
-                          <div className="flex items-center gap-8 mt-0.5 text-[10px] text-muted-foreground">
-                            <span>Início</span><span>Fim</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="w-px h-10 bg-border hidden sm:block" />
-                      <div className="flex-1 flex items-center justify-center gap-3">
-                        <div className="size-10 rounded-xl bg-success/10 text-success grid place-items-center shrink-0">
-                          <CalendarClock className="size-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-0.5">Progresso</p>
-                          <div className="flex items-center gap-4">
-                            <div>
-                              <p className="text-sm font-bold text-success">{diasDecorridos}</p>
-                              <p className="text-[10px] text-muted-foreground whitespace-nowrap">{diasDecorridos === 1 ? "Dia decorrido" : "Dias decorridos"}</p>
-                            </div>
-                            <div className="w-px h-8 bg-border" />
-                            <div>
-                              <p className="text-sm font-bold text-foreground">{diasRestantes}</p>
-                              <p className="text-[10px] text-muted-foreground whitespace-nowrap">Dias restantes</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-bold text-primary shrink-0">{pctTempo.toFixed(1)}%</span>
-                        <div className="h-2 rounded-full bg-muted overflow-hidden flex-1">
-                          <div className="h-full rounded-full bg-primary" style={{ width: `${pctTempo}%` }} />
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">{diasDecorridos} de {totalDias} dias</span>
-                      </div>
-                      {d && (
-                        <div className="flex items-center gap-3">
-                          <span className={cn("text-sm font-bold shrink-0", d.percentAtingida >= 100 ? "text-success" : "text-primary")}>
-                            {Math.max(0, d.percentAtingida).toFixed(1)}%
-                          </span>
-                          <div className="h-2 rounded-full bg-muted overflow-hidden flex-1">
-                            <div
-                              className={cn("h-full rounded-full", d.percentAtingida >= 100 ? "bg-success" : "bg-primary")}
-                              style={{ width: `${Math.min(100, Math.max(0, d.percentAtingida))}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">{fmtMoney(d.lucroAcumulado)} de {fmtMoney(d.meta)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-
-            {/* Metas anteriores */}
-            <div className="bg-card border border-border rounded-3xl p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">Metas por mês</p>
-              {loadingHistory ? (
-                <div className="space-y-2">
-                  {[0, 1].map(i => <Skeleton key={i} className="h-14 rounded-xl" />)}
-                </div>
-              ) : !allGoals.some((g) => g.realizado != null) ? (
-                <p className="text-xs text-muted-foreground text-center py-4">Nenhuma meta registrada ainda.</p>
-              ) : (
-                <div className="space-y-2">
-                  {[...allGoals].filter((g) => g.realizado != null).reverse().map((g) => (
-                    <div key={g.month} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
-                          <TrendingUp className="size-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-foreground">{fmtMoney(g.meta)}</p>
-                          <p className="text-xs text-muted-foreground">{fmtMonthPt(g.month)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-foreground">{fmtMoney(g.realizado ?? 0)}</p>
-                          <span className={cn(
-                            "text-[10px] font-semibold rounded-full px-2 py-0.5",
-                            g.status === "em_andamento" ? "bg-primary/10 text-primary"
-                            : g.status === "batida" ? "bg-success/10 text-success"
-                            : "bg-destructive/10 text-destructive"
-                          )}>
-                            {g.status === "em_andamento" ? "Em andamento" : g.status === "batida" ? "Batida" : "Não batida"}
-                          </span>
-                        </div>
-                        <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            </>
+            <GoalHistory goals={allGoals} loading={loadingHistory} />
           )}
 
           {/* ── Definir Meta: dashboard rico da meta ativa ──────────────────── */}
