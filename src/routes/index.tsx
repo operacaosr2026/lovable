@@ -304,20 +304,30 @@ function MetaLineShape(props: any) {
   );
 }
 
-// Lucro realizado: barra roxa com degradê e o valor dentro.
+// Cor da barra do realizado: verde se bateu a meta, vermelha se o mês fechou sem
+// bater, roxa no mês atual que ainda não chegou lá.
+function realizadoColor(d: { realizado: number; meta: number; atual: boolean }) {
+  if (d.meta > 0 && d.realizado >= d.meta) return { key: "ok", color: "var(--color-success)" };
+  if (!d.atual) return { key: "ko", color: "var(--color-destructive)" };
+  return { key: "on", color: "var(--color-primary)" };
+}
+
+// Lucro realizado: barra com degradê e o valor dentro.
 function RealizadoShape(props: any) {
   const { x, y, width, height, payload } = props;
   if (!width || height == null || height <= 0) return null;
   const top = payload?.projExtra > 0 ? 0 : 6;
+  const c = realizadoColor(payload);
+  const gid = `goal-bar-grad-${c.key}`;
   return (
     <g>
       <defs>
-        <linearGradient id="goal-bar-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={1} />
-          <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.45} />
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={c.color} stopOpacity={1} />
+          <stop offset="100%" stopColor={c.color} stopOpacity={0.45} />
         </linearGradient>
       </defs>
-      <path d={`M${x},${y + height} L${x},${y + top} Q${x},${y} ${x + top},${y} L${x + width - top},${y} Q${x + width},${y} ${x + width},${y + top} L${x + width},${y + height} Z`} fill="url(#goal-bar-grad)" />
+      <path d={`M${x},${y + height} L${x},${y + top} Q${x},${y} ${x + top},${y} L${x + width - top},${y} Q${x + width},${y} ${x + width},${y + top} L${x + width},${y + height} Z`} fill={`url(#${gid})`} />
       {height > 22 && (
         <text x={x + width / 2} y={y + 16} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#fff">{fmtK(payload.realizado)}</text>
       )}
@@ -326,16 +336,17 @@ function RealizadoShape(props: any) {
 }
 
 // Projeção do mês atual: caixa tracejada em cima do realizado até o valor previsto,
-// com o valor dentro e o selo de % projetado acima.
+// na cor da faixa do % projetado (legenda: ≥100% / 70–99% / <70%).
 function ProjecaoShape(props: any) {
   const { x, y, width, height, payload } = props;
   if (!width || !height || height <= 0) return null;
+  const tone = pctTone(payload.pctShown);
   return (
     <g>
-      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 1} rx={6} fill="var(--color-primary)" fillOpacity={0.1}
-        stroke="var(--color-primary)" strokeOpacity={0.6} strokeWidth={1.5} strokeDasharray="5 4" />
+      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 1} rx={6} fill={tone.bg} fillOpacity={0.12}
+        stroke={tone.bg} strokeOpacity={0.8} strokeWidth={1.5} strokeDasharray="5 4" />
       {height > 20 && (
-        <text x={x + width / 2} y={y + 16} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="var(--color-primary)">{fmtK(payload.projecao)}</text>
+        <text x={x + width / 2} y={y + 16} textAnchor="middle" fontSize={10.5} fontWeight={700} fill={tone.text}>{fmtK(payload.projecao)}</text>
       )}
     </g>
   );
@@ -367,7 +378,12 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
     return { ...m, label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month, projExtra, pctShown, topo: Math.max(0, m.realizado) + projExtra };
   });
   const atual = months.find((m) => m.atual);
-  const yMax = Math.max(0, ...months.map((m) => Math.max(m.meta, m.topo))) * 1.28 || 1000;
+  // Eixo com valores redondos (passo 1/2/2,5/5 × 10^n, ~4 linhas) e folga pros selos.
+  const rawMax = Math.max(0, ...months.map((m) => Math.max(m.meta, m.topo))) * 1.22 || 1000;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawMax / 4)));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((st) => rawMax / st <= 4.5) ?? 10 * mag;
+  const yMax = Math.ceil(rawMax / step) * step;
+  const yTicks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step);
   const BAR = 44;
   return (
     <div className="flex-1 min-h-[240px] flex flex-col">
@@ -380,7 +396,7 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
               <BarChart data={months} margin={{ top: 26, right: 14, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="22%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, yMax]} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                <YAxis domain={[0, yMax]} ticks={yTicks} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
                 <Tooltip
                   cursor={{ fill: "var(--color-muted)", opacity: 0.4 }}
                   content={({ active, payload }: any) => {
