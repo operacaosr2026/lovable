@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
+import { upsertShopDisputes } from "@/lib/shopify-disputes.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll, selectAllIn } from "@/lib/select-all";
@@ -219,26 +220,8 @@ async function syncRefundsAndChargebacks(shopId: string, userId: string, domain:
       .upsert(cashRows as any[], { onConflict: "shop_id,shopify_transaction_id" });
   }
 
-  // Grava toda disputa (chargeback e inquiry) vinculada ao pedido, pra calcular
-  // a taxa de estorno do mesmo jeito que o relatório do Shopify: pedidos com
-  // chargeback ÷ total de pedidos na janela.
-  if (disputes.length) {
-    const disputeRows = disputes.filter((d: any) => d.id != null).map((d: any) => ({
-      user_id: userId, shop_id: shopId,
-      shopify_dispute_id: String(d.id),
-      order_external_id: d.order_id != null ? String(d.order_id) : null,
-      type: String(d.type ?? "unknown"),
-      status: d.status ?? null,
-      reason: d.reason ?? null,
-      amount: Math.abs(Number(d.amount ?? 0)),
-      currency: d.currency ?? null,
-      initiated_at: String(d.initiated_at).slice(0, 10),
-      finalized_on: d.finalized_on ? String(d.finalized_on).slice(0, 10) : null,
-      evidence_due_by: d.evidence_due_by ?? null,
-    }));
-    await supabaseAdmin.from("shop_order_disputes")
-      .upsert(disputeRows as any[], { onConflict: "shop_id,shopify_dispute_id" });
-  }
+  // Grava toda disputa (chargeback e inquiry) — mesma função do webhook de disputas.
+  await upsertShopDisputes(shopId, userId, disputes);
 }
 
 // "Sincronizado há ..." do Caixa lê shop_order_settings.last_synced_at, que só

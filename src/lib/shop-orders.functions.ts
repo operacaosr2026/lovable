@@ -1440,6 +1440,11 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
     .eq("user_id", context.ownerId).eq("shop_id", shopId)
     .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate).maybeSingle();
   if (existing && existing.source === "manual_override") return { kept: true };
+  // Ajuste manual no Caixa é sagrado: conciliado não mexe; data/valor travados
+  // ficam como a pessoa deixou (só o que não está travado é recalculado).
+  if (existing?.reconciled) return { kept: true };
+  const dateLocked = Boolean(existing?.date_locked);
+  const amountLocked = Boolean(existing?.amount_locked);
 
   // Cashflow cutoff: if order is older than the configured start date, skip and clean any existing auto entry.
   const cutoff: string | null = settings.cashflow_start_date ?? null;
@@ -1463,13 +1468,15 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   await ensureCostCategory(context.supabase, context.ownerId, shopId);
 
   if (existing) {
-    if (amount <= 0) {
+    if (amount <= 0 && !amountLocked && !dateLocked) {
       await context.supabase.from("shop_cash_entries").delete()
         .eq("id", existing.id).eq("user_id", context.ownerId);
     } else {
-      await context.supabase.from("shop_cash_entries").update({
-        amount, date: processingDate, description: `${items} itens`,
-      }).eq("id", existing.id).eq("user_id", context.ownerId);
+      const patch: Record<string, unknown> = { description: `${items} itens` };
+      if (!amountLocked) patch.amount = amount;
+      if (!dateLocked) patch.date = processingDate;
+      await context.supabase.from("shop_cash_entries").update(patch)
+        .eq("id", existing.id).eq("user_id", context.ownerId);
     }
   } else if (amount > 0) {
     await context.supabase.from("shop_cash_entries").insert({
@@ -1482,6 +1489,14 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   }
   return { items, unit, amount, orderDate, processingDate };
 }
+
+// Previsão de pagamento ao fornecedor do dia de um pedido (data do pedido + D+N
+// da loja) — chamada pelo webhook de pedido, pra previsão no Caixa não esperar
+// alguém abrir a aba Pedidos.
+export const recomputeOrderCostForecast = createServerOnlyFn(async (ownerId: string, shopId: string, orderDate: string) => {
+  const paymentDays = await getShopPaymentDays(supabaseAdmin, shopId);
+  return recomputeForShop({ supabase: supabaseAdmin, ownerId }, shopId, addDays(orderDate, paymentDays), undefined, paymentDays);
+});
 
 export const recomputeDay = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])

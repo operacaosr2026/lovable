@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { orderDateFor } from "@/lib/order-date";
+import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
 
 // Grava em shop_orders um pedido que chegou pelo webhook da Shopify — mesmos
 // campos e mesma regra de rastreio do sync de 10 em 10 min (sync-shop-orders
@@ -42,6 +43,11 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
       shopify_financial_status: financial,
     }, { onConflict: "shop_id,source,external_id" });
     if (upErr) throw new Error(upErr.message);
+
+    // Previsão de pagamento ao fornecedor no Caixa (dia do pedido + D+N) na hora,
+    // em vez de só quando alguém abre a aba Pedidos. Falha aqui não derruba o webhook.
+    await recomputeOrderCostForecast(s.user_id, s.shop_id, orderDate)
+      .catch((e) => console.error("webhook: previsão de custo falhou", s.shop_id, orderDate, e));
 
     let trackingChanged = false;
     const fulfillments = (o.fulfillments ?? []) as any[];

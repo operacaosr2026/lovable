@@ -3,6 +3,8 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ingestShopifyOrder } from "@/lib/shopify-order-ingest.server";
 import { broadcast } from "@/lib/realtime.server";
+import { upsertShopDisputes } from "@/lib/shopify-disputes.server";
+import { refreshSystemNotifications } from "@/lib/notifications.server";
 
 // Recebe os webhooks da Shopify (orders/create, orders/updated) de uma loja —
 // cadastrados por ensureShopifyWebhooks. Autenticidade pela assinatura HMAC
@@ -35,6 +37,32 @@ export const Route = createFileRoute("/api/public/hooks/shopify/$storeId")({
         }
 
         const topic = request.headers.get("x-shopify-topic") ?? "";
+
+        // Disputa (chargeback/inquiry) aberta ou atualizada: grava na hora pra
+        // todas as lojas ligadas a essa Shopify e atualiza o sino (prazo de
+        // resposta) — antes só chegava no sync completo, até 1 h depois.
+        if (topic === "disputes/create" || topic === "disputes/update") {
+          let dispute: any;
+          try { dispute = JSON.parse(rawBody); } catch { return new Response("Invalid JSON", { status: 400 }); }
+          try {
+            const { data: links } = await supabaseAdmin.from("shop_order_settings")
+              .select("shop_id,user_id").eq("shopify_store_id", store.id);
+            const owners = new Set<string>();
+            for (const l of (links ?? []) as any[]) {
+              await upsertShopDisputes(l.shop_id, l.user_id, [dispute]);
+              owners.add(l.user_id);
+            }
+            await Promise.all([...owners].map(async (o) => {
+              await refreshSystemNotifications(o).catch((e) => console.error("dispute webhook notifications", o, e));
+              await Promise.all([broadcast(o, "orders", { store_id: store.id }), broadcast(o, "notifications")]);
+            }));
+            return Response.json({ ok: true });
+          } catch (e) {
+            console.error("shopify webhook dispute fail", store.id, topic, e);
+            return new Response("Dispute ingest failed", { status: 500 });
+          }
+        }
+
         if (topic !== "orders/create" && topic !== "orders/updated") return Response.json({ ok: true, ignored: topic });
 
         let order: any;
