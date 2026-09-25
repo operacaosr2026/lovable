@@ -538,6 +538,7 @@ async function processShop(s: any, today: string) {
 // lojas que sobrarem são pegas na próxima chamada (pg_cron roda a cada
 // 10min pro sync leve de pedidos, então o atraso é pequeno).
 const TIME_BUDGET_MS = 50_000;
+const SYNC_CONCURRENCY = 3;
 
 // Custos do dia (gasto Meta Ads + taxas Shopify Payments). Sem isso, eles só
 // entravam no banco quando alguém abria o Dashboard de Lojas e Grupos — até lá
@@ -656,14 +657,14 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
   // (esse sync leve roda a cada 10min via pg_cron). Muda o ponto de partida
   // a cada janela de 10min pra todo mundo ser coberto ao longo do tempo.
   const startIdx = all.length ? Math.floor(Date.now() / (10 * 60_000)) % all.length : 0;
-  for (let step = 0; step < all.length; step++) {
-    const idx = (startIdx + step) % all.length;
-    if (Date.now() - start > TIME_BUDGET_MS) {
-      skippedByBudget = all.length - step;
-      console.error(`sync-shop-orders: orçamento de tempo (${TIME_BUDGET_MS}ms) estourado, ${skippedByBudget} loja(s) não processadas nesta rodada — pegas na próxima.`);
-      break;
-    }
-    const s = all[idx];
+  const queue = all.map((_, step) => all[(startIdx + step) % all.length]);
+
+  // Lojas em paralelo, até SYNC_CONCURRENCY por vez: uma de cada vez, cada loja
+  // leva ~10 s (várias consultas paginadas à Shopify) e só cabiam ~4 no
+  // orçamento — a última do rodízio ficava pra hora seguinte. Cada loja Shopify
+  // tem seu próprio limite de requisições, então lojas diferentes em paralelo
+  // não estouram nada; duas entradas da MESMA loja Shopify nunca vão na mesma leva.
+  const runOne = async (s: any) => {
     try {
       if (payoutsOnly) await processShopPayoutsOnly(s);
       else if (ordersOnly) await syncOrdersOnlyForShop(s, today);
@@ -671,6 +672,22 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
       processed++;
       if (!ordersOnly && s.user_id) syncedOwners.add(s.user_id);
     } catch (e) { console.error("shop fail", s.shop_id, e); }
+  };
+  while (queue.length) {
+    if (Date.now() - start > TIME_BUDGET_MS) {
+      skippedByBudget = queue.length;
+      console.error(`sync-shop-orders: orçamento de tempo (${TIME_BUDGET_MS}ms) estourado, ${skippedByBudget} loja(s) não processadas nesta rodada — pegas na próxima.`);
+      break;
+    }
+    const batch: any[] = [];
+    const storesInBatch = new Set<string>();
+    for (let i = 0; i < queue.length && batch.length < SYNC_CONCURRENCY; ) {
+      const storeId = queue[i].shopify_store_id as string | null;
+      if (storeId && storesInBatch.has(storeId)) { i++; continue; }
+      if (storeId) storesInBatch.add(storeId);
+      batch.push(queue.splice(i, 1)[0]);
+    }
+    await Promise.all(batch.map(runOne));
   }
   // Caixa/Dashboard abertos recarregam sozinhos depois do sync completo (1x por
   // hora). O leve de 10 em 10 min não avisa: pedido novo já chega pelo webhook.
