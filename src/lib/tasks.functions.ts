@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { broadcast } from "@/lib/realtime.server";
+import { notifyTaskDone } from "@/lib/notifications.server";
 
 export const TASK_AREAS = [
   "pedidos", "marketing", "lojas", "fornecedores", "analise",
@@ -111,11 +112,22 @@ export const updateTask = createServerFn({ method: "POST" })
     // Data de conclusão acompanha o status (pra saber quando foi concluída).
     if (patch.status === "concluida") patch.completed_at = new Date().toISOString();
     else if (patch.status) patch.completed_at = null;
+    const { data: before } = patch.status === "concluida"
+      ? await supabaseAdmin.from("tasks").select("status,created_by,title").eq("id", data.id).eq("user_id", context.ownerId).maybeSingle()
+      : { data: null };
     const { data: row, error } = await supabaseAdmin.from("tasks")
       .update(patch).eq("id", data.id).eq("user_id", context.ownerId)
       .select(TASK_COLUMNS).maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Tarefa não encontrada.");
+    // Outra pessoa concluiu a tarefa → aviso pra quem criou.
+    if (before && before.status !== "concluida" && before.created_by && before.created_by !== context.userId) {
+      const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", context.userId).maybeSingle();
+      const who = prof?.full_name?.trim() || "Alguém da equipe";
+      await notifyTaskDone(context.ownerId, { id: data.id, created_by: before.created_by }, {
+        title: `${who} concluiu: ${row.title}`,
+      }).catch((e) => console.error("notifyTaskDone", e));
+    }
     await broadcast(context.ownerId, "tasks");
     return row as Task;
   });

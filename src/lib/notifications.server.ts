@@ -66,14 +66,39 @@ export async function resolveNotification(ownerId: string, key: string) {
 }
 
 // Tarefa criada a partir de uma notificação (tasks.source_key) é concluída
-// sozinha quando o problema dela é resolvido — ex.: disputa respondida.
+// sozinha quando o problema dela é resolvido — ex.: disputa respondida. Quem
+// criou a tarefa recebe um aviso dizendo que ela foi concluída automaticamente.
 export async function completeLinkedTasks(ownerId: string, keys: string[]) {
   if (!keys.length) return;
   const { data: done } = await supabaseAdmin.from("tasks")
     .update({ status: "concluida", completed_at: new Date().toISOString() })
     .eq("user_id", ownerId).in("source_key", keys).neq("status", "concluida")
-    .select("id");
-  if (done?.length) await broadcast(ownerId, "tasks");
+    .select("id,title,created_by");
+  if (!done?.length) return;
+  for (const t of done as any[]) {
+    await notifyTaskDone(ownerId, t, {
+      title: `Tarefa concluída automaticamente: ${t.title}`,
+      body: "O problema que gerou a tarefa foi resolvido (ex.: disputa encerrada na Shopify).",
+    });
+  }
+  await broadcast(ownerId, "tasks");
+}
+
+// Aviso informativo de tarefa concluída, só pra quem criou a tarefa (sem
+// criador conhecido, vai pra equipe toda). Não vira tarefa; a pessoa dispensa.
+export async function notifyTaskDone(ownerId: string, task: { id: string; created_by?: string | null }, n: { title: string; body?: string | null }) {
+  const now = new Date().toISOString();
+  await supabaseAdmin.from("app_notifications").insert({
+    user_id: ownerId,
+    key: `task_done:${task.id}:${now}`,
+    level: "info",
+    title: n.title.slice(0, 240),
+    body: n.body ?? null,
+    link: "/tarefas",
+    target_user_id: task.created_by ?? null,
+    updated_at: now,
+  });
+  await broadcast(ownerId, "notifications");
 }
 
 function hoursSince(iso: string | null | undefined): number {

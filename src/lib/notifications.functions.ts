@@ -9,12 +9,14 @@ import { broadcast } from "@/lib/realtime.server";
 export const listNotifications = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const { ownerId } = context;
+    const { ownerId, userId } = context;
     // Nunca deixa o sino quebrar a tela: se a checagem falhar, mostra o que já tem.
     try { await refreshSystemNotifications(ownerId); } catch (e) { console.error("refreshSystemNotifications", e); }
     const { data, error } = await supabaseAdmin.from("app_notifications")
       .select("id,key,level,title,body,link,created_at,updated_at,read_at")
       .eq("user_id", ownerId)
+      // Aviso com destinatário só aparece pra essa pessoa.
+      .or(`target_user_id.is.null,target_user_id.eq.${userId}`)
       .is("resolved_at", null)
       .is("dismissed_at", null)
       .order("created_at", { ascending: false })
@@ -27,7 +29,8 @@ export const listNotifications = createServerFn({ method: "GET" })
           .in("source_key", keys).neq("status", "concluida")
       : { data: [] as { source_key: string | null }[] };
     const withTask = new Set((linked ?? []).map((t) => t.source_key));
-    return (data ?? []).map(({ key, ...n }) => ({ ...n, has_task: withTask.has(key) }));
+    // Aviso de tarefa concluída é só informativo — não oferece "Criar tarefa".
+    return (data ?? []).map(({ key, ...n }) => ({ ...n, has_task: withTask.has(key), can_task: !key.startsWith("task_done:") }));
   });
 
 export const markNotificationsRead = createServerFn({ method: "POST" })
@@ -64,7 +67,8 @@ export const dismissAllNotifications = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
     const { error } = await supabaseAdmin.from("app_notifications")
       .update({ dismissed_at: now, read_at: now })
-      .eq("user_id", context.ownerId).is("resolved_at", null).is("dismissed_at", null);
+      .eq("user_id", context.ownerId).is("resolved_at", null).is("dismissed_at", null)
+      .or(`target_user_id.is.null,target_user_id.eq.${context.userId}`);
     if (error) throw new Error(error.message);
     await broadcast(context.ownerId, "notifications");
     return { ok: true };

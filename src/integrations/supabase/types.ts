@@ -109,6 +109,7 @@ export type Database = {
       };
       app_notifications: {
         Row: {
+          target_user_id: string | null;
           body: string | null;
           created_at: string;
           dismissed_at: string | null;
@@ -123,6 +124,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          target_user_id?: string | null;
           body?: string | null;
           created_at?: string;
           dismissed_at?: string | null;
@@ -137,6 +139,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          target_user_id?: string | null;
           body?: string | null;
           created_at?: string;
           dismissed_at?: string | null;

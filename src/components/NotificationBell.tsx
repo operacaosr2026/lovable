@@ -16,6 +16,7 @@ type Notification = {
   created_at: string;
   read_at: string | null;
   has_task: boolean;
+  can_task?: boolean;
 };
 
 const LEVEL_STYLE: Record<string, { icon: typeof Info; cls: string }> = {
@@ -68,7 +69,8 @@ export function NotificationBell({ className = "" }: { className?: string }) {
   const toTask = useMutation({
     mutationFn: (id: string) => toTaskFn({ data: { id } }),
     onSuccess: (r) => {
-      qc.setQueryData<Notification[]>(["notifications"], (prev) => (prev ?? []).map((n) => n.id === toTask.variables ? { ...n, has_task: true } : n));
+      // Com a tarefa criada, o aviso sai do sino.
+      qc.setQueryData<Notification[]>(["notifications"], (prev) => (prev ?? []).filter((n) => n.id !== toTask.variables));
       qc.invalidateQueries({ queryKey: ["notifications"] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       toast.success(r.created ? "Tarefa criada" : "Essa notificação já está em Tarefas", {
@@ -147,7 +149,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                     <p className="text-[10px] text-muted-foreground/70 mt-1.5 pr-24">{timeAgo(n.created_at)}</p>
                   </button>
                   <div className="absolute bottom-2.5 right-3">
-                    {n.has_task ? (
+                    {n.can_task === false ? null : n.has_task ? (
                       <button
                         onClick={() => { setOpen(false); navigate({ to: "/tarefas" }); }}
                         className="h-6 px-2 rounded-md text-[10px] font-semibold text-success bg-success/10 flex items-center gap-1 hover:bg-success/15"
