@@ -113,18 +113,18 @@ export const updateTask = createServerFn({ method: "POST" })
     if (patch.status === "concluida") patch.completed_at = new Date().toISOString();
     else if (patch.status) patch.completed_at = null;
     const { data: before } = patch.status === "concluida"
-      ? await supabaseAdmin.from("tasks").select("status,created_by,title").eq("id", data.id).eq("user_id", context.ownerId).maybeSingle()
+      ? await supabaseAdmin.from("tasks").select("status,title").eq("id", data.id).eq("user_id", context.ownerId).maybeSingle()
       : { data: null };
     const { data: row, error } = await supabaseAdmin.from("tasks")
       .update(patch).eq("id", data.id).eq("user_id", context.ownerId)
       .select(TASK_COLUMNS).maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Tarefa não encontrada.");
-    // Outra pessoa concluiu a tarefa → aviso pra quem criou.
-    if (before && before.status !== "concluida" && before.created_by && before.created_by !== context.userId) {
+    // Tarefa concluída na mão → aviso pra equipe toda, com quem concluiu.
+    if (before && before.status !== "concluida") {
       const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", context.userId).maybeSingle();
       const who = prof?.full_name?.trim() || "Alguém da equipe";
-      await notifyTaskDone(context.ownerId, { id: data.id, created_by: before.created_by }, {
+      await notifyTaskDone(context.ownerId, { id: data.id, created_by: null }, {
         title: `${who} concluiu: ${row.title}`,
       }).catch((e) => console.error("notifyTaskDone", e));
     }
