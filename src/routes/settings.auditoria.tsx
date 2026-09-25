@@ -69,6 +69,8 @@ function AuditRow({ row }: { row: any }) {
   );
 }
 
+const FILTER = "h-10 rounded-lg border border-border bg-surface text-foreground text-sm hover:border-primary/30 focus:outline-none focus:border-primary transition-colors";
+
 function AuditoriaPage() {
   const fn = useServerFn(listAuditLog);
   const [page, setPage] = useState(0);
@@ -102,18 +104,25 @@ function AuditoriaPage() {
           {data && <span className="text-xs text-muted-foreground">· {data.total.toLocaleString("pt-BR")}</span>}
         </div>
 
+        {/* Filtros numa linha (quebra no celular) */}
         <div className="flex flex-wrap items-center gap-2">
-          <form onSubmit={(e) => { e.preventDefault(); setQ(search); setPage(0); }} className="relative flex-1 min-w-[200px]">
-            <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+          <form onSubmit={(e) => { e.preventDefault(); setQ(search); setPage(0); }} className="relative flex-1 min-w-[220px]">
+            <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar ação ou pessoa…"
-              className="settings-input pl-8 w-full" />
+              className={`${FILTER} w-full pl-9 pr-3`} />
           </form>
-          <select value={actorId} onChange={(e) => resetPage(setActorId)(e.target.value)} className="settings-input w-auto">
+          <select value={actorId} onChange={(e) => resetPage(setActorId)(e.target.value)} className={`${FILTER} w-52 px-3`}>
             <option value="">Todas as pessoas</option>
             {(data?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.email}</option>)}
           </select>
-          <input type="date" value={from} onChange={(e) => resetPage(setFrom)(e.target.value)} className="settings-input w-auto" title="De" />
-          <input type="date" value={to} onChange={(e) => resetPage(setTo)(e.target.value)} className="settings-input w-auto" title="Até" />
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            De
+            <input type="date" value={from} onChange={(e) => resetPage(setFrom)(e.target.value)} className={`${FILTER} w-[150px] px-2.5`} />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Até
+            <input type="date" value={to} onChange={(e) => resetPage(setTo)(e.target.value)} className={`${FILTER} w-[150px] px-2.5`} />
+          </label>
         </div>
 
         {query.isLoading ? (

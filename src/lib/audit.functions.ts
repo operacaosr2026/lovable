@@ -34,17 +34,25 @@ export const listAuditLog = createServerFn({ method: "GET" })
     const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
 
-    // Pessoas pro filtro: quem aparece na auditoria do workspace.
-    const { data: actors } = await supabaseAdmin.from("audit_log")
-      .select("actor_id,actor_email").eq("owner_id", ownerId)
-      .order("created_at", { ascending: false }).limit(2000);
+    // Pessoas pro filtro: toda a equipe (dono + membros), mesmo quem ainda não
+    // fez nenhuma ação — mais quem já apareceu na auditoria e saiu da equipe.
+    const [{ data: links }, { data: actors }] = await Promise.all([
+      supabaseAdmin.from("workspace_members").select("member_id").eq("owner_id", ownerId),
+      supabaseAdmin.from("audit_log").select("actor_id,actor_email").eq("owner_id", ownerId)
+        .order("created_at", { ascending: false }).limit(2000),
+    ]);
+    const teamIds = [ownerId, ...((links ?? []) as any[]).map((l) => l.member_id as string)];
     const people = new Map<string, string>();
+    await Promise.all(teamIds.map(async (id) => {
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(id);
+      people.set(id, u?.user?.email ?? id);
+    }));
     for (const a of (actors ?? []) as any[]) if (!people.has(a.actor_id)) people.set(a.actor_id, a.actor_email ?? a.actor_id);
 
     return {
       rows: rows ?? [],
       total: count ?? 0,
       pageSize: PAGE_SIZE,
-      people: [...people.entries()].map(([id, email]) => ({ id, email })),
+      people: [...people.entries()].map(([id, email]) => ({ id, email })).sort((a, b) => a.email.localeCompare(b.email)),
     };
   });
