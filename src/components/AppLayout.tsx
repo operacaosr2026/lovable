@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare,
@@ -21,16 +21,22 @@ type NavItem = {
   section?: Section;
 };
 
+// Cada aba tem sua permissão (Configurações > Membros); admin vê tudo.
 const navItems: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/metas", label: "Metas", icon: Target },
-  { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
-  { to: "/shops/products", label: "Produtos", icon: Package, section: "shops" },
-  { to: "/shops/caixa", label: "Caixa", icon: Wallet, section: "shops" },
-  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "shops" },
-  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "shops" },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
+  { to: "/metas", label: "Metas", icon: Target, section: "metas" },
+  { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
+  { to: "/shops/products", label: "Produtos", icon: Package, section: "produtos" },
+  { to: "/shops/caixa", label: "Caixa", icon: Wallet, section: "caixa" },
+  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
+  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
   { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
 ];
+
+// Aba do menu dona do endereço (pra bloquear quem abre o link direto sem permissão).
+function navItemForPath(path: string): NavItem | undefined {
+  return navItems.find((i) => (i.to === "/" ? path === "/" : path === i.to || path.startsWith(`${i.to}/`)));
+}
 
 const adminNav: NavItem[] = [
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
@@ -175,6 +181,7 @@ function ProfileDialog({ onClose }: { onClose: () => void }) {
 }
 
 function CommandPalette({ onClose }: { onClose: () => void }) {
+  const { role, canAccessSection } = useMyAccess();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -186,9 +193,15 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Só páginas que a pessoa pode abrir.
+  const allowed = ALL_PAGES.filter((p) => {
+    if (p.to.startsWith("/settings")) return role === "admin";
+    const item = navItemForPath(p.to);
+    return !item?.section || canAccessSection(item.section);
+  });
   const filtered = query.trim()
-    ? ALL_PAGES.filter((p) => p.label.toLowerCase().includes(query.toLowerCase()))
-    : ALL_PAGES;
+    ? allowed.filter((p) => p.label.toLowerCase().includes(query.toLowerCase()))
+    : allowed;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[15vh] px-4" onClick={onClose}>
@@ -387,8 +400,31 @@ export function AppLayout() {
       </div>
 
       <main className="flex-1 min-w-0 pt-14 md:pt-0">
-        <Outlet />
+        <PageAccessGate path={path} />
       </main>
+    </div>
+  );
+}
+
+// Bloqueia a página quando a pessoa não tem permissão da aba (ex.: abriu o
+// link direto). Enquanto as permissões carregam, não bloqueia nada.
+function PageAccessGate({ path }: { path: string }) {
+  const { role, canAccessSection, isLoading } = useMyAccess();
+  if (isLoading) return <Outlet />;
+  const blockedSettings = path.startsWith("/settings") && role !== "admin";
+  const item = navItemForPath(path);
+  const blocked = blockedSettings || (item?.section ? !canAccessSection(item.section) : false);
+  if (!blocked) return <Outlet />;
+
+  // Dashboard é a página inicial: sem acesso a ele, manda pra primeira aba liberada.
+  const first = navItems.find((i) => !i.section || canAccessSection(i.section));
+  if (path === "/" && first && first.to !== "/") return <Navigate to={first.to} />;
+  return (
+    <div className="min-h-[60vh] grid place-items-center p-8 text-center">
+      <div>
+        <p className="text-lg font-semibold text-foreground">Sem acesso</p>
+        <p className="text-sm text-muted-foreground mt-1">Você não tem permissão para esta página. Fale com o administrador.</p>
+      </div>
     </div>
   );
 }

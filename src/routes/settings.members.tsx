@@ -31,12 +31,23 @@ export const Route = createFileRoute("/settings/members")({
 type Permission = { section: Section; resource_id: string | null };
 
 const SECTION_LABELS: Record<Section, string> = {
-  shops: "Lojas / Ecommerce",
+  shops: "Lojas que pode ver",
   projects: "Projetos",
   journal: "Diário",
   sops: "SOPs & Processos",
+  dashboard: "Dashboard",
+  metas: "Metas",
+  tarefas: "Tarefas",
+  produtos: "Produtos",
+  caixa: "Caixa",
+  banco_lojas: "Banco de Lojas",
+  lojas_grupos: "Lojas e Grupos",
 };
 
+// Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
+const TAB_SECTIONS: Section[] = ["dashboard", "metas", "tarefas", "produtos", "caixa", "banco_lojas", "lojas_grupos"];
+
+// Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
   s === "shops" || s === "projects" || s === "sops"
 );
@@ -226,8 +237,31 @@ function PermissionsForm({
     }
   };
 
+  const allTabs = TAB_SECTIONS.every((t) => has(t, null));
+  const setAllTabs = (on: boolean) => {
+    const rest = value.filter((p) => !TAB_SECTIONS.includes(p.section));
+    onChange(on ? [...rest, ...TAB_SECTIONS.map((t) => ({ section: t, resource_id: null }))] : rest);
+  };
+
   return (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+      <div className="rounded-xl border border-border p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium">Abas do menu</span>
+          <button type="button" onClick={() => setAllTabs(!allTabs)} className="text-[11px] text-primary hover:underline">
+            {allTabs ? "Desmarcar todas" : "Marcar todas"}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          {TAB_SECTIONS.map((t) => (
+            <label key={t} className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={has(t, null)} onChange={() => toggle(t, null)} className="size-3.5 accent-primary" />
+              <span>{SECTION_LABELS[t]}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-2">Projetos e as lojas visíveis ficam abaixo.</p>
+      </div>
       {VISIBLE_SECTIONS.map((section) => {
         const resKey = RESOURCE_BY_SECTION[section];
         const items: { id: string; name: string }[] = resKey ? resources?.[resKey] ?? [] : [];

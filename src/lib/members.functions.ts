@@ -4,11 +4,20 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolveWorkspaceAccess } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+// Uma permissão por aba do menu (dashboard … lojas_grupos, projects) + "shops",
+// que diz QUAIS lojas o membro enxerga (usada também nas regras do banco).
 export const SECTIONS = [
   "shops",
   "projects",
   "journal",
   "sops",
+  "dashboard",
+  "metas",
+  "tarefas",
+  "produtos",
+  "caixa",
+  "banco_lojas",
+  "lojas_grupos",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
