@@ -89,7 +89,7 @@ function IntegracoesPage() {
       </header>
 
       <Section icon={Store} title="Shopify" loading={q.isLoading} rows={q.data?.shopify}
-        desc="Pedidos, repasses, taxas e disputas. Sincroniza de hora em hora (pedidos também pelo webhook, na hora)." />
+        desc="Repasses e reembolsos: sync completo 2x por dia (08:00 e 20:00). Pedidos e disputas chegam na hora pelo webhook." />
       <Section icon={Megaphone} title="Meta Ads" loading={q.isLoading} rows={q.data?.meta}
         desc="Gasto de anúncios e cobranças do cartão. Sincroniza de 10 em 10 minutos." />
       <Section icon={Truck} title="Track123" loading={q.isLoading} rows={q.data?.track123}

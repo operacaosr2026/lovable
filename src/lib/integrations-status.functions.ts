@@ -50,7 +50,7 @@ export const getIntegrationsStatus = createServerFn({ method: "GET" })
     const shopStore = new Map(((shopsRes.data ?? []) as any[]).map((s) => [s.id as string, s.shopify_store_id as string | null]));
     const isShopPaused = (shopId: string) => { const st = shopStore.get(shopId); return !!st && paused.has(st); };
 
-    // Shopify: o sync completo roda de hora em hora.
+    // Shopify: o sync completo roda 2x por dia (08:00 e 20:00 de Brasília).
     const shopify: IntegrationRow[] = ((storesRes.data ?? []) as any[]).map((s) => {
       const isPaused = paused.has(s.id);
       return {
@@ -59,7 +59,7 @@ export const getIntegrationsStatus = createServerFn({ method: "GET" })
         detail: s.shop_domain ?? null,
         lastSyncAt: s.last_sync_at,
         error: s.last_sync_status === "error" ? s.last_sync_error : null,
-        health: !s.access_token ? "erro" : isPaused ? "pausada" : healthFor(s.last_sync_status, s.last_sync_at, 3 * HOUR),
+        health: !s.access_token ? "erro" : isPaused ? "pausada" : healthFor(s.last_sync_status, s.last_sync_at, 13 * HOUR),
         note: !s.access_token ? "Sem token de acesso" : isPaused ? "Sincronização pausada no Banco de Lojas" : null,
       };
     });
