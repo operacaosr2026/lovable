@@ -458,13 +458,14 @@ function goalProgress(g: PlanGoal) {
 }
 
 function GoalRing({ pct }: { pct: number }) {
-  const r = 52, c = 2 * Math.PI * r;
+  // Anel maior e traço mais fino: mais espaço pro número no meio.
+  const r = 66, c = 2 * Math.PI * r;
   const shown = Math.max(0, Math.min(100, pct));
   return (
-    <div className="relative size-[132px] shrink-0">
-      <svg viewBox="0 0 132 132" className="size-full -rotate-90">
-        <circle cx="66" cy="66" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="14" />
-        <circle cx="66" cy="66" r={r} fill="none" stroke={pct >= 100 ? "var(--color-success)" : "var(--color-primary)"} strokeWidth="14"
+    <div className="relative size-[156px] shrink-0">
+      <svg viewBox="0 0 156 156" className="size-full -rotate-90">
+        <circle cx="78" cy="78" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="11" />
+        <circle cx="78" cy="78" r={r} fill="none" stroke={pct >= 100 ? "var(--color-success)" : "var(--color-primary)"} strokeWidth="11"
           strokeLinecap="round" strokeDasharray={`${(shown / 100) * c} ${c}`} />
       </svg>
       <div className="absolute inset-0 grid place-items-center text-center">
