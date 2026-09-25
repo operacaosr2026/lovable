@@ -16,7 +16,11 @@ import {
 import { useMyAccess } from "@/hooks/useMyAccess";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { Copy, Trash2, UserPlus, Shield, Check, X } from "lucide-react";
+import {
+  Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
+  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow,
+} from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings/members")({
@@ -227,6 +231,44 @@ function MembersPage() {
   );
 }
 
+const SECTION_ICONS: Partial<Record<Section, any>> = {
+  dashboard: LayoutDashboard, metas: Target, tarefas: CheckSquare, produtos: Package, caixa: Wallet,
+  banco_lojas: Database, lojas_grupos: Layers, notificacoes: Bell,
+  lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
+  lg_rastreamento: Truck, lg_integracoes: Plug,
+  shops: Store, projects: FolderKanban, sops: Workflow,
+};
+
+function PermGroup({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5 px-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+        {action}
+      </div>
+      <div className="rounded-xl border border-border divide-y divide-border overflow-hidden bg-card">{children}</div>
+    </div>
+  );
+}
+
+function PermRow({ section, checked, onChange, indent, hint }: {
+  section: Section; checked: boolean; onChange: () => void; indent?: boolean; hint?: string;
+}) {
+  const Icon = SECTION_ICONS[section] ?? Shield;
+  return (
+    <label className={`flex items-center gap-3 px-3.5 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors ${indent ? "pl-10 bg-muted/20" : ""}`}>
+      <span className={`size-7 rounded-lg grid place-items-center shrink-0 ${checked ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+        <Icon className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={`block text-sm ${checked ? "text-foreground font-medium" : "text-muted-foreground"}`}>{SECTION_LABELS[section]}</span>
+        {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      </span>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </label>
+  );
+}
+
 function PermissionsForm({
   value,
   onChange,
@@ -247,13 +289,14 @@ function PermissionsForm({
     }
   };
 
+  const PAGE_TABS = TAB_SECTIONS.filter((t) => t !== "notificacoes");
   const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS];
   const allTabs = ALL_TABS.every((t) => has(t, null));
   const setAllTabs = (on: boolean) => {
     const rest = value.filter((p) => !ALL_TABS.includes(p.section));
     onChange(on ? [...rest, ...ALL_TABS.map((t) => ({ section: t, resource_id: null }))] : rest);
   };
-  // Marcar Lojas e Grupos libera todas as subabas; desmarcar tira todas.
+  // Ligar Lojas e Grupos libera todas as subabas; desligar tira todas.
   const toggleTab = (t: Section) => {
     if (t !== "lojas_grupos") return toggle(t, null);
     const on = !has("lojas_grupos", null);
@@ -262,71 +305,62 @@ function PermissionsForm({
   };
 
   return (
-    <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-      <div className="rounded-xl border border-border p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">Abas do menu</span>
-          <button type="button" onClick={() => setAllTabs(!allTabs)} className="text-[11px] text-primary hover:underline">
-            {allTabs ? "Desmarcar todas" : "Marcar todas"}
+    <div className="space-y-5 max-h-[62vh] overflow-y-auto pr-1 -mr-1">
+      <PermGroup
+        title="Páginas"
+        action={
+          <button type="button" onClick={() => setAllTabs(!allTabs)} className="text-[11px] font-medium text-primary hover:underline">
+            {allTabs ? "Desligar todas" : "Ligar todas"}
           </button>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-          {TAB_SECTIONS.map((t) => (
-            <label key={t} className="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="checkbox" checked={has(t, null)} onChange={() => toggleTab(t)} className="size-3.5 accent-primary" />
-              <span>{SECTION_LABELS[t]}</span>
-            </label>
-          ))}
-        </div>
-        {has("lojas_grupos", null) && (
-          <div className="mt-3 ml-1 pl-3 border-l-2 border-primary/20">
-            <p className="text-[11px] font-medium text-muted-foreground mb-1.5">Subabas de Lojas e Grupos</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {LG_SUBTABS.map((t) => (
-                <label key={t} className="flex items-center gap-2 text-xs cursor-pointer">
-                  <input type="checkbox" checked={has(t, null)} onChange={() => toggle(t, null)} className="size-3.5 accent-primary" />
-                  <span>{SECTION_LABELS[t]}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-        <p className="text-[10px] text-muted-foreground mt-2">Projetos e as lojas visíveis ficam abaixo.</p>
-      </div>
-      {VISIBLE_SECTIONS.map((section) => {
-        const resKey = RESOURCE_BY_SECTION[section];
-        const items: { id: string; name: string }[] = resKey ? resources?.[resKey] ?? [] : [];
-        const sectionAll = has(section, null);
-        return (
-          <div key={section} className="rounded-xl border border-border p-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sectionAll}
-                onChange={() => toggle(section, null)}
-                className="size-4 accent-primary"
-              />
-              <span className="text-sm font-medium">{SECTION_LABELS[section]}</span>
-              {sectionAll && <span className="text-[10px] text-primary ml-auto">Acesso total</span>}
-            </label>
-            {!sectionAll && items.length > 0 && (
-              <div className="mt-2 ml-6 grid grid-cols-2 gap-1.5">
-                {items.map((it) => (
-                  <label key={it.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={has(section, it.id)}
-                      onChange={() => toggle(section, it.id)}
-                      className="size-3.5 accent-primary"
-                    />
-                    <span className="truncate">{it.name}</span>
-                  </label>
+        }
+      >
+        {PAGE_TABS.map((t) => (
+          <div key={t}>
+            <PermRow section={t} checked={has(t, null)} onChange={() => toggleTab(t)} />
+            {t === "lojas_grupos" && has("lojas_grupos", null) && (
+              <div className="divide-y divide-border border-t border-border">
+                {LG_SUBTABS.map((st) => (
+                  <PermRow key={st} section={st} indent checked={has(st, null)} onChange={() => toggle(st, null)} />
                 ))}
               </div>
             )}
           </div>
-        );
-      })}
+        ))}
+      </PermGroup>
+
+      <PermGroup title="Outros">
+        <PermRow section="notificacoes" checked={has("notificacoes", null)} onChange={() => toggle("notificacoes", null)}
+          hint="Avisos de disputas, integrações e tarefas" />
+      </PermGroup>
+
+      <PermGroup title="Acesso a dados">
+        {VISIBLE_SECTIONS.map((section) => {
+          const resKey = RESOURCE_BY_SECTION[section];
+          const items: { id: string; name: string }[] = resKey ? resources?.[resKey] ?? [] : [];
+          const sectionAll = has(section, null);
+          const picked = items.filter((it) => has(section, it.id)).length;
+          return (
+            <div key={section}>
+              <PermRow
+                section={section}
+                checked={sectionAll}
+                onChange={() => toggle(section, null)}
+                hint={sectionAll ? "Todos" : items.length ? (picked ? `${picked} de ${items.length} escolhidos` : "Escolha abaixo quais pode ver") : undefined}
+              />
+              {!sectionAll && items.length > 0 && (
+                <div className="px-3.5 pb-3 pt-1 pl-10 grid grid-cols-2 gap-x-3 gap-y-1.5 bg-muted/20">
+                  {items.map((it) => (
+                    <label key={it.id} className="flex items-center gap-2 text-xs cursor-pointer min-w-0">
+                      <input type="checkbox" checked={has(section, it.id)} onChange={() => toggle(section, it.id)} className="size-3.5 accent-primary shrink-0" />
+                      <span className="truncate">{it.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </PermGroup>
     </div>
   );
 }
@@ -420,8 +454,11 @@ function PermissionsDialog({
 
   return (
     <div className="fixed inset-0 bg-black/50 grid place-items-center z-50 p-4" onClick={onClose}>
-      <div className="bg-surface rounded-2xl border border-border w-full max-w-2xl p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-4">Editar permissões</h2>
+      <div className="bg-surface rounded-2xl border border-border w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4">
+          <h2 className="text-lg font-bold">Editar permissões</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Ligue o que esse membro pode ver e usar.</p>
+        </div>
         <PermissionsForm value={perms} onChange={setPerms} resources={resources} />
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="h-10 px-4 rounded-lg border border-border text-sm">
