@@ -90,8 +90,15 @@ function fmtDateBR(iso: string): string {
 // atenção nas lojas ativas (automação ligada) do workspace. Só consultas no
 // banco — nada de chamada externa —, então pode rodar a cada abertura do sino.
 export async function refreshSystemNotifications(ownerId: string) {
-  const { data: allSettings } = await supabaseAdmin.from("shop_order_settings")
-    .select("shop_id,shopify_store_id").eq("user_id", ownerId).eq("automation_enabled", true);
+  // Consulta que falhar aborta a rodada: sem isso, um erro momentâneo do banco
+  // virava "nenhum problema", resolvia todos os avisos e concluía as tarefas
+  // ligadas a eles — que voltavam na leitura seguinte (tarefas duplicadas).
+  const must = <T,>(res: { data: T; error: any }, what: string): T => {
+    if (res.error) throw new Error(`refreshSystemNotifications: ${what}: ${res.error.message ?? res.error}`);
+    return res.data;
+  };
+  const allSettings = must(await supabaseAdmin.from("shop_order_settings")
+    .select("shop_id,shopify_store_id").eq("user_id", ownerId).eq("automation_enabled", true), "lojas");
   // Loja com sync pausado (coluna do Banco de Lojas) não gera aviso.
   const pausedStores = await getPausedShopifyStoreIds(ownerId);
   const settings = (allSettings ?? []).filter((s: any) => !s.shopify_store_id || !pausedStores.has(s.shopify_store_id));
@@ -116,6 +123,9 @@ export async function refreshSystemNotifications(ownerId: string) {
       supabaseAdmin.from("track123_integrations").select("shop_id,last_sync_at,last_sync_status,last_sync_error")
         .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("enabled", true),
     ]);
+    for (const [res, what] of [[shopsRes, "nomes"], [cardLinksRes, "grupos"], [tokensRes, "tokens Meta"], [accountsRes, "contas Meta"], [storesRes, "lojas Shopify"], [trackRes, "Track123"]] as const) {
+      if ((res as any).error) throw new Error(`refreshSystemNotifications: ${what}: ${(res as any).error.message}`);
+    }
 
     const shopName = new Map((shopsRes.data ?? []).map((s: any) => [s.id as string, s.name as string]));
     const cardByShop = new Map<string, string>();
@@ -177,9 +187,9 @@ export async function refreshSystemNotifications(ownerId: string) {
     // resposta, a Shopify decide contra a loja (inquiry vira chargeback,
     // chargeback é perdido). Some sozinha quando o status muda na Shopify
     // (sync completo de hora em hora).
-    const { data: disputes } = await supabaseAdmin.from("shop_order_disputes")
+    const disputes = must(await supabaseAdmin.from("shop_order_disputes")
       .select("shop_id,shopify_dispute_id,order_external_id,type,reason,amount,currency,evidence_due_by")
-      .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("status", "needs_response");
+      .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("status", "needs_response"), "disputas");
     if (disputes?.length) {
       const extIds = disputes.map((d: any) => d.order_external_id).filter(Boolean) as string[];
       const { data: orderRows } = extIds.length
@@ -229,9 +239,9 @@ export async function refreshSystemNotifications(ownerId: string) {
     }
   }
 
-  const { data: current } = await supabaseAdmin.from("app_notifications")
+  const current = must(await supabaseAdmin.from("app_notifications")
     .select("id,key,level,title,body,link,resolved_at")
-    .eq("user_id", ownerId);
+    .eq("user_id", ownerId), "avisos");
   const byKey = new Map((current ?? []).map((n: any) => [n.key as string, n]));
   const now = new Date().toISOString();
 
@@ -242,8 +252,24 @@ export async function refreshSystemNotifications(ownerId: string) {
     if (!same) await raiseNotification(ownerId, key, n);
   }
 
-  const toResolve = (current ?? [])
+  let toResolve = (current ?? [])
     .filter((n: any) => !n.resolved_at && MANAGED_PREFIXES.some((p) => n.key.startsWith(p)) && !want.has(n.key));
+  // Disputa só sai do sino (e conclui a tarefa ligada) se de fato não está mais
+  // aguardando resposta no banco — segunda checagem contra falso "resolvido".
+  const disputeKeys = toResolve.filter((n: any) => n.key.startsWith("dispute:")).map((n: any) => n.key.slice("dispute:".length));
+  if (disputeKeys.length) {
+    const stillOpen = must(await supabaseAdmin.from("shop_order_disputes").select("shopify_dispute_id")
+      .eq("user_id", ownerId).in("shopify_dispute_id", disputeKeys).eq("status", "needs_response"), "disputas abertas");
+    const open = new Set(((stillOpen ?? []) as any[]).map((d) => `dispute:${d.shopify_dispute_id}`));
+    // Loja pausada é o único caso de disputa aberta que sai do sino de propósito.
+    const pausedShopIds = new Set((allSettings ?? []).filter((s: any) => s.shopify_store_id && pausedStores.has(s.shopify_store_id)).map((s: any) => s.shop_id));
+    if (open.size) {
+      const openRows = must(await supabaseAdmin.from("shop_order_disputes").select("shopify_dispute_id,shop_id")
+        .eq("user_id", ownerId).in("shopify_dispute_id", [...open].map((k) => k.slice(8))), "disputas por loja");
+      const keepKeys = new Set(((openRows ?? []) as any[]).filter((d) => !pausedShopIds.has(d.shop_id)).map((d) => `dispute:${d.shopify_dispute_id}`));
+      toResolve = toResolve.filter((n: any) => !keepKeys.has(n.key));
+    }
+  }
   if (toResolve.length) {
     await supabaseAdmin.from("app_notifications").update({ resolved_at: now }).in("id", toResolve.map((n: any) => n.id as string));
     await broadcast(ownerId, "notifications");
