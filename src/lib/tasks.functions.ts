@@ -120,13 +120,13 @@ export const updateTask = createServerFn({ method: "POST" })
       .select(TASK_COLUMNS).maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Tarefa não encontrada.");
-    // Tarefa concluída na mão → aviso pra equipe toda, com quem concluiu.
+    // Tarefa concluída na mão → aviso pra equipe toda (menos quem concluiu).
     if (before && before.status !== "concluida") {
       const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", context.userId).maybeSingle();
       const who = prof?.full_name?.trim() || "Alguém da equipe";
       await notifyTaskDone(context.ownerId, { id: data.id, created_by: null }, {
         title: `${who} concluiu: ${row.title}`,
-      }).catch((e) => console.error("notifyTaskDone", e));
+      }, { excludeUserId: context.userId }).catch((e) => console.error("notifyTaskDone", e));
     }
     await broadcast(context.ownerId, "tasks");
     return row as Task;

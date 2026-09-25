@@ -86,18 +86,35 @@ export async function completeLinkedTasks(ownerId: string, keys: string[]) {
 
 // Aviso informativo de tarefa concluída, só pra quem criou a tarefa (created_by
 // nulo = equipe toda). Não vira tarefa; a pessoa dispensa.
-export async function notifyTaskDone(ownerId: string, task: { id: string; created_by?: string | null }, n: { title: string; body?: string | null }) {
+export async function notifyTaskDone(
+  ownerId: string,
+  task: { id: string; created_by?: string | null },
+  n: { title: string; body?: string | null },
+  opts: { excludeUserId?: string } = {},
+) {
   const now = new Date().toISOString();
-  await supabaseAdmin.from("app_notifications").insert({
+  const base = {
     user_id: ownerId,
-    key: `task_done:${task.id}:${now}`,
     level: "info",
     title: n.title.slice(0, 240),
     body: n.body ?? null,
     link: "/tarefas",
-    target_user_id: task.created_by ?? null,
     updated_at: now,
-  });
+  };
+  if (!opts.excludeUserId) {
+    await supabaseAdmin.from("app_notifications").insert({
+      ...base, key: `task_done:${task.id}:${now}`, target_user_id: task.created_by ?? null,
+    });
+  } else {
+    // Equipe toda menos quem fez: um aviso por pessoa (dono + membros).
+    const { data: links } = await supabaseAdmin.from("workspace_members").select("member_id").eq("owner_id", ownerId);
+    const team = [ownerId, ...((links ?? []) as any[]).map((l) => l.member_id as string)].filter((id) => id !== opts.excludeUserId);
+    if (team.length) {
+      await supabaseAdmin.from("app_notifications").insert(team.map((id) => ({
+        ...base, key: `task_done:${task.id}:${now}:${id}`, target_user_id: id,
+      })));
+    }
+  }
   await broadcast(ownerId, "notifications");
 }
 
