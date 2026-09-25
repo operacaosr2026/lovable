@@ -5,10 +5,8 @@ import {
   Plus, Pencil, Check, X, StickyNote, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getShopDashboardMetrics } from "@/lib/shop-orders.functions";
 import {
   listLgCardNotes, createLgCardNote, deleteLgCardNote, updateLgCardNote,
-  listShopDailyAnalytics,
 } from "@/lib/lg-cards.functions";
 import { isoTodayUS } from "@/lib/timezone";
 
@@ -16,66 +14,6 @@ const isoToday = isoTodayUS;
 function fmtDate(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
-}
-
-// ─── Note badges (lazy per-note metrics) ─────────────────────────────────────
-
-function NoteBadges({
-  shopIds, matrizShopId, noteDate, visitors: savedVisitors,
-}: {
-  shopIds: string[]; matrizShopId: string | null; noteDate: string; visitors?: number | null;
-}) {
-  const getMetricsFn    = useServerFn(getShopDashboardMetrics);
-  const getAnalyticsFn  = useServerFn(listShopDailyAnalytics);
-
-  const metricsQuery = useQuery({
-    queryKey: ["lg-note-metrics", shopIds.join(","), noteDate],
-    queryFn:  () => getMetricsFn({ data: { shop_ids: shopIds, from: noteDate, to: noteDate, prev_from: noteDate, prev_to: noteDate } }),
-    staleTime: 5 * 60_000,
-  });
-
-  const analyticsQuery = useQuery({
-    queryKey: ["lg-note-analytics", matrizShopId, noteDate],
-    queryFn:  () => getAnalyticsFn({ data: { shop_id: matrizShopId!, from: noteDate, to: noteDate } }),
-    enabled:  Boolean(matrizShopId) && !savedVisitors,
-    staleTime: 5 * 60_000,
-  });
-
-  const m = metricsQuery.data?.metrics;
-  const loading = metricsQuery.isLoading;
-
-  const cpa = m && m.anuncios && m.pedidos
-    ? m.anuncios / m.pedidos
-    : null;
-
-  const lucroPC = m && m.faturamento && m.faturamento > 0
-    ? (m.lucro / m.faturamento) * 100
-    : null;
-
-  const sessions = savedVisitors ?? (analyticsQuery.data?.[0]?.sessions ?? null);
-  const conversao = m && sessions && sessions > 0
-    ? (m.pedidos / sessions) * 100
-    : null;
-
-  if (loading) return (
-    <div className="flex gap-1.5 mt-1.5">
-      {[0,1,2].map(i => <div key={i} className="h-4 w-14 bg-muted animate-pulse rounded-full" />)}
-    </div>
-  );
-
-  return (
-    <div className="flex flex-wrap gap-1.5 mt-1.5">
-      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-warning/30 bg-warning/10 text-warning">
-        CPA {cpa !== null ? `$${cpa.toFixed(2)}` : "—"}
-      </span>
-      <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border ${lucroPC !== null && lucroPC >= 0 ? "border-success/30 bg-success/10 text-success" : "border-destructive/30 bg-destructive/10 text-destructive"}`}>
-        Margem {lucroPC !== null ? `${lucroPC.toFixed(1)}%` : "—"}
-      </span>
-      <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border ${conversao !== null ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground"}`}>
-        Conv. {conversao !== null ? `${conversao.toFixed(2)}%` : "—"}
-      </span>
-    </div>
-  );
 }
 
 // ─── Notes section ────────────────────────────────────────────────────────────
@@ -200,16 +138,6 @@ export function LgNotesSection({
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-muted-foreground font-medium">{fmtDate(note.note_date)}</span>
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      <label className="text-[10px] text-muted-foreground">Visitantes:</label>
-                      <input
-                        type="number"
-                        value={editVisitors}
-                        onChange={(e) => setEditVisitors(e.target.value)}
-                        placeholder="0"
-                        className="w-20 h-6 text-xs rounded-lg border border-border bg-card px-2 focus:outline-none focus:border-primary"
-                      />
-                    </div>
                   </div>
                   <textarea
                     value={editContent}
@@ -238,12 +166,6 @@ export function LgNotesSection({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{note.content}</p>
-                    <NoteBadges
-                      shopIds={shopIds}
-                      matrizShopId={matrizShopId}
-                      noteDate={note.note_date}
-                      visitors={note.visitors}
-                    />
                   </div>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
                     <button
