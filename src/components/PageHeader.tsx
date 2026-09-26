@@ -15,9 +15,10 @@ export function PageHeader({
 
 // fit: no desktop a página ocupa exatamente a altura da tela (as áreas com
 // flex-1 esticam/encolhem); se o conteúdo não couber, a página rola por dentro.
-export function PageShell({ children, fit }: { children: ReactNode; fit?: boolean }) {
+// wide: sem limite de largura (esteira do Banco de Lojas usa a tela toda).
+export function PageShell({ children, fit, wide }: { children: ReactNode; fit?: boolean; wide?: boolean }) {
   return (
-    <div className={`p-4 sm:p-6 max-w-[1400px] mx-auto ${fit ? "md:px-8 md:py-6 lg:h-dvh lg:overflow-y-auto lg:flex lg:flex-col" : "md:p-8"}`}>
+    <div className={`p-4 sm:p-6 mx-auto ${wide ? "" : "max-w-[1400px]"} ${fit ? "md:px-8 md:py-6 lg:h-dvh lg:overflow-y-auto lg:flex lg:flex-col" : "md:p-8"}`}>
       {children}
     </div>
   );
