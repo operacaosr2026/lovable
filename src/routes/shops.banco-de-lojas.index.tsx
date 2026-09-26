@@ -88,7 +88,8 @@ function BancoDeLojasIndex() {
   return (
     <PageShell fit wide>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+      {/* Na esteira, termina alinhado com a última coluna (sem a faixa do "+"). */}
+      <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5 ${view === "esteira" && !columnFilter ? "lg:pr-[42px]" : ""}`}>
         <h1 className="text-2xl font-bold tracking-tight whitespace-nowrap shrink-0">Banco de Lojas</h1>
         {/* Tudo numa linha só: a busca encolhe pra caber. */}
         <div className="flex items-center gap-2 min-w-0 lg:flex-1 lg:justify-end">
