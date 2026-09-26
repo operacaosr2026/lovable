@@ -560,7 +560,7 @@ export function LgDashboard({
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="primary"
           label="Faturamento" value={fmt(m?.faturamento ?? 0)} delta={m?.faturamentoDelta ?? 0}
-          tooltip="Receita de pedidos descontados reembolsos e chargebacks"
+          tooltip="Receita de pedidos descontados reembolsos e chargebacks (o total do mês é dividido igual entre os dias)"
           onClick={isConsolidated ? () => openBreakdown("faturamento", "Faturamento") : undefined}
         />
         <KpiCard loading={isLoading}
@@ -663,9 +663,9 @@ export function LgDashboard({
           <div className="flex items-center gap-2 mb-4">
             <MetricIcon color="info"><BarChart3 className="size-4" /></MetricIcon>
             <div>
-              <p className="text-xs text-muted-foreground">Custos Adicionais</p>
+              <p className="text-xs text-muted-foreground">Custos Adicionais · no mês</p>
               <p className="text-lg font-bold text-foreground">
-                {isLoading ? "—" : fmt((m?.reembolsos ?? 0) + (m?.chargebacks ?? 0))}
+                {isLoading ? "—" : fmt((m?.mesReembolsos ?? 0) + (m?.mesChargebacks ?? 0))}
               </p>
             </div>
           </div>
@@ -673,13 +673,13 @@ export function LgDashboard({
             {[
               {
                 label: "Reembolsos",
-                value: isLoading ? "—" : (m?.reembolsos ? fmt(m.reembolsos) : "—"),
-                color: m?.reembolsos ? "text-destructive" : "text-muted-foreground",
+                value: isLoading ? "—" : (m?.mesReembolsos ? fmt(m.mesReembolsos) : "—"),
+                color: m?.mesReembolsos ? "text-destructive" : "text-muted-foreground",
               },
               {
                 label: "Chargebacks",
-                value: isLoading ? "—" : (m?.chargebacks ? fmt(m.chargebacks) : "—"),
-                color: m?.chargebacks ? "text-destructive" : "text-muted-foreground",
+                value: isLoading ? "—" : (m?.mesChargebacks ? fmt(m.mesChargebacks) : "—"),
+                color: m?.mesChargebacks ? "text-destructive" : "text-muted-foreground",
               },
             ].map(item => (
               <div key={item.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">

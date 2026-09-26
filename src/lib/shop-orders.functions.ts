@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
-import { US_TIME_ZONE } from "@/lib/timezone";
+import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -1238,6 +1238,66 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   return [...byShop.values()];
 });
 
+// Reembolsos e chargebacks "diluídos": o total de cada mês é dividido igual
+// pelos dias do mês (no mês corrente, pelos dias até hoje) e cada dia fica com
+// a sua parte. Assim um chargeback grande não derruba o lucro de um dia só — o
+// lucro do dia serve pra ver se as campanhas estão indo bem — e a soma do mês
+// continua igual ao total real. Mesmo formato de getGroupRefundsAndChargebacks
+// em `rows`; `monthTotals` traz o total real de cada mês ("YYYY-MM").
+function addDayISO(d: string, n: number) {
+  const dt = new Date(`${d}T00:00:00Z`);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
+  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
+) => {
+  const today = isoTodayUS();
+  const end = toISO < today ? toISO : today;
+  const byShop = new Map(shopIds.map((id) => [id, {
+    shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number>,
+  }]));
+  const monthTotals: Record<string, { reembolsos: number; chargebacks: number }> = {};
+  if (fromISO > end) return { rows: [...byShop.values()], monthTotals };
+
+  const months: string[] = [];
+  for (let m = fromISO.slice(0, 7); m <= end.slice(0, 7); ) {
+    months.push(m);
+    const [y, mo] = m.split("-").map(Number);
+    m = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
+  }
+  const monthly = await Promise.all(months.map(async (m) => {
+    const mStart = `${m}-01`;
+    return { m, mStart, rows: await getGroupRefundsAndChargebacks(ownerId, shopIds, mStart, monthEndCapped(m, today)) };
+  }));
+  for (const { m, mStart, rows } of monthly) {
+    const mEnd = monthEndCapped(m, today);
+    const nDays = Math.round((Date.parse(`${mEnd}T00:00:00Z`) - Date.parse(`${mStart}T00:00:00Z`)) / 86_400_000) + 1;
+    const pStart = fromISO > mStart ? fromISO : mStart;
+    const pEnd = end < mEnd ? end : mEnd;
+    monthTotals[m] = {
+      reembolsos: rows.reduce((t: number, r: any) => t + r.refAmt, 0),
+      chargebacks: rows.reduce((t: number, r: any) => t + r.cbAmt, 0),
+    };
+    for (const r of rows) {
+      const row = byShop.get(r.shop_id)!;
+      const refDay = r.refAmt / nDays, cbDay = r.cbAmt / nDays;
+      if (!refDay && !cbDay) continue;
+      for (let d = pStart; d <= pEnd; d = addDayISO(d, 1)) {
+        if (refDay) { row.refAmt += refDay; row.refByDate[d] = (row.refByDate[d] ?? 0) + refDay; }
+        if (cbDay) { row.cbAmt += cbDay; row.cbByDate[d] = (row.cbByDate[d] ?? 0) + cbDay; }
+      }
+    }
+  }
+  return { rows: [...byShop.values()], monthTotals };
+});
+// Último dia do mês "YYYY-MM", sem passar de hoje (mês corrente).
+function monthEndCapped(m: string, today: string) {
+  const [y, mo] = m.split("-").map(Number);
+  const last = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
+  return last < today ? last : today;
+}
+
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
 // e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
 // a cada carregamento de tela.
@@ -2127,13 +2187,15 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       .eq("user_id", ownerId).in("shop_id", shop_ids);
 
     // Reembolsos e chargebacks do período (e do anterior, pros deltas), lidos do
-    // banco — ver getGroupRefundsAndChargebacks. Antes: 4 chamadas ao vivo à
-    // Shopify por loja a cada abertura.
+    // banco e diluídos por dia no mês (getDilutedRefundsAndChargebacks) — não
+    // derrubam o lucro do dia em que caíram.
+    const noRefunds = { rows: [] as any[], monthTotals: {} as Record<string, { reembolsos: number; chargebacks: number }> };
+    const dilutedPromise = !withCosts ? Promise.resolve(noRefunds) : getDilutedRefundsAndChargebacks(ownerId, shop_ids, from, to);
     const shopifyPromise = !withCosts ? Promise.resolve([] as any[]) : Promise.all([
-      getGroupRefundsAndChargebacks(ownerId, shop_ids, from, to),
-      withPrev ? getGroupRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve([] as any[]),
-    ]).then(([curr, prev]) => curr.map((c: any) => {
-      const p = (prev as any[]).find((x) => x.shop_id === c.shop_id);
+      dilutedPromise,
+      withPrev ? getDilutedRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve(noRefunds),
+    ]).then(([curr, prev]) => curr.rows.map((c: any) => {
+      const p = prev.rows.find((x: any) => x.shop_id === c.shop_id);
       return { refAmt: c.refAmt, prevRefAmt: p?.refAmt ?? 0, cbAmt: c.cbAmt, prevCbAmt: p?.cbAmt ?? 0, refByDate: c.refByDate, cbByDate: c.cbByDate };
     }));
 
@@ -2291,6 +2353,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       orders: hourlyMap.get(h)?.orders ?? 0,
     }));
 
+    // Card "Custos Adicionais": total real do mês do fim do período, seja qual
+    // for o filtro (hoje, ontem, 7 dias...).
+    const todayUS = isoTodayUS();
+    const mesTotals = (await dilutedPromise).monthTotals[(to < todayUS ? to : todayUS).slice(0, 7)];
+
     const goalsData = goalRes.data ?? [];
     const aggregatedGoal = goalsData.length === 0 ? null : {
       target_profit: goalsData.reduce((s: number, g: any) => s + Number(g.target_profit ?? 0), 0),
@@ -2309,6 +2376,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         anuncios,          anunciosDelta:     delta(anuncios, prevAnuncios),
         reembolsos,        reembolsosDelta:   delta(reembolsos, prevReembolsos),
         chargebacks,       chargebacksDelta:  delta(chargebacks, prevChargebacks),
+        mesReembolsos:     mesTotals?.reembolsos ?? 0,
+        mesChargebacks:    mesTotals?.chargebacks ?? 0,
         cpa,               cpaDelta:          delta(cpa, prevCpa),
         roas,              roasDelta:         delta(roas, prevRoas),
         roi,
