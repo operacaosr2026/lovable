@@ -158,15 +158,6 @@ function LojasGruposIndex() {
 
 // ─── Card item ───────────────────────────────────────────────────────────────
 
-function fmt(value: number, currency?: string) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: currency ? "currency" : "decimal",
-    currency: currency ?? undefined,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void; onDelete: () => void }) {
   const st = STATUS_META[card.status] ?? STATUS_META.ativo;
   const shops: any[] = card.card_shops ?? [];
@@ -263,14 +254,6 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
               </div>
             ) : metrics ? (
               <>
-                {/* Lucro */}
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Lucro mês</span>
-                  <span className={`text-xs font-semibold ${metrics.lucro >= 0 ? "text-emerald-500" : "text-destructive"}`}>
-                    {fmt(metrics.lucro, "USD")}
-                  </span>
-                </div>
-
                 {/* Estornos + Repasse por loja, nome uma vez só */}
                 {(metrics.totalPedidos > 0 || metrics.payoutLag.some((p: any) => p.days != null)) && (
                   <div className="grid grid-cols-[1fr_auto_auto] gap-x-2 gap-y-1 items-center pt-0.5">

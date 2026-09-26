@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
 import { syncTrack123ForShops, getTrack123Integrations } from "@/lib/track123.functions";
+import { listShopDomains } from "@/lib/shop-orders.functions";
+import { buildTrackingMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers } from "lucide-react";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -172,6 +174,7 @@ export function LgLogistica({
   const [shopFilter, setShopFilter]   = useState<string>("todas");
   const [search, setSearch]           = useState("");
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
+  const [selected, setSelected]       = useState<Set<string>>(new Set());
 
   const nowMs = Date.now();
   const { from, to } = (() => {
@@ -218,6 +221,13 @@ export function LgLogistica({
       qc.invalidateQueries({ queryKey: ["lg-logistics-integrations", cacheKey] });
     },
     onError: (e: any) => toast.error(e?.message ?? "Erro ao sincronizar"),
+  });
+
+  const listShopDomainsFn = useServerFn(listShopDomains);
+  const domainsQuery = useQuery({
+    queryKey: ["lg-shop-domains", cacheKey],
+    queryFn: () => listShopDomainsFn({ data: { shop_ids: shopIds } }),
+    enabled: shopIds.length > 0,
   });
 
   const shopNames: Record<string, string> = {};
@@ -291,6 +301,52 @@ export function LgLogistica({
     const dateCmp = (a.order_date as string).localeCompare(b.order_date as string);
     return dateCmp !== 0 ? dateCmp : orderNum(a) - orderNum(b);
   });
+
+  // Seleção vale pros pedidos do período inteiro (não some ao trocar de filtro);
+  // o checkbox do cabeçalho marca/desmarca só as linhas visíveis.
+  const selectedOrders = allOrders.filter((o) => selected.has(o.id));
+  const allVisibleSelected = sortedOrders.length > 0 && sortedOrders.every((o) => selected.has(o.id));
+  const toggleSelected = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAllVisible = () => setSelected((prev) => {
+    const next = new Set(prev);
+    for (const o of sortedOrders) { if (allVisibleSelected) next.delete(o.id); else next.add(o.id); }
+    return next;
+  });
+
+  const supplierMessage = useMemo(() => {
+    const byShop = new Map<string, any[]>();
+    for (const o of selectedOrders) {
+      if (!byShop.has(o.shop_id)) byShop.set(o.shop_id, []);
+      byShop.get(o.shop_id)!.push(o);
+    }
+    const domains = (domainsQuery.data ?? {}) as Record<string, string | null>;
+    const blocks = [...byShop.entries()]
+      .sort(([a], [b]) => (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true }))
+      .map(([shopId, list]) => ({
+        shopName: shopNames[shopId] ?? shopId,
+        shopDomain: domains[shopId] ?? null,
+        lines: list.map((o) => {
+          const status = STATUS_CONFIG[o.delivery_status ?? "pending_shipment"]?.label ?? o.delivery_status;
+          const reason = attentionReason(o, nowMs);
+          return { orderLabel: orderLabel(o), trackingCode: o.tracking_code ?? null, status: reason ? `${status} (${reason})` : status };
+        }),
+      }));
+    return buildTrackingMessage(blocks);
+  }, [selectedOrders, domainsQuery.data]);
+
+  const copySupplierMessage = async () => {
+    if (!supplierMessage) return;
+    try {
+      await navigator.clipboard.writeText(supplierMessage);
+      toast.success("Mensagem copiada");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -448,6 +504,20 @@ export function LgLogistica({
         )}
       </div>
 
+      {/* Selection bar */}
+      {selectedOrders.length > 0 && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <span className="text-sm">
+            <span className="font-medium">{selectedOrders.length}</span> {selectedOrders.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
+          </span>
+          <div className="flex-1" />
+          <Button size="sm" variant="outline" onClick={copySupplierMessage}>
+            <Copy className="size-4" /> Copiar mensagem pro fornecedor
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Limpar</Button>
+        </div>
+      )}
+
       {/* Orders table */}
       {/* Colunas fr espremiam o cabeçalho em mobile (ex: "Fora do KPI" quebrado
           em 3 linhas) e overflow-hidden cortava o resto; agora rola horizontal. */}
@@ -466,8 +536,17 @@ export function LgLogistica({
         )}
 
         {!isLoading && sortedOrders.length > 0 && (
-        <div className="min-w-[960px]">
-        <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
+        <div className="min-w-[990px]">
+        <div className="grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleAllVisible}
+              title="Selecionar todos os pedidos da lista"
+              className="size-4 rounded border-border accent-primary cursor-pointer"
+            />
+          </div>
           <div>Pedido</div>
           <div className="text-center">Data do Pedido</div>
           <div className="text-center">Data Postado</div>
@@ -483,11 +562,19 @@ export function LgLogistica({
             <div
               key={o.id}
               className={cn(
-                "grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                "grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
               )}
               onClick={() => setEditingOrder(o)}
             >
+              <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(o.id)}
+                  onChange={() => toggleSelected(o.id)}
+                  className="size-4 rounded border-border accent-primary cursor-pointer"
+                />
+              </div>
               <div className="min-w-0">
                 <p className="font-medium text-foreground truncate">{orderLabel(o)}</p>
                 {isConsolidated && <p className="text-[10px] font-medium text-primary truncate">{shopNames[o.shop_id] ?? ""}</p>}
