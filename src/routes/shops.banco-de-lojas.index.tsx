@@ -88,43 +88,41 @@ function BancoDeLojasIndex() {
   return (
     <PageShell fit wide>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
-        <div className="flex items-center gap-4 min-w-0">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+        <div className="flex items-center gap-4 shrink-0">
           <div className="size-14 rounded-2xl bg-gradient-to-br from-primary/80 to-primary text-primary-foreground grid place-items-center shrink-0 shadow-sm">
             <Store className="size-7" />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">Banco de Lojas</h1>
-            <p className="text-sm text-muted-foreground">Gerencie suas lojas Shopify e acompanhe o status de cada uma.</p>
-          </div>
+          <h1 className="text-2xl font-bold tracking-tight whitespace-nowrap">Banco de Lojas</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
+        {/* Tudo numa linha só: a busca encolhe pra caber. */}
+        <div className="flex items-center gap-2 min-w-0 lg:flex-1 lg:justify-end">
+          <div className="relative flex-1 min-w-[140px] max-w-60">
             <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar lojas..."
-              className="h-11 w-60 pl-9 pr-3 rounded-xl border border-border bg-card text-sm outline-none focus:border-primary/50"
+              className="h-10 w-full pl-9 pr-3 rounded-xl border border-border bg-card text-sm outline-none focus:border-primary/50"
             />
           </div>
-          <div className="flex items-center rounded-xl border border-border bg-card p-1 h-11">
+          <div className="flex items-center rounded-xl border border-border bg-card p-1 h-10 shrink-0">
             <button
               onClick={() => navigate({ search: { view: "esteira" } })}
-              className={`h-full px-4 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${view === "esteira" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`h-full px-3 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${view === "esteira" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
               <Layers className="size-4" /> Esteira
             </button>
             <button
               onClick={() => navigate({ search: { view: "lista" } })}
-              className={`h-full px-4 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${view === "lista" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`h-full px-3 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${view === "lista" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
               <List className="size-4" /> Lista
             </button>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-11 w-52 px-3.5 rounded-xl border border-border bg-card text-sm flex items-center gap-2 hover:border-primary/40">
+              <button className="h-10 w-44 shrink-0 px-3 rounded-xl border border-border bg-card text-sm flex items-center gap-2 hover:border-primary/40">
                 <Filter className="size-4 text-muted-foreground shrink-0" />
                 <span className="flex-1 text-left truncate">{filterLabel}</span>
                 <ChevronDown className="size-4 text-muted-foreground shrink-0" />
@@ -142,7 +140,7 @@ function BancoDeLojasIndex() {
           </DropdownMenu>
           <button
             onClick={() => setOpenConnect(true)}
-            className="h-11 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center gap-2 shadow-sm hover:bg-primary/90"
+            className="h-10 px-4 shrink-0 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center gap-1.5 shadow-sm hover:bg-primary/90 whitespace-nowrap"
           >
             <Plus className="size-4" /> Nova loja
           </button>
