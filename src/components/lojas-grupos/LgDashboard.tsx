@@ -681,9 +681,6 @@ export function LgDashboard({
                 value: isLoading ? "—" : (m?.chargebacks ? fmt(m.chargebacks) : "—"),
                 color: m?.chargebacks ? "text-destructive" : "text-muted-foreground",
               },
-              { label: "Impostos",    value: "—",            color: "text-muted-foreground" },
-              { label: "Operacional", value: "—",            color: "text-muted-foreground" },
-              { label: "Garantia",    value: "Sem Garantia", color: "text-emerald-500" },
             ].map(item => (
               <div key={item.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
                 <Package className="size-3.5 text-muted-foreground shrink-0" />
