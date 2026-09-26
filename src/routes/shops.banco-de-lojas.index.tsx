@@ -89,12 +89,7 @@ function BancoDeLojasIndex() {
     <PageShell fit wide>
       {/* ── Cabeçalho ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="size-14 rounded-2xl bg-gradient-to-br from-primary/80 to-primary text-primary-foreground grid place-items-center shrink-0 shadow-sm">
-            <Store className="size-7" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight whitespace-nowrap">Banco de Lojas</h1>
-        </div>
+        <h1 className="text-2xl font-bold tracking-tight whitespace-nowrap shrink-0">Banco de Lojas</h1>
         {/* Tudo numa linha só: a busca encolhe pra caber. */}
         <div className="flex items-center gap-2 min-w-0 lg:flex-1 lg:justify-end">
           <div className="relative flex-1 min-w-[140px] max-w-60">
@@ -149,8 +144,10 @@ function BancoDeLojasIndex() {
 
       {/* ── Resumo por etapa ── */}
       {!isLoading && stores.length > 0 && (
-        <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: `repeat(${Math.min(kpiColumns.length + 1, 6)}, minmax(0, 1fr))` }}>
-          <div className="rounded-2xl border border-border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0">
+        // Mesmo espaçamento das colunas da esteira (gap + faixa do "+" no fim),
+        // pra cada card ficar alinhado com a coluna de baixo.
+        <div className="flex gap-2.5 mb-4">
+          <div className="rounded-2xl border border-border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0 flex-1 basis-0">
             <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Store className="size-5" /></div>
             <div className="min-w-0">
               <p className="text-xl font-bold leading-tight tabular-nums">{connectedCount}</p>
@@ -170,7 +167,7 @@ function BancoDeLojasIndex() {
               <button
                 key={c.id}
                 onClick={() => setColumnFilter(columnFilter === c.id ? null : c.id)}
-                className={`rounded-2xl border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0 text-left transition-colors ${columnFilter === c.id ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:border-primary/30"}`}
+                className={`rounded-2xl border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0 flex-1 basis-0 text-left transition-colors ${columnFilter === c.id ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:border-primary/30"}`}
                 title="Filtrar por esta etapa"
               >
                 <div className={`size-10 rounded-full grid place-items-center shrink-0 ${tone.chip}`}><ToneIcon tone={tone} className="size-5" /></div>
@@ -184,6 +181,7 @@ function BancoDeLojasIndex() {
               </button>
             );
           })}
+          {view === "esteira" && !columnFilter && <div className="w-8 shrink-0" />}
         </div>
       )}
 
