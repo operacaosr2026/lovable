@@ -11,8 +11,8 @@ export const Route = createFileRoute("/metas")({
 
 function MetasPage() {
   return (
-    <PageShell>
-      <div className="mb-5 sm:mb-6">
+    <PageShell fit>
+      <div className="mb-4">
         <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Metas</h1>
       </div>
       <CompanyGoals />

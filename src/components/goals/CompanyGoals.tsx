@@ -778,7 +778,7 @@ export function CompanyGoals() {
   }, [accData, d, savedGoal]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex-1 lg:flex lg:flex-col">
       {!loadingGoal && !hasShops ? (
         <p className="text-xs text-muted-foreground">Nenhum grupo ativo com lojas — a meta da empresa soma o lucro das lojas dos grupos ativos.</p>
       ) : (
@@ -928,14 +928,14 @@ export function CompanyGoals() {
                 </div>
 
                 {/* Chart + coluna lateral */}
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 lg:flex-1">
                   {/* Projeção de lucro acumulado */}
                   {(() => {
                     const acimaDaMeta = d.projecaoFinal >= d.meta;
                     const projColor = acimaDaMeta ? "var(--color-success)" : "var(--color-destructive)";
                     return (
-                      <div className="bg-card border border-border rounded-2xl p-5">
-                        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                      <div className="bg-card border border-border rounded-2xl p-5 flex flex-col">
+                        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
                           <div className="flex items-center gap-3">
                             <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
                               <BarChart3 className="size-4" />
@@ -952,8 +952,8 @@ export function CompanyGoals() {
                         </div>
                         {chartData.length > 0 ? (
                           <>
-                            <div className="group relative">
-                              <ResponsiveContainer width="100%" height={280}>
+                            <div className="group relative flex-1 min-h-[180px]">
+                              <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={chartData} margin={{ top: 44, right: 46, left: -8, bottom: 0 }}>
                                   <defs>
                                     <linearGradient id="lg-goal-progress-grad" x1="0" y1="0" x2="0" y2="1">

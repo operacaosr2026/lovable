@@ -32,7 +32,7 @@ function CaixaIndex() {
   const shopNamesMap = Object.fromEntries(shops.map((s) => [s.id, s.name as string]));
 
   return (
-    <PageShell>
+    <PageShell fit>
       <PageHeader
         title="Caixa"
         subtitle={shops.length > 0 ? `${shops.length} ${shops.length === 1 ? "loja conectada" : "lojas conectadas"}` : undefined}
@@ -53,7 +53,7 @@ function CaixaIndex() {
       ) : tab === "simulador" ? (
         <CaixaSimulator />
       ) : (
-        <LgCashflowView shopIds={shopIds} shopNamesMap={shopNamesMap} simplified standalone />
+        <LgCashflowView shopIds={shopIds} shopNamesMap={shopNamesMap} simplified standalone fill />
       )}
     </PageShell>
   );

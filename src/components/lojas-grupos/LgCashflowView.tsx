@@ -899,7 +899,7 @@ function ManageCategories({ shopId, categories, onClose, onChange }: any) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function LgCashflowView({
-  shopIds, shopNamesMap, simplified, standalone, onManagePayoutDays,
+  shopIds, shopNamesMap, simplified, standalone, fill, onManagePayoutDays,
 }: {
   shopIds:      string[];
   shopNamesMap: Record<string, string>;
@@ -907,6 +907,8 @@ export function LgCashflowView({
   // Cópia isolada: puxa os lançamentos das lojas, mas editar/excluir/conciliar
   // aqui não altera o registro compartilhado usado pela loja/Grupo.
   standalone?: boolean;
+  // Quadro da semana estica até o fim da tela (página Caixa).
+  fill?: boolean;
   // Abre o painel de "Configurações de Repasse" (D+X por loja), quando o
   // card pai (LgCaixa) fornece esse gerenciamento.
   onManagePayoutDays?: () => void;
@@ -1248,7 +1250,7 @@ export function LgCashflowView({
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
   return (
-    <div className="space-y-5">
+    <div className={`space-y-5 ${fill ? "lg:flex-1 lg:min-h-0 lg:flex lg:flex-col" : ""}`}>
       {/* ── 3 KPIs ── */}
       <TooltipProvider delayDuration={150}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1399,14 +1401,15 @@ export function LgCashflowView({
         }}
       >
         <div
-          className="rounded-2xl border border-border bg-surface overflow-x-auto"
+          className={`rounded-2xl border border-border bg-surface overflow-x-auto ${fill ? "lg:flex-1 lg:flex lg:flex-col" : ""}`}
           style={{ scrollbarWidth:"thin", scrollbarColor:"var(--color-border) transparent" }}
         >
           <div
-            className="grid"
+            className={`grid ${fill ? "lg:flex-1 lg:min-h-0" : ""}`}
             style={{
               gridTemplateColumns: dayList.map(d => { const wd=weekdayFromKey(d); return (wd===0||wd===6)?"92px":"minmax(130px,1fr)"; }).join(" "),
-              gridTemplateRows: "auto 170px 170px auto",
+              // fill: entradas/saídas dividem a altura que sobrar (cada uma rola por dentro).
+              gridTemplateRows: fill ? "auto minmax(110px,1fr) minmax(110px,1fr) auto" : "auto 170px 170px auto",
               minWidth: dayList.length * 92,
             }}
           >

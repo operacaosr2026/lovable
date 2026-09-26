@@ -13,6 +13,12 @@ export function PageHeader({
   );
 }
 
-export function PageShell({ children }: { children: ReactNode }) {
-  return <div className="p-4 sm:p-6 md:p-8 max-w-[1400px] mx-auto">{children}</div>;
+// fit: no desktop a página ocupa exatamente a altura da tela (as áreas com
+// flex-1 esticam/encolhem); se o conteúdo não couber, a página rola por dentro.
+export function PageShell({ children, fit }: { children: ReactNode; fit?: boolean }) {
+  return (
+    <div className={`p-4 sm:p-6 max-w-[1400px] mx-auto ${fit ? "md:px-8 md:py-6 lg:h-dvh lg:overflow-y-auto lg:flex lg:flex-col" : "md:p-8"}`}>
+      {children}
+    </div>
+  );
 }

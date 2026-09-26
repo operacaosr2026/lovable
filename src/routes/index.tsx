@@ -146,8 +146,8 @@ function DashKpiCard({
 }) {
   const a = METRIC_ACCENTS[accent];
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 soft-shadow-sm min-w-0 flex flex-col">
-      <div className="flex items-center gap-2.5 mb-3 min-w-0">
+    <div className="rounded-2xl border border-border bg-card p-4 soft-shadow-sm min-w-0 flex flex-col">
+      <div className="flex items-center gap-2.5 mb-2 min-w-0">
         <div className={`size-9 rounded-xl grid place-items-center shrink-0 ${a.chip}`}>
           <Icon className="size-4.5" />
         </div>
@@ -163,13 +163,13 @@ function DashKpiCard({
       </div>
 
       {sparklineKey && (
-        <div className="flex-1 min-h-9 mt-3">
+        <div className="flex-1 min-h-9 mt-2">
           <Sparkline data={chartData} dataKey={sparklineKey} color={a.solid} />
         </div>
       )}
 
       {stats ? (
-        <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 gap-2">
+        <div className="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-2">
           {stats.map((s) => (
             <div key={s.label} className="min-w-0">
               <p className="text-[10px] text-muted-foreground truncate">{s.label}</p>
@@ -182,7 +182,7 @@ function DashKpiCard({
       ) : null}
 
       {shopRows && shopRows.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-border space-y-1">
+        <div className="mt-2 pt-2 border-t border-border space-y-0.5">
           {shopRows.map((r) => (
             <div key={r.shop_id} className="flex items-center justify-between gap-2 text-[11px]">
               <span className="text-muted-foreground truncate">{r.shop_name}</span>
@@ -411,7 +411,7 @@ function PctPill(props: any) {
 }
 
 function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
-  if (loading) return <div className="flex-1 min-h-[240px] bg-muted animate-pulse rounded-xl" />;
+  if (loading) return <div className="flex-1 min-h-[200px] bg-muted animate-pulse rounded-xl" />;
   const months = (data?.months ?? []).map((m) => {
     const projExtra = m.atual && m.projecao != null ? Math.max(0, m.projecao - m.realizado) : 0;
     const pctShown = m.meta > 0 ? ((m.atual && m.projecao != null ? m.projecao : m.realizado) / m.meta) * 100 : 0;
@@ -426,12 +426,12 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
   const yTicks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step);
   const BAR = 44;
   return (
-    <div className="flex-1 min-h-[240px] flex flex-col">
+    <div className="flex-1 min-h-[200px] flex flex-col">
       {months.length === 0 ? (
         <p className="flex-1 grid place-items-center text-xs text-muted-foreground py-8">Nenhuma meta cadastrada ainda.</p>
       ) : (
         <>
-          <div className="flex-1 min-h-[170px]">
+          <div className="flex-1 min-h-[140px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={months} margin={{ top: 26, right: 14, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="22%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
@@ -572,27 +572,28 @@ function OpsTile({ icon: Icon, accent, label, value, hint, loading, onClick, tre
   return (
     <button
       onClick={onClick}
-      className="group bg-card border border-border rounded-2xl p-3 flex items-center gap-3 text-left hover:border-primary/30 transition-colors min-w-0 h-full"
+      className="group bg-card border border-border rounded-2xl px-3 py-2 flex items-center gap-3 text-left hover:border-primary/30 transition-colors min-w-0 h-full"
     >
       <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${METRIC_ACCENTS[accent].chip}`}>
         <Icon className="size-5" />
       </div>
-      <div className="min-w-0 w-[96px] shrink-0">
-        {loading
-          ? <div className="h-6 w-12 bg-muted animate-pulse rounded" />
-          : <p className="text-xl font-bold leading-tight tabular-nums">{value}</p>}
+      <div className="min-w-0 w-[124px] shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {loading
+            ? <div className="h-6 w-12 bg-muted animate-pulse rounded" />
+            : <p className="text-xl font-bold leading-tight tabular-nums">{value}</p>}
+          {delta != null && !loading && (
+            <span className={`inline-flex items-center gap-0.5 px-1 py-0.5 rounded-md text-[10px] font-semibold shrink-0 ${good ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"}`}
+              title="Comparado a 7 dias atrás">
+              {delta > 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+              {delta > 0 ? "+" : ""}{delta.toFixed(0)}%
+            </span>
+          )}
+        </div>
         <p className="text-xs font-medium text-foreground leading-tight truncate">{label}</p>
         {hint && <p className="text-[10px] leading-tight truncate text-destructive font-medium">{hint}</p>}
-        {delta != null && !loading && (
-          <span className={`inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${good ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"}`}
-            title="Comparado a 7 dias atrás">
-            {delta > 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
-            {delta > 0 ? "+" : ""}{delta.toFixed(0)}%
-            <span className="font-normal text-muted-foreground ml-0.5">7d</span>
-          </span>
-        )}
       </div>
-      <div className="flex-1 min-w-0 h-[68px]">
+      <div className="flex-1 min-w-0 h-[50px]">
         {!loading && <MiniTrend data={trend} color={METRIC_ACCENTS[accent].solid} kind={kind} fmt={fmt} gradId={`ops-${label.replace(/\W/g, "")}`} />}
       </div>
       <ChevronRight className="size-4 text-muted-foreground/60 group-hover:text-foreground shrink-0" />
@@ -710,11 +711,11 @@ function Dashboard() {
   const negStop = zeroOffset >= 1 ? activeColor : negColor;
 
   return (
-    <PageShell>
+    <PageShell fit>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+          <h1 className="text-3xl font-bold tracking-tight">
             {greeting}{firstName && <>, <span className="text-gradient-primary">{firstName}</span></>}
           </h1>
         </div>
@@ -777,9 +778,9 @@ function Dashboard() {
       </div>
 
       {/* ── Gráfico principal · Composição ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,290px)] gap-4 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,290px)] gap-4 items-stretch lg:flex-1">
         <div className="bg-card border border-border rounded-2xl p-5 min-w-0 flex flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5">
               <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
                 <BarChart3 className="size-4.5" />
@@ -806,9 +807,9 @@ function Dashboard() {
           {activeTab === "metas" ? (
             <GoalsHistoryChart data={goalsHistory.data} loading={goalsHistory.isLoading} />
           ) : isLoading ? (
-            <div className="flex-1 min-h-[240px] bg-muted animate-pulse rounded-xl" />
+            <div className="flex-1 min-h-[200px] bg-muted animate-pulse rounded-xl" />
           ) : (
-            <div className="flex-1 min-h-[240px]">
+            <div className="flex-1 min-h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
@@ -856,7 +857,7 @@ function Dashboard() {
           ) : (
             <>
               {/* Donut ocupa o espaço livre do card (a linha é tão alta quanto a coluna de indicadores) */}
-              <div className="relative flex-1 min-h-[200px] max-h-[280px]">
+              <div className="relative flex-1 min-h-[150px] max-h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius="64%" outerRadius="94%" paddingAngle={2} strokeWidth={0}>
@@ -880,7 +881,7 @@ function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div className="mt-4 space-y-2.5">
+              <div className="mt-3 space-y-2">
                 {slices.map((s) => (
                   <div key={s.shop_id} className="flex items-center gap-2 text-xs">
                     <span className="size-2.5 rounded-full shrink-0" style={{ background: s.color }} />
@@ -896,7 +897,7 @@ function Dashboard() {
         </div>
 
         {/* Operação: tarefas + indicadores do Rastreamento (com evolução de 7 dias) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5 min-w-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-5 gap-2.5 min-w-0">
           <OpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes"
             value={openTasks.length} hint={overdueTasks ? `${overdueTasks} atrasada${overdueTasks === 1 ? "" : "s"}` : undefined}
             loading={tasksLoading} onClick={() => navigate({ to: "/tarefas" })}
