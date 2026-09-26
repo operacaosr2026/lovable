@@ -1242,7 +1242,10 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
 // pelos dias do mês (no mês corrente, pelos dias até hoje) e cada dia fica com
 // a sua parte. Assim um chargeback grande não derruba o lucro de um dia só — o
 // lucro do dia serve pra ver se as campanhas estão indo bem — e a soma do mês
-// continua igual ao total real. Mesmo formato de getGroupRefundsAndChargebacks
+// continua igual ao total real. A diluição vai só até 2 dias atrás: hoje e
+// ontem ficam sem desconto (o total do mês até agora é dividido pelos dias
+// até D-2); no dia 1º e 2 o mês ainda não tem dia pra receber e fica sem
+// desconto até o dia 3. Mês fechado divide pelo mês todo, igual. Mesmo formato de getGroupRefundsAndChargebacks
 // em `rows`; `monthTotals` traz o total real de cada mês ("YYYY-MM").
 function addDayISO(d: string, n: number) {
   const dt = new Date(`${d}T00:00:00Z`);
@@ -1254,6 +1257,7 @@ export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
 ) => {
   const today = isoTodayUS();
   const end = toISO < today ? toISO : today;
+  const lastDiluted = addDayISO(today, -2);
   const byShop = new Map(shopIds.map((id) => [id, {
     shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number>,
   }]));
@@ -1271,7 +1275,8 @@ export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
     return { m, mStart, rows: await getGroupRefundsAndChargebacks(ownerId, shopIds, mStart, monthEndCapped(m, today)) };
   }));
   for (const { m, mStart, rows } of monthly) {
-    const mEnd = monthEndCapped(m, today);
+    // Mês fechado: divide pelo mês todo. Mês corrente: só até D-2.
+    const mEnd = m < today.slice(0, 7) ? monthEndCapped(m, today) : monthEndCapped(m, lastDiluted);
     const nDays = Math.round((Date.parse(`${mEnd}T00:00:00Z`) - Date.parse(`${mStart}T00:00:00Z`)) / 86_400_000) + 1;
     const pStart = fromISO > mStart ? fromISO : mStart;
     const pEnd = end < mEnd ? end : mEnd;
@@ -1279,6 +1284,7 @@ export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
       reembolsos: rows.reduce((t: number, r: any) => t + r.refAmt, 0),
       chargebacks: rows.reduce((t: number, r: any) => t + r.cbAmt, 0),
     };
+    if (nDays <= 0) continue;
     for (const r of rows) {
       const row = byShop.get(r.shop_id)!;
       const refDay = r.refAmt / nDays, cbDay = r.cbAmt / nDays;
