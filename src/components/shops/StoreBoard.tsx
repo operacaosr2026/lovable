@@ -316,7 +316,7 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
-      <div className="flex gap-3 overflow-x-auto pb-1 items-stretch flex-1 min-h-0">
+      <div className="flex gap-2.5 overflow-x-auto pb-1 items-stretch flex-1 min-h-0">
         <SortableContext items={shownColumns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
           {shownColumns.map((col) => (
             <BoardColumn
@@ -474,15 +474,15 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
     <div
       ref={setNodeRef}
       style={style}
-      className="group/col flex flex-col rounded-2xl border border-border bg-card flex-1 min-w-[250px] min-h-0 overflow-hidden"
+      className="group/col @container flex flex-col rounded-2xl border border-border bg-card flex-1 min-w-[170px] min-h-0 overflow-hidden"
     >
       {/* Cabeçalho (arrasta a coluna) */}
       <div
         {...attributes}
         {...listeners}
-        className={`flex items-start gap-3 px-4 py-3.5 border-b border-border ${tone.head} ${isPending ? "cursor-wait" : "cursor-grab active:cursor-grabbing"}`}
+        className={`flex items-start gap-2 px-3 py-3 border-b border-border ${tone.head} ${isPending ? "cursor-wait" : "cursor-grab active:cursor-grabbing"}`}
       >
-        <div className="size-6 grid place-items-center shrink-0 mt-0.5"><ToneIcon tone={tone} /></div>
+        <div className="size-5 grid place-items-center shrink-0 mt-0.5"><ToneIcon tone={tone} className="size-4.5" /></div>
         <div className="flex-1 min-w-0">
           {renaming ? (
             <input
@@ -498,7 +498,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
               className="w-full bg-transparent text-[15px] font-bold outline-none border-b border-primary/50"
             />
           ) : (
-            <p className={`text-[15px] font-bold text-foreground truncate ${isPending ? "opacity-50" : ""}`}>{column.name}</p>
+            <p className={`text-[13px] @[230px]:text-[15px] font-bold text-foreground truncate ${isPending ? "opacity-50" : ""}`}>{column.name}</p>
           )}
           <p className="text-[11px] text-muted-foreground truncate" title={functions.join(", ")}>
             {tone.desc ?? (functions.join(", ") || "Etapa da esteira")}
@@ -509,7 +509,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
             <DropdownMenuTrigger asChild>
               <button
                 disabled={isPending}
-                className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-background/70 hover:text-foreground opacity-0 group-hover/col:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                className="size-6 rounded-md grid place-items-center text-muted-foreground hover:bg-background/70 hover:text-foreground opacity-0 group-hover/col:opacity-100 data-[state=open]:opacity-100 transition-opacity"
                 title="Opções da coluna"
               >
                 <MoreHorizontal className="size-4" />
@@ -556,7 +556,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <span className="min-w-7 h-7 px-2 rounded-full bg-background/80 border border-border/60 grid place-items-center text-xs font-semibold tabular-nums text-foreground">
+          <span className="min-w-6 h-6 px-1.5 rounded-full bg-background/80 border border-border/60 grid place-items-center text-xs font-semibold tabular-nums text-foreground">
             {stores.length}
           </span>
         </div>
@@ -564,7 +564,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
 
       <div
         ref={setDropRef}
-        className={`flex-1 min-h-[160px] overflow-y-auto p-3 space-y-3 transition-colors ${isOver ? "bg-primary/5" : tone.body}`}
+        className={`flex-1 min-h-[160px] overflow-y-auto p-2 space-y-2 transition-colors ${isOver ? "bg-primary/5" : tone.body}`}
       >
         <SortableContext items={stores.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           {stores.map((s) => (
@@ -573,7 +573,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
         </SortableContext>
 
         {stores.length === 0 ? (
-          <div className="rounded-xl border border-border bg-card px-4 py-6 text-center">
+          <div className="rounded-xl border border-border bg-card px-3 py-5 text-center">
             <Store3 className="size-8 text-muted-foreground/60 mx-auto mb-3" />
             <p className="text-sm font-semibold text-foreground/80">Nenhuma loja nesta etapa</p>
             <p className="text-xs text-muted-foreground mt-1">Arraste uma loja para cá<br />ou adicione uma nova.</p>
@@ -605,7 +605,8 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
 
 function ShopifyMark({ muted }: { muted?: boolean }) {
   return (
-    <div className={`size-9 rounded-lg grid place-items-center shrink-0 ${muted ? "bg-muted text-muted-foreground" : "bg-[#95BF47]/15 text-[#5E8E3E]"}`}>
+    // Some quando a coluna fica estreita, pra sobrar espaço pro nome.
+    <div className={`size-8 rounded-lg hidden @[230px]:grid place-items-center shrink-0 ${muted ? "bg-muted text-muted-foreground" : "bg-[#95BF47]/15 text-[#5E8E3E]"}`}>
       <ShoppingBag className="size-[18px]" strokeWidth={2.2} />
     </div>
   );
@@ -635,9 +636,9 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
       style={style}
       {...(dragging ? {} : attributes)}
       {...(dragging ? {} : listeners)}
-      className={`rounded-xl bg-card border border-border border-l-4 ${t.stripe} p-3.5 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow ${store.is_placeholder ? "border-dashed" : ""} ${dragging ? "shadow-xl w-[280px]" : ""}`}
+      className={`rounded-xl bg-card border border-border border-l-4 ${t.stripe} p-2.5 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow ${store.is_placeholder ? "border-dashed" : ""} ${dragging ? "shadow-xl w-[280px]" : ""}`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2.5">
         <ShopifyMark muted={store.is_placeholder} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-foreground truncate">{store.name || domain || "Nova loja"}</div>
@@ -655,7 +656,7 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="size-7 rounded-md grid place-items-center text-primary hover:bg-primary/10"
+                className="size-6 rounded-md grid place-items-center text-primary hover:bg-primary/10"
                 title="Abrir loja"
               >
                 <ExternalLink className="size-4" />
@@ -664,7 +665,7 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
             {onEdit && (
               <button
                 onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="size-6 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground"
                 title="Editar loja"
               >
                 <MoreVertical className="size-4" />
@@ -674,12 +675,12 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
         )}
       </div>
       {!dragging && !store.is_placeholder && features && features.length > 0 && (
-        <div className="mt-3 flex flex-col gap-2" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <div className="mt-2.5 flex flex-col gap-1.5" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           {features.includes("hold") && <FeatureBadge feature="hold" store={store} />}
           {/* Média de pedidos e tempo de payout sempre lado a lado — são as
               duas métricas mais lidas de relance no board. */}
           {(features.includes("avg_orders") || features.includes("payout_time")) && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               {features.includes("avg_orders") && <FeatureBadge feature="avg_orders" store={store} />}
               {features.includes("payout_time") && <FeatureBadge feature="payout_time" store={store} />}
             </div>
@@ -699,7 +700,7 @@ function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
     return (
       <button
         onClick={() => setAdding(true)}
-        className="w-11 shrink-0 rounded-2xl border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/40 grid place-items-center"
+        className="w-8 shrink-0 rounded-2xl border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/40 grid place-items-center"
         title="Nova coluna"
       >
         <Plus className="size-4" />
@@ -747,8 +748,8 @@ function fmtMoney(amount: number, currency: string | null) {
 // Caixinha de métrica: número em destaque + legenda embaixo.
 function MetricBox({ icon: Icon, value, label }: { icon: any; value: React.ReactNode; label: string }) {
   return (
-    <div className="rounded-lg bg-muted/60 px-2.5 py-2 flex items-center gap-2 min-w-0">
-      <Icon className="size-4 text-muted-foreground shrink-0" />
+    <div className="rounded-lg bg-muted/60 px-2 py-1.5 flex items-center gap-2 min-w-0">
+      <Icon className="size-4 text-muted-foreground shrink-0 hidden @[230px]:block" />
       <div className="min-w-0">
         <p className="text-sm font-bold text-foreground leading-tight tabular-nums">{value}</p>
         <p className="text-[10px] text-muted-foreground leading-tight truncate">{label}</p>
@@ -774,7 +775,7 @@ function HoldBadge({ storeId }: { storeId: string }) {
   });
   const warn = !!data && data.amount > 0;
   return (
-    <div className={`rounded-lg px-3 py-2.5 flex items-center gap-2 text-xs font-medium ${warn ? "bg-orange-500/10 text-orange-700 dark:text-orange-300" : "bg-muted/60 text-muted-foreground"}`}>
+    <div className={`rounded-lg px-2.5 py-2 flex items-center gap-2 text-xs font-medium ${warn ? "bg-orange-500/10 text-orange-700 dark:text-orange-300" : "bg-muted/60 text-muted-foreground"}`}>
       <Clock className="size-4 shrink-0" />
       {isLoading ? "..." : !data ? "-" : `${fmtMoney(data.amount, data.currency)} em hold`}
     </div>

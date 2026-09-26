@@ -150,8 +150,8 @@ function BancoDeLojasIndex() {
       {/* ── Resumo por etapa ── */}
       {!isLoading && stores.length > 0 && (
         <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: `repeat(${Math.min(kpiColumns.length + 1, 6)}, minmax(0, 1fr))` }}>
-          <div className="rounded-2xl border border-border bg-card px-4 py-3.5 flex items-center gap-3 min-w-0">
-            <div className="size-11 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Store className="size-5" /></div>
+          <div className="rounded-2xl border border-border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0">
+            <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Store className="size-5" /></div>
             <div className="min-w-0">
               <p className="text-xl font-bold leading-tight tabular-nums">{connectedCount}</p>
               <p className="text-sm text-muted-foreground truncate">Lojas conectadas</p>
@@ -170,16 +170,16 @@ function BancoDeLojasIndex() {
               <button
                 key={c.id}
                 onClick={() => setColumnFilter(columnFilter === c.id ? null : c.id)}
-                className={`rounded-2xl border bg-card px-4 py-3.5 flex items-center gap-3 min-w-0 text-left transition-colors ${columnFilter === c.id ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:border-primary/30"}`}
+                className={`rounded-2xl border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0 text-left transition-colors ${columnFilter === c.id ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:border-primary/30"}`}
                 title="Filtrar por esta etapa"
               >
-                <div className={`size-11 rounded-full grid place-items-center shrink-0 ${tone.chip}`}><ToneIcon tone={tone} className="size-5" /></div>
+                <div className={`size-10 rounded-full grid place-items-center shrink-0 ${tone.chip}`}><ToneIcon tone={tone} className="size-5" /></div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xl font-bold leading-tight tabular-nums">{n}</p>
-                  <p className="text-sm text-muted-foreground truncate">{c.name}</p>
+                  <p className="text-[13px] text-muted-foreground truncate" title={c.name}>{c.name}</p>
                 </div>
-                <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${pill.cls}`}>
-                  <pill.Icon className="size-3.5" /> {pct}%
+                <span className={`shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] font-semibold ${pill.cls}`}>
+                  <pill.Icon className="size-3" /> {pct}%
                 </span>
               </button>
             );
