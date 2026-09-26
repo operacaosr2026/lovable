@@ -99,7 +99,8 @@ function LgCardDetail() {
   const selectAll = () => setSelectedShopIds([]);
 
   return (
-    <PageShell>
+    // Na subaba Caixa o quadro da semana ocupa a altura da tela (como na página Caixa).
+    <PageShell fit={tab === "caixa"}>
       {/* Breadcrumb + header */}
       {/* flex-wrap: em mobile, "Lojas e Grupos" + seletor de lojas sozinhos já
           ocupam a largura toda, espremendo o nome do card a quase zero

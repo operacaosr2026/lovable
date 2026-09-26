@@ -52,7 +52,7 @@ export function LgCaixa({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -104,6 +104,7 @@ export function LgCaixa({
         shopIds={shopIds}
         shopNamesMap={Object.fromEntries(shops.map((s) => [s.id, s.name]))}
         simplified
+        fill
         onManagePayoutDays={() => setOpen(true)}
       />
     </div>
