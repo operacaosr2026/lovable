@@ -9,8 +9,9 @@ import {
   RefreshCw, DollarSign, Percent, Shield, Megaphone,
   Users, TrendingUp, Package, ShoppingCart,
   Tag, ChevronDown, Info, ArrowUpRight, ArrowDownRight,
-  BarChart3, CalendarDays,
+  BarChart3, CalendarDays, Target,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
@@ -20,8 +21,9 @@ import {
 } from "@/lib/shop-orders.functions";
 import { syncMetaAdsSpend } from "@/lib/meta-ads.functions";
 import {
-  getLgCurrencyRates, saveLgCurrencyRates,
+  getLgCurrencyRates, saveLgCurrencyRates, getLgCardQuickMetrics,
 } from "@/lib/lg-cards.functions";
+import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { toast } from "sonner";
 import { isoTodayUS, US_TIME_ZONE, localDateKey } from "@/lib/timezone";
 
@@ -583,9 +585,9 @@ export function LgDashboard({
         />
       </div>
 
-      {/* ── Chart + Custos Adicionais ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
-        <div className="bg-card border border-border rounded-2xl p-5">
+      {/* ── Chart + Custos Adicionais + Meta do mês ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-stretch">
+        <div className="bg-card border border-border rounded-2xl p-5 flex flex-col min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div>
               <SectionLabel>Evolução</SectionLabel>
@@ -610,7 +612,9 @@ export function LgDashboard({
           {chartLoading ? (
             <div className="h-[220px] bg-muted animate-pulse rounded-xl" />
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
+            // Estica até a altura da coluna ao lado (custos + meta do mês).
+            <div className="flex-1 min-h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <defs>
                   {CHART_LINES.map(({ key, color }) => {
@@ -655,9 +659,11 @@ export function LgDashboard({
                 )}
               </AreaChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
 
+        <div className="flex flex-col gap-4 min-w-0">
         {/* Custos Adicionais */}
         <div className="bg-card border border-border rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
@@ -689,6 +695,8 @@ export function LgDashboard({
               </div>
             ))}
           </div>
+        </div>
+        <MonthGoalCard cardId={cardId} fmt={fmt} />
         </div>
       </div>
 
@@ -779,6 +787,68 @@ export function LgDashboard({
           from={from} to={to} prevFrom={prevFrom} prevTo={prevTo}
           currency={currency} currencyRate={currencyRate}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Meta do mês (da empresa) + quanto este grupo já trouxe ───────────────────
+
+const MONTHS_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+function MonthGoalCard({ cardId, fmt }: { cardId: string; fmt: (n: number) => string }) {
+  const goalsFn = useServerFn(listCompanyGoals);
+  const cardMetricsFn = useServerFn(getLgCardQuickMetrics);
+  // Mesmas chaves da página Metas e da lista de Lojas e Grupos (cache compartilhado).
+  const goals = useQuery({ queryKey: ["company-goals"], queryFn: () => goalsFn() });
+  const card = useQuery({ queryKey: ["lg-card-metrics", cardId], queryFn: () => cardMetricsFn({ data: { card_id: cardId } }) });
+
+  const g = goals.data?.goals.find((x) => x.status === "em_andamento");
+  const monthName = MONTHS_PT[Number(isoTodayUS().slice(5, 7)) - 1];
+  const realizado = g?.realizado ?? 0;
+  const pct = g && g.meta > 0 ? (realizado / g.meta) * 100 : 0;
+  const projPct = g && g.meta > 0 && g.projecao != null ? (g.projecao / g.meta) * 100 : null;
+  const tone = (v: number) => (v >= 100 ? "text-success" : v >= 70 ? "text-amber-600" : "text-destructive");
+  const bar = pct >= 100 ? "bg-success" : pct >= 70 ? "bg-amber-500" : "bg-destructive";
+  const grupoLucro = card.data?.lucro ?? null;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 flex-1 flex flex-col">
+      <div className="flex items-center gap-2 mb-3">
+        <MetricIcon color="primary"><Target className="size-4" /></MetricIcon>
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">Meta de {monthName}</p>
+          <p className="text-lg font-bold text-foreground tabular-nums">{goals.isLoading ? "—" : g ? fmt(g.meta) : "Sem meta"}</p>
+        </div>
+      </div>
+      {goals.isLoading ? (
+        <div className="h-16 bg-muted animate-pulse rounded-xl" />
+      ) : !g ? (
+        <p className="text-xs text-muted-foreground">
+          Nenhuma meta cadastrada para este mês. <Link to="/metas" className="text-primary hover:underline">Definir meta</Link>
+        </p>
+      ) : (
+        <>
+          <div className="flex items-baseline justify-between gap-2 mb-1.5">
+            <span className={`text-sm font-bold tabular-nums ${tone(pct)}`}>{pct.toFixed(0)}%</span>
+            <span className="text-[11px] text-muted-foreground tabular-nums">{fmt(realizado)} de lucro</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
+            <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+          </div>
+          <div className="space-y-0.5">
+            {[
+              { label: "Projeção no mês", value: g.projecao != null ? fmt(g.projecao) : "—", extra: projPct != null ? `${projPct.toFixed(0)}%` : null, cls: projPct != null ? tone(projPct) : "" },
+              { label: "Este grupo", value: grupoLucro != null ? fmt(grupoLucro) : "—", extra: grupoLucro != null && realizado > 0 ? `${((grupoLucro / realizado) * 100).toFixed(0)}% do total` : null, cls: "text-muted-foreground" },
+            ].map((r) => (
+              <div key={r.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
+                <span className="text-xs text-muted-foreground flex-1">{r.label}</span>
+                <span className="text-xs font-medium text-foreground tabular-nums">{r.value}</span>
+                {r.extra && <span className={`text-[10px] font-semibold tabular-nums ${r.cls}`}>{r.extra}</span>}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
