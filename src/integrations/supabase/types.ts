@@ -119,6 +119,7 @@ export type Database = {
           is_read: boolean;
           has_attachment: boolean;
           content_html: string | null;
+          content_pt: string | null;
           ai_checked: boolean;
           created_at: string;
         };
@@ -139,6 +140,7 @@ export type Database = {
           is_read?: boolean;
           has_attachment?: boolean;
           content_html?: string | null;
+          content_pt?: string | null;
           ai_checked?: boolean;
           created_at?: string;
         };
@@ -159,6 +161,7 @@ export type Database = {
           is_read?: boolean;
           has_attachment?: boolean;
           content_html?: string | null;
+          content_pt?: string | null;
           ai_checked?: boolean;
           created_at?: string;
         };

@@ -10,7 +10,7 @@ const SKIP = new Set([
   "syncShopifyOrders", "syncShopifyPaymentsFees", "syncMetaAdsSpend", "syncMetaAdsActivities",
   "syncShopifyVisitors", "syncOrderPaymentTasks", "syncShopifyPayouts", "syncTrack123ForShops",
   "seedKanbanColumns", "testMetaAdsConnection", "testTrack123Sync", "createMetaOAuthUrl",
-  "syncSupportInbox", "markConversationRead", "uploadSupportAttachment",
+  "syncSupportInbox", "markConversationRead", "uploadSupportAttachment", "translateSupportMessage",
 ]);
 
 const LABELS: Record<string, string> = {

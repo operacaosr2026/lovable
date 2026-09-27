@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import type { SupportConversation, SupportMessage, SupportStatus } from "@/lib/atendimento.functions";
+import { translateSupportMessage, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
 
 // Modo demonstração do Atendimento (/atendimento?demo=1): um "backend" em
 // memória com clientes e e-mails fictícios que responde às mesmas chamadas das
@@ -323,6 +323,16 @@ const demoApi = {
     };
   },
 
+  // Tradução usa a IA de verdade (manda só o texto do e-mail fictício).
+  translateSupportMessage: async ({ data }: { data: { id: string } }) => {
+    const m = db().messages.find((x) => x.id === data.id);
+    if (!m) throw new Error("E-mail não encontrado");
+    const text = (m.content_html ?? m.summary ?? "")
+      .replace(/<blockquote[\s\S]*?<\/blockquote>|<div class="gmail_quote"[\s\S]*$/gi, " ")
+      .replace(/<br\s*\/?>|<\/p>/gi, "\n").replace(/<[^>]+>/g, " ")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/[ \t]+/g, " ").trim();
+    return translateSupportMessage({ data: { text } });
+  },
   getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
   saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {
     await wait();

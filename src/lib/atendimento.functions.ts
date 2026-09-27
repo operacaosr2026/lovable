@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { supportAiAvailable } from "@/lib/support-ai.server";
+import { emailText, supportAiAvailable, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -181,7 +181,7 @@ export const findEmailsByOrder = createServerFn({ method: "GET" })
 export type SupportMessage = {
   id: string; message_id: string; folder_id: string; direction: "in" | "out"; from_email: string | null;
   from_name: string | null; to_emails: string | null; subject: string | null; summary: string | null;
-  sent_at: string; is_read: boolean; has_attachment: boolean; content_html: string | null;
+  sent_at: string; is_read: boolean; has_attachment: boolean; content_html: string | null; content_pt?: string | null;
   attachments: { id: string; name: string; size: number }[];
 };
 
@@ -195,7 +195,7 @@ export const getSupportConversation = createServerFn({ method: "GET" })
       .eq("id", data.id).eq("owner_id", ownerId).maybeSingle();
     if (!conv) throw new Error("Conversa não encontrada");
     const { data: rows } = await supabaseAdmin.from("support_messages")
-      .select("id,message_id,folder_id,direction,from_email,from_name,to_emails,subject,summary,sent_at,is_read,has_attachment,content_html")
+      .select("id,message_id,folder_id,direction,from_email,from_name,to_emails,subject,summary,sent_at,is_read,has_attachment,content_html,content_pt")
       .eq("conversation_id", data.id).eq("owner_id", ownerId).order("sent_at", { ascending: false }).limit(30);
     const msgs = (rows ?? []).reverse();
 
@@ -278,6 +278,39 @@ export const updateSupportConversations = createServerFn({ method: "POST" })
         supabaseAdmin.from("support_conversations").update({ ai_tags: c.ai_tags.filter((t) => kept.includes(t)) }).eq("id", c.id)));
     }
     return { ok: true };
+  });
+
+// Tradução pro português (botão 🌐). Com id: e-mail salvo (tradução guardada
+// no banco). Com text: texto solto (modo de exemplo).
+const TRANSLATE_LIMIT = 20_000;
+export const translateSupportMessage = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid().optional(),
+    text: z.string().max(TRANSLATE_LIMIT).optional(),
+  }).refine((v) => v.id || v.text, "Informe o e-mail").parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    if (!supportAiAvailable()) throw new Error("Tradução indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
+    if (!data.id) return { text: await translateToPortuguese(data.text!), truncated: false };
+
+    const { ownerId } = context;
+    const { data: m } = await supabaseAdmin.from("support_messages")
+      .select("id,message_id,folder_id,content_html,content_pt").eq("id", data.id).eq("owner_id", ownerId).maybeSingle();
+    if (!m) throw new Error("E-mail não encontrado");
+    if (m.content_pt) return { text: m.content_pt, truncated: false };
+    let html = m.content_html;
+    if (html == null) {
+      const acc = await requireAccount(ownerId);
+      html = await fetchMessageContent(acc, m.folder_id, m.message_id);
+      await supabaseAdmin.from("support_messages").update({ content_html: html }).eq("id", m.id);
+    }
+    const full = emailText(html, Number.MAX_SAFE_INTEGER);
+    const truncated = full.length > TRANSLATE_LIMIT;
+    let text = await translateToPortuguese(full.slice(0, TRANSLATE_LIMIT));
+    if (truncated) text += "\n\n[E-mail muito longo: traduzido só o início.]";
+    await supabaseAdmin.from("support_messages").update({ content_pt: text }).eq("id", m.id);
+    return { text, truncated };
   });
 
 // ─── Envio ────────────────────────────────────────────────────────────────────

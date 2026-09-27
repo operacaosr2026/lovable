@@ -2,10 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Check, ChevronDown, Copy, Download, ExternalLink, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag,
+  ArrowLeft, Check, ChevronDown, Copy, Download, ExternalLink, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag,
 } from "lucide-react";
 import {
-  getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, updateSupportConversations,
+  getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
   SUPPORT_STATUSES, type SupportConversation, type SupportMessage, type SupportStatus,
 } from "@/lib/atendimento.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -193,11 +193,52 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged }
 
 function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
   const out = m.direction === "out";
+  const translateFn = useSupportFn(translateSupportMessage, "translateSupportMessage");
+  // Tradução pro português: guardada no banco depois da 1ª vez (content_pt).
+  const [pt, setPt] = useState<string | null>(m.content_pt ?? null);
+  const [showPt, setShowPt] = useState(false);
+  const [translating, setTranslating] = useState(false);
+
+  const toggleTranslation = async () => {
+    if (showPt) return setShowPt(false);
+    if (pt) return setShowPt(true);
+    setTranslating(true);
+    try {
+      const r = await translateFn({ data: { id: m.id } });
+      setPt(r.text);
+      setShowPt(true);
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao traduzir");
+    } finally {
+      setTranslating(false);
+    }
+  };
+
   return (
     <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[88%] sm:max-w-[80%] rounded-2xl px-4 py-3 ${out ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"}`}>
-        {m.subject && <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 truncate">{m.subject}</p>}
-        {m.content_html != null
+      <div className={`group/bubble relative max-w-[88%] sm:max-w-[80%] rounded-2xl px-4 py-3 ${out ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"}`}>
+        <div className="flex items-start gap-2 mb-1.5">
+          <p className="flex-1 min-w-0 text-[11px] font-semibold text-muted-foreground truncate">{m.subject}</p>
+          <button
+            onClick={toggleTranslation}
+            disabled={translating}
+            title={showPt ? "Ver original" : "Traduzir para português"}
+            className={`-mt-1 -mr-2 h-6 px-1.5 rounded-md flex items-center gap-1 text-[10px] font-medium shrink-0 transition-colors ${
+              showPt ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-background/70"
+            }`}
+          >
+            {translating ? <Loader2 className="size-3.5 animate-spin" /> : <Languages className="size-3.5" />}
+            {showPt ? "PT" : null}
+          </button>
+        </div>
+        {showPt && pt ? (
+          <div>
+            <p className="text-sm whitespace-pre-wrap leading-relaxed">{pt}</p>
+            <button onClick={() => setShowPt(false)} className="mt-2 text-[10px] text-primary hover:underline">
+              Traduzido para o português · ver original
+            </button>
+          </div>
+        ) : m.content_html != null
           ? <EmailFrame html={m.content_html} color={fg} />
           : <p className="text-sm whitespace-pre-wrap">{m.summary}</p>}
         {m.attachments.length > 0 && (
