@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
-  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare,
+  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -30,6 +30,7 @@ const navItems: NavItem[] = [
   { to: "/shops/caixa", label: "Caixa", icon: Wallet, section: "caixa" },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
+  { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
   { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
 ];
 
@@ -52,6 +53,7 @@ const ALL_PAGES = [
   { to: "/shops/caixa", label: "Caixa", icon: Wallet },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
+  { to: "/atendimento", label: "Atendimento", icon: Headphones },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];

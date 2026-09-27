@@ -18,6 +18,7 @@ export const SECTIONS = [
   "caixa",
   "banco_lojas",
   "lojas_grupos",
+  "atendimento",
   // Sino de notificações.
   "notificacoes",
   // Subabas de Lojas e Grupos (grupo aberto).

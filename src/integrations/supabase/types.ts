@@ -8,6 +8,222 @@ export type Database = {
   };
   public: {
     Tables: {
+      support_conversations: {
+        Row: {
+          id: string;
+          owner_id: string;
+          customer_email: string;
+          customer_name: string | null;
+          subject: string | null;
+          summary: string | null;
+          last_message_at: string | null;
+          last_inbound_at: string | null;
+          last_outbound_at: string | null;
+          message_count: number;
+          unread_count: number;
+          status: string;
+          resolved_at: string | null;
+          favorite: boolean;
+          tags: string[];
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          customer_email: string;
+          customer_name?: string | null;
+          subject?: string | null;
+          summary?: string | null;
+          last_message_at?: string | null;
+          last_inbound_at?: string | null;
+          last_outbound_at?: string | null;
+          message_count?: number;
+          unread_count?: number;
+          status?: string;
+          resolved_at?: string | null;
+          favorite?: boolean;
+          tags?: string[];
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          customer_email?: string;
+          customer_name?: string | null;
+          subject?: string | null;
+          summary?: string | null;
+          last_message_at?: string | null;
+          last_inbound_at?: string | null;
+          last_outbound_at?: string | null;
+          message_count?: number;
+          unread_count?: number;
+          status?: string;
+          resolved_at?: string | null;
+          favorite?: boolean;
+          tags?: string[];
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      support_messages: {
+        Row: {
+          id: string;
+          owner_id: string;
+          conversation_id: string;
+          message_id: string;
+          folder_id: string;
+          thread_id: string | null;
+          direction: string;
+          from_email: string | null;
+          from_name: string | null;
+          to_emails: string | null;
+          subject: string | null;
+          summary: string | null;
+          sent_at: string;
+          is_read: boolean;
+          has_attachment: boolean;
+          content_html: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          conversation_id: string;
+          message_id: string;
+          folder_id: string;
+          thread_id?: string | null;
+          direction: string;
+          from_email?: string | null;
+          from_name?: string | null;
+          to_emails?: string | null;
+          subject?: string | null;
+          summary?: string | null;
+          sent_at: string;
+          is_read?: boolean;
+          has_attachment?: boolean;
+          content_html?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          conversation_id?: string;
+          message_id?: string;
+          folder_id?: string;
+          thread_id?: string | null;
+          direction?: string;
+          from_email?: string | null;
+          from_name?: string | null;
+          to_emails?: string | null;
+          subject?: string | null;
+          summary?: string | null;
+          sent_at?: string;
+          is_read?: boolean;
+          has_attachment?: boolean;
+          content_html?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      zoho_mail_accounts: {
+        Row: {
+          owner_id: string;
+          client_id: string;
+          client_secret: string;
+          refresh_token: string | null;
+          access_token: string | null;
+          access_token_expires_at: string | null;
+          accounts_server: string;
+          mail_api_base: string;
+          account_id: string | null;
+          email: string | null;
+          display_name: string | null;
+          inbox_folder_id: string | null;
+          sent_folder_id: string | null;
+          last_sync_at: string | null;
+          last_sync_error: string | null;
+          connected_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          owner_id: string;
+          client_id: string;
+          client_secret: string;
+          refresh_token?: string | null;
+          access_token?: string | null;
+          access_token_expires_at?: string | null;
+          accounts_server?: string;
+          mail_api_base?: string;
+          account_id?: string | null;
+          email?: string | null;
+          display_name?: string | null;
+          inbox_folder_id?: string | null;
+          sent_folder_id?: string | null;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          connected_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          owner_id?: string;
+          client_id?: string;
+          client_secret?: string;
+          refresh_token?: string | null;
+          access_token?: string | null;
+          access_token_expires_at?: string | null;
+          accounts_server?: string;
+          mail_api_base?: string;
+          account_id?: string | null;
+          email?: string | null;
+          display_name?: string | null;
+          inbox_folder_id?: string | null;
+          sent_folder_id?: string | null;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          connected_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      zoho_oauth_states: {
+        Row: {
+          state: string;
+          owner_id: string;
+          client_id: string;
+          client_secret: string;
+          redirect_uri: string;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          state: string;
+          owner_id: string;
+          client_id: string;
+          client_secret: string;
+          redirect_uri: string;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: {
+          state?: string;
+          owner_id?: string;
+          client_id?: string;
+          client_secret?: string;
+          redirect_uri?: string;
+          expires_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       audit_log: {
         Row: {
           action: string;
@@ -3731,6 +3947,13 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      shop_order_ids_by_email: {
+        Args: {
+          p_email: string;
+          p_user_id: string;
+        };
+        Returns: string[];
+      };
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];

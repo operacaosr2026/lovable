@@ -16,6 +16,7 @@ import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as MetasRouteImport } from "./routes/metas";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as GratitudeRouteImport } from "./routes/gratitude";
+import { Route as AtendimentoRouteImport } from "./routes/atendimento";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
 import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
@@ -39,7 +40,10 @@ import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco
 import { Route as ShopsSopsProcessIdRouteImport } from "./routes/shops.sops.$processId";
 import { Route as ShopsProductsProductIdRouteImport } from "./routes/shops.products.$productId";
 import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas-grupos.$cardId";
+import { Route as ApiAtendimentoAttachmentRouteImport } from "./routes/api/atendimento/attachment";
+import { Route as ApiPublicZohoCallbackRouteImport } from "./routes/api/public/zoho/callback";
 import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
+import { Route as ApiPublicHooksZohoMailSyncRouteImport } from "./routes/api/public/hooks/zoho-mail-sync";
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
 import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
@@ -80,6 +84,11 @@ const LoginRoute = LoginRouteImport.update({
 const GratitudeRoute = GratitudeRouteImport.update({
   id: "/gratitude",
   path: "/gratitude",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AtendimentoRoute = AtendimentoRouteImport.update({
+  id: "/atendimento",
+  path: "/atendimento",
   getParentRoute: () => rootRouteImport,
 } as any);
 const IndexRoute = IndexRouteImport.update({
@@ -197,10 +206,27 @@ const ShopsLojasGruposCardIdRoute = ShopsLojasGruposCardIdRouteImport.update({
   path: "/$cardId",
   getParentRoute: () => ShopsLojasGruposRoute,
 } as any);
+const ApiAtendimentoAttachmentRoute =
+  ApiAtendimentoAttachmentRouteImport.update({
+    id: "/api/atendimento/attachment",
+    path: "/api/atendimento/attachment",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicZohoCallbackRoute = ApiPublicZohoCallbackRouteImport.update({
+  id: "/api/public/zoho/callback",
+  path: "/api/public/zoho/callback",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ApiPublicShopifyCallbackRoute =
   ApiPublicShopifyCallbackRouteImport.update({
     id: "/api/public/shopify/callback",
     path: "/api/public/shopify/callback",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicHooksZohoMailSyncRoute =
+  ApiPublicHooksZohoMailSyncRouteImport.update({
+    id: "/api/public/hooks/zoho-mail-sync",
+    path: "/api/public/hooks/zoho-mail-sync",
     getParentRoute: () => rootRouteImport,
   } as any);
 const ApiPublicHooksSyncTrack123Route =
@@ -242,6 +268,7 @@ const ApiPublicHooksTrack123ShopIdSecretRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/atendimento": typeof AtendimentoRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -263,6 +290,7 @@ export interface FileRoutesByFullPath {
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
+  "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
@@ -275,12 +303,15 @@ export interface FileRoutesByFullPath {
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
+  "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/zoho/callback": typeof ApiPublicZohoCallbackRoute;
   "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/atendimento": typeof AtendimentoRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -295,6 +326,7 @@ export interface FileRoutesByTo {
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/shops": typeof ShopsIndexRoute;
+  "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
@@ -307,13 +339,16 @@ export interface FileRoutesByTo {
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
+  "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/zoho/callback": typeof ApiPublicZohoCallbackRoute;
   "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/atendimento": typeof AtendimentoRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -335,6 +370,7 @@ export interface FileRoutesById {
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
+  "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
@@ -347,7 +383,9 @@ export interface FileRoutesById {
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
+  "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
+  "/api/public/zoho/callback": typeof ApiPublicZohoCallbackRoute;
   "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
   "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
@@ -355,6 +393,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/atendimento"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -376,6 +415,7 @@ export interface FileRouteTypes {
     | "/projects/"
     | "/settings/"
     | "/shops/"
+    | "/api/atendimento/attachment"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
@@ -388,12 +428,15 @@ export interface FileRouteTypes {
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
+    | "/api/public/hooks/zoho-mail-sync"
     | "/api/public/shopify/callback"
+    | "/api/public/zoho/callback"
     | "/api/public/hooks/shopify/$storeId"
     | "/api/public/hooks/track123/$shopId/$secret";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/atendimento"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -408,6 +451,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/settings"
     | "/shops"
+    | "/api/atendimento/attachment"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
@@ -420,12 +464,15 @@ export interface FileRouteTypes {
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
+    | "/api/public/hooks/zoho-mail-sync"
     | "/api/public/shopify/callback"
+    | "/api/public/zoho/callback"
     | "/api/public/hooks/shopify/$storeId"
     | "/api/public/hooks/track123/$shopId/$secret";
   id:
     | "__root__"
     | "/"
+    | "/atendimento"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -447,6 +494,7 @@ export interface FileRouteTypes {
     | "/projects/"
     | "/settings/"
     | "/shops/"
+    | "/api/atendimento/attachment"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
@@ -459,13 +507,16 @@ export interface FileRouteTypes {
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
+    | "/api/public/hooks/zoho-mail-sync"
     | "/api/public/shopify/callback"
+    | "/api/public/zoho/callback"
     | "/api/public/hooks/shopify/$storeId"
     | "/api/public/hooks/track123/$shopId/$secret";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  AtendimentoRoute: typeof AtendimentoRoute;
   GratitudeRoute: typeof GratitudeRoute;
   LoginRoute: typeof LoginRoute;
   MetasRoute: typeof MetasRoute;
@@ -474,11 +525,14 @@ export interface RootRouteChildren {
   ShopsRoute: typeof ShopsRouteWithChildren;
   TarefasRoute: typeof TarefasRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
+  ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
   ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
+  ApiPublicHooksZohoMailSyncRoute: typeof ApiPublicHooksZohoMailSyncRoute;
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute;
+  ApiPublicZohoCallbackRoute: typeof ApiPublicZohoCallbackRoute;
   ApiPublicHooksShopifyStoreIdRoute: typeof ApiPublicHooksShopifyStoreIdRoute;
   ApiPublicHooksTrack123ShopIdSecretRoute: typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
@@ -532,6 +586,13 @@ declare module "@tanstack/react-router" {
       path: "/gratitude";
       fullPath: "/gratitude";
       preLoaderRoute: typeof GratitudeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/atendimento": {
+      id: "/atendimento";
+      path: "/atendimento";
+      fullPath: "/atendimento";
+      preLoaderRoute: typeof AtendimentoRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/": {
@@ -695,11 +756,32 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport;
       parentRoute: typeof ShopsLojasGruposRoute;
     };
+    "/api/atendimento/attachment": {
+      id: "/api/atendimento/attachment";
+      path: "/api/atendimento/attachment";
+      fullPath: "/api/atendimento/attachment";
+      preLoaderRoute: typeof ApiAtendimentoAttachmentRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/zoho/callback": {
+      id: "/api/public/zoho/callback";
+      path: "/api/public/zoho/callback";
+      fullPath: "/api/public/zoho/callback";
+      preLoaderRoute: typeof ApiPublicZohoCallbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/shopify/callback": {
       id: "/api/public/shopify/callback";
       path: "/api/public/shopify/callback";
       fullPath: "/api/public/shopify/callback";
       preLoaderRoute: typeof ApiPublicShopifyCallbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/zoho-mail-sync": {
+      id: "/api/public/hooks/zoho-mail-sync";
+      path: "/api/public/hooks/zoho-mail-sync";
+      fullPath: "/api/public/hooks/zoho-mail-sync";
+      preLoaderRoute: typeof ApiPublicHooksZohoMailSyncRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/public/hooks/sync-track123": {
@@ -857,6 +939,7 @@ const ShopsRouteWithChildren = ShopsRoute._addFileChildren(ShopsRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AtendimentoRoute: AtendimentoRoute,
   GratitudeRoute: GratitudeRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
@@ -865,11 +948,14 @@ const rootRouteChildren: RootRouteChildren = {
   ShopsRoute: ShopsRouteWithChildren,
   TarefasRoute: TarefasRoute,
   InviteTokenRoute: InviteTokenRoute,
+  ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
   ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
+  ApiPublicHooksZohoMailSyncRoute: ApiPublicHooksZohoMailSyncRoute,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
+  ApiPublicZohoCallbackRoute: ApiPublicZohoCallbackRoute,
   ApiPublicHooksShopifyStoreIdRoute: ApiPublicHooksShopifyStoreIdRoute,
   ApiPublicHooksTrack123ShopIdSecretRoute:
     ApiPublicHooksTrack123ShopIdSecretRoute,

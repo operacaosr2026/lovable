@@ -10,6 +10,7 @@ const SKIP = new Set([
   "syncShopifyOrders", "syncShopifyPaymentsFees", "syncMetaAdsSpend", "syncMetaAdsActivities",
   "syncShopifyVisitors", "syncOrderPaymentTasks", "syncShopifyPayouts", "syncTrack123ForShops",
   "seedKanbanColumns", "testMetaAdsConnection", "testTrack123Sync", "createMetaOAuthUrl",
+  "syncSupportInbox", "markConversationRead", "uploadSupportAttachment",
 ]);
 
 const LABELS: Record<string, string> = {
@@ -71,6 +72,9 @@ const LABELS: Record<string, string> = {
   updateUnitCost: "Alterou custo unitário", upsertCompanyGoal: "Definiu meta do mês", upsertGratitude: "Salvou gratidão",
   upsertMetaAdsIntegration: "Alterou integração Meta Ads", upsertOrderSettings: "Alterou configurações de pedidos da loja",
   upsertPricing: "Alterou precificação", upsertTrack123Integration: "Alterou integração Track123",
+  startZohoOAuth: "Iniciou conexão com o Zoho Mail", disconnectZoho: "Desconectou o Zoho Mail",
+  updateSupportConversations: "Alterou conversa do Atendimento", sendSupportReply: "Respondeu e-mail de cliente",
+  sendSupportNewMessage: "Enviou e-mail pelo Atendimento",
 };
 
 export function shouldAudit(name: string) { return !SKIP.has(name); }
