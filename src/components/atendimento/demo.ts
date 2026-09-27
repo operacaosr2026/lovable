@@ -113,7 +113,7 @@ const SEEDS: Seed[] = [
   },
 ];
 
-type Store = { conversations: SupportConversation[]; messages: (SupportMessage & { conversation_id: string })[]; signature: string; signatureEnabled: boolean };
+type Store = { conversations: SupportConversation[]; messages: (SupportMessage & { conversation_id: string })[]; signature: string; signatureEnabled: boolean; tags: string[] };
 
 let seq = 0;
 const uid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
@@ -139,7 +139,7 @@ function buildStore(): Store {
       resolved_at: s.status === "resolvido" ? ago(s.msgs[s.msgs.length - 1].at - 30) : null,
     });
   }
-  const store = { conversations, messages, signature: "Atenciosamente,\n{nome}\nEquipe de Atendimento SRX", signatureEnabled: true };
+  const store = { conversations, messages, signature: "Atenciosamente,\n{nome}\nEquipe de Atendimento SRX", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreamento"] };
   store.conversations.forEach((c) => recompute(store, c));
   return store;
 }
@@ -322,12 +322,21 @@ const demoApi = {
     };
   },
 
-  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, senderName: "Você" }),
-  saveSupportSettings: async ({ data }: { data: { signature: string; signatureEnabled: boolean } }) => {
+  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], senderName: "Você" }),
+  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[] } }) => {
     await wait();
-    db().signature = data.signature;
-    db().signatureEnabled = data.signatureEnabled;
+    if (data.signature !== undefined) db().signature = data.signature;
+    if (data.signatureEnabled !== undefined) db().signatureEnabled = data.signatureEnabled;
+    if (data.tags) db().tags = [...data.tags];
     return { ok: true };
+  },
+  changeSupportTag: async ({ data }: { data: { from: string; to: string | null } }) => {
+    await wait();
+    const replace = (list: string[]) => [...new Set(list.flatMap((t) => (t === data.from ? (data.to ? [data.to] : []) : [t])))];
+    db().tags = replace(db().tags);
+    const hit = db().conversations.filter((c) => c.tags.includes(data.from));
+    hit.forEach((c) => { c.tags = replace(c.tags); });
+    return { conversations: hit.length };
   },
 };
 

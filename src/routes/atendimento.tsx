@@ -22,6 +22,7 @@ import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
 import { AttachmentChips, SignatureToggle, useAttachments, useSignatureToggle } from "@/components/atendimento/Composer";
 import { Avatar, STATUS_META, displayName, formatDuration, listTime, resolvePeriod } from "@/components/atendimento/utils";
 import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
+import { useSupportTags } from "@/components/atendimento/useSupportTags";
 
 export const Route = createFileRoute("/atendimento")({
   beforeLoad: requireAuth,
@@ -127,7 +128,12 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   });
 
   const conversations = list.data?.conversations ?? [];
-  const allTags = useMemo(() => [...new Set(conversations.flatMap((c) => c.tags))].sort(), [conversations]);
+  // Tags fixas (Configurações > Tags) primeiro, depois as usadas que não estão na lista.
+  const { fixed: fixedTags } = useSupportTags();
+  const allTags = useMemo(() => {
+    const used = [...new Set(conversations.flatMap((c) => c.tags))].sort();
+    return [...fixedTags, ...used.filter((t) => !fixedTags.some((f) => f.toLowerCase() === t.toLowerCase()))];
+  }, [conversations, fixedTags]);
 
   const filteredBase = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Loader2, Plug, PenLine } from "lucide-react";
-import { getSupportSettings, saveSupportSettings, type getZohoStatus } from "@/lib/atendimento.functions";
+import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Tag, Trash2, X } from "lucide-react";
+import { changeSupportTag, getSupportSettings, saveSupportSettings, type getZohoStatus } from "@/lib/atendimento.functions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { tagTone } from "./CustomerPanel";
+import { useSupportTags } from "./useSupportTags";
 import { Switch } from "@/components/ui/switch";
 import { ConnectZoho } from "./ConnectZoho";
 import { fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 
-export type ConfigTab = "integracao" | "assinatura";
+export type ConfigTab = "integracao" | "assinatura" | "tags";
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 
 // Atendimento > Configurações: conexão com o Zoho (admin) e assinatura dos e-mails.
@@ -16,6 +19,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
   const TABS: { key: ConfigTab; label: string; desc: string; icon: typeof Plug }[] = [
     { key: "integracao", label: "Integração", desc: "Conta do Zoho Mail", icon: Plug },
     { key: "assinatura", label: "Assinatura", desc: "Fim dos e-mails enviados", icon: PenLine },
+    { key: "tags", label: "Tags", desc: "Etiquetas das conversas", icon: Tag },
   ];
   return (
     <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
@@ -32,7 +36,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
         ))}
       </nav>
       <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 max-w-2xl">
-        {tab === "integracao" ? <Integration status={status} /> : <Signature />}
+        {tab === "integracao" ? <Integration status={status} /> : tab === "tags" ? <TagsSettings /> : <Signature />}
       </div>
     </div>
   );
@@ -139,6 +143,109 @@ function Signature() {
           {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar assinatura
         </button>
       </div>
+    </div>
+  );
+}
+
+function TagsSettings() {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const { fixed, isLoading } = useSupportTags();
+  const saveFn = useSupportFn(saveSupportSettings, "saveSupportSettings");
+  const changeFn = useSupportFn(changeSupportTag, "changeSupportTag");
+  const [newTag, setNewTag] = useState("");
+  const [editing, setEditing] = useState<{ from: string; to: string } | null>(null);
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["support-settings"] });
+    qc.invalidateQueries({ queryKey: ["support-list"] });
+    qc.invalidateQueries({ queryKey: ["support-conv"] });
+  };
+  const add = useMutation({
+    mutationFn: async () => {
+      const tag = newTag.trim();
+      if (!tag) return;
+      if (fixed.some((t) => t.toLowerCase() === tag.toLowerCase())) throw new Error("Essa tag já existe");
+      await saveFn({ data: { tags: [...fixed, tag] } });
+    },
+    onSuccess: () => { setNewTag(""); refresh(); },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+  const change = useMutation({
+    mutationFn: (v: { from: string; to: string | null }) => changeFn({ data: v }),
+    onSuccess: (r: any, v) => {
+      setEditing(null);
+      refresh();
+      toast.success(v.to ? "Tag renomeada" : "Tag apagada", r?.conversations ? { description: `${r.conversations} conversa${r.conversations > 1 ? "s" : ""} atualizada${r.conversations > 1 ? "s" : ""}` } : undefined);
+    },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+
+  const rename = () => {
+    if (!editing) return;
+    const to = editing.to.trim();
+    if (!to || to === editing.from) return setEditing(null);
+    if (fixed.some((t) => t !== editing.from && t.toLowerCase() === to.toLowerCase())) return toast.error("Já existe uma tag com esse nome");
+    change.mutate({ from: editing.from, to });
+  };
+  const remove = async (tag: string) => {
+    if (await confirm({ title: `Apagar a tag "${tag}"?`, description: "Ela sai da lista e de todas as conversas que estão com ela.", confirmText: "Apagar", variant: "destructive" })) {
+      change.mutate({ from: tag, to: null });
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-base font-semibold">Tags</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Sempre aparecem como sugestão nas conversas e nos filtros. Tag nova criada numa conversa entra aqui sozinha.</p>
+      </div>
+
+      <form onSubmit={(e) => { e.preventDefault(); add.mutate(); }} className="flex gap-2">
+        <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Nova tag" maxLength={40}
+          className="flex-1 h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary" />
+        <button type="submit" disabled={!newTag.trim() || add.isPending}
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
+          {add.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Adicionar
+        </button>
+      </form>
+
+      {isLoading ? (
+        <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-10 rounded-lg bg-muted animate-pulse" />)}</div>
+      ) : !fixed.length ? (
+        <p className="text-sm text-muted-foreground text-center py-6">Nenhuma tag cadastrada.</p>
+      ) : (
+        <div className="rounded-xl border border-border divide-y divide-border">
+          {fixed.map((t) => (
+            <div key={t} className="flex items-center gap-2 px-3 h-11">
+              {editing?.from === t ? (
+                <>
+                  <input autoFocus value={editing.to} onChange={(e) => setEditing({ from: t, to: e.target.value })} maxLength={40}
+                    onKeyDown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") setEditing(null); }}
+                    className="flex-1 h-8 px-2.5 rounded-lg bg-background border border-primary text-sm outline-none" />
+                  <button onClick={rename} disabled={change.isPending} className="size-8 rounded-lg grid place-items-center text-success hover:bg-success/10" aria-label="Salvar">
+                    {change.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                  </button>
+                  <button onClick={() => setEditing(null)} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:bg-muted" aria-label="Cancelar">
+                    <X className="size-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${tagTone(t)}`}>{t}</span>
+                  <div className="flex-1" />
+                  <button onClick={() => setEditing({ from: t, to: t })} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted" aria-label={`Renomear ${t}`}>
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button onClick={() => remove(t)} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-destructive hover:bg-destructive/10" aria-label={`Apagar ${t}`}>
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

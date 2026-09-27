@@ -7,6 +7,7 @@ import {
 } from "@/lib/atendimento.functions";
 import { Avatar, displayName, formatMoney, fullTime, listTime } from "./utils";
 import { useSupportFn } from "./demo";
+import { useSupportTags } from "./useSupportTags";
 
 export function customerType(orders: number) {
   if (orders >= 2) return { label: "Cliente recorrente", cls: "bg-success/15 text-success" };
@@ -29,13 +30,17 @@ export function tagTone(tag: string) {
 
 export function TagEditor({ tags, suggestions, onChange }: { tags: string[]; suggestions: string[]; onChange: (tags: string[]) => void }) {
   const [value, setValue] = useState("");
+  const { ensure } = useSupportTags();
   const add = (t: string) => {
-    const tag = t.trim();
+    const typed = t.trim();
+    // Mesma tag com outra caixa ("troca" → "Troca") usa a que já existe.
+    const tag = suggestions.find((s) => s.toLowerCase() === typed.toLowerCase()) ?? typed;
     if (!tag || tags.some((x) => x.toLowerCase() === tag.toLowerCase())) return setValue("");
     onChange([...tags, tag]);
+    ensure([tag]).catch(() => {});
     setValue("");
   };
-  const rest = suggestions.filter((s) => !tags.includes(s) && s.toLowerCase().includes(value.toLowerCase())).slice(0, 8);
+  const rest = suggestions.filter((s) => !tags.includes(s) && s.toLowerCase().includes(value.toLowerCase())).slice(0, 12);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">

@@ -13,18 +13,21 @@ export type Database = {
           owner_id: string;
           signature: string | null;
           signature_enabled: boolean;
+          tags: string[];
           updated_at: string;
         };
         Insert: {
           owner_id: string;
           signature?: string | null;
           signature_enabled?: boolean;
+          tags?: string[];
           updated_at?: string;
         };
         Update: {
           owner_id?: string;
           signature?: string | null;
           signature_enabled?: boolean;
+          tags?: string[];
           updated_at?: string;
         };
         Relationships: [];

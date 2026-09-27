@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
+import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
   fetchMessageContent, fetchAttachmentInfo, markZohoRead, zohoApi, uploadZohoAttachment, sendZohoMail,
@@ -315,25 +316,58 @@ export const getSupportSettings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
-    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled").eq("owner_id", context.ownerId).maybeSingle();
+    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled,tags").eq("owner_id", context.ownerId).maybeSingle();
     return {
       signature: data?.signature ?? "",
       signatureEnabled: data?.signature_enabled ?? true,
+      tags: data?.tags ?? [...DEFAULT_TAGS],
       senderName: await senderName(context.userId),
     };
   });
 
+const DEFAULT_TAGS = ["Reembolso", "Defeito", "Troca", "Rastreamento"];
+const TagName = z.string().trim().min(1).max(40);
+
+// Salva só o que veio (assinatura e/ou lista de tags).
 export const saveSupportSettings = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ signature: z.string().max(2000), signatureEnabled: z.boolean() }).parse(d))
+  .inputValidator((d) => z.object({
+    signature: z.string().max(2000).optional(),
+    signatureEnabled: z.boolean().optional(),
+    tags: z.array(TagName).max(100).optional(),
+  }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
-    const { error } = await supabaseAdmin.from("support_settings").upsert({
-      owner_id: context.ownerId, signature: data.signature.trim() || null, signature_enabled: data.signatureEnabled,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "owner_id" });
+    const row: Database["public"]["Tables"]["support_settings"]["Insert"] = { owner_id: context.ownerId, updated_at: new Date().toISOString() };
+    if (data.signature !== undefined) row.signature = data.signature.trim() || null;
+    if (data.signatureEnabled !== undefined) row.signature_enabled = data.signatureEnabled;
+    if (data.tags) row.tags = [...new Map(data.tags.map((t) => [t.toLowerCase(), t])).values()];
+    const { error } = await supabaseAdmin.from("support_settings").upsert(row, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// Renomeia (to) ou apaga (to = null) uma tag: na lista fixa e em todas as conversas.
+export const changeSupportTag = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ from: TagName, to: TagName.nullable() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { ownerId } = context;
+    const { data: st } = await supabaseAdmin.from("support_settings").select("tags").eq("owner_id", ownerId).maybeSingle();
+    const replace = (list: string[]) => {
+      const out = list.flatMap((t) => (t === data.from ? (data.to ? [data.to] : []) : [t]));
+      return [...new Map(out.map((t) => [t.toLowerCase(), t])).values()];
+    };
+    await supabaseAdmin.from("support_settings").upsert(
+      { owner_id: ownerId, tags: replace(st?.tags ?? [...DEFAULT_TAGS]), updated_at: new Date().toISOString() },
+      { onConflict: "owner_id" },
+    );
+    const { data: convs } = await selectAll<{ id: string; tags: string[] }>(
+      supabaseAdmin.from("support_conversations").select("id,tags").eq("owner_id", ownerId).contains("tags", [data.from]),
+    );
+    await Promise.all(convs.map((c) => supabaseAdmin.from("support_conversations").update({ tags: replace(c.tags) }).eq("id", c.id)));
+    return { conversations: convs.length };
   });
 
 export const sendSupportReply = createServerFn({ method: "POST" })
