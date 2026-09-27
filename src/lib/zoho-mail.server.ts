@@ -206,10 +206,10 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean }
     const touched = await upsertMessages(ownerId, own, parsed);
     await recomputeConversations(ownerId, touched, { firstSync });
 
-    // Tags automáticas com IA nos e-mails novos (falha aqui não derruba a sincronização).
+    // IA nos e-mails novos: tags automáticas + tradução pro português (falha aqui não derruba a sincronização).
     try {
-      const { runSupportAiTagging } = await import("@/lib/support-ai.server");
-      await runSupportAiTagging(acc);
+      const { runSupportAiTagging, runSupportAutoTranslate } = await import("@/lib/support-ai.server");
+      await Promise.all([runSupportAiTagging(acc), runSupportAutoTranslate(acc)]);
     } catch (e) {
       console.error("support ai tagging", e);
     }

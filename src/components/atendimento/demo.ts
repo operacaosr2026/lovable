@@ -330,7 +330,10 @@ const demoApi = {
       .replace(/<blockquote[\s\S]*?<\/blockquote>|<div class="gmail_quote"[\s\S]*$/gi, " ")
       .replace(/<br\s*\/?>|<\/p>/gi, "\n").replace(/<[^>]+>/g, " ")
       .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/[ \t]+/g, " ").trim();
-    return translateSupportMessage({ data: { text } });
+    if (m.content_pt) return { text: m.content_pt };
+    const r = await translateSupportMessage({ data: { text } });
+    m.content_pt = r.text;
+    return r;
   },
   translateSupportReply: async ({ data }: { data: { text: string } }) => translateSupportReply({ data }),
   deleteSupportConversations: async ({ data }: { data: { ids: string[] } }) => {

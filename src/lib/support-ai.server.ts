@@ -182,3 +182,42 @@ export async function translateReplyToEnglish(text: string): Promise<string> {
   if (response.stop_reason === "refusal") throw new Error("A IA não conseguiu traduzir este texto");
   return response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }
+
+// Corpo do e-mail (HTML) → texto em português, pronto pra guardar em content_pt.
+const TRANSLATE_LIMIT = 20_000;
+export async function translateEmailHtml(html: string) {
+  const full = emailText(html, Number.MAX_SAFE_INTEGER);
+  let text = await translateToPortuguese(full.slice(0, TRANSLATE_LIMIT));
+  if (full.length > TRANSLATE_LIMIT) text += "\n\n[E-mail muito longo: traduzido só o início.]";
+  return text;
+}
+
+// Na sincronização: e-mails novos de cliente já ficam traduzidos (a conversa
+// abre direto em português). Os mais antigos traduzem quando a conversa é aberta.
+export async function runSupportAutoTranslate(acc: ZohoAccount) {
+  if (!supportAiAvailable()) return { skipped: "sem_chave" as const };
+  const minDate = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000).toISOString();
+  const { data: pending } = await supabaseAdmin.from("support_messages")
+    .select("id,message_id,folder_id,from_email,content_html")
+    .eq("owner_id", acc.owner_id).eq("direction", "in").is("content_pt", null).gte("sent_at", minDate)
+    .order("sent_at", { ascending: false }).limit(PER_RUN);
+  const queue = (pending ?? []).filter((m) => !AUTOMATED_SENDER.test(m.from_email ?? ""));
+  let translated = 0;
+  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+    for (let m = queue.shift(); m; m = queue.shift()) {
+      try {
+        let html = m.content_html;
+        if (html == null) {
+          html = await fetchMessageContent(acc, m.folder_id, m.message_id);
+          await supabaseAdmin.from("support_messages").update({ content_html: html }).eq("id", m.id);
+        }
+        const pt = await translateEmailHtml(html);
+        await supabaseAdmin.from("support_messages").update({ content_pt: pt }).eq("id", m.id).is("content_pt", null);
+        translated++;
+      } catch (e) {
+        console.error("support auto translate", m.id, e);
+      }
+    }
+  }));
+  return { translated };
+}

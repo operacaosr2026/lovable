@@ -215,48 +215,62 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged, 
 function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
   const out = m.direction === "out";
   const translateFn = useSupportFn(translateSupportMessage, "translateSupportMessage");
-  // Tradução pro português: guardada no banco depois da 1ª vez (content_pt).
+  // E-mail do cliente abre já em português (tradução feita na sincronização ou,
+  // se ainda não tiver, pedida agora); o 🌐 alterna com o original. Nossas
+  // respostas (já em inglês) abrem no original.
   const [pt, setPt] = useState<string | null>(m.content_pt ?? null);
-  const [showPt, setShowPt] = useState(false);
+  const [mode, setMode] = useState<"pt" | "orig">(out ? "orig" : "pt");
   const [translating, setTranslating] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const toggleTranslation = async () => {
-    if (showPt) return setShowPt(false);
-    if (pt) return setShowPt(true);
+  const translate = async (silent: boolean) => {
     setTranslating(true);
     try {
       const r = await translateFn({ data: { id: m.id } });
       setPt(r.text);
-      setShowPt(true);
     } catch (e: any) {
-      toast.error(e.message ?? "Erro ao traduzir");
+      setFailed(true);
+      if (!silent) toast.error(e.message ?? "Erro ao traduzir");
+      else setMode("orig");
     } finally {
       setTranslating(false);
     }
   };
+  useEffect(() => {
+    if (!out && pt == null && !failed) translate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.id]);
+
+  const toggle = () => {
+    if (mode === "pt") return setMode("orig");
+    setMode("pt");
+    if (pt == null && !translating) { setFailed(false); translate(false); }
+  };
+  const showPt = mode === "pt" && !!pt;
 
   return (
     <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
-      <div className={`group/bubble relative max-w-[88%] sm:max-w-[80%] rounded-2xl px-4 py-3 ${out ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"}`}>
+      <div className={`relative max-w-[88%] sm:max-w-[80%] rounded-2xl px-4 py-3 ${out ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"}`}>
         <div className="flex items-start gap-2 mb-1.5">
           <p className="flex-1 min-w-0 text-[11px] font-semibold text-muted-foreground truncate">{m.subject}</p>
+          {mode === "pt" && translating && <span className="text-[10px] text-muted-foreground shrink-0">Traduzindo…</span>}
           <button
-            onClick={toggleTranslation}
+            onClick={toggle}
             disabled={translating}
-            title={showPt ? "Ver original" : "Traduzir para português"}
+            title={showPt ? "Ver original (inglês)" : "Traduzir para português"}
             className={`-mt-1 -mr-2 h-6 px-1.5 rounded-md flex items-center gap-1 text-[10px] font-medium shrink-0 transition-colors ${
               showPt ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-background/70"
             }`}
           >
             {translating ? <Loader2 className="size-3.5 animate-spin" /> : <Languages className="size-3.5" />}
-            {showPt ? "PT" : null}
+            {showPt ? "PT" : "EN"}
           </button>
         </div>
-        {showPt && pt ? (
+        {showPt ? (
           <div>
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{pt}</p>
-            <button onClick={() => setShowPt(false)} className="mt-2 text-[10px] text-primary hover:underline">
-              Traduzido para o português · ver original
+            <button onClick={() => setMode("orig")} className="mt-2 text-[10px] text-primary hover:underline">
+              Traduzido do inglês · ver original
             </button>
           </div>
         ) : m.content_html != null

@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { emailText, supportAiAvailable, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
+import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -295,7 +295,7 @@ export const translateSupportMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     assertAccess(context);
     if (!supportAiAvailable()) throw new Error("Tradução indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
-    if (!data.id) return { text: await translateToPortuguese(data.text!), truncated: false };
+    if (!data.id) return { text: await translateToPortuguese(data.text!) };
 
     const { ownerId } = context;
     const { data: m } = await supabaseAdmin.from("support_messages")
@@ -308,12 +308,9 @@ export const translateSupportMessage = createServerFn({ method: "POST" })
       html = await fetchMessageContent(acc, m.folder_id, m.message_id);
       await supabaseAdmin.from("support_messages").update({ content_html: html }).eq("id", m.id);
     }
-    const full = emailText(html, Number.MAX_SAFE_INTEGER);
-    const truncated = full.length > TRANSLATE_LIMIT;
-    let text = await translateToPortuguese(full.slice(0, TRANSLATE_LIMIT));
-    if (truncated) text += "\n\n[E-mail muito longo: traduzido só o início.]";
+    const text = await translateEmailHtml(html);
     await supabaseAdmin.from("support_messages").update({ content_pt: text }).eq("id", m.id);
-    return { text, truncated };
+    return { text };
   });
 
 // Caixa de resposta: texto em português → inglês (o atendente revisa e envia).
