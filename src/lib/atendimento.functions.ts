@@ -5,6 +5,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { US_TIME_ZONE } from "@/lib/timezone";
 import { supportAiAvailable } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -407,13 +408,16 @@ export const sendSupportReply = createServerFn({ method: "POST" })
       .eq("conversation_id", conv.id).eq("direction", "in").order("sent_at", { ascending: false }).limit(1).maybeSingle();
 
     const baseSubject = (lastIn?.subject ?? conv.subject ?? "").trim();
-    const subject = /^(re|res|aw)\s*:/i.test(baseSubject) ? baseSubject : `Re: ${baseSubject || "Seu contato"}`;
+    const subject = /^(re|res|aw)\s*:/i.test(baseSubject) ? baseSubject : `Re: ${baseSubject || "Your inquiry"}`;
     let html = await buildBody(ownerId, context.userId, data.text, data.signature);
     if (lastIn) {
-      const when = new Date(lastIn.sent_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      // Clientes escrevem em inglês: cabeçalho da citação no padrão do Gmail em inglês.
+      const when = new Date(lastIn.sent_at).toLocaleString("en-US", {
+        timeZone: US_TIME_ZONE, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+      });
       const who = lastIn.from_name ? `${lastIn.from_name} &lt;${lastIn.from_email}&gt;` : lastIn.from_email;
       const quoted = lastIn.content_html ?? "";
-      html += `<br><div>Em ${when}, ${who} escreveu:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${quoted}</blockquote>`;
+      html += `<br><div>On ${when}, ${who} wrote:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${quoted}</blockquote>`;
     }
     await sendZohoMail(acc, {
       to: conv.customer_email, subject, html, replyToMessageId: lastIn?.message_id, attachments: data.attachments,

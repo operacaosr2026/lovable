@@ -38,32 +38,32 @@ const quote = (who: string, body: string) =>
 
 const SEEDS: Seed[] = [
   {
-    email: "camila.lopes@email.com", name: "Camila Lopes", status: "em_atendimento", favorite: true,
-    tags: ["Cliente recorrente", "Walkesty", "VIP"],
+    email: "jessica.miller@gmail.com", name: "Jessica Miller", status: "em_atendimento", favorite: true,
+    tags: ["Rastreamento", "Walkesty", "VIP"], ai: ["Rastreamento"],
     note: "Cliente VIP — já comprou 5 vezes. Priorizar.",
     msgs: [
-      { dir: "in", at: 26 * H, subject: "Status do meu pedido #4532", body: p("Olá, gostaria de saber qual o status do meu pedido #4532?", "Ele foi pago dia 15/09 e ainda não recebi atualização.", "Podem me informar, por favor?", "Att,<br>Camila") },
-      { dir: "out", at: 25 * H, subject: "Re: Status do meu pedido #4532", body: p("Olá Camila!", "Tudo bem?", "Já verifiquei aqui e o seu pedido #4532 foi enviado hoje e já está em transporte.", "O código de rastreio é: <b>TR123456789BR</b>.", "Qualquer dúvida, estou à disposição! 😊", "Atenciosamente,<br>Equipe SRX") },
-      { dir: "in", at: 18, subject: "Re: Status do meu pedido #4532", read: false, body: p("Oi! Obrigada pelo retorno.", "Olhei o rastreio e está parado em \"objeto postado\" há 2 dias. É normal?", "Preciso do produto até sexta 🙏") + quote("25/09/2026, Equipe SRX &lt;suporte@srxstore.com&gt;", p("Olá Camila! Já verifiquei aqui e o seu pedido #4532 foi enviado hoje...")) },
+      { dir: "in", at: 26 * H, subject: "Order status #4532", body: p("Hi,", "Could you tell me the status of my order #4532? I paid on 9/15 and haven't received any update yet.", "Thanks,<br>Jessica") },
+      { dir: "out", at: 25 * H, subject: "Re: Order status #4532", body: p("Hi Jessica!", "I just checked and your order #4532 shipped today and is already in transit.", "Your tracking number is <b>TR123456789US</b>.", "Let me know if you have any other questions! 😊", "Best regards,<br>SRX Support") },
+      { dir: "in", at: 18, subject: "Re: Order status #4532", read: false, body: p("Thanks for getting back to me!", "The tracking has been stuck on \"label created\" for 2 days. Is that normal?", "I really need it by Friday 🙏") + quote("Sep 26, 2026, SRX Support &lt;support@srxstore.com&gt;", p("Hi Jessica! I just checked and your order #4532 shipped today...")) },
     ],
   },
   {
-    email: "rafael.ferreira@gmail.com", name: "Rafael Ferreira", status: "em_atendimento", tags: ["Troca"], ai: ["Troca"],
-    msgs: [{ dir: "in", at: 95, subject: "Dúvida sobre troca", read: false, body: p("Boa tarde!", "Recebi o tênis mas ficou pequeno. Preciso trocar o produto por um número maior, como faço?", "Pedido #4519.", "Obrigado,<br>Rafael") }],
+    email: "ryan.cooper@gmail.com", name: "Ryan Cooper", status: "em_atendimento", tags: ["Troca"], ai: ["Troca"],
+    msgs: [{ dir: "in", at: 95, subject: "Exchange question", read: false, body: p("Hello,", "The sneakers I got are too small. I'd like to exchange them for a bigger size — how do I do that?", "Order #4519.", "Thanks,<br>Ryan") }],
   },
   {
-    email: "joao.oliveira@outlook.com", name: "João Oliveira", status: "em_atendimento", tags: ["Reembolso"], ai: ["Reembolso"],
+    email: "david.thompson@outlook.com", name: "David Thompson", status: "em_atendimento", tags: ["Reembolso"], ai: ["Reembolso"],
     msgs: [
-      { dir: "in", at: 6 * D, subject: "Reembolso", body: p("Olá, cancelei o pedido #4401 e gostaria do reembolso.") },
-      { dir: "out", at: 6 * D - 3 * H, subject: "Re: Reembolso", body: p("Olá João, o reembolso foi solicitado e cai em até 7 dias úteis no cartão.", "Atenciosamente,<br>Equipe SRX") },
-      { dir: "in", at: 3 * H + 12, subject: "Re: Reembolso", read: false, body: p("Ainda não recebi o reembolso, já passou uma semana. Podem me ajudar?") },
+      { dir: "in", at: 6 * D, subject: "Refund", body: p("Hi, I cancelled order #4401 and would like a refund.") },
+      { dir: "out", at: 6 * D - 3 * H, subject: "Re: Refund", body: p("Hi David, your refund has been issued and should reach your card within 5–7 business days.", "Best regards,<br>SRX Support") },
+      { dir: "in", at: 3 * H + 12, subject: "Re: Refund", read: false, body: p("It's been over a week and I still haven't received my refund. Can you help?") },
     ],
   },
   {
-    email: "mariana.alves@yahoo.com.br", name: "Mariana Alves", status: "aguardando_cliente", tags: ["Defeito"],
+    email: "megan.brooks@yahoo.com", name: "Megan Brooks", status: "aguardando_cliente", tags: ["Defeito"], ai: ["Defeito"],
     msgs: [
-      { dir: "in", at: 5 * H, subject: "Produto chegou com defeito", body: p("Oi, a bolsa chegou com a alça descosturada. Segue foto.", "Pedido #4498."), attachments: [{ name: "foto-bolsa.jpg", size: 1_840_000 }] },
-      { dir: "out", at: 4 * H, subject: "Re: Produto chegou com defeito", body: p("Oi Mariana, sentimos muito! Podemos enviar uma nova ou fazer o reembolso total — qual prefere?", "Atenciosamente,<br>Equipe SRX") },
+      { dir: "in", at: 5 * H, subject: "Item arrived damaged", body: p("Hi, the bag arrived with the strap coming apart at the seam. Photo attached.", "Order #4498."), attachments: [{ name: "bag-photo.jpg", size: 1_840_000 }] },
+      { dir: "out", at: 4 * H, subject: "Re: Item arrived damaged", body: p("Hi Megan, we're so sorry about that! We can send you a replacement or issue a full refund — which would you prefer?", "Best regards,<br>SRX Support") },
     ],
   },
   {
@@ -78,14 +78,14 @@ const SEEDS: Seed[] = [
     msgs: [{ dir: "in", at: 7 * H, subject: "Wrong size received", read: false, body: p("Hello, I ordered a size M but received an XL. How can I get the right one?", "Order #1102."), attachments: [{ name: "label.png", size: 420_000 }, { name: "invoice.pdf", size: 96_000 }] }],
   },
   {
-    email: "ana.costa@gmail.com", name: "Ana Costa", status: "em_atendimento", tags: ["Walkesty"],
-    msgs: [{ dir: "in", at: 9 * H, subject: "Cupom não funcionou", body: p("O cupom PRIMAVERA10 não aplicou o desconto no checkout. Ainda consigo usar?") }],
+    email: "ashley.davis@gmail.com", name: "Ashley Davis", status: "em_atendimento", tags: ["Walkesty"],
+    msgs: [{ dir: "in", at: 9 * H, subject: "Discount code didn't work", body: p("The code FALL10 didn't apply at checkout. Can I still use it on my order?") }],
   },
   {
-    email: "lucas.martins@gmail.com", name: "Lucas Martins", status: "resolvido",
+    email: "kevin.martinez@gmail.com", name: "Kevin Martinez", status: "resolvido",
     msgs: [
-      { dir: "in", at: 2 * D, subject: "Endereço errado no pedido", body: p("Coloquei o número da casa errado no pedido #4510, é 245 e não 254.") },
-      { dir: "out", at: 2 * D - 40, subject: "Re: Endereço errado no pedido", body: p("Pronto Lucas, endereço corrigido antes do envio!", "Atenciosamente,<br>Equipe SRX") },
+      { dir: "in", at: 2 * D, subject: "Wrong address on my order", body: p("I typed the wrong house number on order #4510 — it's 245, not 254.") },
+      { dir: "out", at: 2 * D - 40, subject: "Re: Wrong address on my order", body: p("All set, Kevin — the address was updated before shipping!", "Best regards,<br>SRX Support") },
     ],
   },
   {
@@ -97,19 +97,19 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "pedro.rocha@uol.com.br", name: "Pedro Rocha", status: "resolvido",
+    email: "brian.walker@aol.com", name: "Brian Walker", status: "resolvido",
     msgs: [
-      { dir: "in", at: 4 * D, subject: "Nota fiscal", body: p("Poderiam me enviar a nota fiscal do pedido #4455?") },
-      { dir: "out", at: 4 * D - 5 * H, subject: "Re: Nota fiscal", body: p("Claro Pedro, segue em anexo.", "Atenciosamente,<br>Equipe SRX"), attachments: [{ name: "NF-4455.pdf", size: 180_000 }] },
+      { dir: "in", at: 4 * D, subject: "Invoice request", body: p("Could you send me the invoice for order #4455?") },
+      { dir: "out", at: 4 * D - 5 * H, subject: "Re: Invoice request", body: p("Sure, Brian — it's attached.", "Best regards,<br>SRX Support"), attachments: [{ name: "invoice-4455.pdf", size: 180_000 }] },
     ],
   },
   {
-    email: "carla.mendes@gmail.com", name: "Carla Mendes", status: "resolvido", tags: ["Elogio"],
-    msgs: [{ dir: "in", at: 5 * D, subject: "Elogio 😊", body: p("Só passando pra dizer que amei o produto e a entrega foi super rápida. Parabéns!") }],
+    email: "laura.green@gmail.com", name: "Laura Green", status: "resolvido", tags: ["Elogio"],
+    msgs: [{ dir: "in", at: 5 * D, subject: "Love it! 😊", body: p("Just wanted to say I love the product and shipping was super fast. Great job!") }],
   },
   {
     email: "noreply@shopify.com", name: "Shopify", status: "resolvido",
-    msgs: [{ dir: "in", at: 6 * D, subject: "Seu repasse de US$ 3.482,10 foi enviado", body: p("O repasse da loja Walkesty foi enviado para a sua conta bancária.") }],
+    msgs: [{ dir: "in", at: 6 * D, subject: "Your payout of $3,482.10 is on its way", body: p("The payout for Walkesty has been sent to your bank account.") }],
   },
 ];
 
@@ -139,7 +139,7 @@ function buildStore(): Store {
       resolved_at: s.status === "resolvido" ? ago(s.msgs[s.msgs.length - 1].at - 30) : null,
     });
   }
-  const store = { conversations, messages, signature: "Atenciosamente,\n{nome}\nEquipe de Atendimento SRX", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreamento"], aiTagsEnabled: true };
+  const store = { conversations, messages, signature: "Best regards,\n{nome}\nSRX Customer Support", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreamento"], aiTagsEnabled: true };
   store.conversations.forEach((c) => recompute(store, c));
   return store;
 }
@@ -163,16 +163,16 @@ const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 // Pedidos fictícios por cliente (painel da direita).
 const ORDERS: Record<string, { n: number; currency: string; store: string; values: number[] }> = {
-  "camila.lopes@email.com": { n: 4532, currency: "BRL", store: "Walkesty", values: [289.9, 159.9, 349.9, 199.9, 234.9] },
-  "rafael.ferreira@gmail.com": { n: 4519, currency: "BRL", store: "Walkesty", values: [399.9] },
-  "joao.oliveira@outlook.com": { n: 4401, currency: "BRL", store: "Walkesty", values: [179.9, 129.9] },
-  "mariana.alves@yahoo.com.br": { n: 4498, currency: "BRL", store: "Walkesty", values: [459.0] },
+  "jessica.miller@gmail.com": { n: 4532, currency: "USD", store: "Walkesty", values: [59.9, 34.9, 79.9, 44.9, 54.9] },
+  "ryan.cooper@gmail.com": { n: 4519, currency: "USD", store: "Walkesty", values: [89.9] },
+  "david.thompson@outlook.com": { n: 4401, currency: "USD", store: "Walkesty", values: [39.9, 29.9] },
+  "megan.brooks@yahoo.com": { n: 4498, currency: "USD", store: "Walkesty", values: [99.0] },
   "emily.johnson@gmail.com": { n: 1087, currency: "USD", store: "Nordhaus", values: [89.99, 64.5, 120] },
   "sarah.wilson@hotmail.com": { n: 1102, currency: "USD", store: "Nordhaus", values: [74.9] },
-  "lucas.martins@gmail.com": { n: 4510, currency: "BRL", store: "Walkesty", values: [219.9] },
+  "kevin.martinez@gmail.com": { n: 4510, currency: "USD", store: "Walkesty", values: [49.9] },
   "michael.brown@icloud.com": { n: 1079, currency: "USD", store: "Nordhaus", values: [49.9] },
-  "pedro.rocha@uol.com.br": { n: 4455, currency: "BRL", store: "Walkesty", values: [599.9, 99.9] },
-  "carla.mendes@gmail.com": { n: 4470, currency: "BRL", store: "Walkesty", values: [149.9] },
+  "brian.walker@aol.com": { n: 4455, currency: "USD", store: "Walkesty", values: [129.9, 24.9] },
+  "laura.green@gmail.com": { n: 4470, currency: "USD", store: "Walkesty", values: [34.9] },
 };
 
 // ─── API falsa (mesmos nomes/formatos das server functions) ───────────────────
@@ -307,7 +307,7 @@ const demoApi = {
     if (!o) return { name: null, phone: null, firstOrderAt: null, ordersCount: 0, totals: {}, stores: [], orders: [] };
     const orders = o.values.map((v, i) => ({
       id: `${o.n}-${i}`, number: `#${o.n - i * 7}`, date: ago(i * 38 * D + 3 * D), revenue: v, currency: o.currency,
-      store: o.store, financial: i === 0 && data.email.startsWith("joao") ? "refunded" : "paid",
+      store: o.store, financial: i === 0 && data.email.startsWith("david") ? "refunded" : "paid",
       delivery: i === 0 ? "Em trânsito" : "Entregue",
       tracking: `TR${String(123456789 - i * 1111).padStart(9, "0")}${o.currency === "BRL" ? "BR" : "US"}`,
       trackingUrl: `https://${o.store.toLowerCase()}.com/apps/track123?nums=TR${String(123456789 - i * 1111).padStart(9, "0")}${o.currency === "BRL" ? "BR" : "US"}`, carrier: o.currency === "BRL" ? "Correios" : "USPS", cancelled: false,

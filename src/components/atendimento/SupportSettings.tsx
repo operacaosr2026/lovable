@@ -119,7 +119,7 @@ function Signature() {
           rows={6}
           maxLength={2000}
           disabled={!enabled}
-          placeholder={"Atenciosamente,\n{nome}\nEquipe de Atendimento\nsuporte@sualoja.com"}
+          placeholder={"Best regards,\n{nome}\nCustomer Support\nsupport@yourstore.com"}
           className="w-full resize-y rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary disabled:opacity-50"
         />
         <p className="text-[11px] text-muted-foreground mt-1">
