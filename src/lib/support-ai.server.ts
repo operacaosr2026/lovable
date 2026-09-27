@@ -82,7 +82,7 @@ export async function runSupportAiTagging(acc: ZohoAccount) {
   if (!supportAiAvailable()) return { skipped: "sem_chave" as const };
 
   const { data: st } = await supabaseAdmin.from("support_settings").select("tags,ai_tags_enabled").eq("owner_id", ownerId).maybeSingle();
-  const tags = st?.tags ?? ["Reembolso", "Defeito", "Troca", "Rastreamento"];
+  const tags = st?.tags ?? ["Reembolso", "Defeito", "Troca", "Rastreio"];
   const enabled = st?.ai_tags_enabled ?? true;
 
   // Reserva os pendentes (ai_checked = true já aqui, pra outra sincronização

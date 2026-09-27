@@ -39,7 +39,7 @@ const quote = (who: string, body: string) =>
 const SEEDS: Seed[] = [
   {
     email: "jessica.miller@gmail.com", name: "Jessica Miller", status: "em_atendimento", favorite: true,
-    tags: ["Rastreamento"], ai: ["Rastreamento"],
+    tags: ["Rastreio"], ai: ["Rastreio"],
     note: "Cliente VIP — já comprou 5 vezes. Priorizar.",
     msgs: [
       { dir: "in", at: 26 * H, subject: "Order status #4532", body: p("Hi,", "Could you tell me the status of my order #4532? I paid on 9/15 and haven't received any update yet.", "Thanks,<br>Jessica") },
@@ -67,7 +67,7 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "em_atendimento", tags: ["Rastreamento"], ai: ["Rastreamento"],
+    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "em_atendimento", tags: ["Rastreio"], ai: ["Rastreio"],
     msgs: [
       { dir: "in", at: D + 4 * H, subject: "Where is my order #1087?", body: p("Hi, I ordered 10 days ago and tracking hasn't updated. Can you check?", "Thanks, Emily") },
       { dir: "out", at: D + 2 * H, subject: "Re: Where is my order #1087?", body: p("Hi Emily! Your package cleared customs yesterday and should arrive in 3–5 business days.", "Best,<br>SRX Support") },
@@ -82,7 +82,7 @@ const SEEDS: Seed[] = [
     msgs: [{ dir: "in", at: 9 * H, subject: "Discount code didn't work", body: p("The code FALL10 didn't apply at checkout. Can I still use it on my order?") }],
   },
   {
-    email: "kevin.martinez@gmail.com", name: "Kevin Martinez", status: "resolvido", tags: ["Rastreamento"],
+    email: "kevin.martinez@gmail.com", name: "Kevin Martinez", status: "resolvido", tags: ["Rastreio"],
     msgs: [
       { dir: "in", at: 2 * D, subject: "Wrong address on my order", body: p("I typed the wrong house number on order #4510 — it's 245, not 254.") },
       { dir: "out", at: 2 * D - 40, subject: "Re: Wrong address on my order", body: p("All set, Kevin — the address was updated before shipping!", "Best regards,<br>SRX Support") },
@@ -139,7 +139,7 @@ function buildStore(): Store {
       resolved_at: s.status === "resolvido" ? ago(s.msgs[s.msgs.length - 1].at - 30) : null,
     });
   }
-  const store = { conversations, messages, signature: "Best regards,\n{nome}\nSRX Customer Support", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreamento"], aiTagsEnabled: true };
+  const store = { conversations, messages, signature: "Best regards,\n{nome}\nSRX Customer Support", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreio"], aiTagsEnabled: true };
   store.conversations.forEach((c) => recompute(store, c));
   return store;
 }

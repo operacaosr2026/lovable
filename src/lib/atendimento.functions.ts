@@ -415,7 +415,7 @@ export const getSupportSettings = createServerFn({ method: "GET" })
     };
   });
 
-const DEFAULT_TAGS = ["Reembolso", "Defeito", "Troca", "Rastreamento"];
+const DEFAULT_TAGS = ["Reembolso", "Defeito", "Troca", "Rastreio"];
 const TagName = z.string().trim().min(1).max(40);
 
 // Salva só o que veio (assinatura e/ou lista de tags).
