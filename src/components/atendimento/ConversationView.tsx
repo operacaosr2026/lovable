@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Check, ChevronDown, Download, ExternalLink, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag, Trash2,
+  ArrowLeft, Check, ChevronDown, Download, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag, Trash2,
 } from "lucide-react";
 import {
   deleteSupportConversations, getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
@@ -20,8 +20,8 @@ import { TagEditor, customerType } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
 import { useSupportFn, useIsDemo } from "./demo";
 
-export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged, onDeleted }: {
-  id: string; allTags: string[]; mailWebBase: string; onBack: () => void; onChanged: () => void; onDeleted: () => void;
+export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: {
+  id: string; allTags: string[]; onBack: () => void; onChanged: () => void; onDeleted: () => void;
 }) {
   const confirm = useConfirm();
   const deleteFn = useSupportFn(deleteSupportConversations, "deleteSupportConversations");
@@ -114,7 +114,6 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged, 
 
   const name = displayName(conv.customer_name ?? customer.data?.name, conv.customer_email);
   const type = customer.data ? customerType(customer.data.ordersCount) : null;
-  const lastMsg = q.data!.messages[q.data!.messages.length - 1];
   const status = STATUS_META[conv.status];
 
   return (
@@ -160,16 +159,6 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged, 
             <DropdownMenuItem onClick={() => readFn({ data: { ids: [id], read: false } }).then(() => { markedRef.current = id; onChanged(); toast.success("Marcada como não lida"); })}>
               <MailOpen className="size-3.5 mr-2" />Marcar como não lida
             </DropdownMenuItem>
-            {lastMsg && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <a href={`${mailWebBase}/zm/#mail/folder/${lastMsg.direction === "in" ? "inbox" : "sent"}/p/${lastMsg.message_id}`} target="_blank" rel="noreferrer">
-                    <ExternalLink className="size-3.5 mr-2" />Abrir no Zoho
-                  </a>
-                </DropdownMenuItem>
-              </>
-            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={askDelete} className="text-destructive focus:text-destructive">
               <Trash2 className="size-3.5 mr-2" />Excluir conversa

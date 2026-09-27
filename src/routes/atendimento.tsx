@@ -430,7 +430,6 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               key={selectedId}
               id={selectedId}
               allTags={allTags}
-              mailWebBase={status.mailWebBase}
               onBack={() => setSelectedId(null)}
               onChanged={refreshAll}
               onDeleted={() => { setSelectedId(null); refreshAll(); }}
