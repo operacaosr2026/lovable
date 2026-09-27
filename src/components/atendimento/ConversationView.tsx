@@ -16,7 +16,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmailFrame } from "./EmailFrame";
 import { Composer, type SendMode } from "./Composer";
-import { TagEditor, customerType } from "./CustomerPanel";
+import { TagEditor } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
 import { useSupportFn, useIsDemo } from "./demo";
 
@@ -113,7 +113,6 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
   }
 
   const name = displayName(conv.customer_name ?? customer.data?.name, conv.customer_email);
-  const type = customer.data ? customerType(customer.data.ordersCount) : null;
   const status = STATUS_META[conv.status];
 
   return (
@@ -127,7 +126,6 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-semibold truncate">{name}</p>
-            {type && <span className={`hidden sm:inline text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${type.cls}`}>{type.label}</span>}
           </div>
           <p className="text-xs text-muted-foreground truncate">{conv.customer_email}</p>
         </div>

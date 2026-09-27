@@ -9,12 +9,6 @@ import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { useSupportTags } from "./useSupportTags";
 
-export function customerType(orders: number) {
-  if (orders >= 2) return { label: "Cliente recorrente", cls: "bg-success/15 text-success" };
-  if (orders === 1) return { label: "Cliente novo", cls: "bg-info/10 text-info" };
-  return { label: "Sem pedidos", cls: "bg-muted text-muted-foreground" };
-}
-
 const TAG_TONES = [
   "bg-violet-500/10 text-violet-700 dark:text-violet-300",
   "bg-sky-500/10 text-sky-700 dark:text-sky-300",
