@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Check, ChevronDown, Copy, Download, ExternalLink, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag, Trash2,
+  ArrowLeft, Check, ChevronDown, Download, ExternalLink, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag, Trash2,
 } from "lucide-react";
 import {
   deleteSupportConversations, getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
@@ -159,9 +159,6 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged, 
           <DropdownMenuContent align="end" className="w-52">
             <DropdownMenuItem onClick={() => readFn({ data: { ids: [id], read: false } }).then(() => { markedRef.current = id; onChanged(); toast.success("Marcada como não lida"); })}>
               <MailOpen className="size-3.5 mr-2" />Marcar como não lida
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(conv.customer_email); toast.success("E-mail copiado"); }}>
-              <Copy className="size-3.5 mr-2" />Copiar e-mail
             </DropdownMenuItem>
             {lastMsg && (
               <>
