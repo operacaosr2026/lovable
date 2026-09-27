@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Loader2, Package, RefreshCw, Truck, X } from "lucide-react";
+import { Copy, Loader2, Package, Truck, X } from "lucide-react";
 import {
   getSupportConversation, getSupportCustomer, updateSupportConversations,
 } from "@/lib/atendimento.functions";
-import { Avatar, displayName, formatMoney, fullTime, listTime } from "./utils";
+import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { useSupportTags } from "./useSupportTags";
 
@@ -74,14 +74,11 @@ export function TagEditor({ tags, suggestions, onChange }: { tags: string[]; sug
   );
 }
 
-type PanelTab = "cliente" | "pedidos" | "zoho" | "notas";
+type PanelTab = "cliente" | "pedidos" | "notas";
 
-export function CustomerPanel({ conversationId, allTags, zoho, onSync, syncing, onChanged }: {
+export function CustomerPanel({ conversationId, allTags, onChanged }: {
   conversationId: string | null;
   allTags: string[];
-  zoho: { email: string | null; lastSyncAt: string | null; lastSyncError: string | null; mailWebBase: string };
-  onSync: () => void;
-  syncing: boolean;
   onChanged: () => void;
 }) {
   const [tab, setTab] = useState<PanelTab>("cliente");
@@ -114,7 +111,7 @@ export function CustomerPanel({ conversationId, allTags, zoho, onSync, syncing, 
   useEffect(() => { setNote(c?.note ?? ""); }, [c?.id, c?.note]);
 
   const TABS: { key: PanelTab; label: string }[] = [
-    { key: "cliente", label: "Cliente" }, { key: "pedidos", label: "Pedidos" }, { key: "zoho", label: "Zoho" }, { key: "notas", label: "Notas" },
+    { key: "cliente", label: "Cliente" }, { key: "pedidos", label: "Pedidos" }, { key: "notas", label: "Notas" },
   ];
 
   return (
@@ -132,9 +129,7 @@ export function CustomerPanel({ conversationId, allTags, zoho, onSync, syncing, 
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4">
-        {tab === "zoho" ? (
-          <ZohoTab zoho={zoho} onSync={onSync} syncing={syncing} lastMsg={conv.data?.messages.at(-1)} />
-        ) : !conversationId ? (
+        {!conversationId ? (
           <p className="text-xs text-muted-foreground text-center py-10">Selecione uma conversa</p>
         ) : !c ? (
           <div className="grid place-items-center py-10"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
@@ -256,42 +251,6 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="bg-card px-3 py-2.5 min-w-0">
       <p className="text-[10px] text-muted-foreground">{label}</p>
       <div className="text-xs font-semibold mt-0.5">{value}</div>
-    </div>
-  );
-}
-
-function ZohoTab({ zoho, onSync, syncing, lastMsg }: {
-  zoho: { email: string | null; lastSyncAt: string | null; lastSyncError: string | null; mailWebBase: string };
-  onSync: () => void; syncing: boolean;
-  lastMsg?: { message_id: string; direction: string };
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border p-3 space-y-1">
-        <p className="text-[10px] text-muted-foreground">Conta conectada</p>
-        <p className="text-sm font-medium truncate">{zoho.email ?? "—"}</p>
-        <p className="text-[11px] text-muted-foreground">
-          Última sincronização: {zoho.lastSyncAt ? `${listTime(zoho.lastSyncAt)} ${new Date(zoho.lastSyncAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "nunca"}
-        </p>
-        {zoho.lastSyncError && <p className="text-[11px] text-destructive">{zoho.lastSyncError}</p>}
-      </div>
-      <button onClick={onSync} disabled={syncing}
-        className="w-full h-9 rounded-lg border border-border text-sm flex items-center justify-center gap-2 hover:bg-muted disabled:opacity-60">
-        <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} /> Sincronizar agora
-      </button>
-      {lastMsg && (
-        <a href={`${zoho.mailWebBase}/zm/#mail/folder/${lastMsg.direction === "in" ? "inbox" : "sent"}/p/${lastMsg.message_id}`} target="_blank" rel="noreferrer"
-          className="w-full h-9 rounded-lg border border-border text-sm flex items-center justify-center gap-2 hover:bg-muted">
-          <ExternalLink className="size-3.5" /> Abrir conversa no Zoho
-        </a>
-      )}
-      <a href={`${zoho.mailWebBase}/zm/`} target="_blank" rel="noreferrer"
-        className="w-full h-9 rounded-lg text-xs text-muted-foreground flex items-center justify-center gap-1.5 hover:text-foreground">
-        Abrir Zoho Mail <ExternalLink className="size-3" />
-      </a>
-      <p className="text-[11px] text-muted-foreground leading-relaxed">
-        O sistema busca e-mails novos a cada 5 minutos e sempre que esta tela está aberta. O que você responde aqui sai da sua caixa do Zoho e fica em Enviados.
-      </p>
     </div>
   );
 }

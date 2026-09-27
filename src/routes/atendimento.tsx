@@ -382,9 +382,6 @@ function Inboxes({ status }: { status: ZohoStatus }) {
           <CustomerPanel
             conversationId={selectedId}
             allTags={allTags}
-            zoho={status}
-            onSync={() => sync.mutate(true)}
-            syncing={sync.isPending}
             onChanged={refreshAll}
           />
         </section>
@@ -396,9 +393,6 @@ function Inboxes({ status }: { status: ZohoStatus }) {
           <CustomerPanel
             conversationId={selectedId}
             allTags={allTags}
-            zoho={status}
-            onSync={() => sync.mutate(true)}
-            syncing={sync.isPending}
             onChanged={refreshAll}
           />
         </section>
