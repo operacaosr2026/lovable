@@ -81,7 +81,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
   allTags: string[];
   onChanged: () => void;
 }) {
-  const [tab, setTab] = useState<PanelTab>("cliente");
+  const [tab, setTab] = useState<PanelTab>("pedidos");
   const qc = useQueryClient();
   const getFn = useSupportFn(getSupportConversation, "getSupportConversation");
   const customerFn = useSupportFn(getSupportCustomer, "getSupportCustomer");
@@ -111,7 +111,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
   useEffect(() => { setNote(c?.note ?? ""); }, [c?.id, c?.note]);
 
   const TABS: { key: PanelTab; label: string }[] = [
-    { key: "cliente", label: "Cliente" }, { key: "pedidos", label: "Pedidos" }, { key: "notas", label: "Notas" },
+    { key: "pedidos", label: "Pedidos" }, { key: "cliente", label: "Cliente" }, { key: "notas", label: "Notas" },
   ];
 
   return (
