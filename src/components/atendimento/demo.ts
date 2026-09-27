@@ -39,7 +39,7 @@ const quote = (who: string, body: string) =>
 const SEEDS: Seed[] = [
   {
     email: "jessica.miller@gmail.com", name: "Jessica Miller", status: "em_atendimento", favorite: true,
-    tags: ["Rastreamento", "Walkesty", "VIP"], ai: ["Rastreamento"],
+    tags: ["Rastreamento"], ai: ["Rastreamento"],
     note: "Cliente VIP — já comprou 5 vezes. Priorizar.",
     msgs: [
       { dir: "in", at: 26 * H, subject: "Order status #4532", body: p("Hi,", "Could you tell me the status of my order #4532? I paid on 9/15 and haven't received any update yet.", "Thanks,<br>Jessica") },
@@ -67,29 +67,29 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "em_atendimento", tags: ["Nordhaus", "Rastreamento"], ai: ["Rastreamento"],
+    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "em_atendimento", tags: ["Rastreamento"], ai: ["Rastreamento"],
     msgs: [
       { dir: "in", at: D + 4 * H, subject: "Where is my order #1087?", body: p("Hi, I ordered 10 days ago and tracking hasn't updated. Can you check?", "Thanks, Emily") },
       { dir: "out", at: D + 2 * H, subject: "Re: Where is my order #1087?", body: p("Hi Emily! Your package cleared customs yesterday and should arrive in 3–5 business days.", "Best,<br>SRX Support") },
     ],
   },
   {
-    email: "sarah.wilson@hotmail.com", name: "Sarah Wilson", status: "em_atendimento", favorite: true, tags: ["Nordhaus", "Troca"], ai: ["Troca"],
+    email: "sarah.wilson@hotmail.com", name: "Sarah Wilson", status: "em_atendimento", favorite: true, tags: ["Troca"], ai: ["Troca"],
     msgs: [{ dir: "in", at: 7 * H, subject: "Wrong size received", read: false, body: p("Hello, I ordered a size M but received an XL. How can I get the right one?", "Order #1102."), attachments: [{ name: "label.png", size: 420_000 }, { name: "invoice.pdf", size: 96_000 }] }],
   },
   {
-    email: "ashley.davis@gmail.com", name: "Ashley Davis", status: "em_atendimento", tags: ["Walkesty"],
+    email: "ashley.davis@gmail.com", name: "Ashley Davis", status: "em_atendimento",
     msgs: [{ dir: "in", at: 9 * H, subject: "Discount code didn't work", body: p("The code FALL10 didn't apply at checkout. Can I still use it on my order?") }],
   },
   {
-    email: "kevin.martinez@gmail.com", name: "Kevin Martinez", status: "resolvido",
+    email: "kevin.martinez@gmail.com", name: "Kevin Martinez", status: "resolvido", tags: ["Rastreamento"],
     msgs: [
       { dir: "in", at: 2 * D, subject: "Wrong address on my order", body: p("I typed the wrong house number on order #4510 — it's 245, not 254.") },
       { dir: "out", at: 2 * D - 40, subject: "Re: Wrong address on my order", body: p("All set, Kevin — the address was updated before shipping!", "Best regards,<br>SRX Support") },
     ],
   },
   {
-    email: "michael.brown@icloud.com", name: "Michael Brown", status: "resolvido", tags: ["Cancelamento"],
+    email: "michael.brown@icloud.com", name: "Michael Brown", status: "resolvido", tags: ["Reembolso"], ai: ["Reembolso"],
     msgs: [
       { dir: "in", at: 3 * D, subject: "Cancel my order", body: p("Please cancel order #1079, I bought it by mistake.") },
       { dir: "out", at: 3 * D - 2 * H, subject: "Re: Cancel my order", body: p("Done, Michael — order cancelled and refunded.", "Best,<br>SRX Support") },
@@ -104,7 +104,7 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "laura.green@gmail.com", name: "Laura Green", status: "resolvido", tags: ["Elogio"],
+    email: "laura.green@gmail.com", name: "Laura Green", status: "resolvido",
     msgs: [{ dir: "in", at: 5 * D, subject: "Love it! 😊", body: p("Just wanted to say I love the product and shipping was super fast. Great job!") }],
   },
   {
