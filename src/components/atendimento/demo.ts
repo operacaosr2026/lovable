@@ -243,6 +243,14 @@ const demoApi = {
   listSupportConversations: async ({ data }: { data: { from: string; to: string } }) => {
     await wait();
     const s = db();
+    // Mesma regra do servidor: em atendimento, última mensagem nossa, 3 dias sem resposta → resolvido.
+    for (const c of s.conversations) {
+      const out = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
+      const inn = c.last_inbound_at ? new Date(c.last_inbound_at).getTime() : 0;
+      if (c.status === "em_atendimento" && out > inn && out < Date.now() - 3 * 86_400_000) {
+        c.status = "resolvido"; c.resolved_at = new Date().toISOString();
+      }
+    }
     const conversations = s.conversations.filter((c) => c.last_message_at && c.last_message_at >= data.from && c.last_message_at <= data.to);
     const to = new Date(data.to).getTime();
     const waits: number[] = [];

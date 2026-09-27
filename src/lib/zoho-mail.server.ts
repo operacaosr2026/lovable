@@ -206,6 +206,7 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean }
     const touched = await upsertMessages(ownerId, own, parsed);
     await recomputeConversations(ownerId, touched, { firstSync });
     try { await assignConversationShops(ownerId, touched); } catch (e) { console.error("assign shops", e); }
+    try { await autoResolveStale(ownerId); } catch (e) { console.error("auto resolve", e); }
 
     // IA nos e-mails novos: tags automáticas + tradução pro português (falha aqui não derruba a sincronização).
     try {
@@ -451,4 +452,26 @@ export async function assignConversationShops(ownerId: string, ids?: string[]) {
   await Promise.all([...shopByConv].map(([id, shop_id]) =>
     supabaseAdmin.from("support_conversations").update({ shop_id }).eq("id", id).is("shop_id", null).eq("shop_manual", false)));
   return { assigned: shopByConv.size };
+}
+
+// ─── Resolver sozinho ─────────────────────────────────────────────────────────
+
+// Em atendimento + última mensagem é nossa + cliente sem responder há 3 dias
+// → resolvido. (Se ele escrever depois, a conversa volta pra em atendimento.)
+export const AUTO_RESOLVE_DAYS = 3;
+export async function autoResolveStale(ownerId: string) {
+  const cutoff = new Date(Date.now() - AUTO_RESOLVE_DAYS * 86_400_000).toISOString();
+  const { data } = await selectAll<{ id: string; last_inbound_at: string | null; last_outbound_at: string }>(
+    supabaseAdmin.from("support_conversations").select("id,last_inbound_at,last_outbound_at")
+      .eq("owner_id", ownerId).eq("status", "em_atendimento").lt("last_outbound_at", cutoff),
+  );
+  const ids = data
+    .filter((c) => !c.last_inbound_at || new Date(c.last_inbound_at).getTime() < new Date(c.last_outbound_at).getTime())
+    .map((c) => c.id);
+  for (let i = 0; i < ids.length; i += 200) {
+    await supabaseAdmin.from("support_conversations")
+      .update({ status: "resolvido", resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .in("id", ids.slice(i, i + 200)).eq("status", "em_atendimento");
+  }
+  return { resolved: ids.length };
 }
