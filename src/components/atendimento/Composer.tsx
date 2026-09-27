@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { ChevronDown, Loader2, Paperclip, PenLine, Send, X } from "lucide-react";
 import { getSupportSettings, uploadSupportAttachment } from "@/lib/atendimento.functions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatBytes } from "./utils";
+import { useSupportFn } from "./demo";
 
 export type UploadedAttachment = { storeName: string; attachmentPath: string; attachmentName: string; size: number };
 
@@ -13,7 +13,7 @@ export type UploadedAttachment = { storeName: string; attachmentPath: string; at
 const MAX_FILE = 3 * 1024 * 1024;
 
 export function useAttachments() {
-  const uploadFn = useServerFn(uploadSupportAttachment);
+  const uploadFn = useSupportFn(uploadSupportAttachment, "uploadSupportAttachment");
   const [files, setFiles] = useState<UploadedAttachment[]>([]);
   const [uploading, setUploading] = useState(0);
 
@@ -65,7 +65,7 @@ export type SendMode = "aguardando_cliente" | "resolvido" | "em_atendimento";
 
 // Assinatura configurada (Configurações > Assinatura) + liga/desliga por envio.
 export function useSignatureToggle() {
-  const getFn = useServerFn(getSupportSettings);
+  const getFn = useSupportFn(getSupportSettings, "getSupportSettings");
   const q = useQuery({ queryKey: ["support-settings"], queryFn: () => getFn(), staleTime: 5 * 60_000 });
   const available = !!q.data?.signatureEnabled && !!q.data.signature.trim();
   const [on, setOn] = useState(true);

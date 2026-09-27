@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   ArrowLeft, Check, ChevronDown, Copy, Download, ExternalLink, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag,
@@ -18,16 +17,17 @@ import { EmailFrame } from "./EmailFrame";
 import { Composer, type SendMode } from "./Composer";
 import { TagEditor, customerType } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
+import { useSupportFn, useIsDemo } from "./demo";
 
 export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged }: {
   id: string; allTags: string[]; mailWebBase: string; onBack: () => void; onChanged: () => void;
 }) {
   const qc = useQueryClient();
-  const getFn = useServerFn(getSupportConversation);
-  const customerFn = useServerFn(getSupportCustomer);
-  const readFn = useServerFn(markConversationRead);
-  const updateFn = useServerFn(updateSupportConversations);
-  const replyFn = useServerFn(sendSupportReply);
+  const getFn = useSupportFn(getSupportConversation, "getSupportConversation");
+  const customerFn = useSupportFn(getSupportCustomer, "getSupportCustomer");
+  const readFn = useSupportFn(markConversationRead, "markConversationRead");
+  const updateFn = useSupportFn(updateSupportConversations, "updateSupportConversations");
+  const replyFn = useSupportFn(sendSupportReply, "sendSupportReply");
 
   const q = useQuery({ queryKey: ["support-conv", id], queryFn: () => getFn({ data: { id } }), staleTime: 30_000 });
   const conv = q.data?.conversation;
@@ -215,7 +215,9 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
 
 function AttachmentLink({ messageId, att }: { messageId: string; att: { id: string; name: string; size: number } }) {
   const [busy, setBusy] = useState(false);
+  const demo = useIsDemo();
   const download = async () => {
+    if (demo) return toast.info("Modo demonstração — anexo fictício");
     setBusy(true);
     try {
       const { data } = await supabase.auth.getSession();

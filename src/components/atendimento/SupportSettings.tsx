@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Loader2, Plug, PenLine } from "lucide-react";
 import { getSupportSettings, saveSupportSettings, type getZohoStatus } from "@/lib/atendimento.functions";
 import { Switch } from "@/components/ui/switch";
 import { ConnectZoho } from "./ConnectZoho";
 import { fullTime } from "./utils";
+import { useSupportFn } from "./demo";
 
 export type ConfigTab = "integracao" | "assinatura";
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
@@ -77,8 +77,8 @@ function Integration({ status }: { status: ZohoStatus }) {
 
 function Signature() {
   const qc = useQueryClient();
-  const getFn = useServerFn(getSupportSettings);
-  const saveFn = useServerFn(saveSupportSettings);
+  const getFn = useSupportFn(getSupportSettings, "getSupportSettings");
+  const saveFn = useSupportFn(saveSupportSettings, "saveSupportSettings");
   const q = useQuery({ queryKey: ["support-settings"], queryFn: () => getFn() });
   const [text, setText] = useState("");
   const [enabled, setEnabled] = useState(true);

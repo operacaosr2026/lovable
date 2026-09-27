@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, Clock, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
@@ -22,6 +21,7 @@ import { ConversationView } from "@/components/atendimento/ConversationView";
 import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
 import { AttachmentChips, SignatureToggle, useAttachments, useSignatureToggle } from "@/components/atendimento/Composer";
 import { Avatar, STATUS_META, displayName, formatDuration, listTime, resolvePeriod } from "@/components/atendimento/utils";
+import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
 
 export const Route = createFileRoute("/atendimento")({
   beforeLoad: requireAuth,
@@ -35,8 +35,21 @@ type Sort = "recentes" | "antigos" | "nao_lidos";
 type View = "inbox" | "config";
 
 function AtendimentoPage() {
-  const statusFn = useServerFn(getZohoStatus);
-  const status = useQuery({ queryKey: ["zoho-status"], queryFn: () => statusFn(), refetchInterval: 60_000 });
+  // Modo demonstração (?demo=1): lido só no navegador, antes de qualquer consulta.
+  const [demo, setDemo] = useState<boolean | null>(null);
+  useEffect(() => { setDemo(isDemoUrl()); }, []);
+  if (demo === null) return <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  return (
+    <DemoContext.Provider value={demo}>
+      <AtendimentoContent />
+    </DemoContext.Provider>
+  );
+}
+
+function AtendimentoContent() {
+  const demo = useIsDemo();
+  const statusFn = useSupportFn(getZohoStatus, "getZohoStatus");
+  const status = useQuery({ queryKey: ["zoho-status", demo], queryFn: () => statusFn(), refetchInterval: 60_000 });
 
   if (status.isLoading) {
     return <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
@@ -50,15 +63,16 @@ function AtendimentoPage() {
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 
 function Inboxes({ status }: { status: ZohoStatus }) {
+  const demo = useIsDemo();
   const [view, setView] = useState<View>("inbox");
   const [configTab, setConfigTab] = useState<ConfigTab>("integracao");
   const openConfig = (tab: ConfigTab) => { setConfigTab(tab); setView("config"); };
   const qc = useQueryClient();
-  const listFn = useServerFn(listSupportConversations);
-  const syncFn = useServerFn(syncSupportInbox);
-  const orderFn = useServerFn(findEmailsByOrder);
-  const readFn = useServerFn(markConversationRead);
-  const updateFn = useServerFn(updateSupportConversations);
+  const listFn = useSupportFn(listSupportConversations, "listSupportConversations");
+  const syncFn = useSupportFn(syncSupportInbox, "syncSupportInbox");
+  const orderFn = useSupportFn(findEmailsByOrder, "findEmailsByOrder");
+  const readFn = useSupportFn(markConversationRead, "markConversationRead");
+  const updateFn = useSupportFn(updateSupportConversations, "updateSupportConversations");
 
   const [period, setPeriod] = useState("30d");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
@@ -174,6 +188,12 @@ function Inboxes({ status }: { status: ZohoStatus }) {
             <span className={`size-1.5 rounded-full ${!connected ? "bg-muted-foreground" : syncOk ? "bg-success" : "bg-destructive"}`} />
             {!connected ? "Desconectado" : syncOk ? "Online" : "Erro na sincronização"}
           </span>
+          {demo && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium pl-2 pr-1 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              Dados fictícios
+              <a href="/atendimento" className="px-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30">Sair</a>
+            </span>
+          )}
           <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1">
             {([["inbox", "Caixa de entrada", Inbox], ["config", "Configurações", Settings]] as const).map(([key, label, Icon]) => (
               <button key={key} onClick={() => setView(key)}
@@ -259,6 +279,10 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               {status.isAdmin ? "Conecte a conta de atendimento para os e-mails dos clientes aparecerem aqui." : "Peça para o administrador conectar a conta do Zoho Mail."}
             </p>
           </div>
+          <a href="/atendimento?demo=1"
+            className="h-9 px-4 rounded-xl border border-border bg-card text-sm font-medium flex items-center gap-1.5 shrink-0 hover:bg-muted">
+            Ver com dados de exemplo
+          </a>
           {status.isAdmin && (
             <button onClick={() => openConfig("integracao")}
               className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 shrink-0">
@@ -465,7 +489,7 @@ function ConversationRow({ c, active, checked, onCheck, onOpen }: {
 }
 
 function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpenChange: (o: boolean) => void; onSent: (id: string | null) => void }) {
-  const sendFn = useServerFn(sendSupportNewMessage);
+  const sendFn = useSupportFn(sendSupportNewMessage, "sendSupportNewMessage");
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");

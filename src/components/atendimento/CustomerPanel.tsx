@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Copy, ExternalLink, Loader2, Package, RefreshCw, Truck, X } from "lucide-react";
 import {
   getSupportConversation, getSupportCustomer, updateSupportConversations,
 } from "@/lib/atendimento.functions";
 import { Avatar, displayName, formatMoney, fullTime, listTime } from "./utils";
+import { useSupportFn } from "./demo";
 
 export function customerType(orders: number) {
   if (orders >= 2) return { label: "Cliente recorrente", cls: "bg-success/15 text-success" };
@@ -81,9 +81,9 @@ export function CustomerPanel({ conversationId, allTags, zoho, onSync, syncing, 
 }) {
   const [tab, setTab] = useState<PanelTab>("cliente");
   const qc = useQueryClient();
-  const getFn = useServerFn(getSupportConversation);
-  const customerFn = useServerFn(getSupportCustomer);
-  const updateFn = useServerFn(updateSupportConversations);
+  const getFn = useSupportFn(getSupportConversation, "getSupportConversation");
+  const customerFn = useSupportFn(getSupportCustomer, "getSupportCustomer");
+  const updateFn = useSupportFn(updateSupportConversations, "updateSupportConversations");
 
   const conv = useQuery({
     queryKey: ["support-conv", conversationId],

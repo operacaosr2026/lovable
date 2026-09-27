@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Copy, ExternalLink, Loader2, Plug, RefreshCw, Unplug } from "lucide-react";
 import { startZohoOAuth, disconnectZoho } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useSupportFn } from "./demo";
 
 // Conectar a conta do Zoho Mail (só admin). O Client ID/Secret vêm de um app
 // "Server-based" criado no api-console.zoho.com; o login abre numa janela e ela
@@ -11,8 +11,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 export function ConnectZoho({ redirectUri, connectedEmail, onDone }: {
   redirectUri: string; connectedEmail?: string | null; onDone: () => void;
 }) {
-  const startFn = useServerFn(startZohoOAuth);
-  const disconnectFn = useServerFn(disconnectZoho);
+  const startFn = useSupportFn(startZohoOAuth, "startZohoOAuth");
+  const disconnectFn = useSupportFn(disconnectZoho, "disconnectZoho");
   const confirm = useConfirm();
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
