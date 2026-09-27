@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, Clock, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
-  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check,
+  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SupportSettings, type ConfigTab } from "@/components/atendimento/SupportSettings";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import {
   getZohoStatus, listSupportConversations, syncSupportInbox, findEmailsByOrder, markConversationRead,
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/atendimento")({
 
 type Tab = "todos" | "nao_lidos" | "favoritos";
 type Sort = "recentes" | "antigos" | "nao_lidos";
+const SORT_LABELS: Record<Sort, string> = { recentes: "Mais recentes", antigos: "Mais antigos", nao_lidos: "Não lidos primeiro" };
 
 type View = "inbox" | "config";
 
@@ -302,15 +304,25 @@ function Inboxes({ status }: { status: ZohoStatus }) {
                 </button>
               ))}
             </div>
-            <div className="relative">
-              <select value={sort} onChange={(e) => setSort(e.target.value as Sort)}
-                className="appearance-none bg-background border border-border text-[11px] rounded-lg pl-2 pr-6 h-7 outline-none cursor-pointer">
-                <option value="recentes">Mais recentes</option>
-                <option value="antigos">Mais antigos</option>
-                <option value="nao_lidos">Não lidos primeiro</option>
-              </select>
-              <ChevronDown className="size-3 text-muted-foreground absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
+            {/* Ordenação: botão compacto (a coluna é estreita) que abre as opções. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button title={`Ordenar: ${SORT_LABELS[sort]}`}
+                  className={`h-7 pl-2 pr-1.5 rounded-lg border text-muted-foreground hover:text-foreground flex items-center gap-0.5 shrink-0 ${sort !== "recentes" ? "border-primary/50 text-primary" : "border-border bg-background"}`}>
+                  <ArrowDownUp className="size-3.5" />
+                  <ChevronDown className="size-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">Ordenar por</p>
+                {(Object.keys(SORT_LABELS) as Sort[]).map((key) => (
+                  <DropdownMenuItem key={key} onClick={() => setSort(key)}>
+                    {SORT_LABELS[key]}
+                    {sort === key && <Check className="size-3.5 ml-auto text-primary" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {checked.size > 0 && (
