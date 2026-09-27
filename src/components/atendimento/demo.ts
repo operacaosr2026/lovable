@@ -309,7 +309,7 @@ const demoApi = {
       store: o.store, financial: i === 0 && data.email.startsWith("joao") ? "refunded" : "paid",
       delivery: i === 0 ? "Em trânsito" : "Entregue",
       tracking: `TR${String(123456789 - i * 1111).padStart(9, "0")}${o.currency === "BRL" ? "BR" : "US"}`,
-      trackingUrl: null, carrier: o.currency === "BRL" ? "Correios" : "USPS", cancelled: false,
+      trackingUrl: `https://${o.store.toLowerCase()}.com/apps/track123?nums=TR${String(123456789 - i * 1111).padStart(9, "0")}${o.currency === "BRL" ? "BR" : "US"}`, carrier: o.currency === "BRL" ? "Correios" : "USPS", cancelled: false,
     }));
     return {
       name: conv?.customer_name ?? null,

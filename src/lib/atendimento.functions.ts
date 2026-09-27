@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
+import { buildTrackingUrl } from "@/lib/tracking-url";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -464,6 +465,12 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
       ? await supabaseAdmin.from("shops").select("id,name").in("id", shopIds)
       : { data: [] as { id: string; name: string }[] };
     const shopName = new Map((shops ?? []).map((s) => [s.id, s.name]));
+    // URL de rastreio da página da própria loja (Lojas e Grupos > Integrações:
+    // "URL padrão de rastreio" com [CODE]); sem modelo, o link que veio da Shopify.
+    const { data: integs } = shopIds.length
+      ? await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds)
+      : { data: [] as { shop_id: string; tracking_link_template: string | null }[] };
+    const templateByShop = new Map((integs ?? []).map((i) => [i.shop_id, i.tracking_link_template]));
     const valid = orders.filter((o) => !o.cancelled_at);
     const totals: Record<string, number> = {};
     for (const o of valid) totals[o.currency ?? "USD"] = (totals[o.currency ?? "USD"] ?? 0) + Number(o.revenue ?? 0);
@@ -478,7 +485,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
       orders: orders.map((o) => ({
         id: o.id, number: o.order_number, date: o.created_at_shopify, revenue: Number(o.revenue ?? 0), currency: o.currency ?? "USD",
         store: shopName.get(o.shop_id) ?? null, financial: o.shopify_financial_status, delivery: o.delivery_status,
-        tracking: o.tracking_code, trackingUrl: o.tracking_url, carrier: o.carrier, cancelled: !!o.cancelled_at,
+        tracking: o.tracking_code, trackingUrl: buildTrackingUrl(templateByShop.get(o.shop_id), o.tracking_code) ?? o.tracking_url, carrier: o.carrier, cancelled: !!o.cancelled_at,
       })),
     };
   });

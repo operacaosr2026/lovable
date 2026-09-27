@@ -207,7 +207,15 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                       {o.trackingUrl
                         ? <a href={o.trackingUrl} target="_blank" rel="noreferrer" className="font-mono text-primary hover:underline truncate">{o.tracking}</a>
                         : <span className="font-mono truncate">{o.tracking}</span>}
-                      <button onClick={() => { navigator.clipboard.writeText(o.tracking!); toast.success("Rastreio copiado"); }} className="text-muted-foreground hover:text-foreground" aria-label="Copiar rastreio">
+                      {/* Copia o link da página de rastreio da loja (já com o código). */}
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(o.trackingUrl ?? o.tracking!);
+                          if (o.trackingUrl) toast.success("Link de rastreio copiado");
+                          else toast.success("Código copiado", { description: "Esta loja não tem URL de rastreio configurada." });
+                        }}
+                        title={o.trackingUrl ? `Copiar link: ${o.trackingUrl}` : "Copiar código (loja sem URL de rastreio)"}
+                        className="text-muted-foreground hover:text-foreground" aria-label="Copiar link de rastreio">
                         <Copy className="size-3" />
                       </button>
                     </div>
