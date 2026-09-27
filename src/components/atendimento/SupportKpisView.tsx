@@ -138,7 +138,6 @@ export function SupportKpisView({ month }: { month: string }) {
                     <th className="text-right font-medium py-2 px-1">E-mails recebidos</th>
                     <th className="text-right font-medium py-2 px-1">Respondidos</th>
                     <th className="text-right font-medium py-2 px-1">Em aberto</th>
-                    <th className="text-right font-medium py-2 px-1">Taxa de resolução</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -165,7 +164,6 @@ export function SupportKpisView({ month }: { month: string }) {
                         </td>
                         <td className="py-2 px-1 text-right tabular-nums">{int(r.replied)}</td>
                         <td className="py-2 px-1 text-right tabular-nums">{int(r.open)}</td>
-                        <td className="py-2 px-1 text-right tabular-nums">{r.ratePct == null ? "—" : `${r.ratePct.toLocaleString("pt-BR")}%`}</td>
                       </tr>
                     );
                   })}
