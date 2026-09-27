@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, Clock, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
-  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, Plug,
+  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -66,7 +66,6 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   const demo = useIsDemo();
   const [view, setView] = useState<View>("inbox");
   const [configTab, setConfigTab] = useState<ConfigTab>("integracao");
-  const openConfig = (tab: ConfigTab) => { setConfigTab(tab); setView("config"); };
   const qc = useQueryClient();
   const listFn = useSupportFn(listSupportConversations, "listSupportConversations");
   const syncFn = useSupportFn(syncSupportInbox, "syncSupportInbox");
@@ -172,6 +171,8 @@ function Inboxes({ status }: { status: ZohoStatus }) {
 
   const k = list.data?.kpis;
   const connected = status.connected;
+  // Sem dados (erro ou Zoho não conectado): "—" em vez de ficar carregando.
+  const kv = (v: number | undefined) => (v ?? (list.isError || !connected ? "—" : undefined));
   const syncOk = connected && !status.lastSyncError;
   const activeFilters = statusFilter.length + tagFilter.length;
 
@@ -272,37 +273,15 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         <SupportSettings status={status} tab={configTab} setTab={setConfigTab} />
       ) : (
       <>
-      {!connected && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4">
-          <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Mail className="size-4" /></div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold">Zoho Mail não conectado</p>
-            <p className="text-xs text-muted-foreground">
-              {status.isAdmin ? "Conecte a conta de atendimento para os e-mails dos clientes aparecerem aqui." : "Peça para o administrador conectar a conta do Zoho Mail."}
-            </p>
-          </div>
-          <a href="/atendimento?demo=1"
-            className="h-9 px-4 rounded-xl border border-border bg-card text-sm font-medium flex items-center gap-1.5 shrink-0 hover:bg-muted">
-            Ver com dados de exemplo
-          </a>
-          {status.isAdmin && (
-            <button onClick={() => openConfig("integracao")}
-              className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 shrink-0">
-              <Plug className="size-4" /> Conectar Zoho
-            </button>
-          )}
-        </div>
-      )}
-
       {/* ── Indicadores ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
-        <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={k?.received} hint="no período" />
-        <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={k?.unread} hint="conversas" />
-        <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={k?.inProgress} hint="aguardando nós" />
-        <Kpi icon={Clock} cls="bg-warning/15 text-amber-600 dark:text-amber-400" label="Aguardando cliente" value={k?.waiting} hint="já respondidas" />
-        <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={k?.resolved} hint="no período" />
+        <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={kv(k?.received)} />
+        <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(k?.unread)} />
+        <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={kv(k?.inProgress)} />
+        <Kpi icon={Clock} cls="bg-warning/15 text-amber-600 dark:text-amber-400" label="Aguardando cliente" value={kv(k?.waiting)} />
+        <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(k?.resolved)} />
         <Kpi icon={Timer} cls="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Tempo médio de resposta"
-          value={k ? formatDuration(k.avgResponseMs) : undefined} hint={k ? `${k.responses} resposta${k.responses === 1 ? "" : "s"}` : ""} />
+          value={k ? formatDuration(k.avgResponseMs) : kv(undefined)} />
       </div>
 
       {/* ── Lista | Conversa | Cliente ── */}
@@ -419,14 +398,13 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   );
 }
 
-function Kpi({ icon: Icon, cls, label, value, hint }: { icon: typeof Mail; cls: string; label: string; value: number | string | undefined; hint: string }) {
+function Kpi({ icon: Icon, cls, label, value }: { icon: typeof Mail; cls: string; label: string; value: number | string | undefined }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-3.5 flex items-center gap-3 min-w-0">
       <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${cls}`}><Icon className="size-[18px]" /></div>
       <div className="min-w-0">
         <p className="text-xl font-bold tracking-tight leading-tight">{value ?? <span className="inline-block w-8 h-5 rounded bg-muted animate-pulse align-middle" />}</p>
-        <p className="text-[11px] text-muted-foreground truncate">{label}</p>
-        {hint && <p className="text-[10px] text-muted-foreground/70 truncate">{hint}</p>}
+        <p className="text-[11px] text-muted-foreground truncate" title={label}>{label}</p>
       </div>
     </div>
   );
