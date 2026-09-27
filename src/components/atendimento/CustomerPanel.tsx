@@ -153,7 +153,6 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
               <div className="h-24 rounded-xl bg-muted animate-pulse" />
             ) : customer.data && (
               <div className="grid grid-cols-2 gap-px rounded-xl border border-border bg-border overflow-hidden">
-                <Stat label="Tipo de cliente" value={<span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${customerType(customer.data.ordersCount).cls}`}>{customerType(customer.data.ordersCount).label}</span>} />
                 <Stat label="Total de pedidos" value={String(customer.data.ordersCount)} />
                 <Stat label="Primeiro pedido" value={customer.data.firstOrderAt ? new Date(customer.data.firstOrderAt).toLocaleDateString("pt-BR") : "—"} />
                 <Stat label="Valor total" value={
@@ -161,12 +160,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                     ? Object.entries(customer.data.totals).map(([cur, v]) => <span key={cur} className="block">{formatMoney(v, cur)}</span>)
                     : "—"
                 } />
-                {customer.data.stores.length > 0 && (
-                  <div className="col-span-2 bg-card px-3 py-2.5">
-                    <p className="text-[10px] text-muted-foreground">Loja{customer.data.stores.length > 1 ? "s" : ""}</p>
-                    <p className="text-xs font-medium">{customer.data.stores.join(", ")}</p>
-                  </div>
-                )}
+                <Stat label={customer.data.stores.length > 1 ? "Lojas" : "Loja"} value={customer.data.stores.join(", ") || "—"} />
               </div>
             )}
 
