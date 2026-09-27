@@ -6,8 +6,8 @@ import { fetchMessageContent, type ZohoAccount } from "@/lib/zoho-mail.server";
 // lido uma vez e recebe tags da lista fixa (Configurações > Tags). Roda no fim
 // de cada sincronização; sem ANTHROPIC_API_KEY, não faz nada.
 
-// Modelo trocável pela variável SUPPORT_AI_MODEL (ex.: claude-haiku-4-5, mais barato).
-const MODEL = process.env.SUPPORT_AI_MODEL || "claude-opus-5";
+// Haiku: classificar em poucas tags é tarefa simples; trocável por SUPPORT_AI_MODEL.
+const MODEL = process.env.SUPPORT_AI_MODEL || "claude-haiku-4-5";
 const PER_RUN = 15;           // e-mails por sincronização (limita tempo e custo)
 const MAX_AGE_DAYS = 3;       // mais antigos que isso não são classificados
 const CONCURRENCY = 4;
