@@ -16,7 +16,7 @@ import {
 // Aba Atendimento: e-mails de clientes do Zoho Mail. Uma conta por workspace.
 // Acesso: admin, ou membro com a permissão "atendimento".
 
-export const SUPPORT_STATUSES = ["em_atendimento", "aguardando_cliente", "resolvido"] as const;
+export const SUPPORT_STATUSES = ["em_atendimento", "resolvido"] as const;
 export type SupportStatus = (typeof SUPPORT_STATUSES)[number];
 
 type Ctx = { role: "admin" | "member"; ownerId: string; permissions: { section: string }[] };
@@ -147,6 +147,8 @@ export const listSupportConversations = createServerFn({ method: "GET" })
       }
     }
 
+    // "aguardando_cliente" (status antigo, foi juntado a "em atendimento").
+    for (const c of convRes.data) if (c.status !== "resolvido") c.status = "em_atendimento";
     const conversations = convRes.data.sort((a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""));
     return {
       conversations,
@@ -154,7 +156,6 @@ export const listSupportConversations = createServerFn({ method: "GET" })
         received: received.length,
         unread: open.filter((c) => c.unread_count > 0).length,
         inProgress: open.filter((c) => c.status === "em_atendimento").length,
-        waiting: open.filter((c) => c.status === "aguardando_cliente").length,
         resolved: conversations.filter((c) => c.status === "resolvido" && c.resolved_at && c.resolved_at >= data.from && c.resolved_at <= data.to).length,
         avgResponseMs: waits.length ? Math.round(waits.reduce((s, x) => s + x, 0) / waits.length) : null,
         responses: waits.length,
@@ -218,7 +219,9 @@ export const getSupportConversation = createServerFn({ method: "GET" })
         }
       }));
     }
-    return { conversation: conv as SupportConversation, messages: out };
+    const conversation = conv as SupportConversation;
+    if (conversation.status !== "resolvido") conversation.status = "em_atendimento";
+    return { conversation, messages: out };
   });
 
 export const markConversationRead = createServerFn({ method: "POST" })
@@ -468,7 +471,7 @@ export const sendSupportReply = createServerFn({ method: "POST" })
     conversationId: z.string().uuid(),
     text: z.string().trim().min(1).max(20_000),
     attachments: z.array(AttachmentRef).max(10).optional(),
-    status: z.enum(SUPPORT_STATUSES).default("aguardando_cliente"),
+    status: z.enum(SUPPORT_STATUSES).default("em_atendimento"),
     signature: z.boolean().default(true),
   }).parse(d))
   .handler(async ({ data, context }) => {
@@ -506,10 +509,6 @@ export const sendSupportReply = createServerFn({ method: "POST" })
     }).eq("id", conv.id);
     // Traz o enviado pro histórico (pasta Enviados, só a 1ª página).
     try { await syncZohoMailbox(ownerId, { quick: true }); } catch { /* aparece na próxima sincronização */ }
-    // A sincronização não pode puxar o status de volta pra "aguardando" se foi marcado resolvido.
-    if (data.status !== "aguardando_cliente") {
-      await supabaseAdmin.from("support_conversations").update({ status: data.status }).eq("id", conv.id);
-    }
     return { ok: true };
   });
 

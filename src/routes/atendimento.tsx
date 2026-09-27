@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Mail, MailWarning, MessageCircle, Clock, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
+  Mail, MailWarning, MessageCircle, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
   RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
@@ -211,7 +211,6 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   const periodCounts = {
     unread: conversations.filter((c) => c.unread_count > 0).length,
     em_atendimento: conversations.filter((c) => c.status === "em_atendimento").length,
-    aguardando_cliente: conversations.filter((c) => c.status === "aguardando_cliente").length,
     resolvido: conversations.filter((c) => c.status === "resolvido").length,
   };
   const onlyStatus = (st: SupportStatus) => statusFilter.length === 1 && statusFilter[0] === st;
@@ -345,15 +344,13 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       ) : (
       <>
       {/* ── Indicadores ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4">
         <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={kv(k?.received)}
           onClick={() => { setTab("todos"); setStatusFilter([]); }} />
         <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(list.data ? periodCounts.unread : undefined)}
           active={tab === "nao_lidos"} onClick={() => setTab(tab === "nao_lidos" ? "todos" : "nao_lidos")} />
         <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={kv(list.data ? periodCounts.em_atendimento : undefined)}
           active={onlyStatus("em_atendimento")} onClick={() => toggleStatusCard("em_atendimento")} />
-        <Kpi icon={Clock} cls="bg-warning/15 text-amber-600 dark:text-amber-400" label="Aguardando cliente" value={kv(list.data ? periodCounts.aguardando_cliente : undefined)}
-          active={onlyStatus("aguardando_cliente")} onClick={() => toggleStatusCard("aguardando_cliente")} />
         <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(list.data ? periodCounts.resolvido : undefined)}
           active={onlyStatus("resolvido")} onClick={() => toggleStatusCard("resolvido")} />
         <Kpi icon={Timer} cls="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Tempo médio de resposta"

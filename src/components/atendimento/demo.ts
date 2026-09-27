@@ -60,14 +60,14 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "megan.brooks@yahoo.com", name: "Megan Brooks", status: "aguardando_cliente", tags: ["Defeito"], ai: ["Defeito"],
+    email: "megan.brooks@yahoo.com", name: "Megan Brooks", status: "em_atendimento", tags: ["Defeito"], ai: ["Defeito"],
     msgs: [
       { dir: "in", at: 5 * H, subject: "Item arrived damaged", body: p("Hi, the bag arrived with the strap coming apart at the seam. Photo attached.", "Order #4498."), attachments: [{ name: "bag-photo.jpg", size: 1_840_000 }] },
       { dir: "out", at: 4 * H, subject: "Re: Item arrived damaged", body: p("Hi Megan, we're so sorry about that! We can send you a replacement or issue a full refund — which would you prefer?", "Best regards,<br>SRX Support") },
     ],
   },
   {
-    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "aguardando_cliente", tags: ["Nordhaus", "Rastreamento"], ai: ["Rastreamento"],
+    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "em_atendimento", tags: ["Nordhaus", "Rastreamento"], ai: ["Rastreamento"],
     msgs: [
       { dir: "in", at: D + 4 * H, subject: "Where is my order #1087?", body: p("Hi, I ordered 10 days ago and tracking hasn't updated. Can you check?", "Thanks, Emily") },
       { dir: "out", at: D + 2 * H, subject: "Re: Where is my order #1087?", body: p("Hi Emily! Your package cleared customs yesterday and should arrive in 3–5 business days.", "Best,<br>SRX Support") },
@@ -206,7 +206,6 @@ const demoApi = {
         received: s.messages.filter((m) => m.direction === "in" && m.sent_at >= data.from && m.sent_at <= data.to).length,
         unread: s.conversations.filter((c) => c.unread_count > 0).length,
         inProgress: s.conversations.filter((c) => c.status === "em_atendimento").length,
-        waiting: s.conversations.filter((c) => c.status === "aguardando_cliente").length,
         resolved: conversations.filter((c) => c.status === "resolvido").length,
         avgResponseMs: waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null,
         responses: waits.length,
@@ -284,7 +283,7 @@ const demoApi = {
     if (!c) {
       c = {
         id: uid(), customer_email: email, customer_name: null, subject: null, summary: null, last_message_at: null,
-        last_inbound_at: null, last_outbound_at: null, message_count: 0, unread_count: 0, status: "aguardando_cliente",
+        last_inbound_at: null, last_outbound_at: null, message_count: 0, unread_count: 0, status: "em_atendimento",
         favorite: false, tags: [], ai_tags: [], note: null, resolved_at: null,
       };
       s.conversations.push(c);
@@ -295,7 +294,7 @@ const demoApi = {
       sent_at: new Date().toISOString(), is_read: true, has_attachment: false,
       content_html: `<p>${data.text.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p>`, attachments: [],
     });
-    c.status = "aguardando_cliente";
+    c.status = "em_atendimento";
     recompute(s, c);
     return { conversationId: c.id };
   },

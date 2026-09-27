@@ -2,7 +2,6 @@ import type { SupportStatus } from "@/lib/atendimento.functions";
 
 export const STATUS_META: Record<SupportStatus, { label: string; cls: string; dot: string }> = {
   em_atendimento:     { label: "Em atendimento",     cls: "bg-primary/10 text-primary",                          dot: "bg-primary" },
-  aguardando_cliente: { label: "Aguardando cliente", cls: "bg-warning/15 text-amber-600 dark:text-amber-400",    dot: "bg-warning" },
   resolvido:          { label: "Resolvido",          cls: "bg-success/15 text-success",                          dot: "bg-success" },
 };
 

@@ -297,12 +297,12 @@ export async function recomputeConversations(ownerId: string, ids: string[], opt
       const newOut = lastOut?.sent_at ?? null;
       const t = (s: string | null) => (s ? new Date(s).getTime() : 0);
 
-      let status = c.status;
+      // Só dois status: em atendimento e resolvido. Cliente escreveu de novo
+      // numa conversa resolvida → volta pra em atendimento.
+      let status = c.status === "resolvido" ? "resolvido" : "em_atendimento";
       let resolvedAt = c.resolved_at;
       if (t(newIn) > t(c.last_inbound_at) && t(newIn) >= t(newOut)) {
         status = "em_atendimento"; resolvedAt = null;
-      } else if (t(newOut) > t(c.last_outbound_at) && t(newOut) > t(newIn) && status === "em_atendimento") {
-        status = "aguardando_cliente";
       }
       // 1ª sincronização: o que está parado há mais de 7 dias entra como resolvido.
       if (opts.firstSync && t(last.sent_at) < Date.now() - 7 * 86_400_000) {

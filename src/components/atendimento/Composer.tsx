@@ -101,7 +101,7 @@ export function TranslateToEnglish({ text, setText }: { text: string; setText: (
   );
 }
 
-export type SendMode = "aguardando_cliente" | "resolvido" | "em_atendimento";
+export type SendMode = "em_atendimento" | "resolvido";
 
 // Assinatura configurada (Configurações > Assinatura) + liga/desliga por envio.
 export function useSignatureToggle() {
@@ -145,7 +145,7 @@ export function Composer({ customerName, onSend, sending }: {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("aguardando_cliente"); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("em_atendimento"); } }}
           placeholder={`Responder ${customerName}… pode escrever em português e traduzir  (Ctrl+Enter envia)`}
           rows={4}
           className="w-full resize-y min-h-[88px] max-h-80 bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-muted-foreground/70"
@@ -161,7 +161,7 @@ export function Composer({ customerName, onSend, sending }: {
           <div className="flex-1" />
           <div className="flex shrink-0">
             <button
-              onClick={() => send("aguardando_cliente")}
+              onClick={() => send("em_atendimento")}
               disabled={!text.trim() || sending || att.uploading}
               className="h-8 pl-3.5 pr-3 rounded-l-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
             >
@@ -176,9 +176,8 @@ export function Composer({ customerName, onSend, sending }: {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
-                <DropdownMenuItem onClick={() => send("aguardando_cliente")}>Enviar e aguardar cliente</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => send("em_atendimento")}>Enviar</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => send("resolvido")}>Enviar e marcar como resolvido</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => send("em_atendimento")}>Enviar e manter em atendimento</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
