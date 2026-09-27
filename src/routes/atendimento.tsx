@@ -13,7 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { SupportSettings, type ConfigTab } from "@/components/atendimento/SupportSettings";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
+import { Calendar } from "@/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
+import { localDateKey } from "@/lib/timezone";
 import {
   getZohoStatus, listSupportConversations, syncSupportInbox, findEmailsByOrder, markConversationRead,
   updateSupportConversations, sendSupportNewMessage, deleteSupportConversations, SUPPORT_STATUSES,
@@ -33,6 +35,11 @@ export const Route = createFileRoute("/atendimento")({
 });
 
 type Tab = "todos" | "nao_lidos" | "favoritos";
+const PERIODS = [
+  ["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "Últimos 7 dias"], ["30d", "Últimos 30 dias"], ["mes", "Este mês"], ["custom", "Personalizado"],
+] as const;
+const fmtDay = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
+
 type Sort = "recentes" | "antigos" | "nao_lidos";
 const SORT_LABELS: Record<Sort, string> = { recentes: "Mais recentes", antigos: "Mais antigos", nao_lidos: "Não lidos primeiro" };
 
@@ -204,7 +211,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   // Sem dados (erro ou Zoho não conectado): "—" em vez de ficar carregando.
   const kv = (v: number | undefined) => (v ?? (list.isError || !connected ? "—" : undefined));
   const syncOk = connected && !status.lastSyncError;
-  const activeFilters = statusFilter.length + tagFilter.length;
+  const activeFilters = statusFilter.length + tagFilter.length + (period !== "30d" ? 1 : 0);
 
   return (
     <PageShell fit wide>
@@ -256,7 +263,32 @@ function Inboxes({ status }: { status: ZohoStatus }) {
                 <SlidersHorizontal className="size-3.5" /><span className="hidden xl:inline">Filtros</span>{activeFilters ? ` (${activeFilters})` : ""}
               </button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-3 space-y-3">
+            <PopoverContent align="end" className="w-72 p-3 space-y-3 max-h-[80vh] overflow-y-auto">
+              <div>
+                <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">Período</p>
+                {PERIODS.map(([key, label]) => (
+                  <CheckRow key={key} radio checked={period === key}
+                    onToggle={() => { setPeriod(key); if (key !== "custom") setCustomRange(undefined); }}>
+                    {label}
+                    {key === "custom" && customRange && period === "custom" && (
+                      <span className="ml-auto text-[10px] text-muted-foreground">{fmtDay(customRange.from)} → {fmtDay(customRange.to)}</span>
+                    )}
+                  </CheckRow>
+                ))}
+                {period === "custom" && (
+                  <div className="mt-1 rounded-lg border border-border">
+                    <Calendar
+                      mode="range"
+                      numberOfMonths={1}
+                      selected={customRange ? { from: new Date(`${customRange.from}T00:00:00`), to: new Date(`${customRange.to}T00:00:00`) } : undefined}
+                      onSelect={(r: DateRange | undefined) => {
+                        if (!r?.from) return setCustomRange(undefined);
+                        setCustomRange({ from: localDateKey(r.from), to: localDateKey(r.to ?? r.from) });
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
               <div>
                 <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">Status</p>
                 {SUPPORT_STATUSES.map((st) => (
@@ -280,13 +312,10 @@ function Inboxes({ status }: { status: ZohoStatus }) {
                 </div>
               )}
               {activeFilters > 0 && (
-                <button onClick={() => { setStatusFilter([]); setTagFilter([]); }} className="text-xs text-primary hover:underline">Limpar filtros</button>
+                <button onClick={() => { setStatusFilter([]); setTagFilter([]); setPeriod("30d"); setCustomRange(undefined); }} className="text-xs text-primary hover:underline">Limpar filtros</button>
               )}
             </PopoverContent>
           </Popover>
-          <div className="flex items-center gap-2 shrink-0">
-            <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
-          </div>
           <button onClick={() => sync.mutate(true)} disabled={sync.isPending || !connected} title="Sincronizar agora"
             className="size-8 shrink-0 rounded-xl bg-card border border-border grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-60">
             <RefreshCw className={`size-3.5 ${sync.isPending ? "animate-spin" : ""}`} />
@@ -446,12 +475,18 @@ function Kpi({ icon: Icon, cls, label, value }: { icon: typeof Mail; cls: string
   );
 }
 
-function CheckRow({ checked, onToggle, children }: { checked: boolean; onToggle: () => void; children: React.ReactNode }) {
+function CheckRow({ checked, onToggle, children, radio }: { checked: boolean; onToggle: () => void; children: React.ReactNode; radio?: boolean }) {
   return (
     <button onClick={onToggle} className="w-full flex items-center gap-2 h-7 px-1 rounded-md text-xs hover:bg-muted">
-      <span className={`size-4 rounded border grid place-items-center ${checked ? "bg-primary border-primary text-primary-foreground" : "border-border"}`}>
-        {checked && <Check className="size-3" strokeWidth={3} />}
-      </span>
+      {radio ? (
+        <span className={`size-4 rounded-full border grid place-items-center shrink-0 ${checked ? "border-primary" : "border-border"}`}>
+          {checked && <span className="size-2 rounded-full bg-primary" />}
+        </span>
+      ) : (
+        <span className={`size-4 rounded border grid place-items-center shrink-0 ${checked ? "bg-primary border-primary text-primary-foreground" : "border-border"}`}>
+          {checked && <Check className="size-3" strokeWidth={3} />}
+        </span>
+      )}
       {children}
     </button>
   );
