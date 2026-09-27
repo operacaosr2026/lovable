@@ -207,6 +207,18 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   };
 
   const k = list.data?.kpis;
+  // Cards clicáveis: contam as conversas do período (as mesmas da lista).
+  const periodCounts = {
+    unread: conversations.filter((c) => c.unread_count > 0).length,
+    em_atendimento: conversations.filter((c) => c.status === "em_atendimento").length,
+    aguardando_cliente: conversations.filter((c) => c.status === "aguardando_cliente").length,
+    resolvido: conversations.filter((c) => c.status === "resolvido").length,
+  };
+  const onlyStatus = (st: SupportStatus) => statusFilter.length === 1 && statusFilter[0] === st;
+  const toggleStatusCard = (st: SupportStatus) => {
+    setStatusFilter(onlyStatus(st) ? [] : [st]);
+    setTab("todos");
+  };
   const connected = status.connected;
   // Sem dados (erro ou Zoho não conectado): "—" em vez de ficar carregando.
   const kv = (v: number | undefined) => (v ?? (list.isError || !connected ? "—" : undefined));
@@ -334,11 +346,16 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       <>
       {/* ── Indicadores ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
-        <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={kv(k?.received)} />
-        <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(k?.unread)} />
-        <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={kv(k?.inProgress)} />
-        <Kpi icon={Clock} cls="bg-warning/15 text-amber-600 dark:text-amber-400" label="Aguardando cliente" value={kv(k?.waiting)} />
-        <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(k?.resolved)} />
+        <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={kv(k?.received)}
+          onClick={() => { setTab("todos"); setStatusFilter([]); }} />
+        <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(list.data ? periodCounts.unread : undefined)}
+          active={tab === "nao_lidos"} onClick={() => setTab(tab === "nao_lidos" ? "todos" : "nao_lidos")} />
+        <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={kv(list.data ? periodCounts.em_atendimento : undefined)}
+          active={onlyStatus("em_atendimento")} onClick={() => toggleStatusCard("em_atendimento")} />
+        <Kpi icon={Clock} cls="bg-warning/15 text-amber-600 dark:text-amber-400" label="Aguardando cliente" value={kv(list.data ? periodCounts.aguardando_cliente : undefined)}
+          active={onlyStatus("aguardando_cliente")} onClick={() => toggleStatusCard("aguardando_cliente")} />
+        <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(list.data ? periodCounts.resolvido : undefined)}
+          active={onlyStatus("resolvido")} onClick={() => toggleStatusCard("resolvido")} />
         <Kpi icon={Timer} cls="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Tempo médio de resposta"
           value={k ? formatDuration(k.avgResponseMs) : kv(undefined)} />
       </div>
@@ -463,15 +480,24 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   );
 }
 
-function Kpi({ icon: Icon, cls, label, value }: { icon: typeof Mail; cls: string; label: string; value: number | string | undefined }) {
+function Kpi({ icon: Icon, cls, label, value, active, onClick }: {
+  icon: typeof Mail; cls: string; label: string; value: number | string | undefined; active?: boolean; onClick?: () => void;
+}) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="rounded-2xl border border-border bg-card p-3.5 flex items-center gap-3 min-w-0">
+    <Tag
+      onClick={onClick}
+      title={onClick ? (active ? "Clique para tirar o filtro" : `Mostrar: ${label}`) : undefined}
+      className={`rounded-2xl border bg-card p-3.5 flex items-center gap-3 min-w-0 text-left transition-colors ${
+        active ? "border-primary ring-2 ring-primary/20" : "border-border"
+      } ${onClick ? "hover:border-primary/50 cursor-pointer" : ""}`}
+    >
       <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${cls}`}><Icon className="size-[18px]" /></div>
       <div className="min-w-0">
         <p className="text-xl font-bold tracking-tight leading-tight">{value ?? <span className="inline-block w-8 h-5 rounded bg-muted animate-pulse align-middle" />}</p>
         <p className="text-[11px] text-muted-foreground truncate" title={label}>{label}</p>
       </div>
-    </div>
+    </Tag>
   );
 }
 
