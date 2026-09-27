@@ -344,7 +344,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       </div>
 
       {/* ── Lista | Conversa | Cliente ── */}
-      <div className="grid lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_280px] 2xl:grid-cols-[340px_minmax(0,1fr)_320px] gap-3 lg:flex-1 lg:min-h-[520px]">
+      <div className="grid lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_224px] 2xl:grid-cols-[340px_minmax(0,1fr)_256px] gap-3 lg:flex-1 lg:min-h-[520px]">
         <section className={`rounded-2xl border border-border bg-card flex-col min-h-0 overflow-hidden ${selectedId ? "hidden lg:flex" : "flex"} h-[70vh] lg:h-auto`}>
           <div className="flex items-center justify-between gap-2 px-3 border-b border-border">
             <div className="flex">
