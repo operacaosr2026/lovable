@@ -253,12 +253,7 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
           </button>
         </div>
         {showPt ? (
-          <div>
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{pt}</p>
-            <button onClick={() => setMode("orig")} className="mt-2 text-[10px] text-primary hover:underline">
-              Traduzido do inglês · ver original
-            </button>
-          </div>
+          <p className="text-sm whitespace-pre-wrap leading-relaxed">{pt}</p>
         ) : m.content_html != null
           ? <EmailFrame html={m.content_html} color={fg} />
           : <p className="text-sm whitespace-pre-wrap">{m.summary}</p>}
