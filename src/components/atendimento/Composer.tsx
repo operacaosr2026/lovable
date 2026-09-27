@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronDown, Languages, Loader2, Paperclip, PenLine, Send, Undo2, X } from "lucide-react";
-import { getSupportSettings, translateSupportReply, uploadSupportAttachment } from "@/lib/atendimento.functions";
+import { ChevronDown, Languages, Loader2, Paperclip, Send, Undo2, X } from "lucide-react";
+import { translateSupportReply, uploadSupportAttachment } from "@/lib/atendimento.functions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatBytes } from "./utils";
 import { useSupportFn } from "./demo";
@@ -103,38 +102,18 @@ export function TranslateToEnglish({ text, setText }: { text: string; setText: (
 
 export type SendMode = "em_atendimento" | "resolvido";
 
-// Assinatura configurada (Configurações > Assinatura) + liga/desliga por envio.
-export function useSignatureToggle() {
-  const getFn = useSupportFn(getSupportSettings, "getSupportSettings");
-  const q = useQuery({ queryKey: ["support-settings"], queryFn: () => getFn(), staleTime: 5 * 60_000 });
-  const available = !!q.data?.signatureEnabled && !!q.data.signature.trim();
-  const [on, setOn] = useState(true);
-  return { available, on: available && on, toggle: () => setOn((v) => !v) };
-}
-
-export function SignatureToggle({ sig }: { sig: ReturnType<typeof useSignatureToggle> }) {
-  if (!sig.available) return null;
-  return (
-    <button type="button" onClick={sig.toggle} title={sig.on ? "Assinatura será incluída — clique para tirar" : "Sem assinatura — clique para incluir"}
-      className={`h-8 px-2.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors ${sig.on ? "text-primary bg-primary/10" : "text-muted-foreground hover:bg-muted line-through"}`}>
-      <PenLine className="size-3.5" /> Assinatura
-    </button>
-  );
-}
-
 export function Composer({ customerName, onSend, sending }: {
   customerName: string;
   sending: boolean;
-  onSend: (text: string, attachments: ReturnType<typeof useAttachments>["refs"], mode: SendMode, signature: boolean) => Promise<boolean>;
+  onSend: (text: string, attachments: ReturnType<typeof useAttachments>["refs"], mode: SendMode) => Promise<boolean>;
 }) {
   const [text, setText] = useState("");
   const att = useAttachments();
-  const sig = useSignatureToggle();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const send = async (mode: SendMode) => {
     if (!text.trim() || sending || att.uploading) return;
-    if (await onSend(text, att.refs, mode, sig.on)) { setText(""); att.clear(); }
+    if (await onSend(text, att.refs, mode)) { setText(""); att.clear(); }
   };
 
   return (
@@ -155,7 +134,6 @@ export function Composer({ customerName, onSend, sending }: {
             className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
             {att.uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
           </button>
-          <SignatureToggle sig={sig} />
           <TranslateToEnglish text={text} setText={setText} />
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
           <div className="flex-1" />

@@ -25,7 +25,7 @@ import {
 } from "@/lib/atendimento.functions";
 import { ConversationView } from "@/components/atendimento/ConversationView";
 import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
-import { AttachmentChips, SignatureToggle, TranslateToEnglish, useAttachments, useSignatureToggle } from "@/components/atendimento/Composer";
+import { AttachmentChips, TranslateToEnglish, useAttachments } from "@/components/atendimento/Composer";
 import { Avatar, STATUS_META, displayName, formatDuration, listTime, resolvePeriod } from "@/components/atendimento/utils";
 import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
 import { useSupportTags } from "@/components/atendimento/useSupportTags";
@@ -605,9 +605,8 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const att = useAttachments();
-  const sig = useSignatureToggle();
   const send = useMutation({
-    mutationFn: () => sendFn({ data: { to: to.trim(), subject: subject.trim(), text, attachments: att.refs, signature: sig.on } }),
+    mutationFn: () => sendFn({ data: { to: to.trim(), subject: subject.trim(), text, attachments: att.refs } }),
     onSuccess: (r) => {
       toast.success("E-mail enviado");
       setTo(""); setSubject(""); setText(""); att.clear();
@@ -632,7 +631,6 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
               {att.uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />} Anexar
               <input type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
             </label>
-            <SignatureToggle sig={sig} />
             <TranslateToEnglish text={text} setText={setText} />
             <div className="flex-1" />
             <button

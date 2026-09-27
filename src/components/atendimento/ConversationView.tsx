@@ -74,10 +74,10 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
   });
 
   const [sending, setSending] = useState(false);
-  const onSend = async (text: string, attachments: any[], mode: SendMode, signature: boolean) => {
+  const onSend = async (text: string, attachments: any[], mode: SendMode) => {
     setSending(true);
     try {
-      await replyFn({ data: { conversationId: id, text, attachments, status: mode, signature } });
+      await replyFn({ data: { conversationId: id, text, attachments, status: mode } });
       toast.success("Resposta enviada");
       await q.refetch();
       onChanged();
