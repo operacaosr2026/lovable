@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
-  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles, BarChart3,
+  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles, BarChart3, CalendarDays,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -14,7 +14,7 @@ import { SupportSettings, type ConfigTab } from "@/components/atendimento/Suppor
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar } from "@/components/ui/calendar";
-import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
+import { currentMonth } from "@/lib/support-kpis";
 import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import type { DateRange } from "react-day-picker";
 import { localDateKey } from "@/lib/timezone";
@@ -78,10 +78,8 @@ type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 function Inboxes({ status }: { status: ZohoStatus }) {
   const demo = useIsDemo();
   const [view, setView] = useState<View>("inbox");
-  // Período da aba KPI (independente do filtro da Caixa).
-  const [kpiPeriod, setKpiPeriod] = useState("30d");
-  const [kpiCustom, setKpiCustom] = useState<{ from: string; to: string } | undefined>();
-  const kpiRange = useMemo(() => resolvePeriod(kpiPeriod, kpiCustom), [kpiPeriod, kpiCustom]);
+  // Mês da aba KPI (independente do filtro da Caixa).
+  const [kpiMonth, setKpiMonth] = useState(() => currentMonth());
   const [configTab, setConfigTab] = useState<ConfigTab>("integracao");
   const qc = useQueryClient();
   const listFn = useSupportFn(listSupportConversations, "listSupportConversations");
@@ -260,7 +258,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         </div>
         {view === "kpi" && (
           <div className="flex items-center gap-2 lg:ml-auto">
-            <DateRangePicker period={kpiPeriod} setPeriod={setKpiPeriod} customRange={kpiCustom} setCustomRange={setKpiCustom} />
+            <MonthSelect value={kpiMonth} onChange={setKpiMonth} />
           </div>
         )}
         {view === "inbox" && (
@@ -351,7 +349,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       </div>
 
       {view === "kpi" ? (
-        <SupportKpisView range={kpiRange} />
+        <SupportKpisView month={kpiMonth} />
       ) : view === "config" ? (
         <SupportSettings status={status} tab={configTab} setTab={setConfigTab} />
       ) : (
@@ -507,6 +505,30 @@ function Kpi({ icon: Icon, cls, label, value, active, onClick }: {
         <p className="text-[11px] text-muted-foreground truncate" title={label}>{label}</p>
       </div>
     </Tag>
+  );
+}
+
+const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+// Mês da aba KPI: os últimos 12 meses.
+function MonthSelect({ value, onChange }: { value: string; onChange: (m: string) => void }) {
+  const options = useMemo(() => {
+    const [y, m] = currentMonth().split("-").map(Number);
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(y, m - 1 - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return { key, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}${i === 0 ? " (atual)" : ""}` };
+    });
+  }, []);
+  return (
+    <div className="relative">
+      <CalendarDays className="size-3.5 text-primary absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="appearance-none bg-card border border-border hover:border-primary/30 text-xs rounded-xl pl-8 pr-7 h-8 cursor-pointer outline-none focus:border-primary">
+        {options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+    </div>
   );
 }
 

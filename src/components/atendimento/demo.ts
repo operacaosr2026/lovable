@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { computeSupportKpis } from "@/lib/support-kpis";
+import { computeSupportKpis, monthRange } from "@/lib/support-kpis";
 import { useServerFn } from "@tanstack/react-start";
 import { translateSupportMessage, translateSupportReply, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
 
@@ -29,7 +29,7 @@ const ago = (min: number) => new Date(now - min * 60_000).toISOString();
 const H = 60, D = 24 * 60;
 
 type Seed = {
-  email: string; name: string; status: SupportStatus; favorite?: boolean; tags?: string[]; ai?: string[]; note?: string;
+  email: string; name: string; status: SupportStatus; favorite?: boolean; tags?: string[]; ai?: string[]; note?: string; shop?: string;
   msgs: { dir: "in" | "out"; at: number; subject: string; body: string; read?: boolean; attachments?: { name: string; size: number }[] }[];
 };
 
@@ -136,6 +136,12 @@ const TOPICS: { subject: string; body: string; tag: string | null }[] = [
   { subject: "Discount code", body: "Do you have any discount code for a second purchase?", tag: null },
 ];
 
+// Lojas fictícias (ids fixos).
+const DEMO_SHOPS = ["Walkesty", "Voultie Wear", "Voultie Club", "Woovah", "The Voultie"].map((name, i) => ({
+  id: `00000000-0000-4000-9000-00000000000${i + 1}`, name,
+}));
+const shopIdByName = (name?: string) => DEMO_SHOPS.find((s) => s.name === name)?.id ?? null;
+
 function seededRandom(seed: number) {
   return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
 }
@@ -153,6 +159,8 @@ function historySeeds(): Seed[] {
     const wait = 20 + Math.floor(rand() ** 2 * 30 * H);   // maioria responde rápido
     out.push({
       email: `${first}.${last}${i}@gmail.com`.toLowerCase(), name: `${first} ${last}`, status: "resolvido",
+      // Walkesty e Voultie Wear recebem mais e-mails que as outras.
+      shop: DEMO_SHOPS[Math.min(4, Math.floor(rand() ** 1.6 * 5))].name,
       tags: topic.tag ? [topic.tag] : [], ai: topic.tag && rand() > 0.2 ? [topic.tag] : [],
       msgs: [
         { dir: "in", at, subject: topic.subject, body: p("Hi,", topic.body, `Thanks,<br>${first}`) },
@@ -182,6 +190,7 @@ function buildStore(): Store {
       last_message_at: null, last_inbound_at: null, last_outbound_at: null, message_count: 0, unread_count: 0,
       status: s.status, favorite: !!s.favorite, tags: s.tags ?? [], ai_tags: s.ai ?? [], note: s.note ?? null,
       resolved_at: s.status === "resolvido" ? ago(s.msgs[s.msgs.length - 1].at - 30) : null,
+      shop_id: shopIdByName(s.shop ?? ORDERS[s.email]?.store),
     });
   }
   const store = { conversations, messages, signature: "Best regards,\n{nome}\nSRX Customer Support", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreio"], aiTagsEnabled: true };
@@ -212,10 +221,10 @@ const ORDERS: Record<string, { n: number; currency: string; store: string; value
   "ryan.cooper@gmail.com": { n: 4519, currency: "USD", store: "Walkesty", values: [89.9] },
   "david.thompson@outlook.com": { n: 4401, currency: "USD", store: "Walkesty", values: [39.9, 29.9] },
   "megan.brooks@yahoo.com": { n: 4498, currency: "USD", store: "Walkesty", values: [99.0] },
-  "emily.johnson@gmail.com": { n: 1087, currency: "USD", store: "Nordhaus", values: [89.99, 64.5, 120] },
-  "sarah.wilson@hotmail.com": { n: 1102, currency: "USD", store: "Nordhaus", values: [74.9] },
+  "emily.johnson@gmail.com": { n: 1087, currency: "USD", store: "Voultie Wear", values: [89.99, 64.5, 120] },
+  "sarah.wilson@hotmail.com": { n: 1102, currency: "USD", store: "Voultie Wear", values: [74.9] },
   "kevin.martinez@gmail.com": { n: 4510, currency: "USD", store: "Walkesty", values: [49.9] },
-  "michael.brown@icloud.com": { n: 1079, currency: "USD", store: "Nordhaus", values: [49.9] },
+  "michael.brown@icloud.com": { n: 1079, currency: "USD", store: "Voultie Wear", values: [49.9] },
   "brian.walker@aol.com": { n: 4455, currency: "USD", store: "Walkesty", values: [129.9, 24.9] },
   "laura.green@gmail.com": { n: 4470, currency: "USD", store: "Walkesty", values: [34.9] },
 };
@@ -329,7 +338,7 @@ const demoApi = {
       c = {
         id: uid(), customer_email: email, customer_name: null, subject: null, summary: null, last_message_at: null,
         last_inbound_at: null, last_outbound_at: null, message_count: 0, unread_count: 0, status: "em_atendimento",
-        favorite: false, tags: [], ai_tags: [], note: null, resolved_at: null,
+        favorite: false, tags: [], ai_tags: [], note: null, resolved_at: null, shop_id: null,
       };
       s.conversations.push(c);
     }
@@ -388,11 +397,13 @@ const demoApi = {
     s.messages = s.messages.filter((m) => !data.ids.includes(m.conversation_id));
     return { deleted: data.ids.length, failed: 0 };
   },
-  getSupportKpis: async ({ data }: { data: { from: string; to: string } }) => {
+  getSupportKpis: async ({ data }: { data: { month: string } }) => {
     await wait(300);
     const s = db();
-    return computeSupportKpis(s.messages, s.conversations, data.from, data.to);
+    const range = monthRange(data.month);
+    return { ...computeSupportKpis(s.messages, s.conversations, DEMO_SHOPS, s.tags, range), partial: range.partial };
   },
+  listSupportShops: async () => DEMO_SHOPS,
   getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
   saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {
     await wait();

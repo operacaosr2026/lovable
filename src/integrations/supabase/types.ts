@@ -49,6 +49,8 @@ export type Database = {
           message_count: number;
           unread_count: number;
           status: string;
+          shop_id: string | null;
+          shop_manual: boolean;
           resolved_at: string | null;
           favorite: boolean;
           tags: string[];
@@ -70,6 +72,8 @@ export type Database = {
           message_count?: number;
           unread_count?: number;
           status?: string;
+          shop_id?: string | null;
+          shop_manual?: boolean;
           resolved_at?: string | null;
           favorite?: boolean;
           tags?: string[];
@@ -91,6 +95,8 @@ export type Database = {
           message_count?: number;
           unread_count?: number;
           status?: string;
+          shop_id?: string | null;
+          shop_manual?: boolean;
           resolved_at?: string | null;
           favorite?: boolean;
           tags?: string[];
@@ -3983,6 +3989,13 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      shop_by_customer_emails: {
+        Args: {
+          p_emails: string[];
+          p_user_id: string;
+        };
+        Returns: { email: string; shop_id: string }[];
+      };
       shop_order_ids_by_email: {
         Args: {
           p_email: string;

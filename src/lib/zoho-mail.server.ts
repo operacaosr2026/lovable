@@ -205,6 +205,7 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean }
 
     const touched = await upsertMessages(ownerId, own, parsed);
     await recomputeConversations(ownerId, touched, { firstSync });
+    try { await assignConversationShops(ownerId, touched); } catch (e) { console.error("assign shops", e); }
 
     // IA nos e-mails novos: tags automáticas + tradução pro português (falha aqui não derruba a sincronização).
     try {
@@ -390,4 +391,62 @@ export async function syncAllZohoMailboxes() {
     catch (e: any) { out[a.owner_id] = { error: String(e?.message ?? e) }; }
   }
   return out;
+}
+
+// ─── Loja de cada conversa (KPI por loja) ─────────────────────────────────────
+
+// Descobre a loja das conversas ainda sem loja: 1) pedido mais recente com o
+// mesmo e-mail; 2) nº de pedido citado no assunto ("#4532"). Loja escolhida à
+// mão (shop_manual) nunca é trocada.
+export async function assignConversationShops(ownerId: string, ids?: string[]) {
+  const base = () => supabaseAdmin.from("support_conversations").select("id,customer_email")
+    .eq("owner_id", ownerId).is("shop_id", null).eq("shop_manual", false);
+  const { data: convs } = ids
+    ? await selectAllIn<{ id: string; customer_email: string }>(ids, (c) => base().in("id", c))
+    : await selectAll<{ id: string; customer_email: string }>(base());
+  if (!convs.length) return { assigned: 0 };
+
+  const shopByConv = new Map<string, string>();
+  const emails = [...new Set(convs.map((c) => c.customer_email.toLowerCase()))];
+  for (let i = 0; i < emails.length; i += 200) {
+    const { data } = await supabaseAdmin.rpc("shop_by_customer_emails", { p_user_id: ownerId, p_emails: emails.slice(i, i + 200) });
+    const byEmail = new Map(((data ?? []) as { email: string; shop_id: string }[]).map((r) => [r.email, r.shop_id]));
+    for (const c of convs) {
+      const shop = byEmail.get(c.customer_email.toLowerCase());
+      if (shop) shopByConv.set(c.id, shop);
+    }
+  }
+
+  // Sem pedido com esse e-mail: procura "#1234" nos assuntos dos e-mails da conversa.
+  const rest = convs.filter((c) => !shopByConv.has(c.id)).map((c) => c.id);
+  if (rest.length) {
+    const { data: msgs } = await selectAllIn<{ conversation_id: string; subject: string | null }>(rest, (c) =>
+      supabaseAdmin.from("support_messages").select("conversation_id,subject").in("conversation_id", c));
+    const numsByConv = new Map<string, Set<string>>();
+    for (const m of msgs) {
+      for (const [, n] of (m.subject ?? "").matchAll(/#\s?(\d{3,8})\b/g)) {
+        (numsByConv.get(m.conversation_id) ?? numsByConv.set(m.conversation_id, new Set()).get(m.conversation_id)!).add(n);
+      }
+    }
+    const allNums = [...new Set([...numsByConv.values()].flatMap((s) => [...s]))];
+    if (allNums.length) {
+      const { data: orders } = await selectAllIn<{ shop_id: string; order_number: string | null }>(
+        allNums.flatMap((n) => [n, `#${n}`]),
+        (c) => supabaseAdmin.from("shop_orders").select("shop_id,order_number").eq("user_id", ownerId).in("order_number", c),
+      );
+      const shopsByNum = new Map<string, Set<string>>();
+      for (const o of orders) {
+        const n = String(o.order_number ?? "").replace(/^#/, "");
+        (shopsByNum.get(n) ?? shopsByNum.set(n, new Set()).get(n)!).add(o.shop_id);
+      }
+      for (const [convId, nums] of numsByConv) {
+        const shops = new Set([...nums].flatMap((n) => [...(shopsByNum.get(n) ?? [])]));
+        if (shops.size === 1) shopByConv.set(convId, [...shops][0]);   // só se não for ambíguo
+      }
+    }
+  }
+
+  await Promise.all([...shopByConv].map(([id, shop_id]) =>
+    supabaseAdmin.from("support_conversations").update({ shop_id }).eq("id", id).is("shop_id", null).eq("shop_manual", false)));
+  return { assigned: shopByConv.size };
 }

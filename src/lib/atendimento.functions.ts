@@ -6,12 +6,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { computeSupportKpis, type KpiConversation, type KpiMessage } from "@/lib/support-kpis";
+import { computeSupportKpis, monthRange, type KpiConversation, type KpiMessage } from "@/lib/support-kpis";
 import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
-  fetchMessageContent, fetchAttachmentInfo, markZohoRead, zohoApi, trashZohoMessage, uploadZohoAttachment, sendZohoMail,
+  fetchMessageContent, fetchAttachmentInfo, markZohoRead, zohoApi, trashZohoMessage, assignConversationShops, uploadZohoAttachment, sendZohoMail,
 } from "@/lib/zoho-mail.server";
 
 // Aba Atendimento: e-mails de clientes do Zoho Mail. Uma conta por workspace.
@@ -105,10 +105,10 @@ export type SupportConversation = {
   id: string; customer_email: string; customer_name: string | null; subject: string | null; summary: string | null;
   last_message_at: string | null; last_inbound_at: string | null; last_outbound_at: string | null;
   message_count: number; unread_count: number; status: SupportStatus; favorite: boolean; tags: string[];
-  note: string | null; resolved_at: string | null; ai_tags: string[];
+  note: string | null; resolved_at: string | null; ai_tags: string[]; shop_id: string | null;
 };
 
-const CONV_COLS = "id,customer_email,customer_name,subject,summary,last_message_at,last_inbound_at,last_outbound_at,message_count,unread_count,status,favorite,tags,note,resolved_at,ai_tags";
+const CONV_COLS = "id,customer_email,customer_name,subject,summary,last_message_at,last_inbound_at,last_outbound_at,message_count,unread_count,status,favorite,tags,note,resolved_at,ai_tags,shop_id";
 
 export const listSupportConversations = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -164,27 +164,42 @@ export const listSupportConversations = createServerFn({ method: "GET" })
     };
   });
 
-// Aba KPI: números do período (e do período anterior, pra comparar).
+// Aba KPI: números do mês (comparados com o mesmo trecho do mês anterior).
 export const getSupportKpis = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ from: z.string().datetime(), to: z.string().datetime() }).parse(d))
+  .inputValidator((d) => z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
     const { ownerId } = context;
-    const from = new Date(data.from).getTime();
-    const to = new Date(data.to).getTime();
-    const prevFrom = new Date(from - (to - from) - 1).toISOString();
+    const range = monthRange(data.month);
+    // Conversas que ainda não têm loja: tenta descobrir antes de contar.
+    try { await assignConversationShops(ownerId); } catch (e) { console.error("assign shops", e); }
     // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
-    const until = new Date(to + 7 * 86_400_000).toISOString();
-    const [msgs, convs] = await Promise.all([
+    const until = new Date(new Date(range.to).getTime() + 7 * 86_400_000).toISOString();
+    const [msgs, convs, shops, settings] = await Promise.all([
       selectAll<KpiMessage>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at")
-        .eq("owner_id", ownerId).gte("sent_at", prevFrom).lte("sent_at", until)),
-      selectAll<KpiConversation>(supabaseAdmin.from("support_conversations").select("id,status,tags,resolved_at,last_message_at")
-        .eq("owner_id", ownerId).gte("last_message_at", prevFrom)),
+        .eq("owner_id", ownerId).gte("sent_at", range.prevFrom).lte("sent_at", until)),
+      selectAll<KpiConversation>(supabaseAdmin.from("support_conversations")
+        .select("id,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
+        .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
+      supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
+      supabaseAdmin.from("support_settings").select("tags").eq("owner_id", ownerId).maybeSingle(),
     ]);
     if (msgs.error) throw new Error(msgs.error.message);
     if (convs.error) throw new Error(convs.error.message);
-    return computeSupportKpis(msgs.data, convs.data, data.from, data.to);
+    return {
+      ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range),
+      partial: range.partial,
+    };
+  });
+
+// Lojas do workspace (seletor de loja no painel do cliente).
+export const listSupportShops = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    assertAccess(context);
+    const { data } = await supabaseAdmin.from("shops").select("id,name,archived").eq("user_id", context.ownerId).order("name");
+    return (data ?? []).filter((s) => !s.archived).map((s) => ({ id: s.id, name: s.name }));
   });
 
 // Busca por pedido: "#4532" ou "4532" → e-mails dos compradores.
@@ -287,11 +302,14 @@ export const updateSupportConversations = createServerFn({ method: "POST" })
       favorite: z.boolean().optional(),
       tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
       note: z.string().max(5000).nullable().optional(),
+      shop_id: z.string().uuid().nullable().optional(),
     }),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
-    const patch: typeof data.patch & { updated_at: string; resolved_at?: string | null } = { ...data.patch, updated_at: new Date().toISOString() };
+    const patch: typeof data.patch & { updated_at: string; resolved_at?: string | null; shop_manual?: boolean } = { ...data.patch, updated_at: new Date().toISOString() };
+    // Loja escolhida à mão: a descoberta automática não troca mais (limpar volta pro automático).
+    if (data.patch.shop_id !== undefined) patch.shop_manual = data.patch.shop_id !== null;
     if (data.patch.status) patch.resolved_at = data.patch.status === "resolvido" ? new Date().toISOString() : null;
     const { error } = await supabaseAdmin.from("support_conversations").update(patch)
       .eq("owner_id", context.ownerId).in("id", data.ids);

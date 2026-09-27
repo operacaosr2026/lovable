@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Loader2, Package, Sparkles, Truck, X } from "lucide-react";
 import {
-  getSupportConversation, getSupportCustomer, updateSupportConversations,
+  getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
 } from "@/lib/atendimento.functions";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
@@ -96,7 +96,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
   });
 
   const update = useMutation({
-    mutationFn: (patch: { tags?: string[]; note?: string | null }) => updateFn({ data: { ids: [conversationId!], patch } }),
+    mutationFn: (patch: { tags?: string[]; note?: string | null; shop_id?: string | null }) => updateFn({ data: { ids: [conversationId!], patch } }),
     onMutate: (patch) => qc.setQueryData(["support-conv", conversationId], (old: any) =>
       old ? { ...old, conversation: { ...old.conversation, ...patch } } : old),
     onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
@@ -154,7 +154,10 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                     ? Object.entries(customer.data.totals).map(([cur, v]) => <span key={cur} className="block">{formatMoney(v, cur)}</span>)
                     : "—"
                 } />
-                <Stat label={customer.data.stores.length > 1 ? "Lojas" : "Loja"} value={customer.data.stores.join(", ") || "—"} />
+                <div className="bg-card px-3 py-2.5 min-w-0">
+                  <p className="text-[10px] text-muted-foreground">Loja do atendimento</p>
+                  <StoreSelect value={c.shop_id} onChange={(shop_id) => update.mutate({ shop_id })} />
+                </div>
               </div>
             )}
 
@@ -250,5 +253,22 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="text-[10px] text-muted-foreground">{label}</p>
       <div className="text-xs font-semibold mt-0.5">{value}</div>
     </div>
+  );
+}
+
+// Loja da conversa (usada nos KPIs por loja). Vem sozinha pelos pedidos do
+// cliente ou pelo nº do pedido no assunto; aqui dá pra escolher/corrigir.
+function StoreSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+  const shopsFn = useSupportFn(listSupportShops, "listSupportShops");
+  const { data: shops = [] } = useQuery({ queryKey: ["support-shops"], queryFn: () => shopsFn(), staleTime: 10 * 60_000 });
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value || null)}
+      className={`w-full mt-0.5 bg-transparent text-xs font-semibold outline-none cursor-pointer truncate ${value ? "" : "text-destructive"}`}
+    >
+      <option value="">Escolher loja…</option>
+      {shops.map((s: { id: string; name: string }) => <option key={s.id} value={s.id}>{s.name}</option>)}
+    </select>
   );
 }
