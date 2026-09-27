@@ -20,7 +20,7 @@ import {
 } from "@/lib/atendimento.functions";
 import { ConversationView } from "@/components/atendimento/ConversationView";
 import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
-import { AttachmentChips, SignatureToggle, useAttachments, useSignatureToggle } from "@/components/atendimento/Composer";
+import { AttachmentChips, SignatureToggle, TranslateToEnglish, useAttachments, useSignatureToggle } from "@/components/atendimento/Composer";
 import { Avatar, STATUS_META, displayName, formatDuration, listTime, resolvePeriod } from "@/components/atendimento/utils";
 import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
 import { useSupportTags } from "@/components/atendimento/useSupportTags";
@@ -514,6 +514,7 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
               <input type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
             </label>
             <SignatureToggle sig={sig} />
+            <TranslateToEnglish text={text} setText={setText} />
             <div className="flex-1" />
             <button
               onClick={() => send.mutate()}

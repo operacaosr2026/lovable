@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { translateSupportMessage, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
+import { translateSupportMessage, translateSupportReply, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
 
 // Modo demonstração do Atendimento (/atendimento?demo=1): um "backend" em
 // memória com clientes e e-mails fictícios que responde às mesmas chamadas das
@@ -333,6 +333,7 @@ const demoApi = {
       .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/[ \t]+/g, " ").trim();
     return translateSupportMessage({ data: { text } });
   },
+  translateSupportReply: async ({ data }: { data: { text: string } }) => translateSupportReply({ data }),
   getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
   saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {
     await wait();

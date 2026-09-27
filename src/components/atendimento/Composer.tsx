@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronDown, Loader2, Paperclip, PenLine, Send, X } from "lucide-react";
-import { getSupportSettings, uploadSupportAttachment } from "@/lib/atendimento.functions";
+import { ChevronDown, Languages, Loader2, Paperclip, PenLine, Send, Undo2, X } from "lucide-react";
+import { getSupportSettings, translateSupportReply, uploadSupportAttachment } from "@/lib/atendimento.functions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatBytes } from "./utils";
 import { useSupportFn } from "./demo";
@@ -61,6 +61,46 @@ export function AttachmentChips({ files, onRemove }: { files: UploadedAttachment
   );
 }
 
+// Escreve em português → botão troca o texto pela versão em inglês; "Desfazer"
+// volta o português. O envio continua manual.
+export function TranslateToEnglish({ text, setText }: { text: string; setText: (t: string) => void }) {
+  const translateFn = useSupportFn(translateSupportReply, "translateSupportReply");
+  const [busy, setBusy] = useState(false);
+  const [original, setOriginal] = useState<{ pt: string; en: string } | null>(null);
+  // Texto apagado/enviado: some o "Desfazer".
+  const undoable = original && text.trim() !== "";
+
+  const translate = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await translateFn({ data: { text } });
+      setOriginal({ pt: text, en: r.text });
+      setText(r.text);
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao traduzir");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button type="button" onClick={translate} disabled={!text.trim() || busy} title="Traduz o que você escreveu para inglês (você revisa antes de enviar)"
+        className="h-8 px-2.5 rounded-lg text-xs flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 disabled:hover:bg-transparent">
+        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Languages className="size-3.5" />}
+        <span className="hidden sm:inline">{busy ? "Traduzindo…" : "Traduzir para inglês"}</span>
+      </button>
+      {undoable && !busy && (
+        <button type="button" onClick={() => { setText(original.pt); setOriginal(null); }} title="Voltar ao texto em português"
+          className="h-8 px-2 rounded-lg text-xs flex items-center gap-1 text-primary hover:bg-primary/10">
+          <Undo2 className="size-3.5" /> Desfazer
+        </button>
+      )}
+    </>
+  );
+}
+
 export type SendMode = "aguardando_cliente" | "resolvido" | "em_atendimento";
 
 // Assinatura configurada (Configurações > Assinatura) + liga/desliga por envio.
@@ -106,7 +146,7 @@ export function Composer({ customerName, onSend, sending }: {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("aguardando_cliente"); } }}
-          placeholder={`Responder ${customerName}…  (Ctrl+Enter envia)`}
+          placeholder={`Responder ${customerName}… pode escrever em português e traduzir  (Ctrl+Enter envia)`}
           rows={4}
           className="w-full resize-y min-h-[88px] max-h-80 bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-muted-foreground/70"
         />
@@ -116,6 +156,7 @@ export function Composer({ customerName, onSend, sending }: {
             {att.uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
           </button>
           <SignatureToggle sig={sig} />
+          <TranslateToEnglish text={text} setText={setText} />
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
           <div className="flex-1" />
           <div className="flex shrink-0">

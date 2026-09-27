@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { emailText, supportAiAvailable, translateToPortuguese } from "@/lib/support-ai.server";
+import { emailText, supportAiAvailable, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -311,6 +311,16 @@ export const translateSupportMessage = createServerFn({ method: "POST" })
     if (truncated) text += "\n\n[E-mail muito longo: traduzido só o início.]";
     await supabaseAdmin.from("support_messages").update({ content_pt: text }).eq("id", m.id);
     return { text, truncated };
+  });
+
+// Caixa de resposta: texto em português → inglês (o atendente revisa e envia).
+export const translateSupportReply = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ text: z.string().trim().min(1).max(TRANSLATE_LIMIT) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    if (!supportAiAvailable()) throw new Error("Tradução indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
+    return { text: await translateReplyToEnglish(data.text) };
   });
 
 // ─── Envio ────────────────────────────────────────────────────────────────────
