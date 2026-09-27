@@ -10,7 +10,7 @@ import { emailText, supportAiAvailable, translateReplyToEnglish, translateToPort
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
-  fetchMessageContent, fetchAttachmentInfo, markZohoRead, zohoApi, uploadZohoAttachment, sendZohoMail,
+  fetchMessageContent, fetchAttachmentInfo, markZohoRead, zohoApi, trashZohoMessage, uploadZohoAttachment, sendZohoMail,
 } from "@/lib/zoho-mail.server";
 
 // Aba Atendimento: e-mails de clientes do Zoho Mail. Uma conta por workspace.
@@ -321,6 +321,40 @@ export const translateSupportReply = createServerFn({ method: "POST" })
     assertAccess(context);
     if (!supportAiAvailable()) throw new Error("Tradução indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
     return { text: await translateReplyToEnglish(data.text) };
+  });
+
+// Exclui conversas: e-mails (do cliente e nossas respostas) vão pra Lixeira do
+// Zoho e a conversa sai daqui. Se o Zoho falhar num e-mail, aquela conversa
+// fica (senão a próxima sincronização traria de volta).
+export const deleteSupportConversations = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { ownerId } = context;
+    const acc = await getZohoAccount(ownerId);
+    const { data: msgs } = await selectAll<{ conversation_id: string; message_id: string; folder_id: string }>(
+      supabaseAdmin.from("support_messages").select("conversation_id,message_id,folder_id").eq("owner_id", ownerId).in("conversation_id", data.ids),
+    );
+    const failed = new Set<string>();
+    if (msgs.length) {
+      if (!acc?.refresh_token || !acc.account_id) throw new Error("Zoho Mail não conectado");
+      const queue = [...msgs];
+      await Promise.all(Array.from({ length: 4 }, async () => {
+        for (let m = queue.shift(); m; m = queue.shift()) {
+          if (failed.has(m.conversation_id)) continue;
+          try { await trashZohoMessage(acc, m.folder_id, m.message_id); }
+          catch (e) { console.error("trash zoho", m.message_id, e); failed.add(m.conversation_id); }
+        }
+      }));
+    }
+    const ok = data.ids.filter((id) => !failed.has(id));
+    if (ok.length) {
+      const { error } = await supabaseAdmin.from("support_conversations").delete().eq("owner_id", ownerId).in("id", ok);
+      if (error) throw new Error(error.message);
+    }
+    if (failed.size && !ok.length) throw new Error("Não foi possível excluir no Zoho — tente de novo");
+    return { deleted: ok.length, failed: failed.size };
   });
 
 // ─── Envio ────────────────────────────────────────────────────────────────────

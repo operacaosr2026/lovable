@@ -372,6 +372,15 @@ export async function sendZohoMail(acc: ZohoAccount, opts: {
   return zohoApi(acc, `/api/accounts/${acc.account_id}/messages`, { method: "POST", body: JSON.stringify(body) });
 }
 
+// Manda o e-mail pra Lixeira do Zoho (recuperável por 30 dias). Já apagado
+// no Zoho (404) conta como feito.
+export async function trashZohoMessage(acc: ZohoAccount, folderId: string, messageId: string) {
+  const res = await zohoRaw(acc, `/api/accounts/${acc.account_id}/folders/${folderId}/messages/${messageId}`, { method: "DELETE" });
+  if (res.ok || res.status === 404) { await res.body?.cancel().catch(() => {}); return; }
+  const json: any = await res.json().catch(() => ({}));
+  throw new Error(`Zoho Mail: ${json?.data?.moreInfo || json?.status?.description || `HTTP ${res.status}`}`);
+}
+
 // Cron: sincroniza todas as contas conectadas.
 export async function syncAllZohoMailboxes() {
   const { data } = await supabaseAdmin.from("zoho_mail_accounts").select("owner_id").not("refresh_token", "is", null);

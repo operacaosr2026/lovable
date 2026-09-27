@@ -334,6 +334,13 @@ const demoApi = {
     return translateSupportMessage({ data: { text } });
   },
   translateSupportReply: async ({ data }: { data: { text: string } }) => translateSupportReply({ data }),
+  deleteSupportConversations: async ({ data }: { data: { ids: string[] } }) => {
+    await wait(400);
+    const s = db();
+    s.conversations = s.conversations.filter((c) => !data.ids.includes(c.id));
+    s.messages = s.messages.filter((m) => !data.ids.includes(m.conversation_id));
+    return { deleted: data.ids.length, failed: 0 };
+  },
   getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
   saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {
     await wait();

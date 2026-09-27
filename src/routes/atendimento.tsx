@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SupportSettings, type ConfigTab } from "@/components/atendimento/SupportSettings";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -15,7 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import {
   getZohoStatus, listSupportConversations, syncSupportInbox, findEmailsByOrder, markConversationRead,
-  updateSupportConversations, sendSupportNewMessage, SUPPORT_STATUSES,
+  updateSupportConversations, sendSupportNewMessage, deleteSupportConversations, SUPPORT_STATUSES,
   type SupportConversation, type SupportStatus,
 } from "@/lib/atendimento.functions";
 import { ConversationView } from "@/components/atendimento/ConversationView";
@@ -177,6 +178,27 @@ function Inboxes({ status }: { status: ZohoStatus }) {
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
 
+  const deleteFn = useSupportFn(deleteSupportConversations, "deleteSupportConversations");
+  const confirm = useConfirm();
+  const askBulkDelete = async () => {
+    const n = checked.size;
+    if (!(await confirm({
+      title: `Excluir ${n} conversa${n > 1 ? "s" : ""}?`,
+      description: "Os e-mails delas (do cliente e as respostas) vão para a Lixeira do Zoho, onde ficam recuperáveis por 30 dias.",
+      confirmText: "Excluir", variant: "destructive",
+    }))) return;
+    try {
+      const r = await deleteFn({ data: { ids: [...checked] } });
+      if (selectedId && checked.has(selectedId)) setSelectedId(null);
+      setChecked(new Set());
+      refreshAll();
+      if (r.failed) toast.warning(`${r.deleted} excluída${r.deleted === 1 ? "" : "s"}; ${r.failed} não deu (Zoho recusou) — tente de novo`);
+      else toast.success(`${r.deleted} conversa${r.deleted > 1 ? "s" : ""} excluída${r.deleted > 1 ? "s" : ""}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao excluir");
+    }
+  };
+
   const k = list.data?.kpis;
   const connected = status.connected;
   // Sem dados (erro ou Zoho não conectado): "—" em vez de ficar carregando.
@@ -331,6 +353,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               <BulkBtn onClick={() => bulk.mutate("read")}>Lida</BulkBtn>
               <BulkBtn onClick={() => bulk.mutate("unread")}>Não lida</BulkBtn>
               <BulkBtn onClick={() => bulk.mutate("resolve")}>Resolver</BulkBtn>
+              <BulkBtn danger onClick={askBulkDelete}>Excluir</BulkBtn>
               <button onClick={() => setChecked(new Set())} className="size-6 grid place-items-center rounded text-muted-foreground hover:text-foreground" aria-label="Limpar seleção"><X className="size-3.5" /></button>
             </div>
           )}
@@ -367,6 +390,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               mailWebBase={status.mailWebBase}
               onBack={() => setSelectedId(null)}
               onChanged={refreshAll}
+              onDeleted={() => { setSelectedId(null); refreshAll(); }}
             />
           ) : (
             <div className="flex-1 grid place-items-center text-center p-8">
@@ -433,8 +457,8 @@ function CheckRow({ checked, onToggle, children }: { checked: boolean; onToggle:
   );
 }
 
-function BulkBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} className="h-6 px-2 rounded-md border border-border bg-background hover:border-primary">{children}</button>;
+function BulkBtn({ onClick, children, danger }: { onClick: () => void; children: React.ReactNode; danger?: boolean }) {
+  return <button onClick={onClick} className={`h-6 px-2 rounded-md border bg-background ${danger ? "border-destructive/40 text-destructive hover:bg-destructive/10" : "border-border hover:border-primary"}`}>{children}</button>;
 }
 
 function ConversationRow({ c, active, checked, onCheck, onOpen }: {

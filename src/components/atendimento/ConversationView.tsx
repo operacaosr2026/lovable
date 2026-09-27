@@ -2,13 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Check, ChevronDown, Copy, Download, ExternalLink, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag,
+  ArrowLeft, Check, ChevronDown, Copy, Download, ExternalLink, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag, Trash2,
 } from "lucide-react";
 import {
-  getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
+  deleteSupportConversations, getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
   SUPPORT_STATUSES, type SupportConversation, type SupportMessage, type SupportStatus,
 } from "@/lib/atendimento.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -19,9 +20,25 @@ import { TagEditor, customerType } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
 import { useSupportFn, useIsDemo } from "./demo";
 
-export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged }: {
-  id: string; allTags: string[]; mailWebBase: string; onBack: () => void; onChanged: () => void;
+export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged, onDeleted }: {
+  id: string; allTags: string[]; mailWebBase: string; onBack: () => void; onChanged: () => void; onDeleted: () => void;
 }) {
+  const confirm = useConfirm();
+  const deleteFn = useSupportFn(deleteSupportConversations, "deleteSupportConversations");
+  const askDelete = async () => {
+    if (!(await confirm({
+      title: "Excluir esta conversa?",
+      description: "Os e-mails dela (do cliente e as respostas) vão para a Lixeira do Zoho, onde ficam recuperáveis por 30 dias.",
+      confirmText: "Excluir", variant: "destructive",
+    }))) return;
+    try {
+      await deleteFn({ data: { ids: [id] } });
+      toast.success("Conversa excluída");
+      onDeleted();
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao excluir");
+    }
+  };
   const qc = useQueryClient();
   const getFn = useSupportFn(getSupportConversation, "getSupportConversation");
   const customerFn = useSupportFn(getSupportCustomer, "getSupportCustomer");
@@ -156,6 +173,10 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged }
                 </DropdownMenuItem>
               </>
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={askDelete} className="text-destructive focus:text-destructive">
+              <Trash2 className="size-3.5 mr-2" />Excluir conversa
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <DropdownMenu>
