@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, Clock, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
-  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp,
+  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -473,7 +473,7 @@ function ConversationRow({ c, active, checked, onCheck, onOpen }: {
         <p className="text-[11px] text-muted-foreground truncate">{c.summary}</p>
         <div className="flex items-center gap-1 mt-1">
           <span className={`text-[9px] px-1.5 py-px rounded font-medium ${STATUS_META[c.status].cls}`}>{STATUS_META[c.status].label}</span>
-          {c.tags.slice(0, 2).map((t) => <span key={t} className={`text-[9px] px-1.5 py-px rounded font-medium truncate max-w-[90px] ${tagTone(t)}`}>{t}</span>)}
+          {c.tags.slice(0, 2).map((t) => <span key={t} className={`text-[9px] px-1.5 py-px rounded font-medium truncate max-w-[90px] inline-flex items-center gap-0.5 ${tagTone(t)}`}>{c.ai_tags.includes(t) && <Sparkles className="size-2.5 shrink-0" />}{t}</span>)}
         </div>
       </div>
     </div>

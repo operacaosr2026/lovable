@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, Loader2, Package, Truck, X } from "lucide-react";
+import { Copy, Loader2, Package, Sparkles, Truck, X } from "lucide-react";
 import {
   getSupportConversation, getSupportCustomer, updateSupportConversations,
 } from "@/lib/atendimento.functions";
@@ -28,7 +28,7 @@ export function tagTone(tag: string) {
   return TAG_TONES[h % TAG_TONES.length];
 }
 
-export function TagEditor({ tags, suggestions, onChange }: { tags: string[]; suggestions: string[]; onChange: (tags: string[]) => void }) {
+export function TagEditor({ tags, aiTags = [], suggestions, onChange }: { tags: string[]; aiTags?: string[]; suggestions: string[]; onChange: (tags: string[]) => void }) {
   const [value, setValue] = useState("");
   const { ensure } = useSupportTags();
   const add = (t: string) => {
@@ -45,7 +45,9 @@ export function TagEditor({ tags, suggestions, onChange }: { tags: string[]; sug
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
         {tags.map((t) => (
-          <span key={t} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-md text-[11px] font-medium ${tagTone(t)}`}>
+          <span key={t} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-md text-[11px] font-medium ${tagTone(t)}`}
+            title={aiTags.includes(t) ? "Posta automaticamente pela IA" : undefined}>
+            {aiTags.includes(t) && <Sparkles className="size-3" />}
             {t}
             <button onClick={() => onChange(tags.filter((x) => x !== t))} className="size-4 rounded grid place-items-center hover:bg-black/10" aria-label={`Remover ${t}`}>
               <X className="size-3" />
@@ -170,7 +172,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
 
             <div>
               <p className="text-xs font-semibold mb-2">Tags</p>
-              <TagEditor tags={c.tags} suggestions={allTags} onChange={(tags) => update.mutate({ tags })} />
+              <TagEditor tags={c.tags} aiTags={c.ai_tags} suggestions={allTags} onChange={(tags) => update.mutate({ tags })} />
             </div>
 
             <div className="text-[11px] text-muted-foreground space-y-0.5 pt-1 border-t border-border">

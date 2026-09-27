@@ -14,6 +14,7 @@ export type Database = {
           signature: string | null;
           signature_enabled: boolean;
           tags: string[];
+          ai_tags_enabled: boolean;
           updated_at: string;
         };
         Insert: {
@@ -21,6 +22,7 @@ export type Database = {
           signature?: string | null;
           signature_enabled?: boolean;
           tags?: string[];
+          ai_tags_enabled?: boolean;
           updated_at?: string;
         };
         Update: {
@@ -28,6 +30,7 @@ export type Database = {
           signature?: string | null;
           signature_enabled?: boolean;
           tags?: string[];
+          ai_tags_enabled?: boolean;
           updated_at?: string;
         };
         Relationships: [];
@@ -50,6 +53,7 @@ export type Database = {
           favorite: boolean;
           tags: string[];
           note: string | null;
+          ai_tags: string[];
           created_at: string;
           updated_at: string;
         };
@@ -70,6 +74,7 @@ export type Database = {
           favorite?: boolean;
           tags?: string[];
           note?: string | null;
+          ai_tags?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -90,6 +95,7 @@ export type Database = {
           favorite?: boolean;
           tags?: string[];
           note?: string | null;
+          ai_tags?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -113,6 +119,7 @@ export type Database = {
           is_read: boolean;
           has_attachment: boolean;
           content_html: string | null;
+          ai_checked: boolean;
           created_at: string;
         };
         Insert: {
@@ -132,6 +139,7 @@ export type Database = {
           is_read?: boolean;
           has_attachment?: boolean;
           content_html?: string | null;
+          ai_checked?: boolean;
           created_at?: string;
         };
         Update: {
@@ -151,6 +159,7 @@ export type Database = {
           is_read?: boolean;
           has_attachment?: boolean;
           content_html?: string | null;
+          ai_checked?: boolean;
           created_at?: string;
         };
         Relationships: [];

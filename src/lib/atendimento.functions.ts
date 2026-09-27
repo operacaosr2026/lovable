@@ -5,6 +5,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { supportAiAvailable } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -102,10 +103,10 @@ export type SupportConversation = {
   id: string; customer_email: string; customer_name: string | null; subject: string | null; summary: string | null;
   last_message_at: string | null; last_inbound_at: string | null; last_outbound_at: string | null;
   message_count: number; unread_count: number; status: SupportStatus; favorite: boolean; tags: string[];
-  note: string | null; resolved_at: string | null;
+  note: string | null; resolved_at: string | null; ai_tags: string[];
 };
 
-const CONV_COLS = "id,customer_email,customer_name,subject,summary,last_message_at,last_inbound_at,last_outbound_at,message_count,unread_count,status,favorite,tags,note,resolved_at";
+const CONV_COLS = "id,customer_email,customer_name,subject,summary,last_message_at,last_inbound_at,last_outbound_at,message_count,unread_count,status,favorite,tags,note,resolved_at,ai_tags";
 
 export const listSupportConversations = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -267,6 +268,14 @@ export const updateSupportConversations = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.from("support_conversations").update(patch)
       .eq("owner_id", context.ownerId).in("id", data.ids);
     if (error) throw new Error(error.message);
+    // Tag tirada à mão deixa de contar como "posta pela IA".
+    if (data.patch.tags) {
+      const kept = data.patch.tags;
+      const { data: convs } = await supabaseAdmin.from("support_conversations").select("id,ai_tags")
+        .eq("owner_id", context.ownerId).in("id", data.ids);
+      await Promise.all((convs ?? []).filter((c) => c.ai_tags.some((t) => !kept.includes(t))).map((c) =>
+        supabaseAdmin.from("support_conversations").update({ ai_tags: c.ai_tags.filter((t) => kept.includes(t)) }).eq("id", c.id)));
+    }
     return { ok: true };
   });
 
@@ -317,11 +326,13 @@ export const getSupportSettings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
-    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled,tags").eq("owner_id", context.ownerId).maybeSingle();
+    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled,tags,ai_tags_enabled").eq("owner_id", context.ownerId).maybeSingle();
     return {
       signature: data?.signature ?? "",
       signatureEnabled: data?.signature_enabled ?? true,
       tags: data?.tags ?? [...DEFAULT_TAGS],
+      aiTagsEnabled: data?.ai_tags_enabled ?? true,
+      aiAvailable: supportAiAvailable(),
       senderName: await senderName(context.userId),
     };
   });
@@ -336,12 +347,14 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     signature: z.string().max(2000).optional(),
     signatureEnabled: z.boolean().optional(),
     tags: z.array(TagName).max(100).optional(),
+    aiTagsEnabled: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
     const row: Database["public"]["Tables"]["support_settings"]["Insert"] = { owner_id: context.ownerId, updated_at: new Date().toISOString() };
     if (data.signature !== undefined) row.signature = data.signature.trim() || null;
     if (data.signatureEnabled !== undefined) row.signature_enabled = data.signatureEnabled;
+    if (data.aiTagsEnabled !== undefined) row.ai_tags_enabled = data.aiTagsEnabled;
     if (data.tags) row.tags = [...new Map(data.tags.map((t) => [t.toLowerCase(), t])).values()];
     const { error } = await supabaseAdmin.from("support_settings").upsert(row, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
@@ -364,10 +377,10 @@ export const changeSupportTag = createServerFn({ method: "POST" })
       { owner_id: ownerId, tags: replace(st?.tags ?? [...DEFAULT_TAGS]), updated_at: new Date().toISOString() },
       { onConflict: "owner_id" },
     );
-    const { data: convs } = await selectAll<{ id: string; tags: string[] }>(
-      supabaseAdmin.from("support_conversations").select("id,tags").eq("owner_id", ownerId).contains("tags", [data.from]),
+    const { data: convs } = await selectAll<{ id: string; tags: string[]; ai_tags: string[] }>(
+      supabaseAdmin.from("support_conversations").select("id,tags,ai_tags").eq("owner_id", ownerId).contains("tags", [data.from]),
     );
-    await Promise.all(convs.map((c) => supabaseAdmin.from("support_conversations").update({ tags: replace(c.tags) }).eq("id", c.id)));
+    await Promise.all(convs.map((c) => supabaseAdmin.from("support_conversations").update({ tags: replace(c.tags), ai_tags: replace(c.ai_tags) }).eq("id", c.id)));
     return { conversations: convs.length };
   });
 

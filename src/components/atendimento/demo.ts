@@ -28,7 +28,7 @@ const ago = (min: number) => new Date(now - min * 60_000).toISOString();
 const H = 60, D = 24 * 60;
 
 type Seed = {
-  email: string; name: string; status: SupportStatus; favorite?: boolean; tags?: string[]; note?: string;
+  email: string; name: string; status: SupportStatus; favorite?: boolean; tags?: string[]; ai?: string[]; note?: string;
   msgs: { dir: "in" | "out"; at: number; subject: string; body: string; read?: boolean; attachments?: { name: string; size: number }[] }[];
 };
 
@@ -48,11 +48,11 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "rafael.ferreira@gmail.com", name: "Rafael Ferreira", status: "em_atendimento",
+    email: "rafael.ferreira@gmail.com", name: "Rafael Ferreira", status: "em_atendimento", tags: ["Troca"], ai: ["Troca"],
     msgs: [{ dir: "in", at: 95, subject: "Dúvida sobre troca", read: false, body: p("Boa tarde!", "Recebi o tênis mas ficou pequeno. Preciso trocar o produto por um número maior, como faço?", "Pedido #4519.", "Obrigado,<br>Rafael") }],
   },
   {
-    email: "joao.oliveira@outlook.com", name: "João Oliveira", status: "em_atendimento", tags: ["Reembolso"],
+    email: "joao.oliveira@outlook.com", name: "João Oliveira", status: "em_atendimento", tags: ["Reembolso"], ai: ["Reembolso"],
     msgs: [
       { dir: "in", at: 6 * D, subject: "Reembolso", body: p("Olá, cancelei o pedido #4401 e gostaria do reembolso.") },
       { dir: "out", at: 6 * D - 3 * H, subject: "Re: Reembolso", body: p("Olá João, o reembolso foi solicitado e cai em até 7 dias úteis no cartão.", "Atenciosamente,<br>Equipe SRX") },
@@ -67,14 +67,14 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "aguardando_cliente", tags: ["Nordhaus"],
+    email: "emily.johnson@gmail.com", name: "Emily Johnson", status: "aguardando_cliente", tags: ["Nordhaus", "Rastreamento"], ai: ["Rastreamento"],
     msgs: [
       { dir: "in", at: D + 4 * H, subject: "Where is my order #1087?", body: p("Hi, I ordered 10 days ago and tracking hasn't updated. Can you check?", "Thanks, Emily") },
       { dir: "out", at: D + 2 * H, subject: "Re: Where is my order #1087?", body: p("Hi Emily! Your package cleared customs yesterday and should arrive in 3–5 business days.", "Best,<br>SRX Support") },
     ],
   },
   {
-    email: "sarah.wilson@hotmail.com", name: "Sarah Wilson", status: "em_atendimento", favorite: true, tags: ["Nordhaus", "Troca"],
+    email: "sarah.wilson@hotmail.com", name: "Sarah Wilson", status: "em_atendimento", favorite: true, tags: ["Nordhaus", "Troca"], ai: ["Troca"],
     msgs: [{ dir: "in", at: 7 * H, subject: "Wrong size received", read: false, body: p("Hello, I ordered a size M but received an XL. How can I get the right one?", "Order #1102."), attachments: [{ name: "label.png", size: 420_000 }, { name: "invoice.pdf", size: 96_000 }] }],
   },
   {
@@ -113,7 +113,7 @@ const SEEDS: Seed[] = [
   },
 ];
 
-type Store = { conversations: SupportConversation[]; messages: (SupportMessage & { conversation_id: string })[]; signature: string; signatureEnabled: boolean; tags: string[] };
+type Store = { conversations: SupportConversation[]; messages: (SupportMessage & { conversation_id: string })[]; signature: string; signatureEnabled: boolean; tags: string[]; aiTagsEnabled: boolean };
 
 let seq = 0;
 const uid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
@@ -135,11 +135,11 @@ function buildStore(): Store {
     conversations.push({
       id, customer_email: s.email, customer_name: s.name, subject: null, summary: null,
       last_message_at: null, last_inbound_at: null, last_outbound_at: null, message_count: 0, unread_count: 0,
-      status: s.status, favorite: !!s.favorite, tags: s.tags ?? [], note: s.note ?? null,
+      status: s.status, favorite: !!s.favorite, tags: s.tags ?? [], ai_tags: s.ai ?? [], note: s.note ?? null,
       resolved_at: s.status === "resolvido" ? ago(s.msgs[s.msgs.length - 1].at - 30) : null,
     });
   }
-  const store = { conversations, messages, signature: "Atenciosamente,\n{nome}\nEquipe de Atendimento SRX", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreamento"] };
+  const store = { conversations, messages, signature: "Atenciosamente,\n{nome}\nEquipe de Atendimento SRX", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreamento"], aiTagsEnabled: true };
   store.conversations.forEach((c) => recompute(store, c));
   return store;
 }
@@ -242,6 +242,7 @@ const demoApi = {
   updateSupportConversations: async ({ data }: { data: { ids: string[]; patch: Partial<SupportConversation> } }) => {
     for (const c of db().conversations.filter((x) => data.ids.includes(x.id))) {
       Object.assign(c, data.patch);
+      if (data.patch.tags) c.ai_tags = c.ai_tags.filter((t) => data.patch.tags!.includes(t));
       if (data.patch.status) c.resolved_at = data.patch.status === "resolvido" ? new Date().toISOString() : null;
     }
     return { ok: true };
@@ -284,7 +285,7 @@ const demoApi = {
       c = {
         id: uid(), customer_email: email, customer_name: null, subject: null, summary: null, last_message_at: null,
         last_inbound_at: null, last_outbound_at: null, message_count: 0, unread_count: 0, status: "aguardando_cliente",
-        favorite: false, tags: [], note: null, resolved_at: null,
+        favorite: false, tags: [], ai_tags: [], note: null, resolved_at: null,
       };
       s.conversations.push(c);
     }
@@ -322,12 +323,13 @@ const demoApi = {
     };
   },
 
-  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], senderName: "Você" }),
-  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[] } }) => {
+  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
+  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {
     await wait();
     if (data.signature !== undefined) db().signature = data.signature;
     if (data.signatureEnabled !== undefined) db().signatureEnabled = data.signatureEnabled;
     if (data.tags) db().tags = [...data.tags];
+    if (data.aiTagsEnabled !== undefined) db().aiTagsEnabled = data.aiTagsEnabled;
     return { ok: true };
   },
   changeSupportTag: async ({ data }: { data: { from: string; to: string | null } }) => {
@@ -335,7 +337,7 @@ const demoApi = {
     const replace = (list: string[]) => [...new Set(list.flatMap((t) => (t === data.from ? (data.to ? [data.to] : []) : [t])))];
     db().tags = replace(db().tags);
     const hit = db().conversations.filter((c) => c.tags.includes(data.from));
-    hit.forEach((c) => { c.tags = replace(c.tags); });
+    hit.forEach((c) => { c.tags = replace(c.tags); c.ai_tags = replace(c.ai_tags); });
     return { conversations: hit.length };
   },
 };

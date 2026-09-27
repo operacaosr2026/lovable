@@ -130,7 +130,7 @@ export function ConversationView({ id, allTags, mailWebBase, onBack, onChanged }
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-64 p-3">
-            <TagEditor tags={conv.tags} suggestions={allTags} onChange={(tags) => update.mutate({ tags })} />
+            <TagEditor tags={conv.tags} aiTags={conv.ai_tags} suggestions={allTags} onChange={(tags) => update.mutate({ tags })} />
           </PopoverContent>
         </Popover>
         <DropdownMenu>

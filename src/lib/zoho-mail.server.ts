@@ -206,6 +206,14 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean }
     const touched = await upsertMessages(ownerId, own, parsed);
     await recomputeConversations(ownerId, touched, { firstSync });
 
+    // Tags automáticas com IA nos e-mails novos (falha aqui não derruba a sincronização).
+    try {
+      const { runSupportAiTagging } = await import("@/lib/support-ai.server");
+      await runSupportAiTagging(acc);
+    } catch (e) {
+      console.error("support ai tagging", e);
+    }
+
     await supabaseAdmin.from("zoho_mail_accounts")
       .update({ last_sync_at: new Date().toISOString(), last_sync_error: null, updated_at: new Date().toISOString() })
       .eq("owner_id", ownerId);

@@ -19,5 +19,5 @@ export function useSupportTags() {
     qc.invalidateQueries({ queryKey: ["support-settings"] });
   };
 
-  return { fixed, ensure, isLoading: q.isLoading };
+  return { fixed, ensure, isLoading: q.isLoading, aiTagsEnabled: q.data?.aiTagsEnabled ?? true, aiAvailable: q.data?.aiAvailable ?? false };
 }

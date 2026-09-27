@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Tag, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Trash2, X } from "lucide-react";
 import { changeSupportTag, getSupportSettings, saveSupportSettings, type getZohoStatus } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { tagTone } from "./CustomerPanel";
@@ -150,7 +150,7 @@ function Signature() {
 function TagsSettings() {
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const { fixed, isLoading } = useSupportTags();
+  const { fixed, isLoading, aiTagsEnabled, aiAvailable } = useSupportTags();
   const saveFn = useSupportFn(saveSupportSettings, "saveSupportSettings");
   const changeFn = useSupportFn(changeSupportTag, "changeSupportTag");
   const [newTag, setNewTag] = useState("");
@@ -169,6 +169,11 @@ function TagsSettings() {
       await saveFn({ data: { tags: [...fixed, tag] } });
     },
     onSuccess: () => { setNewTag(""); refresh(); },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+  const toggleAi = useMutation({
+    mutationFn: (on: boolean) => saveFn({ data: { aiTagsEnabled: on } }),
+    onSuccess: (_r, on) => { toast.success(on ? "Tags automáticas ligadas" : "Tags automáticas desligadas"); refresh(); },
     onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
   });
   const change = useMutation({
@@ -199,6 +204,19 @@ function TagsSettings() {
       <div>
         <h2 className="text-base font-semibold">Tags</h2>
         <p className="text-xs text-muted-foreground mt-0.5">Sempre aparecem como sugestão nas conversas e nos filtros. Tag nova criada numa conversa entra aqui sozinha.</p>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
+        <Sparkles className="size-4 text-primary mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">Tags automáticas com IA</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {aiAvailable
+              ? "Cada e-mail novo de cliente é lido pela IA e recebe as tags desta lista que combinarem (marcadas com ✨). Só acrescenta — nunca tira tag."
+              : "Falta configurar a chave da API da Anthropic (ANTHROPIC_API_KEY) no servidor."}
+          </p>
+        </div>
+        <Switch checked={aiAvailable && aiTagsEnabled} disabled={!aiAvailable || toggleAi.isPending} onCheckedChange={(on) => toggleAi.mutate(on)} />
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); add.mutate(); }} className="flex gap-2">
