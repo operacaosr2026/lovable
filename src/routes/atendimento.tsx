@@ -178,34 +178,34 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   return (
     <PageShell fit wide>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-col xl:flex-row xl:items-center gap-3 mb-4">
-        <div className="flex items-center gap-3 min-w-0 mr-auto">
-          <h1 className="text-2xl font-semibold tracking-tight">Atendimento</h1>
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 shrink-0">
+          <h1 className="text-2xl font-semibold tracking-tight whitespace-nowrap">Atendimento</h1>
           <span
             title={!connected ? "Zoho Mail não conectado" : syncOk ? `Conectado a ${status.email}` : status.lastSyncError ?? ""}
-            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${!connected ? "bg-muted text-muted-foreground" : syncOk ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
+            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${!connected ? "bg-muted text-muted-foreground" : syncOk ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
           >
             <span className={`size-1.5 rounded-full ${!connected ? "bg-muted-foreground" : syncOk ? "bg-success" : "bg-destructive"}`} />
             {!connected ? "Desconectado" : syncOk ? "Online" : "Erro na sincronização"}
           </span>
           {demo && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium pl-2 pr-1 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium pl-2 pr-1 py-0.5 rounded-full whitespace-nowrap bg-amber-500/15 text-amber-700 dark:text-amber-400">
               Dados fictícios
               <a href="/atendimento" className="px-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30">Sair</a>
             </span>
           )}
-          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1 shrink-0">
             {([["inbox", "Caixa de entrada", Inbox], ["config", "Configurações", Settings]] as const).map(([key, label, Icon]) => (
               <button key={key} onClick={() => setView(key)}
-                className={`h-7 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${view === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                <Icon className="size-3.5" /> <span className="hidden sm:inline">{label}</span>
+                className={`h-7 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors ${view === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                <Icon className="size-3.5" /> <span className="hidden sm:inline">{key === "inbox" ? <><span className="2xl:hidden">Caixa</span><span className="hidden 2xl:inline">Caixa de entrada</span></> : label}</span>
               </button>
             ))}
           </div>
         </div>
         {view === "inbox" && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px] xl:w-80 xl:flex-none">
+        <div className="flex items-center gap-2 flex-1 min-w-0 lg:justify-end">
+          <div className="relative flex-1 min-w-[120px] lg:max-w-80">
             <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={search}
@@ -221,8 +221,8 @@ function Inboxes({ status }: { status: ZohoStatus }) {
           </div>
           <Popover>
             <PopoverTrigger asChild>
-              <button className={`h-8 px-3 rounded-xl border text-xs flex items-center gap-1.5 bg-card ${activeFilters ? "border-primary/50 text-primary" : "border-border"}`}>
-                <SlidersHorizontal className="size-3.5" /> Filtros{activeFilters ? ` (${activeFilters})` : ""}
+              <button title="Filtros" className={`h-8 px-2.5 xl:px-3 rounded-xl border text-xs flex items-center gap-1.5 bg-card shrink-0 whitespace-nowrap ${activeFilters ? "border-primary/50 text-primary" : "border-border"}`}>
+                <SlidersHorizontal className="size-3.5" /><span className="hidden xl:inline">Filtros</span>{activeFilters ? ` (${activeFilters})` : ""}
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-64 p-3 space-y-3">
@@ -253,14 +253,16 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               )}
             </PopoverContent>
           </Popover>
-          <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
+          <div className="flex items-center gap-2 shrink-0">
+            <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
+          </div>
           <button onClick={() => sync.mutate(true)} disabled={sync.isPending || !connected} title="Sincronizar agora"
-            className="size-8 rounded-xl bg-card border border-border grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-60">
+            className="size-8 shrink-0 rounded-xl bg-card border border-border grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-60">
             <RefreshCw className={`size-3.5 ${sync.isPending ? "animate-spin" : ""}`} />
           </button>
-          <button onClick={() => setComposeOpen(true)} disabled={!connected}
-            className="h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 disabled:opacity-50">
-            <PenSquare className="size-3.5" /> Nova mensagem
+          <button onClick={() => setComposeOpen(true)} disabled={!connected} title="Nova mensagem"
+            className="h-8 px-2.5 xl:px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 shrink-0 whitespace-nowrap disabled:opacity-50">
+            <PenSquare className="size-3.5" /><span className="hidden xl:inline">Nova mensagem</span>
           </button>
         </div>
         )}
