@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Mail, MailWarning, MessageCircle, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
+  Mail, MailWarning, MailPlus, MessageCircle, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
   RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles, BarChart3, CalendarDays,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
@@ -214,6 +214,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   // Cards clicáveis: contam as conversas do período (as mesmas da lista).
   const periodCounts = {
     unread: conversations.filter((c) => c.unread_count > 0).length,
+    novo: conversations.filter((c) => c.status === "novo").length,
     em_atendimento: conversations.filter((c) => c.status === "em_atendimento").length,
     resolvido: conversations.filter((c) => c.status === "resolvido").length,
   };
@@ -355,11 +356,13 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       ) : (
       <>
       {/* ── Indicadores ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
         <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={kv(k?.received)}
           onClick={() => { setTab("todos"); setStatusFilter([]); }} />
         <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(list.data ? periodCounts.unread : undefined)}
           active={tab === "nao_lidos"} onClick={() => setTab(tab === "nao_lidos" ? "todos" : "nao_lidos")} />
+        <Kpi icon={MailPlus} cls="bg-sky-500/10 text-sky-600 dark:text-sky-400" label="Novos" value={kv(list.data ? periodCounts.novo : undefined)}
+          active={onlyStatus("novo")} onClick={() => toggleStatusCard("novo")} />
         <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={kv(list.data ? periodCounts.em_atendimento : undefined)}
           active={onlyStatus("em_atendimento")} onClick={() => toggleStatusCard("em_atendimento")} />
         <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(list.data ? periodCounts.resolvido : undefined)}

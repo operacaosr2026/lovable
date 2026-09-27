@@ -1,6 +1,7 @@
 import type { SupportStatus } from "@/lib/atendimento.functions";
 
 export const STATUS_META: Record<SupportStatus, { label: string; cls: string; dot: string }> = {
+  novo:               { label: "Novo",               cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400",        dot: "bg-sky-500" },
   em_atendimento:     { label: "Em atendimento",     cls: "bg-primary/10 text-primary",                          dot: "bg-primary" },
   resolvido:          { label: "Resolvido",          cls: "bg-success/15 text-success",                          dot: "bg-success" },
 };

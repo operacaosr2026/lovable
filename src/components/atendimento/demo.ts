@@ -49,7 +49,7 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "ryan.cooper@gmail.com", name: "Ryan Cooper", status: "em_atendimento", tags: ["Troca"], ai: ["Troca"],
+    email: "ryan.cooper@gmail.com", name: "Ryan Cooper", status: "novo", tags: ["Troca"], ai: ["Troca"],
     msgs: [{ dir: "in", at: 95, subject: "Exchange question", read: false, body: p("Hello,", "The sneakers I got are too small. I'd like to exchange them for a bigger size — how do I do that?", "Order #4519.", "Thanks,<br>Ryan") }],
   },
   {
@@ -75,11 +75,11 @@ const SEEDS: Seed[] = [
     ],
   },
   {
-    email: "sarah.wilson@hotmail.com", name: "Sarah Wilson", status: "em_atendimento", favorite: true, tags: ["Troca"], ai: ["Troca"],
+    email: "sarah.wilson@hotmail.com", name: "Sarah Wilson", status: "novo", favorite: true, tags: ["Troca"], ai: ["Troca"],
     msgs: [{ dir: "in", at: 7 * H, subject: "Wrong size received", read: false, body: p("Hello, I ordered a size M but received an XL. How can I get the right one?", "Order #1102."), attachments: [{ name: "label.png", size: 420_000 }, { name: "invoice.pdf", size: 96_000 }] }],
   },
   {
-    email: "ashley.davis@gmail.com", name: "Ashley Davis", status: "em_atendimento",
+    email: "ashley.davis@gmail.com", name: "Ashley Davis", status: "novo",
     msgs: [{ dir: "in", at: 9 * H, subject: "Discount code didn't work", body: p("The code FALL10 didn't apply at checkout. Can I still use it on my order?") }],
   },
   {

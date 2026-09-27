@@ -17,7 +17,7 @@ import {
 // Aba Atendimento: e-mails de clientes do Zoho Mail. Uma conta por workspace.
 // Acesso: admin, ou membro com a permissão "atendimento".
 
-export const SUPPORT_STATUSES = ["em_atendimento", "resolvido"] as const;
+export const SUPPORT_STATUSES = ["novo", "em_atendimento", "resolvido"] as const;
 export type SupportStatus = (typeof SUPPORT_STATUSES)[number];
 
 type Ctx = { role: "admin" | "member"; ownerId: string; permissions: { section: string }[] };
@@ -149,7 +149,7 @@ export const listSupportConversations = createServerFn({ method: "GET" })
     }
 
     // "aguardando_cliente" (status antigo, foi juntado a "em atendimento").
-    for (const c of convRes.data) if (c.status !== "resolvido") c.status = "em_atendimento";
+    for (const c of convRes.data) if (!SUPPORT_STATUSES.includes(c.status)) c.status = "em_atendimento";
     const conversations = convRes.data.sort((a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""));
     return {
       conversations,
@@ -263,7 +263,7 @@ export const getSupportConversation = createServerFn({ method: "GET" })
       }));
     }
     const conversation = conv as SupportConversation;
-    if (conversation.status !== "resolvido") conversation.status = "em_atendimento";
+    if (!SUPPORT_STATUSES.includes(conversation.status)) conversation.status = "em_atendimento";
     return { conversation, messages: out };
   });
 
