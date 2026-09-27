@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
 import { changeSupportTag, getSupportSettings, saveSupportSettings, type getZohoStatus } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { tagTone } from "./CustomerPanel";
@@ -11,7 +11,7 @@ import { ConnectZoho } from "./ConnectZoho";
 import { fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 
-export type ConfigTab = "integracao" | "assinatura" | "tags";
+export type ConfigTab = "integracao" | "assinatura" | "tags" | "metas";
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 
 // Atendimento > Configurações: conexão com o Zoho (admin) e assinatura dos e-mails.
@@ -20,6 +20,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
     { key: "integracao", label: "Integração", desc: "Conta do Zoho Mail", icon: Plug },
     { key: "assinatura", label: "Assinatura", desc: "Fim dos e-mails enviados", icon: PenLine },
     { key: "tags", label: "Tags", desc: "Etiquetas das conversas", icon: Tag },
+    { key: "metas", label: "Metas", desc: "Tempos-alvo do KPI", icon: Target },
   ];
   return (
     <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
@@ -36,7 +37,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
         ))}
       </nav>
       <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 max-w-2xl">
-        {tab === "integracao" ? <Integration status={status} /> : tab === "tags" ? <TagsSettings /> : <Signature />}
+        {tab === "integracao" ? <Integration status={status} /> : tab === "tags" ? <TagsSettings /> : tab === "metas" ? <GoalsSettings /> : <Signature />}
       </div>
     </div>
   );
@@ -264,6 +265,81 @@ function TagsSettings() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Metas dos cards do KPI: tempo de 1ª resposta e de resolução.
+type Unit = "min" | "h";
+const toUnit = (min: number): { value: string; unit: Unit } =>
+  min % 60 === 0 && min >= 60 ? { value: String(min / 60), unit: "h" } : { value: String(min), unit: "min" };
+
+function GoalsSettings() {
+  const qc = useQueryClient();
+  const getFn = useSupportFn(getSupportSettings, "getSupportSettings");
+  const saveFn = useSupportFn(saveSupportSettings, "saveSupportSettings");
+  const q = useQuery({ queryKey: ["support-settings"], queryFn: () => getFn() });
+  const [first, setFirst] = useState<{ value: string; unit: Unit }>({ value: "30", unit: "min" });
+  const [resolution, setResolution] = useState<{ value: string; unit: Unit }>({ value: "6", unit: "h" });
+  useEffect(() => {
+    if (!q.data?.goals) return;
+    setFirst(toUnit(q.data.goals.firstResponseMin));
+    setResolution(toUnit(q.data.goals.resolutionMin));
+  }, [q.data]);
+
+  const minutes = (g: { value: string; unit: Unit }) => Math.round(Number(g.value.replace(",", ".")) * (g.unit === "h" ? 60 : 1));
+  const firstMin = minutes(first), resolutionMin = minutes(resolution);
+  const valid = firstMin >= 1 && resolutionMin >= 1;
+  const dirty = !!q.data?.goals && (firstMin !== q.data.goals.firstResponseMin || resolutionMin !== q.data.goals.resolutionMin);
+
+  const save = useMutation({
+    mutationFn: () => saveFn({ data: { goals: { firstResponseMin: firstMin, resolutionMin } } }),
+    onSuccess: () => {
+      toast.success("Metas salvas");
+      qc.invalidateQueries({ queryKey: ["support-settings"] });
+      qc.invalidateQueries({ queryKey: ["support-kpis"] });
+    },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+
+  if (q.isLoading) return <div className="grid place-items-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-base font-semibold">Metas</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Usadas nos cards da aba KPI para mostrar se o atendimento está dentro ou fora da meta.</p>
+      </div>
+      <GoalRow label="Tempo médio de 1ª resposta" hint="Do primeiro e-mail do cliente até a primeira resposta." goal={first} onChange={setFirst} />
+      <GoalRow label="Tempo médio de resolução" hint="Do primeiro e-mail da conversa até ela ser marcada como resolvida." goal={resolution} onChange={setResolution} />
+      <div className="flex justify-end">
+        <button onClick={() => save.mutate()} disabled={!dirty || !valid || save.isPending}
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
+          {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar metas
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GoalRow({ label, hint, goal, onChange }: {
+  label: string; hint: string; goal: { value: string; unit: Unit }; onChange: (g: { value: string; unit: Unit }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-[11px] text-muted-foreground">{hint}</p>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <input value={goal.value} onChange={(e) => onChange({ ...goal, value: e.target.value.replace(/[^\d.,]/g, "") })} inputMode="decimal"
+          className="w-16 h-9 px-2.5 rounded-lg bg-background border border-border text-sm text-right outline-none focus:border-primary" />
+        <select value={goal.unit} onChange={(e) => onChange({ ...goal, unit: e.target.value as Unit })}
+          className="h-9 px-2 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary cursor-pointer">
+          <option value="min">minutos</option>
+          <option value="h">horas</option>
+        </select>
+      </div>
     </div>
   );
 }

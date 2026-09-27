@@ -15,6 +15,8 @@ export type Database = {
           signature_enabled: boolean;
           tags: string[];
           ai_tags_enabled: boolean;
+          goal_first_response_min: number;
+          goal_resolution_min: number;
           updated_at: string;
         };
         Insert: {
@@ -23,6 +25,8 @@ export type Database = {
           signature_enabled?: boolean;
           tags?: string[];
           ai_tags_enabled?: boolean;
+          goal_first_response_min?: number;
+          goal_resolution_min?: number;
           updated_at?: string;
         };
         Update: {
@@ -31,6 +35,8 @@ export type Database = {
           signature_enabled?: boolean;
           tags?: string[];
           ai_tags_enabled?: boolean;
+          goal_first_response_min?: number;
+          goal_resolution_min?: number;
           updated_at?: string;
         };
         Relationships: [];

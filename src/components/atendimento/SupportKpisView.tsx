@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { ArrowDown, ArrowUp, CircleCheck, Clock, Mail, MailWarning, Minus, Timer, ChevronDown } from "lucide-react";
 import { getSupportKpis } from "@/lib/atendimento.functions";
-import { KPI_GOALS, type SupportKpis } from "@/lib/support-kpis";
+import type { KpiGoals, SupportKpis } from "@/lib/support-kpis";
 import { useSupportFn } from "./demo";
 import { formatDuration } from "./utils";
 
@@ -24,7 +24,7 @@ const fmtDay = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS_SHORT[Number(d
 const MONTHS_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const int = (n: number) => n.toLocaleString("pt-BR");
 
-type Kpis = SupportKpis & { partial: boolean };
+type Kpis = SupportKpis & { partial: boolean; goals: KpiGoals };
 
 export function SupportKpisView({ month }: { month: string }) {
   const kpiFn = useSupportFn(getSupportKpis, "getSupportKpis");
@@ -48,12 +48,12 @@ export function SupportKpisView({ month }: { month: string }) {
           value={k ? formatDuration(k.cards.firstResponse.value) : undefined}
           delta={k && pctDelta(k.cards.firstResponse.value, k.cards.firstResponse.prev)} deltaTone="lower"
           series={k?.cards.firstResponse.series} seriesFormat={(v) => formatDuration(v)}
-          footer={k && <Goal goalMs={KPI_GOALS.firstResponseMs} value={k.cards.firstResponse.value} />} />
+          footer={k && <Goal goalMs={k.goals.firstResponseMin * 60_000} value={k.cards.firstResponse.value} />} />
         <StatCard icon={Timer} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" color="#f59e0b" label="Tempo médio de resolução" vs={vs}
           value={k ? formatDuration(k.cards.resolution.value) : undefined}
           delta={k && pctDelta(k.cards.resolution.value, k.cards.resolution.prev)} deltaTone="lower"
           series={k?.cards.resolution.series} seriesFormat={(v) => formatDuration(v)}
-          footer={k && <Goal goalMs={KPI_GOALS.resolutionMs} value={k.cards.resolution.value} />} />
+          footer={k && <Goal goalMs={k.goals.resolutionMin * 60_000} value={k.cards.resolution.value} />} />
         <StatCard icon={CircleCheck} tone="bg-info/10 text-info" color="var(--color-info)" label="Taxa de resolução" vs={vs}
           value={k ? (k.cards.rate.value == null ? "—" : `${k.cards.rate.value.toLocaleString("pt-BR")}%`) : undefined}
           delta={k && ppDelta(k.cards.rate.value, k.cards.rate.prev)} deltaTone="higher"

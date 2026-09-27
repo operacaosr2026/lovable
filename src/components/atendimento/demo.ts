@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { computeSupportKpis, monthRange } from "@/lib/support-kpis";
+import { DEFAULT_GOALS, computeSupportKpis, monthRange, type KpiGoals } from "@/lib/support-kpis";
 import { useServerFn } from "@tanstack/react-start";
 import { translateSupportMessage, translateSupportReply, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
 
@@ -114,7 +114,7 @@ const SEEDS: Seed[] = [
   },
 ];
 
-type Store = { conversations: SupportConversation[]; messages: (SupportMessage & { conversation_id: string })[]; signature: string; signatureEnabled: boolean; tags: string[]; aiTagsEnabled: boolean };
+type Store = { conversations: SupportConversation[]; messages: (SupportMessage & { conversation_id: string })[]; signature: string; signatureEnabled: boolean; tags: string[]; aiTagsEnabled: boolean; goals: KpiGoals };
 
 let seq = 0;
 const uid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
@@ -193,7 +193,7 @@ function buildStore(): Store {
       shop_id: shopIdByName(s.shop ?? ORDERS[s.email]?.store),
     });
   }
-  const store = { conversations, messages, signature: "Best regards,\n{nome}\nSRX Customer Support", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreio"], aiTagsEnabled: true };
+  const store = { conversations, messages, signature: "Best regards,\n{nome}\nSRX Customer Support", signatureEnabled: true, tags: ["Reembolso", "Defeito", "Troca", "Rastreio"], aiTagsEnabled: true, goals: { ...DEFAULT_GOALS } };
   store.conversations.forEach((c) => recompute(store, c));
   return store;
 }
@@ -401,11 +401,12 @@ const demoApi = {
     await wait(300);
     const s = db();
     const range = monthRange(data.month);
-    return { ...computeSupportKpis(s.messages, s.conversations, DEMO_SHOPS, s.tags, range), partial: range.partial };
+    return { ...computeSupportKpis(s.messages, s.conversations, DEMO_SHOPS, s.tags, range), partial: range.partial, goals: { ...s.goals } };
   },
   listSupportShops: async () => DEMO_SHOPS,
-  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
-  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {
+  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, goals: { ...db().goals }, senderName: "Você" }),
+  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean; goals?: KpiGoals } }) => {
+    if (data.goals) db().goals = { ...data.goals };
     await wait();
     if (data.signature !== undefined) db().signature = data.signature;
     if (data.signatureEnabled !== undefined) db().signatureEnabled = data.signatureEnabled;

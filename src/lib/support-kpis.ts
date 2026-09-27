@@ -11,8 +11,9 @@ export type KpiConversation = {
 };
 export type KpiShop = { id: string; name: string };
 
-// Metas dos cards (tempo de 1ª resposta e de resolução).
-export const KPI_GOALS = { firstResponseMs: 30 * 60_000, resolutionMs: 6 * 3_600_000 };
+// Metas padrão dos cards (Configurações > Metas pode trocar), em minutos.
+export const DEFAULT_GOALS = { firstResponseMin: 30, resolutionMin: 360 };
+export type KpiGoals = typeof DEFAULT_GOALS;
 
 type Point = { date: string; value: number | null };
 export type SupportKpis = {

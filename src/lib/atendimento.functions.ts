@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { computeSupportKpis, monthRange, type KpiConversation, type KpiMessage } from "@/lib/support-kpis";
+import { DEFAULT_GOALS, computeSupportKpis, monthRange, type KpiConversation, type KpiMessage } from "@/lib/support-kpis";
 import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -183,13 +183,17 @@ export const getSupportKpis = createServerFn({ method: "GET" })
         .select("id,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
         .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
       supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
-      supabaseAdmin.from("support_settings").select("tags").eq("owner_id", ownerId).maybeSingle(),
+      supabaseAdmin.from("support_settings").select("tags,goal_first_response_min,goal_resolution_min").eq("owner_id", ownerId).maybeSingle(),
     ]);
     if (msgs.error) throw new Error(msgs.error.message);
     if (convs.error) throw new Error(convs.error.message);
     return {
       ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range),
       partial: range.partial,
+      goals: {
+        firstResponseMin: settings.data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,
+        resolutionMin: settings.data?.goal_resolution_min ?? DEFAULT_GOALS.resolutionMin,
+      },
     };
   });
 
@@ -446,12 +450,16 @@ export const getSupportSettings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
-    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled,tags,ai_tags_enabled").eq("owner_id", context.ownerId).maybeSingle();
+    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled,tags,ai_tags_enabled,goal_first_response_min,goal_resolution_min").eq("owner_id", context.ownerId).maybeSingle();
     return {
       signature: data?.signature ?? "",
       signatureEnabled: data?.signature_enabled ?? true,
       tags: data?.tags ?? [...DEFAULT_TAGS],
       aiTagsEnabled: data?.ai_tags_enabled ?? true,
+      goals: {
+        firstResponseMin: data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,
+        resolutionMin: data?.goal_resolution_min ?? DEFAULT_GOALS.resolutionMin,
+      },
       aiAvailable: supportAiAvailable(),
       senderName: await senderName(context.userId),
     };
@@ -468,6 +476,10 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     signatureEnabled: z.boolean().optional(),
     tags: z.array(TagName).max(100).optional(),
     aiTagsEnabled: z.boolean().optional(),
+    goals: z.object({
+      firstResponseMin: z.number().int().min(1).max(60 * 24 * 30),
+      resolutionMin: z.number().int().min(1).max(60 * 24 * 90),
+    }).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
@@ -475,6 +487,10 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     if (data.signature !== undefined) row.signature = data.signature.trim() || null;
     if (data.signatureEnabled !== undefined) row.signature_enabled = data.signatureEnabled;
     if (data.aiTagsEnabled !== undefined) row.ai_tags_enabled = data.aiTagsEnabled;
+    if (data.goals) {
+      row.goal_first_response_min = data.goals.firstResponseMin;
+      row.goal_resolution_min = data.goals.resolutionMin;
+    }
     if (data.tags) row.tags = [...new Map(data.tags.map((t) => [t.toLowerCase(), t])).values()];
     const { error } = await supabaseAdmin.from("support_settings").upsert(row, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
