@@ -8,6 +8,27 @@ export type Database = {
   };
   public: {
     Tables: {
+      support_settings: {
+        Row: {
+          owner_id: string;
+          signature: string | null;
+          signature_enabled: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          owner_id: string;
+          signature?: string | null;
+          signature_enabled?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          owner_id?: string;
+          signature?: string | null;
+          signature_enabled?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       support_conversations: {
         Row: {
           id: string;

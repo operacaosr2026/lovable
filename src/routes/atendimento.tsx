@@ -5,11 +5,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, Clock, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
-  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check,
+  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, Plug,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SupportSettings, type ConfigTab } from "@/components/atendimento/SupportSettings";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import {
@@ -17,10 +18,9 @@ import {
   updateSupportConversations, sendSupportNewMessage, SUPPORT_STATUSES,
   type SupportConversation, type SupportStatus,
 } from "@/lib/atendimento.functions";
-import { ConnectZoho } from "@/components/atendimento/ConnectZoho";
 import { ConversationView } from "@/components/atendimento/ConversationView";
 import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
-import { AttachmentChips, useAttachments } from "@/components/atendimento/Composer";
+import { AttachmentChips, SignatureToggle, useAttachments, useSignatureToggle } from "@/components/atendimento/Composer";
 import { Avatar, STATUS_META, displayName, formatDuration, listTime, resolvePeriod } from "@/components/atendimento/utils";
 
 export const Route = createFileRoute("/atendimento")({
@@ -32,11 +32,11 @@ export const Route = createFileRoute("/atendimento")({
 type Tab = "todos" | "nao_lidos" | "favoritos";
 type Sort = "recentes" | "antigos" | "nao_lidos";
 
+type View = "inbox" | "config";
+
 function AtendimentoPage() {
-  const qc = useQueryClient();
   const statusFn = useServerFn(getZohoStatus);
   const status = useQuery({ queryKey: ["zoho-status"], queryFn: () => statusFn(), refetchInterval: 60_000 });
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (status.isLoading) {
     return <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
@@ -44,48 +44,15 @@ function AtendimentoPage() {
   if (status.isError) {
     return <div className="min-h-[60vh] grid place-items-center text-sm text-destructive">{(status.error as any)?.message ?? "Erro"}</div>;
   }
-  const s = status.data!;
-
-  if (!s.connected) {
-    return (
-      <PageShell>
-        <h1 className="text-2xl font-semibold tracking-tight mb-6">Atendimento</h1>
-        <div className="max-w-xl mx-auto rounded-2xl border border-border bg-card p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="size-11 rounded-xl bg-primary/10 text-primary grid place-items-center"><Mail className="size-5" /></div>
-            <div>
-              <h2 className="text-base font-semibold">Conecte o Zoho Mail</h2>
-              <p className="text-xs text-muted-foreground">Leia e responda os e-mails dos clientes sem sair do sistema.</p>
-            </div>
-          </div>
-          {s.isAdmin
-            ? <ConnectZoho redirectUri={s.redirectUri} onDone={() => qc.invalidateQueries({ queryKey: ["zoho-status"] })} />
-            : <p className="text-sm text-muted-foreground">Peça para o administrador conectar a conta do Zoho Mail.</p>}
-        </div>
-      </PageShell>
-    );
-  }
-
-  return (
-    <>
-      <Inboxes status={s} onOpenSettings={() => setSettingsOpen(true)} />
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Conexão com o Zoho Mail</DialogTitle></DialogHeader>
-          <ConnectZoho
-            redirectUri={s.redirectUri}
-            connectedEmail={s.email}
-            onDone={() => { setSettingsOpen(false); qc.invalidateQueries({ queryKey: ["zoho-status"] }); qc.invalidateQueries({ queryKey: ["support-list"] }); }}
-          />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
+  return <Inboxes status={status.data!} />;
 }
 
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 
-function Inboxes({ status, onOpenSettings }: { status: ZohoStatus; onOpenSettings: () => void }) {
+function Inboxes({ status }: { status: ZohoStatus }) {
+  const [view, setView] = useState<View>("inbox");
+  const [configTab, setConfigTab] = useState<ConfigTab>("integracao");
+  const openConfig = (tab: ConfigTab) => { setConfigTab(tab); setView("config"); };
   const qc = useQueryClient();
   const listFn = useServerFn(listSupportConversations);
   const syncFn = useServerFn(syncSupportInbox);
@@ -117,11 +84,12 @@ function Inboxes({ status, onOpenSettings }: { status: ZohoStatus; onOpenSetting
     onError: (e: any, force) => { if (force) toast.error(e.message ?? "Erro ao sincronizar"); qc.invalidateQueries({ queryKey: ["zoho-status"] }); },
   });
   useEffect(() => {
+    if (!status.connected) return;
     sync.mutate(false);
     const t = setInterval(() => { if (document.visibilityState === "visible") sync.mutate(false); }, 60_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status.connected]);
 
   const [tab, setTab] = useState<Tab>("todos");
   const [sort, setSort] = useState<Sort>("recentes");
@@ -189,7 +157,8 @@ function Inboxes({ status, onOpenSettings }: { status: ZohoStatus; onOpenSetting
   });
 
   const k = list.data?.kpis;
-  const syncOk = !status.lastSyncError;
+  const connected = status.connected;
+  const syncOk = connected && !status.lastSyncError;
   const activeFilters = statusFilter.length + tagFilter.length;
 
   return (
@@ -199,13 +168,22 @@ function Inboxes({ status, onOpenSettings }: { status: ZohoStatus; onOpenSetting
         <div className="flex items-center gap-3 min-w-0 mr-auto">
           <h1 className="text-2xl font-semibold tracking-tight">Atendimento</h1>
           <span
-            title={syncOk ? `Conectado a ${status.email}` : status.lastSyncError ?? ""}
-            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${syncOk ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
+            title={!connected ? "Zoho Mail não conectado" : syncOk ? `Conectado a ${status.email}` : status.lastSyncError ?? ""}
+            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${!connected ? "bg-muted text-muted-foreground" : syncOk ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
           >
-            <span className={`size-1.5 rounded-full ${syncOk ? "bg-success" : "bg-destructive"}`} />
-            {syncOk ? "Online" : "Erro na sincronização"}
+            <span className={`size-1.5 rounded-full ${!connected ? "bg-muted-foreground" : syncOk ? "bg-success" : "bg-destructive"}`} />
+            {!connected ? "Desconectado" : syncOk ? "Online" : "Erro na sincronização"}
           </span>
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1">
+            {([["inbox", "Caixa de entrada", Inbox], ["config", "Configurações", Settings]] as const).map(([key, label, Icon]) => (
+              <button key={key} onClick={() => setView(key)}
+                className={`h-7 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${view === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                <Icon className="size-3.5" /> <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
+        {view === "inbox" && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px] xl:w-80 xl:flex-none">
             <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
@@ -256,22 +234,39 @@ function Inboxes({ status, onOpenSettings }: { status: ZohoStatus; onOpenSetting
             </PopoverContent>
           </Popover>
           <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
-          <button onClick={() => sync.mutate(true)} disabled={sync.isPending} title="Sincronizar agora"
+          <button onClick={() => sync.mutate(true)} disabled={sync.isPending || !connected} title="Sincronizar agora"
             className="size-8 rounded-xl bg-card border border-border grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-60">
             <RefreshCw className={`size-3.5 ${sync.isPending ? "animate-spin" : ""}`} />
           </button>
-          {status.isAdmin && (
-            <button onClick={onOpenSettings} title="Conexão com o Zoho"
-              className="size-8 rounded-xl bg-card border border-border grid place-items-center text-muted-foreground hover:text-foreground">
-              <Settings className="size-3.5" />
-            </button>
-          )}
-          <button onClick={() => setComposeOpen(true)}
-            className="h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5">
+          <button onClick={() => setComposeOpen(true)} disabled={!connected}
+            className="h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 disabled:opacity-50">
             <PenSquare className="size-3.5" /> Nova mensagem
           </button>
         </div>
+        )}
       </div>
+
+      {view === "config" ? (
+        <SupportSettings status={status} tab={configTab} setTab={setConfigTab} />
+      ) : (
+      <>
+      {!connected && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4">
+          <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Mail className="size-4" /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Zoho Mail não conectado</p>
+            <p className="text-xs text-muted-foreground">
+              {status.isAdmin ? "Conecte a conta de atendimento para os e-mails dos clientes aparecerem aqui." : "Peça para o administrador conectar a conta do Zoho Mail."}
+            </p>
+          </div>
+          {status.isAdmin && (
+            <button onClick={() => openConfig("integracao")}
+              className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 shrink-0">
+              <Plug className="size-4" /> Conectar Zoho
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Indicadores ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
@@ -386,6 +381,9 @@ function Inboxes({ status, onOpenSettings }: { status: ZohoStatus; onOpenSetting
         </section>
       )}
 
+      </>
+      )}
+
       <NewMessageDialog
         open={composeOpen}
         onOpenChange={setComposeOpen}
@@ -472,8 +470,9 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const att = useAttachments();
+  const sig = useSignatureToggle();
   const send = useMutation({
-    mutationFn: () => sendFn({ data: { to: to.trim(), subject: subject.trim(), text, attachments: att.refs } }),
+    mutationFn: () => sendFn({ data: { to: to.trim(), subject: subject.trim(), text, attachments: att.refs, signature: sig.on } }),
     onSuccess: (r) => {
       toast.success("E-mail enviado");
       setTo(""); setSubject(""); setText(""); att.clear();
@@ -498,6 +497,8 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
               {att.uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />} Anexar
               <input type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
             </label>
+            <SignatureToggle sig={sig} />
+            <div className="flex-1" />
             <button
               onClick={() => send.mutate()}
               disabled={!to.trim() || !subject.trim() || !text.trim() || send.isPending || att.uploading}

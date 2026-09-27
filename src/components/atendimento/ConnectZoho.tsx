@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Loader2, Mail, Plug, Unplug } from "lucide-react";
+import { Copy, ExternalLink, Loader2, Plug, RefreshCw, Unplug } from "lucide-react";
 import { startZohoOAuth, disconnectZoho } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
@@ -17,6 +17,8 @@ export function ConnectZoho({ redirectUri, connectedEmail, onDone }: {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showForm, setShowForm] = useState(!connectedEmail);
+  useEffect(() => { setShowForm(!connectedEmail); }, [connectedEmail]);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   useEffect(() => {
@@ -54,19 +56,18 @@ export function ConnectZoho({ redirectUri, connectedEmail, onDone }: {
   return (
     <div className="space-y-5">
       {connectedEmail && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-4 py-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Mail className="size-4 text-primary shrink-0" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{connectedEmail}</p>
-              <p className="text-[11px] text-muted-foreground">Conta conectada. Para trocar, conecte outra abaixo.</p>
-            </div>
-          </div>
-          <button onClick={disconnect} className="h-8 px-3 rounded-lg border border-border text-xs flex items-center gap-1.5 text-destructive hover:bg-destructive/10 shrink-0">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setShowForm((v) => !v)} className="h-9 px-3.5 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted">
+            <RefreshCw className="size-3.5" /> {showForm ? "Cancelar troca" : "Trocar conta / reconectar"}
+          </button>
+          <button onClick={disconnect} className="h-9 px-3.5 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 text-destructive hover:bg-destructive/10">
             <Unplug className="size-3.5" /> Desconectar
           </button>
         </div>
       )}
+
+      {showForm && (
+      <>
 
       <ol className="space-y-3 text-sm">
         <li className="flex gap-3">
@@ -108,6 +109,8 @@ export function ConnectZoho({ redirectUri, connectedEmail, onDone }: {
       <p className="text-[11px] text-muted-foreground text-center">
         Vai abrir uma janela do Zoho pedindo para autorizar leitura e envio de e-mails. Os últimos 30 dias são importados na hora.
       </p>
+      </>
+      )}
     </div>
   );
 }

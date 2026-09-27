@@ -290,6 +290,52 @@ function textToHtml(text: string) {
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${esc.replace(/\r?\n/g, "<br>")}</div>`;
 }
 
+async function senderName(userId: string) {
+  const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", userId).maybeSingle();
+  if (prof?.full_name?.trim()) return prof.full_name.trim();
+  const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
+  return data?.user?.email?.split("@")[0] ?? "";
+}
+
+// Texto digitado + assinatura do workspace ({nome} = quem está respondendo).
+async function buildBody(ownerId: string, userId: string, text: string, withSignature: boolean) {
+  let html = textToHtml(text);
+  if (!withSignature) return html;
+  const { data: st } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled").eq("owner_id", ownerId).maybeSingle();
+  if (st?.signature_enabled && st.signature?.trim()) {
+    const sig = st.signature.replace(/\{nome\}/gi, await senderName(userId));
+    html += `<br><div style="color:#555">${textToHtml(sig)}</div>`;
+  }
+  return html;
+}
+
+// ─── Configurações (assinatura) ───────────────────────────────────────────────
+
+export const getSupportSettings = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    assertAccess(context);
+    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled").eq("owner_id", context.ownerId).maybeSingle();
+    return {
+      signature: data?.signature ?? "",
+      signatureEnabled: data?.signature_enabled ?? true,
+      senderName: await senderName(context.userId),
+    };
+  });
+
+export const saveSupportSettings = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ signature: z.string().max(2000), signatureEnabled: z.boolean() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { error } = await supabaseAdmin.from("support_settings").upsert({
+      owner_id: context.ownerId, signature: data.signature.trim() || null, signature_enabled: data.signatureEnabled,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "owner_id" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const sendSupportReply = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -297,6 +343,7 @@ export const sendSupportReply = createServerFn({ method: "POST" })
     text: z.string().trim().min(1).max(20_000),
     attachments: z.array(AttachmentRef).max(10).optional(),
     status: z.enum(SUPPORT_STATUSES).default("aguardando_cliente"),
+    signature: z.boolean().default(true),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
@@ -313,7 +360,7 @@ export const sendSupportReply = createServerFn({ method: "POST" })
 
     const baseSubject = (lastIn?.subject ?? conv.subject ?? "").trim();
     const subject = /^(re|res|aw)\s*:/i.test(baseSubject) ? baseSubject : `Re: ${baseSubject || "Seu contato"}`;
-    let html = textToHtml(data.text);
+    let html = await buildBody(ownerId, context.userId, data.text, data.signature);
     if (lastIn) {
       const when = new Date(lastIn.sent_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
       const who = lastIn.from_name ? `${lastIn.from_name} &lt;${lastIn.from_email}&gt;` : lastIn.from_email;
@@ -344,11 +391,13 @@ export const sendSupportNewMessage = createServerFn({ method: "POST" })
     subject: z.string().trim().min(1).max(300),
     text: z.string().trim().min(1).max(20_000),
     attachments: z.array(AttachmentRef).max(10).optional(),
+    signature: z.boolean().default(true),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
     const acc = await requireAccount(context.ownerId);
-    await sendZohoMail(acc, { to: data.to, subject: data.subject, html: textToHtml(data.text), attachments: data.attachments });
+    const html = await buildBody(context.ownerId, context.userId, data.text, data.signature);
+    await sendZohoMail(acc, { to: data.to, subject: data.subject, html, attachments: data.attachments });
     try { await syncZohoMailbox(context.ownerId, { quick: true }); } catch { /* próxima sincronização */ }
     const { data: conv } = await supabaseAdmin.from("support_conversations").select("id")
       .eq("owner_id", context.ownerId).eq("customer_email", data.to.toLowerCase()).maybeSingle();
