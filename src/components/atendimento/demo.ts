@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { computeSupportKpis } from "@/lib/support-kpis";
 import { useServerFn } from "@tanstack/react-start";
 import { translateSupportMessage, translateSupportReply, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
 
@@ -118,10 +119,54 @@ type Store = { conversations: SupportConversation[]; messages: (SupportMessage &
 let seq = 0;
 const uid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
 
+// Histórico fictício (45 dias de conversas já resolvidas) pra aba KPI ter o
+// que mostrar. Sorteio com semente fixa: sempre os mesmos dados.
+const FIRST = ["Olivia", "Liam", "Emma", "Noah", "Ava", "Ethan", "Sophia", "Mason", "Isabella", "Lucas", "Mia", "Logan", "Amelia", "James", "Harper", "Benjamin", "Evelyn", "Henry", "Abigail", "Jack"];
+const LAST = ["Smith", "Johnson", "Williams", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Wilson", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "White", "Harris"];
+const TOPICS: { subject: string; body: string; tag: string | null }[] = [
+  { subject: "Where is my package?", body: "Hi, my tracking hasn't updated in a few days. Can you check on it?", tag: "Rastreio" },
+  { subject: "Tracking number not working", body: "The tracking number you sent says 'not found'. Is it correct?", tag: "Rastreio" },
+  { subject: "Refund request", body: "I'd like to return my order and get a refund, please.", tag: "Reembolso" },
+  { subject: "Still waiting for my refund", body: "It's been 10 days and my refund hasn't shown up yet.", tag: "Reembolso" },
+  { subject: "Item arrived broken", body: "The product arrived damaged. What can you do?", tag: "Defeito" },
+  { subject: "Not working", body: "The item stopped working after two days of use.", tag: "Defeito" },
+  { subject: "Wrong size", body: "I need a different size. How do I exchange it?", tag: "Troca" },
+  { subject: "Exchange for another color", body: "Can I swap this for the black one instead?", tag: "Troca" },
+  { subject: "Question about my order", body: "Can I still change the shipping address on my order?", tag: null },
+  { subject: "Discount code", body: "Do you have any discount code for a second purchase?", tag: null },
+];
+
+function seededRandom(seed: number) {
+  return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+}
+
+function historySeeds(): Seed[] {
+  const rand = seededRandom(42);
+  const pick = <T,>(list: T[]) => list[Math.floor(rand() * list.length)];
+  const out: Seed[] = [];
+  for (let i = 0; i < 90; i++) {
+    const topic = pick(TOPICS);
+    const first = pick(FIRST), last = pick(LAST);
+    // Espalhados nos últimos 45 dias, em horários variados.
+    const daysAgo = 7 + Math.floor(rand() * 38);
+    const at = daysAgo * D + Math.floor(rand() * 12) * H + Math.floor(rand() * 60);
+    const wait = 20 + Math.floor(rand() ** 2 * 30 * H);   // maioria responde rápido
+    out.push({
+      email: `${first}.${last}${i}@gmail.com`.toLowerCase(), name: `${first} ${last}`, status: "resolvido",
+      tags: topic.tag ? [topic.tag] : [], ai: topic.tag && rand() > 0.2 ? [topic.tag] : [],
+      msgs: [
+        { dir: "in", at, subject: topic.subject, body: p("Hi,", topic.body, `Thanks,<br>${first}`) },
+        { dir: "out", at: at - wait, subject: `Re: ${topic.subject}`, body: p(`Hi ${first}, thanks for reaching out — we've taken care of it!`, "Best regards,<br>SRX Support") },
+      ],
+    });
+  }
+  return out;
+}
+
 function buildStore(): Store {
   const conversations: SupportConversation[] = [];
   const messages: Store["messages"] = [];
-  for (const s of SEEDS) {
+  for (const s of [...SEEDS, ...historySeeds()]) {
     const id = uid();
     const msgs = s.msgs.map((m) => ({
       id: uid(), conversation_id: id, message_id: String(1_700_000_000_000 + seq), folder_id: "1",
@@ -342,6 +387,11 @@ const demoApi = {
     s.conversations = s.conversations.filter((c) => !data.ids.includes(c.id));
     s.messages = s.messages.filter((m) => !data.ids.includes(m.conversation_id));
     return { deleted: data.ids.length, failed: 0 };
+  },
+  getSupportKpis: async ({ data }: { data: { from: string; to: string } }) => {
+    await wait(300);
+    const s = db();
+    return computeSupportKpis(s.messages, s.conversations, data.from, data.to);
   },
   getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, senderName: "Você" }),
   saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean } }) => {

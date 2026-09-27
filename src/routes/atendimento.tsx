@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
-  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles,
+  RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles, BarChart3,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -14,6 +14,8 @@ import { SupportSettings, type ConfigTab } from "@/components/atendimento/Suppor
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar } from "@/components/ui/calendar";
+import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
+import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import type { DateRange } from "react-day-picker";
 import { localDateKey } from "@/lib/timezone";
 import {
@@ -43,7 +45,7 @@ const fmtDay = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
 type Sort = "recentes" | "antigos" | "nao_lidos";
 const SORT_LABELS: Record<Sort, string> = { recentes: "Mais recentes", antigos: "Mais antigos", nao_lidos: "Não lidos primeiro" };
 
-type View = "inbox" | "config";
+type View = "inbox" | "kpi" | "config";
 
 function AtendimentoPage() {
   // Modo demonstração (?demo=1): lido só no navegador, antes de qualquer consulta.
@@ -76,6 +78,10 @@ type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 function Inboxes({ status }: { status: ZohoStatus }) {
   const demo = useIsDemo();
   const [view, setView] = useState<View>("inbox");
+  // Período da aba KPI (independente do filtro da Caixa).
+  const [kpiPeriod, setKpiPeriod] = useState("30d");
+  const [kpiCustom, setKpiCustom] = useState<{ from: string; to: string } | undefined>();
+  const kpiRange = useMemo(() => resolvePeriod(kpiPeriod, kpiCustom), [kpiPeriod, kpiCustom]);
   const [configTab, setConfigTab] = useState<ConfigTab>("integracao");
   const qc = useQueryClient();
   const listFn = useSupportFn(listSupportConversations, "listSupportConversations");
@@ -244,7 +250,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
             </span>
           )}
           <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1 shrink-0">
-            {([["inbox", "Caixa de entrada", Inbox], ["config", "Configurações", Settings]] as const).map(([key, label, Icon]) => (
+            {([["inbox", "Caixa de entrada", Inbox], ["kpi", "KPI", BarChart3], ["config", "Configurações", Settings]] as const).map(([key, label, Icon]) => (
               <button key={key} onClick={() => setView(key)}
                 className={`h-7 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors ${view === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-3.5" /> <span className="hidden sm:inline">{key === "inbox" ? <><span className="2xl:hidden">Caixa</span><span className="hidden 2xl:inline">Caixa de entrada</span></> : label}</span>
@@ -252,6 +258,11 @@ function Inboxes({ status }: { status: ZohoStatus }) {
             ))}
           </div>
         </div>
+        {view === "kpi" && (
+          <div className="flex items-center gap-2 lg:ml-auto">
+            <DateRangePicker period={kpiPeriod} setPeriod={setKpiPeriod} customRange={kpiCustom} setCustomRange={setKpiCustom} />
+          </div>
+        )}
         {view === "inbox" && (
         <div className="flex items-center gap-2 flex-1 min-w-0 lg:justify-end">
           <div className="relative flex-1 min-w-[120px] lg:max-w-80">
@@ -339,7 +350,9 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         )}
       </div>
 
-      {view === "config" ? (
+      {view === "kpi" ? (
+        <SupportKpisView range={kpiRange} />
+      ) : view === "config" ? (
         <SupportSettings status={status} tab={configTab} setTab={setConfigTab} />
       ) : (
       <>

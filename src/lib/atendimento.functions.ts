@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
+import { computeSupportKpis, type KpiConversation, type KpiMessage } from "@/lib/support-kpis";
 import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -161,6 +162,29 @@ export const listSupportConversations = createServerFn({ method: "GET" })
         responses: waits.length,
       },
     };
+  });
+
+// Aba KPI: números do período (e do período anterior, pra comparar).
+export const getSupportKpis = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ from: z.string().datetime(), to: z.string().datetime() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { ownerId } = context;
+    const from = new Date(data.from).getTime();
+    const to = new Date(data.to).getTime();
+    const prevFrom = new Date(from - (to - from) - 1).toISOString();
+    // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
+    const until = new Date(to + 7 * 86_400_000).toISOString();
+    const [msgs, convs] = await Promise.all([
+      selectAll<KpiMessage>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at")
+        .eq("owner_id", ownerId).gte("sent_at", prevFrom).lte("sent_at", until)),
+      selectAll<KpiConversation>(supabaseAdmin.from("support_conversations").select("id,status,tags,resolved_at,last_message_at")
+        .eq("owner_id", ownerId).gte("last_message_at", prevFrom)),
+    ]);
+    if (msgs.error) throw new Error(msgs.error.message);
+    if (convs.error) throw new Error(convs.error.message);
+    return computeSupportKpis(msgs.data, convs.data, data.from, data.to);
   });
 
 // Busca por pedido: "#4532" ou "4532" → e-mails dos compradores.
