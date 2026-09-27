@@ -100,47 +100,47 @@ export function Composer({ customerName, onSend, sending }: {
   return (
     <div className="border-t border-border p-3 space-y-2">
       <AttachmentChips files={att.files} onRemove={att.remove} />
-      <div className="flex items-end gap-2">
-        <div className="flex-1 min-w-0 rounded-xl border border-border bg-background focus-within:border-primary transition-colors">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("aguardando_cliente"); } }}
-            placeholder={`Responder ${customerName}…  (Ctrl+Enter envia)`}
-            rows={3}
-            className="w-full resize-none bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-muted-foreground/70 max-h-60"
-          />
-          <div className="flex items-center gap-1 px-2 pb-1.5">
-            <button type="button" onClick={() => fileRef.current?.click()} title="Anexar arquivo (até 3 MB)"
-              className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
-              {att.uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
-            </button>
-            <SignatureToggle sig={sig} />
-            <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
-          </div>
-        </div>
-        <div className="flex shrink-0">
-          <button
-            onClick={() => send("aguardando_cliente")}
-            disabled={!text.trim() || sending || att.uploading}
-            className="h-10 pl-4 pr-3 rounded-l-xl bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            Enviar
+      {/* Caixa ocupa a largura toda; anexar, assinatura e Enviar ficam na barra de baixo. */}
+      <div className="rounded-xl border border-border bg-background focus-within:border-primary transition-colors">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("aguardando_cliente"); } }}
+          placeholder={`Responder ${customerName}…  (Ctrl+Enter envia)`}
+          rows={4}
+          className="w-full resize-y min-h-[88px] max-h-80 bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-muted-foreground/70"
+        />
+        <div className="flex items-center gap-1 px-2 pb-2">
+          <button type="button" onClick={() => fileRef.current?.click()} title="Anexar arquivo (até 3 MB)"
+            className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
+            {att.uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button disabled={!text.trim() || sending || att.uploading} aria-label="Mais opções de envio"
-                className="h-10 px-2 rounded-r-xl bg-primary text-primary-foreground border-l border-primary-foreground/20 disabled:opacity-50">
-                <ChevronDown className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuItem onClick={() => send("aguardando_cliente")}>Enviar e aguardar cliente</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => send("resolvido")}>Enviar e marcar como resolvido</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => send("em_atendimento")}>Enviar e manter em atendimento</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <SignatureToggle sig={sig} />
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
+          <div className="flex-1" />
+          <div className="flex shrink-0">
+            <button
+              onClick={() => send("aguardando_cliente")}
+              disabled={!text.trim() || sending || att.uploading}
+              className="h-8 pl-3.5 pr-3 rounded-l-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              Enviar
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button disabled={!text.trim() || sending || att.uploading} aria-label="Mais opções de envio"
+                  className="h-8 px-1.5 rounded-r-lg bg-primary text-primary-foreground border-l border-primary-foreground/20 disabled:opacity-50">
+                  <ChevronDown className="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem onClick={() => send("aguardando_cliente")}>Enviar e aguardar cliente</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => send("resolvido")}>Enviar e marcar como resolvido</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => send("em_atendimento")}>Enviar e manter em atendimento</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
     </div>
