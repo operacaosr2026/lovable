@@ -91,6 +91,7 @@ export type Database = {
           dnd_start: string;
           dnd_end: string;
           timezone: string;
+          profit_times: string[];
           updated_at: string;
         };
         Insert: {
@@ -100,6 +101,7 @@ export type Database = {
           dnd_start?: string;
           dnd_end?: string;
           timezone?: string;
+          profit_times?: string[];
           updated_at?: string;
         };
         Update: {
@@ -109,6 +111,7 @@ export type Database = {
           dnd_start?: string;
           dnd_end?: string;
           timezone?: string;
+          profit_times?: string[];
           updated_at?: string;
         };
         Relationships: [];
@@ -2275,6 +2278,8 @@ export type Database = {
       };
       shop_meta_ad_accounts: {
         Row: {
+          account_status: number | null;
+          account_status_at: string | null;
           account_name: string | null;
           billing_seen_tx: string[];
           billing_started_at: string | null;
@@ -2294,6 +2299,8 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          account_status?: number | null;
+          account_status_at?: string | null;
           account_name?: string | null;
           billing_seen_tx?: string[];
           billing_started_at?: string | null;
@@ -2313,6 +2320,8 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          account_status?: number | null;
+          account_status_at?: string | null;
           account_name?: string | null;
           billing_seen_tx?: string[];
           billing_started_at?: string | null;

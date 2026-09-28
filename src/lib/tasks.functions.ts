@@ -6,6 +6,27 @@ import { selectAll } from "@/lib/select-all";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { broadcast } from "@/lib/realtime.server";
 import { notifyTaskDone } from "@/lib/notifications.server";
+import { emitEvent } from "@/lib/notify.server";
+
+// Push "Tarefa criada pra você" — só pra pessoa responsável, e não quando ela
+// mesma criou/atribuiu. Uma vez por tarefa e pessoa. Nunca derruba a tarefa.
+async function notifyTaskAssigned(ownerId: string, byUserId: string, task: { id: string; title: string; due_date: string | null; assignee_id: string | null }) {
+  if (!task.assignee_id || task.assignee_id === byUserId) return;
+  try {
+    const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", byUserId).maybeSingle();
+    const who = prof?.full_name?.trim() || "Alguém da equipe";
+    const due = task.due_date ? ` · prazo ${task.due_date.slice(8, 10)}/${task.due_date.slice(5, 7)}` : "";
+    await emitEvent(ownerId, {
+      key: `task_assigned:${task.id}:${task.assignee_id}`,
+      title: "📋 Nova tarefa para você",
+      body: `${task.title}${due} — de ${who}`,
+      link: "/tarefas",
+      targetUserId: task.assignee_id,
+    });
+  } catch (e) {
+    console.error("push tarefa", e);
+  }
+}
 
 export const TASK_AREAS = [
   "pedidos", "marketing", "lojas", "fornecedores", "analise",
@@ -94,6 +115,7 @@ export const createTask = createServerFn({ method: "POST" })
       completed_at: data.status === "concluida" ? new Date().toISOString() : null,
     }).select(TASK_COLUMNS).single();
     if (error) throw new Error(error.message);
+    await notifyTaskAssigned(context.ownerId, context.userId, row as Task);
     await broadcast(context.ownerId, "tasks");
     return row as Task;
   });
@@ -112,16 +134,20 @@ export const updateTask = createServerFn({ method: "POST" })
     // Data de conclusão acompanha o status (pra saber quando foi concluída).
     if (patch.status === "concluida") patch.completed_at = new Date().toISOString();
     else if (patch.status) patch.completed_at = null;
-    const { data: before } = patch.status === "concluida"
-      ? await supabaseAdmin.from("tasks").select("status,title").eq("id", data.id).eq("user_id", context.ownerId).maybeSingle()
+    const { data: before } = patch.status === "concluida" || "assignee_id" in patch
+      ? await supabaseAdmin.from("tasks").select("status,title,assignee_id").eq("id", data.id).eq("user_id", context.ownerId).maybeSingle()
       : { data: null };
     const { data: row, error } = await supabaseAdmin.from("tasks")
       .update(patch).eq("id", data.id).eq("user_id", context.ownerId)
       .select(TASK_COLUMNS).maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Tarefa não encontrada.");
+    // Responsável trocado → push pra pessoa nova.
+    if (before && "assignee_id" in patch && row.assignee_id !== before.assignee_id) {
+      await notifyTaskAssigned(context.ownerId, context.userId, row as Task);
+    }
     // Tarefa concluída na mão → aviso pra equipe toda (menos quem concluiu).
-    if (before && before.status !== "concluida") {
+    if (before && patch.status === "concluida" && before.status !== "concluida") {
       const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", context.userId).maybeSingle();
       const who = prof?.full_name?.trim() || "Alguém da equipe";
       await notifyTaskDone(context.ownerId, { id: data.id, created_by: null }, {

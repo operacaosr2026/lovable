@@ -9,7 +9,7 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Chaves geradas por refreshSystemNotifications (recalculadas a cada leitura).
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
-const MANAGED_PREFIXES = ["meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:"];
+const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:"];
 
 const TRACK123_STALE_HOURS = 4;   // cron roda de hora em hora
 const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
@@ -106,13 +106,11 @@ export async function notifyTaskDone(
     link: "/tarefas",
     updated_at: now,
   };
-  const push = { title: base.title, body: base.body, link: base.link };
+  // Só no sino — o push de Tarefas é o de tarefa criada pra pessoa (tasks.functions).
   if (!opts.excludeUserId) {
-    const key = `task_done:${task.id}:${now}`;
     await supabaseAdmin.from("app_notifications").insert({
-      ...base, key, target_user_id: task.created_by ?? null,
+      ...base, key: `task_done:${task.id}:${now}`, target_user_id: task.created_by ?? null,
     });
-    await notifyPeople(ownerId, { key, ...push, targetUserId: task.created_by ?? null });
   } else {
     // Equipe toda menos quem fez: um aviso por pessoa (dono + membros).
     const { data: links } = await supabaseAdmin.from("workspace_members").select("member_id").eq("owner_id", ownerId);
@@ -121,7 +119,6 @@ export async function notifyTaskDone(
       await supabaseAdmin.from("app_notifications").insert(team.map((id) => ({
         ...base, key: `task_done:${task.id}:${now}:${id}`, target_user_id: id,
       })));
-      await Promise.all(team.map((id) => notifyPeople(ownerId, { key: `task_done:${task.id}:${now}:${id}`, ...push, targetUserId: id })));
     }
   }
   await broadcast(ownerId, "notifications");
@@ -165,7 +162,7 @@ export async function refreshSystemNotifications(ownerId: string) {
         .in("shop_id", activeShopIds).eq("lg_cards.user_id", ownerId),
       supabaseAdmin.from("shop_meta_tokens").select("shop_id,token_expires_at")
         .eq("user_id", ownerId).in("shop_id", activeShopIds),
-      supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name,last_sync_status,last_sync_error")
+      supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name,last_sync_status,last_sync_error,account_status")
         .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("enabled", true),
       storeIds.length
         ? supabaseAdmin.from("shopify_stores").select("id,name,shop_domain,last_sync_status,last_sync_error")
@@ -210,6 +207,26 @@ export async function refreshSystemNotifications(ownerId: string) {
           link: linkFor(t.shop_id, "integracoes"),
         });
       }
+    }
+
+    // Falha de pagamento: a Meta marca a conta como UNSETTLED (3, pagamento
+    // pendente) ou IN_GRACE_PERIOD (9, em carência) — os anúncios param logo.
+    // Status lido no sync de gasto (a cada 10 min). Uma conta usada por várias
+    // lojas avisa uma vez só.
+    const paymentSeen = new Set<string>();
+    for (const a of (accountsRes.data ?? []) as any[]) {
+      if (a.account_status !== 3 && a.account_status !== 9) continue;
+      if (paymentSeen.has(a.ad_account_id)) continue;
+      paymentSeen.add(a.ad_account_id);
+      const num = String(a.ad_account_id).replace(/^act_/, "");
+      want.set(`meta_payment:${a.ad_account_id}`, {
+        level: "error",
+        title: `Falha de pagamento na Meta — ${a.account_name ?? a.ad_account_id}`,
+        body: a.account_status === 9
+          ? "A conta de anúncio está em período de carência por pagamento não processado. Atualize a forma de pagamento antes que os anúncios parem."
+          : "A conta de anúncio está com pagamento pendente e os anúncios podem parar. Atualize a forma de pagamento no Gerenciador de Anúncios.",
+        link: `https://adsmanager.facebook.com/adsmanager/manage/billing?act=${num}`,
+      });
     }
 
     for (const a of (accountsRes.data ?? []) as any[]) {

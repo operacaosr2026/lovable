@@ -43,6 +43,7 @@ export const SECTIONS = [
   "nt_vendas",
   "nt_email",
   "nt_metas",
+  "nt_lucro",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 

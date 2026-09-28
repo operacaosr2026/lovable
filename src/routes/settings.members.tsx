@@ -18,7 +18,7 @@ import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
-  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail,
+  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -57,7 +57,7 @@ const SECTION_LABELS: Record<Section, string> = {
   at_caixa: "Caixa",
   at_kpi: "KPI",
   at_config: "Configurações",
-  nt_meta: "Meta",
+  nt_meta: "Meta Facebook",
   nt_shopify: "Shopify",
   nt_disputas: "Disputas",
   nt_rastreio: "Rastreio",
@@ -66,6 +66,7 @@ const SECTION_LABELS: Record<Section, string> = {
   nt_vendas: "Nova venda",
   nt_email: "E-mail novo no Atendimento",
   nt_metas: "Metas",
+  nt_lucro: "Lucro do dia",
 };
 
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
@@ -73,17 +74,18 @@ const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedi
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
 const AT_SUBTABS: Section[] = ["at_caixa", "at_kpi", "at_config"];
 // Tipos de notificação (aparecem quando "Notificações" está marcado).
-const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas"];
+const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro"];
 const NT_HINTS: Partial<Record<Section, string>> = {
-  nt_meta: "Token da Meta e conta de anúncio com erro",
+  nt_meta: "Falha de pagamento, token vencendo e conta com erro",
   nt_shopify: "Sincronização, reembolsos e acesso negado",
   nt_disputas: "Chargeback e inquiry aguardando resposta",
   nt_rastreio: "Track123 com erro ou sem atualizar",
   nt_atendimento: "Zoho Mail com erro ou parado",
-  nt_tarefas: "Tarefa concluída",
+  nt_tarefas: "Tarefa criada para a pessoa (só no celular)",
   nt_vendas: "Cada pedido novo (só no celular)",
   nt_email: "Cliente mandou e-mail (só no celular)",
-  nt_metas: "Meta do dia e do mês atingidas (só no celular)",
+  nt_metas: "Meta do mês atingida (só no celular)",
+  nt_lucro: "Lucro de hoje nos horários que a pessoa escolher (só no celular)",
 };
 const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
@@ -267,7 +269,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
   nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_tarefas: CheckSquare,
-  nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target,
+  nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp,
   shops: Store, projects: FolderKanban, sops: Workflow,
 };
 

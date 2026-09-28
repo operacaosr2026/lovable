@@ -407,8 +407,21 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
           spendByDate.set(date, (spendByDate.get(date) ?? 0) + spend);
         }
 
+        // Status da conta (3 = pagamento pendente, 9 = em carência): o sino
+        // (refreshSystemNotifications) avisa "Falha de pagamento na Meta".
+        // Falha aqui não atrapalha o gasto.
+        let accountStatus: number | null = null;
+        try {
+          const st = await fetchWithRetry(`${META_GRAPH_API_BASE}/${account.ad_account_id}?fields=account_status&access_token=${encodeURIComponent(accessToken)}`);
+          const sj: any = await st.json();
+          if (st.ok && !sj.error && sj.account_status != null) accountStatus = Number(sj.account_status);
+        } catch { /* fica o status anterior */ }
+
         await supabaseAdmin.from("shop_meta_ad_accounts")
-          .update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null })
+          .update({
+            last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
+            ...(accountStatus != null ? { account_status: accountStatus, account_status_at: new Date().toISOString() } : {}),
+          })
           .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", account.ad_account_id);
       } catch (e: any) {
         const msg = String(e?.message ?? e);

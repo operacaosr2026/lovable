@@ -21,18 +21,19 @@ export type NotifyInput = {
 };
 
 export type UserNotificationPrefs = {
-  muted: Set<string>; dndEnabled: boolean; dndStart: string; dndEnd: string; timezone: string;
+  muted: Set<string>; dndEnabled: boolean; dndStart: string; dndEnd: string; timezone: string; profitTimes: string[];
 };
 
 export async function getUserNotificationPrefs(userId: string): Promise<UserNotificationPrefs> {
   const { data } = await supabaseAdmin.from("notification_settings")
-    .select("muted_categories,dnd_enabled,dnd_start,dnd_end,timezone").eq("user_id", userId).maybeSingle();
+    .select("muted_categories,dnd_enabled,dnd_start,dnd_end,timezone,profit_times").eq("user_id", userId).maybeSingle();
   return {
     muted: new Set(data?.muted_categories ?? []),
     dndEnabled: data?.dnd_enabled ?? false,
     dndStart: data?.dnd_start ?? "23:00",
     dndEnd: data?.dnd_end ?? "07:00",
     timezone: data?.timezone ?? "America/Sao_Paulo",
+    profitTimes: data?.profit_times ?? [],
   };
 }
 

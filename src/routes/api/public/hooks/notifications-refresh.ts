@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
-import { checkGoalEvents } from "@/lib/goal-events.server";
+import { checkGoalEvents, checkProfitReports } from "@/lib/goal-events.server";
 
-// Disparado a cada 10 min pelo pg_cron (ver *_push_notifications_cron.sql):
+// Disparado a cada 5 min pelo pg_cron (ver *_push_notifications_cron.sql):
 // recalcula os avisos do sino de cada workspace (token da Meta, sync da
 // Shopify, Track123, disputas, Zoho). Antes isso só rodava quando alguém
 // abria o sino — agora o aviso novo nasce sozinho e vira push no celular
@@ -27,9 +27,11 @@ export const Route = createFileRoute("/api/public/hooks/notifications-refresh")(
         for (const owner of owners) {
           try { await refreshSystemNotifications(owner); out[owner] = "ok"; }
           catch (e: any) { console.error("notifications-refresh", owner, e); out[owner] = String(e?.message ?? e).slice(0, 200); }
-          // Push de Metas (meta do dia / do mês atingida).
+          // Push de Metas (meta do mês atingida) e do Lucro do dia (horários de cada pessoa).
           try { await checkGoalEvents(owner); }
           catch (e: any) { console.error("notifications-refresh metas", owner, e); out[owner] += ` · metas: ${String(e?.message ?? e).slice(0, 120)}`; }
+          try { await checkProfitReports(owner); }
+          catch (e: any) { console.error("notifications-refresh lucro", owner, e); out[owner] += ` · lucro: ${String(e?.message ?? e).slice(0, 120)}`; }
         }
         return Response.json(out);
       },

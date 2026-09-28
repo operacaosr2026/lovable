@@ -28,6 +28,7 @@ export const getNotificationSettings = createServerFn({ method: "GET" })
         .map((c) => ({ key: c.key, label: c.label, desc: c.desc, enabled: !prefs.muted.has(c.key) })),
       dnd: { enabled: prefs.dndEnabled, start: prefs.dndStart, end: prefs.dndEnd },
       timezone: prefs.timezone,
+      profitTimes: prefs.profitTimes,
       // O endpoint vai pra tela só pra ela saber qual dos dispositivos é "este".
       devices: (devices ?? []).map((d) => ({
         id: d.id, endpoint: d.endpoint, label: d.device_label, createdAt: d.created_at,
@@ -47,6 +48,8 @@ export const saveNotificationSettings = createServerFn({ method: "POST" })
     muted: z.array(z.string().max(40)).max(50).optional(),
     dnd: z.object({ enabled: z.boolean(), start: Hhmm, end: Hhmm }).optional(),
     timezone: z.string().max(60).refine(validTimeZone, "Fuso inválido").optional(),
+    // Lucro do dia: até 3 horários (HH:MM no fuso da pessoa).
+    profitTimes: z.array(Hhmm).max(3).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const allowed = allowedCategories(context.role, context.permissions);
@@ -54,6 +57,7 @@ export const saveNotificationSettings = createServerFn({ method: "POST" })
     if (data.muted) row.muted_categories = [...new Set(data.muted.filter((c) => allowed.has(c as any)))];
     if (data.dnd) { row.dnd_enabled = data.dnd.enabled; row.dnd_start = data.dnd.start; row.dnd_end = data.dnd.end; }
     if (data.timezone) row.timezone = data.timezone;
+    if (data.profitTimes) row.profit_times = [...new Set(data.profitTimes)].sort();
     const { error } = await supabaseAdmin.from("notification_settings").upsert(row as any, { onConflict: "user_id" });
     if (error) throw new Error(error.message);
     return { ok: true };

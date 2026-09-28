@@ -16,7 +16,7 @@ export const Route = createFileRoute("/settings/notificacoes")({
 });
 
 type Settings = Awaited<ReturnType<typeof getNotificationSettings>>;
-type SettingsPatch = { muted?: string[]; dnd?: { enabled: boolean; start: string; end: string }; timezone?: string };
+type SettingsPatch = { muted?: string[]; dnd?: { enabled: boolean; start: string; end: string }; timezone?: string; profitTimes?: string[] };
 
 // ─── Detecção do aparelho ─────────────────────────────────────────────────────
 
@@ -75,7 +75,8 @@ function NotificacoesPage() {
       ) : (
         <>
           <DeviceCard settings={s} />
-          <CategoriesCard settings={s} onSave={(muted) => save.mutate({ muted })} />
+          <CategoriesCard settings={s} onSave={(muted) => save.mutate({ muted })}
+            onSaveProfitTimes={(profitTimes) => save.mutate({ profitTimes })} saving={save.isPending} />
           <QuietHoursCard settings={s} saving={save.isPending} onSave={(dnd) => save.mutate({ dnd })} />
           <DevicesCard settings={s} />
         </>
@@ -236,7 +237,9 @@ function DeviceCard({ settings }: { settings: Settings }) {
 
 // ─── O que receber ────────────────────────────────────────────────────────────
 
-function CategoriesCard({ settings, onSave }: { settings: Settings; onSave: (muted: string[]) => void }) {
+function CategoriesCard({ settings, onSave, onSaveProfitTimes, saving }: {
+  settings: Settings; onSave: (muted: string[]) => void; onSaveProfitTimes: (times: string[]) => void; saving: boolean;
+}) {
   const toggle = (key: string, on: boolean) => {
     const muted = settings.categories.filter((c) => (c.key === key ? !on : !c.enabled)).map((c) => c.key);
     onSave(muted);
@@ -257,17 +260,49 @@ function CategoriesCard({ settings, onSave }: { settings: Settings; onSave: (mut
       ) : (
         <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
           {settings.categories.map((c) => (
-            <label key={c.key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface transition-colors">
-              <span className="min-w-0 flex-1">
-                <span className={`block text-sm ${c.enabled ? "font-medium" : "text-muted-foreground"}`}>{c.label}</span>
-                <span className="block text-[11px] text-muted-foreground">{c.desc}</span>
-              </span>
-              <Switch checked={c.enabled} onCheckedChange={(on) => toggle(c.key, on)} />
-            </label>
+            <div key={c.key}>
+              <label className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface transition-colors">
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-sm ${c.enabled ? "font-medium" : "text-muted-foreground"}`}>{c.label}</span>
+                  <span className="block text-[11px] text-muted-foreground">{c.desc}</span>
+                </span>
+                <Switch checked={c.enabled} onCheckedChange={(on) => toggle(c.key, on)} />
+              </label>
+              {c.key === "nt_lucro" && c.enabled && (
+                <ProfitTimes initial={settings.profitTimes} timezone={settings.timezone} saving={saving} onSave={onSaveProfitTimes} />
+              )}
+            </div>
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+// Lucro do dia: até 3 horários.
+function ProfitTimes({ initial, timezone, saving, onSave }: {
+  initial: string[]; timezone: string; saving: boolean; onSave: (times: string[]) => void;
+}) {
+  const [times, setTimes] = useState<string[]>(() => [...initial, "", "", ""].slice(0, 3));
+  useEffect(() => { setTimes([...initial, "", "", ""].slice(0, 3)); }, [initial.join(",")]);
+  const filled = times.filter(Boolean);
+  const changed = [...new Set(filled)].sort().join(",") !== [...initial].sort().join(",");
+  return (
+    <div className="px-4 pb-3 -mt-1 space-y-2">
+      <p className="text-[11px] text-muted-foreground">Horários para receber o lucro de hoje (até 3, fuso {timezone.replace("_", " ")}):</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {times.map((t, i) => (
+          <input key={i} type="time" value={t} onChange={(e) => setTimes((cur) => cur.map((x, j) => (j === i ? e.target.value : x)))}
+            className="settings-input w-28" />
+        ))}
+        {changed && (
+          <button onClick={() => onSave(filled)} disabled={saving}
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+            {saving && <Loader2 className="size-3.5 animate-spin" />}Salvar horários
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

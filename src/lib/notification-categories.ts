@@ -5,16 +5,18 @@
 // seus em Configurações > Notificações. Usado no servidor e na tela.
 
 export const NOTIFICATION_CATEGORIES = [
-  { key: "nt_meta", label: "Meta", desc: "Token da Meta vencendo e conta de anúncio com erro", prefixes: ["meta_token:", "meta_account:"] },
+  { key: "nt_meta", label: "Meta Facebook", desc: "Falha de pagamento na conta de anúncio, token vencendo e conta com erro", prefixes: ["meta_payment:", "meta_token:", "meta_account:"] },
   { key: "nt_shopify", label: "Shopify", desc: "Sincronização com erro, reembolsos e acesso negado", prefixes: ["shopify_sync:", "shopify_refunds:", "shopify_access:"] },
   { key: "nt_disputas", label: "Disputas", desc: "Chargeback e inquiry aguardando resposta", prefixes: ["dispute:"] },
   { key: "nt_rastreio", label: "Rastreio", desc: "Track123 com erro ou sem atualizar", prefixes: ["track123:"] },
   { key: "nt_atendimento", label: "Atendimento", desc: "Zoho Mail com erro ou parado", prefixes: ["zoho_mail:"] },
-  { key: "nt_tarefas", label: "Tarefas", desc: "Tarefa concluída", prefixes: ["task_done:"] },
+
   // Eventos: só no celular (no sino encheriam a lista — ele é pra problemas).
   { key: "nt_vendas", label: "Nova venda", desc: "Cada pedido novo, com loja e valor (só no celular)", prefixes: ["sale:"], pushOnly: true },
   { key: "nt_email", label: "E-mail novo no Atendimento", desc: "Cliente mandou e-mail (só no celular)", prefixes: ["email:"], pushOnly: true },
-  { key: "nt_metas", label: "Metas", desc: "Meta do dia e meta do mês atingidas (só no celular)", prefixes: ["goal_day:", "goal_month:"], pushOnly: true },
+  { key: "nt_tarefas", label: "Tarefas", desc: "Tarefa criada para você — só você recebe (só no celular)", prefixes: ["task_assigned:"], pushOnly: true },
+  { key: "nt_metas", label: "Metas", desc: "Meta do mês atingida (só no celular)", prefixes: ["goal_month:"], pushOnly: true },
+  { key: "nt_lucro", label: "Lucro do dia", desc: "Lucro de hoje nos horários que você escolher (só no celular)", prefixes: ["profit:"], pushOnly: true },
 ] as const;
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]["key"];
