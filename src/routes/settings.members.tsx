@@ -18,7 +18,7 @@ import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
-  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings,
+  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -57,13 +57,29 @@ const SECTION_LABELS: Record<Section, string> = {
   at_caixa: "Caixa",
   at_kpi: "KPI",
   at_config: "Configurações",
+  nt_meta: "Meta",
+  nt_shopify: "Shopify",
+  nt_disputas: "Disputas",
+  nt_rastreio: "Rastreio",
+  nt_atendimento: "Atendimento",
+  nt_tarefas: "Tarefas",
 };
 
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
 const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
 const AT_SUBTABS: Section[] = ["at_caixa", "at_kpi", "at_config"];
-const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS };
+// Tipos de notificação (aparecem quando "Notificações" está marcado).
+const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_tarefas"];
+const NT_HINTS: Partial<Record<Section, string>> = {
+  nt_meta: "Token da Meta e conta de anúncio com erro",
+  nt_shopify: "Sincronização, reembolsos e acesso negado",
+  nt_disputas: "Chargeback e inquiry aguardando resposta",
+  nt_rastreio: "Track123 com erro ou sem atualizar",
+  nt_atendimento: "Zoho Mail com erro ou parado",
+  nt_tarefas: "Tarefa concluída",
+};
+const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
 const TAB_SECTIONS: Section[] = ["dashboard", "metas", "tarefas", "produtos", "caixa", "banco_lojas", "lojas_grupos", "atendimento", "notificacoes"];
@@ -244,6 +260,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
+  nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_tarefas: CheckSquare,
   shops: Store, projects: FolderKanban, sops: Workflow,
 };
 
@@ -298,7 +315,7 @@ function PermissionsForm({
   };
 
   const PAGE_TABS = TAB_SECTIONS.filter((t) => t !== "notificacoes");
-  const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS, ...AT_SUBTABS];
+  const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS, ...AT_SUBTABS, ...NT_TYPES];
   const allTabs = ALL_TABS.every((t) => has(t, null));
   const setAllTabs = (on: boolean) => {
     const rest = value.filter((p) => !ALL_TABS.includes(p.section));
@@ -338,8 +355,15 @@ function PermissionsForm({
       </PermGroup>
 
       <PermGroup title="Outros">
-        <PermRow section="notificacoes" checked={has("notificacoes", null)} onChange={() => toggle("notificacoes", null)}
-          hint="Avisos de disputas, integrações e tarefas" />
+        <PermRow section="notificacoes" checked={has("notificacoes", null)} onChange={() => toggleTab("notificacoes")}
+          hint="Sino e push no celular — escolha abaixo os tipos" />
+        {has("notificacoes", null) && (
+          <div className="divide-y divide-border border-t border-border">
+            {NT_TYPES.map((t) => (
+              <PermRow key={t} section={t} indent checked={has(t, null)} onChange={() => toggle(t, null)} hint={NT_HINTS[t]} />
+            ))}
+          </div>
+        )}
       </PermGroup>
 
       <PermGroup title="Acesso a dados">

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { broadcast } from "@/lib/realtime.server";
+import { notifyPeople } from "@/lib/notify.server";
 
 export type NotificationLevel = "info" | "warning" | "error";
 type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
@@ -42,14 +43,17 @@ export async function raiseNotification(ownerId: string, key: string, n: Notific
   const fields = { level: n.level, title: n.title, body: n.body ?? null, link: n.link ?? null, updated_at: now };
   if (!existing) {
     // Duas chamadas simultâneas podem tentar inserir a mesma chave — o índice
-    // único barra a segunda, e tudo bem.
-    await supabaseAdmin.from("app_notifications").insert({ user_id: ownerId, key, ...fields });
+    // único barra a segunda, e tudo bem (e só a que entrou manda o push).
+    const { error } = await supabaseAdmin.from("app_notifications").insert({ user_id: ownerId, key, ...fields });
     await broadcast(ownerId, "notifications");
+    if (!error) await notifyPeople(ownerId, { key, ...n });
   } else if (existing.resolved_at) {
     await supabaseAdmin.from("app_notifications")
       .update({ ...fields, created_at: now, resolved_at: null, read_at: null, dismissed_at: null })
       .eq("id", existing.id);
     await broadcast(ownerId, "notifications");
+    // Problema que voltou: avisa de novo no celular.
+    await notifyPeople(ownerId, { key, ...n });
   } else {
     await supabaseAdmin.from("app_notifications").update(fields).eq("id", existing.id);
   }
@@ -102,10 +106,13 @@ export async function notifyTaskDone(
     link: "/tarefas",
     updated_at: now,
   };
+  const push = { title: base.title, body: base.body, link: base.link };
   if (!opts.excludeUserId) {
+    const key = `task_done:${task.id}:${now}`;
     await supabaseAdmin.from("app_notifications").insert({
-      ...base, key: `task_done:${task.id}:${now}`, target_user_id: task.created_by ?? null,
+      ...base, key, target_user_id: task.created_by ?? null,
     });
+    await notifyPeople(ownerId, { key, ...push, targetUserId: task.created_by ?? null });
   } else {
     // Equipe toda menos quem fez: um aviso por pessoa (dono + membros).
     const { data: links } = await supabaseAdmin.from("workspace_members").select("member_id").eq("owner_id", ownerId);
@@ -114,6 +121,7 @@ export async function notifyTaskDone(
       await supabaseAdmin.from("app_notifications").insert(team.map((id) => ({
         ...base, key: `task_done:${task.id}:${now}:${id}`, target_user_id: id,
       })));
+      await Promise.all(team.map((id) => notifyPeople(ownerId, { key: `task_done:${task.id}:${now}:${id}`, ...push, targetUserId: id })));
     }
   }
   await broadcast(ownerId, "notifications");

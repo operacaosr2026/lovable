@@ -5,6 +5,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
 import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
 import { broadcast } from "@/lib/realtime.server";
+import { canReceive, getUserNotificationPrefs } from "@/lib/notify.server";
+import { categoryOfKey } from "@/lib/notification-categories";
+
+// Só os tipos liberados pro membro (Configurações > Membros) e ligados pela
+// pessoa (Configurações > Notificações) aparecem no sino dela.
+async function visibleFilter(context: { userId: string; role: string; permissions: { section: string }[] }) {
+  const prefs = await getUserNotificationPrefs(context.userId);
+  return (key: string) => canReceive(categoryOfKey(key), context, prefs.muted);
+}
 
 export const listNotifications = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -22,15 +31,17 @@ export const listNotifications = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) throw new Error(error.message);
+    const visible = await visibleFilter(context);
+    const rows = (data ?? []).filter((n) => visible(n.key));
     // Quais já viraram tarefa (aberta) — o sino mostra "Tarefa criada" em vez do botão.
-    const keys = (data ?? []).map((n) => n.key);
+    const keys = rows.map((n) => n.key);
     const { data: linked } = keys.length
       ? await supabaseAdmin.from("tasks").select("source_key").eq("user_id", ownerId)
           .in("source_key", keys).neq("status", "concluida")
       : { data: [] as { source_key: string | null }[] };
     const withTask = new Set((linked ?? []).map((t) => t.source_key));
     // Aviso de tarefa concluída é só informativo — não oferece "Criar tarefa".
-    return (data ?? []).map(({ key, ...n }) => ({ ...n, has_task: withTask.has(key), can_task: !key.startsWith("task_done:") }));
+    return rows.map(({ key, ...n }) => ({ ...n, has_task: withTask.has(key), can_task: !key.startsWith("task_done:") }));
   });
 
 export const markNotificationsRead = createServerFn({ method: "POST" })
@@ -65,10 +76,16 @@ export const dismissAllNotifications = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     const now = new Date().toISOString();
-    const { error } = await supabaseAdmin.from("app_notifications")
-      .update({ dismissed_at: now, read_at: now })
+    // Só o que está no sino dessa pessoa (tipos escondidos pra ela ficam).
+    const { data: open } = await supabaseAdmin.from("app_notifications").select("id,key")
       .eq("user_id", context.ownerId).is("resolved_at", null).is("dismissed_at", null)
       .or(`target_user_id.is.null,target_user_id.eq.${context.userId}`);
+    const visible = await visibleFilter(context);
+    const ids = (open ?? []).filter((n) => visible(n.key)).map((n) => n.id);
+    if (!ids.length) return { ok: true };
+    const { error } = await supabaseAdmin.from("app_notifications")
+      .update({ dismissed_at: now, read_at: now })
+      .eq("user_id", context.ownerId).in("id", ids);
     if (error) throw new Error(error.message);
     await broadcast(context.ownerId, "notifications");
     return { ok: true };

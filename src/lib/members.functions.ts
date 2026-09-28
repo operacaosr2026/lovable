@@ -32,6 +32,14 @@ export const SECTIONS = [
   "at_caixa",
   "at_kpi",
   "at_config",
+  // Tipos de notificação (sino + push), dentro de "notificacoes" — ver
+  // src/lib/notification-categories.ts.
+  "nt_meta",
+  "nt_shopify",
+  "nt_disputas",
+  "nt_rastreio",
+  "nt_atendimento",
+  "nt_tarefas",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 

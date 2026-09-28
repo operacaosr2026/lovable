@@ -41,6 +41,114 @@ export type Database = {
         };
         Relationships: [];
       };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          owner_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          device_label: string | null;
+          created_at: string;
+          last_used_at: string | null;
+          failure_count: number;
+          disabled_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          owner_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          device_label?: string | null;
+          created_at?: string;
+          last_used_at?: string | null;
+          failure_count?: number;
+          disabled_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          owner_id?: string;
+          endpoint?: string;
+          p256dh?: string;
+          auth?: string;
+          device_label?: string | null;
+          created_at?: string;
+          last_used_at?: string | null;
+          failure_count?: number;
+          disabled_at?: string | null;
+        };
+        Relationships: [];
+      };
+      notification_settings: {
+        Row: {
+          user_id: string;
+          muted_categories: string[];
+          dnd_enabled: boolean;
+          dnd_start: string;
+          dnd_end: string;
+          timezone: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          muted_categories?: string[];
+          dnd_enabled?: boolean;
+          dnd_start?: string;
+          dnd_end?: string;
+          timezone?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          muted_categories?: string[];
+          dnd_enabled?: boolean;
+          dnd_start?: string;
+          dnd_end?: string;
+          timezone?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      push_log: {
+        Row: {
+          id: string;
+          owner_id: string;
+          user_id: string;
+          subscription_id: string | null;
+          notification_key: string | null;
+          title: string | null;
+          status: string;
+          error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          user_id: string;
+          subscription_id?: string | null;
+          notification_key?: string | null;
+          title?: string | null;
+          status: string;
+          error?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          user_id?: string;
+          subscription_id?: string | null;
+          notification_key?: string | null;
+          title?: string | null;
+          status?: string;
+          error?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       support_conversations: {
         Row: {
           id: string;

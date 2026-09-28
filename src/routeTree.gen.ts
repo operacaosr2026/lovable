@@ -26,6 +26,7 @@ import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupo
 import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
 import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
 import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
+import { Route as SettingsNotificacoesRouteImport } from "./routes/settings.notificacoes";
 import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
 import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
 import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
@@ -46,6 +47,7 @@ import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/publi
 import { Route as ApiPublicHooksZohoMailSyncRouteImport } from "./routes/api/public/hooks/zoho-mail-sync";
 import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
+import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
 import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
 import { Route as ApiPublicHooksCaixaSnapshotRouteImport } from "./routes/api/public/hooks/caixa-snapshot";
 import { Route as ApiPublicHooksShopifyStoreIdRouteImport } from "./routes/api/public/hooks/shopify.$storeId";
@@ -134,6 +136,11 @@ const ShopsBancoDeLojasRoute = ShopsBancoDeLojasRouteImport.update({
 const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
   id: "/seguranca",
   path: "/seguranca",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsNotificacoesRoute = SettingsNotificacoesRouteImport.update({
+  id: "/notificacoes",
+  path: "/notificacoes",
   getParentRoute: () => SettingsRoute,
 } as any);
 const SettingsMembersRoute = SettingsMembersRouteImport.update({
@@ -241,6 +248,12 @@ const ApiPublicHooksSyncShopOrdersRoute =
     path: "/api/public/hooks/sync-shop-orders",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksNotificationsRefreshRoute =
+  ApiPublicHooksNotificationsRefreshRouteImport.update({
+    id: "/api/public/hooks/notifications-refresh",
+    path: "/api/public/hooks/notifications-refresh",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicHooksEstornoDailyRoute =
   ApiPublicHooksEstornoDailyRouteImport.update({
     id: "/api/public/hooks/estorno-daily",
@@ -282,6 +295,7 @@ export interface FileRoutesByFullPath {
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
+  "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
@@ -301,6 +315,7 @@ export interface FileRoutesByFullPath {
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
+  "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
@@ -322,6 +337,7 @@ export interface FileRoutesByTo {
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
+  "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
@@ -337,6 +353,7 @@ export interface FileRoutesByTo {
   "/shops/sops": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
+  "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
@@ -362,6 +379,7 @@ export interface FileRoutesById {
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
+  "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
@@ -381,6 +399,7 @@ export interface FileRoutesById {
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
+  "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
@@ -407,6 +426,7 @@ export interface FileRouteTypes {
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
+    | "/settings/notificacoes"
     | "/settings/seguranca"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
@@ -426,6 +446,7 @@ export interface FileRouteTypes {
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
     | "/api/public/hooks/estorno-daily"
+    | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/hooks/zoho-mail-sync"
@@ -447,6 +468,7 @@ export interface FileRouteTypes {
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
+    | "/settings/notificacoes"
     | "/settings/seguranca"
     | "/projects"
     | "/settings"
@@ -462,6 +484,7 @@ export interface FileRouteTypes {
     | "/shops/sops"
     | "/api/public/hooks/caixa-snapshot"
     | "/api/public/hooks/estorno-daily"
+    | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/hooks/zoho-mail-sync"
@@ -486,6 +509,7 @@ export interface FileRouteTypes {
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
+    | "/settings/notificacoes"
     | "/settings/seguranca"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
@@ -505,6 +529,7 @@ export interface FileRouteTypes {
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
     | "/api/public/hooks/estorno-daily"
+    | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/sync-track123"
     | "/api/public/hooks/zoho-mail-sync"
@@ -528,6 +553,7 @@ export interface RootRouteChildren {
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
   ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
+  ApiPublicHooksNotificationsRefreshRoute: typeof ApiPublicHooksNotificationsRefreshRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
   ApiPublicHooksZohoMailSyncRoute: typeof ApiPublicHooksZohoMailSyncRoute;
@@ -656,6 +682,13 @@ declare module "@tanstack/react-router" {
       path: "/seguranca";
       fullPath: "/settings/seguranca";
       preLoaderRoute: typeof SettingsSegurancaRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/notificacoes": {
+      id: "/settings/notificacoes";
+      path: "/notificacoes";
+      fullPath: "/settings/notificacoes";
+      preLoaderRoute: typeof SettingsNotificacoesRouteImport;
       parentRoute: typeof SettingsRoute;
     };
     "/settings/members": {
@@ -798,6 +831,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/api/public/hooks/notifications-refresh": {
+      id: "/api/public/hooks/notifications-refresh";
+      path: "/api/public/hooks/notifications-refresh";
+      fullPath: "/api/public/hooks/notifications-refresh";
+      preLoaderRoute: typeof ApiPublicHooksNotificationsRefreshRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/hooks/estorno-daily": {
       id: "/api/public/hooks/estorno-daily";
       path: "/api/public/hooks/estorno-daily";
@@ -848,6 +888,7 @@ interface SettingsRouteChildren {
   SettingsGeralRoute: typeof SettingsGeralRoute;
   SettingsIntegracoesRoute: typeof SettingsIntegracoesRoute;
   SettingsMembersRoute: typeof SettingsMembersRoute;
+  SettingsNotificacoesRoute: typeof SettingsNotificacoesRoute;
   SettingsSegurancaRoute: typeof SettingsSegurancaRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
 }
@@ -857,6 +898,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGeralRoute: SettingsGeralRoute,
   SettingsIntegracoesRoute: SettingsIntegracoesRoute,
   SettingsMembersRoute: SettingsMembersRoute,
+  SettingsNotificacoesRoute: SettingsNotificacoesRoute,
   SettingsSegurancaRoute: SettingsSegurancaRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 };
@@ -951,6 +993,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
   ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,
+  ApiPublicHooksNotificationsRefreshRoute:
+    ApiPublicHooksNotificationsRefreshRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
   ApiPublicHooksZohoMailSyncRoute: ApiPublicHooksZohoMailSyncRoute,
