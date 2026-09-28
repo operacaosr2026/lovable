@@ -201,7 +201,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                   <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Cancelado</span>}
                     {o.financial && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{FINANCIAL[o.financial] ?? o.financial}</span>}
-                    {o.delivery && <span className="text-[10px] px-1.5 py-0.5 rounded bg-info/10 text-info">{o.delivery}</span>}
+                    {o.delivery && <span className={`text-[10px] px-1.5 py-0.5 rounded ${DELIVERY[o.delivery]?.cls ?? "bg-info/10 text-info"}`}>{DELIVERY[o.delivery]?.label ?? o.delivery}</span>}
                   </div>
                   {o.tracking && (
                     <div className="flex items-center gap-1.5 mt-2 text-[11px]">
@@ -251,6 +251,16 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
   );
 }
 
+// Status de entrega (mesmos nomes da aba Rastreamento).
+const DELIVERY: Record<string, { label: string; cls: string }> = {
+  pending_shipment: { label: "Pendente envio", cls: "bg-amber-500/10 text-amber-600" },
+  shipped: { label: "Enviado", cls: "bg-blue-500/10 text-blue-600" },
+  in_transit: { label: "Em trânsito", cls: "bg-blue-500/10 text-blue-600" },
+  delivered: { label: "Entregue", cls: "bg-emerald-500/10 text-emerald-600" },
+  returned: { label: "Devolvido", cls: "bg-rose-500/10 text-rose-600" },
+  problem: { label: "Problema", cls: "bg-rose-500/10 text-rose-600" },
+  waiting_customer: { label: "Esperando cliente", cls: "bg-violet-500/10 text-violet-600" },
+};
 const FINANCIAL: Record<string, string> = {
   paid: "Pago", pending: "Pendente", refunded: "Reembolsado", partially_refunded: "Reembolso parcial",
   voided: "Anulado", authorized: "Autorizado", partially_paid: "Pago parcial",
