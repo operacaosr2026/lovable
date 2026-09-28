@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import { ArrowDown, ArrowUp, CircleCheck, Clock, Mail, MailWarning, Minus, Timer, ChevronDown } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleCheck, Clock, Mail, MailWarning, Minus, Tag, Timer, ChevronDown } from "lucide-react";
 import { getSupportKpis } from "@/lib/atendimento.functions";
 import type { KpiGoals, SupportKpis } from "@/lib/support-kpis";
 import { useSupportFn } from "./demo";
@@ -99,30 +99,7 @@ export function SupportKpisView({ month }: { month: string }) {
           )}
         </Card>
 
-        <Card title="Conversas por tag" className="xl:col-span-2">
-          {!k ? <Skeleton h={260} /> : (
-            <div className="space-y-3.5 pt-1">
-              {k.tags.map((t, i) => {
-                const none = t.tag === "Sem tag";
-                const max = Math.max(1, ...k.tags.map((x) => x.count));
-                return (
-                  <div key={t.tag} className="grid grid-cols-[minmax(0,1fr)_40px_48px_minmax(0,1.1fr)] items-center gap-3 text-xs"
-                    title={`${t.tag}: ${t.count} conversa${t.count === 1 ? "" : "s"} (${t.pct}%)`}>
-                    <span className="flex items-center gap-2 min-w-0">
-                      <span className="size-2.5 rounded-sm shrink-0" style={{ background: none ? "var(--c-none)" : slot(i) }} />
-                      <span className="truncate">{t.tag}</span>
-                    </span>
-                    <span className="text-right font-semibold tabular-nums">{int(t.count)}</span>
-                    <span className="text-right text-muted-foreground tabular-nums">{t.pct.toLocaleString("pt-BR")}%</span>
-                    <span className="h-2.5 rounded bg-muted overflow-hidden">
-                      <span className="block h-full rounded" style={{ width: `${(t.count / max) * 100}%`, background: none ? "var(--c-none)" : slot(i) }} />
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
+        <TagsCard k={k} className="xl:col-span-2" />
       </div>
 
       {/* ── Chegada | Desempenho por loja ── */}
@@ -268,6 +245,90 @@ function Card({ title, right, className = "", children }: { title: string; right
       </div>
       {children}
     </section>
+  );
+}
+
+// Conversas por tag: filtro por loja, variação vs mês anterior e resumo.
+function TagsCard({ k, className }: { k: Kpis | undefined; className: string }) {
+  const [store, setStore] = useState("all");
+  const stats = k ? k.tagsByStore[store] ?? k.tagsByStore.all : undefined;
+  const max = stats ? Math.max(1, ...stats.tags.map((t) => t.count)) : 1;
+  const classifiedDelta = stats ? ppDelta(stats.summary.classifiedPct, stats.summary.prevClassifiedPct) : null;
+  return (
+    <Card title="Conversas por tag" className={className} right={k && k.stores.length > 0 && (
+      <div className="relative">
+        <select value={store} onChange={(e) => setStore(e.target.value)}
+          className="appearance-none bg-background border border-border text-[11px] rounded-lg pl-2.5 pr-7 h-7 outline-none cursor-pointer max-w-[150px] truncate">
+          <option value="all">Todas as lojas</option>
+          {k.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+      </div>
+    )}>
+      {!stats ? <Skeleton h={260} /> : (
+        <>
+          <div className="space-y-3 pt-1">
+            {stats.tags.map((t, i) => {
+              const none = t.tag === "Sem tag";
+              const color = none ? "var(--c-none)" : slot(i);
+              const d = pctDelta(t.count, t.prevCount);
+              return (
+                <div key={t.tag} className="grid grid-cols-[minmax(0,1fr)_32px_44px_minmax(0,1.2fr)_52px] items-center gap-2.5 text-xs"
+                  title={`${t.tag}: ${t.count} conversa${t.count === 1 ? "" : "s"} (${t.pct}%) · mês anterior: ${t.prevCount}`}>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="size-2.5 rounded-full shrink-0" style={{ background: color }} />
+                    <span className="truncate">{t.tag}</span>
+                  </span>
+                  <span className="text-right font-semibold tabular-nums">{int(t.count)}</span>
+                  <span className="text-right text-muted-foreground tabular-nums">{t.pct.toLocaleString("pt-BR")}%</span>
+                  <span className="h-2.5 rounded-full bg-muted overflow-hidden">
+                    <span className="block h-full rounded-full" style={{ width: `${(t.count / max) * 100}%`, background: color }} />
+                  </span>
+                  <DeltaBadge value={d} />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 rounded-xl bg-muted/50 p-3 flex items-center gap-3">
+            <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Tag className="size-[18px]" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1">Resumo das tags</p>
+              <div className="grid grid-cols-[1fr_1fr_1.2fr_auto] items-end gap-3">
+                <SummaryItem value={int(stats.summary.withTag)} label="Com tag" />
+                <SummaryItem value={int(stats.summary.withoutTag)} label="Sem tag" />
+                <SummaryItem value={stats.summary.classifiedPct == null ? "—" : `${stats.summary.classifiedPct.toLocaleString("pt-BR")}%`} label="Classificadas" />
+                <div className="text-right">
+                  <DeltaBadge value={classifiedDelta} unit=" p.p." />
+                  <p className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">vs mês anterior</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function SummaryItem({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-lg font-bold leading-tight tabular-nums">{value}</p>
+      <p className="text-[10px] text-muted-foreground truncate">{label}</p>
+    </div>
+  );
+}
+
+// Selo de variação: verde subindo, vermelho caindo (como no mockup).
+function DeltaBadge({ value, unit = "%" }: { value: number | null; unit?: string }) {
+  if (value == null) return <span className="text-[10px] text-muted-foreground text-right">—</span>;
+  if (value === 0) return <span className="inline-flex items-center justify-end gap-0.5 text-[10px] text-muted-foreground"><Minus className="size-3" />0{unit}</span>;
+  const up = value > 0;
+  return (
+    <span className={`inline-flex items-center justify-center gap-0.5 h-5 px-1.5 rounded-md text-[10px] font-semibold tabular-nums ${up ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"}`}>
+      {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}{Math.abs(value).toLocaleString("pt-BR")}{unit}
+    </span>
   );
 }
 

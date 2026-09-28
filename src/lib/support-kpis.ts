@@ -16,6 +16,10 @@ export const DEFAULT_GOALS = { firstResponseMin: 30, resolutionMin: 360 };
 export type KpiGoals = typeof DEFAULT_GOALS;
 
 type Point = { date: string; value: number | null };
+export type TagStats = {
+  tags: { tag: string; count: number; pct: number; prevCount: number }[];
+  summary: { withTag: number; withoutTag: number; classifiedPct: number | null; prevClassifiedPct: number | null };
+};
 export type SupportKpis = {
   cards: {
     total: { value: number; prev: number; series: Point[]; newConversations: number; replied: number };
@@ -26,7 +30,8 @@ export type SupportKpis = {
   };
   stores: { id: string; name: string; color: number }[];        // color = posição fixa da loja (a cor segue a loja)
   byStoreDaily: ({ date: string } & Record<string, number | string>)[];
-  tags: { tag: string; count: number; pct: number }[];
+  // Por loja ("all" = todas): contagem por tag, comparação e resumo.
+  tagsByStore: Record<string, TagStats>;
   arrivals: { day: { label: string; count: number }[]; hour: { label: string; count: number }[]; weekday: { label: string; count: number }[] };
   unassigned: number;   // conversas do mês ainda sem loja (definir no painel do cliente)
   storeTable: {
@@ -133,13 +138,26 @@ export function computeSupportKpis(
     return row;
   });
 
-  // Tags: só a lista fixa (Configurações > Tags) + "Sem tag".
+  // Tags: só a lista fixa (Configurações > Tags) + "Sem tag", por loja e no
+  // total, comparando com o mês anterior (conversas com movimento em cada mês).
   const active = convs.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to));
-  const tagCounts = fixedTags.map((tag) => ({ tag, count: active.filter((c) => c.tags.includes(tag)).length }));
-  const untagged = active.filter((c) => !c.tags.some((t) => fixedTags.includes(t))).length;
-  const tagTotal = active.length || 1;
-  const tags = [...tagCounts, { tag: "Sem tag", count: untagged }]
-    .map((t) => ({ ...t, pct: Math.round((t.count / tagTotal) * 1000) / 10 }));
+  const tagStats = (subset: Conv[]): TagStats => {
+    const cur = subset.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to));
+    const prv = subset.filter((c) => c.msgs.some((m) => m.t >= pFrom && m.t <= pTo));
+    const hasTag = (c: Conv) => c.tags.some((t) => fixedTags.includes(t));
+    const count = (list: Conv[], tag: string) => (tag === "Sem tag" ? list.filter((c) => !hasTag(c)).length : list.filter((c) => c.tags.includes(tag)).length);
+    const withTag = cur.filter(hasTag).length;
+    const prevWithTag = prv.filter(hasTag).length;
+    const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
+    return {
+      tags: [...fixedTags, "Sem tag"].map((tag) => ({
+        tag, count: count(cur, tag), pct: pct(count(cur, tag), cur.length) ?? 0, prevCount: count(prv, tag),
+      })),
+      summary: { withTag, withoutTag: cur.length - withTag, classifiedPct: pct(withTag, cur.length), prevClassifiedPct: pct(prevWithTag, prv.length) },
+    };
+  };
+  const tagsByStore: Record<string, TagStats> = { all: tagStats(convs) };
+  for (const st of stores) tagsByStore[st.id] = tagStats(convs.filter((c) => shopOf(c) === st.id));
 
   // Chegada de e-mails: por dia, por hora e por dia da semana.
   const inbound = convs.flatMap((c) => c.msgs.filter((m) => m.dir === "in" && m.t >= from && m.t <= to).map((m) => m.t));
@@ -172,7 +190,7 @@ export function computeSupportKpis(
         over72h: openNow.filter((c) => waitingSince(c) > 3 * DAY).length,
       },
     },
-    stores, byStoreDaily, tags, arrivals, storeTable,
+    stores, byStoreDaily, tagsByStore, arrivals, storeTable,
     unassigned: active.filter((c) => !shopOf(c)).length,
   };
 }
