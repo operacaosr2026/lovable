@@ -121,6 +121,22 @@ export async function initZohoAccount(acc: ZohoAccount) {
   if (!a) throw new Error("Nenhuma conta de e-mail encontrada no Zoho.");
   const accountId = String(a.accountId);
   const email = String(a.primaryEmailAddress ?? a.mailboxAddress ?? a.emailAddress?.[0]?.mailId ?? "").toLowerCase();
+  // Endereços da conta: principal, apelidos, a caixa e os liberados em "Enviar
+  // e-mail como". Remetente padrão: o que já foi escolhido (se ainda vale), senão
+  // o endereço da caixa (onde os clientes escrevem), senão o principal.
+  const lower = (v: unknown) => String(v ?? "").trim().toLowerCase();
+  const mailbox = lower(a.mailboxAddress);
+  const sendAsOptions = [...new Set([
+    ...((a.sendMailDetails ?? []) as any[]).map((d) => lower(d.fromAddress)),
+  ].filter((e) => e.includes("@")))];
+  if (!sendAsOptions.length && email) sendAsOptions.push(email);
+  const addresses = [...new Set([
+    email, mailbox, ...sendAsOptions,
+    ...((a.emailAddress ?? []) as any[]).map((e) => lower(e.mailId)),
+  ].filter((e) => e.includes("@")))];
+  const sendAs = acc.send_as && sendAsOptions.includes(acc.send_as) ? acc.send_as
+    : sendAsOptions.includes(mailbox) ? mailbox
+    : sendAsOptions.includes(email) ? email : sendAsOptions[0] ?? email;
   acc.account_id = accountId;
   const folders = await zohoApi<any[]>(acc, `/api/accounts/${accountId}/folders`);
   const byType = (t: string) => folders.find((f) => String(f.folderType).toLowerCase() === t)?.folderId;
@@ -130,6 +146,7 @@ export async function initZohoAccount(acc: ZohoAccount) {
   const patch = {
     account_id: accountId, email, display_name: a.displayName ?? a.accountDisplayName ?? null,
     inbox_folder_id: String(inbox), sent_folder_id: sent ? String(sent) : null, updated_at: new Date().toISOString(),
+    send_as: sendAs, send_as_options: sendAsOptions, addresses,
   };
   await supabaseAdmin.from("zoho_mail_accounts").update(patch).eq("owner_id", acc.owner_id);
   Object.assign(acc, patch);
@@ -186,17 +203,22 @@ const FIRST_SYNC_DAYS = 30;
 
 // Puxa Entrada + Enviados desde a última sincronização (com folga de 2 dias pra
 // pegar mudança de lido/não lido) e recalcula as conversas afetadas.
-export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean } = {}) {
+export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; refreshAccount?: boolean } = {}) {
   const acc = await getZohoAccount(ownerId);
   if (!acc?.refresh_token) return { skipped: "not_connected" as const };
   try {
-    if (!acc.account_id || !acc.inbox_folder_id) await initZohoAccount(acc);
+    // Conta ligada antes de guardar os endereços/remetente: completa agora.
+    // "Sincronizar agora" (refreshAccount) relê os endereços — pega um "Enviar como" liberado depois.
+    if (opts.refreshAccount || !acc.account_id || !acc.inbox_folder_id || !acc.send_as_options?.length) await initZohoAccount(acc);
     const firstSync = !acc.last_sync_at;
     const sinceMs = firstSync
       ? Date.now() - FIRST_SYNC_DAYS * 86_400_000
       : new Date(acc.last_sync_at!).getTime() - 2 * 86_400_000;
     const maxPages = opts.quick ? 1 : firstSync ? 10 : 4;
-    const own = (acc.email ?? "").toLowerCase();
+    // Todos os endereços da conta (principal, apelidos, "enviar como") contam
+    // como nossos — e-mail entre eles não vira conversa de cliente.
+    const ownSet = new Set([acc.email ?? "", ...(acc.addresses ?? [])].map((e) => e.toLowerCase()).filter(Boolean));
+    const own = (acc.send_as ?? acc.email ?? "").toLowerCase();
 
     const [inbox, sent] = await Promise.all([
       listFolder(acc, acc.inbox_folder_id!, sinceMs, maxPages),
@@ -209,11 +231,11 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean }
     const parsed: Parsed[] = [];
     for (const item of inbox) {
       const from = parseAddresses(item.fromAddress)[0];
-      if (!from || from.email === own) continue;
+      if (!from || ownSet.has(from.email)) continue;
       parsed.push({ customer: from.email, customerName: item.sender && !item.sender.includes("@") ? unescapeHtml(item.sender) : from.name, direction: "in", item });
     }
     for (const item of sent) {
-      const to = parseAddresses(item.toAddress).find((a) => a.email !== own);
+      const to = parseAddresses(item.toAddress).find((a) => !ownSet.has(a.email));
       if (!to) continue;
       parsed.push({ customer: to.email, customerName: to.name, direction: "out", item });
     }
@@ -379,8 +401,10 @@ export type ZohoAttachmentRef = { storeName: string; attachmentPath: string; att
 export async function sendZohoMail(acc: ZohoAccount, opts: {
   to: string; subject: string; html: string; replyToMessageId?: string; attachments?: ZohoAttachmentRef[];
 }) {
+  // Remetente: o escolhido em Configurações > Integração ("Enviar como").
+  const from = acc.send_as || acc.email;
   const body: Record<string, unknown> = {
-    fromAddress: acc.display_name ? `"${acc.display_name}" <${acc.email}>` : acc.email,
+    fromAddress: acc.display_name ? `"${acc.display_name}" <${from}>` : from,
     toAddress: opts.to, subject: opts.subject, content: opts.html, mailFormat: "html", askReceipt: "no",
   };
   if (opts.attachments?.length) body.attachments = opts.attachments;

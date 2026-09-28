@@ -194,6 +194,9 @@ export type Database = {
           display_name: string | null;
           inbox_folder_id: string | null;
           sent_folder_id: string | null;
+          send_as: string | null;
+          send_as_options: string[];
+          addresses: string[];
           last_sync_at: string | null;
           last_sync_error: string | null;
           connected_at: string | null;
@@ -214,6 +217,9 @@ export type Database = {
           display_name?: string | null;
           inbox_folder_id?: string | null;
           sent_folder_id?: string | null;
+          send_as?: string | null;
+          send_as_options?: string[];
+          addresses?: string[];
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           connected_at?: string | null;
@@ -234,6 +240,9 @@ export type Database = {
           display_name?: string | null;
           inbox_folder_id?: string | null;
           sent_folder_id?: string | null;
+          send_as?: string | null;
+          send_as_options?: string[];
+          addresses?: string[];
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           connected_at?: string | null;

@@ -56,6 +56,9 @@ export const getZohoStatus = createServerFn({ method: "GET" })
       connected: !!acc?.refresh_token && !!acc.account_id,
       email: acc?.email ?? null,
       displayName: acc?.display_name ?? null,
+      // Remetente das respostas e as opções que a conta permite.
+      sendAs: acc?.send_as ?? acc?.email ?? null,
+      sendAsOptions: acc?.send_as_options ?? [],
       lastSyncAt: acc?.last_sync_at ?? null,
       lastSyncError: acc?.last_sync_error ?? null,
       mailWebBase: acc?.mail_api_base ?? "https://mail.zoho.com",
@@ -86,6 +89,22 @@ export const startZohoOAuth = createServerFn({ method: "POST" })
     return { url: `https://accounts.zoho.com/oauth/v2/auth?${qs}` };
   });
 
+// Configurações > Integração: por qual endereço as respostas saem.
+export const setZohoSendAs = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ send_as: z.string().trim().toLowerCase().email() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAdmin(context);
+    const acc = await requireAccount(context.ownerId);
+    if (!(acc.send_as_options ?? []).includes(data.send_as)) {
+      throw new Error("Esse endereço não está liberado para envio nessa conta do Zoho");
+    }
+    const { error } = await supabaseAdmin.from("zoho_mail_accounts")
+      .update({ send_as: data.send_as, updated_at: new Date().toISOString() }).eq("owner_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const disconnectZoho = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
@@ -110,7 +129,7 @@ export const syncSupportInbox = createServerFn({ method: "POST" })
     // também a última que deu erro (senão cada aba tenta de novo todo minuto).
     const lastTry = acc.last_sync_error ? acc.updated_at : acc.last_sync_at;
     if (!data.force && lastTry && Date.now() - new Date(lastTry).getTime() < 45_000) return { skipped: true };
-    return syncZohoMailbox(context.ownerId);
+    return syncZohoMailbox(context.ownerId, { refreshAccount: data.force });
   });
 
 // ─── Lista + indicadores ──────────────────────────────────────────────────────
@@ -385,7 +404,8 @@ export const translateSupportReply = createServerFn({ method: "POST" })
 
 // Exclui conversas: e-mails (do cliente e nossas respostas) vão pra Lixeira do
 // Zoho e a conversa sai daqui. Se o Zoho falhar num e-mail, aquela conversa
-// fica (senão a próxima sincronização traria de volta).
+// fica (senão a próxima sincronização traria de volta). Usado também pelo botão
+// Spam (e-mails que não são atendimento), que só muda o texto na tela.
 export const deleteSupportConversations = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }).parse(d))

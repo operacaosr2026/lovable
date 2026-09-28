@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
-import { changeSupportTag, getSupportSettings, saveSupportSettings, type getZohoStatus } from "@/lib/atendimento.functions";
+import { changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, type getZohoStatus } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { tagTone } from "./CustomerPanel";
 import { useSupportTags } from "./useSupportTags";
@@ -43,6 +43,35 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
   );
 }
 
+// Remetente das respostas e mensagens novas: um dos endereços que a conta do
+// Zoho pode usar (principal, apelido ou liberado em "Enviar e-mail como").
+function SendAs({ status, onChanged }: { status: ZohoStatus; onChanged: () => void }) {
+  const setFn = useSupportFn(setZohoSendAs, "setZohoSendAs");
+  const options = status.sendAsOptions ?? [];
+  const save = useMutation({
+    mutationFn: (send_as: string) => setFn({ data: { send_as } }),
+    onSuccess: () => { toast.success("Remetente atualizado"); onChanged(); },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+  return (
+    <div className="rounded-xl border border-border px-4 py-3 space-y-1.5">
+      <label className="text-sm font-medium">Enviar como</label>
+      <p className="text-xs text-muted-foreground">Todas as respostas e mensagens novas saem por este endereço.</p>
+      {status.isAdmin && options.length > 1 ? (
+        <select value={status.sendAs ?? ""} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}
+          className="w-full h-9 px-3 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary">
+          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <p className="text-sm font-mono">{status.sendAs ?? status.email}</p>
+      )}
+      {status.isAdmin && (
+        <p className="text-[11px] text-muted-foreground">Para usar outro endereço, libere-o no Zoho em Configurações → Contas de e-mail → Enviar e-mail como, e sincronize.</p>
+      )}
+    </div>
+  );
+}
+
 function Integration({ status }: { status: ZohoStatus }) {
   const qc = useQueryClient();
   const refresh = () => {
@@ -70,6 +99,8 @@ function Integration({ status }: { status: ZohoStatus }) {
           </div>
         </div>
       )}
+
+      {status.connected && <SendAs status={status} onChanged={refresh} />}
 
       {status.isAdmin ? (
         <ConnectZoho redirectUri={status.redirectUri} connectedEmail={status.connected ? status.email : null} onDone={refresh} />

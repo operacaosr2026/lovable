@@ -234,11 +234,13 @@ const ORDERS: Record<string, { n: number; currency: string; store: string; value
 const demoApi = {
   getZohoStatus: async () => ({
     connected: true, email: OWN, displayName: "Equipe SRX", lastSyncAt: ago(1), lastSyncError: null,
+    sendAs: OWN, sendAsOptions: [OWN],
     mailWebBase: "https://mail.zoho.com", redirectUri: `${window.location.origin}/api/public/zoho/callback`, isAdmin: true,
   }),
   syncSupportInbox: async () => { await wait(600); return { skipped: true }; },
   startZohoOAuth: async () => { throw new Error("Modo demonstração — saia do modo demo para conectar"); },
   disconnectZoho: async () => { throw new Error("Modo demonstração — nada foi desconectado"); },
+  setZohoSendAs: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
 
   listSupportConversations: async ({ data }: { data: { from: string; to: string } }) => {
     await wait();
