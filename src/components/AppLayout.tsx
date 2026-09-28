@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
-  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, Bell,
+  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -42,8 +42,10 @@ function navItemForPath(path: string): NavItem | undefined {
 const adminNav: NavItem[] = [
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
-// Membro não vê Configurações, mas precisa ativar as notificações no celular.
-const memberNotificationsNav: NavItem = { to: "/settings/notificacoes", label: "Notificações", icon: Bell };
+// Membro também tem Configurações: Notificações e Segurança (pessoais) e o
+// status das Integrações — Membros e Auditoria são só do admin.
+const memberSettingsNav: NavItem = { to: "/settings", label: "Configurações", icon: SettingsIcon };
+const MEMBER_SETTINGS_PATHS = ["/settings/notificacoes", "/settings/seguranca", "/settings/integracoes"];
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -322,7 +324,7 @@ export function AppLayout() {
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-0.5">
           {visibleNavItems.map(renderItem)}
           {role === "admin" && adminNav.map(renderItem)}
-          {role !== "admin" && canAccessSection("notificacoes") && renderItem(memberNotificationsNav)}
+          {role !== "admin" && renderItem(memberSettingsNav)}
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
@@ -423,9 +425,9 @@ function PageAccessGate({ path }: { path: string }) {
       ? <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
       : <Outlet />;
   }
-  // Configurações é do admin — menos Notificações (cada pessoa ativa o próprio celular).
-  const ownNotifications = path.startsWith("/settings/notificacoes") && canAccessSection("notificacoes");
-  const blockedSettings = path.startsWith("/settings") && role !== "admin" && !ownNotifications;
+  // Configurações é do admin — menos as partes pessoais do membro.
+  const personal = MEMBER_SETTINGS_PATHS.some((p) => path.startsWith(p));
+  const blockedSettings = path.startsWith("/settings") && role !== "admin" && !personal;
   const item = navItemForPath(path);
   const blocked = blockedSettings || (item?.section ? !canAccessSection(item.section) : false);
   if (!blocked) return <Outlet />;

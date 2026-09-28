@@ -1,4 +1,5 @@
-import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Settings as SettingsIcon, Users, Shield, Plug, ScrollText, Bell } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -21,6 +22,8 @@ export const Route = createFileRoute("/settings")({
   component: SettingsLayout,
 });
 
+const MEMBER_PAGES = ["/settings/notificacoes", "/settings/seguranca", "/settings/integracoes"];
+
 const NAV = [
   { to: "/settings/members", label: "Membros", icon: Users, desc: "Convites, permissões e acessos" },
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
@@ -31,9 +34,16 @@ const NAV = [
 
 function SettingsLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  // Membro só entra em Notificações (o resto é do admin).
+  // Membro vê Notificações, Segurança e Integrações (Membros e Auditoria são do admin).
   const { role, isLoading } = useMyAccess();
-  const nav = isLoading ? [] : role === "admin" ? NAV : NAV.filter((i) => i.to === "/settings/notificacoes");
+  const navigate = useNavigate();
+  const nav = isLoading ? [] : role === "admin" ? NAV : NAV.filter((i) => MEMBER_PAGES.includes(i.to));
+  // /settings manda pra Membros (admin); membro vai pra Notificações.
+  useEffect(() => {
+    if (!isLoading && role !== "admin" && path.startsWith("/settings") && !MEMBER_PAGES.some((p) => path.startsWith(p))) {
+      navigate({ to: "/settings/notificacoes", replace: true });
+    }
+  }, [isLoading, role, path, navigate]);
 
   return (
     <div className="flex min-h-screen bg-background">
