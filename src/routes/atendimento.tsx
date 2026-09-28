@@ -132,7 +132,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.connected]);
 
-  const [tab, setTab] = useState<Tab>("nao_lidos");
+  const [tab, setTab] = useState<Tab>("todos");
   const [sort, setSort] = useState<Sort>("recentes");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<SupportStatus[]>([]);
@@ -401,7 +401,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         <section className={`rounded-2xl border border-border bg-card flex-col min-h-0 overflow-hidden ${selectedId ? "hidden lg:flex" : "flex"} h-[70vh] lg:h-auto`}>
           <div className="flex items-center justify-between gap-2 px-3 border-b border-border">
             <div className="flex">
-              {([["nao_lidos", "Não lidos"], ["favoritos", "Favoritos"], ["todos", "Todos"]] as const).map(([key, label]) => (
+              {([["todos", "Todos"], ["nao_lidos", "Não lidos"], ["favoritos", "Favoritos"]] as const).map(([key, label]) => (
                 <button key={key} onClick={() => setTab(key)}
                   className={`h-11 px-2.5 text-xs font-medium border-b-2 -mb-px whitespace-nowrap ${tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                   {label} <span className="text-[10px] opacity-70">({counts[key]})</span>
