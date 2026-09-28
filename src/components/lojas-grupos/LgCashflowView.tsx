@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/core";
 import {
   Plus, Trash2, ChevronDown, X, Wallet, TrendingUp,
-  Repeat, Pencil, Check, RefreshCw, Database, ArrowUp, ArrowDown,
+  Repeat, Pencil, Check, RefreshCw, Database, ArrowUp, ArrowDown, AlertTriangle,
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area } from "recharts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -607,6 +607,8 @@ function KpiSparkline({ data, color, id }: { data: { key: string; v: number }[];
   );
 }
 
+const fmtDayMonth = (key: string) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
+
 function KpiChange({ current, base, label }: { current: number; base: number | null; label: string }) {
   if (base == null) return null;
   const diff = current - base;
@@ -623,9 +625,11 @@ function KpiChange({ current, base, label }: { current: number; base: number | n
   );
 }
 
-function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, children, spark, sparkId }: {
+function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, alert, children, spark, sparkId }: {
   icon: any; tone: keyof typeof KPI_TONES; title: string; subtitle: string; value: string; negative?: boolean;
   badge?: string; children?: React.ReactNode; spark?: { key: string; v: number }[]; sparkId?: string;
+  // Selo de alerta no canto superior direito (detalhe no tooltip; clique opcional).
+  alert?: { label: string; detail: string; onClick?: () => void };
 }) {
   const t = KPI_TONES[tone];
   return (
@@ -639,6 +643,17 @@ function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, ch
           <div className="text-[11px] text-muted-foreground leading-tight">{subtitle}</div>
         </div>
         {badge && <span className="shrink-0 rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-600 dark:text-violet-400">{badge}</span>}
+        {alert && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={alert.onClick}
+                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
+                <AlertTriangle className="size-3" />{alert.label}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-64 text-xs">{alert.detail}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
       <div className={`relative z-10 mt-2 text-xl font-bold leading-none tracking-tight tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
       {children && <div className="relative z-10 mt-2">{children}</div>}
@@ -1105,6 +1120,28 @@ export function LgCashflowView({
     return acc;
   }, [expanded, opening]);
 
+  // Lançamentos de dias anteriores a hoje ainda não conciliados. O Saldo atual
+  // só soma conciliados, então ele ainda vai mudar quando forem conciliados —
+  // o card avisa. Fora: payouts pendentes/agendados da Shopify e ocorrências
+  // de recorrentes (virtual), que não se conciliam individualmente.
+  const unreconciledPast = useMemo(() => expanded.filter((e) => {
+    const src = e.source ?? "";
+    return !e.virtual && src !== "shopify_pending" && src !== "shopify_pending_sync" && e.date < todayKey && !e.reconciled;
+  }), [expanded, todayKey]);
+  const unreconciledNet = unreconciledPast.reduce((s, e) => s + (e.kind === "income" ? Number(e.amount) : -Number(e.amount)), 0);
+  const oldestUnreconciled = unreconciledPast.reduce((min: string | null, e) => (!min || e.date < min ? e.date : min), null);
+  // Leva a grade pra semana do lançamento pendente mais antigo.
+  const reconcileAlert = unreconciledPast.length > 0 && oldestUnreconciled ? {
+    label: "Falta conciliação",
+    detail: `${unreconciledPast.length} lançamento${unreconciledPast.length > 1 ? "s" : ""} de dias anteriores sem conciliar desde ${fmtDayMonth(oldestUnreconciled)} (${unreconciledNet >= 0 ? "+" : "-"}${fmtMoneyGrouped(Math.abs(unreconciledNet))}). O saldo vai mudar quando conciliar. Clique pra ir até o mais antigo.`,
+    onClick: () => goToWeekOf(oldestUnreconciled),
+  } : undefined;
+  const goToWeekOf = (key: string) => {
+    const monday = (k: string) => { const wd = weekdayFromKey(k); return addDaysToKey(k, wd === 0 ? -6 : -(wd - 1)); };
+    const weeks = Math.round((Date.parse(`${monday(key)}T12:00:00Z`) - Date.parse(`${monday(todayKey)}T12:00:00Z`)) / (7 * 86_400_000));
+    setPeriod("semana"); setCustomRange(undefined); setWeekOffset(weeks);
+  };
+
   // Saldo atual dia a dia nos últimos 30 dias (mesma regra do KPI: só
   // lançamentos conciliados), pro gráfico e a variação do card.
   const saldoHistory = useMemo(() => {
@@ -1131,12 +1168,14 @@ export function LgCashflowView({
     ? [...(((effectivePending as any)?.perShop ?? []) as { shop_id: string; amount: number }[])]
         .sort((a, b) => (shopNamesMap[a.shop_id] ?? "").localeCompare(shopNamesMap[b.shop_id] ?? "", "pt-BR", { numeric: true, sensitivity: "base" }))
     : [];
+  // "A receber" = só o saldo do Shopify Payments (o mesmo número que a Shopify
+  // mostra como Saldo) — os payouts já agendados/em trânsito ficam de fora,
+  // aqui e no Saldo total (voltam a contar quando caem no banco). Sem saldo ao
+  // vivo, a soma dos payouts agendados.
   const receivable = effectivePending?.connected
     ? (isConsolidated
         ? perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0)
-        // Saldo ao vivo (não alocado a payout) + payouts já agendados com
-        // data futura — não se sobrepõem, então soma os dois.
-        : (Number((effectivePending as any).balance ?? 0) + Number(effectivePending.pending ?? 0)))
+        : Number((effectivePending as any).balance ?? effectivePending.pending ?? 0))
     : 0;
 
   // Gráfico do Saldo total: fotos diárias gravadas no fim de cada dia
@@ -1257,7 +1296,7 @@ export function LgCashflowView({
           <KpiCard
             icon={Wallet} tone="blue" title="Saldo atual" subtitle="Disponível na conta"
             value={fmtMoneyGrouped(future)} negative={future < 0}
-            spark={saldoHistory} sparkId="caixa-kpi-saldo"
+            spark={saldoHistory} sparkId="caixa-kpi-saldo" alert={reconcileAlert}
           >
             <KpiChange current={future} base={saldoHistory.length ? saldoHistory[0].v : null} label="em relação a 30 dias atrás" />
           </KpiCard>
@@ -1282,7 +1321,7 @@ export function LgCashflowView({
           </KpiCard>
           <KpiCard
             icon={Database} tone="green" title="Saldo total" subtitle="Disponível + A receber"
-            value={fmtMoneyGrouped(future + receivable)} negative={future + receivable < 0}
+            value={fmtMoneyGrouped(future + receivable)} negative={future + receivable < 0} alert={reconcileAlert}
             spark={saldoTotalHistory.points} sparkId="caixa-kpi-total"
           >
             {saldoTotalHistory.real && saldoTotalHistory.points.length > 1 && (

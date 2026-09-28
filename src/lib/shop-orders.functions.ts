@@ -1400,11 +1400,13 @@ export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof
         if (!b) throw new Error("saldo indisponível");
         const live = b.live ? b : null;
         return {
-          // Saldo ao vivo (ainda não alocado a nenhum payout) + payouts já
-          // agendados com data futura — a Shopify remove o valor do saldo
-          // assim que ele entra num payout, então os dois não se sobrepõem.
+          // "A receber" = só o saldo do Shopify Payments (o mesmo número que a
+          // Shopify mostra como Saldo). Os payouts já agendados/em trânsito
+          // ficam de fora (decisão do usuário): saem do saldo quando a Shopify
+          // cria o payout e só voltam a contar quando caem no banco.
+          // Sem saldo ao vivo (loja sem Payments), usa a soma dos payouts.
           shop_id: shopId,
-          amount: (live?.amount ?? 0) + pendingSum,
+          amount: live ? live.amount : pendingSum,
           pending: pendingSum,
           connected: true,
           live: live != null,
