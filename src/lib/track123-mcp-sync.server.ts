@@ -4,6 +4,8 @@ import type { TablesUpdate } from "@/integrations/supabase/types";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
+import { isoTodayUS } from "@/lib/timezone";
+import { eventDateUS, track123EventUtc } from "@/lib/track123-sync.server";
 const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // Sem limite de quantidade — processa todos os pedidos em aberto dentro dos
 // últimos 30 dias. Vercel function tem maxDuration de 60s e cada pedido custa
@@ -13,13 +15,41 @@ const MCP_URL = "https://shp.track123.com/shopify/mcp";
 // mais "parados" (sem sync/evento recente) primeiro, pra rotacionar de forma
 // justa quando a loja tem mais pedidos abertos do que dá pra checar em 60s.
 const SYNC_TIME_BUDGET_MS = 50_000;
-// Chamadas simultâneas por lote — valor conservador pra não levar rate limit
-// do Track123. Com isso, ~8x mais pedidos cabem no mesmo orçamento de tempo.
-const MCP_CONCURRENCY = 8;
+// Chamadas em voo ao mesmo tempo (só pra esconder a latência de ~1s de cada
+// uma); quem manda no ritmo é o limitador abaixo.
+const MCP_CONCURRENCY = 2;
 // Uma chamada travada não pode consumir sozinha o orçamento da rodada inteira.
 const MCP_REQUEST_TIMEOUT_MS = 15_000;
+// O Track123 aceita 4 chamadas/s por API key, mas cada consulta de pedido pelo
+// MCP gasta várias dessas por dentro. Acima do limite ele responde 200 com
+// {"error":"Exceeded 4 calls per second..."} no lugar do pedido — com 8 em
+// paralelo, ~metade voltava assim e era pulada em silêncio ("40/89
+// sincronizados" sem erro). Medido em 28/09/2026: 1 chamada/s ainda perde ~40%;
+// 1 a cada 1,5s não perde nenhuma. Lojas com a mesma chave dividem o ritmo.
+const MCP_MIN_INTERVAL_MS = 1_600;
+const nextSlotByKey = new Map<string, number>();
+async function paceMcp(apiKey: string) {
+  const now = Date.now();
+  const slot = Math.max(now, nextSlotByKey.get(apiKey) ?? 0);
+  nextSlotByKey.set(apiKey, slot + MCP_MIN_INTERVAL_MS);
+  if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
+}
+const isRateLimited = (msg: unknown) => /calls per second|rate limit|too many requests/i.test(String(msg ?? ""));
 
 async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumber: string) {
+  try {
+    return await mcpCallOrderByNumberOnce(apiKey, storeUuid, orderNumber);
+  } catch (e: any) {
+    // Passou do limite mesmo com o ritmo (ex.: outra rodada usando a mesma
+    // chave): espera 2s e tenta uma vez de novo.
+    if (!isRateLimited(e?.message)) throw e;
+    await new Promise((r) => setTimeout(r, 2_000));
+    return mcpCallOrderByNumberOnce(apiKey, storeUuid, orderNumber);
+  }
+}
+
+async function mcpCallOrderByNumberOnce(apiKey: string, storeUuid: string, orderNumber: string) {
+  await paceMcp(apiKey);
   const r = await fetchWithRetry(MCP_URL, {
     method: "POST",
     headers: {
@@ -40,7 +70,11 @@ async function mcpCallOrderByNumber(apiKey: string, storeUuid: string, orderNumb
   if (json?.error) throw new Error(json.error.message ?? "Erro MCP");
   const text = json?.result?.content?.[0]?.text;
   if (!text) throw new Error("Resposta MCP sem conteúdo");
-  return JSON.parse(text);
+  const parsed = JSON.parse(text);
+  // Erro do Track123 vem dentro do conteúdo (HTTP 200) — antes passava como
+  // "pedido sem envio" e o pedido era pulado sem aparecer como erro.
+  if (parsed?.error) throw new Error(String(parsed.error));
+  return parsed;
 }
 
 // Mesma lógica de mapeamento de evento -> status usada no sync/webhook via Open
@@ -161,6 +195,8 @@ export async function runTrack123McpSync(
   const total = orders?.length ?? 0;
 
   async function processOrder(o: any) {
+    // O ritmo pode segurar a chamada; passou do prazo, fica pra próxima rodada.
+    if (Date.now() > deadline) return;
     attempted++;
     const num = String(o.order_number).replace(/^#/, "");
     try {
@@ -169,7 +205,7 @@ export async function runTrack123McpSync(
       if (!fulfillment) return;
 
       const lastLabel: string | null = fulfillment.last_event ?? null;
-      const lastAt: string | null = fulfillment.last_event_time ?? null;
+      const lastAt = track123EventUtc(fulfillment.tracking_details?.[0]?.event_time_utc, fulfillment.last_event_time);
 
       const trackingUpdate = {
         user_id: o.user_id,
@@ -190,11 +226,11 @@ export async function runTrack123McpSync(
       // real (ver lg-logistics.functions.ts), sem precisar reescrever nada aqui.
       const target = matchRule(lastLabel) ?? matchRule(fulfillment.transit_status)
         ?? inferStatus(fulfillment.transit_status, Boolean(fulfillment.tracking_number));
-      const nowDate = new Date().toISOString().slice(0, 10);
-      // Data do evento real do Track123 (não a data desta rodada) — e só na
-      // primeira vez: regravar a cada rodada empurrava delivered_at pra "hoje"
-      // todo dia e inflava o KPI "Tempo de entrega".
-      const eventDate = lastAt && /^\d{4}-\d{2}-\d{2}/.test(lastAt) ? lastAt.slice(0, 10) : nowDate;
+      const nowDate = isoTodayUS();
+      // Data do evento real do Track123 (não a data desta rodada), no dia de
+      // Nova York — e só na primeira vez: regravar a cada rodada empurrava
+      // delivered_at pra "hoje" todo dia e inflava o KPI "Tempo de entrega".
+      const eventDate = eventDateUS(lastAt) ?? nowDate;
       const orderUpdate: TablesUpdate<"shop_orders"> = {};
       if (target === "shipped" && o.delivery_status !== "shipped" && !o.shipped_at) orderUpdate.shipped_at = nowDate;
       else if (target === "delivered") {
@@ -223,17 +259,17 @@ export async function runTrack123McpSync(
     }
   }
 
-  // Chamadas em paralelo (lotes de MCP_CONCURRENCY) em vez de uma por vez —
-  // o MCP não tem endpoint de lote, mas nada impede várias chamadas HTTP
-  // simultâneas. Isso multiplica quantos pedidos cabem nos mesmos 50s de
-  // orçamento, reduzindo o tempo até um pedido "parado" ser reconferido.
-  // Lote moderado pra não estourar rate limit do Track123.
+  // O MCP não tem endpoint de lote: uma chamada por pedido, várias em voo.
+  // Pool contínuo (não lotes): cada "trabalhador" pega o próximo assim que
+  // termina, então o ritmo fica no limite do paceMcp em vez de esperar o mais
+  // lento de cada lote.
   const queue = [...(orders ?? [])];
-  while (queue.length) {
-    if (Date.now() > deadline) break;
-    const batch = queue.splice(0, MCP_CONCURRENCY);
-    await Promise.all(batch.map(processOrder));
-  }
+  await Promise.all(Array.from({ length: MCP_CONCURRENCY }, async () => {
+    for (let o = queue.shift(); o; o = queue.shift()) {
+      if (Date.now() > deadline) break;
+      await processOrder(o);
+    }
+  }));
 
   const status = total === 0 ? "ok" : updated === 0 && attempted > 0 ? "error" : "ok";
   const cutShort = attempted < total ? ` (parou por tempo, resto pega na próxima rodada)` : "";

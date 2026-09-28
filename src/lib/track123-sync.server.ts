@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
+import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 
 const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2.1";
 
@@ -17,8 +18,8 @@ export async function applyTrackingTargetToOrder(
   target: string | null,
   eventAt: string | null,
 ) {
-  const nowDate = new Date().toISOString().slice(0, 10);
-  const eventDate = eventAt && /^\d{4}-\d{2}-\d{2}/.test(eventAt) ? eventAt.slice(0, 10) : nowDate;
+  const nowDate = isoTodayUS();
+  const eventDate = eventDateUS(eventAt) ?? nowDate;
   if (target === "shipped") {
     await supabase.from("shop_orders").update({ shipped_at: nowDate }).eq("id", orderId).is("shipped_at", null);
   } else if (target === "delivered") {
@@ -27,6 +28,25 @@ export async function applyTrackingTargetToOrder(
   } else if (target === "problem") {
     await supabase.from("shop_orders").update({ problem_at: eventDate }).eq("id", orderId).is("problem_at", null);
   }
+}
+
+// Hora do evento do Track123 como instante UTC de verdade. O `event_time` /
+// `last_event_time` vem no horário LOCAL da transportadora (China = +8h) mas
+// marcado como "Z" — gravar isso deslocava tudo em até 12h. O `event_time_utc`
+// ("2026-09-23 03:36:37", sem fuso) é o certo.
+export function track123EventUtc(utc: string | null | undefined, fallback: string | null | undefined): string | null {
+  const m = utc?.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+  if (m) return `${m[1]}T${m[2]}Z`;
+  return fallback ?? null;
+}
+
+// Dia do evento em Nova York (fuso do negócio). Instante com fuso → converte;
+// só data ("2026-09-23") → usa como está.
+export function eventDateUS(eventAt: string | null | undefined): string | null {
+  if (!eventAt || !/^\d{4}-\d{2}-\d{2}/.test(eventAt)) return null;
+  if (!/[T ]\d{2}:\d{2}/.test(eventAt)) return eventAt.slice(0, 10);
+  const ms = Date.parse(eventAt);
+  return Number.isFinite(ms) ? isoDateUS(ms) : eventAt.slice(0, 10);
 }
 
 // Evento mais antigo que o já gravado = chegou fora de ordem (webhook atrasado
@@ -134,7 +154,8 @@ export async function runTrack123Sync(shopId: string, apiKey: string, supabase: 
       const events = logistics.trackingDetails ?? [];
       const last = events[0] ?? null;
       const lastLabel: string | null = last?.eventDetail ?? null;
-      const lastAt: string | null = last?.eventTime ?? last?.eventTimeZeroUTC ?? null;
+      // eventTimeZeroUTC = instante em UTC; eventTime é o horário local da transportadora.
+      const lastAt: string | null = last?.eventTimeZeroUTC ?? last?.eventTime ?? null;
 
       if (isOlderEvent(lastAt, t.last_event_at)) { updated++; continue; }
 

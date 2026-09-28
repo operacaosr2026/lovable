@@ -56,10 +56,13 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
           .filter((i) => activeShopIds.has(i.shop_id) && !pausedShopIds.has(i.shop_id))
           .sort((a, b) => (a.last_sync_at ?? "").localeCompare(b.last_sync_at ?? ""));
 
+        // Lojas em paralelo: cada uma tem a própria API key (e o próprio limite
+        // de 4 chamadas/s no Track123), então uma não precisa esperar a outra.
+        // Chave repetida entre lojas divide o mesmo ritmo (paceMcp).
         let processed = 0;
         let skippedByBudget = 0;
-        for (const integ of queue) {
-          if (Date.now() > deadline - 5_000) { skippedByBudget++; continue; }
+        await Promise.all(queue.map(async (integ) => {
+          if (Date.now() > deadline - 5_000) { skippedByBudget++; return; }
           try {
             // Preferimos o MCP quando a loja tem Store UUID configurado — é o
             // método que sabemos que funciona quando a Open API clássica não
@@ -71,14 +74,14 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
             } else if (integ.api_key) {
               await runTrack123Sync(integ.shop_id, integ.api_key, supabaseAdmin);
             } else {
-              continue;
+              return;
             }
             processed++;
             await broadcast(integ.user_id, "orders", { shop_id: integ.shop_id });
           } catch (e) {
             console.error("track123 sync fail", integ.shop_id, e);
           }
-        }
+        }));
         if (skippedByBudget) console.error(`sync-track123: orçamento de tempo esgotado, ${skippedByBudget} loja(s) ficam pra próxima rodada.`);
         return new Response(JSON.stringify({ processed, skippedByBudget }), { headers: { "Content-Type": "application/json" } });
       },

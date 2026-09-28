@@ -99,8 +99,8 @@ export const syncTrack123ForShops = createServerFn({ method: "POST" })
       .sort((a: any, b: any) => (a.last_sync_at ?? "").localeCompare(b.last_sync_at ?? ""));
     let synced = 0;
     const errors: string[] = [];
-    for (const integ of queue) {
-      if (Date.now() > deadline - 5_000) break;
+    // Lojas em paralelo (cada uma com a própria chave/limite no Track123).
+    await Promise.all(queue.map(async (integ: any) => {
       try {
         if (integ.mcp_store_uuid) {
           await runTrack123McpSync(integ.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin, { deadline });
@@ -111,7 +111,7 @@ export const syncTrack123ForShops = createServerFn({ method: "POST" })
       } catch (e: any) {
         errors.push(String(e?.message ?? e));
       }
-    }
+    }));
     return { synced, total: (integrations ?? []).length, errors };
   });
 
