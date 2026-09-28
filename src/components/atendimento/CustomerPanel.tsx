@@ -9,14 +9,23 @@ import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { useSupportTags } from "./useSupportTags";
 
+// Tags da lista fixa (Configurações > Tags): cor pela posição, uma diferente
+// pra cada. Tag fora da lista: cor pelo nome.
 const TAG_TONES = [
   "bg-violet-500/10 text-violet-700 dark:text-violet-300",
   "bg-sky-500/10 text-sky-700 dark:text-sky-300",
   "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   "bg-pink-500/10 text-pink-700 dark:text-pink-300",
+  "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+  "bg-teal-500/10 text-teal-700 dark:text-teal-300",
+  "bg-red-500/10 text-red-700 dark:text-red-300",
+  "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
+  "bg-lime-500/15 text-lime-700 dark:text-lime-300",
 ];
-export function tagTone(tag: string) {
+export function tagTone(tag: string, fixed: string[] = []) {
+  const i = fixed.findIndex((f) => f.toLowerCase() === tag.toLowerCase());
+  if (i >= 0) return TAG_TONES[i % TAG_TONES.length];
   let h = 0;
   for (const ch of tag) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return TAG_TONES[h % TAG_TONES.length];
@@ -24,7 +33,7 @@ export function tagTone(tag: string) {
 
 export function TagEditor({ tags, aiTags = [], suggestions, onChange }: { tags: string[]; aiTags?: string[]; suggestions: string[]; onChange: (tags: string[]) => void }) {
   const [value, setValue] = useState("");
-  const { ensure } = useSupportTags();
+  const { ensure, fixed } = useSupportTags();
   const add = (t: string) => {
     const typed = t.trim();
     // Mesma tag com outra caixa ("troca" → "Troca") usa a que já existe.
@@ -39,7 +48,7 @@ export function TagEditor({ tags, aiTags = [], suggestions, onChange }: { tags: 
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
         {tags.map((t) => (
-          <span key={t} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-md text-[11px] font-medium ${tagTone(t)}`}
+          <span key={t} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-md text-[11px] font-medium ${tagTone(t, fixed)}`}
             title={aiTags.includes(t) ? "Posta automaticamente pela IA" : undefined}>
             {aiTags.includes(t) && <Sparkles className="size-3" />}
             {t}

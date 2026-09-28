@@ -233,8 +233,9 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
   const showPt = mode === "pt" && !!pt;
 
   return (
-    <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
-      <div className={`relative max-w-[88%] sm:max-w-[80%] rounded-2xl px-4 py-3 ${out ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"}`}>
+    // Ocupa a largura toda; o recuo do lado oposto ainda mostra quem mandou.
+    <div className={out ? "pl-1.5 sm:pl-3" : "pr-1.5 sm:pr-3"}>
+      <div className={`relative w-full rounded-2xl px-4 py-3 ${out ? "bg-primary/10 rounded-br-md" : "bg-muted rounded-bl-md"}`}>
         <div className="flex items-start gap-2 mb-1.5">
           <p className="flex-1 min-w-0 text-[11px] font-semibold text-muted-foreground truncate">{m.subject}</p>
           {mode === "pt" && translating && <span className="text-[10px] text-muted-foreground shrink-0">Traduzindo…</span>}

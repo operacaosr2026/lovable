@@ -101,8 +101,10 @@ export const syncSupportInbox = createServerFn({ method: "POST" })
     assertAccess(context);
     const acc = await getZohoAccount(context.ownerId);
     if (!acc?.refresh_token) return { skipped: true };
-    // Várias abas abertas: no máximo uma sincronização a cada 45s.
-    if (!data.force && acc.last_sync_at && Date.now() - new Date(acc.last_sync_at).getTime() < 45_000) return { skipped: true };
+    // Várias abas abertas: no máximo uma sincronização a cada 45s — contando
+    // também a última que deu erro (senão cada aba tenta de novo todo minuto).
+    const lastTry = acc.last_sync_error ? acc.updated_at : acc.last_sync_at;
+    if (!data.force && lastTry && Date.now() - new Date(lastTry).getTime() < 45_000) return { skipped: true };
     return syncZohoMailbox(context.ownerId);
   });
 

@@ -8,9 +8,10 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Chaves geradas por refreshSystemNotifications (recalculadas a cada leitura).
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
-const MANAGED_PREFIXES = ["meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:"];
+const MANAGED_PREFIXES = ["meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:"];
 
 const TRACK123_STALE_HOURS = 4;   // cron roda de hora em hora
+const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
 
 // Motivos de disputa da Shopify Payments em português.
 const DISPUTE_REASON_PT: Record<string, string> = {
@@ -278,6 +279,30 @@ export async function refreshSystemNotifications(ownerId: string) {
           link: linkFor(t.shop_id, "logistica"),
         });
       }
+    }
+  }
+
+  // Atendimento: caixa do Zoho Mail com erro ou parada (e-mails de cliente
+  // deixam de chegar sem ninguém perceber).
+  const zoho = must(await supabaseAdmin.from("zoho_mail_accounts")
+    .select("email,refresh_token,last_sync_at,last_sync_error").eq("owner_id", ownerId).maybeSingle(), "Zoho Mail");
+  if (zoho?.refresh_token) {
+    const mins = hoursSince(zoho.last_sync_at) * 60;
+    if (zoho.last_sync_error) {
+      want.set("zoho_mail:sync", {
+        level: "error",
+        title: `Atendimento: erro ao sincronizar o Zoho Mail${zoho.email ? ` (${zoho.email})` : ""}`,
+        body: String(zoho.last_sync_error).slice(0, 240),
+        link: "/atendimento",
+      });
+    } else if (mins > ZOHO_STALE_MINUTES) {
+      const h = Number.isFinite(mins) ? Math.floor(mins / 60) : null;
+      want.set("zoho_mail:sync", {
+        level: "warning",
+        title: `Atendimento: e-mails sem atualizar${h ? ` há ${h}h` : Number.isFinite(mins) ? ` há ${Math.floor(mins)} min` : ""}`,
+        body: "O Zoho Mail não sincroniza há mais tempo que o normal; e-mails novos de clientes podem não estar aparecendo.",
+        link: "/atendimento",
+      });
     }
   }
 

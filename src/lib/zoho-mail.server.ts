@@ -50,9 +50,26 @@ export async function exchangeZohoCode(opts: {
   return json as { access_token: string; refresh_token?: string; expires_in: number };
 }
 
+// Renovação em andamento por workspace: chamadas em paralelo (Entrada + Enviados,
+// 4 e-mails por vez) esperam a mesma renovação em vez de pedir várias — o Zoho
+// limita quantos tokens um refresh_token gera em 10 min.
+const refreshing = new Map<string, Promise<{ token: string; expiresAt: string }>>();
+
 async function accessToken(acc: ZohoAccount, force = false): Promise<string> {
   const exp = acc.access_token_expires_at ? new Date(acc.access_token_expires_at).getTime() : 0;
   if (!force && acc.access_token && exp - Date.now() > 60_000) return acc.access_token;
+  let p = refreshing.get(acc.owner_id);
+  if (!p) {
+    p = refreshAccessToken(acc).finally(() => refreshing.delete(acc.owner_id));
+    refreshing.set(acc.owner_id, p);
+  }
+  const { token, expiresAt } = await p;
+  acc.access_token = token;
+  acc.access_token_expires_at = expiresAt;
+  return token;
+}
+
+async function refreshAccessToken(acc: ZohoAccount) {
   if (!acc.refresh_token) throw new Error("Zoho desconectado — conecte a conta de novo.");
   const body = new URLSearchParams({
     grant_type: "refresh_token", client_id: acc.client_id, client_secret: acc.client_secret, refresh_token: acc.refresh_token,
@@ -68,9 +85,7 @@ async function accessToken(acc: ZohoAccount, force = false): Promise<string> {
   await supabaseAdmin.from("zoho_mail_accounts")
     .update({ access_token: json.access_token, access_token_expires_at: expiresAt, updated_at: new Date().toISOString() })
     .eq("owner_id", acc.owner_id);
-  acc.access_token = json.access_token;
-  acc.access_token_expires_at = expiresAt;
-  return json.access_token;
+  return { token: json.access_token as string, expiresAt };
 }
 
 // Chamada à API do Mail. Renova o token uma vez se o Zoho responder 401.

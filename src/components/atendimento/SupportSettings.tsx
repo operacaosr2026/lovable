@@ -251,7 +251,7 @@ function TagsSettings() {
                 </>
               ) : (
                 <>
-                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${tagTone(t)}`}>{t}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${tagTone(t, fixed)}`}>{t}</span>
                   <div className="flex-1" />
                   <button onClick={() => setEditing({ from: t, to: t })} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted" aria-label={`Renomear ${t}`}>
                     <Pencil className="size-3.5" />

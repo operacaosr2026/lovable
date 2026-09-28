@@ -27,7 +27,7 @@ import {
 import { ConversationView } from "@/components/atendimento/ConversationView";
 import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
 import { AttachmentChips, TranslateToEnglish, useAttachments } from "@/components/atendimento/Composer";
-import { Avatar, STATUS_META, displayName, formatDuration, listTime, resolvePeriod } from "@/components/atendimento/utils";
+import { Avatar, STATUS_META, displayName, formatDuration, fullTime, listTime, resolvePeriod } from "@/components/atendimento/utils";
 import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
 import { useSupportTags } from "@/components/atendimento/useSupportTags";
 
@@ -338,7 +338,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
                   <div className="flex flex-wrap gap-1">
                     {allTags.map((t) => (
                       <button key={t} onClick={() => setTagFilter((f) => f.includes(t) ? f.filter((x) => x !== t) : [...f, t])}
-                        className={`h-6 px-2 rounded-md text-[11px] font-medium border ${tagFilter.includes(t) ? `${tagTone(t)} border-current` : "border-border text-muted-foreground"}`}>
+                        className={`h-6 px-2 rounded-md text-[11px] font-medium border ${tagFilter.includes(t) ? `${tagTone(t, fixedTags)} border-current` : "border-border text-muted-foreground"}`}>
                         {t}
                       </button>
                     ))}
@@ -350,6 +350,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               )}
             </PopoverContent>
           </Popover>
+          {connected && <SyncedAgo at={status.lastSyncAt} syncing={sync.isPending} />}
           <button onClick={() => sync.mutate(true)} disabled={sync.isPending || !connected} title="Sincronizar agora"
             className="size-8 shrink-0 rounded-xl bg-card border border-border grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-60">
             <RefreshCw className={`size-3.5 ${sync.isPending ? "animate-spin" : ""}`} />
@@ -442,6 +443,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               <ConversationRow
                 key={c.id}
                 c={c}
+                fixedTags={fixedTags}
                 active={c.id === selectedId}
                 checked={checked.has(c.id)}
                 onCheck={() => setChecked((s) => { const n = new Set(s); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
@@ -500,6 +502,29 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         onSent={(id) => { refreshAll(); if (id) setSelectedId(id); }}
       />
     </PageShell>
+  );
+}
+
+// "Sincronizado há 3 min" ao lado do botão de sincronizar (atualiza sozinho).
+function SyncedAgo({ at, syncing }: { at: string | null; syncing: boolean }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  let text = "Nunca sincronizado";
+  if (syncing) text = "Sincronizando…";
+  else if (at) {
+    const min = Math.floor((Date.now() - new Date(at).getTime()) / 60_000);
+    text = min < 1 ? "Sincronizado agora"
+      : min < 60 ? `Sincronizado há ${min} min`
+      : min < 24 * 60 ? `Sincronizado há ${Math.floor(min / 60)}h`
+      : `Sincronizado em ${fullTime(at)}`;
+  }
+  return (
+    <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap shrink-0" title={at ? `Última sincronização: ${fullTime(at)}` : undefined}>
+      {text}
+    </span>
   );
 }
 
@@ -569,8 +594,8 @@ function BulkBtn({ onClick, children, danger }: { onClick: () => void; children:
   return <button onClick={onClick} className={`h-6 px-2 rounded-md border bg-background ${danger ? "border-destructive/40 text-destructive hover:bg-destructive/10" : "border-border hover:border-primary"}`}>{children}</button>;
 }
 
-function ConversationRow({ c, active, checked, onCheck, onOpen }: {
-  c: SupportConversation; active: boolean; checked: boolean; onCheck: () => void; onOpen: () => void;
+function ConversationRow({ c, fixedTags, active, checked, onCheck, onOpen }: {
+  c: SupportConversation; fixedTags: string[]; active: boolean; checked: boolean; onCheck: () => void; onOpen: () => void;
 }) {
   const unread = c.unread_count > 0;
   const name = displayName(c.customer_name, c.customer_email);
@@ -605,7 +630,7 @@ function ConversationRow({ c, active, checked, onCheck, onOpen }: {
         <p className="text-[11px] text-muted-foreground truncate">{c.summary}</p>
         <div className="flex items-center gap-1 mt-1">
           <span className={`text-[9px] px-1.5 py-px rounded font-medium ${STATUS_META[c.status].cls}`}>{STATUS_META[c.status].label}</span>
-          {c.tags.slice(0, 2).map((t) => <span key={t} className={`text-[9px] px-1.5 py-px rounded font-medium truncate max-w-[90px] inline-flex items-center gap-0.5 ${tagTone(t)}`}>{c.ai_tags.includes(t) && <Sparkles className="size-2.5 shrink-0" />}{t}</span>)}
+          {c.tags.slice(0, 2).map((t) => <span key={t} className={`text-[9px] px-1.5 py-px rounded font-medium truncate max-w-[90px] inline-flex items-center gap-0.5 ${tagTone(t, fixedTags)}`}>{c.ai_tags.includes(t) && <Sparkles className="size-2.5 shrink-0" />}{t}</span>)}
         </div>
       </div>
     </div>
