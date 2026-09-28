@@ -27,6 +27,9 @@ export function useMyAccess() {
     ownerId: q.data?.ownerId ?? null,
     permissions,
     canAccessSection,
-    isLoading: q.isLoading,
+    // isPending (e não isLoading): true até a 1ª resposta chegar, inclusive no
+    // instante antes da consulta começar — senão a página aparecia (ex.: o
+    // Dashboard piscava pro membro sem acesso) antes de checar a permissão.
+    isLoading: q.isPending,
   };
 }
