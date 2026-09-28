@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import {
   getShopifyCreds, fetchShopifyPayouts, refreshStoreBalance,
 } from "@/lib/shop-orders.functions";
@@ -25,10 +26,8 @@ async function fetchShopifyOrdersCountRange(domain: string, token: string, fromI
 async function fetchShopifyBalanceTransactionsForPayout(domain: string, token: string, payoutId: string | number) {
   const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?payout_id=${payoutId}&limit=250`;
   const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-  if (!res.ok) {
-    if (res.status === 404 || res.status === 403) return [];
-    throw new Error(`Shopify ${res.status}: ${await res.text()}`);
-  }
+  if (await handleShopifyAccess(res, domain, "balance_transactions")) return [];
+  if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
   const json: any = await res.json();
   return json.transactions ?? [];
 }

@@ -1,4 +1,5 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
+import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -90,11 +91,9 @@ export const fetchShopifyPayouts = createServerOnlyFn(async (domain: string, tok
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/payouts.json?limit=250&date_min=${encodeURIComponent(sinceISO.slice(0, 10))}`;
   for (let i = 0; i < 20 && url; i++) {
     const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-    if (!res.ok) {
-      // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
-      if (res.status === 404 || res.status === 403) return [];
-      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
-    }
+    // Loja sem Shopify Payments (404) ou app sem o escopo (403): avisa no sino.
+    if (await handleShopifyAccess(res, domain, "payouts")) return [];
+    if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     const json: any = await res.json();
     out.push(...(json.payouts ?? []));
     const link = res.headers.get("link") || res.headers.get("Link") || "";
@@ -110,11 +109,9 @@ async function fetchShopifyBalanceTransactions(domain: string, token: string, ma
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?limit=250`;
   for (let i = 0; i < maxPages && url; i++) {
     const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-    if (!res.ok) {
-      // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
-      if (res.status === 404 || res.status === 403) return [];
-      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
-    }
+    // Loja sem Shopify Payments (404) ou app sem o escopo (403): avisa no sino.
+    if (await handleShopifyAccess(res, domain, "balance_transactions")) return [];
+    if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     const json: any = await res.json();
     out.push(...(json.transactions ?? []));
     const link = res.headers.get("link") || res.headers.get("Link") || "";
@@ -130,11 +127,9 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250&initiated_at_min=${encodeURIComponent(sinceISO)}`;
   for (let i = 0; i < 20 && url; i++) {
     const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-    if (!res.ok) {
-      // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
-      if (res.status === 404 || res.status === 403) return [];
-      throw new Error(`Shopify ${res.status}: ${await res.text()}`);
-    }
+    // Loja sem Shopify Payments (404) ou app sem o escopo (403): avisa no sino.
+    if (await handleShopifyAccess(res, domain, "disputes")) return [];
+    if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     const json: any = await res.json();
     out.push(...(json.disputes ?? []));
     const link = res.headers.get("link") || res.headers.get("Link") || "";
@@ -191,11 +186,9 @@ async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: 
 export const fetchShopifyPaymentsBalance = createServerOnlyFn(async (domain: string, token: string) => {
   const url = `https://${domain}/admin/api/2024-10/shopify_payments/balance.json`;
   const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-  if (!res.ok) {
-    // Loja sem Shopify Payments habilitado, ou app sem o escopo necessário.
-    if (res.status === 404 || res.status === 403) return null;
-    throw new Error(`Shopify ${res.status}: ${await res.text()}`);
-  }
+  // Loja sem Shopify Payments (404) ou app sem o escopo (403): avisa no sino.
+  if (await handleShopifyAccess(res, domain, "balance")) return null;
+  if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
   const json: any = await res.json();
   const balances: any[] = json.balance ?? [];
   if (balances.length === 0) return null;
@@ -1148,7 +1141,7 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     return { connected: true, pending, balance, currency, items };
   });
 
-// Taxa de chargeback (estorno via banco/cartão) dos últimos 60 dias, igual ao
+// Taxa de chargeback (estorno via banco/cartão) dos últimos 90 dias, igual ao
 // relatório "Taxa de estorno" da Shopify (chargebacks / pedidos no período).
 export const getShopifyChargebackRate = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -1159,7 +1152,7 @@ export const getShopifyChargebackRate = createServerFn({ method: "GET" })
     if (!settings?.shopify_store_id) return { connected: false, rate: null };
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
-    const since = new Date(); since.setUTCDate(since.getUTCDate() - 60);
+    const since = new Date(); since.setUTCDate(since.getUTCDate() - 90);
     const sinceISO = since.toISOString();
 
     const [disputes, totalOrders] = await Promise.all([

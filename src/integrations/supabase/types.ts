@@ -2363,7 +2363,9 @@ export type Database = {
       shop_order_settings: {
         Row: {
           chargeback_count_30d: number | null;
+          chargeback_count_prev: number | null;
           chargeback_orders_30d: number | null;
+          chargeback_orders_prev: number | null;
           chargeback_stats_at: string | null;
           automation_enabled: boolean;
           cashflow_start_date: string | null;
@@ -2382,7 +2384,9 @@ export type Database = {
         };
         Insert: {
           chargeback_count_30d?: number | null;
+          chargeback_count_prev?: number | null;
           chargeback_orders_30d?: number | null;
+          chargeback_orders_prev?: number | null;
           chargeback_stats_at?: string | null;
           automation_enabled?: boolean;
           cashflow_start_date?: string | null;
@@ -2401,7 +2405,9 @@ export type Database = {
         };
         Update: {
           chargeback_count_30d?: number | null;
+          chargeback_count_prev?: number | null;
           chargeback_orders_30d?: number | null;
+          chargeback_orders_prev?: number | null;
           chargeback_stats_at?: string | null;
           automation_enabled?: boolean;
           cashflow_start_date?: string | null;
