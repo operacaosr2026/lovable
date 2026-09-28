@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Settings as SettingsIcon, Users, Shield, Plug, ScrollText, Bell } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMyAccess } from "@/hooks/useMyAccess";
+import { MEMBER_SETTINGS_PAGES } from "@/components/AppLayout";
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: async ({ location }) => {
@@ -22,8 +23,6 @@ export const Route = createFileRoute("/settings")({
   component: SettingsLayout,
 });
 
-const MEMBER_PAGES = ["/settings/notificacoes", "/settings/seguranca", "/settings/integracoes"];
-
 const NAV = [
   { to: "/settings/members", label: "Membros", icon: Users, desc: "Convites, permissões e acessos" },
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
@@ -34,16 +33,17 @@ const NAV = [
 
 function SettingsLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  // Membro vê Notificações, Segurança e Integrações (Membros e Auditoria são do admin).
-  const { role, isLoading } = useMyAccess();
+  // Membro vê só as páginas liberadas pra ele (Membros > Permissões > Configurações).
+  const { role, isLoading, canAccessSection } = useMyAccess();
   const navigate = useNavigate();
-  const nav = isLoading ? [] : role === "admin" ? NAV : NAV.filter((i) => MEMBER_PAGES.includes(i.to));
-  // /settings manda pra Membros (admin); membro vai pra Notificações.
+  const memberPages = MEMBER_SETTINGS_PAGES.filter((p) => canAccessSection(p.section)).map((p) => p.path);
+  const nav = isLoading ? [] : role === "admin" ? NAV : NAV.filter((i) => memberPages.includes(i.to));
+  // /settings manda pra Membros (admin); membro vai pra primeira página liberada.
   useEffect(() => {
-    if (!isLoading && role !== "admin" && path.startsWith("/settings") && !MEMBER_PAGES.some((p) => path.startsWith(p))) {
-      navigate({ to: "/settings/notificacoes", replace: true });
+    if (!isLoading && role !== "admin" && memberPages.length && !memberPages.some((p) => path.startsWith(p))) {
+      navigate({ to: memberPages[0], replace: true });
     }
-  }, [isLoading, role, path, navigate]);
+  }, [isLoading, role, path, navigate, memberPages.join(",")]);
 
   return (
     <div className="flex min-h-screen bg-background">

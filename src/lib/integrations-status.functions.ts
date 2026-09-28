@@ -30,6 +30,9 @@ function healthFor(status: string | null, lastSyncAt: string | null, staleAfterM
 export const getIntegrationsStatus = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
+    if (context.role !== "admin" && !context.permissions.some((p) => p.section === "cfg_integracoes")) {
+      throw new Error("Sem acesso às integrações — peça ao administrador.");
+    }
     const { ownerId } = context;
     const [storesRes, accountsRes, tokensRes, trackRes, shopsRes, paused] = await Promise.all([
       supabaseAdmin.from("shopify_stores")

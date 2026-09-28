@@ -67,6 +67,8 @@ const SECTION_LABELS: Record<Section, string> = {
   nt_email: "E-mail novo no Atendimento",
   nt_metas: "Metas",
   nt_lucro: "Lucro do dia",
+  cfg_seguranca: "Segurança",
+  cfg_integracoes: "Integrações",
 };
 
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
@@ -269,7 +271,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
   nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_tarefas: CheckSquare,
-  nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp,
+  nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, cfg_seguranca: Shield, cfg_integracoes: Plug,
   shops: Store, projects: FolderKanban, sops: Workflow,
 };
 
@@ -373,6 +375,16 @@ function PermissionsForm({
             ))}
           </div>
         )}
+      </PermGroup>
+
+      <PermGroup title="Configurações">
+        <PermRow section="cfg_seguranca" checked={has("cfg_seguranca", null)} onChange={() => toggle("cfg_seguranca", null)}
+          hint="Trocar a própria senha e encerrar as próprias sessões" />
+        <PermRow section="cfg_integracoes" checked={has("cfg_integracoes", null)} onChange={() => toggle("cfg_integracoes", null)}
+          hint="Status da Shopify, Meta e Track123 das lojas" />
+        <p className="px-3.5 py-2 text-[11px] text-muted-foreground bg-muted/20">
+          A página Notificações aparece para quem tem "Notificações" ligado acima. Membros e Auditoria são só do administrador.
+        </p>
       </PermGroup>
 
       <PermGroup title="Acesso a dados">

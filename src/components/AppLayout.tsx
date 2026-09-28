@@ -42,10 +42,14 @@ function navItemForPath(path: string): NavItem | undefined {
 const adminNav: NavItem[] = [
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
-// Membro também tem Configurações: Notificações e Segurança (pessoais) e o
-// status das Integrações — Membros e Auditoria são só do admin.
+// Configurações pro membro: cada página liberada em Membros > Permissões
+// (Membros e Auditoria são só do admin).
 const memberSettingsNav: NavItem = { to: "/settings", label: "Configurações", icon: SettingsIcon };
-const MEMBER_SETTINGS_PATHS = ["/settings/notificacoes", "/settings/seguranca", "/settings/integracoes"];
+export const MEMBER_SETTINGS_PAGES: { path: string; section: Section }[] = [
+  { path: "/settings/notificacoes", section: "notificacoes" },
+  { path: "/settings/seguranca", section: "cfg_seguranca" },
+  { path: "/settings/integracoes", section: "cfg_integracoes" },
+];
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -324,7 +328,7 @@ export function AppLayout() {
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-0.5">
           {visibleNavItems.map(renderItem)}
           {role === "admin" && adminNav.map(renderItem)}
-          {role !== "admin" && renderItem(memberSettingsNav)}
+          {role !== "admin" && MEMBER_SETTINGS_PAGES.some((p) => canAccessSection(p.section)) && renderItem(memberSettingsNav)}
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
@@ -426,7 +430,7 @@ function PageAccessGate({ path }: { path: string }) {
       : <Outlet />;
   }
   // Configurações é do admin — menos as partes pessoais do membro.
-  const personal = MEMBER_SETTINGS_PATHS.some((p) => path.startsWith(p));
+  const personal = MEMBER_SETTINGS_PAGES.some((p) => path.startsWith(p.path) && canAccessSection(p.section));
   const blockedSettings = path.startsWith("/settings") && role !== "admin" && !personal;
   const item = navItemForPath(path);
   const blocked = blockedSettings || (item?.section ? !canAccessSection(item.section) : false);

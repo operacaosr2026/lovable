@@ -44,6 +44,10 @@ export const SECTIONS = [
   "nt_email",
   "nt_metas",
   "nt_lucro",
+  // Páginas de Configurações liberáveis pra membro (Membros e Auditoria são só
+  // do admin; Notificações segue a seção "notificacoes").
+  "cfg_seguranca",
+  "cfg_integracoes",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
