@@ -1148,7 +1148,7 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     return { connected: true, pending, balance, currency, items };
   });
 
-// Taxa de chargeback (estorno via banco/cartão) dos últimos 30 dias, igual ao
+// Taxa de chargeback (estorno via banco/cartão) dos últimos 60 dias, igual ao
 // relatório "Taxa de estorno" da Shopify (chargebacks / pedidos no período).
 export const getShopifyChargebackRate = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -1159,7 +1159,7 @@ export const getShopifyChargebackRate = createServerFn({ method: "GET" })
     if (!settings?.shopify_store_id) return { connected: false, rate: null };
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
-    const since = new Date(); since.setUTCDate(since.getUTCDate() - 30);
+    const since = new Date(); since.setUTCDate(since.getUTCDate() - 60);
     const sinceISO = since.toISOString();
 
     const [disputes, totalOrders] = await Promise.all([

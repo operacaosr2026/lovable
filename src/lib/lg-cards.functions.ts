@@ -2,7 +2,7 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { computeEstornoByShop } from "@/lib/estorno-daily.server";
+import { ESTORNO_WINDOW_DAYS, computeEstornoByShop } from "@/lib/estorno-daily.server";
 import { attachLiveShopifyNames, costProductsFor, getDilutedRefundsAndChargebacks, getGroupRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
@@ -652,13 +652,13 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const prevTo = addDaysISO(from, -1);
     const prevFrom = addDaysISO(prevTo, -(days - 1));
 
-    // Taxa de estorno é sempre uma janela rolante fixa de 30 dias, independente
-    // do seletor de datas: estorno demora a acontecer depois da compra
-    // (semanas), então medir só o período selecionado deixaria a taxa
-    // artificialmente perto de 0. O delta compara com os 30 dias anteriores.
-    const estornoStart = addDaysISO(todayStr, -30);
+    // Taxa de estorno é sempre uma janela rolante fixa de 60 dias (contando
+    // hoje), independente do seletor de datas: estorno demora a acontecer
+    // depois da compra (semanas), então medir só o período selecionado deixaria
+    // a taxa artificialmente perto de 0. O delta compara com os 60 dias anteriores.
+    const estornoStart = addDaysISO(todayStr, -(ESTORNO_WINDOW_DAYS - 1));
     const prevEstornoEnd = addDaysISO(estornoStart, -1);
-    const prevEstornoStart = addDaysISO(prevEstornoEnd, -29);
+    const prevEstornoStart = addDaysISO(prevEstornoEnd, -(ESTORNO_WINDOW_DAYS - 1));
 
     // supabaseAdmin ignora RLS — todo filtro de posse abaixo é manual. shopIds
     // já vem só de cards do próprio ownerId (linhas acima), mas filtramos por
@@ -777,7 +777,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const prevReembolsosByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
     const prevChargebacksByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
 
-    // Taxa de estorno em janela rolante de 30 dias (ver comentário acima)
+    // Taxa de estorno em janela rolante de 60 dias (ver comentário acima)
     const totalOrdersByShop = new Map<string, number>();
     for (const o of (estornoOrdersRes.data ?? []) as any[]) totalOrdersByShop.set(o.shop_id, (totalOrdersByShop.get(o.shop_id) ?? 0) + 1);
     const estornosPorLojaSet = new Map<string, Set<string>>();
@@ -978,7 +978,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const anuncios = sumAmt(ads);
     const lucro    = faturamento - custoProduto - taxas - anuncios;
 
-    // Taxa de estorno (30 dias) por loja: calculada 1x por dia à meia-noite
+    // Taxa de estorno (60 dias) por loja: calculada 1x por dia à meia-noite
     // (estorno-daily.server.ts) e guardada em shop_order_settings — aqui só lê.
     // Enquanto alguma loja ainda não tiver o valor guardado, calcula na hora.
     const allStored = shopIds.every((id) => settings.some((s: any) => s.shop_id === id && s.chargeback_stats_at));

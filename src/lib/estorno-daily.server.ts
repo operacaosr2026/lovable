@@ -10,9 +10,11 @@ function addDaysISO(iso: string, n: number) {
 
 // Taxa de estorno por loja — igual à fórmula do Shopify: pedidos com
 // chargeback real (shop_order_disputes) sobre o total de pedidos, numa janela
-// rolante de 30 dias (estorno demora semanas pra acontecer depois da compra).
+// rolante de 60 dias, contando hoje (estorno demora semanas pra acontecer
+// depois da compra). Era 30; as colunas *_30d guardam a janela de 60 agora.
+export const ESTORNO_WINDOW_DAYS = 60;
 export async function computeEstornoByShop(ownerId: string, shopIds: string[], to = isoTodayUS()) {
-  const from = addDaysISO(to, -30);
+  const from = addDaysISO(to, -(ESTORNO_WINDOW_DAYS - 1));
   const [ordersRes, disputesRes] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_orders").select("shop_id")
       .eq("user_id", ownerId).in("shop_id", shopIds)
@@ -33,7 +35,7 @@ export async function computeEstornoByShop(ownerId: string, shopIds: string[], t
 }
 
 // 1x por dia, à meia-noite de Nova York (pg_cron, ver *_estorno_daily.sql):
-// grava a taxa de estorno de 30 dias em shop_order_settings, pro card de
+// grava a taxa de estorno de 60 dias em shop_order_settings, pro card de
 // Lojas e Grupos só ler em vez de recalcular a cada abertura.
 export async function runEstornoDaily() {
   const { data: settings, error } = await supabaseAdmin.from("shop_order_settings").select("user_id,shop_id");
