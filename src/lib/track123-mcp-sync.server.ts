@@ -154,6 +154,10 @@ export async function runTrack123McpSync(
     // Entregue = fim da linha. Sem isso o pedido seguia na fila por 30 dias,
     // gastando chamada ao MCP (e orçamento de tempo) a cada rodada.
     .is("delivered_at", null)
+    // Cancelado/reembolsado sai da aba Rastreamento (lg-logistics.functions.ts)
+    // — mesmo filtro aqui, pra não gastar consulta (limitada) do Track123 nele.
+    .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
+    .filter("raw->>cancelled_at", "is", null)
     .gte("order_date", since)
     .order("order_date", { ascending: true }));
   if (ordersError) throw new Error(ordersError.message);

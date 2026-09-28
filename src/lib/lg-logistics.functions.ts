@@ -38,14 +38,18 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     const orderIds = (rows ?? []).map((o: any) => o.id);
     const lastEventMap = new Map<string, string | null>();
     const lastLabelMap = new Map<string, string | null>();
+    // Quando o sync conferiu esse rastreio pela última vez (updated_at é
+    // regravado a cada consulta ao Track123, mesmo sem evento novo).
+    const checkedAtMap = new Map<string, string | null>();
     if (orderIds.length) {
       const { data: trackingRows } = await selectAllIn<any>(orderIds, (ids) => supabaseAdmin
         .from("shop_order_tracking")
-        .select("order_id,last_event_at,last_event_label,tracking_status")
+        .select("order_id,last_event_at,last_event_label,tracking_status,updated_at")
         .in("order_id", ids));
       for (const t of trackingRows ?? []) {
         lastEventMap.set(t.order_id, t.last_event_at);
         lastLabelMap.set(t.order_id, t.tracking_status ?? t.last_event_label);
+        checkedAtMap.set(t.order_id, t.updated_at);
       }
     }
     // O Shopify já marca "shipped" assim que a etiqueta é criada (tem código de
@@ -94,7 +98,7 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
           if (!note) note = "tempo de entrega demorado";
         }
       }
-      return { ...o, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null };
+      return { ...o, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
     });
 
     return withEffectiveStatus;

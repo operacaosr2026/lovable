@@ -239,6 +239,24 @@ export function LgLogistica({
     i.last_sync_at && (!max || i.last_sync_at > max) ? i.last_sync_at : max
   ), null as string | null);
 
+  // Progresso do rastreio: "Sincronizado há X" dizia só quando rodou a última
+  // rodada, mas cada rodada confere ~30 pedidos por loja (limite do Track123) —
+  // não garantia que tudo estava em dia. Agora: % dos rastreios em aberto (mesma
+  // janela de 30 dias do sync) conferidos na última hora, por loja no tooltip.
+  const syncWindowStart = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const freshSince = new Date(Date.now() - 60 * 60_000).toISOString();
+  const openTracked = (orders as any[]).filter((o) => (shopFilter === "todas" || o.shop_id === shopFilter)
+    && o.tracking_checked_at && o.order_date >= syncWindowStart
+    && o.delivery_status !== "delivered" && o.delivery_status !== "returned");
+  const isFresh = (o: any) => new Date(o.tracking_checked_at).toISOString() >= freshSince;
+  const freshCount = openTracked.filter(isFresh).length;
+  const syncPct = openTracked.length ? Math.round((freshCount / openTracked.length) * 100) : null;
+  const stalest = openTracked.reduce((min: any, o) => (!min || o.tracking_checked_at < min.tracking_checked_at ? o : min), null);
+  const progressByShop = [...new Set(openTracked.map((o) => o.shop_id as string))].map((id) => {
+    const mine = openTracked.filter((o) => o.shop_id === id);
+    return `${shopNames[id] ?? "Loja"}: ${mine.filter(isFresh).length} de ${mine.length}`;
+  });
+
   const save = useMutation({
     mutationFn: (vars: any) => updateFn({ data: vars }),
     onSuccess: () => {
@@ -491,12 +509,31 @@ export function LgLogistica({
         >
           <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
         </Button>
-        <span
-          className="text-xs text-muted-foreground"
-          title={lastSyncAt ? new Date(lastSyncAt).toLocaleString("pt-BR") : undefined}
+        <div
+          className="flex items-center gap-2 text-xs text-muted-foreground cursor-default"
+          title={[
+            "Rastreios em aberto conferidos no Track123 na última hora:",
+            ...progressByShop,
+            "",
+            lastSyncAt && `Última rodada: ${new Date(lastSyncAt).toLocaleString("pt-BR")}`,
+            stalest && `Há mais tempo sem conferir: ${stalest.order_number} (${timeAgo(stalest.tracking_checked_at)})`,
+            "A cada 15 min, cada loja confere ~30 pedidos, começando pelos há mais tempo sem conferir.",
+          ].filter((l) => l !== null && l !== undefined && l !== false).join("\n")}
         >
-          Sincronizado {timeAgo(lastSyncAt)}
-        </span>
+          {syncPct != null ? (
+            <>
+              <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all", syncPct >= 90 ? "bg-emerald-500" : syncPct >= 50 ? "bg-amber-500" : "bg-rose-500")}
+                  style={{ width: `${syncPct}%` }}
+                />
+              </div>
+              <span className="tabular-nums whitespace-nowrap">{syncPct}% conferidos (1h)</span>
+            </>
+          ) : (
+            <span>Sincronizado {timeAgo(lastSyncAt)}</span>
+          )}
+        </div>
         {(statusFilter !== "todos" || shopFilter !== "todas" || search) && (
           <Button size="sm" variant="ghost" onClick={() => { setStatusFilter("todos"); setShopFilter("todas"); setSearch(""); }}>
             Limpar filtro
