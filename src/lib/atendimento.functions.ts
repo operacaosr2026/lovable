@@ -27,6 +27,13 @@ function assertAccess(ctx: Ctx) {
     throw new Error("Sem acesso ao Atendimento");
   }
 }
+// Subabas (Configurações > Membros): at_caixa, at_kpi, at_config.
+function assertSub(ctx: Ctx, section: "at_caixa" | "at_kpi" | "at_config") {
+  assertAccess(ctx);
+  if (ctx.role !== "admin" && !ctx.permissions.some((p) => p.section === section)) {
+    throw new Error("Sem acesso a esta parte do Atendimento");
+  }
+}
 function assertAdmin(ctx: Ctx) {
   if (ctx.role !== "admin") throw new Error("Só o administrador pode conectar o Zoho");
 }
@@ -114,7 +121,7 @@ export const listSupportConversations = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ from: z.string().datetime(), to: z.string().datetime() }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const { ownerId } = context;
     const [convRes, openRes, msgRes] = await Promise.all([
       selectAll<SupportConversation>(supabaseAdmin.from("support_conversations").select(CONV_COLS)
@@ -169,7 +176,7 @@ export const getSupportKpis = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_kpi");
     const { ownerId } = context;
     const range = monthRange(data.month);
     // Conversas que ainda não têm loja: tenta descobrir antes de contar.
@@ -211,7 +218,7 @@ export const findEmailsByOrder = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ q: z.string().trim().min(2).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const num = data.q.replace(/^#/, "");
     if (!/^[A-Za-z0-9-]+$/.test(num)) return [];
     const { data: rows } = await supabaseAdmin.from("shop_orders")
@@ -233,7 +240,7 @@ export const getSupportConversation = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const { ownerId } = context;
     const { data: conv } = await supabaseAdmin.from("support_conversations").select(CONV_COLS)
       .eq("id", data.id).eq("owner_id", ownerId).maybeSingle();
@@ -271,7 +278,7 @@ export const markConversationRead = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ ids: z.array(z.string().uuid()).min(1).max(200), read: z.boolean().default(true) }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const { ownerId } = context;
     // Lido: todas as mensagens do cliente. Não lido: só a última de cada conversa.
     const { data: inbound } = await supabaseAdmin.from("support_messages").select("id,message_id,conversation_id,is_read")
@@ -310,7 +317,7 @@ export const updateSupportConversations = createServerFn({ method: "POST" })
     }),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const patch: typeof data.patch & { updated_at: string; resolved_at?: string | null; shop_manual?: boolean } = { ...data.patch, updated_at: new Date().toISOString() };
     // Loja escolhida à mão: a descoberta automática não troca mais (limpar volta pro automático).
     if (data.patch.shop_id !== undefined) patch.shop_manual = data.patch.shop_id !== null;
@@ -339,7 +346,7 @@ export const translateSupportMessage = createServerFn({ method: "POST" })
     text: z.string().max(TRANSLATE_LIMIT).optional(),
   }).refine((v) => v.id || v.text, "Informe o e-mail").parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     if (!supportAiAvailable()) throw new Error("Tradução indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
     if (!data.id) return { text: await translateToPortuguese(data.text!) };
 
@@ -364,7 +371,7 @@ export const translateSupportReply = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ text: z.string().trim().min(1).max(TRANSLATE_LIMIT) }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     if (!supportAiAvailable()) throw new Error("Tradução indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
     return { text: await translateReplyToEnglish(data.text) };
   });
@@ -376,7 +383,7 @@ export const deleteSupportConversations = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const { ownerId } = context;
     const acc = await getZohoAccount(ownerId);
     const { data: msgs } = await selectAll<{ conversation_id: string; message_id: string; folder_id: string }>(
@@ -415,7 +422,7 @@ export const uploadSupportAttachment = createServerFn({ method: "POST" })
     base64: z.string().max(4_300_000),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const acc = await requireAccount(context.ownerId);
     return uploadZohoAttachment(acc, data.fileName, Buffer.from(data.base64, "base64"));
   });
@@ -482,7 +489,7 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     }).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_config");
     const row: Database["public"]["Tables"]["support_settings"]["Insert"] = { owner_id: context.ownerId, updated_at: new Date().toISOString() };
     if (data.signature !== undefined) row.signature = data.signature.trim() || null;
     if (data.signatureEnabled !== undefined) row.signature_enabled = data.signatureEnabled;
@@ -502,7 +509,7 @@ export const changeSupportTag = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ from: TagName, to: TagName.nullable() }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_config");
     const { ownerId } = context;
     const { data: st } = await supabaseAdmin.from("support_settings").select("tags").eq("owner_id", ownerId).maybeSingle();
     const replace = (list: string[]) => {
@@ -530,7 +537,7 @@ export const sendSupportReply = createServerFn({ method: "POST" })
     signature: z.boolean().default(true),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const { ownerId } = context;
     const acc = await requireAccount(ownerId);
     const { data: conv } = await supabaseAdmin.from("support_conversations").select("id,customer_email,subject")
@@ -577,7 +584,7 @@ export const sendSupportNewMessage = createServerFn({ method: "POST" })
     signature: z.boolean().default(true),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const acc = await requireAccount(context.ownerId);
     const html = await buildBody(context.ownerId, context.userId, data.text, data.signature);
     await sendZohoMail(acc, { to: data.to, subject: data.subject, html, attachments: data.attachments });
@@ -593,7 +600,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ email: z.string().trim().email() }).parse(d))
   .handler(async ({ data, context }) => {
-    assertAccess(context);
+    assertSub(context, "at_caixa");
     const email = data.email.toLowerCase();
     // Função SQL usa o índice por e-mail (shop_orders_user_email_idx).
     const { data: ids, error: idsError } = await supabaseAdmin.rpc("shop_order_ids_by_email", { p_user_id: context.ownerId, p_email: email });

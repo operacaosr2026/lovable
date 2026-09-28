@@ -18,7 +18,7 @@ import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
-  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones,
+  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -54,10 +54,16 @@ const SECTION_LABELS: Record<Section, string> = {
   lg_pedidos: "Pedidos",
   lg_rastreamento: "Rastreamento",
   lg_integracoes: "Integrações",
+  at_caixa: "Caixa",
+  at_kpi: "KPI",
+  at_config: "Configurações",
 };
 
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
 const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
+// Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
+const AT_SUBTABS: Section[] = ["at_caixa", "at_kpi", "at_config"];
+const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
 const TAB_SECTIONS: Section[] = ["dashboard", "metas", "tarefas", "produtos", "caixa", "banco_lojas", "lojas_grupos", "atendimento", "notificacoes"];
@@ -237,6 +243,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
+  at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
   shops: Store, projects: FolderKanban, sops: Workflow,
 };
 
@@ -291,18 +298,19 @@ function PermissionsForm({
   };
 
   const PAGE_TABS = TAB_SECTIONS.filter((t) => t !== "notificacoes");
-  const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS];
+  const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS, ...AT_SUBTABS];
   const allTabs = ALL_TABS.every((t) => has(t, null));
   const setAllTabs = (on: boolean) => {
     const rest = value.filter((p) => !ALL_TABS.includes(p.section));
     onChange(on ? [...rest, ...ALL_TABS.map((t) => ({ section: t, resource_id: null }))] : rest);
   };
-  // Ligar Lojas e Grupos libera todas as subabas; desligar tira todas.
+  // Ligar Lojas e Grupos / Atendimento libera todas as subabas; desligar tira todas.
   const toggleTab = (t: Section) => {
-    if (t !== "lojas_grupos") return toggle(t, null);
-    const on = !has("lojas_grupos", null);
-    const rest = value.filter((p) => p.section !== "lojas_grupos" && !LG_SUBTABS.includes(p.section));
-    onChange(on ? [...rest, { section: "lojas_grupos", resource_id: null }, ...LG_SUBTABS.map((st) => ({ section: st, resource_id: null }))] : rest);
+    const subs = SUBTABS[t];
+    if (!subs) return toggle(t, null);
+    const on = !has(t, null);
+    const rest = value.filter((p) => p.section !== t && !subs.includes(p.section));
+    onChange(on ? [...rest, { section: t, resource_id: null }, ...subs.map((st) => ({ section: st, resource_id: null }))] : rest);
   };
 
   return (
@@ -318,9 +326,9 @@ function PermissionsForm({
         {PAGE_TABS.map((t) => (
           <div key={t}>
             <PermRow section={t} checked={has(t, null)} onChange={() => toggleTab(t)} />
-            {t === "lojas_grupos" && has("lojas_grupos", null) && (
+            {SUBTABS[t] && has(t, null) && (
               <div className="divide-y divide-border border-t border-border">
-                {LG_SUBTABS.map((st) => (
+                {SUBTABS[t]!.map((st) => (
                   <PermRow key={st} section={st} indent checked={has(st, null)} onChange={() => toggle(st, null)} />
                 ))}
               </div>

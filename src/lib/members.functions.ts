@@ -28,6 +28,10 @@ export const SECTIONS = [
   "lg_pedidos",
   "lg_rastreamento",
   "lg_integracoes",
+  // Subabas de Atendimento.
+  "at_caixa",
+  "at_kpi",
+  "at_config",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
