@@ -45,7 +45,7 @@ export function ConnectZoho({ redirectUri, connectedEmail, onDone }: {
   };
 
   const disconnect = async () => {
-    if (!(await confirm({ title: "Desconectar o Zoho?", description: "O Atendimento para de receber e enviar e-mails até conectar de novo. Nada é apagado no Zoho.", confirmText: "Desconectar", variant: "destructive" }))) return;
+    if (!(await confirm({ title: "Desconectar o Zoho?", description: "O Atendimento para de receber e enviar e-mails até conectar de novo, e as conversas (com status, tags e notas) saem do sistema. Nada é apagado no Zoho.", confirmText: "Desconectar", variant: "destructive" }))) return;
     await disconnectFn();
     toast.success("Zoho desconectado");
     onDone();

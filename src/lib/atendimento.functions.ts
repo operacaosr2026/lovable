@@ -91,6 +91,11 @@ export const disconnectZoho = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     assertAdmin(context);
     await supabaseAdmin.from("zoho_mail_accounts").delete().eq("owner_id", context.ownerId);
+    // Limpa o espelho dos e-mails (as mensagens vão junto, ON DELETE CASCADE):
+    // as conversas apontam pras pastas da conta desconectada e, se ficassem,
+    // misturavam com a próxima conta conectada. Nada é apagado no Zoho.
+    const { error } = await supabaseAdmin.from("support_conversations").delete().eq("owner_id", context.ownerId);
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
