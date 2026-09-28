@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -38,9 +39,31 @@ function NotFoundComponent() {
   );
 }
 
+// Deploy novo com a aba aberta: a versão antiga pede um pedaço da página
+// (chunk) que não existe mais e dá erro ao navegar (ex.: clicar em Sair).
+// Nesse caso recarrega sozinho, uma vez, já na versão nova.
+const STALE_CHUNK = /dynamically imported module|Importing a module script failed|error loading dynamically imported|Loading chunk|Failed to fetch dynamically/i;
+
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const staleChunk = STALE_CHUNK.test(String(error?.message ?? error));
+  useEffect(() => {
+    if (!staleChunk) return;
+    try {
+      const last = Number(sessionStorage.getItem("chunk-reload-at") ?? 0);
+      if (Date.now() - last < 30_000) return;   // já tentou há pouco: não entra em loop
+      sessionStorage.setItem("chunk-reload-at", String(Date.now()));
+    } catch { /* sem sessionStorage: recarrega mesmo assim */ }
+    window.location.reload();
+  }, [staleChunk]);
+  if (staleChunk) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 text-sm text-muted-foreground">
+        Atualizando para a versão nova…
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -156,7 +179,8 @@ function AuthGate() {
   }
 
   if (!user && !isLogin && !isInvite) {
-    const here = location.pathname + location.search;
+    // href = caminho + ?busca como texto (location.search é objeto e virava "[object Object]").
+    const here = location.href;
     const safeRedirect = here && !here.startsWith("/login") ? here : undefined;
     return <Navigate to="/login" search={safeRedirect ? { redirect: safeRedirect } : {}} />;
   }
