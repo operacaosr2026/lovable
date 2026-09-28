@@ -138,6 +138,14 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   const [statusFilter, setStatusFilter] = useState<SupportStatus[]>([]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Link da notificação de e-mail (/atendimento?c=<conversa>): abre direto nela.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("c");
+    if (c && /^[0-9a-f-]{36}$/i.test(c)) {
+      setSelectedId(c);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [composeOpen, setComposeOpen] = useState(false);
 

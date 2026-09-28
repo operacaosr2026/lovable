@@ -2,6 +2,27 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { orderDateFor } from "@/lib/order-date";
 import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
+import { emitEvent } from "@/lib/notify.server";
+
+// Push "Nova venda": loja + número + valor; o toque abre os pedidos do grupo
+// da loja. Só pedido que acabou de entrar (não reprocessamento de antigo).
+async function notifyNewSale(ownerId: string, shopId: string, o: any) {
+  if (Date.now() - Date.parse(o.created_at) > 24 * 3600_000) return;
+  const [{ data: shop }, { data: link }] = await Promise.all([
+    supabaseAdmin.from("shops").select("name").eq("id", shopId).maybeSingle(),
+    supabaseAdmin.from("lg_card_shops").select("card_id").eq("shop_id", shopId).limit(1).maybeSingle(),
+  ]);
+  let valor = `${o.currency ?? ""} ${o.total_price ?? ""}`.trim();
+  try {
+    valor = new Intl.NumberFormat("pt-BR", { style: "currency", currency: o.currency || "USD" }).format(Number(o.total_price ?? 0));
+  } catch { /* moeda desconhecida: fica o texto cru */ }
+  await emitEvent(ownerId, {
+    key: `sale:${shopId}:${o.id}`,
+    title: `🎉 Nova venda — ${shop?.name ?? "Loja"}`,
+    body: `${o.name ?? "Pedido"} · ${valor}`,
+    link: link?.card_id ? `/shops/lojas-grupos/${link.card_id}?tab=pedidos` : "/",
+  });
+}
 
 // Grava em shop_orders um pedido que chegou pelo webhook da Shopify — mesmos
 // campos e mesma regra de rastreio do sync de 10 em 10 min (sync-shop-orders
@@ -43,6 +64,8 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
       shopify_financial_status: financial,
     }, { onConflict: "shop_id,source,external_id" });
     if (upErr) throw new Error(upErr.message);
+    // Pedido novo (não existia) e não cancelado → push de venda (nunca derruba o webhook).
+    if (!before && !cancelledAt) await notifyNewSale(s.user_id, s.shop_id, o).catch((e) => console.error("push venda", e));
 
     // Previsão de pagamento ao fornecedor no Caixa (dia do pedido + D+N) na hora,
     // em vez de só quando alguém abre a aba Pedidos. Falha aqui não derruba o webhook.

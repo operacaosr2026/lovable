@@ -149,6 +149,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      notification_events: {
+        Row: { owner_id: string; key: string; created_at: string };
+        Insert: { owner_id: string; key: string; created_at?: string };
+        Update: { owner_id?: string; key?: string; created_at?: string };
+        Relationships: [];
+      };
       support_conversations: {
         Row: {
           id: string;

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
+import { checkGoalEvents } from "@/lib/goal-events.server";
 
 // Disparado a cada 10 min pelo pg_cron (ver *_push_notifications_cron.sql):
 // recalcula os avisos do sino de cada workspace (token da Meta, sync da
@@ -26,6 +27,9 @@ export const Route = createFileRoute("/api/public/hooks/notifications-refresh")(
         for (const owner of owners) {
           try { await refreshSystemNotifications(owner); out[owner] = "ok"; }
           catch (e: any) { console.error("notifications-refresh", owner, e); out[owner] = String(e?.message ?? e).slice(0, 200); }
+          // Push de Metas (meta do dia / do mês atingida).
+          try { await checkGoalEvents(owner); }
+          catch (e: any) { console.error("notifications-refresh metas", owner, e); out[owner] += ` · metas: ${String(e?.message ?? e).slice(0, 120)}`; }
         }
         return Response.json(out);
       },

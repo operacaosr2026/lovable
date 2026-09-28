@@ -240,7 +240,7 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
       parsed.push({ customer: to.email, customerName: to.name, direction: "out", item });
     }
 
-    const touched = await upsertMessages(ownerId, own, parsed);
+    const { touched, newInbound } = await upsertMessages(ownerId, own, parsed);
     await recomputeConversations(ownerId, touched, { firstSync });
     try { await assignConversationShops(ownerId, touched); } catch (e) { console.error("assign shops", e); }
     try { await autoResolveStale(ownerId); } catch (e) { console.error("auto resolve", e); }
@@ -251,6 +251,11 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
       await Promise.all([runSupportAiTagging(acc), runSupportAutoTranslate(acc)]);
     } catch (e) {
       console.error("support ai tagging", e);
+    }
+
+    // Push "E-mail novo" (fora a 1ª sincronização, que traz 30 dias de uma vez).
+    if (!firstSync) {
+      try { await notifyNewEmails(ownerId, newInbound); } catch (e) { console.error("push e-mail", e); }
     }
 
     await supabaseAdmin.from("zoho_mail_accounts")
@@ -268,8 +273,8 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
 async function upsertMessages(
   ownerId: string, own: string,
   parsed: { customer: string; customerName: string | null; direction: "in" | "out"; item: ZohoListItem }[],
-) {
-  if (!parsed.length) return [] as string[];
+): Promise<{ touched: string[]; newInbound: NewInbound[] }> {
+  if (!parsed.length) return { touched: [], newInbound: [] };
   // Conversa por e-mail do cliente (cria se não existe; não mexe em status/tags).
   const customers = [...new Set(parsed.map((p) => p.customer))];
   const { data: existing, error: exErr } = await selectAllIn<{ id: string; customer_email: string }>(customers, (c) =>
@@ -305,9 +310,43 @@ async function upsertMessages(
       has_attachment: String(item.hasAttachment) === "1",
     };
   });
+  // Quais já existiam — o resto é e-mail novo de verdade (pro push).
+  const { data: known } = await selectAllIn<{ message_id: string }>(rows.map((r) => r.message_id), (c) =>
+    supabaseAdmin.from("support_messages").select("message_id").eq("owner_id", ownerId).in("message_id", c));
+  const knownIds = new Set(known.map((k) => k.message_id));
   const { error } = await supabaseAdmin.from("support_messages").upsert(rows, { onConflict: "owner_id,message_id" });
   if (error) throw new Error(error.message);
-  return [...new Set(rows.map((r) => r.conversation_id))];
+  const newInbound = rows.filter((r) => r.direction === "in" && !knownIds.has(r.message_id)).map((r) => ({
+    conversationId: r.conversation_id, messageId: r.message_id, fromEmail: r.from_email, fromName: r.from_name,
+    subject: r.subject, sentAt: r.sent_at,
+  }));
+  return { touched: [...new Set(rows.map((r) => r.conversation_id))], newInbound };
+}
+
+type NewInbound = {
+  conversationId: string; messageId: string; fromEmail: string | null; fromName: string | null; subject: string | null; sentAt: string;
+};
+
+// Remetente automático (noreply, avisos de sistema): não é cliente, não avisa.
+const AUTOMATED_SENDER = /(^|[.+_-])(no-?reply|mailer-daemon|postmaster|notifications?|bounce)([.+_-]|@)/i;
+
+// 1 push por conversa (o e-mail mais recente dela), só dos últimos 2 dias.
+async function notifyNewEmails(ownerId: string, list: NewInbound[]) {
+  const recent = list.filter((m) => Date.now() - Date.parse(m.sentAt) < 2 * 86_400_000 && !AUTOMATED_SENDER.test(m.fromEmail ?? ""));
+  const latest = new Map<string, NewInbound>();
+  for (const m of recent) {
+    const cur = latest.get(m.conversationId);
+    if (!cur || m.sentAt > cur.sentAt) latest.set(m.conversationId, m);
+  }
+  const { emitEvent } = await import("@/lib/notify.server");
+  for (const m of latest.values()) {
+    await emitEvent(ownerId, {
+      key: `email:${m.messageId}`,
+      title: `📩 Novo e-mail — ${m.fromName || m.fromEmail || "cliente"}`,
+      body: m.subject || "(sem assunto)",
+      link: `/atendimento?c=${m.conversationId}`,
+    });
+  }
 }
 
 // Recalcula contadores/datas da conversa a partir das mensagens e aplica a

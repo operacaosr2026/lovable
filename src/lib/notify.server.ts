@@ -85,3 +85,19 @@ export async function notifyPeople(ownerId: string, n: NotifyInput) {
     console.error("notifyPeople", n.key, e instanceof Error ? e.message : e);
   }
 }
+
+// Evento (venda nova, e-mail novo, meta atingida): registra a chave uma vez
+// só por workspace e só o primeiro a registrar manda o push — o mesmo pedido
+// chegando 2x pelo webhook, ou a meta checada a cada 10 min, avisa uma vez.
+// Não vai pro sino (ele é pra problemas). Nunca lança.
+export async function emitEvent(ownerId: string, n: NotifyInput) {
+  try {
+    const { data, error } = await supabaseAdmin.from("notification_events")
+      .upsert({ owner_id: ownerId, key: n.key }, { onConflict: "owner_id,key", ignoreDuplicates: true })
+      .select("key");
+    if (error || !data?.length) return;   // já avisado (ou falhou ao registrar)
+    await notifyPeople(ownerId, n);
+  } catch (e) {
+    console.error("emitEvent", n.key, e instanceof Error ? e.message : e);
+  }
+}
