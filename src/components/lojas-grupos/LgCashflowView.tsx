@@ -1122,11 +1122,13 @@ export function LgCashflowView({
 
   // Lançamentos de dias anteriores a hoje ainda não conciliados. O Saldo atual
   // só soma conciliados, então ele ainda vai mudar quando forem conciliados —
-  // o card avisa. Fora: payouts pendentes/agendados da Shopify e ocorrências
-  // de recorrentes (virtual), que não se conciliam individualmente.
+  // o card avisa. Fora: payouts pendentes/agendados da Shopify, ocorrências
+  // de recorrentes (virtual), que não se conciliam individualmente, e
+  // lançamentos de $0 (ex.: custo de fornecedor zerado à mão) — não mudam o saldo.
   const unreconciledPast = useMemo(() => expanded.filter((e) => {
     const src = e.source ?? "";
-    return !e.virtual && src !== "shopify_pending" && src !== "shopify_pending_sync" && e.date < todayKey && !e.reconciled;
+    return !e.virtual && src !== "shopify_pending" && src !== "shopify_pending_sync" && e.date < todayKey && !e.reconciled
+      && Number(e.amount) !== 0;
   }), [expanded, todayKey]);
   const unreconciledNet = unreconciledPast.reduce((s, e) => s + (e.kind === "income" ? Number(e.amount) : -Number(e.amount)), 0);
   const oldestUnreconciled = unreconciledPast.reduce((min: string | null, e) => (!min || e.date < min ? e.date : min), null);
