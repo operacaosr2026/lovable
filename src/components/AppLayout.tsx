@@ -432,14 +432,24 @@ let homeHandled = false;
 
 function PageAccessGate({ path }: { path: string }) {
   const { role, canAccessSection, isLoading, homePath } = useMyAccess();
+  // Página que está de fato na tela: durante a troca de página o endereço já é
+  // o novo, mas o <Outlet> ainda mostra a anterior até a nova carregar — era
+  // assim que o Dashboard piscava depois do redirecionamento pra aba liberada.
+  const renderedPath = useRouterState({ select: (s) => s.resolvedLocation?.pathname ?? s.location.pathname });
+  // Marca a página inicial como aplicada só depois da 1ª tela com as permissões
+  // (no desenho, não — o React pode desenhar 2x e a 2ª achava que já tinha ido).
+  useEffect(() => { if (!isLoading) homeHandled = true; }, [isLoading]);
   const gated = path.startsWith("/settings") || !!navItemForPath(path)?.section;
-  if (isLoading) {
-    return gated
-      ? <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
-      : <Outlet />;
+  const spinner = <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return gated ? spinner : <Outlet />;
+  if (renderedPath !== path) {
+    const renderedItem = navItemForPath(renderedPath);
+    const renderedBlocked = (renderedPath.startsWith("/settings") && role !== "admin"
+        && !MEMBER_SETTINGS_PAGES.some((p) => renderedPath.startsWith(p.path) && canAccessSection(p.section)))
+      || (renderedItem?.section ? !canAccessSection(renderedItem.section) : false);
+    if (renderedBlocked) return spinner;
   }
   if (!homeHandled) {
-    homeHandled = true;
     const homeItem = homePath ? navItemForPath(homePath) : undefined;
     const homeAllowed = homeItem && (!homeItem.section || canAccessSection(homeItem.section));
     if (path === "/" && role !== "admin" && homePath && homePath !== "/" && homeAllowed) {
