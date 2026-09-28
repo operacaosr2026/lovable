@@ -385,7 +385,10 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 mb-1">
           {group.label} · {group.entries.length} lançamentos{isPendingGroup ? " · previsto" : ""}
         </div>
-        {group.entries.map((e) => {
+        {/* Na ordem das lojas (Loja 1, Loja 2… Loja 10), igual ao card "A receber". */}
+        {[...group.entries].sort((a, b) =>
+          (shopNamesMap?.[a.shop_id ?? ""] ?? "").localeCompare(shopNamesMap?.[b.shop_id ?? ""] ?? "", "pt-BR", { numeric: true, sensitivity: "base" })
+        ).map((e) => {
           const src = e.source ?? "";
           const isPending = src === "shopify_pending" || src === "shopify_pending_sync";
           const canReconcile = !isPending && !e.virtual && e.date <= todayKey;
