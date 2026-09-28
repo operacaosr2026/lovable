@@ -24,14 +24,14 @@ type NavItem = {
 // Cada aba tem sua permissão (Configurações > Membros); admin vê tudo.
 const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
+  { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet, section: "caixa" },
   { to: "/metas", label: "Metas", icon: Target, section: "metas" },
-  { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
-  { to: "/shops/products", label: "Produtos", icon: Package, section: "produtos" },
-  { to: "/shops/caixa", label: "Caixa", icon: Wallet, section: "caixa" },
-  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
-  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
-  { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
   { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
+  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
+  { to: "/shops/products", label: "Produtos", icon: Package, section: "produtos" },
+  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
+  { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
+  { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
 ];
 
 // Aba do menu dona do endereço (pra bloquear quem abre o link direto sem permissão).
@@ -45,15 +45,15 @@ const adminNav: NavItem[] = [
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet },
   { to: "/metas", label: "Metas", icon: Target },
-  { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
-  { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/projects", label: "Projetos", icon: FolderKanban },
-  { to: "/shops/products", label: "Produtos", icon: Package },
-  { to: "/shops/caixa", label: "Caixa", icon: Wallet },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
+  { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
+  { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/atendimento", label: "Atendimento", icon: Headphones },
+  { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];

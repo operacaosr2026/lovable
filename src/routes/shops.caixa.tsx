@@ -5,7 +5,7 @@ export const Route = createFileRoute("/shops/caixa")({
   beforeLoad: requireAuth,
   head: () => ({
     meta: [
-      { title: "Caixa — SRX Growth" },
+      { title: "Caixa Geral — SRX Growth" },
       { name: "description", content: "Visão consolidada de caixa de todas as lojas conectadas." },
     ],
   }),

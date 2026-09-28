@@ -34,7 +34,7 @@ function CaixaIndex() {
   return (
     <PageShell fit>
       <PageHeader
-        title="Caixa"
+        title="Caixa Geral"
         subtitle={shops.length > 0 ? `${shops.length} ${shops.length === 1 ? "loja conectada" : "lojas conectadas"}` : undefined}
       />
 

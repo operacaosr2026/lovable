@@ -43,7 +43,7 @@ const SECTION_LABELS: Record<Section, string> = {
   metas: "Metas",
   tarefas: "Tarefas",
   produtos: "Produtos",
-  caixa: "Caixa",
+  caixa: "Caixa Geral",
   banco_lojas: "Banco de Lojas",
   lojas_grupos: "Lojas e Grupos",
   atendimento: "Atendimento",
@@ -90,7 +90,7 @@ const NT_HINTS: Partial<Record<Section, string>> = {
 const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "metas", "tarefas", "produtos", "caixa", "banco_lojas", "lojas_grupos", "atendimento", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
