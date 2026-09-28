@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Check, ChevronDown, Download, Languages, Loader2, MailOpen, MoreVertical, Paperclip, Star, Tag, Trash2,
+  ArrowLeft, Check, ChevronDown, Download, Languages, Loader2, MailOpen, MoreVertical, Paperclip, ShieldAlert, Star, Tag, Trash2,
 } from "lucide-react";
 import {
   deleteSupportConversations, getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
@@ -37,6 +37,23 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
       onDeleted();
     } catch (e: any) {
       toast.error(e.message ?? "Erro ao excluir");
+    }
+  };
+  // Spam: e-mail que não é atendimento (aviso de sistema, propaganda…). Vai pra
+  // Lixeira do Zoho e sai daqui — e dos contadores/KPIs. Novos e-mails do mesmo
+  // remetente continuam entrando normalmente.
+  const askSpam = async () => {
+    if (!(await confirm({
+      title: "Marcar como spam?",
+      description: "A conversa sai do Atendimento (e dos indicadores) e os e-mails dela vão para a Lixeira do Zoho, onde ficam recuperáveis por 30 dias.",
+      confirmText: "Mover para o lixo", variant: "destructive",
+    }))) return;
+    try {
+      await deleteFn({ data: { ids: [id] } });
+      toast.success("Movido para o lixo");
+      onDeleted();
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao mover para o lixo");
     }
   };
   const qc = useQueryClient();
@@ -130,6 +147,13 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
           <p className="text-xs text-muted-foreground truncate">{conv.customer_email}</p>
         </div>
 
+        <button
+          onClick={askSpam}
+          title="Spam — não é atendimento (vai para o lixo)"
+          className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 border border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 text-muted-foreground text-xs font-medium"
+        >
+          <ShieldAlert className="size-4" /><span className="hidden sm:inline">Spam</span>
+        </button>
         <button
           onClick={() => update.mutate({ favorite: !conv.favorite })}
           title={conv.favorite ? "Tirar dos favoritos" : "Favoritar"}

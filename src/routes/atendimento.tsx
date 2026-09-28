@@ -204,12 +204,15 @@ function Inboxes({ status }: { status: ZohoStatus }) {
 
   const deleteFn = useSupportFn(deleteSupportConversations, "deleteSupportConversations");
   const confirm = useConfirm();
-  const askBulkDelete = async () => {
+  // Excluir e Spam fazem o mesmo (Lixeira do Zoho + sai daqui e dos KPIs); só o texto muda.
+  const askBulkDelete = async (spam = false) => {
     const n = checked.size;
     if (!(await confirm({
-      title: `Excluir ${n} conversa${n > 1 ? "s" : ""}?`,
-      description: "Os e-mails delas (do cliente e as respostas) vão para a Lixeira do Zoho, onde ficam recuperáveis por 30 dias.",
-      confirmText: "Excluir", variant: "destructive",
+      title: spam ? `Marcar ${n} conversa${n > 1 ? "s" : ""} como spam?` : `Excluir ${n} conversa${n > 1 ? "s" : ""}?`,
+      description: spam
+        ? "Saem do Atendimento (e dos indicadores) e os e-mails vão para a Lixeira do Zoho, onde ficam recuperáveis por 30 dias."
+        : "Os e-mails delas (do cliente e as respostas) vão para a Lixeira do Zoho, onde ficam recuperáveis por 30 dias.",
+      confirmText: spam ? "Mover para o lixo" : "Excluir", variant: "destructive",
     }))) return;
     try {
       const r = await deleteFn({ data: { ids: [...checked] } });
@@ -424,7 +427,8 @@ function Inboxes({ status }: { status: ZohoStatus }) {
               <BulkBtn onClick={() => bulk.mutate("read")}>Lida</BulkBtn>
               <BulkBtn onClick={() => bulk.mutate("unread")}>Não lida</BulkBtn>
               <BulkBtn onClick={() => bulk.mutate("resolve")}>Resolver</BulkBtn>
-              <BulkBtn danger onClick={askBulkDelete}>Excluir</BulkBtn>
+              <BulkBtn danger onClick={() => askBulkDelete(true)}>Spam</BulkBtn>
+              <BulkBtn danger onClick={() => askBulkDelete()}>Excluir</BulkBtn>
               <button onClick={() => setChecked(new Set())} className="size-6 grid place-items-center rounded text-muted-foreground hover:text-foreground" aria-label="Limpar seleção"><X className="size-3.5" /></button>
             </div>
           )}
