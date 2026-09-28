@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { Settings as SettingsIcon, Users, Shield, Plug, ScrollText, Bell } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useMyAccess } from "@/hooks/useMyAccess";
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: async ({ location }) => {
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/settings")({
   component: SettingsLayout,
 });
 
-const nav = [
+const NAV = [
   { to: "/settings/members", label: "Membros", icon: Users, desc: "Convites, permissões e acessos" },
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
   { to: "/settings/notificacoes", label: "Notificações", icon: Bell, desc: "Sino, celular e o que receber" },
@@ -30,6 +31,9 @@ const nav = [
 
 function SettingsLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  // Membro só entra em Notificações (o resto é do admin).
+  const { role, isLoading } = useMyAccess();
+  const nav = isLoading ? [] : role === "admin" ? NAV : NAV.filter((i) => i.to === "/settings/notificacoes");
 
   return (
     <div className="flex min-h-screen bg-background">

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
-  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones,
+  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, Bell,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -42,6 +42,8 @@ function navItemForPath(path: string): NavItem | undefined {
 const adminNav: NavItem[] = [
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
+// Membro não vê Configurações, mas precisa ativar as notificações no celular.
+const memberNotificationsNav: NavItem = { to: "/settings/notificacoes", label: "Notificações", icon: Bell };
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -320,6 +322,7 @@ export function AppLayout() {
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-0.5">
           {visibleNavItems.map(renderItem)}
           {role === "admin" && adminNav.map(renderItem)}
+          {role !== "admin" && canAccessSection("notificacoes") && renderItem(memberNotificationsNav)}
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
@@ -409,11 +412,20 @@ export function AppLayout() {
 }
 
 // Bloqueia a página quando a pessoa não tem permissão da aba (ex.: abriu o
-// link direto). Enquanto as permissões carregam, não bloqueia nada.
+// link direto). Enquanto as permissões carregam, página com permissão mostra
+// "carregando" — antes mostrava a página (ex.: o Dashboard piscava pro membro
+// sem acesso a ele antes de ir pra aba liberada).
 function PageAccessGate({ path }: { path: string }) {
   const { role, canAccessSection, isLoading } = useMyAccess();
-  if (isLoading) return <Outlet />;
-  const blockedSettings = path.startsWith("/settings") && role !== "admin";
+  const gated = path.startsWith("/settings") || !!navItemForPath(path)?.section;
+  if (isLoading) {
+    return gated
+      ? <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      : <Outlet />;
+  }
+  // Configurações é do admin — menos Notificações (cada pessoa ativa o próprio celular).
+  const ownNotifications = path.startsWith("/settings/notificacoes") && canAccessSection("notificacoes");
+  const blockedSettings = path.startsWith("/settings") && role !== "admin" && !ownNotifications;
   const item = navItemForPath(path);
   const blocked = blockedSettings || (item?.section ? !canAccessSection(item.section) : false);
   if (!blocked) return <Outlet />;
