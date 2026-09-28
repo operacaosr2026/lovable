@@ -14,6 +14,7 @@ import {
   type Section,
 } from "@/lib/members.functions";
 import { useMyAccess } from "@/hooks/useMyAccess";
+import { navItems } from "@/components/AppLayout";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -114,7 +115,7 @@ function MembersPage() {
   const wsQ = useQuery({ queryKey: ["workspace"], queryFn: () => listWs() });
   const resQ = useQuery({ queryKey: ["owner-resources"], queryFn: () => listRes() });
 
-  const [editing, setEditing] = useState<{ memberId: string; permissions: Permission[] } | null>(null);
+  const [editing, setEditing] = useState<{ memberId: string; permissions: Permission[]; homePath: string | null } | null>(null);
   const [inviting, setInviting] = useState(false);
   const confirm = useConfirm();
 
@@ -173,6 +174,7 @@ function MembersPage() {
                       section: p.section as Section,
                       resource_id: p.resource_id,
                     })),
+                    homePath: (m as any).home_path ?? null,
                   })
                 }
                 className="h-9 px-3 rounded-lg border border-border text-xs hover:bg-surface-hover flex items-center gap-1.5"
@@ -252,6 +254,7 @@ function MembersPage() {
         <PermissionsDialog
           memberId={editing.memberId}
           initial={editing.permissions}
+          initialHome={editing.homePath}
           resources={resQ.data}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -478,17 +481,23 @@ function InviteDialog({ resources, onClose, onCreated }: { resources: any; onClo
 function PermissionsDialog({
   memberId,
   initial,
+  initialHome,
   resources,
   onClose,
   onSaved,
 }: {
   memberId: string;
   initial: Permission[];
+  initialHome: string | null;
   resources: any;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [perms, setPerms] = useState<Permission[]>(initial);
+  const [home, setHome] = useState<string>(initialHome ?? "/");
+  // "Abrir primeiro": só páginas do menu que o membro tem liberadas.
+  const homeOptions = navItems.filter((i) => i.section && perms.some((p) => p.section === i.section));
+  const homeValid = home === "/" || homeOptions.some((o) => o.to === home);
   const [busy, setBusy] = useState(false);
 
   useEscapeToClose(onClose);
@@ -496,7 +505,7 @@ function PermissionsDialog({
   const save = async () => {
     setBusy(true);
     try {
-      await updateMemberPermissions({ data: { member_id: memberId, permissions: perms } });
+      await updateMemberPermissions({ data: { member_id: memberId, permissions: perms, home_path: homeValid ? home : "/" } });
       toast.success("Permissões atualizadas");
       onSaved();
     } catch (e: any) {
@@ -512,6 +521,17 @@ function PermissionsDialog({
         <div className="mb-4">
           <h2 className="text-lg font-bold">Editar permissões</h2>
           <p className="text-xs text-muted-foreground mt-0.5">Ligue o que esse membro pode ver e usar.</p>
+        </div>
+        <div className="mb-4 rounded-xl border border-border bg-card px-3.5 py-3 flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Abrir primeiro</p>
+            <p className="text-[11px] text-muted-foreground">Página que aparece quando ele entra no sistema.</p>
+          </div>
+          <select value={homeValid ? home : "/"} onChange={(e) => setHome(e.target.value)}
+            className="h-9 px-2.5 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary">
+            <option value="/">Dashboard (padrão)</option>
+            {homeOptions.filter((o) => o.to !== "/").map((o) => <option key={o.to} value={o.to}>{o.label}</option>)}
+          </select>
         </div>
         <PermissionsForm value={perms} onChange={setPerms} resources={resources} />
         <div className="flex justify-end gap-2 mt-5">

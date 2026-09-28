@@ -61,7 +61,14 @@ export const getMyAccess = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { role, ownerId, permissions } = await resolveWorkspaceAccess(context.supabase, context.userId);
-    return { role, ownerId, permissions };
+    // Página que abre primeiro (só membro; escolhida pelo admin em Permissões).
+    let homePath: string | null = null;
+    if (role === "member") {
+      const { data } = await supabaseAdmin.from("workspace_members").select("home_path")
+        .eq("member_id", context.userId).maybeSingle();
+      homePath = data?.home_path ?? null;
+    }
+    return { role, ownerId, permissions, homePath };
   });
 
 // ---------- List members + invitations ----------
@@ -72,7 +79,7 @@ export const listWorkspace = createServerFn({ method: "GET" })
 
     const { data: links } = await supabase
       .from("workspace_members")
-      .select("id,member_id,created_at")
+      .select("id,member_id,created_at,home_path")
       .eq("owner_id", userId)
       .order("created_at", { ascending: false });
 
@@ -118,6 +125,7 @@ export const listWorkspace = createServerFn({ method: "GET" })
       full_name: profiles[l.member_id]?.full_name ?? null,
       avatar_url: profiles[l.member_id]?.avatar_url ?? null,
       permissions: permsByMember[l.member_id] ?? [],
+      home_path: (l.home_path as string | null) ?? null,
     }));
 
     // Use admin client because the `token` column is no longer readable
@@ -225,11 +233,19 @@ export const updateMemberPermissions = createServerFn({ method: "POST" })
       .object({
         member_id: z.string().uuid(),
         permissions: z.array(PermissionSchema).max(500),
+        // Página que abre primeiro (null = Dashboard). Só caminhos internos.
+        home_path: z.string().regex(/^\/[a-z0-9/_-]*$/).max(80).nullable().optional(),
       })
       .parse(input)
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    if (data.home_path !== undefined) {
+      const { error: homeErr } = await supabaseAdmin.from("workspace_members")
+        .update({ home_path: data.home_path === "/" ? null : data.home_path })
+        .eq("owner_id", userId).eq("member_id", data.member_id);
+      if (homeErr) throw new Error(homeErr.message);
+    }
     // wipe & rewrite
     await supabase
       .from("member_permissions")

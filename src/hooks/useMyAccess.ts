@@ -25,6 +25,7 @@ export function useMyAccess() {
   return {
     role,
     ownerId: q.data?.ownerId ?? null,
+    homePath: q.data?.homePath ?? null,
     permissions,
     canAccessSection,
     // isPending (e não isLoading): true até a 1ª resposta chegar, inclusive no

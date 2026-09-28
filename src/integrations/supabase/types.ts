@@ -3999,6 +3999,7 @@ export type Database = {
       };
       workspace_members: {
         Row: {
+          home_path: string | null;
           created_at: string;
           id: string;
           is_admin: boolean;
@@ -4006,6 +4007,7 @@ export type Database = {
           owner_id: string;
         };
         Insert: {
+          home_path?: string | null;
           created_at?: string;
           id?: string;
           is_admin?: boolean;
@@ -4013,6 +4015,7 @@ export type Database = {
           owner_id: string;
         };
         Update: {
+          home_path?: string | null;
           created_at?: string;
           id?: string;
           is_admin?: boolean;

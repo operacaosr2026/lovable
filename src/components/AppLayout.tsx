@@ -23,7 +23,7 @@ type NavItem = {
 };
 
 // Cada aba tem sua permissão (Configurações > Membros); admin vê tudo.
-const navItems: NavItem[] = [
+export const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
   { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet, section: "caixa" },
   { to: "/metas", label: "Metas", icon: Target, section: "metas" },
@@ -426,13 +426,25 @@ export function AppLayout() {
 // link direto). Enquanto as permissões carregam, página com permissão mostra
 // "carregando" — antes mostrava a página (ex.: o Dashboard piscava pro membro
 // sem acesso a ele antes de ir pra aba liberada).
+// Página inicial do membro (Permissões > "Abrir primeiro"): aplicada só uma vez,
+// na abertura do sistema — depois, clicar em Dashboard no menu abre normal.
+let homeHandled = false;
+
 function PageAccessGate({ path }: { path: string }) {
-  const { role, canAccessSection, isLoading } = useMyAccess();
+  const { role, canAccessSection, isLoading, homePath } = useMyAccess();
   const gated = path.startsWith("/settings") || !!navItemForPath(path)?.section;
   if (isLoading) {
     return gated
       ? <div className="min-h-[60vh] grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
       : <Outlet />;
+  }
+  if (!homeHandled) {
+    homeHandled = true;
+    const homeItem = homePath ? navItemForPath(homePath) : undefined;
+    const homeAllowed = homeItem && (!homeItem.section || canAccessSection(homeItem.section));
+    if (path === "/" && role !== "admin" && homePath && homePath !== "/" && homeAllowed) {
+      return <Navigate to={homePath} replace />;
+    }
   }
   // Configurações é do admin — menos as partes pessoais do membro.
   const personal = MEMBER_SETTINGS_PAGES.some((p) => path.startsWith(p.path) && canAccessSection(p.section));
