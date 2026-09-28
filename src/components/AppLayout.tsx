@@ -19,6 +19,7 @@ type NavItem = {
   label: string;
   icon: typeof LayoutDashboard;
   section?: Section;
+  activePrefix?: string;   // marca como ativo em todo esse prefixo (ex.: /settings)
 };
 
 // Cada aba tem sua permissão (Configurações > Membros); admin vê tudo.
@@ -291,7 +292,7 @@ export function AppLayout() {
 
   const navContent = (onNavigate?: () => void) => {
     const renderItem = (item: NavItem) => {
-      const active = item.to === "/" ? path === "/" : path.startsWith(item.to);
+      const active = item.to === "/" ? path === "/" : path.startsWith(item.activePrefix ?? item.to);
       const Icon = item.icon;
 
       return (
@@ -328,7 +329,11 @@ export function AppLayout() {
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-0.5">
           {visibleNavItems.map(renderItem)}
           {role === "admin" && adminNav.map(renderItem)}
-          {role !== "admin" && MEMBER_SETTINGS_PAGES.some((p) => canAccessSection(p.section)) && renderItem(memberSettingsNav)}
+          {role !== "admin" && (() => {
+            // Vai direto pra 1ª página liberada (/settings sozinho leva pra Membros, do admin).
+            const first = MEMBER_SETTINGS_PAGES.find((p) => canAccessSection(p.section));
+            return first ? renderItem({ ...memberSettingsNav, to: first.path, activePrefix: "/settings" }) : null;
+          })()}
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
@@ -432,6 +437,12 @@ function PageAccessGate({ path }: { path: string }) {
   // Configurações é do admin — menos as partes pessoais do membro.
   const personal = MEMBER_SETTINGS_PAGES.some((p) => path.startsWith(p.path) && canAccessSection(p.section));
   const blockedSettings = path.startsWith("/settings") && role !== "admin" && !personal;
+  // Membro em página de Configurações que não é dele (ex.: /settings → Membros):
+  // leva pra 1ª página de Configurações liberada, em vez de "Sem acesso".
+  if (blockedSettings) {
+    const firstSettings = MEMBER_SETTINGS_PAGES.find((p) => canAccessSection(p.section));
+    if (firstSettings) return <Navigate to={firstSettings.path} replace />;
+  }
   const item = navItemForPath(path);
   const blocked = blockedSettings || (item?.section ? !canAccessSection(item.section) : false);
   if (!blocked) return <Outlet />;
