@@ -17,6 +17,10 @@ export type Database = {
           ai_tags_enabled: boolean;
           goal_first_response_min: number;
           goal_resolution_min: number;
+          bh_start: number;
+          bh_end: number;
+          bh_days: number[];
+          bh_timezone: string;
           updated_at: string;
         };
         Insert: {
@@ -27,6 +31,10 @@ export type Database = {
           ai_tags_enabled?: boolean;
           goal_first_response_min?: number;
           goal_resolution_min?: number;
+          bh_start?: number;
+          bh_end?: number;
+          bh_days?: number[];
+          bh_timezone?: string;
           updated_at?: string;
         };
         Update: {
@@ -37,8 +45,18 @@ export type Database = {
           ai_tags_enabled?: boolean;
           goal_first_response_min?: number;
           goal_resolution_min?: number;
+          bh_start?: number;
+          bh_end?: number;
+          bh_days?: number[];
+          bh_timezone?: string;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      support_templates: {
+        Row: { id: string; owner_id: string; title: string; body: string; created_at: string; updated_at: string };
+        Insert: { id?: string; owner_id: string; title: string; body: string; created_at?: string; updated_at?: string };
+        Update: { id?: string; owner_id?: string; title?: string; body?: string; created_at?: string; updated_at?: string };
         Relationships: [];
       };
       push_subscriptions: {

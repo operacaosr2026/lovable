@@ -6,7 +6,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { US_TIME_ZONE } from "@/lib/timezone";
-import { DEFAULT_GOALS, computeSupportKpis, monthRange, type KpiConversation, type KpiMessage } from "@/lib/support-kpis";
+import {
+  DEFAULT_GOALS, DEFAULT_BUSINESS_HOURS, BUSINESS_TIMEZONES, businessMs, computeSupportKpis, monthRange,
+  type BusinessHours, type KpiConversation, type KpiMessage,
+} from "@/lib/support-kpis";
 import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -141,6 +144,17 @@ export type SupportConversation = {
   note: string | null; resolved_at: string | null; ai_tags: string[]; shop_id: string | null;
 };
 
+// Horário comercial salvo (Configurações > Metas); sem linha, o padrão.
+const BH_COLS = "bh_start,bh_end,bh_days,bh_timezone";
+function toBusinessHours(r: { bh_start?: number | null; bh_end?: number | null; bh_days?: number[] | null; bh_timezone?: string | null } | null | undefined): BusinessHours {
+  return {
+    timeZone: r?.bh_timezone ?? DEFAULT_BUSINESS_HOURS.timeZone,
+    start: r?.bh_start ?? DEFAULT_BUSINESS_HOURS.start,
+    end: r?.bh_end ?? DEFAULT_BUSINESS_HOURS.end,
+    days: r?.bh_days ?? DEFAULT_BUSINESS_HOURS.days,
+  };
+}
+
 const CONV_COLS = "id,customer_email,customer_name,subject,summary,last_message_at,last_inbound_at,last_outbound_at,message_count,unread_count,status,favorite,tags,note,resolved_at,ai_tags,shop_id";
 
 export const listSupportConversations = createServerFn({ method: "GET" })
@@ -149,7 +163,7 @@ export const listSupportConversations = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     assertSub(context, "at_caixa");
     const { ownerId } = context;
-    const [convRes, openRes, msgRes] = await Promise.all([
+    const [convRes, openRes, msgRes, bhRes] = await Promise.all([
       selectAll<SupportConversation>(supabaseAdmin.from("support_conversations").select(CONV_COLS)
         .eq("owner_id", ownerId).gte("last_message_at", data.from).lte("last_message_at", data.to)),
       // Status atuais (independem do período): em aberto, aguardando, não lidos.
@@ -158,14 +172,17 @@ export const listSupportConversations = createServerFn({ method: "GET" })
       selectAll<{ conversation_id: string; direction: string; sent_at: string }>(supabaseAdmin.from("support_messages")
         .select("conversation_id,direction,sent_at").eq("owner_id", ownerId)
         .gte("sent_at", data.from).lte("sent_at", new Date(new Date(data.to).getTime() + 7 * 86_400_000).toISOString())),
+      supabaseAdmin.from("support_settings").select(BH_COLS).eq("owner_id", ownerId).maybeSingle(),
     ]);
     if (convRes.error) throw new Error(convRes.error.message);
+    const hours = toBusinessHours(bhRes.data);
 
     const open = openRes.data;
     const to = new Date(data.to).getTime();
     const received = msgRes.data.filter((m) => m.direction === "in" && new Date(m.sent_at).getTime() <= to);
 
-    // Tempo de resposta: da 1ª mensagem do cliente sem resposta até a nossa resposta.
+    // Tempo de resposta: da 1ª mensagem do cliente sem resposta até a nossa
+    // resposta, contando só o horário comercial.
     const byConv = new Map<string, { direction: string; t: number }[]>();
     for (const m of msgRes.data) {
       (byConv.get(m.conversation_id) ?? byConv.set(m.conversation_id, []).get(m.conversation_id)!)
@@ -177,7 +194,7 @@ export const listSupportConversations = createServerFn({ method: "GET" })
       let pending: number | null = null;
       for (const m of list) {
         if (m.direction === "in") { if (pending == null) pending = m.t; }
-        else if (pending != null) { if (pending <= to) waits.push(m.t - pending); pending = null; }
+        else if (pending != null) { if (pending <= to) waits.push(businessMs(pending, m.t, hours)); pending = null; }
       }
     }
 
@@ -193,6 +210,7 @@ export const listSupportConversations = createServerFn({ method: "GET" })
         resolved: conversations.filter((c) => c.status === "resolvido" && c.resolved_at && c.resolved_at >= data.from && c.resolved_at <= data.to).length,
         avgResponseMs: waits.length ? Math.round(waits.reduce((s, x) => s + x, 0) / waits.length) : null,
         responses: waits.length,
+        hours,
       },
     };
   });
@@ -216,12 +234,12 @@ export const getSupportKpis = createServerFn({ method: "GET" })
         .select("id,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
         .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
       supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
-      supabaseAdmin.from("support_settings").select("tags,goal_first_response_min,goal_resolution_min").eq("owner_id", ownerId).maybeSingle(),
+      supabaseAdmin.from("support_settings").select(`tags,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", ownerId).maybeSingle(),
     ]);
     if (msgs.error) throw new Error(msgs.error.message);
     if (convs.error) throw new Error(convs.error.message);
     return {
-      ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range),
+      ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data)),
       partial: range.partial,
       goals: {
         firstResponseMin: settings.data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,
@@ -239,19 +257,85 @@ export const listSupportShops = createServerFn({ method: "GET" })
     return (data ?? []).filter((s) => !s.archived).map((s) => ({ id: s.id, name: s.name }));
   });
 
-// Busca por pedido: "#4532" ou "4532" → e-mails dos compradores.
+// Busca por pedido: "#L4-1508", "L4-1508" ou só "1508" → e-mails dos compradores.
 export const findEmailsByOrder = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ q: z.string().trim().min(2).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
     assertSub(context, "at_caixa");
-    const num = data.q.replace(/^#/, "");
-    if (!/^[A-Za-z0-9-]+$/.test(num)) return [];
-    const { data: rows } = await supabaseAdmin.from("shop_orders")
-      .select("email:raw->>email,cust:raw->customer->>email")
-      .eq("user_id", context.ownerId).in("order_number", [num, `#${num}`]).limit(20);
-    return [...new Set((rows ?? []).map((r: any) => String(r.email ?? r.cust ?? "").toLowerCase()).filter(Boolean))];
+    const hits = await ordersByNumber(context.ownerId, data.q);
+    return [...new Set(hits.map((h) => h.email))];
   });
+
+// Mesmo, com o nº do pedido junto (Nova mensagem: escolher quando o número
+// existe em mais de uma loja).
+export const findOrderCustomers = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ q: z.string().trim().min(2).max(40) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertSub(context, "at_caixa");
+    return ordersByNumber(context.ownerId, data.q);
+  });
+
+// ─── Mensagens salvas ─────────────────────────────────────────────────────────
+
+export type SupportTemplate = { id: string; title: string; body: string };
+
+export const listSupportTemplates = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }): Promise<SupportTemplate[]> => {
+    assertSub(context, "at_caixa");
+    const { data, error } = await supabaseAdmin.from("support_templates").select("id,title,body")
+      .eq("owner_id", context.ownerId).order("title");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+// Sem id: cria. Com id: edita.
+export const saveSupportTemplate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid().optional(),
+    title: z.string().trim().min(1).max(80),
+    body: z.string().trim().min(1).max(20_000),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertSub(context, "at_caixa");
+    const row = { title: data.title, body: data.body, updated_at: new Date().toISOString() };
+    const { error } = data.id
+      ? await supabaseAdmin.from("support_templates").update(row).eq("id", data.id).eq("owner_id", context.ownerId)
+      : await supabaseAdmin.from("support_templates").insert({ ...row, owner_id: context.ownerId });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteSupportTemplate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertSub(context, "at_caixa");
+    const { error } = await supabaseAdmin.from("support_templates").delete().eq("id", data.id).eq("owner_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+async function ordersByNumber(ownerId: string, q: string): Promise<{ order: string; email: string }[]> {
+  const num = q.replace(/^#/, "");
+  if (!/^[A-Za-z0-9-]+$/.test(num)) return [];
+  // Só o número: casa com o fim do pedido ("1508" → "#L4-1508", "#WV1508"),
+  // sem pegar "#L4-11508".
+  const onlyDigits = /^\d+$/.test(num);
+  const base = supabaseAdmin.from("shop_orders")
+    .select("order_number,email:raw->>email,cust:raw->customer->>email")
+    .eq("user_id", ownerId);
+  const { data: rows } = await (onlyDigits
+    ? base.ilike("order_number", `%${num}`).order("created_at_shopify", { ascending: false }).limit(50)
+    : base.in("order_number", [num, `#${num}`]).limit(20));
+  return ((rows ?? []) as any[])
+    .filter((r) => !onlyDigits || new RegExp(`(^|[^0-9])${num}$`).test(String(r.order_number ?? "")))
+    .map((r) => ({ order: String(r.order_number ?? ""), email: String(r.email ?? r.cust ?? "").toLowerCase() }))
+    .filter((r) => r.email);
+}
 
 // ─── Conversa ─────────────────────────────────────────────────────────────────
 
@@ -484,7 +568,7 @@ export const getSupportSettings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
-    const { data } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled,tags,ai_tags_enabled,goal_first_response_min,goal_resolution_min").eq("owner_id", context.ownerId).maybeSingle();
+    const { data } = await supabaseAdmin.from("support_settings").select(`signature,signature_enabled,tags,ai_tags_enabled,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", context.ownerId).maybeSingle();
     return {
       signature: data?.signature ?? "",
       signatureEnabled: data?.signature_enabled ?? true,
@@ -494,6 +578,7 @@ export const getSupportSettings = createServerFn({ method: "GET" })
         firstResponseMin: data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,
         resolutionMin: data?.goal_resolution_min ?? DEFAULT_GOALS.resolutionMin,
       },
+      businessHours: toBusinessHours(data),
       aiAvailable: supportAiAvailable(),
       senderName: await senderName(context.userId),
     };
@@ -514,6 +599,12 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
       firstResponseMin: z.number().int().min(1).max(60 * 24 * 30),
       resolutionMin: z.number().int().min(1).max(60 * 24 * 90),
     }).optional(),
+    businessHours: z.object({
+      start: z.number().int().min(0).max(23),
+      end: z.number().int().min(1).max(24),
+      days: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+      timeZone: z.string().refine((tz) => BUSINESS_TIMEZONES.some((t) => t.value === tz), "Fuso inválido"),
+    }).refine((h) => h.end > h.start, "O fim precisa ser depois do início").optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertSub(context, "at_config");
@@ -524,6 +615,12 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     if (data.goals) {
       row.goal_first_response_min = data.goals.firstResponseMin;
       row.goal_resolution_min = data.goals.resolutionMin;
+    }
+    if (data.businessHours) {
+      row.bh_start = data.businessHours.start;
+      row.bh_end = data.businessHours.end;
+      row.bh_days = [...new Set(data.businessHours.days)].sort((a, b) => a - b);
+      row.bh_timezone = data.businessHours.timeZone;
     }
     if (data.tags) row.tags = [...new Map(data.tags.map((t) => [t.toLowerCase(), t])).values()];
     const { error } = await supabaseAdmin.from("support_settings").upsert(row, { onConflict: "owner_id" });

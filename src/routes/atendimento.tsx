@@ -15,18 +15,18 @@ import { SupportSettings, type ConfigTab } from "@/components/atendimento/Suppor
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar } from "@/components/ui/calendar";
-import { currentMonth } from "@/lib/support-kpis";
+import { businessHoursLabel, currentMonth } from "@/lib/support-kpis";
 import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import type { DateRange } from "react-day-picker";
 import { localDateKey } from "@/lib/timezone";
 import {
   getZohoStatus, listSupportConversations, syncSupportInbox, findEmailsByOrder, markConversationRead,
-  updateSupportConversations, sendSupportNewMessage, deleteSupportConversations, SUPPORT_STATUSES,
+  updateSupportConversations, sendSupportNewMessage, deleteSupportConversations, findOrderCustomers, SUPPORT_STATUSES,
   type SupportConversation, type SupportStatus,
 } from "@/lib/atendimento.functions";
 import { ConversationView } from "@/components/atendimento/ConversationView";
 import { CustomerPanel, tagTone } from "@/components/atendimento/CustomerPanel";
-import { AttachmentChips, TranslateToEnglish, useAttachments } from "@/components/atendimento/Composer";
+import { AttachmentChips, SavedReplies, TemplateTextarea, TranslateToEnglish, useAttachments } from "@/components/atendimento/Composer";
 import { Avatar, STATUS_META, displayName, formatDuration, fullTime, listTime, resolvePeriod } from "@/components/atendimento/utils";
 import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
 import { useSupportTags } from "@/components/atendimento/useSupportTags";
@@ -393,6 +393,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(list.data ? periodCounts.resolvido : undefined)}
           active={onlyStatus("resolvido")} onClick={() => toggleStatusCard("resolvido")} />
         <Kpi icon={Timer} cls="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Tempo médio de resposta"
+          hint={k?.hours ? `Tempo médio de resposta em horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
           value={k ? formatDuration(k.avgResponseMs) : kv(undefined)} />
       </div>
 
@@ -540,14 +541,14 @@ function SyncedAgo({ at, syncing }: { at: string | null; syncing: boolean }) {
   );
 }
 
-function Kpi({ icon: Icon, cls, label, value, active, onClick }: {
-  icon: typeof Mail; cls: string; label: string; value: number | string | undefined; active?: boolean; onClick?: () => void;
+function Kpi({ icon: Icon, cls, label, value, active, onClick, hint }: {
+  icon: typeof Mail; cls: string; label: string; value: number | string | undefined; active?: boolean; onClick?: () => void; hint?: string;
 }) {
   const Tag = onClick ? "button" : "div";
   return (
     <Tag
       onClick={onClick}
-      title={onClick ? (active ? "Clique para tirar o filtro" : `Mostrar: ${label}`) : undefined}
+      title={hint ?? (onClick ? (active ? "Clique para tirar o filtro" : `Mostrar: ${label}`) : undefined)}
       className={`rounded-2xl border bg-card p-3.5 flex items-center gap-3 min-w-0 text-left transition-colors ${
         active ? "border-primary ring-2 ring-primary/20" : "border-border"
       } ${onClick ? "hover:border-primary/50 cursor-pointer" : ""}`}
@@ -651,7 +652,20 @@ function ConversationRow({ c, fixedTags, active, checked, onCheck, onOpen }: {
 
 function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpenChange: (o: boolean) => void; onSent: (id: string | null) => void }) {
   const sendFn = useSupportFn(sendSupportNewMessage, "sendSupportNewMessage");
+  const orderFn = useSupportFn(findOrderCustomers, "findOrderCustomers");
   const [to, setTo] = useState("");
+  // Nº do pedido → e-mail do cliente (1 resultado preenche o "Para"; vários, escolhe).
+  const [order, setOrder] = useState("");
+  const [orderEmails, setOrderEmails] = useState<{ order: string; email: string }[] | null>(null);
+  const lookup = useMutation({
+    mutationFn: (q: string) => orderFn({ data: { q } }) as Promise<{ order: string; email: string }[]>,
+    onSuccess: (hits) => {
+      setOrderEmails(hits);
+      if (hits.length === 1) setTo(hits[0].email);
+    },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao buscar o pedido"),
+  });
+  const searchOrder = () => { const q = order.trim(); if (q.length >= 2 && !lookup.isPending) lookup.mutate(q); };
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const att = useAttachments();
@@ -659,7 +673,7 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
     mutationFn: () => sendFn({ data: { to: to.trim(), subject: subject.trim(), text, attachments: att.refs } }),
     onSuccess: (r) => {
       toast.success("E-mail enviado");
-      setTo(""); setSubject(""); setText(""); att.clear();
+      setTo(""); setSubject(""); setText(""); setOrder(""); setOrderEmails(null); att.clear();
       onOpenChange(false);
       onSent(r.conversationId);
     },
@@ -668,12 +682,37 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
   const input = "w-full h-10 px-3.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-primary";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg"
+        onEscapeKeyDown={(e) => { if ((document.activeElement as HTMLElement | null)?.dataset.slashOpen) e.preventDefault(); }}>
         <DialogHeader><DialogTitle>Nova mensagem</DialogTitle></DialogHeader>
         <div className="space-y-2.5">
+          <div className="flex gap-2">
+            <input value={order} onChange={(e) => { setOrder(e.target.value); setOrderEmails(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); searchOrder(); } }}
+              placeholder="Nº do pedido (ex.: 1508 ou #L4-1508)" className={input} />
+            <button type="button" onClick={searchOrder} disabled={order.trim().length < 2 || lookup.isPending}
+              className="h-10 px-3.5 rounded-xl border border-border text-sm flex items-center gap-1.5 shrink-0 hover:bg-muted disabled:opacity-50">
+              {lookup.isPending ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />} Buscar
+            </button>
+          </div>
+          {orderEmails && orderEmails.length === 0 && (
+            <p className="text-xs text-muted-foreground px-1">Nenhum pedido com esse número (ou sem e-mail do cliente).</p>
+          )}
+          {orderEmails && orderEmails.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5 px-1">
+              <span className="text-xs text-muted-foreground">Mais de um pedido com esse número:</span>
+              {orderEmails.map((h) => (
+                <button key={`${h.order}:${h.email}`} type="button" onClick={() => setTo(h.email)}
+                  className={`text-xs px-2 py-1 rounded-lg border ${to === h.email ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}>
+                  <span className="font-semibold">{h.order}</span> · {h.email}
+                </button>
+              ))}
+            </div>
+          )}
           <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Para (e-mail do cliente)" type="email" className={input} />
           <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Assunto" className={input} />
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder="Mensagem"
+          <TemplateTextarea value={text} onChange={setText} rows={8} placeholder="Mensagem  (/ = mensagens salvas)"
+            customerEmail={to} orderNumber={order}
             className="w-full resize-none rounded-xl bg-background border border-border p-3.5 text-sm outline-none focus:border-primary" />
           <AttachmentChips files={att.files} onRemove={att.remove} />
           <div className="flex items-center justify-between gap-2">
@@ -681,6 +720,7 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
               {att.uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />} Anexar
               <input type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
             </label>
+            <SavedReplies text={text} setText={setText} customerEmail={to} orderNumber={order} />
             <TranslateToEnglish text={text} setText={setText} />
             <div className="flex-1" />
             <button

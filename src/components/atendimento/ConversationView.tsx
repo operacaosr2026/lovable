@@ -215,7 +215,7 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
         {q.data!.messages.map((m) => <Bubble key={m.id} m={m} fg={fg} />)}
       </div>
 
-      <Composer customerName={name.split(" ")[0]} onSend={onSend} sending={sending} />
+      <Composer customerName={name.split(" ")[0]} customerEmail={conv.customer_email} onSend={onSend} sending={sending} />
     </div>
   );
 }

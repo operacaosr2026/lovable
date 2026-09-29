@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Check, CheckCircle2, Loader2, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
-import { changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, type getZohoStatus } from "@/lib/atendimento.functions";
+import { AlertTriangle, Check, CheckCircle2, Loader2, MessageSquareText, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
+import {
+  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate,
+  type getZohoStatus, type SupportTemplate,
+} from "@/lib/atendimento.functions";
+import { TemplateEditor, type TemplateDraft } from "./Composer";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { tagTone } from "./CustomerPanel";
 import { useSupportTags } from "./useSupportTags";
 import { Switch } from "@/components/ui/switch";
 import { ConnectZoho } from "./ConnectZoho";
 import { fullTime } from "./utils";
+import { BUSINESS_TIMEZONES, DEFAULT_BUSINESS_HOURS, businessHoursLabel, type BusinessHours } from "@/lib/support-kpis";
 import { useSupportFn } from "./demo";
 
-export type ConfigTab = "integracao" | "assinatura" | "tags" | "metas";
+export type ConfigTab = "integracao" | "assinatura" | "mensagens" | "tags" | "metas";
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 
 // Atendimento > Configurações: conexão com o Zoho (admin) e assinatura dos e-mails.
@@ -19,8 +24,9 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
   const TABS: { key: ConfigTab; label: string; desc: string; icon: typeof Plug }[] = [
     { key: "integracao", label: "Integração", desc: "Conta do Zoho Mail", icon: Plug },
     { key: "assinatura", label: "Assinatura", desc: "Fim dos e-mails enviados", icon: PenLine },
+    { key: "mensagens", label: "Mensagens salvas", desc: "Respostas prontas", icon: MessageSquareText },
     { key: "tags", label: "Tags", desc: "Etiquetas das conversas", icon: Tag },
-    { key: "metas", label: "Metas", desc: "Tempos-alvo do KPI", icon: Target },
+    { key: "metas", label: "Metas", desc: "Horário comercial e tempos-alvo", icon: Target },
   ];
   return (
     <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
@@ -37,7 +43,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
         ))}
       </nav>
       <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 max-w-2xl">
-        {tab === "integracao" ? <Integration status={status} /> : tab === "tags" ? <TagsSettings /> : tab === "metas" ? <GoalsSettings /> : <Signature />}
+        {tab === "integracao" ? <Integration status={status} /> : tab === "mensagens" ? <TemplatesSettings /> : tab === "tags" ? <TagsSettings /> : tab === "metas" ? <GoalsSettings /> : <Signature />}
       </div>
     </div>
   );
@@ -175,6 +181,85 @@ function Signature() {
           {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar assinatura
         </button>
       </div>
+    </div>
+  );
+}
+
+// Mensagens salvas: as mesmas do botão "Mensagens salvas" da resposta.
+function TemplatesSettings() {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const listFn = useSupportFn(listSupportTemplates, "listSupportTemplates");
+  const saveFn = useSupportFn(saveSupportTemplate, "saveSupportTemplate");
+  const deleteFn = useSupportFn(deleteSupportTemplate, "deleteSupportTemplate");
+  const [editing, setEditing] = useState<TemplateDraft | null>(null);
+
+  const list = useQuery({ queryKey: ["support-templates"], queryFn: () => listFn() as Promise<SupportTemplate[]> });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["support-templates"] });
+  const save = useMutation({
+    mutationFn: (t: TemplateDraft) => saveFn({ data: { id: t.id, title: t.title.trim(), body: t.body.trim() } }),
+    onSuccess: () => { toast.success("Mensagem salva"); setEditing(null); refresh(); },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    onSuccess: () => { toast.success("Mensagem excluída"); refresh(); },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao excluir"),
+  });
+  const askRemove = async (t: SupportTemplate) => {
+    if (await confirm({ title: `Excluir a mensagem "${t.title}"?`, confirmText: "Excluir", variant: "destructive" })) remove.mutate(t.id);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Mensagens salvas</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Respostas prontas para usar no botão "Mensagens salvas" da resposta e da Nova mensagem.
+          </p>
+        </div>
+        {!editing && (
+          <button onClick={() => setEditing({ title: "", body: "" })}
+            className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 shrink-0">
+            <Plus className="size-4" /> Nova
+          </button>
+        )}
+      </div>
+
+      {editing && (
+        <div className="rounded-xl border border-primary/40 bg-primary/[0.03] p-4">
+          <TemplateEditor value={editing} onChange={setEditing} saving={save.isPending} rows={10}
+            onSave={() => save.mutate(editing)} onCancel={() => setEditing(null)} />
+        </div>
+      )}
+
+      {list.isLoading ? (
+        <div className="py-8 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : !list.data?.length ? (
+        !editing && <p className="text-sm text-muted-foreground rounded-xl border border-dashed border-border p-6 text-center">Nenhuma mensagem salva ainda.</p>
+      ) : (
+        <div className="space-y-2">
+          {list.data.map((t) => (
+            <div key={t.id} className="rounded-xl border border-border p-3 flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{t.title}</p>
+                <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-line mt-0.5">{t.body}</p>
+              </div>
+              <div className="flex shrink-0">
+                <button onClick={() => setEditing({ id: t.id, title: t.title, body: t.body })} title="Editar"
+                  className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
+                  <Pencil className="size-4" />
+                </button>
+                <button onClick={() => askRemove(t)} title="Excluir"
+                  className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-destructive hover:bg-muted">
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -334,19 +419,94 @@ function GoalsSettings() {
   });
 
   if (q.isLoading) return <div className="grid place-items-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  const bhText = businessHoursLabel(q.data?.businessHours ?? DEFAULT_BUSINESS_HOURS);
 
   return (
     <div className="space-y-5">
+      <BusinessHoursSettings current={q.data?.businessHours ?? DEFAULT_BUSINESS_HOURS} />
+      <div className="border-t border-border" />
       <div>
         <h2 className="text-base font-semibold">Metas</h2>
         <p className="text-xs text-muted-foreground mt-0.5">Usadas nos cards da aba KPI para mostrar se o atendimento está dentro ou fora da meta.</p>
       </div>
-      <GoalRow label="Tempo médio de 1ª resposta" hint="Do primeiro e-mail do cliente até a primeira resposta." goal={first} onChange={setFirst} />
-      <GoalRow label="Tempo médio de resolução" hint="Do primeiro e-mail da conversa até ela ser marcada como resolvida." goal={resolution} onChange={setResolution} />
+      <GoalRow label="Tempo médio de 1ª resposta" hint={`Do primeiro e-mail do cliente até a primeira resposta, contando só o horário comercial (${bhText}).`} goal={first} onChange={setFirst} />
+      <GoalRow label="Tempo médio de resolução" hint={`Do primeiro e-mail da conversa até ela ser marcada como resolvida, contando só o horário comercial (${bhText}).`} goal={resolution} onChange={setResolution} />
       <div className="flex justify-end">
         <button onClick={() => save.mutate()} disabled={!dirty || !valid || save.isPending}
           className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
           {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar metas
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Horário comercial: 1ª resposta, resolução e tempo médio de resposta só
+// contam o tempo dentro dele.
+const WEEKDAY_CHIPS = [
+  { d: 1, label: "Seg" }, { d: 2, label: "Ter" }, { d: 3, label: "Qua" }, { d: 4, label: "Qui" },
+  { d: 5, label: "Sex" }, { d: 6, label: "Sáb" }, { d: 0, label: "Dom" },
+];
+function BusinessHoursSettings({ current }: { current: BusinessHours }) {
+  const qc = useQueryClient();
+  const saveFn = useSupportFn(saveSupportSettings, "saveSupportSettings");
+  const [h, setH] = useState<BusinessHours>(current);
+  useEffect(() => { setH(current); }, [current.start, current.end, current.timeZone, current.days.join(",")]);
+  const dirty = h.start !== current.start || h.end !== current.end || h.timeZone !== current.timeZone
+    || [...h.days].sort().join(",") !== [...current.days].sort().join(",");
+  const valid = h.end > h.start && h.days.length > 0;
+  const save = useMutation({
+    mutationFn: () => saveFn({ data: { businessHours: h } }),
+    onSuccess: () => {
+      toast.success("Horário comercial salvo");
+      qc.invalidateQueries({ queryKey: ["support-settings"] });
+      qc.invalidateQueries({ queryKey: ["support-kpis"] });
+      qc.invalidateQueries({ queryKey: ["support-list"] });
+    },
+    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+  });
+  const toggleDay = (d: number) => setH({ ...h, days: h.days.includes(d) ? h.days.filter((x) => x !== d) : [...h.days, d] });
+  const select = "h-9 px-2 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary cursor-pointer";
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-base font-semibold">Horário comercial</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Tempo médio de resposta, de 1ª resposta e de resolução só contam o tempo dentro deste horário
+          (e-mail que chega fora dele começa a contar na abertura seguinte).
+        </p>
+      </div>
+      <div className="rounded-xl border border-border px-4 py-3 space-y-3">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Das</span>
+          <select value={h.start} onChange={(e) => setH({ ...h, start: Number(e.target.value) })} className={select}>
+            {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>)}
+          </select>
+          <span className="text-muted-foreground">às</span>
+          <select value={h.end} onChange={(e) => setH({ ...h, end: Number(e.target.value) })} className={select}>
+            {Array.from({ length: 24 }, (_, i) => i + 1).map((i) => <option key={i} value={i}>{i === 24 ? "24:00" : `${String(i).padStart(2, "0")}:00`}</option>)}
+          </select>
+          <span className="text-muted-foreground">fuso</span>
+          <select value={h.timeZone} onChange={(e) => setH({ ...h, timeZone: e.target.value })} className={select}>
+            {BUSINESS_TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {WEEKDAY_CHIPS.map(({ d, label }) => (
+            <button key={d} type="button" onClick={() => toggleDay(d)}
+              className={`h-8 px-3 rounded-lg text-xs font-medium border transition-colors ${h.days.includes(d) ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {!valid && <p className="text-xs text-destructive">{h.days.length ? "O fim precisa ser depois do início." : "Escolha pelo menos um dia."}</p>}
+        {valid && <p className="text-[11px] text-muted-foreground">Fica: {businessHoursLabel(h)}</p>}
+      </div>
+      <div className="flex justify-end">
+        <button onClick={() => save.mutate()} disabled={!dirty || !valid || save.isPending}
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
+          {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar horário
         </button>
       </div>
     </div>

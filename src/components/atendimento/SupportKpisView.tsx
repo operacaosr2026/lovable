@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { ArrowDown, ArrowUp, CircleCheck, Clock, Mail, MailWarning, Minus, Tag, Timer, ChevronDown } from "lucide-react";
 import { getSupportKpis } from "@/lib/atendimento.functions";
-import type { KpiGoals, SupportKpis } from "@/lib/support-kpis";
+import { businessHoursLabel, type KpiGoals, type SupportKpis } from "@/lib/support-kpis";
 import { useSupportFn } from "./demo";
 import { formatDuration } from "./utils";
 
@@ -44,12 +44,12 @@ export function SupportKpisView({ month }: { month: string }) {
           value={k ? int(k.cards.total.value) : undefined} delta={k && pctDelta(k.cards.total.value, k.cards.total.prev)} deltaTone="neutral"
           series={k?.cards.total.series} seriesFormat={(v) => `${v} e-mails`}
           footer={k && <Split a={["Novos", int(k.cards.total.newConversations)]} b={["Respondidos", int(k.cards.total.replied)]} />} />
-        <StatCard icon={Clock} tone="bg-success/15 text-success" color="var(--color-success)" label="Tempo médio 1ª resposta" vs={vs}
+        <StatCard icon={Clock} tone="bg-success/15 text-success" color="var(--color-success)" label="Tempo médio 1ª resposta" vs={vs} hint={k ? `Horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
           value={k ? formatDuration(k.cards.firstResponse.value) : undefined}
           delta={k && pctDelta(k.cards.firstResponse.value, k.cards.firstResponse.prev)} deltaTone="lower"
           series={k?.cards.firstResponse.series} seriesFormat={(v) => formatDuration(v)}
           footer={k && <Goal goalMs={k.goals.firstResponseMin * 60_000} value={k.cards.firstResponse.value} />} />
-        <StatCard icon={Timer} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" color="#f59e0b" label="Tempo médio de resolução" vs={vs}
+        <StatCard icon={Timer} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" color="#f59e0b" label="Tempo médio de resolução" vs={vs} hint={k ? `Horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
           value={k ? formatDuration(k.cards.resolution.value) : undefined}
           delta={k && pctDelta(k.cards.resolution.value, k.cards.resolution.prev)} deltaTone="lower"
           series={k?.cards.resolution.series} seriesFormat={(v) => formatDuration(v)}
@@ -159,7 +159,8 @@ export function SupportKpisView({ month }: { month: string }) {
 const pctDelta = (cur: number | null, prev: number | null) => (cur == null || prev == null || prev === 0 ? null : Math.round(((cur - prev) / prev) * 100));
 const ppDelta = (cur: number | null, prev: number | null) => (cur == null || prev == null ? null : Math.round((cur - prev) * 10) / 10);
 
-function StatCard({ icon: Icon, tone, color, label, value, delta, deltaTone, vs, series, seriesFormat, footer }: {
+function StatCard({ icon: Icon, tone, color, label, value, delta, deltaTone, vs, series, seriesFormat, footer, hint }: {
+  hint?: string;
   icon: typeof Mail; tone: string; color: string; label: string; value: string | undefined;
   delta: number | null | undefined; deltaTone: "lower" | "higher" | "neutral"; vs: string;
   series: { date: string; value: number | null }[] | undefined; seriesFormat: (v: number) => string; footer: React.ReactNode;
@@ -172,7 +173,8 @@ function StatCard({ icon: Icon, tone, color, label, value, delta, deltaTone, vs,
       <div className="flex items-start gap-3">
         <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${tone}`}><Icon className="size-[18px]" /></div>
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate" title={label}>{label}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate" title={hint ? `${label} — ${hint}` : label}>{label}</p>
+          {hint && <p className="text-[10px] text-muted-foreground truncate -mt-0.5" title={hint}>{hint}</p>}
           <p className="text-2xl font-bold tracking-tight leading-tight">
             {value ?? <span className="inline-block w-16 h-6 rounded bg-muted animate-pulse align-middle" />}
           </p>

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { DEFAULT_GOALS, computeSupportKpis, monthRange, type KpiGoals } from "@/lib/support-kpis";
+import { DEFAULT_BUSINESS_HOURS, DEFAULT_GOALS, businessMs, computeSupportKpis, monthRange, type BusinessHours, type KpiGoals } from "@/lib/support-kpis";
 import { useServerFn } from "@tanstack/react-start";
 import { translateSupportMessage, translateSupportReply, type SupportConversation, type SupportMessage, type SupportStatus } from "@/lib/atendimento.functions";
 
@@ -261,7 +261,7 @@ const demoApi = {
       for (const m of s.messages.filter((x) => x.conversation_id === c.id).sort((a, b) => a.sent_at.localeCompare(b.sent_at))) {
         const t = new Date(m.sent_at).getTime();
         if (t < new Date(data.from).getTime()) continue;
-        if (m.direction === "in") { if (pending == null) pending = t; } else if (pending != null) { if (pending <= to) waits.push(t - pending); pending = null; }
+        if (m.direction === "in") { if (pending == null) pending = t; } else if (pending != null) { if (pending <= to) waits.push(businessMs(pending, t, demoHours)); pending = null; }
       }
     }
     return clone({
@@ -273,6 +273,7 @@ const demoApi = {
         resolved: conversations.filter((c) => c.status === "resolvido").length,
         avgResponseMs: waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null,
         responses: waits.length,
+        hours: demoHours,
       },
     });
   },
@@ -280,6 +281,11 @@ const demoApi = {
   findEmailsByOrder: async ({ data }: { data: { q: string } }) => {
     const n = Number(data.q.replace("#", ""));
     return Object.entries(ORDERS).filter(([, o]) => o.values.some((_, i) => o.n - i * 7 === n)).map(([e]) => e);
+  },
+
+  findOrderCustomers: async ({ data }: { data: { q: string } }) => {
+    const n = Number(data.q.replace("#", ""));
+    return Object.entries(ORDERS).filter(([, o]) => o.values.some((_, i) => o.n - i * 7 === n)).map(([email]) => ({ order: `#${n}`, email }));
   },
 
   getSupportConversation: async ({ data }: { data: { id: string } }) => {
@@ -411,12 +417,13 @@ const demoApi = {
     await wait(300);
     const s = db();
     const range = monthRange(data.month);
-    return { ...computeSupportKpis(s.messages, s.conversations, DEMO_SHOPS, s.tags, range), partial: range.partial, goals: { ...s.goals } };
+    return { ...computeSupportKpis(s.messages, s.conversations, DEMO_SHOPS, s.tags, range, demoHours), partial: range.partial, goals: { ...s.goals } };
   },
   listSupportShops: async () => DEMO_SHOPS,
-  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, goals: { ...db().goals }, senderName: "Você" }),
-  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean; goals?: KpiGoals } }) => {
+  getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, aiAvailable: true, goals: { ...db().goals }, businessHours: { ...demoHours }, senderName: "Você" }),
+  saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean; goals?: KpiGoals; businessHours?: BusinessHours } }) => {
     if (data.goals) db().goals = { ...data.goals };
+    if (data.businessHours) demoHours = { ...data.businessHours };
     await wait();
     if (data.signature !== undefined) db().signature = data.signature;
     if (data.signatureEnabled !== undefined) db().signatureEnabled = data.signatureEnabled;
@@ -432,6 +439,31 @@ const demoApi = {
     hit.forEach((c) => { c.tags = replace(c.tags); c.ai_tags = replace(c.ai_tags); });
     return { conversations: hit.length };
   },
+
+  // Mensagens salvas (em memória).
+  listSupportTemplates: async () => {
+    await wait();
+    return [...demoTemplates].sort((a, b) => a.title.localeCompare(b.title));
+  },
+  saveSupportTemplate: async ({ data }: { data: { id?: string; title: string; body: string } }) => {
+    await wait();
+    const t = data.id ? demoTemplates.find((x) => x.id === data.id) : null;
+    if (t) { t.title = data.title; t.body = data.body; }
+    else demoTemplates.push({ id: crypto.randomUUID(), title: data.title, body: data.body });
+    return { ok: true };
+  },
+  deleteSupportTemplate: async ({ data }: { data: { id: string } }) => {
+    await wait();
+    const i = demoTemplates.findIndex((x) => x.id === data.id);
+    if (i >= 0) demoTemplates.splice(i, 1);
+    return { ok: true };
+  },
 };
+
+let demoHours: BusinessHours = { ...DEFAULT_BUSINESS_HOURS };
+
+const demoTemplates: { id: string; title: string; body: string }[] = [
+  { id: "demo-t1", title: "Prazo de entrega", body: "Hi {nome},\n\nYour order is on its way and should arrive within 7–12 business days." },
+];
 
 type DemoFnName = keyof typeof demoApi;

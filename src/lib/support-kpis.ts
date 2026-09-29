@@ -33,6 +33,7 @@ export type SupportKpis = {
   // Por loja ("all" = todas): contagem por tag, comparação e resumo.
   tagsByStore: Record<string, TagStats>;
   arrivals: { day: { label: string; count: number }[]; hour: { label: string; count: number }[]; weekday: { label: string; count: number }[] };
+  hours: BusinessHours;   // horário comercial usado nos tempos
   unassigned: number;   // conversas do mês ainda sem loja (definir no painel do cliente)
   storeTable: {
     id: string; name: string; received: number; receivedPrev: number; replied: number; open: number;
@@ -46,6 +47,60 @@ const hourOf = (t: number) => Number(new Date(t).toLocaleString("en-US", { timeZ
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const weekdayOf = (t: number) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(new Date(t).toLocaleDateString("en-US", { timeZone: US_TIME_ZONE, weekday: "short" }));
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+
+// Horário comercial (Atendimento > Configurações > Metas): 1ª resposta,
+// resolução e tempo médio de resposta só contam dentro dele. Padrão seg–sex,
+// 8h às 19h de Brasília — e-mail de sábado às 2h começa a contar segunda às 8h.
+export type BusinessHours = { timeZone: string; start: number; end: number; days: number[] };
+export const DEFAULT_BUSINESS_HOURS: BusinessHours = { timeZone: "America/Sao_Paulo", start: 8, end: 19, days: [1, 2, 3, 4, 5] };
+export const BUSINESS_TIMEZONES = [
+  { value: "America/Sao_Paulo", label: "Brasília" },
+  { value: "America/New_York", label: "Nova York" },
+];
+const DAY_SHORT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+// Ex.: "seg–sex, 8h às 19h (Brasília)".
+export function businessHoursLabel(h: BusinessHours): string {
+  const days = [...h.days].sort((a, b) => a - b);
+  const consecutive = days.length > 2 && days.every((d, i) => i === 0 || d === days[i - 1] + 1);
+  const dayText = days.length === 7 ? "todos os dias" : consecutive ? `${DAY_SHORT[days[0]]}–${DAY_SHORT[days[days.length - 1]]}` : days.map((d) => DAY_SHORT[d]).join(", ");
+  const tz = BUSINESS_TIMEZONES.find((t) => t.value === h.timeZone)?.label ?? h.timeZone;
+  return `${dayText}, ${h.start}h às ${h.end}h (${tz})`;
+}
+
+const bhFormats = new Map<string, Intl.DateTimeFormat>();
+// Dia local (y, m, d, dia da semana) e deslocamento do fuso (min) de um instante.
+function bhLocal(t: number, timeZone: string) {
+  let f = bhFormats.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", timeZoneName: "longOffset" });
+    bhFormats.set(timeZone, f);
+  }
+  const p = Object.fromEntries(f.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  const off = /GMT([+-])(\d{2}):(\d{2})/.exec(p.timeZoneName ?? "");
+  const offsetMin = off ? (off[1] === "-" ? -1 : 1) * (Number(off[2]) * 60 + Number(off[3])) : 0;
+  return { y: Number(p.year), m: Number(p.month), d: Number(p.day), wd: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday), offsetMin };
+}
+
+// Milissegundos entre a e b que caem dentro do horário comercial.
+export function businessMs(a: number, b: number, h: BusinessHours = DEFAULT_BUSINESS_HOURS): number {
+  if (!(b > a) || !h.days.length || h.end <= h.start) return 0;
+  let total = 0;
+  // Meio-dia local de cada dia, do dia de `a` até o de `b`.
+  let cur = bhLocal(a, h.timeZone);
+  for (let i = 0; i < 400; i++) {
+    const noonUtc = Date.UTC(cur.y, cur.m - 1, cur.d, 12) - cur.offsetMin * 60_000;
+    if (h.days.includes(cur.wd)) {
+      const base = Date.UTC(cur.y, cur.m - 1, cur.d) - cur.offsetMin * 60_000;
+      const s = base + h.start * 3_600_000, e = base + h.end * 3_600_000;
+      total += Math.max(0, Math.min(b, e) - Math.max(a, s));
+    }
+    const next = noonUtc + DAY;
+    if (next - 12 * 3_600_000 > b) break;
+    cur = bhLocal(next, h.timeZone);
+  }
+  return total;
+}
 
 type Conv = KpiConversation & { first: number; firstIn: number | null; firstOut: number | null; msgs: { dir: string; t: number }[] };
 
@@ -64,15 +119,17 @@ function prepare(messages: KpiMessage[], conversations: KpiConversation[]): Conv
 }
 
 // Números de um intervalo [from, to] (usado pro período e pro anterior).
-function window(convs: Conv[], from: number, to: number) {
+function window(convs: Conv[], from: number, to: number, hours: BusinessHours = DEFAULT_BUSINESS_HOURS) {
   const inR = (t: number | null | undefined) => t != null && t >= from && t <= to;
   const received = convs.reduce((s, c) => s + c.msgs.filter((m) => m.dir === "in" && inR(m.t)).length, 0);
   const replied = convs.reduce((s, c) => s + c.msgs.filter((m) => m.dir === "out" && inR(m.t)).length, 0);
   const created = convs.filter((c) => inR(c.first));
   // 1ª resposta: conversas que começaram no período com mensagem do cliente.
-  const firstWaits = created.filter((c) => c.firstIn != null && c.firstOut != null && c.first === c.firstIn).map((c) => c.firstOut! - c.firstIn!);
+  // Tempos em horário comercial (businessMs), não relógio corrido.
+  const firstWaits = created.filter((c) => c.firstIn != null && c.firstOut != null && c.first === c.firstIn).map((c) => businessMs(c.firstIn!, c.firstOut!, hours));
   const resolvedHere = convs.filter((c) => c.status === "resolvido" && inR(c.resolved_at ? new Date(c.resolved_at).getTime() : null));
-  const resolutionTimes = resolvedHere.filter((c) => c.first !== Infinity).map((c) => new Date(c.resolved_at!).getTime() - c.first).filter((x) => x >= 0);
+  const resolutionTimes = resolvedHere.filter((c) => c.first !== Infinity && new Date(c.resolved_at!).getTime() >= c.first)
+    .map((c) => businessMs(c.first, new Date(c.resolved_at!).getTime(), hours));
   // Conversas com movimento no período: resolvidas × ainda abertas.
   const active = convs.filter((c) => c.msgs.some((m) => inR(m.t)) || inR(c.resolved_at ? new Date(c.resolved_at).getTime() : null));
   const resolved = active.filter((c) => c.status === "resolvido").length;
@@ -91,14 +148,16 @@ function window(convs: Conv[], from: number, to: number) {
 export function computeSupportKpis(
   messages: KpiMessage[], conversations: KpiConversation[], shops: KpiShop[], fixedTags: string[],
   range: { from: string; to: string; prevFrom: string; prevTo: string },
+  hours: BusinessHours = DEFAULT_BUSINESS_HOURS,
 ): SupportKpis {
   const from = new Date(range.from).getTime();
   const to = new Date(range.to).getTime();
   const pFrom = new Date(range.prevFrom).getTime();
   const pTo = new Date(range.prevTo).getTime();
   const convs = prepare(messages, conversations);
-  const cur = window(convs, from, to);
-  const prev = window(convs, pFrom, pTo);
+  const win = (c: Conv[], a: number, b: number) => window(c, a, b, hours);
+  const cur = win(convs, from, to);
+  const prev = win(convs, pFrom, pTo);
 
   // Dias do período (inclusive os sem movimento).
   const days: { key: string; start: number; end: number }[] = [];
@@ -106,7 +165,7 @@ export function computeSupportKpis(
     const key = dayKey(t);
     if (!days.length || days[days.length - 1].key !== key) days.push({ key, start: t, end: Math.min(t + DAY - 1, to) });
   }
-  const perDay = days.map((d) => ({ d, w: window(convs, d.start, d.end) }));
+  const perDay = days.map((d) => ({ d, w: win(convs, d.start, d.end) }));
   const series = (pick: (w: ReturnType<typeof window>) => number | null): Point[] => perDay.map(({ d, w }) => ({ date: d.key, value: pick(w) }));
 
   // Aberto há mais de 24h/72h: cliente escreveu por último e ninguém respondeu.
@@ -169,8 +228,8 @@ export function computeSupportKpis(
 
   const storeTable = stores.map((s) => {
     const mine = convs.filter((c) => shopOf(c) === s.id);
-    const w = window(mine, from, to);
-    const wp = window(mine, pFrom, pTo);
+    const w = win(mine, from, to);
+    const wp = win(mine, pFrom, pTo);
     return {
       id: s.id, name: s.name, received: w.received, receivedPrev: wp.received, replied: w.replied,
       open: mine.filter((c) => c.status !== "resolvido").length,
@@ -190,7 +249,7 @@ export function computeSupportKpis(
         over72h: openNow.filter((c) => waitingSince(c) > 3 * DAY).length,
       },
     },
-    stores, byStoreDaily, tagsByStore, arrivals, storeTable,
+    stores, byStoreDaily, tagsByStore, arrivals, storeTable, hours,
     unassigned: active.filter((c) => !shopOf(c)).length,
   };
 }
