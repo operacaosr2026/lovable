@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
-  Plus, ShoppingBag, ExternalLink, Pencil, Trash2, X, List, Layers, Search, Filter, ChevronDown, Store,
+  Plus, ShoppingBag, ExternalLink, Pencil, Trash2, X, List, Layers, Search, Filter, ChevronDown,
   ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
 import { listShopifyStores, renameShopifyStore, deleteShopifyStore } from "@/lib/shop-orders.functions";
@@ -80,8 +80,8 @@ function BancoDeLojasIndex() {
   };
 
   const connectedCount = stores.filter((s: any) => !s.is_placeholder).length;
-  // KPIs: total + cada etapa menos a primeira (aquecimento), com % do total.
-  const kpiColumns = (columns as any[]).slice(1);
+  // KPIs: um card por etapa (alinhado com a coluna de baixo), com % do total.
+  const kpiColumns = columns as any[];
   const countIn = (colId: string) => stores.filter((s: any) => columnOf(s) === colId).length;
   const filterLabel = columnFilter ? columnNameById.get(columnFilter) ?? "Todas as lojas" : "Todas as lojas";
 
@@ -90,7 +90,14 @@ function BancoDeLojasIndex() {
       {/* ── Cabeçalho ── */}
       {/* Na esteira, termina alinhado com a última coluna (sem a faixa do "+"). */}
       <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5 ${view === "esteira" && !columnFilter ? "lg:pr-[42px]" : ""}`}>
-        <h1 className="text-2xl font-bold tracking-tight whitespace-nowrap shrink-0">Banco de Lojas</h1>
+        <div className="flex items-baseline gap-3 shrink-0">
+          <h1 className="text-2xl font-bold tracking-tight whitespace-nowrap">Banco de Lojas</h1>
+          {!isLoading && (
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              {stores.length} {stores.length === 1 ? "loja" : "lojas"} · {connectedCount} {connectedCount === 1 ? "conectada" : "conectadas"}
+            </span>
+          )}
+        </div>
         {/* Tudo numa linha só: a busca encolhe pra caber. */}
         <div className="flex items-center gap-2 min-w-0 lg:flex-1 lg:justify-end">
           <div className="relative flex-1 min-w-[140px] max-w-60">
@@ -148,13 +155,6 @@ function BancoDeLojasIndex() {
         // Mesmo espaçamento das colunas da esteira (gap + faixa do "+" no fim),
         // pra cada card ficar alinhado com a coluna de baixo.
         <div className="flex gap-2.5 mb-4">
-          <div className="rounded-2xl border border-border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0 flex-1 basis-0">
-            <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Store className="size-5" /></div>
-            <div className="min-w-0">
-              <p className="text-xl font-bold leading-tight tabular-nums">{connectedCount}</p>
-              <p className="text-sm text-muted-foreground truncate">Lojas conectadas</p>
-            </div>
-          </div>
           {kpiColumns.map((c) => {
             const tone = columnTone(c.name);
             const n = countIn(c.id);

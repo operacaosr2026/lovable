@@ -12,7 +12,7 @@ const ORDER_QUERY_KEYS = [
 ];
 const KEYS_BY_EVENT: Record<string, string[]> = {
   orders: ORDER_QUERY_KEYS,
-  tasks: ["tasks"],
+  tasks: ["tasks", "nav-badges"],
   notifications: ["notifications"],
 };
 

@@ -13,6 +13,9 @@ import { toast } from "sonner";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getNavBadges } from "@/lib/nav-badges.functions";
 
 type NavItem = {
   to: string;
@@ -259,6 +262,22 @@ export function AppLayout() {
   // Tempo real: pedido novo, tarefa, aviso do sino → telas abertas atualizam sozinhas.
   useRealtimeSync(ownerId);
 
+  // Números do menu (tarefas não concluídas, e-mails sem resposta). Atualiza
+  // a cada minuto e ao trocar de página (ex.: depois de responder um e-mail).
+  const navBadgesFn = useServerFn(getNavBadges);
+  const badges = useQuery({
+    queryKey: ["nav-badges", ownerId],
+    queryFn: () => navBadgesFn(),
+    enabled: !!ownerId,
+    refetchInterval: 60_000,
+  });
+  const refetchBadges = badges.refetch;
+  useEffect(() => { if (ownerId) refetchBadges(); }, [path, ownerId, refetchBadges]);
+  const badgeFor: Record<string, number | null | undefined> = {
+    "/tarefas": badges.data?.tarefas,
+    "/atendimento": badges.data?.atendimento,
+  };
+
   const visibleNavItems = navItems.filter((item) => !item.section || canAccessSection(item.section));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -306,6 +325,11 @@ export function AppLayout() {
         >
           <Icon className="size-4 shrink-0" />
           <span className="truncate flex-1">{item.label}</span>
+          {!!badgeFor[item.to] && (
+            <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tabular-nums grid place-items-center">
+              {badgeFor[item.to]! > 99 ? "99+" : badgeFor[item.to]}
+            </span>
+          )}
         </Link>
       );
     };
