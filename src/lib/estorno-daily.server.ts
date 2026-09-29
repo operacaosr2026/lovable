@@ -11,7 +11,7 @@ function addDaysISO(iso: string, n: number) {
 
 // Taxa de estorno por loja — igual ao relatório "Taxa de estorno" da Shopify:
 // chargebacks (disputas do tipo chargeback, cada uma conta — 2 no mesmo pedido
-// contam 2) ÷ pedidos pagos + parcialmente reembolsados (totalmente
+// contam 2; as "prevented" não) ÷ pedidos pagos + parcialmente reembolsados (totalmente
 // reembolsados/cancelados ficam de fora), numa janela rolante de 90 dias
 // contando hoje (estorno demora semanas pra acontecer depois da compra).
 // Os pedidos vêm contados direto da Shopify (orders/count), não do nosso
@@ -20,6 +20,9 @@ function addDaysISO(iso: string, n: number) {
 // As colunas *_30d guardam a janela atual (o nome ficou de quando era 30 dias);
 // *_prev, os 90 dias imediatamente anteriores (delta do Dashboard).
 export const ESTORNO_WINDOW_DAYS = 90;
+// Chargeback "prevented" (evitado, ex.: resolvido por RDR antes de virar
+// disputa) não entra — a Shopify também não conta.
+const NOT_PREVENTED = "status.is.null,status.neq.prevented";
 
 export type EstornoStats = { pedidos: number; estornos: number; prevPedidos: number; prevEstornos: number };
 
@@ -51,7 +54,7 @@ export async function computeEstornoByShop(ownerId: string, shopIds: string[], t
 
   const [disputesRes, settingsRes] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_order_disputes").select("shop_id, initiated_at")
-      .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
+      .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").or(NOT_PREVENTED)
       .gte("initiated_at", prevFrom).lte("initiated_at", to)),
     supabaseAdmin.from("shop_order_settings").select("shop_id, shopify_store_id").eq("user_id", ownerId).in("shop_id", shopIds),
   ]);
@@ -105,6 +108,24 @@ async function saveEstornoStats(ownerId: string, stats: Map<string, EstornoStats
     else saved++;
   }));
   return saved;
+}
+
+// Reconta só os chargebacks guardados de uma loja (a contagem de pedidos da
+// Shopify fica a da meia-noite). Chamada quando chega disputa nova.
+export async function refreshEstornoDisputeCounts(ownerId: string, shopId: string, to = isoTodayUS()) {
+  const from = addDaysISO(to, -(ESTORNO_WINDOW_DAYS - 1));
+  const prevTo = addDaysISO(from, -1);
+  const prevFrom = addDaysISO(prevTo, -(ESTORNO_WINDOW_DAYS - 1));
+  const count = async (a: string, b: string) => {
+    const { count, error } = await supabaseAdmin.from("shop_order_disputes").select("id", { count: "exact", head: true })
+      .eq("user_id", ownerId).eq("shop_id", shopId).eq("type", "chargeback").or(NOT_PREVENTED).gte("initiated_at", a).lte("initiated_at", b);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+  const [cur, prev] = await Promise.all([count(from, to), count(prevFrom, prevTo)]);
+  await supabaseAdmin.from("shop_order_settings")
+    .update({ chargeback_count_30d: cur, chargeback_count_prev: prev })
+    .eq("user_id", ownerId).eq("shop_id", shopId).not("chargeback_stats_at", "is", null);
 }
 
 // Lê a taxa guardada (card de Lojas e Grupos e Dashboard). Loja sem valor
