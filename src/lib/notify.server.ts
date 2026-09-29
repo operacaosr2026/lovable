@@ -18,11 +18,17 @@ import { sendPushToUser } from "@/lib/push.server";
 export type NotifyInput = {
   key: string; title: string; body?: string | null; link?: string | null; level?: string;
   targetUserId?: string | null;
+  // Horário escolhido pela própria pessoa (Lucro do dia): chega mesmo no Não Perturbe.
+  ignoreDnd?: boolean;
 };
 
 export type UserNotificationPrefs = {
   muted: Set<string>; dndEnabled: boolean; dndStart: string; dndEnd: string; timezone: string; profitTimes: string[];
 };
+
+// Padrão pra quem nunca mexeu (igual ao DEFAULT da tabela notification_settings).
+export const DEFAULT_PROFIT_TIMES = ["00:00", "12:00", "20:00"];
+export const DEFAULT_DND = { start: "00:00", end: "07:00" };
 
 export async function getUserNotificationPrefs(userId: string): Promise<UserNotificationPrefs> {
   const { data } = await supabaseAdmin.from("notification_settings")
@@ -30,10 +36,10 @@ export async function getUserNotificationPrefs(userId: string): Promise<UserNoti
   return {
     muted: new Set(data?.muted_categories ?? []),
     dndEnabled: data?.dnd_enabled ?? false,
-    dndStart: data?.dnd_start ?? "23:00",
-    dndEnd: data?.dnd_end ?? "07:00",
+    dndStart: data?.dnd_start ?? DEFAULT_DND.start,
+    dndEnd: data?.dnd_end ?? DEFAULT_DND.end,
     timezone: data?.timezone ?? "America/Sao_Paulo",
-    profitTimes: data?.profit_times ?? [],
+    profitTimes: data?.profit_times ?? DEFAULT_PROFIT_TIMES,
   };
 }
 
@@ -73,7 +79,7 @@ export async function notifyPeople(ownerId: string, n: NotifyInput) {
     await Promise.all(people.map(async (userId) => {
       const [access, prefs] = await Promise.all([resolveWorkspaceAccess(supabaseAdmin, userId), getUserNotificationPrefs(userId)]);
       if (access.ownerId !== ownerId || !canReceive(category, access, prefs.muted)) return;
-      if (inQuietHours(prefs)) {
+      if (!n.ignoreDnd && inQuietHours(prefs)) {
         await supabaseAdmin.from("push_log").insert({
           owner_id: ownerId, user_id: userId, notification_key: n.key, title: n.title.slice(0, 200),
           status: "skipped", error: "Não Perturbe",

@@ -3,7 +3,7 @@ import { isoTodayUS } from "@/lib/timezone";
 import { companyShopIdsForMonth, monthStartOf } from "@/lib/company-goals.server";
 import { computeAccumulatedLucroServer } from "@/lib/lg-overview.functions";
 import { resolveWorkspaceAccess } from "@/integrations/supabase/workspace-middleware";
-import { canReceive, emitEvent, getUserNotificationPrefs } from "@/lib/notify.server";
+import { canReceive, emitEvent, getUserNotificationPrefs, DEFAULT_PROFIT_TIMES } from "@/lib/notify.server";
 
 // Pushes que dependem do lucro, checados pelo notifications-refresh (5 em 5 min):
 //  - Metas (nt_metas): meta do mês atingida — lucro do mês (mesma conta da
@@ -58,8 +58,13 @@ export async function checkProfitReports(ownerId: string) {
   const { data: settings } = await supabaseAdmin.from("notification_settings")
     .select("user_id,profit_times,timezone").in("user_id", people);
 
+  // Quem ainda não tem configuração salva recebe nos horários padrão.
+  type Row = { user_id: string; profit_times: string[]; timezone: string };
+  const saved = new Map(((settings ?? []) as Row[]).map((r) => [r.user_id, r]));
+  const rows: Row[] = people.map((id) => saved.get(id) ?? { user_id: id, profit_times: DEFAULT_PROFIT_TIMES, timezone: "America/Sao_Paulo" });
+
   let lucroHoje: { lucro: number; pedidos: number } | null = null;
-  for (const st of (settings ?? []) as { user_id: string; profit_times: string[]; timezone: string }[]) {
+  for (const st of rows) {
     if (!st.profit_times?.length) continue;
     let local: { date: string; hhmm: string };
     try { local = localNow(st.timezone); } catch { continue; }
@@ -83,8 +88,8 @@ export async function checkProfitReports(ownerId: string) {
           : { lucro: 0, pedidos: 0 };
       }
       await emitEvent(ownerId, {
-        key, targetUserId: st.user_id,
-        title: `💰 Lucro de hoje até ${t}: ${usd(lucroHoje.lucro)}`,
+        key, targetUserId: st.user_id, ignoreDnd: true,
+        title: `💰 Lucro até ${t}: ${usd(lucroHoje.lucro)}`,
         body: `${lucroHoje.pedidos} pedido${lucroHoje.pedidos === 1 ? "" : "s"} hoje`,
         link: "/",
       });
