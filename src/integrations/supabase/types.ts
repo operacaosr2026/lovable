@@ -2418,6 +2418,8 @@ export type Database = {
           id: string;
           initiated_at: string;
           order_external_id: string | null;
+          order_snapshot: Json | null;
+          order_snapshot_at: string | null;
           reason: string | null;
           shop_id: string;
           shopify_dispute_id: string;
@@ -2435,6 +2437,8 @@ export type Database = {
           id?: string;
           initiated_at: string;
           order_external_id?: string | null;
+          order_snapshot?: Json | null;
+          order_snapshot_at?: string | null;
           reason?: string | null;
           shop_id: string;
           shopify_dispute_id: string;
@@ -2452,6 +2456,8 @@ export type Database = {
           id?: string;
           initiated_at?: string;
           order_external_id?: string | null;
+          order_snapshot?: Json | null;
+          order_snapshot_at?: string | null;
           reason?: string | null;
           shop_id?: string;
           shopify_dispute_id?: string;

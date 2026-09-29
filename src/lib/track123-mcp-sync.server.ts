@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
-import type { TablesUpdate } from "@/integrations/supabase/types";
+import type { Database, TablesUpdate } from "@/integrations/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -127,6 +128,29 @@ function inferStatus(transitStatus: string | null | undefined, hasTrackingNumber
   if (ts.includes("pending") || ts.includes("inforeceived")) return "pending_shipment";
   if (hasTrackingNumber) return "shipped";
   return null;
+}
+
+// Status do rastreio de UM pedido pelo número (aba Chargebacks: pedido antigo
+// que não está em shop_orders). Não grava nada — quem chama decide onde guardar.
+export async function track123StatusByOrderNumber(
+  shopId: string, orderNumber: string, supabase: SupabaseClient<Database>,
+): Promise<{ status: string | null; lastLabel: string | null; lastAt: string | null; trackingNumber: string | null } | null> {
+  const { data: integ } = await supabase.from("track123_integrations")
+    .select("api_key,mcp_store_uuid").eq("shop_id", shopId).maybeSingle();
+  if (!integ?.api_key || !integ.mcp_store_uuid) return null;
+  const { data: rules } = await supabase.from("track123_event_rules")
+    .select("event_key,event_label,target_status").eq("shop_id", shopId).eq("enabled", true);
+  const matchRule = buildRuleMatcher(rules ?? []);
+  const data = await mcpCallOrderByNumber(integ.api_key, integ.mcp_store_uuid, orderNumber.replace(/^#/, ""));
+  const f = data?.order?.fulfillments?.[0];
+  if (!f) return null;
+  const lastLabel: string | null = f.last_event ?? null;
+  return {
+    status: matchRule(lastLabel) ?? matchRule(f.transit_status) ?? inferStatus(f.transit_status, Boolean(f.tracking_number), lastLabel),
+    lastLabel,
+    lastAt: track123EventUtc(f.tracking_details?.[0]?.event_time_utc, f.last_event_time),
+    trackingNumber: f.tracking_number ?? null,
+  };
 }
 
 export async function runTrack123McpSync(

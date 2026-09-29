@@ -16,6 +16,7 @@ import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as MetasRouteImport } from "./routes/metas";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as GratitudeRouteImport } from "./routes/gratitude";
+import { Route as ChargebacksRouteImport } from "./routes/chargebacks";
 import { Route as AtendimentoRouteImport } from "./routes/atendimento";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
@@ -86,6 +87,11 @@ const LoginRoute = LoginRouteImport.update({
 const GratitudeRoute = GratitudeRouteImport.update({
   id: "/gratitude",
   path: "/gratitude",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ChargebacksRoute = ChargebacksRouteImport.update({
+  id: "/chargebacks",
+  path: "/chargebacks",
   getParentRoute: () => rootRouteImport,
 } as any);
 const AtendimentoRoute = AtendimentoRouteImport.update({
@@ -282,6 +288,7 @@ const ApiPublicHooksTrack123ShopIdSecretRoute =
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
+  "/chargebacks": typeof ChargebacksRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -327,6 +334,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
+  "/chargebacks": typeof ChargebacksRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -366,6 +374,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
+  "/chargebacks": typeof ChargebacksRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -413,6 +422,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/atendimento"
+    | "/chargebacks"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -458,6 +468,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/atendimento"
+    | "/chargebacks"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -496,6 +507,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/atendimento"
+    | "/chargebacks"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -542,6 +554,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AtendimentoRoute: typeof AtendimentoRoute;
+  ChargebacksRoute: typeof ChargebacksRoute;
   GratitudeRoute: typeof GratitudeRoute;
   LoginRoute: typeof LoginRoute;
   MetasRoute: typeof MetasRoute;
@@ -612,6 +625,13 @@ declare module "@tanstack/react-router" {
       path: "/gratitude";
       fullPath: "/gratitude";
       preLoaderRoute: typeof GratitudeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/chargebacks": {
+      id: "/chargebacks";
+      path: "/chargebacks";
+      fullPath: "/chargebacks";
+      preLoaderRoute: typeof ChargebacksRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/atendimento": {
@@ -982,6 +1002,7 @@ const ShopsRouteWithChildren = ShopsRoute._addFileChildren(ShopsRouteChildren);
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AtendimentoRoute: AtendimentoRoute,
+  ChargebacksRoute: ChargebacksRoute,
   GratitudeRoute: GratitudeRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,

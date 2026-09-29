@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
-  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones,
+  Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -36,6 +36,7 @@ export const navItems: NavItem[] = [
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
   { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
+  { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks" },
 ];
 
 // Aba do menu dona do endereço (pra bloquear quem abre o link direto sem permissão).
@@ -65,6 +66,7 @@ const ALL_PAGES = [
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/atendimento", label: "Atendimento", icon: Headphones },
+  { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },

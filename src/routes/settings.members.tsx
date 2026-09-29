@@ -48,6 +48,7 @@ const SECTION_LABELS: Record<Section, string> = {
   banco_lojas: "Banco de Lojas",
   lojas_grupos: "Lojas e Grupos",
   atendimento: "Atendimento",
+  chargebacks: "Chargebacks",
   notificacoes: "Notificações (sino)",
   lg_dashboard: "Dashboard",
   lg_diario: "Diário",
@@ -93,7 +94,7 @@ const NT_HINTS: Partial<Record<Section, string>> = {
 const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
@@ -269,7 +270,7 @@ function MembersPage() {
 
 const SECTION_ICONS: Partial<Record<Section, any>> = {
   dashboard: LayoutDashboard, metas: Target, tarefas: CheckSquare, produtos: Package, caixa: Wallet,
-  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, notificacoes: Bell,
+  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
