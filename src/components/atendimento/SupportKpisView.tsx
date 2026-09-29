@@ -43,7 +43,7 @@ export function SupportKpisView({ month }: { month: string }) {
         <StatCard icon={Mail} tone="bg-primary/10 text-primary" color="var(--color-primary)" label="Total de e-mails" vs={vs}
           value={k ? int(k.cards.total.value) : undefined} delta={k && pctDelta(k.cards.total.value, k.cards.total.prev)} deltaTone="neutral"
           series={k?.cards.total.series} seriesFormat={(v) => `${v} e-mails`}
-          footer={k && <Split a={["Novos", int(k.cards.total.newConversations)]} b={["Respondidos", int(k.cards.total.replied)]} />} />
+          footer={k && <Split a={["Novos", int(k.cards.total.newConversations)]} b={["Enviados", int(k.cards.total.started)]} c={["Respondidos", int(k.cards.total.replied)]} />} />
         <StatCard icon={Clock} tone="bg-success/15 text-success" color="var(--color-success)" label="Tempo médio 1ª resposta" vs={vs} hint={k ? `Horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
           value={k ? formatDuration(k.cards.firstResponse.value) : undefined}
           delta={k && pctDelta(k.cards.firstResponse.value, k.cards.firstResponse.prev)} deltaTone="lower"
@@ -108,13 +108,19 @@ export function SupportKpisView({ month }: { month: string }) {
         <Card title="Desempenho por loja" className="xl:col-span-3">
           {!k ? <Skeleton h={220} /> : !k.storeTable.length ? <Empty h={220} text="Nenhuma loja com e-mails no mês" /> : (
             <div className="overflow-x-auto -mx-1">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs table-fixed">
+                {/* As 4 colunas de números com a mesma largura; a loja fica com o resto. */}
+                <colgroup>
+                  <col />
+                  <col className="w-[17%]" /><col className="w-[17%]" /><col className="w-[17%]" /><col className="w-[17%]" />
+                </colgroup>
                 <thead>
                   <tr className="text-[11px] text-muted-foreground border-b border-border">
                     <th className="text-left font-medium py-2 px-1">Loja</th>
-                    <th className="text-right font-medium py-2 px-1">E-mails recebidos</th>
-                    <th className="text-right font-medium py-2 px-1">Respondidos</th>
-                    <th className="text-right font-medium py-2 px-1">Em aberto</th>
+                    <th className="text-center font-medium py-2 px-1">E-mails enviados</th>
+                    <th className="text-center font-medium py-2 px-1">E-mails recebidos</th>
+                    <th className="text-center font-medium py-2 px-1">Respondidos</th>
+                    <th className="text-center font-medium py-2 px-1">Em aberto</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -131,16 +137,20 @@ export function SupportKpisView({ month }: { month: string }) {
                             <span className="font-medium truncate">{r.name}</span>
                           </span>
                         </td>
-                        <td className="py-2 px-1 text-right tabular-nums whitespace-nowrap">
-                          <span className="font-semibold">{int(r.received)}</span>
-                          {d != null && d !== 0 && (
-                            <span className="ml-1.5 text-[10px] text-muted-foreground inline-flex items-center">
-                              {d > 0 ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}{Math.abs(d)}%
-                            </span>
-                          )}
+                        <td className="py-2 px-1 text-center tabular-nums">{int(r.started)}</td>
+                        <td className="py-2 px-1 text-center tabular-nums whitespace-nowrap">
+                          {/* A variação fica ao lado sem tirar o número do centro. */}
+                          <span className="relative inline-block">
+                            <span className="font-semibold">{int(r.received)}</span>
+                            {d != null && d !== 0 && (
+                              <span className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 text-[10px] text-muted-foreground inline-flex items-center">
+                                {d > 0 ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}{Math.abs(d)}%
+                              </span>
+                            )}
+                          </span>
                         </td>
-                        <td className="py-2 px-1 text-right tabular-nums">{int(r.replied)}</td>
-                        <td className="py-2 px-1 text-right tabular-nums">{int(r.open)}</td>
+                        <td className="py-2 px-1 text-center tabular-nums">{int(r.replied)}</td>
+                        <td className="py-2 px-1 text-center tabular-nums">{int(r.open)}</td>
                       </tr>
                     );
                   })}
@@ -215,11 +225,12 @@ function StatCard({ icon: Icon, tone, color, label, value, delta, deltaTone, vs,
   );
 }
 
-function Split({ a, b }: { a: [string, string]; b: [string, string] }) {
+function Split({ a, b, c }: { a: [string, string]; b: [string, string]; c?: [string, string] }) {
   return (
-    <div className="grid grid-cols-2 divide-x divide-border">
+    <div className={`grid ${c ? "grid-cols-3" : "grid-cols-2"} divide-x divide-border`}>
       <div className="pr-2 min-w-0"><p className="text-muted-foreground truncate">{a[0]}</p><p className="font-semibold text-sm">{a[1]}</p></div>
-      <div className="pl-3 min-w-0"><p className="text-muted-foreground truncate">{b[0]}</p><p className="font-semibold text-sm">{b[1]}</p></div>
+      <div className={`${c ? "px-2" : "pl-3"} min-w-0`}><p className="text-muted-foreground truncate">{b[0]}</p><p className="font-semibold text-sm">{b[1]}</p></div>
+      {c && <div className="pl-2 min-w-0"><p className="text-muted-foreground truncate">{c[0]}</p><p className="font-semibold text-sm">{c[1]}</p></div>}
     </div>
   );
 }
@@ -295,7 +306,7 @@ function TagsCard({ k, className }: { k: Kpis | undefined; className: string }) 
           <div className="mt-4 rounded-xl bg-muted/50 p-3 flex items-center gap-3">
             <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Tag className="size-[18px]" /></div>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">Resumo das tags</p>
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1">Resumo das conversas</p>
               <div className="grid grid-cols-[1fr_1fr_1.2fr_auto] items-end gap-3">
                 <SummaryItem value={int(stats.summary.withTag)} label="Com tag" />
                 <SummaryItem value={int(stats.summary.withoutTag)} label="Sem tag" />
@@ -338,7 +349,7 @@ type ArrivalMode = "day" | "hour" | "weekday";
 const ARRIVAL_LABELS: Record<ArrivalMode, string> = { day: "Por dia", hour: "Por hora (Nova York)", weekday: "Por dia da semana" };
 
 function ArrivalsCard({ k, className }: { k: Kpis | undefined; className: string }) {
-  const [mode, setMode] = useState<ArrivalMode>("day");
+  const [mode, setMode] = useState<ArrivalMode>("hour");
   const data = k ? k.arrivals[mode].map((d) => ({ ...d, label: mode === "day" ? fmtDay(d.label) : d.label })) : [];
   return (
     <Card title="Histórico de chegada de e-mails" className={className} right={

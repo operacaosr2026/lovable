@@ -22,7 +22,8 @@ export type TagStats = {
 };
 export type SupportKpis = {
   cards: {
-    total: { value: number; prev: number; series: Point[]; newConversations: number; replied: number };
+    // newConversations = começadas pelo cliente; started = começadas por nós (Nova mensagem).
+    total: { value: number; prev: number; series: Point[]; newConversations: number; started: number; replied: number };
     firstResponse: { value: number | null; prev: number | null; series: Point[] };
     resolution: { value: number | null; prev: number | null; series: Point[] };
     rate: { value: number | null; prev: number | null; series: Point[]; resolved: number; pending: number };
@@ -36,7 +37,7 @@ export type SupportKpis = {
   hours: BusinessHours;   // horário comercial usado nos tempos
   unassigned: number;   // conversas do mês ainda sem loja (definir no painel do cliente)
   storeTable: {
-    id: string; name: string; received: number; receivedPrev: number; replied: number; open: number;
+    id: string; name: string; started: number; received: number; receivedPrev: number; replied: number; open: number;
     firstResponseMs: number | null; resolutionMs: number | null; ratePct: number | null;
   }[];
 };
@@ -124,6 +125,8 @@ function window(convs: Conv[], from: number, to: number, hours: BusinessHours = 
   const received = convs.reduce((s, c) => s + c.msgs.filter((m) => m.dir === "in" && inR(m.t)).length, 0);
   const replied = convs.reduce((s, c) => s + c.msgs.filter((m) => m.dir === "out" && inR(m.t)).length, 0);
   const created = convs.filter((c) => inR(c.first));
+  // Conversas que nós começamos (1ª mensagem é nossa: Nova mensagem).
+  const startedByUs = created.filter((c) => c.msgs[0]?.dir === "out").length;
   // 1ª resposta: conversas que começaram no período com mensagem do cliente.
   // Tempos em horário comercial (businessMs), não relógio corrido.
   const firstWaits = created.filter((c) => c.firstIn != null && c.firstOut != null && c.first === c.firstIn).map((c) => businessMs(c.firstIn!, c.firstOut!, hours));
@@ -137,7 +140,7 @@ function window(convs: Conv[], from: number, to: number, hours: BusinessHours = 
   // Em aberto no fim do intervalo.
   const openAt = convs.filter((c) => c.first <= to && (!c.resolved_at || new Date(c.resolved_at).getTime() > to) && !(c.status === "resolvido" && !c.resolved_at)).length;
   return {
-    received, replied, newConversations: created.length,
+    received, replied, newConversations: created.length - startedByUs, started: startedByUs,
     firstResponse: avg(firstWaits), resolution: avg(resolutionTimes),
     rate: active.length ? Math.round((resolved / active.length) * 1000) / 10 : null,
     resolved, pending, openAt,
@@ -149,6 +152,8 @@ export function computeSupportKpis(
   messages: KpiMessage[], conversations: KpiConversation[], shops: KpiShop[], fixedTags: string[],
   range: { from: string; to: string; prevFrom: string; prevTo: string },
   hours: BusinessHours = DEFAULT_BUSINESS_HOURS,
+  // Lojas que aparecem mesmo sem e-mail no mês (grupos ativos de Lojas e Grupos).
+  alwaysShowShopIds: string[] = [],
 ): SupportKpis {
   const from = new Date(range.from).getTime();
   const to = new Date(range.to).getTime();
@@ -181,7 +186,7 @@ export function computeSupportKpis(
   // loja identificada entra nos totais, mas não nos quebrados por loja.
   const shopName = new Map(shops.map((s) => [s.id, s.name]));
   const shopOf = (c: Conv) => (c.shop_id && shopName.has(c.shop_id) ? c.shop_id : null);
-  const usedShops = new Set(convs.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to)).map(shopOf));
+  const usedShops = new Set([...convs.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to)).map(shopOf), ...alwaysShowShopIds]);
   const allShops = [...shops].sort((a, b) => a.name.localeCompare(b.name));
   const stores = allShops.map((s, color) => ({ ...s, color })).filter((s) => usedShops.has(s.id));
 
@@ -231,15 +236,15 @@ export function computeSupportKpis(
     const w = win(mine, from, to);
     const wp = win(mine, pFrom, pTo);
     return {
-      id: s.id, name: s.name, received: w.received, receivedPrev: wp.received, replied: w.replied,
+      id: s.id, name: s.name, started: w.started, received: w.received, receivedPrev: wp.received, replied: w.replied,
       open: mine.filter((c) => c.status !== "resolvido").length,
       firstResponseMs: w.firstResponse, resolutionMs: w.resolution, ratePct: w.rate,
     };
-  }).sort((a, b) => b.received - a.received);
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     cards: {
-      total: { value: cur.received, prev: prev.received, series: series((w) => w.received), newConversations: cur.newConversations, replied: cur.replied },
+      total: { value: cur.received, prev: prev.received, series: series((w) => w.received), newConversations: cur.newConversations, started: cur.started, replied: cur.replied },
       firstResponse: { value: cur.firstResponse, prev: prev.firstResponse, series: series((w) => w.firstResponse) },
       resolution: { value: cur.resolution, prev: prev.resolution, series: series((w) => w.resolution) },
       rate: { value: cur.rate, prev: prev.rate, series: series((w) => w.rate), resolved: cur.resolved, pending: cur.pending },

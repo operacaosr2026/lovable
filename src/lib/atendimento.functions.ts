@@ -5,6 +5,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { US_TIME_ZONE } from "@/lib/timezone";
 import {
   DEFAULT_GOALS, DEFAULT_BUSINESS_HOURS, BUSINESS_TIMEZONES, businessMs, computeSupportKpis, monthRange,
@@ -227,7 +228,7 @@ export const getSupportKpis = createServerFn({ method: "GET" })
     try { await assignConversationShops(ownerId); } catch (e) { console.error("assign shops", e); }
     // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
     const until = new Date(new Date(range.to).getTime() + 7 * 86_400_000).toISOString();
-    const [msgs, convs, shops, settings] = await Promise.all([
+    const [msgs, convs, shops, settings, activeShops] = await Promise.all([
       selectAll<KpiMessage>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at")
         .eq("owner_id", ownerId).gte("sent_at", range.prevFrom).lte("sent_at", until)),
       selectAll<KpiConversation>(supabaseAdmin.from("support_conversations")
@@ -235,11 +236,13 @@ export const getSupportKpis = createServerFn({ method: "GET" })
         .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
       supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
       supabaseAdmin.from("support_settings").select(`tags,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", ownerId).maybeSingle(),
+      // Lojas dos grupos ativos: aparecem na tabela por loja mesmo zeradas.
+      companyShopIdsForMonth(ownerId, `${data.month}-01`).catch(() => [] as string[]),
     ]);
     if (msgs.error) throw new Error(msgs.error.message);
     if (convs.error) throw new Error(convs.error.message);
     return {
-      ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data)),
+      ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data), activeShops),
       partial: range.partial,
       goals: {
         firstResponseMin: settings.data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,

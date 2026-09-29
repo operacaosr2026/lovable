@@ -41,6 +41,10 @@ type Tab = "todos" | "nao_lidos" | "favoritos";
 const PERIODS = [
   ["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "Últimos 7 dias"], ["30d", "Últimos 30 dias"], ["mes", "Este mês"], ["custom", "Personalizado"],
 ] as const;
+// Complemento do card "E-mails recebidos" conforme o período escolhido.
+const PERIOD_SUFFIX: Record<string, string> = {
+  hoje: "hoje", ontem: "ontem", "7d": "em 7 dias", "30d": "em 30 dias", mes: "este mês", custom: "no período",
+};
 const fmtDay = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
 
 type Sort = "recentes" | "antigos" | "nao_lidos";
@@ -382,7 +386,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       <>
       {/* ── Indicadores ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
-        <Kpi icon={Mail} cls="bg-primary/10 text-primary" label="E-mails recebidos" value={kv(k?.received)}
+        <Kpi icon={Mail} cls="bg-primary/10 text-primary" label={`E-mails recebidos ${PERIOD_SUFFIX[period] ?? "no período"}`} value={kv(k?.received)}
           onClick={() => { setTab("todos"); setStatusFilter([]); }} />
         <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(list.data ? periodCounts.unread : undefined)}
           active={tab === "nao_lidos"} onClick={() => setTab(tab === "nao_lidos" ? "todos" : "nao_lidos")} />
@@ -644,6 +648,9 @@ function ConversationRow({ c, fixedTags, active, checked, onCheck, onOpen }: {
         <div className="flex items-center gap-1 mt-1">
           <span className={`text-[9px] px-1.5 py-px rounded font-medium ${STATUS_META[c.status].cls}`}>{STATUS_META[c.status].label}</span>
           {c.tags.slice(0, 2).map((t) => <span key={t} className={`text-[9px] px-1.5 py-px rounded font-medium truncate max-w-[90px] inline-flex items-center gap-0.5 ${tagTone(t, fixedTags)}`}>{c.ai_tags.includes(t) && <Sparkles className="size-2.5 shrink-0" />}{t}</span>)}
+          {c.tags.length > 2 && (
+            <span className="text-[9px] px-1.5 py-px rounded font-medium bg-muted text-muted-foreground shrink-0" title={c.tags.slice(2).join(", ")}>+{c.tags.length - 2}</span>
+          )}
         </div>
       </div>
     </div>
