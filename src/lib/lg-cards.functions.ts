@@ -679,8 +679,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
           ownerId,
           (shopsRes.data ?? []).map((s: any) => ({ id: s.id as string, name: s.name as string })),
         )),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, revenue, line_items:raw->line_items").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, revenue, line_items:raw->line_items,tags:raw->>tags").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
       // Mesma fonte do card de Lojas e Grupos (getLgCardQuickMetrics).
       getEstornoStats(ownerId, shopIds),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
@@ -704,10 +704,10 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
     // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
     // em vez de items_count × custo fixo da loja.
-    function costFor(shopId: string, rawLineItems: any) {
+    function costFor(shopId: string, rawLineItems: any, tags?: string | null) {
       const shopCost = costByShop.get(shopId);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return orderLineItemsCost(rawLineItems, costProducts, fallback);
+      return orderLineItemsCost(rawLineItems, costProducts, fallback, tags);
     }
 
     // Período atual — por loja e por dia (a série diária vira o gráfico principal)
@@ -717,7 +717,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       const rev = Number(o.revenue ?? 0);
-      const cost = costFor(sid, o.line_items);
+      const cost = costFor(sid, o.line_items, o.tags);
       revenueByShop.set(sid, (revenueByShop.get(sid) ?? 0) + rev);
       custoByShop.set(sid, (custoByShop.get(sid) ?? 0) + cost);
       const d = o.order_date as string;
@@ -732,7 +732,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     for (const o of (prevOrdersRes.data ?? []) as any[]) {
       const sid = o.shop_id as string;
       prevRevenueByShop.set(sid, (prevRevenueByShop.get(sid) ?? 0) + Number(o.revenue ?? 0));
-      prevCustoByShop.set(sid, (prevCustoByShop.get(sid) ?? 0) + costFor(sid, o.line_items));
+      prevCustoByShop.set(sid, (prevCustoByShop.get(sid) ?? 0) + costFor(sid, o.line_items, o.tags));
     }
     const prevPedidos = (prevOrdersRes.data ?? []).length;
 
@@ -885,7 +885,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const [ordersRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts, patchedCardShops] = await Promise.all([
       selectAll(supabaseAdmin
         .from("shop_orders")
-        .select("revenue, items_count, shop_id, line_items:raw->line_items")
+        .select("revenue, items_count, shop_id, line_items:raw->line_items,tags:raw->>tags")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", from)
@@ -941,7 +941,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const custoProduto  = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id as string);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return s + orderLineItemsCost(o.line_items, costProducts, fallback);
+      return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags);
     }, 0);
     const taxas    = sumAmt(fees);
     const anuncios = sumAmt(ads);

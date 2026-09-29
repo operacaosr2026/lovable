@@ -217,7 +217,7 @@ export function LgOrders({
       const d = byDate.get(day)!;
       d.totalOrders++;
       d.totalItems += Number(o.items_count ?? 0);
-      d.totalCost  += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0);
+      d.totalCost  += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags);
       const st = o.payment_status as string;
       if (st === "paid" || st === "shipped") d.paidCount++;
       else if (st === "pending") d.pendingCount++;
@@ -589,7 +589,7 @@ export function LgOrders({
                       {/* Order rows */}
                       {orders.map((o: any) => {
                         const sel = selected.has(o.id);
-                        const cost = orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0);
+                        const cost = orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags);
                         return (
                           <div key={o.id} className={cn("grid grid-cols-[32px_1fr_80px_110px_120px_100px] gap-3 px-8 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors text-sm", sel && "bg-primary/5")}>
                             <Checkbox

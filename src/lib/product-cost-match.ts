@@ -15,7 +15,17 @@ export function matchLineItemCost(title: string, products: CostProduct[]): numbe
   return best ? best.cost : null;
 }
 
-export function orderLineItemsCost(rawLineItems: any[] | undefined, products: CostProduct[], fallbackUnitCost: number): number {
+// Tag do pedido na Shopify que zera o custo do fornecedor: reenvio que o
+// fornecedor manda sem cobrar.
+export const SUPPLIER_FREE_TAG = "reenvio-fornecedor";
+
+export function isSupplierFree(tags: string | null | undefined): boolean {
+  return !!tags && tags.split(",").some((t) => t.trim().toLowerCase() === SUPPLIER_FREE_TAG);
+}
+
+// `tags` = tags do pedido (raw->>tags); com "reenvio-fornecedor" o custo é 0.
+export function orderLineItemsCost(rawLineItems: any[] | undefined, products: CostProduct[], fallbackUnitCost: number, tags?: string | null): number {
+  if (isSupplierFree(tags)) return 0;
   let total = 0;
   for (const li of rawLineItems ?? []) {
     const qty = Number(li.quantity ?? 0);

@@ -653,7 +653,7 @@ export const listOrders = createServerFn({ method: "GET" })
     // tráfego): a aba Pedidos só usa os produtos (título/quantidade) e o
     // financial_status. Devolve `raw` enxuto no mesmo formato.
     const { data: rows, error } = await selectAll(context.supabase.from("shop_orders")
-      .select(`${ORDER_LIST_COLUMNS},line_items:raw->line_items,raw_financial_status:raw->>financial_status`)
+      .select(`${ORDER_LIST_COLUMNS},line_items:raw->line_items,tags:raw->>tags,raw_financial_status:raw->>financial_status`)
       .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
       .gte("order_date", data.from).lte("order_date", data.to)
       .order("created_at_shopify", { ascending: false }));
@@ -669,11 +669,12 @@ export const listOrders = createServerFn({ method: "GET" })
       : { data: [] as { shop_id: string; order_external_id: string; status: string }[] };
     const chargebackStatus = new Map<string, string>();
     for (const d of cbs ?? []) if (d.status !== "won") chargebackStatus.set(`${d.shop_id}:${d.order_external_id}`, d.status);
-    return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, ...o }) => ({
+    return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, tags, ...o }) => ({
       ...o,
       chargeback_status: chargebackStatus.get(`${o.shop_id}:${o.external_id}`) ?? null,
       raw: {
         financial_status: raw_financial_status ?? null,
+        tags: tags ?? null,
         line_items: ((line_items ?? []) as any[]).map((li) => ({ title: li?.title ?? null, name: li?.name ?? null, quantity: li?.quantity ?? 0 })),
       },
     }));
@@ -684,7 +685,7 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: pending, error } = await selectAll(context.supabase.from("shop_orders")
-      .select("order_date,items_count,line_items:raw->line_items")
+      .select("order_date,items_count,line_items:raw->line_items,tags:raw->>tags")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
@@ -720,7 +721,7 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
     for (const [date, { items, orders }] of byDate.entries()) {
       if (existingRefs.has(date)) continue;
       const fallback = await unitCostFor(context.supabase, context.ownerId, data.shop_id, date, defaultCost);
-      const total = orders.reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, costProducts, fallback), 0);
+      const total = orders.reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags), 0);
       const dueAt = `${addDays(date, paymentDays)}T12:00:00.000Z`;
       const dateLabel = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
       const { data: top } = await context.supabase.from("shop_tasks").select("position")
@@ -1449,7 +1450,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const { shop_ids, month_start, month_end } = data;
 
     const [ordersRes, settingsRes, adRes, feesRes, costProducts, refundsAndChargebacks] = await Promise.all([
-      selectAll(supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,line_items:raw->line_items")
+      selectAll(supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,line_items:raw->line_items,tags:raw->>tags")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", month_start).lte("order_date", month_end)),
       supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
@@ -1486,7 +1487,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const productCost = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return s + orderLineItemsCost(o.line_items, costProducts, fallback);
+      return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags);
     }, 0);
 
     const adSpend = (adRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
@@ -1533,7 +1534,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   // Mesma regra da aba Pedidos: reembolsado ou com chargeback (menos o ganho)
   // sai da lista e não vai ser enviado — não entra no que vai ser pago ao fornecedor.
   const { data: pendingRows } = await context.supabase.from("shop_orders")
-    .select("items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items")
+    .select("items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items,tags:raw->>tags")
     .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("order_date", orderDate)
     .eq("payment_status", "pending");
   const pendingExt = ((pendingRows ?? []) as any[]).map((o) => o.external_id).filter(Boolean) as string[];
@@ -1547,7 +1548,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   const items = (orders ?? []).reduce((s: number, o: any) => s + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(context.supabase, context.ownerId, shopId, orderDate, settings.default_unit_cost);
   const products = preloadedProducts ?? await costProductsFor(context.supabase, context.ownerId);
-  const amount = (orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, products, unit), 0);
+  const amount = (orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, products, unit, o.tags), 0);
 
   await ensureCostCategory(context.supabase, context.ownerId, shopId);
 
@@ -1766,7 +1767,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     // Fetch pending orders only
     const { data: orders, error } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
-      .select("id,order_date,items_count,payment_status,line_items:raw->line_items")
+      .select("id,order_date,items_count,payment_status,line_items:raw->line_items,tags:raw->>tags")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("id", ids).eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
@@ -1790,7 +1791,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       const items = Number(o.items_count ?? 0);
       totalItems += items;
       const unit = costByDate.get(o.order_date as string) ?? defaultCost;
-      totalAmount += orderLineItemsCost((o as any).line_items, products, unit);
+      totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags);
     }
 
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
@@ -2020,7 +2021,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: orders, error: ordersErr } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
-      .select("id,payment_batch_id,order_date,items_count,line_items:raw->line_items")
+      .select("id,payment_batch_id,order_date,items_count,line_items:raw->line_items,tags:raw->>tags")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .neq("payment_status", "pending")
       .in("id", ids));
@@ -2091,7 +2092,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
         const items = Number(o.items_count ?? 0);
         totalItems += items;
         const unit = costByDate.get(o.order_date as string) ?? defaultCost;
-        totalAmount += orderLineItemsCost((o as any).line_items, products, unit);
+        totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags);
       }
 
       const batchNumber = await nextBatchNumber(context, data.shop_id);
@@ -2225,11 +2226,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes, shopifyResults, costProducts] = await Promise.all([
       selectAll(supabase.from("shop_orders").select(withCosts
-          ? "revenue,items_count,order_date,shop_id,line_items:raw->line_items,created_at_shopify"
+          ? "revenue,items_count,order_date,shop_id,line_items:raw->line_items,tags:raw->>tags,created_at_shopify"
           : "revenue,items_count,order_date,shop_id,created_at_shopify")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to)),
-      withPrev ? selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,line_items:raw->line_items")
+      withPrev ? selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,line_items:raw->line_items,tags:raw->>tags")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", prev_from).lte("order_date", prev_to)) : empty,
       settingsPromise,
@@ -2288,7 +2289,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     function orderCost(o: any) {
       const shopCost = costByShop.get((o as any).shop_id);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return orderLineItemsCost((o as any).line_items, costProducts, fallback);
+      return orderLineItemsCost((o as any).line_items, costProducts, fallback, (o as any).tags);
     }
 
     // Current period
