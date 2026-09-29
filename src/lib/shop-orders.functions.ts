@@ -658,8 +658,20 @@ export const listOrders = createServerFn({ method: "GET" })
       .gte("order_date", data.from).lte("order_date", data.to)
       .order("created_at_shopify", { ascending: false }));
     if (error) throw new Error(error.message);
+    // Pedido com chargeback (aberto ou perdido) não entra na fila de envio /
+    // pagamento ao fornecedor — na Shopify ele segue "Pago", então só a
+    // disputa diz. Chargeback ganho (won) volta pra lista.
+    const extIds = [...new Set(((rows ?? []) as any[]).map((o) => o.external_id).filter(Boolean))] as string[];
+    const { data: cbs } = extIds.length
+      ? await selectAllIn<{ shop_id: string; order_external_id: string; status: string }>(extIds, (c) =>
+          supabaseAdmin.from("shop_order_disputes").select("shop_id,order_external_id,status")
+            .eq("user_id", context.ownerId).in("shop_id", data.shop_ids).eq("type", "chargeback").in("order_external_id", c))
+      : { data: [] as { shop_id: string; order_external_id: string; status: string }[] };
+    const chargebackStatus = new Map<string, string>();
+    for (const d of cbs ?? []) if (d.status !== "won") chargebackStatus.set(`${d.shop_id}:${d.order_external_id}`, d.status);
     return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, ...o }) => ({
       ...o,
+      chargeback_status: chargebackStatus.get(`${o.shop_id}:${o.external_id}`) ?? null,
       raw: {
         financial_status: raw_financial_status ?? null,
         line_items: ((line_items ?? []) as any[]).map((li) => ({ title: li?.title ?? null, name: li?.name ?? null, quantity: li?.quantity ?? 0 })),
@@ -1517,10 +1529,21 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
     return { skippedByCutoff: true };
   }
 
-  // sum items for orderDate — apenas pedidos pendentes (pagos já saíram via lote)
-  const { data: orders } = await context.supabase.from("shop_orders").select("items_count,payment_status,line_items:raw->line_items")
+  // sum items for orderDate — apenas pedidos pendentes (pagos já saíram via lote).
+  // Mesma regra da aba Pedidos: reembolsado ou com chargeback (menos o ganho)
+  // sai da lista e não vai ser enviado — não entra no que vai ser pago ao fornecedor.
+  const { data: pendingRows } = await context.supabase.from("shop_orders")
+    .select("items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items")
     .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("order_date", orderDate)
     .eq("payment_status", "pending");
+  const pendingExt = ((pendingRows ?? []) as any[]).map((o) => o.external_id).filter(Boolean) as string[];
+  const { data: cbRows } = pendingExt.length
+    ? await supabaseAdmin.from("shop_order_disputes").select("order_external_id,status")
+        .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("type", "chargeback").in("order_external_id", pendingExt)
+    : { data: [] as { order_external_id: string; status: string }[] };
+  const withChargeback = new Set((cbRows ?? []).filter((d) => d.status !== "won").map((d) => d.order_external_id));
+  const orders = ((pendingRows ?? []) as any[]).filter((o) =>
+    !["refunded", "partially_refunded"].includes(o.shopify_financial_status ?? "") && !withChargeback.has(o.external_id));
   const items = (orders ?? []).reduce((s: number, o: any) => s + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(context.supabase, context.ownerId, shopId, orderDate, settings.default_unit_cost);
   const products = preloadedProducts ?? await costProductsFor(context.supabase, context.ownerId);

@@ -211,6 +211,7 @@ export function LgOrders({
     for (const o of allOrders) {
       const rb = shopifyRefundBadge(resolveFinancialStatus(o));
       if (rb === "reembolso") continue; // pedido reembolsado: retirado da listagem
+      if (o.chargeback_status) continue; // chargeback aberto/perdido: não envia nem paga o fornecedor
       const day = o.order_date as string;
       if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;

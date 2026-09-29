@@ -5,6 +5,7 @@ import { ingestShopifyOrder } from "@/lib/shopify-order-ingest.server";
 import { broadcast } from "@/lib/realtime.server";
 import { upsertShopDisputes } from "@/lib/shopify-disputes.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
+import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
 
 // Recebe os webhooks da Shopify (orders/create, orders/updated) de uma loja —
 // cadastrados por ensureShopifyWebhooks. Autenticidade pela assinatura HMAC
@@ -51,6 +52,16 @@ export const Route = createFileRoute("/api/public/hooks/shopify/$storeId")({
             for (const l of (links ?? []) as any[]) {
               await upsertShopDisputes(l.shop_id, l.user_id, [dispute]);
               owners.add(l.user_id);
+              // Chargeback tira o pedido da previsão de pagamento ao fornecedor
+              // (e ganho devolve): recalcula o dia do pedido no Caixa.
+              if (dispute?.type === "chargeback" && dispute?.order_id) {
+                const { data: ord } = await supabaseAdmin.from("shop_orders").select("order_date")
+                  .eq("shop_id", l.shop_id).eq("source", "shopify").eq("external_id", String(dispute.order_id)).maybeSingle();
+                if (ord?.order_date) {
+                  await recomputeOrderCostForecast(l.user_id, l.shop_id, ord.order_date)
+                    .catch((e) => console.error("dispute webhook: previsão de custo", l.shop_id, e));
+                }
+              }
             }
             await Promise.all([...owners].map(async (o) => {
               await refreshSystemNotifications(o).catch((e) => console.error("dispute webhook notifications", o, e));
