@@ -99,7 +99,23 @@ function buildRuleMatcher(rules: { event_key: string; event_label: string; targe
 
 // Sem regra configurada pro evento, cai numa inferência simples a partir do
 // transit_status que o próprio Track123 já normaliza.
-function inferStatus(transitStatus: string | null | undefined, hasTrackingNumber: boolean): string | null {
+// O último evento às vezes já diz "Delivered, Front Desk/Reception…" enquanto
+// o transit_status do Track123 continua "Out for delivery" por dias (ex.:
+// #L2-1050). Só conta como entregue quando o evento COMEÇA com "Delivered"
+// (entrega ao cliente: "Delivered, Mail Room", "Delivered, In/At Mailbox"…).
+// "Delivered to local carrier/airline/hub…" é repasse entre transportadoras e
+// não conta, nem "not delivered", "undeliverable", "attempted"…
+function labelSaysDelivered(label: string | null | undefined): boolean {
+  if (!label) return false;
+  const t = label.trim().toLowerCase();
+  if (!/^delivered\b/.test(t)) return false;
+  if (/^delivered\s+to\b/.test(t)) return false;
+  if (/\b(not|un|attempt\w*|fail\w*)\s*(to be\s*)?deliver/.test(t)) return false;
+  return true;
+}
+
+function inferStatus(transitStatus: string | null | undefined, hasTrackingNumber: boolean, lastLabel?: string | null): string | null {
+  if (labelSaysDelivered(lastLabel)) return "delivered";
   // Sem espaço/case pra pegar tanto "InfoReceived" quanto "Info received" (o
   // Track123 já mandou os dois formatos pra esse mesmo status).
   const ts = (transitStatus ?? "").toLowerCase().replace(/\s+/g, "");
@@ -229,7 +245,7 @@ export async function runTrack123McpSync(
       // tela; o status exibido é recalculado na leitura a partir do rastreio
       // real (ver lg-logistics.functions.ts), sem precisar reescrever nada aqui.
       const target = matchRule(lastLabel) ?? matchRule(fulfillment.transit_status)
-        ?? inferStatus(fulfillment.transit_status, Boolean(fulfillment.tracking_number));
+        ?? inferStatus(fulfillment.transit_status, Boolean(fulfillment.tracking_number), lastLabel);
       const nowDate = isoTodayUS();
       // Data do evento real do Track123 (não a data desta rodada), no dia de
       // Nova York — e só na primeira vez: regravar a cada rodada empurrava
