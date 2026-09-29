@@ -99,8 +99,8 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
   });
   const c = conv.data?.conversation;
   const customer = useQuery({
-    queryKey: ["support-customer", c?.customer_email],
-    queryFn: () => customerFn({ data: { email: c!.customer_email } }),
+    queryKey: ["support-customer", c?.customer_email, c?.id],
+    queryFn: () => customerFn({ data: { email: c!.customer_email, conversationId: c!.id } }),
     enabled: !!c, staleTime: 5 * 60_000,
   });
 

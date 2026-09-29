@@ -27,7 +27,7 @@ export type SupportKpis = {
     firstResponse: { value: number | null; prev: number | null; series: Point[] };
     resolution: { value: number | null; prev: number | null; series: Point[] };
     rate: { value: number | null; prev: number | null; series: Point[]; resolved: number; pending: number };
-    open: { value: number; prev: number; series: Point[]; over24h: number; over72h: number };
+    open: { value: number; prev: number; series: Point[]; over12h: number; over36h: number };
   };
   stores: { id: string; name: string; color: number }[];        // color = posição fixa da loja (a cor segue a loja)
   byStoreDaily: ({ date: string } & Record<string, number | string>)[];
@@ -131,8 +131,18 @@ function window(convs: Conv[], from: number, to: number, hours: BusinessHours = 
   // Tempos em horário comercial (businessMs), não relógio corrido.
   const firstWaits = created.filter((c) => c.firstIn != null && c.firstOut != null && c.first === c.firstIn).map((c) => businessMs(c.firstIn!, c.firstOut!, hours));
   const resolvedHere = convs.filter((c) => c.status === "resolvido" && inR(c.resolved_at ? new Date(c.resolved_at).getTime() : null));
-  const resolutionTimes = resolvedHere.filter((c) => c.first !== Infinity && new Date(c.resolved_at!).getTime() >= c.first)
-    .map((c) => businessMs(c.first, new Date(c.resolved_at!).getTime(), hours));
+  // Até solucionar: do 1º e-mail até a nossa última resposta antes de resolver
+  // — o tempo esperando o cliente voltar (ou sumir) não conta.
+  const lastReply = (c: Conv): number | null => {
+    const until = new Date(c.resolved_at!).getTime();
+    return c.msgs.filter((m) => m.dir === "out" && m.t <= until).at(-1)?.t ?? null;
+  };
+  const resolutionTimes = resolvedHere.filter((c) => c.first !== Infinity)
+    .map((c) => ({ c, end: lastReply(c) }))
+    // Resolvida sem resposta nossa: conta até ser marcada como resolvida.
+    .map(({ c, end }) => ({ c, end: end ?? new Date(c.resolved_at!).getTime() }))
+    .filter(({ c, end }) => end >= c.first)
+    .map(({ c, end }) => businessMs(c.first, end, hours));
   // Conversas com movimento no período: resolvidas × ainda abertas.
   const active = convs.filter((c) => c.msgs.some((m) => inR(m.t)) || inR(c.resolved_at ? new Date(c.resolved_at).getTime() : null));
   const resolved = active.filter((c) => c.status === "resolvido").length;
@@ -173,7 +183,7 @@ export function computeSupportKpis(
   const perDay = days.map((d) => ({ d, w: win(convs, d.start, d.end) }));
   const series = (pick: (w: ReturnType<typeof window>) => number | null): Point[] => perDay.map(({ d, w }) => ({ date: d.key, value: pick(w) }));
 
-  // Aberto há mais de 24h/72h: cliente escreveu por último e ninguém respondeu.
+  // Aberto há mais de 12h/36h: cliente escreveu por último e ninguém respondeu.
   const now = Math.min(Date.now(), to);
   const openNow = convs.filter((c) => c.status !== "resolvido");
   const waitingSince = (c: Conv) => {
@@ -250,8 +260,8 @@ export function computeSupportKpis(
       rate: { value: cur.rate, prev: prev.rate, series: series((w) => w.rate), resolved: cur.resolved, pending: cur.pending },
       open: {
         value: openNow.length, prev: prev.openAt, series: series((w) => w.openAt),
-        over24h: openNow.filter((c) => waitingSince(c) > DAY).length,
-        over72h: openNow.filter((c) => waitingSince(c) > 3 * DAY).length,
+        over12h: openNow.filter((c) => waitingSince(c) > 12 * 3_600_000).length,
+        over36h: openNow.filter((c) => waitingSince(c) > 36 * 3_600_000).length,
       },
     },
     stores, byStoreDaily, tagsByStore, arrivals, storeTable, hours,

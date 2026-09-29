@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
+import { orderNumberVariants, orderNumbersInText } from "@/lib/order-numbers";
 import { US_TIME_ZONE } from "@/lib/timezone";
 import {
   DEFAULT_GOALS, DEFAULT_BUSINESS_HOURS, BUSINESS_TIMEZONES, businessMs, computeSupportKpis, monthRange,
@@ -725,14 +726,26 @@ export const sendSupportNewMessage = createServerFn({ method: "POST" })
 
 export const getSupportCustomer = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ email: z.string().trim().email() }).parse(d))
+  .inputValidator((d) => z.object({ email: z.string().trim().email(), conversationId: z.string().uuid().optional() }).parse(d))
   .handler(async ({ data, context }) => {
     assertSub(context, "at_caixa");
     const email = data.email.toLowerCase();
     // Função SQL usa o índice por e-mail (shop_orders_user_email_idx).
     const { data: ids, error: idsError } = await supabaseAdmin.rpc("shop_order_ids_by_email", { p_user_id: context.ownerId, p_email: email });
     if (idsError) throw new Error(idsError.message);
-    const idList = (ids ?? []) as string[];
+    const idList = [...((ids ?? []) as string[])];
+    // Pedido citado na conversa ("#L2-1131" no assunto): entra mesmo feito com
+    // outro e-mail (ex.: comprado pelo marido, cliente escreve do dela).
+    if (data.conversationId) {
+      const { data: msgs } = await supabaseAdmin.from("support_messages").select("subject,summary")
+        .eq("owner_id", context.ownerId).eq("conversation_id", data.conversationId).limit(50);
+      const nums = [...new Set((msgs ?? []).flatMap((m) => [...orderNumbersInText(m.subject), ...orderNumbersInText(m.summary)]))];
+      if (nums.length) {
+        const { data: cited } = await supabaseAdmin.from("shop_orders").select("id")
+          .eq("user_id", context.ownerId).in("order_number", orderNumberVariants(nums)).limit(20);
+        for (const o of cited ?? []) if (!idList.includes(o.id)) idList.push(o.id);
+      }
+    }
     let orders: any[] = [];
     if (idList.length) {
       const { data: rows, error } = await supabaseAdmin.from("shop_orders")

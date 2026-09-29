@@ -134,11 +134,11 @@ export function TemplateEditor({ value, onChange, onSave, onCancel, saving, rows
   );
 }
 
-type TemplateContext = { customerName?: string | null; customerEmail?: string | null; orderNumber?: string | null };
+type TemplateContext = { customerName?: string | null; customerEmail?: string | null; orderNumber?: string | null; conversationId?: string | null };
 
 // Texto final de uma mensagem salva: {nome} → primeiro nome do cliente,
 // {rastreio} → link de rastreio (do pedido buscado, ou o mais recente do cliente).
-function useTemplateFill({ customerName, customerEmail, orderNumber }: TemplateContext) {
+function useTemplateFill({ customerName, customerEmail, orderNumber, conversationId }: TemplateContext) {
   const qc = useQueryClient();
   const customerFn = useSupportFn(getSupportCustomer, "getSupportCustomer");
   const [filling, setFilling] = useState(false);
@@ -152,7 +152,11 @@ function useTemplateFill({ customerName, customerEmail, orderNumber }: TemplateC
     if (email.includes("@") && (needsTracking || (!first && /\{nome\}/i.test(body)))) {
       setFilling(true);
       try {
-        customer = await qc.fetchQuery({ queryKey: ["support-customer", email], queryFn: () => customerFn({ data: { email } }) });
+        // Mesma chave do painel do cliente (com a conversa: pedidos citados nela também).
+        customer = await qc.fetchQuery({
+          queryKey: conversationId ? ["support-customer", email, conversationId] : ["support-customer", email],
+          queryFn: () => customerFn({ data: conversationId ? { email, conversationId } : { email } }),
+        });
       } catch { /* sem pedido: segue sem preencher */ }
       setFilling(false);
     }
@@ -176,10 +180,10 @@ function useTemplateFill({ customerName, customerEmail, orderNumber }: TemplateC
 // Caixa de texto com atalho "/": digitar "/" (no começo ou depois de espaço)
 // abre as mensagens salvas filtradas pelo que vem depois; ↑↓ escolhe,
 // Enter/Tab insere no lugar do "/…", Esc fecha.
-export function TemplateTextarea({ value, onChange, onKeyDown, customerName, customerEmail, orderNumber, className, ...rest }:
+export function TemplateTextarea({ value, onChange, onKeyDown, customerName, customerEmail, orderNumber, conversationId, className, ...rest }:
   Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & TemplateContext & { value: string; onChange: (v: string) => void }) {
   const listFn = useSupportFn(listSupportTemplates, "listSupportTemplates");
-  const { fill } = useTemplateFill({ customerName, customerEmail, orderNumber });
+  const { fill } = useTemplateFill({ customerName, customerEmail, orderNumber, conversationId });
   const ref = useRef<HTMLTextAreaElement>(null);
   // Onde está o "/" e o que foi digitado depois dele (null = menu fechado).
   const [slash, setSlash] = useState<{ start: number; query: string } | null>(null);
@@ -256,10 +260,9 @@ export function TemplateTextarea({ value, onChange, onKeyDown, customerName, cus
 // caixa (vazia: substitui; com texto: acrescenta no fim). {nome} vira o
 // primeiro nome do cliente e {rastreio} o link de rastreio do pedido
 // (o buscado na Nova mensagem, ou o mais recente do cliente).
-export function SavedReplies({ text, setText, customerName, customerEmail, orderNumber }: {
+export function SavedReplies({ text, setText, customerName, customerEmail, orderNumber, conversationId }: {
   text: string; setText: (t: string) => void;
-  customerName?: string | null; customerEmail?: string | null; orderNumber?: string | null;
-}) {
+} & TemplateContext) {
   const qc = useQueryClient();
   const listFn = useSupportFn(listSupportTemplates, "listSupportTemplates");
   const saveFn = useSupportFn(saveSupportTemplate, "saveSupportTemplate");
@@ -282,7 +285,7 @@ export function SavedReplies({ text, setText, customerName, customerEmail, order
     onError: (e: any) => toast.error(e.message ?? "Erro ao excluir"),
   });
 
-  const { fill, filling } = useTemplateFill({ customerName, customerEmail, orderNumber });
+  const { fill, filling } = useTemplateFill({ customerName, customerEmail, orderNumber, conversationId });
   const use = async (t: SupportTemplate) => {
     setOpen(false);
     const body = await fill(t);
@@ -363,9 +366,10 @@ export function SavedReplies({ text, setText, customerName, customerEmail, order
 
 export type SendMode = "em_atendimento" | "resolvido";
 
-export function Composer({ customerName, customerEmail, onSend, sending }: {
+export function Composer({ customerName, customerEmail, conversationId, onSend, sending }: {
   customerName: string;
   customerEmail?: string | null;
+  conversationId?: string | null;
   sending: boolean;
   onSend: (text: string, attachments: ReturnType<typeof useAttachments>["refs"], mode: SendMode) => Promise<boolean>;
 }) {
@@ -388,6 +392,7 @@ export function Composer({ customerName, customerEmail, onSend, sending }: {
           onChange={setText}
           customerName={customerName}
           customerEmail={customerEmail}
+          conversationId={conversationId}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("em_atendimento"); } }}
           placeholder={`Responder ${customerName}… pode escrever em português e traduzir  (/ = mensagens salvas · Ctrl+Enter envia)`}
           rows={4}
@@ -398,7 +403,7 @@ export function Composer({ customerName, customerEmail, onSend, sending }: {
             className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
             {att.uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
           </button>
-          <SavedReplies text={text} setText={setText} customerName={customerName} customerEmail={customerEmail} />
+          <SavedReplies text={text} setText={setText} customerName={customerName} customerEmail={customerEmail} conversationId={conversationId} />
           <TranslateToEnglish text={text} setText={setText} />
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
           <div className="flex-1" />

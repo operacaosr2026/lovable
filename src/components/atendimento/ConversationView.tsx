@@ -14,7 +14,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { EmailFrame } from "./EmailFrame";
+import { EmailFrame, QuotedText } from "./EmailFrame";
 import { Composer, type SendMode } from "./Composer";
 import { TagEditor } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
@@ -66,8 +66,8 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
   const q = useQuery({ queryKey: ["support-conv", id], queryFn: () => getFn({ data: { id } }), staleTime: 30_000 });
   const conv = q.data?.conversation;
   const customer = useQuery({
-    queryKey: ["support-customer", conv?.customer_email],
-    queryFn: () => customerFn({ data: { email: conv!.customer_email } }),
+    queryKey: ["support-customer", conv?.customer_email, conv?.id],
+    queryFn: () => customerFn({ data: { email: conv!.customer_email, conversationId: conv!.id } }),
     enabled: !!conv, staleTime: 5 * 60_000,
   });
 
@@ -215,7 +215,7 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
         {q.data!.messages.map((m) => <Bubble key={m.id} m={m} fg={fg} />)}
       </div>
 
-      <Composer customerName={name.split(" ")[0]} customerEmail={conv.customer_email} onSend={onSend} sending={sending} />
+      <Composer customerName={name.split(" ")[0]} customerEmail={conv.customer_email} conversationId={conv.id} onSend={onSend} sending={sending} />
     </div>
   );
 }
@@ -223,11 +223,11 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
 function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
   const out = m.direction === "out";
   const translateFn = useSupportFn(translateSupportMessage, "translateSupportMessage");
-  // E-mail do cliente abre já em português (tradução feita na sincronização ou,
-  // se ainda não tiver, pedida agora); o 🌐 alterna com o original. Nossas
-  // respostas (já em inglês) abrem no original.
+  // Todo e-mail abre em português — do cliente e os nossos já enviados
+  // (tradução feita na sincronização ou, se ainda não tiver, pedida agora e
+  // guardada); o 🌐 alterna com o original em inglês.
   const [pt, setPt] = useState<string | null>(m.content_pt ?? null);
-  const [mode, setMode] = useState<"pt" | "orig">(out ? "orig" : "pt");
+  const [mode, setMode] = useState<"pt" | "orig">("pt");
   const [translating, setTranslating] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -245,7 +245,7 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
     }
   };
   useEffect(() => {
-    if (!out && pt == null && !failed) translate(true);
+    if (pt == null && !failed) translate(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [m.id]);
 
@@ -276,7 +276,7 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
           </button>
         </div>
         {showPt ? (
-          <p className="text-sm whitespace-pre-wrap leading-relaxed">{pt}</p>
+          <QuotedText text={pt!} />
         ) : m.content_html != null
           ? <EmailFrame html={m.content_html} color={fg} />
           : <p className="text-sm whitespace-pre-wrap">{m.summary}</p>}

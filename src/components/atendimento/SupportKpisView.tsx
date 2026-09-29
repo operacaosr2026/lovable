@@ -49,7 +49,7 @@ export function SupportKpisView({ month }: { month: string }) {
           delta={k && pctDelta(k.cards.firstResponse.value, k.cards.firstResponse.prev)} deltaTone="lower"
           series={k?.cards.firstResponse.series} seriesFormat={(v) => formatDuration(v)}
           footer={k && <Goal goalMs={k.goals.firstResponseMin * 60_000} value={k.cards.firstResponse.value} />} />
-        <StatCard icon={Timer} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" color="#f59e0b" label="Tempo médio de resolução" vs={vs} hint={k ? `Horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
+        <StatCard icon={Timer} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" color="#f59e0b" label="Tempo médio até solucionar" vs={vs} hint={k ? `Horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
           value={k ? formatDuration(k.cards.resolution.value) : undefined}
           delta={k && pctDelta(k.cards.resolution.value, k.cards.resolution.prev)} deltaTone="lower"
           series={k?.cards.resolution.series} seriesFormat={(v) => formatDuration(v)}
@@ -62,7 +62,7 @@ export function SupportKpisView({ month }: { month: string }) {
         <StatCard icon={MailWarning} tone="bg-destructive/10 text-destructive" color="var(--color-destructive)" label="Em aberto" vs={vs}
           value={k ? int(k.cards.open.value) : undefined} delta={k && pctDelta(k.cards.open.value, k.cards.open.prev)} deltaTone="lower"
           series={k?.cards.open.series} seriesFormat={(v) => `${v} em aberto`}
-          footer={k && <Split a={["Há mais de 24h", int(k.cards.open.over24h)]} b={["Há mais de 72h", int(k.cards.open.over72h)]} />} />
+          footer={k && <Split a={["Há mais de 12h", int(k.cards.open.over12h)]} b={["Há mais de 36h", int(k.cards.open.over36h)]} />} />
       </div>
 
       {/* ── Por loja | Por tag ── */}

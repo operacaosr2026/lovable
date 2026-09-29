@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Mail, MailWarning, MailPlus, MessageCircle, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
+  Mail, MailWarning, MessageCircle, Percent, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
   RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles, BarChart3, CalendarDays,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
@@ -37,7 +37,10 @@ export const Route = createFileRoute("/atendimento")({
   component: AtendimentoPage,
 });
 
-type Tab = "todos" | "nao_lidos" | "favoritos";
+type Tab = "todos" | "nao_respondidos" | "favoritos";
+// Não respondido: conversa em aberto em que o cliente escreveu por último.
+const isUnanswered = (c: SupportConversation) =>
+  c.status !== "resolvido" && !!c.last_inbound_at && (!c.last_outbound_at || c.last_inbound_at > c.last_outbound_at);
 const PERIODS = [
   ["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "Últimos 7 dias"], ["30d", "Últimos 30 dias"], ["mes", "Este mês"], ["custom", "Personalizado"],
 ] as const;
@@ -186,12 +189,12 @@ function Inboxes({ status }: { status: ZohoStatus }) {
 
   const counts = {
     todos: filteredBase.length,
-    nao_lidos: filteredBase.filter((c) => c.unread_count > 0).length,
+    nao_respondidos: filteredBase.filter(isUnanswered).length,
     favoritos: filteredBase.filter((c) => c.favorite).length,
   };
 
   const visible = useMemo(() => {
-    const rows = filteredBase.filter((c) => tab === "todos" || (tab === "nao_lidos" ? c.unread_count > 0 : c.favorite));
+    const rows = filteredBase.filter((c) => tab === "todos" || (tab === "nao_respondidos" ? isUnanswered(c) : c.favorite));
     const t = (c: SupportConversation) => c.last_message_at ?? "";
     return [...rows].sort((a, b) =>
       sort === "antigos" ? t(a).localeCompare(t(b))
@@ -241,8 +244,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   const k = list.data?.kpis;
   // Cards clicáveis: contam as conversas do período (as mesmas da lista).
   const periodCounts = {
-    unread: conversations.filter((c) => c.unread_count > 0).length,
-    novo: conversations.filter((c) => c.status === "novo").length,
+    unanswered: conversations.filter(isUnanswered).length,
     em_atendimento: conversations.filter((c) => c.status === "em_atendimento").length,
     resolvido: conversations.filter((c) => c.status === "resolvido").length,
   };
@@ -388,10 +390,9 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
         <Kpi icon={Mail} cls="bg-primary/10 text-primary" label={`E-mails recebidos ${PERIOD_SUFFIX[period] ?? "no período"}`} value={kv(k?.received)}
           onClick={() => { setTab("todos"); setStatusFilter([]); }} />
-        <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não lidos" value={kv(list.data ? periodCounts.unread : undefined)}
-          active={tab === "nao_lidos"} onClick={() => setTab(tab === "nao_lidos" ? "todos" : "nao_lidos")} />
-        <Kpi icon={MailPlus} cls="bg-sky-500/10 text-sky-600 dark:text-sky-400" label="Novos" value={kv(list.data ? periodCounts.novo : undefined)}
-          active={onlyStatus("novo")} onClick={() => toggleStatusCard("novo")} />
+        <Kpi icon={MailWarning} cls="bg-destructive/10 text-destructive" label="Não respondidos" value={kv(list.data ? periodCounts.unanswered : undefined)}
+          hint="Conversas em que o cliente escreveu por último e ainda não teve resposta sua"
+          active={tab === "nao_respondidos"} onClick={() => { setTab(tab === "nao_respondidos" ? "todos" : "nao_respondidos"); setStatusFilter([]); }} />
         <Kpi icon={MessageCircle} cls="bg-info/10 text-info" label="Em atendimento" value={kv(list.data ? periodCounts.em_atendimento : undefined)}
           active={onlyStatus("em_atendimento")} onClick={() => toggleStatusCard("em_atendimento")} />
         <Kpi icon={CircleCheck} cls="bg-success/15 text-success" label="Resolvidos" value={kv(list.data ? periodCounts.resolvido : undefined)}
@@ -399,6 +400,12 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         <Kpi icon={Timer} cls="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Tempo médio de resposta"
           hint={k?.hours ? `Tempo médio de resposta em horário comercial: ${businessHoursLabel(k.hours)}` : undefined}
           value={k ? formatDuration(k.avgResponseMs) : kv(undefined)} />
+        {/* Resolvidas ÷ conversas do período (as mesmas da lista). */}
+        <Kpi icon={Percent} cls="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" label="Taxa de resolução"
+          hint="Conversas do período já resolvidas ÷ total de conversas do período"
+          value={list.data
+            ? (conversations.length ? `${(Math.round((periodCounts.resolvido / conversations.length) * 1000) / 10).toLocaleString("pt-BR")}%` : "—")
+            : kv(undefined)} />
       </div>
 
       {/* ── Lista | Conversa | Cliente ── */}
@@ -406,7 +413,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         <section className={`rounded-2xl border border-border bg-card flex-col min-h-0 overflow-hidden ${selectedId ? "hidden lg:flex" : "flex"} h-[70vh] lg:h-auto`}>
           <div className="flex items-center justify-between gap-2 px-3 border-b border-border">
             <div className="flex">
-              {([["todos", "Todos"], ["nao_lidos", "Não lidos"], ["favoritos", "Favoritos"]] as const).map(([key, label]) => (
+              {([["todos", "Todos"], ["nao_respondidos", "Não respondidos"], ["favoritos", "Favoritos"]] as const).map(([key, label]) => (
                 <button key={key} onClick={() => setTab(key)}
                   className={`h-11 px-2.5 text-xs font-medium border-b-2 -mb-px whitespace-nowrap ${tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                   {label} <span className="text-[10px] opacity-70">({counts[key]})</span>

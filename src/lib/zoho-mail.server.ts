@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { orderNumberVariants, orderNumbersInText } from "@/lib/order-numbers";
 import { fetchWithRetry } from "@/lib/http";
 import type { Database } from "@/integrations/supabase/types";
 import { selectAll, selectAllIn } from "@/lib/select-all";
@@ -498,21 +499,22 @@ export async function assignConversationShops(ownerId: string, ids?: string[]) {
     }
   }
 
-  // Sem pedido com esse e-mail: procura "#1234" nos assuntos dos e-mails da conversa.
+  // Sem pedido com esse e-mail: procura o nº do pedido ("#1234", "#L2-1131",
+  // "L4-1490") nos assuntos e resumos dos e-mails da conversa.
   const rest = convs.filter((c) => !shopByConv.has(c.id)).map((c) => c.id);
   if (rest.length) {
-    const { data: msgs } = await selectAllIn<{ conversation_id: string; subject: string | null }>(rest, (c) =>
-      supabaseAdmin.from("support_messages").select("conversation_id,subject").in("conversation_id", c));
+    const { data: msgs } = await selectAllIn<{ conversation_id: string; subject: string | null; summary: string | null }>(rest, (c) =>
+      supabaseAdmin.from("support_messages").select("conversation_id,subject,summary").in("conversation_id", c));
     const numsByConv = new Map<string, Set<string>>();
     for (const m of msgs) {
-      for (const [, n] of (m.subject ?? "").matchAll(/#\s?(\d{3,8})\b/g)) {
+      for (const n of [...orderNumbersInText(m.subject), ...orderNumbersInText(m.summary)]) {
         (numsByConv.get(m.conversation_id) ?? numsByConv.set(m.conversation_id, new Set()).get(m.conversation_id)!).add(n);
       }
     }
     const allNums = [...new Set([...numsByConv.values()].flatMap((s) => [...s]))];
     if (allNums.length) {
       const { data: orders } = await selectAllIn<{ shop_id: string; order_number: string | null }>(
-        allNums.flatMap((n) => [n, `#${n}`]),
+        orderNumberVariants(allNums),
         (c) => supabaseAdmin.from("shop_orders").select("shop_id,order_number").eq("user_id", ownerId).in("order_number", c),
       );
       const shopsByNum = new Map<string, Set<string>>();
@@ -534,9 +536,9 @@ export async function assignConversationShops(ownerId: string, ids?: string[]) {
 
 // ─── Resolver sozinho ─────────────────────────────────────────────────────────
 
-// Em atendimento + última mensagem é nossa + cliente sem responder há 3 dias
+// Em atendimento + última mensagem é nossa + cliente sem responder há 48h
 // → resolvido. (Se ele escrever depois, a conversa volta pra em atendimento.)
-export const AUTO_RESOLVE_DAYS = 3;
+export const AUTO_RESOLVE_DAYS = 2;
 export async function autoResolveStale(ownerId: string) {
   const cutoff = new Date(Date.now() - AUTO_RESOLVE_DAYS * 86_400_000).toISOString();
   const { data } = await selectAll<{ id: string; last_inbound_at: string | null; last_outbound_at: string }>(

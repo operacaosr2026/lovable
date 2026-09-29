@@ -430,7 +430,7 @@ function GoalsSettings() {
         <p className="text-xs text-muted-foreground mt-0.5">Usadas nos cards da aba KPI para mostrar se o atendimento está dentro ou fora da meta.</p>
       </div>
       <GoalRow label="Tempo médio de 1ª resposta" hint={`Do primeiro e-mail do cliente até a primeira resposta, contando só o horário comercial (${bhText}).`} goal={first} onChange={setFirst} />
-      <GoalRow label="Tempo médio de resolução" hint={`Do primeiro e-mail da conversa até ela ser marcada como resolvida, contando só o horário comercial (${bhText}).`} goal={resolution} onChange={setResolution} />
+      <GoalRow label="Tempo médio até solucionar" hint={`Do primeiro e-mail da conversa até a sua última resposta antes de resolver (o tempo esperando o cliente não conta), só no horário comercial (${bhText}).`} goal={resolution} onChange={setResolution} />
       <div className="flex justify-end">
         <button onClick={() => save.mutate()} disabled={!dirty || !valid || save.isPending}
           className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
