@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { US_TIME_ZONE } from "@/lib/timezone";
+import { US_TIME_ZONE, isoDateUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -591,8 +591,10 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
       const seen = new Set(((existing ?? []) as any[]).map((r) => r.mercury_transaction_id));
       const toInsert: any[] = [];
       for (const c of charges) {
-        // Data em UTC — é como a Meta mostra a cobrança no faturamento.
-        const date = new Date(c.time).toISOString().slice(0, 10);
+        // Dia da cobrança em Nova York (fuso do negócio, igual ao resto do
+        // Caixa). Antes era UTC: cobrança feita depois das 20h de NY caía no
+        // dia seguinte.
+        const date = isoDateUS(c.time);
         const shares = splitCentsEvenly(c.amount, targets.length);
         targets.forEach((shopId, i) => {
           const extId = `meta_charge_${c.txId}_${shopId}`;
