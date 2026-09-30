@@ -18,7 +18,10 @@ export type ChargebackRow = {
   id: string; shopId: string; shopName: string; type: string; status: string | null; reason: string | null;
   amount: number; currency: string | null; initiatedAt: string; evidenceDueBy: string | null; finalizedOn: string | null;
   orderExternalId: string | null; orderNumber: string | null; orderDate: string | null; daysToDispute: number | null;
-  customerName: string | null; customerEmail: string | null; product: string | null;
+  customerName: string | null; customerEmail: string | null; product: string | null; productImage: string | null;
+  // Produto do cadastro (Produtos) que casa com o título — agrupa variações do
+  // mesmo produto ("Air 1 Low Georgetown" e "Georgetown"). Sem cadastro: o título.
+  productGroup: string | null;
   deliveryStatus: string | null; shippedAt: string | null; deliveredAt: string | null;
   lastEvent: string | null; lastEventAt: string | null; trackingCode: string | null; trackingUrl: string | null;
   alerts: string[]; conversationId: string | null; adminUrl: string | null;
@@ -177,6 +180,21 @@ export const getChargebacks = createServerFn({ method: "GET" })
       });
     }
 
+    // Foto do produto: cadastro de Produtos (nome/palavra-chave no título, a
+    // mais específica ganha — mesma regra do custo).
+    const { data: products } = await supabaseAdmin.from("products").select("name,keywords,main_image_url").eq("user_id", ownerId);
+    const matchProduct = (title: string | null | undefined) => {
+      const t = (title ?? "").toLowerCase();
+      let best: { name: string; url: string | null; len: number } | null = null;
+      for (const p of (products ?? []) as { name: string; keywords: string[] | null; main_image_url: string | null }[]) {
+        for (const c of [p.name, ...(p.keywords ?? [])]) {
+          const k = (c ?? "").trim().toLowerCase();
+          if (k && t.includes(k) && (!best || k.length > best.len)) best = { name: p.name, url: p.main_image_url, len: k.length };
+        }
+      }
+      return best;
+    };
+
     // Conversa no Atendimento com o e-mail do pedido.
     const emailOf = (o: any) => String(o?.email ?? o?.cust_email ?? "").toLowerCase() || null;
     const emails = [...new Set([...orderBy.values()].map(emailOf).filter(Boolean))] as string[];
@@ -203,6 +221,8 @@ export const getChargebacks = createServerFn({ method: "GET" })
         daysToDispute: days != null && days >= 0 ? days : null,
         customerName: o ? [o.first_name, o.last_name].filter(Boolean).join(" ") || null : null, customerEmail: email,
         product: o ? ((o.items ?? []) as any[]).map((li) => li?.title).filter(Boolean).join(", ") || null : null,
+        productImage: o ? matchProduct(((o.items ?? []) as any[])[0]?.title)?.url ?? null : null,
+        productGroup: o ? matchProduct(((o.items ?? []) as any[])[0]?.title)?.name ?? (((o.items ?? []) as any[])[0]?.title ?? null) : null,
         deliveryStatus: o?.delivery_status ?? null, shippedAt: o?.shipped_at ?? null, deliveredAt: o?.delivered_at ?? null,
         lastEvent: t?.last_event_label ?? o?.last_event_label ?? null, lastEventAt: t?.last_event_at ?? o?.last_event_at ?? null,
         trackingCode: o?.tracking_code ?? null,
