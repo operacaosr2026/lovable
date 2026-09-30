@@ -67,6 +67,15 @@ export function AlertsTab() {
         Pedidos que o <strong className="text-foreground font-medium">Disputifier reembolsou</strong> por alerta de pré-chargeback (CDRN, Ethoca, RDR).
         O reembolso evita o chargeback, mas o pedido quase sempre foi entregue — dá pra contatar o cliente e tentar reaver o valor.
       </p>
+      <div className="grid sm:grid-cols-3 gap-2 text-xs text-muted-foreground">
+        {([
+          ["CDRN", "Rede da Verifi (Visa). O banco avisa que o cliente vai contestar; reembolsando em até 72h, o chargeback não é aberto."],
+          ["Ethoca", "Rede da Mastercard. Mesmo esquema: o banco alerta sobre a reclamação e o reembolso rápido cancela a disputa."],
+          ["RDR", "Rapid Dispute Resolution, da Visa. O reembolso sai automático por regra pré-definida, sem a loja decidir caso a caso."],
+        ] as const).map(([k, d]) => (
+          <p key={k}><span className="inline-flex text-[11px] px-1.5 py-0.5 mr-1.5 rounded-full font-semibold bg-violet-500/10 text-violet-700 dark:text-violet-400">{k}</span>{d}</p>
+        ))}
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Stat icon={BellRing} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Alertas" value={String(rows.length)} sub={`${money(sum(rows, (r) => r.refundedAmount))} reembolsados`} />
