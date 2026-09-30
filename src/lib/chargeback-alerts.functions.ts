@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { alertShopIds, loadAlerts, getChargebackSettings as readSettings } from "@/lib/chargeback-alerts.server";
+import { ensureRecoveryLink } from "@/lib/chargeback-recovery.server";
 import { ALERT_STATUSES, type AlertRow } from "@/lib/chargeback-alerts.shared";
 
 // Chargebacks > Alertas e Chargebacks > Configurações (sequência de cobrança).
@@ -86,4 +87,19 @@ export const saveChargebackSettings = createServerFn({ method: "POST" })
     }, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// Botão "Link de pagamento" da lista: cria o pedido de cobrança na Shopify (ou
+// devolve o que já existe) — o mesmo link que a sequência usa no {link_pagamento}.
+export const createRecoveryPaymentLink = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shopId: z.string().uuid(), orderExternalId: z.string().min(1).max(40) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const shopIds = await alertShopIds(context.ownerId);
+    if (!shopIds.includes(data.shopId)) throw new Error("Loja não encontrada");
+    const row = (await loadAlerts(context.ownerId, [data.shopId])).find((r) => r.orderExternalId === data.orderExternalId);
+    if (!row) throw new Error("Alerta não encontrado");
+    if (row.recoveryOrderId) throw new Error(`Já pago no pedido ${row.recoveryOrderName ?? ""}`.trim());
+    return { url: await ensureRecoveryLink(context.ownerId, row) };
   });

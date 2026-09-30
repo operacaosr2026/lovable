@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  BellRing, CircleCheck, Pause, Play, Reply, DollarSign, Clock, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, StickyNote, Wallet,
+  BellRing, CircleCheck, Pause, Play, Reply, DollarSign, Clock, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings, saveChargebackSettings } from "@/lib/chargeback-alerts.functions";
+import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings, saveChargebackSettings, createRecoveryPaymentLink } from "@/lib/chargeback-alerts.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ALERT_STATUSES, type AlertRow, type AlertStatus, type ChargebackSettings } from "@/lib/chargeback-alerts.shared";
 
@@ -105,7 +105,7 @@ export function AlertsTab() {
                 <th className="font-medium py-2.5 px-2 text-center">Reembolsado</th>
                 <th className="font-medium py-2.5 px-2 text-center">Entrega</th>
                 <th className="font-medium py-2.5 px-2 text-center">Cobrança</th>
-                <th className="font-medium py-2.5 px-2 text-left">Notas</th>
+                <th className="font-medium py-2.5 px-2 text-center">Pagamento</th>
               </tr>
             </thead>
             <tbody>
@@ -163,7 +163,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
     <div className="text-xs text-muted-foreground">{fmtDate(r.refundedAt)}</div>
   </>;
   const delivery = <>
-    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${delivered ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+    <span className={`inline-flex items-center justify-center gap-1 w-[150px] text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${delivered ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
       {delivered ? <CircleCheck className="size-3" /> : <Package className="size-3" />}{dl}{delivered && r.deliveredAt ? ` · ${fmtDate(r.deliveredAt)}` : ""}
     </span>
     {r.trackingCode && (
@@ -180,14 +180,14 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
         const st = e.target.value as AlertStatus;
         save.mutate({ status: st, recoveredAmount: st === "recuperado" ? r.recoveredAmount ?? r.refundedAmount : null });
       }}
-      className={`h-7 px-2.5 rounded-full text-xs font-medium border-0 outline-none cursor-pointer appearance-none text-center ${STATUS[r.status].cls}`}
+      className={`h-7 w-[124px] px-2 rounded-full text-xs font-medium border-0 outline-none cursor-pointer appearance-none text-center ${STATUS[r.status].cls}`}
       style={{ backgroundImage: "none" }}>
       {ALERT_STATUSES.map((st) => <option key={st} value={st}>{STATUS[st].label}</option>)}
     </select>
     {r.status === "recuperado" && r.recoveredAmount != null && <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">{money(r.recoveredAmount)}</div>}
     <DunningInfo r={r} seq={seq} busy={save.isPending} onPause={(p) => save.mutate({ status: r.status, dunningPaused: p })} />
   </>;
-  const notes = <FollowupPopover r={r} saving={save.isPending} onSave={(v) => save.mutate({ status: r.status, ...v })} />;
+  const payment = <PaymentLink r={r} />;
 
   if (mobile) return (
     <div className="py-3.5 space-y-2.5">
@@ -198,7 +198,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       <div className="flex items-center gap-2 min-w-0"><div className="min-w-0 flex-1">{product}</div>{network}</div>
       <div>{delivery}</div>
       <div>{status}</div>
-      <div>{notes}</div>
+      <div>{payment}</div>
     </div>
   );
 
@@ -210,7 +210,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       <td className="py-3 px-2 text-center">{refund}</td>
       <td className="py-3 px-2 text-center">{delivery}</td>
       <td className="py-3 px-2 text-center">{status}</td>
-      <td className="py-3 px-2">{notes}</td>
+      <td className="py-3 px-2 text-center">{payment}</td>
     </tr>
   );
 }
@@ -391,44 +391,39 @@ function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: b
   );
 }
 
-// Anotação + valor recuperado.
-function FollowupPopover({ r, saving, onSave }: { r: AlertRow; saving: boolean; onSave: (v: { recoveredAmount: number | null; note: string | null }) => void }) {
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState(r.followupNote ?? "");
-  const [amount, setAmount] = useState(String(r.recoveredAmount ?? r.refundedAmount));
+// Link de pagamento (pedido "Payment for order #X" na Shopify): cria na 1ª vez e
+// copia; depois só copia. Pago → mostra o pedido.
+function PaymentLink({ r }: { r: AlertRow }) {
+  const qc = useQueryClient();
+  const fn = useServerFn(createRecoveryPaymentLink);
+  const [copied, setCopied] = useState(false);
+  const copy = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("Link de pagamento copiado");
+    } catch {
+      // Navegador bloqueou a cópia (ex.: depois de esperar a Shopify): mostra o link.
+      toast("Link de pagamento", { description: url, duration: 20_000 });
+    }
+  };
+  const create = useMutation({
+    mutationFn: () => fn({ data: { shopId: r.shopId, orderExternalId: r.orderExternalId } }),
+    onSuccess: async ({ url }) => { await copy(url); qc.invalidateQueries({ queryKey: ["chargeback-alerts"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao criar o link"),
+  });
+  if (r.recoveryOrderName) {
+    return <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><CircleCheck className="size-3.5" />Pago · {r.recoveryOrderName}</span>;
+  }
+  const has = !!r.recoveryInvoiceUrl;
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) { setNote(r.followupNote ?? ""); setAmount(String(r.recoveredAmount ?? r.refundedAmount)); } }}>
-      <PopoverTrigger asChild>
-        <button title={r.followupNote ?? "Adicionar nota"}
-          className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-muted text-xs">
-          {r.followupNote
-            ? <span className="line-clamp-2 whitespace-pre-line text-foreground/80">{r.followupNote}</span>
-            : <span className="inline-flex items-center gap-1.5 text-muted-foreground"><StickyNote className="size-3.5" />Adicionar nota</span>}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 space-y-2.5">
-        <p className="text-xs font-semibold">{r.orderNumber} · cobrança</p>
-        {r.status === "recuperado" && (
-          <label className="block">
-            <span className="text-[11px] text-muted-foreground">Valor recuperado (US$)</span>
-            <div className="relative mt-1">
-              <Wallet className="size-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ""))} inputMode="decimal"
-                className="w-full h-9 pl-8 pr-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary" />
-            </div>
-          </label>
-        )}
-        <label className="block">
-          <span className="text-[11px] text-muted-foreground">Anotação</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} placeholder="Ex.: cliente confirmou que recebeu, vai pagar pelo link…"
-            className="mt-1 w-full resize-none rounded-lg border border-border bg-background p-2 text-xs outline-none focus:border-primary" />
-        </label>
-        <div className="flex justify-end">
-          <button disabled={saving} onClick={() => { onSave({ recoveredAmount: r.status === "recuperado" ? Number(amount.replace(",", ".")) || 0 : null, note: note.trim() || null }); setOpen(false); }}
-            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-60">Salvar</button>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <button onClick={() => (has ? copy(r.recoveryInvoiceUrl!) : create.mutate())} disabled={create.isPending}
+      title={has ? r.recoveryInvoiceUrl! : "Cria o pedido de cobrança na Shopify e copia o link"}
+      className={`h-8 w-[112px] px-2 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-60 ${has ? "border border-border hover:bg-muted" : "bg-primary/10 text-primary hover:bg-primary/15"}`}>
+      {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : copied ? <Check className="size-3.5" /> : has ? <Copy className="size-3.5" /> : <Link2 className="size-3.5" />}
+      {create.isPending ? "Criando…" : copied ? "Copiado" : has ? "Copiar link" : "Gerar link"}
+    </button>
   );
 }
 
