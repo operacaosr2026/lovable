@@ -37,7 +37,8 @@ const DELIVERY: Record<string, string> = {
 
 export function AlertsTab() {
   const fn = useServerFn(getChargebackAlerts);
-  const q = useQuery({ queryKey: ["chargeback-alerts"], queryFn: () => fn() });
+  // Recarrega sozinha: a cobrança automática muda status a cada rodada (5 em 5 min).
+  const q = useQuery({ queryKey: ["chargeback-alerts"], queryFn: () => fn(), refetchInterval: 2 * 60_000 });
   const settingsFn = useServerFn(getChargebackSettings);
   const settings = useQuery({ queryKey: ["chargeback-settings"], queryFn: () => settingsFn() });
   const seq = { enabled: !!settings.data?.dunningEnabled, total: settings.data?.dunningSteps.filter((st) => st.subject && st.body).length ?? 0 };
