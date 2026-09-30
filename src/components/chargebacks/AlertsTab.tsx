@@ -94,9 +94,9 @@ export function AlertsTab() {
         {!list.length ? <p className="text-sm text-muted-foreground text-center py-10">Nenhum alerta nesse filtro</p> : (<>
           <table className="hidden xl:table w-full table-fixed text-sm">
             <colgroup>
-              {/* Larguras fixas nas colunas de etiqueta/botão (cabem inteiras); o produto fica com o resto. */}
-              <col className="w-[120px]" /><col /><col className="w-[88px]" /><col className="w-[112px]" />
-              <col className="w-[172px]" /><col className="w-[148px]" /><col className="w-[136px]" />
+              {/* Espaço dividido entre as colunas (não sobra tudo pro produto); etiquetas encolhem até caber. */}
+              <col className="w-[12%]" /><col className="w-[20%]" /><col className="w-[9%]" /><col className="w-[11%]" />
+              <col className="w-[17%]" /><col className="w-[15%]" /><col className="w-[16%]" />
             </colgroup>
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border">
@@ -164,7 +164,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
     <div className="text-xs text-muted-foreground">{fmtDate(r.refundedAt)}</div>
   </>;
   const delivery = <>
-    <span className={`inline-flex items-center justify-center gap-1 w-[150px] text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${delivered ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+    <span className={`inline-flex items-center justify-center gap-1 w-full max-w-[150px] text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap overflow-hidden ${delivered ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
       {delivered ? <CircleCheck className="size-3" /> : <Package className="size-3" />}{dl}{delivered && r.deliveredAt ? ` · ${fmtDate(r.deliveredAt)}` : ""}
     </span>
     {r.trackingCode && (
@@ -181,7 +181,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
         const st = e.target.value as AlertStatus;
         save.mutate({ status: st, recoveredAmount: st === "recuperado" ? r.recoveredAmount ?? r.refundedAmount : null });
       }}
-      className={`h-7 w-[124px] px-2 rounded-full text-xs font-medium border-0 outline-none cursor-pointer appearance-none text-center ${STATUS[r.status].cls}`}
+      className={`h-7 w-full max-w-[124px] px-2 rounded-full text-xs font-medium border-0 outline-none cursor-pointer appearance-none text-center ${STATUS[r.status].cls}`}
       style={{ backgroundImage: "none" }}>
       {ALERT_STATUSES.map((st) => <option key={st} value={st}>{STATUS[st].label}</option>)}
     </select>
@@ -421,7 +421,7 @@ function PaymentLink({ r }: { r: AlertRow }) {
   return (
     <button onClick={() => (has ? copy(r.recoveryInvoiceUrl!) : create.mutate())} disabled={create.isPending}
       title={has ? r.recoveryInvoiceUrl! : "Cria o pedido de cobrança na Shopify e copia o link"}
-      className={`h-8 w-[112px] px-2 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-60 ${has ? "border border-border hover:bg-muted" : "bg-primary/10 text-primary hover:bg-primary/15"}`}>
+      className={`h-8 w-full max-w-[112px] px-2 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-60 ${has ? "border border-border hover:bg-muted" : "bg-primary/10 text-primary hover:bg-primary/15"}`}>
       {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : copied ? <Check className="size-3.5" /> : has ? <Copy className="size-3.5" /> : <Link2 className="size-3.5" />}
       {create.isPending ? "Criando…" : copied ? "Copiado" : has ? "Copiar link" : "Gerar link"}
     </button>
