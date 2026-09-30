@@ -56,3 +56,23 @@ export function dunningVars(r: AlertRow): Record<string, string> {
 export function renderDunning(text: string, vars: Record<string, string>) {
   return text.replace(/\{[a-z_]+\}/gi, (m) => vars[m.toLowerCase()] ?? m);
 }
+
+// Texto do e-mail → HTML. Formatação no estilo WhatsApp: *negrito* (ou **negrito**)
+// e _itálico_. Links viram clicáveis (e não são formatados por dentro).
+function escHtml(t: string) {
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+// Marcador só vale colado no texto e com espaço/pontuação em volta (não pega
+// "5*3" nem nomes_com_underline).
+const B2 = /(^|[\s(["'])\*\*(\S(?:[^*\n]*?\S)?)\*\*(?=$|[\s.,!?;:)\]"'])/g;
+const B1 = /(^|[\s(["'])\*(\S(?:[^*\n]*?\S)?)\*(?=$|[\s.,!?;:)\]"'])/g;
+const IT = /(^|[\s(["'])_(\S(?:[^_\n]*?\S)?)_(?=$|[\s.,!?;:)\]"'])/g;
+function inlineFormat(t: string) {
+  return t.replace(B2, "$1<b>$2</b>").replace(B1, "$1<b>$2</b>").replace(IT, "$1<i>$2</i>");
+}
+export function dunningTextToHtml(text: string) {
+  const html = text.split(/(https?:\/\/[^\s<]+)/g)
+    .map((part, i) => (i % 2 ? `<a href="${escHtml(part)}">${escHtml(part)}</a>` : inlineFormat(escHtml(part))))
+    .join("");
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${html.replace(/\r?\n/g, "<br>")}</div>`;
+}

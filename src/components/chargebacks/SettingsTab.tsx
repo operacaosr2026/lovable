@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info } from "lucide-react";
+import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info, Bold, Italic } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getChargebackSettings, saveChargebackSettings, getChargebackAlerts } from "@/lib/chargeback-alerts.functions";
-import { DUNNING_VARS, dunningVars, renderDunning, type ChargebackSettings, type DunningStep } from "@/lib/chargeback-alerts.shared";
+import { DUNNING_VARS, dunningVars, renderDunning, dunningTextToHtml, type ChargebackSettings, type DunningStep } from "@/lib/chargeback-alerts.shared";
 
 // Chargebacks > Configurações. Por enquanto: sequência de cobrança dos Alertas.
 
@@ -41,6 +41,20 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
   const setSteps = (s: DunningStep[]) => setCfg({ ...cfg, dunningSteps: s });
   const upd = (i: number, p: Partial<DunningStep>) => setSteps(steps.map((s, j) => (j === i ? { ...s, ...p } : s)));
   const move = (i: number, d: -1 | 1) => { const s = [...steps]; [s[i], s[i + d]] = [s[i + d], s[i]]; setSteps(s); };
+  // Envolve a seleção com o marcador (*negrito*, _itálico_); sem seleção, insere o par e põe o cursor no meio.
+  const wrap = (i: number, mark: string) => {
+    const el = bodies.current[i];
+    if (!el) return;
+    const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? a;
+    const sel = el.value.slice(a, b);
+    const lead = sel.match(/^\s*/)![0], trail = sel.match(/\s*$/)![0], core = sel.trim();
+    upd(i, { body: el.value.slice(0, a) + lead + mark + core + mark + trail + el.value.slice(b) });
+    requestAnimationFrame(() => {
+      el.focus();
+      const start = a + lead.length + mark.length;
+      el.setSelectionRange(start, start + core.length);
+    });
+  };
   const insertVar = (v: string) => {
     const i = Math.min(focused, steps.length - 1);
     const el = bodies.current[i];
@@ -96,9 +110,21 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
             </div>
             <input value={s.subject} onChange={(e) => upd(i, { subject: e.target.value })} placeholder="Assunto (ex.: About your order {pedido})"
               className={`${INPUT} h-10 px-3`} />
+            <div className="rounded-lg border border-border focus-within:border-primary overflow-hidden">
+            <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-border bg-muted/40">
+              <IconBtn title="Negrito (*texto*)" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(i, "*")}><Bold className="size-3.5" /></IconBtn>
+              <IconBtn title="Itálico (_texto_)" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(i, "_")}><Italic className="size-3.5" /></IconBtn>
+              <span className="text-[11px] text-muted-foreground ml-1.5">Selecione o texto e clique · *negrito* · _itálico_</span>
+            </div>
             <textarea ref={(el) => { bodies.current[i] = el; }} onFocus={() => setFocused(i)} value={s.body} onChange={(e) => upd(i, { body: e.target.value })}
               rows={8} placeholder={"Hi {nome},\n\nWe noticed your order {pedido} was refunded, but tracking shows it was delivered on {data_entrega}…"}
-              className={`${INPUT} p-3 resize-y leading-relaxed`} />
+              onKeyDown={(e) => {
+                if (!(e.ctrlKey || e.metaKey)) return;
+                const k = e.key.toLowerCase();
+                if (k === "b" || k === "i") { e.preventDefault(); wrap(i, k === "b" ? "*" : "_"); }
+              }}
+              className="w-full bg-background text-sm outline-none p-3 resize-y leading-relaxed block" />
+            </div>
           </div>
         ))}
         <button onClick={() => { setSteps([...steps, { subject: "", body: "", days: steps.length ? 3 : 0 }]); setFocused(steps.length); }} disabled={steps.length >= 10}
@@ -171,9 +197,10 @@ function PreviewDialog({ step, index, onClose }: { step: DunningStep | null; ind
                 <p className="text-xs text-muted-foreground">Para: {sample.customerName ?? ""} &lt;{sample.customerEmail ?? "—"}&gt;</p>
                 <p className="font-semibold break-words">{renderDunning(step.subject, vars) || "(sem assunto)"}</p>
               </div>
-              <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap break-words max-h-[55vh] overflow-y-auto" style={{ fontFamily: "Arial, sans-serif" }}>
-                {renderDunning(step.body, vars) || <span className="text-muted-foreground">(sem texto)</span>}
-              </div>
+              {step.body.trim()
+                // HTML seguro: dunningTextToHtml escapa o texto antes de formatar.
+                ? <div className="p-4 break-words max-h-[55vh] overflow-y-auto [&_a]:text-primary [&_a]:underline" dangerouslySetInnerHTML={{ __html: dunningTextToHtml(renderDunning(step.body, vars)) }} />
+                : <p className="p-4 text-sm text-muted-foreground">(sem texto)</p>}
             </div>
           </div>
         )}

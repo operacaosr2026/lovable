@@ -5,7 +5,7 @@ import { isoTodayUS } from "@/lib/timezone";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { getZohoAccount, sendZohoMail } from "@/lib/zoho-mail.server";
 import {
-  DEFAULT_CHARGEBACK_SETTINGS, dunningVars, renderDunning,
+  DEFAULT_CHARGEBACK_SETTINGS, dunningVars, renderDunning, dunningTextToHtml,
   type AlertRow, type AlertStatus, type ChargebackSettings, type DunningStep,
 } from "@/lib/chargeback-alerts.shared";
 
@@ -117,7 +117,7 @@ function textToHtml(text: string) {
 
 // Mesma assinatura do Atendimento ({nome} da assinatura = quem envia; aqui, o dono do workspace).
 async function dunningHtml(ownerId: string, senderId: string, text: string) {
-  let html = textToHtml(text);
+  let html = dunningTextToHtml(text);
   const { data: st } = await supabaseAdmin.from("support_settings").select("signature,signature_enabled").eq("owner_id", ownerId).maybeSingle();
   if (st?.signature_enabled && st.signature?.trim()) {
     const { data: prof } = await supabaseAdmin.from("profiles").select("full_name").eq("id", senderId).maybeSingle();
