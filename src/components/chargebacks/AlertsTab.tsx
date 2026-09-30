@@ -152,7 +152,7 @@ function AlertLine({ r }: { r: AlertRow }) {
       </td>
       <td className="py-3 px-2 max-w-[260px]">
         <div className="truncate font-medium" title={r.product ?? undefined}>{r.product ?? "—"}</div>
-        <div className="text-xs text-muted-foreground truncate">{r.customerName ?? "—"}{r.customerEmail ? ` · ${r.customerEmail}` : ""}</div>
+        <div className="text-xs text-muted-foreground truncate">{r.customerName ?? "—"}</div>
       </td>
       <td className="py-3 px-2 text-center">
         <span className="inline-flex text-xs px-2 py-0.5 rounded-full font-semibold bg-violet-500/10 text-violet-700 dark:text-violet-400">{r.network}</span>
