@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { alertShopIds, loadAlerts, getChargebackSettings as readSettings, sendDunningEmail } from "@/lib/chargeback-alerts.server";
+import { alertShopIds, loadAlerts, getChargebackSettings as readSettings } from "@/lib/chargeback-alerts.server";
 import { ALERT_STATUSES, type AlertRow } from "@/lib/chargeback-alerts.shared";
 
 // Chargebacks > Alertas e Chargebacks > Configurações (sequência de cobrança).
@@ -72,22 +72,4 @@ export const saveChargebackSettings = createServerFn({ method: "POST" })
     }, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
-  });
-
-// E-mail de teste pro próprio usuário, com os dados de um alerta de verdade (o
-// entregue mais recente) — só pra ver como o texto chega.
-export const sendDunningTest = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => Step.parse(d))
-  .handler(async ({ data, context }) => {
-    assertAccess(context);
-    if (!data.subject.trim() || !data.body.trim()) throw new Error("Preencha o assunto e o texto");
-    const { data: u } = await supabaseAdmin.auth.admin.getUserById(context.userId);
-    const to = u?.user?.email;
-    if (!to) throw new Error("Seu usuário não tem e-mail");
-    const rows = await loadAlerts(context.ownerId, await alertShopIds(context.ownerId));
-    const sample = rows.find((r) => r.deliveryStatus === "delivered") ?? rows[0];
-    if (!sample) throw new Error("Nenhum alerta pra usar de exemplo");
-    await sendDunningEmail(context.ownerId, context.userId, to, { ...data, subject: `[TESTE] ${data.subject}` }, sample);
-    return { to, orderNumber: sample.orderNumber };
   });

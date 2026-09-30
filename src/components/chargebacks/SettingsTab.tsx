@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Send, Info } from "lucide-react";
+import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { getChargebackSettings, saveChargebackSettings, sendDunningTest } from "@/lib/chargeback-alerts.functions";
-import { DUNNING_VARS, type ChargebackSettings, type DunningStep } from "@/lib/chargeback-alerts.shared";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { getChargebackSettings, saveChargebackSettings, getChargebackAlerts } from "@/lib/chargeback-alerts.functions";
+import { DUNNING_VARS, dunningVars, renderDunning, type ChargebackSettings, type DunningStep } from "@/lib/chargeback-alerts.shared";
 
 // Chargebacks > Configurações. Por enquanto: sequência de cobrança dos Alertas.
 
@@ -23,7 +24,7 @@ export function SettingsTab() {
 function DunningSettings({ initial }: { initial: ChargebackSettings }) {
   const qc = useQueryClient();
   const saveFn = useServerFn(saveChargebackSettings);
-  const testFn = useServerFn(sendDunningTest);
+  const [preview, setPreview] = useState<number | null>(null);
   const [cfg, setCfg] = useState<ChargebackSettings>(initial);
   useEffect(() => setCfg(initial), [initial]);
   const dirty = JSON.stringify(cfg) !== JSON.stringify(initial);
@@ -34,11 +35,6 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
     mutationFn: (c: ChargebackSettings) => saveFn({ data: c }),
     onSuccess: () => { toast.success("Configurações salvas"); qc.invalidateQueries({ queryKey: ["chargeback-settings"] }); },
     onError: (e: any) => toast.error(e?.message ?? "Erro ao salvar"),
-  });
-  const test = useMutation({
-    mutationFn: (s: DunningStep) => testFn({ data: s }),
-    onSuccess: (r) => toast.success(`Teste enviado pra ${r.to} (dados do pedido ${r.orderNumber})`),
-    onError: (e: any) => toast.error(e?.message ?? "Erro ao enviar o teste"),
   });
 
   const steps = cfg.dunningSteps;
@@ -89,9 +85,9 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
                 <span className="text-muted-foreground">{i === 0 ? "dias depois da entrega" : "dias depois do e-mail anterior"}</span>
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={() => test.mutate(s)} disabled={test.isPending || !s.subject.trim() || !s.body.trim()}
+                <button onClick={() => setPreview(i)} disabled={!s.subject.trim() && !s.body.trim()}
                   className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50">
-                  {test.isPending && test.variables === s ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Enviar teste pra mim
+                  <Eye className="size-3.5" /> Pré-visualizar
                 </button>
                 <IconBtn title="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" /></IconBtn>
                 <IconBtn title="Descer" disabled={i === steps.length - 1} onClick={() => move(i, 1)}><ArrowDown className="size-3.5" /></IconBtn>
@@ -139,7 +135,50 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
           {save.isPending && <Loader2 className="size-4 animate-spin" />} Salvar
         </button>
       </div>
+      <PreviewDialog step={preview != null ? steps[preview] : null} index={preview ?? 0} onClose={() => setPreview(null)} />
     </div>
+  );
+}
+
+// Mostra o e-mail como o cliente vai receber, com os dados de um alerta real.
+function PreviewDialog({ step, index, onClose }: { step: DunningStep | null; index: number; onClose: () => void }) {
+  const fn = useServerFn(getChargebackAlerts);
+  const q = useQuery({ queryKey: ["chargeback-alerts"], queryFn: () => fn(), enabled: !!step });
+  const rows = q.data?.rows ?? [];
+  const [pick, setPick] = useState<string | null>(null);
+  const sample = rows.find((r) => `${r.shopId}:${r.orderExternalId}` === pick) ?? rows.find((r) => r.deliveryStatus === "delivered") ?? rows[0];
+  const vars = sample ? dunningVars(sample) : {};
+  return (
+    <Dialog open={!!step} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Pré-visualizar · E-mail {index + 1}</DialogTitle>
+          <DialogDescription>Como o cliente vai receber. A assinatura do Atendimento entra no fim.</DialogDescription>
+        </DialogHeader>
+        {q.isLoading ? <div className="py-10 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div> : !sample ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">Nenhum alerta pra usar de exemplo</p>
+        ) : step && (
+          <div className="space-y-3 min-w-0">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              Dados do pedido
+              <select value={`${sample.shopId}:${sample.orderExternalId}`} onChange={(e) => setPick(e.target.value)}
+                className="h-8 px-2 rounded-lg border border-border bg-background text-xs text-foreground outline-none">
+                {rows.map((r) => <option key={`${r.shopId}:${r.orderExternalId}`} value={`${r.shopId}:${r.orderExternalId}`}>{r.orderNumber} · {r.customerName ?? "—"}</option>)}
+              </select>
+            </label>
+            <div className="rounded-xl border border-border overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-border bg-muted/40 text-sm space-y-0.5">
+                <p className="text-xs text-muted-foreground">Para: {sample.customerName ?? ""} &lt;{sample.customerEmail ?? "—"}&gt;</p>
+                <p className="font-semibold break-words">{renderDunning(step.subject, vars) || "(sem assunto)"}</p>
+              </div>
+              <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap break-words max-h-[55vh] overflow-y-auto" style={{ fontFamily: "Arial, sans-serif" }}>
+                {renderDunning(step.body, vars) || <span className="text-muted-foreground">(sem texto)</span>}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
