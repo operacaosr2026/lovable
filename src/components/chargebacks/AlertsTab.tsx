@@ -36,7 +36,10 @@ const DELIVERY: Record<string, string> = {
   returned: "Devolvido", problem: "Problema", waiting_customer: "Esperando cliente",
 };
 
-export function AlertsTab({ scope }: { scope: "ativas" | "todas" }) {
+// Só as lojas ativas (as que contam na meta do mês).
+const scope = "ativas" as const;
+
+export function AlertsTab() {
   const fn = useServerFn(getChargebackAlerts);
   const q = useQuery({ queryKey: ["chargeback-alerts", scope], queryFn: () => fn({ data: { scope } }) });
   const [statusFilter, setStatusFilter] = useState<AlertStatus | "todos">("todos");
@@ -106,7 +109,7 @@ export function AlertsTab({ scope }: { scope: "ativas" | "todas" }) {
                 </tr>
               </thead>
               <tbody>
-                {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} scope={scope} />)}
+                {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} />)}
               </tbody>
             </table>
           </div>
@@ -116,7 +119,7 @@ export function AlertsTab({ scope }: { scope: "ativas" | "todas" }) {
   );
 }
 
-function AlertLine({ r, scope }: { r: AlertRow; scope: "ativas" | "todas" }) {
+function AlertLine({ r }: { r: AlertRow }) {
   const router = useRouter();
   const qc = useQueryClient();
   const saveFn = useServerFn(saveAlertFollowup);

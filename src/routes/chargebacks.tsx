@@ -234,8 +234,8 @@ function ChargebacksPage() {
           <Seg value={tab} options={[["chargebacks", "Disputas"], ["alertas", "Alertas"]] as const} onChange={setTab} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Seg value={scope} options={[["ativas", "Lojas ativas"], ["todas", "Todas as lojas"]] as const} onChange={(v) => { setScope(v); setFilter(null); }} />
           {tab === "chargebacks" && <>
+            <Seg value={scope} options={[["ativas", "Lojas ativas"], ["todas", "Todas as lojas"]] as const} onChange={(v) => { setScope(v); setFilter(null); }} />
             <Seg value={type} options={TYPES} onChange={(v) => { setType(v); setFilter(null); }} />
             <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44" />
           </>}
@@ -243,7 +243,7 @@ function ChargebacksPage() {
       </div>
 
       {tab === "alertas" ? (
-        <AlertsTab scope={scope} />
+        <AlertsTab />
       ) : q.isLoading ? (
         <div className="py-24 grid place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
       ) : q.isError ? (
