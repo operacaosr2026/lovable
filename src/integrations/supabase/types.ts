@@ -53,6 +53,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      chargeback_alert_followups: {
+        Row: { id: string; shop_id: string; order_external_id: string; user_id: string; status: string; recovered_amount: number | null; note: string | null; updated_at: string; updated_by: string | null };
+        Insert: { id?: string; shop_id: string; order_external_id: string; user_id: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null };
+        Update: { id?: string; shop_id?: string; order_external_id?: string; user_id?: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null };
+        Relationships: [];
+      };
       shop_order_risks: {
         Row: {
           shop_id: string; order_external_id: string; user_id: string; order_name: string | null; order_created_at: string | null;

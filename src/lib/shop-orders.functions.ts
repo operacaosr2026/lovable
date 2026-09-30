@@ -570,10 +570,11 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
       replace_placeholder_id: data.replace_placeholder_id ?? null,
     });
     if (error) throw new Error(error.message);
-    // dispute_evidences: ler o que foi enviado nas disputas e (no futuro) enviar a resposta pelo sistema.
+    // write_draft_orders + write_customers: pedido de troca (rascunho com o mesmo cliente, finalizado como pago).
+    // (dispute_evidences não entra: a Shopify só libera pra apps públicos de disputa.)
     // read_all_orders: pedidos com mais de 60 dias (sem ela a Shopify só libera os últimos 60).
     // read_reports: visitas da loja (sessões) pro cálculo de conversão.
-    const scopes = "read_orders,read_all_orders,read_products,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,read_shopify_payments_dispute_evidences,write_shopify_payments_dispute_evidences";
+    const scopes = "read_orders,read_all_orders,read_products,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers";
     const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
     const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
       `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
