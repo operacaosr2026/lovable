@@ -146,12 +146,12 @@ const MAX_PER_RUN = 15;
 
 // Uma rodada da sequência de cobrança pra um workspace. Roda depois do sync do
 // Zoho (a cada 5 min), então uma resposta do cliente já está no banco.
-export async function runChargebackDunning(ownerId: string) {
+export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
   const cfg = await getChargebackSettings(ownerId);
   const steps = cfg.dunningSteps.filter((s) => s.subject.trim() && s.body.trim());
   if (!cfg.dunningEnabled || !steps.length) return { skipped: "desligada" };
 
-  const rows = (await loadAlerts(ownerId, await alertShopIds(ownerId)))
+  const rows = (all ?? await loadAlerts(ownerId, await alertShopIds(ownerId)))
     .filter((r) => r.deliveryStatus === "delivered" && r.customerEmail && !r.dunningPaused
       && (r.dunningStep === 0 ? r.status === "a_contatar" : r.status === "a_contatar" || r.status === "contatado")
       && !(r.dunningStopReason === "respondeu" || r.dunningStopReason === "fim"));
@@ -225,12 +225,43 @@ export async function runChargebackDunning(ownerId: string) {
   return { sent, errors };
 }
 
+// Tag "Chargeback" nas conversas do Atendimento com clientes de alerta (e-mail
+// da sequência, "Contatar" ou resposta do cliente) — só conversas com mensagem
+// depois do reembolso. Usa a tag da lista do Atendimento que contém "chargeback";
+// se não houver, cria "Chargeback".
+export async function tagAlertConversations(ownerId: string, rows: AlertRow[]) {
+  const byEmail = new Map<string, string>();   // e-mail → reembolso mais antigo
+  for (const r of rows) {
+    if (!r.customerEmail || !r.refundedAt) continue;
+    const cur = byEmail.get(r.customerEmail);
+    if (!cur || r.refundedAt < cur) byEmail.set(r.customerEmail, r.refundedAt);
+  }
+  if (!byEmail.size) return 0;
+  const { data: convs } = await supabaseAdmin.from("support_conversations").select("id,customer_email,last_message_at,tags")
+    .eq("owner_id", ownerId).in("customer_email", [...byEmail.keys()]);
+  const { data: st } = await supabaseAdmin.from("support_settings").select("tags").eq("owner_id", ownerId).maybeSingle();
+  const list: string[] = st?.tags ?? [];
+  const tag = list.find((t) => /chargeback/i.test(t)) ?? "Chargeback";
+  const todo = (convs ?? []).filter((c) => (c.last_message_at ?? "") >= byEmail.get(c.customer_email.toLowerCase())!
+    && !c.tags.some((t: string) => t.toLowerCase() === tag.toLowerCase()));
+  if (!todo.length) return 0;
+  if (!list.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+    await supabaseAdmin.from("support_settings").upsert({ owner_id: ownerId, tags: [...list, tag], updated_at: new Date().toISOString() }, { onConflict: "owner_id" });
+  }
+  await Promise.all(todo.map((c) => supabaseAdmin.from("support_conversations").update({ tags: [...c.tags, tag] }).eq("id", c.id)));
+  return todo.length;
+}
+
+// Roda depois do sync do Zoho: tag nas conversas + sequência de cobrança (se ligada).
 export async function runAllChargebackDunning() {
-  const { data } = await supabaseAdmin.from("chargeback_settings").select("owner_id").eq("dunning_enabled", true);
+  const { data } = await supabaseAdmin.from("zoho_mail_accounts").select("owner_id").not("refresh_token", "is", null);
   const out: Record<string, unknown> = {};
-  for (const s of data ?? []) {
-    try { out[s.owner_id] = await runChargebackDunning(s.owner_id); }
-    catch (e: any) { out[s.owner_id] = { error: String(e?.message ?? e) }; }
+  for (const a of data ?? []) {
+    try {
+      const rows = await loadAlerts(a.owner_id, await alertShopIds(a.owner_id));
+      const tagged = await tagAlertConversations(a.owner_id, rows);
+      out[a.owner_id] = { tagged, ...(await runChargebackDunning(a.owner_id, rows)) };
+    } catch (e: any) { out[a.owner_id] = { error: String(e?.message ?? e) }; }
   }
   return out;
 }
