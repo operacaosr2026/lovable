@@ -91,7 +91,7 @@ export function AlertsTab() {
 
         {!list.length ? <p className="text-sm text-muted-foreground text-center py-10">Nenhum alerta nesse filtro</p> : (
           <div className="overflow-x-auto -mx-2">
-            <table className="w-full text-sm min-w-[1050px]">
+            <table className="w-full text-sm min-w-[1200px]">
               <thead>
                 <tr className="text-xs text-muted-foreground border-b border-border">
                   <th className="font-medium py-2.5 px-2 text-left">Pedido</th>
@@ -100,6 +100,7 @@ export function AlertsTab() {
                   <th className="font-medium py-2.5 px-2 text-center">Reembolsado</th>
                   <th className="font-medium py-2.5 px-2 text-center">Entrega</th>
                   <th className="font-medium py-2.5 px-2 text-center">Cobrança</th>
+                  <th className="font-medium py-2.5 px-2 text-left">Notas</th>
                   <th className="font-medium py-2.5 px-2 text-center">Contato</th>
                 </tr>
               </thead>
@@ -184,9 +185,11 @@ function AlertLine({ r }: { r: AlertRow }) {
             style={{ backgroundImage: "none" }}>
             {ALERT_STATUSES.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}
           </select>
-          <FollowupPopover r={r} saving={save.isPending} onSave={(v) => save.mutate({ status: r.status, ...v })} />
         </div>
         {r.status === "recuperado" && r.recoveredAmount != null && <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">{money(r.recoveredAmount)}</div>}
+      </td>
+      <td className="py-3 px-2 w-[240px] max-w-[240px]">
+        <FollowupPopover r={r} saving={save.isPending} onSave={(v) => save.mutate({ status: r.status, ...v })} />
       </td>
       <td className="py-3 px-2 text-center whitespace-nowrap">
         <div className="inline-flex gap-1.5">
@@ -215,12 +218,14 @@ function FollowupPopover({ r, saving, onSave }: { r: AlertRow; saving: boolean; 
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) { setNote(r.followupNote ?? ""); setAmount(String(r.recoveredAmount ?? r.refundedAmount)); } }}>
       <PopoverTrigger asChild>
-        <button title={r.followupNote ? `Anotação: ${r.followupNote}` : "Anotar"}
-          className={`size-7 rounded-full grid place-items-center hover:bg-muted ${r.followupNote ? "text-primary" : "text-muted-foreground"}`}>
-          <StickyNote className="size-3.5" />
+        <button title={r.followupNote ?? "Adicionar nota"}
+          className="w-full text-left rounded-lg px-2 py-1.5 -mx-2 hover:bg-muted text-xs">
+          {r.followupNote
+            ? <span className="line-clamp-2 whitespace-pre-line text-foreground/80">{r.followupNote}</span>
+            : <span className="inline-flex items-center gap-1.5 text-muted-foreground"><StickyNote className="size-3.5" />Adicionar nota</span>}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 space-y-2.5">
+      <PopoverContent align="start" className="w-72 space-y-2.5">
         <p className="text-xs font-semibold">{r.orderNumber} · cobrança</p>
         {r.status === "recuperado" && (
           <label className="block">
