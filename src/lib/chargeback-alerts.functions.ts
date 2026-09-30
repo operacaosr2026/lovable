@@ -17,8 +17,17 @@ export const getChargebackAlerts = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
-    const rows: AlertRow[] = await loadAlerts(context.ownerId, await alertShopIds(context.ownerId));
-    return { rows };
+    const shopIds = await alertShopIds(context.ownerId);
+    const [rows, { data: sends }] = await Promise.all([
+      loadAlerts(context.ownerId, shopIds) as Promise<AlertRow[]>,
+      shopIds.length
+        ? supabaseAdmin.from("chargeback_dunning_sends").select("step").eq("user_id", context.ownerId).in("shop_id", shopIds)
+        : Promise.resolve({ data: [] as { step: number }[] }),
+    ]);
+    // Métrica: quantos e-mails saíram de cada etapa da sequência.
+    const sendsByStep: Record<number, number> = {};
+    for (const x of sends ?? []) sendsByStep[x.step] = (sendsByStep[x.step] ?? 0) + 1;
+    return { rows, sendsByStep };
   });
 
 export const saveAlertFollowup = createServerFn({ method: "POST" })
@@ -33,7 +42,14 @@ export const saveAlertFollowup = createServerFn({ method: "POST" })
     assertAccess(context);
     const { data: shop } = await supabaseAdmin.from("shops").select("id").eq("id", data.shopId).eq("user_id", context.ownerId).maybeSingle();
     if (!shop) throw new Error("Loja não encontrada");
+    // Métrica: quando virou Recuperado e depois de quantos e-mails da sequência.
+    const { data: prev } = await supabaseAdmin.from("chargeback_alert_followups").select("status,dunning_step,recovered_at,recovered_step")
+      .eq("shop_id", data.shopId).eq("order_external_id", data.orderExternalId).maybeSingle();
+    const recovered = data.status !== "recuperado" ? { recovered_at: null, recovered_step: null }
+      : prev?.status === "recuperado" ? {}
+      : { recovered_at: new Date().toISOString(), recovered_step: prev?.dunning_step ?? 0 };
     const { error } = await supabaseAdmin.from("chargeback_alert_followups").upsert({
+      ...recovered,
       shop_id: data.shopId, order_external_id: data.orderExternalId, user_id: context.ownerId,
       status: data.status, recovered_amount: data.status === "recuperado" ? data.recoveredAmount ?? null : null,
       note: data.note?.trim() || null, updated_at: new Date().toISOString(), updated_by: context.userId,

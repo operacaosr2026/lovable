@@ -71,6 +71,8 @@ export function AlertsTab() {
           onClick={() => setStatusFilter(statusFilter === "recuperado" ? "todos" : "recuperado")} active={statusFilter === "recuperado"} />
       </div>
 
+      <DunningMetrics rows={rows} sendsByStep={q.data?.sendsByStep ?? {}} seq={seq} />
+
       <div className={`${CARD} p-5`}>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -228,6 +230,86 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       <td className="py-3 px-2">{notes}</td>
       <td className="py-3 px-2 text-center">{contact}</td>
     </tr>
+  );
+}
+
+// Métricas da sequência de cobrança: funil (cobrados → responderam → recuperados)
+// e o resultado de cada e-mail (depois de qual e-mail o cliente respondeu / pagou).
+function DunningMetrics({ rows, sendsByStep, seq }: { rows: AlertRow[]; sendsByStep: Record<number, number>; seq: { enabled: boolean; total: number } }) {
+  const inSeq = rows.filter((r) => r.dunningStep > 0);
+  if (!seq.enabled && !inSeq.length) return null;
+  const replied = inSeq.filter((r) => r.repliedAt);
+  const recovered = rows.filter((r) => r.status === "recuperado" && (r.recoveredStep ?? 0) > 0);
+  const manual = rows.filter((r) => r.status === "recuperado" && !((r.recoveredStep ?? 0) > 0));
+  const noReturn = inSeq.filter((r) => r.dunningStopReason === "fim");
+  const charged = inSeq.reduce((t, r) => t + r.refundedAmount, 0);
+  const got = recovered.reduce((t, r) => t + (r.recoveredAmount ?? 0), 0);
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+  const hours = replied.map((r) => (Date.parse(r.repliedAt!) - Date.parse(r.dunningStartedAt ?? r.repliedAt!)) / 3_600_000).filter((h) => h >= 0);
+  const avgH = hours.length ? hours.reduce((a, b) => a + b, 0) / hours.length : null;
+  const avgLabel = avgH == null ? "—" : avgH < 48 ? `${Math.round(avgH)}h` : `${Math.round(avgH / 24)} dias`;
+  const nSteps = Math.max(seq.total, ...Object.keys(sendsByStep).map(Number), 0);
+
+  const tiles: [string, string, string][] = [
+    ["Cobrados", String(inSeq.length), `${money(charged)} em cobrança`],
+    ["Responderam", String(replied.length), `${pct(replied.length, inSeq.length)} dos cobrados`],
+    ["Recuperados", String(recovered.length), `${pct(recovered.length, inSeq.length)} dos cobrados`],
+    ["Valor recuperado", money(got), `${pct(got, charged)} do valor cobrado`],
+    ["Tempo até responder", avgLabel, "média depois do 1º e-mail"],
+  ];
+  return (
+    <div className={`${CARD} p-5`}>
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+        <h2 className="font-semibold flex items-center gap-2"><Mail className="size-4 text-primary" />Cobrança automática</h2>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${seq.enabled ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+          {seq.enabled ? "Ligada" : "Desligada"}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {tiles.map(([l, v, sub]) => (
+          <div key={l} className="rounded-xl bg-muted/40 p-3 text-center min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{l}</p>
+            <p className="text-xl font-bold mt-0.5 tabular-nums">{v}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{sub}</p>
+          </div>
+        ))}
+      </div>
+      {nSteps > 0 && (
+        <table className="w-full text-sm mt-4 table-fixed">
+          <thead>
+            <tr className="text-xs text-muted-foreground border-b border-border">
+              <th className="font-medium py-2 px-2 text-left">E-mail</th>
+              <th className="font-medium py-2 px-2 text-center">Enviados</th>
+              <th className="font-medium py-2 px-2 text-center">Respostas</th>
+              <th className="font-medium py-2 px-2 text-center">Recuperados</th>
+              <th className="font-medium py-2 px-2 text-center">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: nSteps }, (_, i) => i + 1).map((n) => {
+              const sent = sendsByStep[n] ?? 0;
+              const rep = replied.filter((r) => r.repliedStep === n).length;
+              const rec = recovered.filter((r) => r.recoveredStep === n);
+              return (
+                <tr key={n} className="border-b border-border/60 last:border-0">
+                  <td className="py-2 px-2 font-medium">E-mail {n}</td>
+                  <td className="py-2 px-2 text-center tabular-nums">{sent}</td>
+                  <td className="py-2 px-2 text-center tabular-nums">{rep}<span className="text-xs text-muted-foreground ml-1">{sent ? `(${pct(rep, sent)})` : ""}</span></td>
+                  <td className="py-2 px-2 text-center tabular-nums">{rec.length}<span className="text-xs text-muted-foreground ml-1">{sent ? `(${pct(rec.length, sent)})` : ""}</span></td>
+                  <td className="py-2 px-2 text-center tabular-nums">{money(rec.reduce((t, r) => t + (r.recoveredAmount ?? 0), 0))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {(noReturn.length > 0 || manual.length > 0) && (
+        <p className="text-xs text-muted-foreground mt-3">
+          {noReturn.length > 0 && <>{noReturn.length} terminaram a sequência sem resposta. </>}
+          {manual.length > 0 && <>{manual.length} recuperado{manual.length === 1 ? "" : "s"} fora da sequência ({money(manual.reduce((t, r) => t + (r.recoveredAmount ?? 0), 0))}).</>}
+        </p>
+      )}
+    </div>
   );
 }
 

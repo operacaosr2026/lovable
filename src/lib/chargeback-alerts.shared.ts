@@ -11,6 +11,7 @@ export type AlertRow = {
   lastEvent: string | null; conversationId: string | null;
   status: AlertStatus; recoveredAmount: number | null; followupNote: string | null; followupAt: string | null;
   dunningStep: number; dunningLastAt: string | null; dunningPaused: boolean; dunningStopReason: string | null;
+  dunningStartedAt: string | null; repliedAt: string | null; repliedStep: number | null; recoveredAt: string | null; recoveredStep: number | null;
 };
 
 // Sequência de cobrança: days do 1º = dias depois da entrega; dos demais = dias depois do anterior.

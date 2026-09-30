@@ -59,10 +59,16 @@ export type Database = {
         Update: { id?: string; owner_id?: string; dunning_enabled?: boolean; dunning_steps?: Json; dunning_final_wait_days?: number; updated_at?: string; updated_by?: string | null };
         Relationships: [];
       };
+      chargeback_dunning_sends: {
+        Row: { id: string; user_id: string; shop_id: string; order_external_id: string; step: number; subject: string | null; sent_at: string };
+        Insert: { id?: string; user_id: string; shop_id: string; order_external_id: string; step: number; subject?: string | null; sent_at?: string };
+        Update: { id?: string; user_id?: string; shop_id?: string; order_external_id?: string; step?: number; subject?: string | null; sent_at?: string };
+        Relationships: [];
+      };
       chargeback_alert_followups: {
-        Row: { id: string; shop_id: string; order_external_id: string; user_id: string; status: string; recovered_amount: number | null; note: string | null; updated_at: string; updated_by: string | null; dunning_step: number; dunning_started_at: string | null; dunning_last_at: string | null; dunning_paused: boolean; dunning_stop_reason: string | null; };
-        Insert: { id?: string; shop_id: string; order_external_id: string; user_id: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; };
-        Update: { id?: string; shop_id?: string; order_external_id?: string; user_id?: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; };
+        Row: { id: string; shop_id: string; order_external_id: string; user_id: string; status: string; recovered_amount: number | null; note: string | null; updated_at: string; updated_by: string | null; dunning_step: number; dunning_started_at: string | null; dunning_last_at: string | null; dunning_paused: boolean; dunning_stop_reason: string | null; dunning_replied_at: string | null; dunning_replied_step: number | null; recovered_at: string | null; recovered_step: number | null; };
+        Insert: { id?: string; shop_id: string; order_external_id: string; user_id: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; dunning_replied_at?: string | null; dunning_replied_step?: number | null; recovered_at?: string | null; recovered_step?: number | null; };
+        Update: { id?: string; shop_id?: string; order_external_id?: string; user_id?: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; dunning_replied_at?: string | null; dunning_replied_step?: number | null; recovered_at?: string | null; recovered_step?: number | null; };
         Relationships: [];
       };
       shop_order_risks: {

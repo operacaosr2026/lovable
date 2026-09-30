@@ -58,7 +58,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
     selectAllIn<{ order_id: string; last_event_label: string | null }>(orderIds, (c) =>
       supabaseAdmin.from("shop_order_tracking").select("order_id,last_event_label").in("order_id", c)),
     selectAllIn<any>(extIds, (c) => supabaseAdmin.from("chargeback_alert_followups")
-      .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason")
+      .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason,dunning_started_at,dunning_replied_at,dunning_replied_step,recovered_at,recovered_step")
       .eq("user_id", ownerId).in("order_external_id", c)),
     emails.length
       ? selectAllIn<{ id: string; customer_email: string; last_message_at: string | null }>(emails, (c) =>
@@ -90,6 +90,8 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       status: (fu?.status as AlertStatus) ?? (delivered ? "a_contatar" : "nao_recuperavel"),
       recoveredAmount: fu?.recovered_amount != null ? Number(fu.recovered_amount) : null, followupNote: fu?.note ?? null, followupAt: fu?.updated_at ?? null,
       dunningStep: fu?.dunning_step ?? 0, dunningLastAt: fu?.dunning_last_at ?? null, dunningPaused: fu?.dunning_paused ?? false, dunningStopReason: fu?.dunning_stop_reason ?? null,
+      dunningStartedAt: fu?.dunning_started_at ?? null, repliedAt: fu?.dunning_replied_at ?? null, repliedStep: fu?.dunning_replied_step ?? null,
+      recoveredAt: fu?.recovered_at ?? null, recoveredStep: fu?.recovered_step ?? null,
     };
   }).sort((a, b) => (b.refundedAt ?? "").localeCompare(a.refundedAt ?? ""));
 }
@@ -156,19 +158,15 @@ export async function runChargebackDunning(ownerId: string) {
   if (!rows.length) return { sent: 0 };
 
   // Cliente respondeu depois do 1º e-mail → para a sequência (segue na mão pelo Atendimento).
-  const started = rows.filter((r) => r.dunningStep > 0);
-  const { data: fus } = started.length
-    ? await supabaseAdmin.from("chargeback_alert_followups").select("shop_id,order_external_id,dunning_started_at")
-        .eq("user_id", ownerId).in("order_external_id", started.map((r) => r.orderExternalId))
-    : { data: [] as any[] };
-  const startedAt = new Map((fus ?? []).map((f: any) => [`${f.shop_id}:${f.order_external_id}`, f.dunning_started_at as string | null]));
-  const replied = new Set<string>();
+  const started = rows.filter((r) => r.dunningStep > 0 && r.dunningStartedAt);
+  const replied = new Map<string, string>();   // pedido → 1ª resposta depois do 1º e-mail
   if (started.length) {
     const { data: ins } = await supabaseAdmin.from("support_messages").select("from_email,sent_at")
       .eq("owner_id", ownerId).eq("direction", "in").in("from_email", [...new Set(started.map((r) => r.customerEmail!))]);
     for (const r of started) {
-      const since = startedAt.get(`${r.shopId}:${r.orderExternalId}`);
-      if (since && (ins ?? []).some((m: any) => m.from_email?.toLowerCase() === r.customerEmail && m.sent_at > since)) replied.add(`${r.shopId}:${r.orderExternalId}`);
+      const first = (ins ?? []).filter((m: any) => m.from_email?.toLowerCase() === r.customerEmail && m.sent_at > r.dunningStartedAt!)
+        .map((m: any) => m.sent_at as string).sort()[0];
+      if (first) replied.set(`${r.shopId}:${r.orderExternalId}`, first);
     }
   }
 
@@ -178,8 +176,10 @@ export async function runChargebackDunning(ownerId: string) {
   const errors: string[] = [];
   for (const r of rows) {
     const key = { shop_id: r.shopId, order_external_id: r.orderExternalId };
-    if (replied.has(`${r.shopId}:${r.orderExternalId}`)) {
-      await supabaseAdmin.from("chargeback_alert_followups").update({ dunning_stop_reason: "respondeu" }).match(key);
+    const repliedAt = replied.get(`${r.shopId}:${r.orderExternalId}`);
+    if (repliedAt) {
+      await supabaseAdmin.from("chargeback_alert_followups")
+        .update({ dunning_stop_reason: "respondeu", dunning_replied_at: repliedAt, dunning_replied_step: r.dunningStep }).match(key);
       continue;
     }
     // Sequência acabou sem retorno.
@@ -209,6 +209,10 @@ export async function runChargebackDunning(ownerId: string) {
     try {
       await sendDunningEmail(ownerId, ownerId, r.customerEmail!, step, r);
       sent++;
+      await supabaseAdmin.from("chargeback_dunning_sends").insert({
+        user_id: ownerId, shop_id: r.shopId, order_external_id: r.orderExternalId, step: r.dunningStep + 1,
+        subject: renderDunning(step.subject, dunningVars(r)),
+      });
     } catch (e: any) {
       const msg = String(e?.message ?? e).slice(0, 200);
       errors.push(`${r.orderNumber}: ${msg}`);
