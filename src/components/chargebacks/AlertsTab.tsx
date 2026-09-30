@@ -297,7 +297,6 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
           <div className="size-14 rounded-2xl grid place-items-center shrink-0 bg-violet-500/10 text-violet-600 dark:text-violet-400"><Mail className="size-6" /></div>
           <div className="min-w-0">
             <h2 className="text-xl font-bold tracking-tight">Cobrança automática</h2>
-            <p className="text-sm text-muted-foreground">Acompanhe o envio e os resultados dos e-mails de cobrança.</p>
           </div>
         </div>
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
@@ -328,7 +327,6 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h3 className="font-bold">Detalhamento por e-mail</h3>
-            <p className="text-sm text-muted-foreground">Veja quantos e-mails foram enviados, quantas respostas teve e quanto foi recuperado.</p>
           </div>
           <div className="relative shrink-0 self-start sm:self-auto">
             <CalendarDays className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
