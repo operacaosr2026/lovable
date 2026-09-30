@@ -21,13 +21,11 @@ export const getChargebackAlerts = createServerFn({ method: "GET" })
     const [rows, { data: sends }] = await Promise.all([
       loadAlerts(context.ownerId, shopIds) as Promise<AlertRow[]>,
       shopIds.length
-        ? supabaseAdmin.from("chargeback_dunning_sends").select("step").eq("user_id", context.ownerId).in("shop_id", shopIds)
-        : Promise.resolve({ data: [] as { step: number }[] }),
+        ? supabaseAdmin.from("chargeback_dunning_sends").select("step,sent_at").eq("user_id", context.ownerId).in("shop_id", shopIds)
+        : Promise.resolve({ data: [] as { step: number; sent_at: string }[] }),
     ]);
-    // Métrica: quantos e-mails saíram de cada etapa da sequência.
-    const sendsByStep: Record<number, number> = {};
-    for (const x of sends ?? []) sendsByStep[x.step] = (sendsByStep[x.step] ?? 0) + 1;
-    return { rows, sendsByStep };
+    // Métrica: cada e-mail que saiu da sequência (etapa + data, pro filtro de período).
+    return { rows, sends: (sends ?? []).map((x) => ({ step: x.step, sentAt: x.sent_at })) };
   });
 
 export const saveAlertFollowup = createServerFn({ method: "POST" })
