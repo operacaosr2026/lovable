@@ -12,6 +12,7 @@ import { DUNNING_VARS, dunningVars, renderDunning, dunningTextToHtml, type Charg
 
 const CARD = "rounded-2xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(16,24,40,0.04)]";
 const INPUT = "w-full rounded-lg border border-border bg-background text-sm outline-none focus:border-primary";
+const NUM = "w-16 shrink-0 h-8 px-2 text-center rounded-lg border border-border bg-background text-sm outline-none focus:border-primary";
 
 export function SettingsTab() {
   const fn = useServerFn(getChargebackSettings);
@@ -91,11 +92,11 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
         {steps.map((s, i) => (
           <div key={i} className="rounded-xl border border-border p-4 space-y-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="font-semibold">E-mail {i + 1}</span>
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <span className="font-semibold whitespace-nowrap">E-mail {i + 1}</span>
                 <span className="text-muted-foreground">·</span>
                 <input type="number" min={0} max={90} value={s.days} onChange={(e) => upd(i, { days: Math.max(0, Math.min(90, Number(e.target.value) || 0)) })}
-                  className={`${INPUT} w-16 h-8 px-2 text-center`} />
+                  className={NUM} />
                 <span className="text-muted-foreground">{i === 0 ? "dias depois da entrega" : "dias depois do e-mail anterior"}</span>
               </div>
               <div className="flex items-center gap-1">
@@ -150,7 +151,7 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
         <span>Marcar como <b>Sem retorno</b></span>
         <input type="number" min={1} max={60} value={cfg.dunningFinalWaitDays}
           onChange={(e) => setCfg({ ...cfg, dunningFinalWaitDays: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })}
-          className={`${INPUT} w-16 h-8 px-2 text-center`} />
+          className={NUM} />
         <span className="text-muted-foreground">dias depois do último e-mail sem resposta</span>
       </div>
 
