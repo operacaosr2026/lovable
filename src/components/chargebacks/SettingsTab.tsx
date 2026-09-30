@@ -94,7 +94,7 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
       <div className="rounded-xl bg-muted/50 p-3.5 text-xs text-muted-foreground space-y-1">
         <p className="flex items-center gap-1.5 font-medium text-foreground"><Info className="size-3.5" />Como funciona</p>
         <p>• Só pedidos de lojas ativas, com status <b>A contatar</b> e rastreio <b>Entregue</b>. No 1º envio o status vira <b>Contatado</b>.</p>
-        <p>• Envia das 9h às 20h no horário de Nova York, no máximo 15 e-mails a cada 5 minutos.</p>
+        <p>• Envia das 9h às 20h no horário de Nova York, um e-mail por vez, com 30 minutos de intervalo (sem rajada, pra não parecer robô). Quem espera há mais tempo sai primeiro.</p>
         <p>• A sequência para quando o cliente responde (segue na mão pelo Atendimento), quando alguém muda o status ou pausa a cobrança do pedido.</p>
         <p>• Terminou a sequência sem resposta: depois dos dias abaixo o status vira <b>Sem retorno</b>.</p>
       </div>

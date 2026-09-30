@@ -237,7 +237,7 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
       const ok = await confirm({
         title: "Ativar cobrança automática?",
         description: n
-          ? `${n} pedido${n === 1 ? "" : "s"} entregue${n === 1 ? "" : "s"} em "A contatar" vai receber o 1º e-mail quando chegar o prazo (das 9h às 20h de Nova York).`
+          ? `${n} pedido${n === 1 ? "" : "s"} entregue${n === 1 ? "" : "s"} em "A contatar" vai receber o 1º e-mail, um de cada vez, a cada 30 minutos (das 9h às 20h de Nova York).`
           : `Os pedidos entregues em "A contatar" passam a receber os e-mails da sequência.`,
         confirmText: "Ativar",
       });

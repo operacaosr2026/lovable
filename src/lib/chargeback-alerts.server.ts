@@ -142,7 +142,9 @@ function inSendWindow(now = new Date()) {
 }
 
 const DAY = 86_400_000;
-const MAX_PER_RUN = 15;
+// Um e-mail de cobrança a cada 30 min por workspace — envio em rajada parece robô
+// (e pesa na reputação do domínio). Com o cron de 5 em 5 min, sai a cada 30–35 min.
+const SEND_GAP_MS = 30 * 60_000;
 
 // Uma rodada da sequência de cobrança pra um workspace. Roda depois do sync do
 // Zoho (a cada 5 min), então uma resposta do cliente já está no banco.
@@ -171,9 +173,18 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
   }
 
   const now = Date.now();
-  const canSend = inSendWindow();
+  const { data: last } = await supabaseAdmin.from("chargeback_dunning_sends").select("sent_at")
+    .eq("user_id", ownerId).order("sent_at", { ascending: false }).limit(1).maybeSingle();
+  let canSend = inSendWindow() && (!last || now - Date.parse(last.sent_at) >= SEND_GAP_MS);
   let sent = 0;
   const errors: string[] = [];
+  // Quem está esperando há mais tempo sai primeiro.
+  const dueAt = (r: AlertRow) => {
+    const ref = r.dunningStep === 0 ? r.deliveredAt : r.dunningLastAt;
+    const st = steps[r.dunningStep];
+    return ref && st ? Date.parse(ref) + st.days * DAY : Infinity;
+  };
+  rows.sort((a, b) => dueAt(a) - dueAt(b));
   for (const r of rows) {
     const key = { shop_id: r.shopId, order_external_id: r.orderExternalId };
     const repliedAt = replied.get(`${r.shopId}:${r.orderExternalId}`);
@@ -193,7 +204,7 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
     const step = steps[r.dunningStep];
     const ref = r.dunningStep === 0 ? r.deliveredAt : r.dunningLastAt;
     if (!ref || now < Date.parse(ref) + step.days * DAY) continue;
-    if (!canSend || sent >= MAX_PER_RUN) continue;
+    if (!canSend) continue;
 
     // Reserva o envio (evita e-mail duplicado se duas rodadas se cruzarem).
     await supabaseAdmin.from("chargeback_alert_followups")
@@ -209,6 +220,7 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
     try {
       await sendDunningEmail(ownerId, ownerId, r.customerEmail!, step, r);
       sent++;
+      canSend = false;   // próximo só daqui a 30 min
       await supabaseAdmin.from("chargeback_dunning_sends").insert({
         user_id: ownerId, shop_id: r.shopId, order_external_id: r.orderExternalId, step: r.dunningStep + 1,
         subject: renderDunning(step.subject, dunningVars(r)),
