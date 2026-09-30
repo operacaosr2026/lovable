@@ -92,10 +92,11 @@ export function AlertsTab() {
         </div>
 
         {!list.length ? <p className="text-sm text-muted-foreground text-center py-10">Nenhum alerta nesse filtro</p> : (<>
-          <table className="hidden lg:table w-full table-fixed text-sm">
+          <table className="hidden xl:table w-full table-fixed text-sm">
             <colgroup>
-              <col className="w-[12%]" /><col className="w-[19%]" /><col className="w-[8%]" /><col className="w-[11%]" />
-              <col className="w-[16%]" /><col className="w-[14%]" /><col className="w-[20%]" />
+              {/* Larguras fixas nas colunas de etiqueta/botão (cabem inteiras); o produto fica com o resto. */}
+              <col className="w-[120px]" /><col /><col className="w-[88px]" /><col className="w-[112px]" />
+              <col className="w-[172px]" /><col className="w-[148px]" /><col className="w-[136px]" />
             </colgroup>
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border">
@@ -112,7 +113,7 @@ export function AlertsTab() {
               {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} seq={seq} />)}
             </tbody>
           </table>
-          <div className="lg:hidden divide-y divide-border/60">
+          <div className="xl:hidden divide-y divide-border/60">
             {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} seq={seq} mobile />)}
           </div>
         </>)}
