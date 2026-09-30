@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, AreaChart, Area } from "recharts";
@@ -290,7 +290,12 @@ function ChargebacksPage() {
           </div>
 
           {/* ── Risco de fraude × resultado ── */}
-          {q.data?.riskSummary && q.data.riskSummary.total > 0 && <RiskCard summary={q.data.riskSummary} />}
+          {q.data?.riskSummary && q.data.riskSummary.total > 0 && (
+            <div className="grid xl:grid-cols-2 gap-4">
+              <RiskCard summary={q.data.riskSummary} />
+              {q.data.riskSummary.brands.some((b) => b.brand !== "Outro / sem dado") && <BrandCard summary={q.data.riskSummary} />}
+            </div>
+          )}
 
           {/* ── Lista ── */}
           <div className={`${CARD} p-5`}>
@@ -365,9 +370,7 @@ function ChargebacksPage() {
                           title="Ver detalhes" className="border-b border-border/60 last:border-0 hover:bg-muted/30 cursor-pointer">
                           <td className="py-3 px-2 whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
-                              {r.adminUrl
-                                ? <a href={r.adminUrl} target="_blank" rel="noreferrer" className="font-semibold hover:text-primary inline-flex items-center gap-1.5">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}<ExternalLink className="size-3.5 text-muted-foreground" /></a>
-                                : <span className="font-semibold">{r.orderNumber ?? "—"}</span>}
+                              <span className="font-semibold">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}</span>
                               {risky(r) && <span title={riskTitle(r)}><AlertTriangle className={`size-4 ${r.riskLevel === "HIGH" ? "text-rose-500" : "text-amber-500"}`} /></span>}
                             </div>
                             <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")}{r.type === "inquiry" ? " · inquiry" : ""}</div>
@@ -413,7 +416,7 @@ function ChargebacksPage() {
                           </td>
                           <td className="py-3 px-2">
                             {r.conversationId
-                              ? <Link to="/atendimento" title="Tem conversa no Atendimento"><Pill cls="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">Sim</Pill></Link>
+                              ? <ConvLink id={r.conversationId} title="Abrir a conversa no Atendimento"><Pill cls="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">Sim</Pill></ConvLink>
                               : r.orderNumber ? <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400">Não</Pill>
                               : <span className="text-muted-foreground">—</span>}
                           </td>
@@ -440,12 +443,79 @@ function ChargebacksPage() {
 
 // ─── Peças ───────────────────────────────────────────────────────────────────
 
+// Abre a conversa do cliente direto no Atendimento (?c=<id>).
+function ConvLink({ id, className, title, children }: { id: string; className?: string; title?: string; children: ReactNode }) {
+  const router = useRouter();
+  const href = `/atendimento?c=${id}`;
+  return (
+    <a href={href} className={className} title={title}
+      onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); router.history.push(href); }}>
+      {children}
+    </a>
+  );
+}
+
+// % de chargeback (tabelas dos cards de risco e bandeira) — só o número.
+function RateBar({ label }: { value: number; max: number; label: string }) {
+  return <span className="text-sm tabular-nums font-medium">{label}</span>;
+}
+
+// Bandeira do pagamento × o que aconteceu: quantos pedidos de cada bandeira
+// viraram chargeback ou reembolso, comparado com a média de todos os pedidos.
+function BrandCard({ summary }: { summary: RiskSummary }) {
+  const rate = (n: number, total: number) => (total ? (n / total) * 100 : 0);
+  const fmtPct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+  const totalOrders = summary.brands.reduce((s, b) => s + b.orders, 0);
+  const avg = rate(summary.brands.reduce((s, b) => s + b.chargebacks, 0), totalOrders);
+  const maxRate = Math.max(0.1, ...summary.brands.map((b) => rate(b.chargebacks, b.orders)));
+  return (
+    <div className={`${CARD} p-5`}>
+      <div className="mb-4">
+        <h2 className="text-base font-semibold">Bandeira × chargeback</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Bandeira do cartão (ou meio de pagamento) dos pedidos desde {fmtDate(summary.since)}. Média geral: {fmtPct(avg)} de chargeback.
+        </p>
+      </div>
+      <div className="-mx-1">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-muted-foreground border-b border-border">
+              <th className="font-medium py-2 px-1 text-left">Bandeira</th>
+              <th className="font-medium py-2 px-1 text-center">Pedidos</th>
+              <th className="font-medium py-2 px-1 text-center">Chargebacks</th>
+              <th className="font-medium py-2 px-1 text-center">% chargeback</th>
+              <th className="font-medium py-2 px-1 text-center">Reembolsos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.brands.map((b) => {
+              const cbRate = rate(b.chargebacks, b.orders);
+              return (
+                <tr key={b.brand} className="border-b border-border/60 last:border-0">
+                  <td className="py-2.5 px-1 font-medium">{b.brand}</td>
+                  <td className="py-2.5 px-1 text-center tabular-nums whitespace-nowrap">
+                    {b.orders} <span className="text-[11px] text-muted-foreground">· {fmtPct(rate(b.orders, totalOrders))}</span>
+                  </td>
+                  <td className="py-2.5 px-1 text-center tabular-nums font-semibold">{b.chargebacks}</td>
+                  <td className="py-2.5 px-1 text-center">
+                    <RateBar value={cbRate} max={maxRate} label={fmtPct(cbRate)} />
+                  </td>
+                  <td className="py-2.5 px-1 text-center tabular-nums">{b.refunds}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // Risco de fraude da Shopify (o ⚠ da lista de pedidos) × o que aconteceu:
 // quantos de cada nível viraram chargeback ou reembolso.
 function RiskCard({ summary }: { summary: RiskSummary }) {
   const rate = (n: number, total: number) => (total ? (n / total) * 100 : 0);
   const fmtPct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
-  const low = summary.levels.find((l) => l.level === "LOW");
   const maxRate = Math.max(0.1, ...summary.levels.map((l) => rate(l.chargebacks, l.orders)));
   return (
     <div className={`${CARD} p-5`}>
@@ -460,40 +530,32 @@ function RiskCard({ summary }: { summary: RiskSummary }) {
           {summary.matured} de {summary.total} pedidos já têm 25+ dias
         </span>
       </div>
-      <div className="overflow-x-auto -mx-1">
-        <table className="w-full text-sm min-w-[560px]">
+      <div className="-mx-1">
+        <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-muted-foreground border-b border-border text-left">
-              <th className="font-medium py-2 px-1.5">Risco</th>
-              <th className="font-medium py-2 px-1.5 text-right">Pedidos</th>
-              <th className="font-medium py-2 px-1.5 text-right">Chargebacks</th>
-              <th className="font-medium py-2 px-1.5 w-[30%]">% chargeback</th>
-              <th className="font-medium py-2 px-1.5 text-right">Reembolsos</th>
-              <th className="font-medium py-2 px-1.5 text-right">% reembolso</th>
+            <tr className="text-xs text-muted-foreground border-b border-border">
+              <th className="font-medium py-2 px-1 text-left">Risco</th>
+              <th className="font-medium py-2 px-1 text-center">Pedidos</th>
+              <th className="font-medium py-2 px-1 text-center">Chargebacks</th>
+              <th className="font-medium py-2 px-1 text-center">% chargeback</th>
+              <th className="font-medium py-2 px-1 text-center">Reembolsos</th>
             </tr>
           </thead>
           <tbody>
             {summary.levels.map((l) => {
               const cbRate = rate(l.chargebacks, l.orders);
-              const vsLow = low && l.level !== "LOW" && low.orders && rate(low.chargebacks, low.orders) > 0 && cbRate > 0
-                ? cbRate / rate(low.chargebacks, low.orders) : null;
               const meta = RISK[l.level] ?? RISK.NONE;
               return (
                 <tr key={l.level} className="border-b border-border/60 last:border-0">
-                  <td className="py-2.5 px-1.5"><Pill cls={meta.cls} icon={l.level === "MEDIUM" || l.level === "HIGH" ? AlertTriangle : undefined}>{meta.label}</Pill></td>
-                  <td className="py-2.5 px-1.5 text-right tabular-nums">{l.orders}</td>
-                  <td className="py-2.5 px-1.5 text-right tabular-nums font-semibold">{l.chargebacks}</td>
-                  <td className="py-2.5 px-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full bg-gradient-to-r from-primary/70 to-primary" style={{ width: `${(cbRate / maxRate) * 100}%` }} />
-                      </div>
-                      <span className="text-xs tabular-nums w-12 text-right font-medium">{fmtPct(cbRate)}</span>
-                    </div>
-                    {vsLow != null && <p className="text-[10px] text-muted-foreground mt-0.5">{vsLow.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}× o risco baixo</p>}
+                  <td className="py-2.5 px-1"><Pill cls={meta.cls} icon={l.level === "MEDIUM" || l.level === "HIGH" ? AlertTriangle : undefined}>{meta.label}</Pill></td>
+                  <td className="py-2.5 px-1 text-center tabular-nums">{l.orders}</td>
+                  <td className="py-2.5 px-1 text-center tabular-nums font-semibold">{l.chargebacks}</td>
+                  <td className="py-2.5 px-1 text-center">
+                    <RateBar value={cbRate} max={maxRate} label={fmtPct(cbRate)} />
                   </td>
-                  <td className="py-2.5 px-1.5 text-right tabular-nums">{l.refunds}</td>
-                  <td className="py-2.5 px-1.5 text-right tabular-nums text-muted-foreground">{fmtPct(rate(l.refunds, l.orders))}</td>
+                  <td className="py-2.5 px-1 text-center tabular-nums whitespace-nowrap">
+                    {l.refunds} <span className="text-xs text-muted-foreground">· {fmtPct(rate(l.refunds, l.orders))}</span>
+                  </td>
                 </tr>
               );
             })}
@@ -516,9 +578,7 @@ function MobileItem({ r, onOpen }: { r: ChargebackRow; onOpen: () => void }) {
       className="rounded-xl border border-border p-3 space-y-2.5 active:bg-muted/40">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {r.adminUrl
-            ? <a href={r.adminUrl} target="_blank" rel="noreferrer" className="font-semibold inline-flex items-center gap-1.5">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}<ExternalLink className="size-3.5 text-muted-foreground" /></a>
-            : <span className="font-semibold">{r.orderNumber ?? "—"}</span>}
+          <span className="font-semibold">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}</span>
           {risky(r) && <AlertTriangle className={`inline size-4 ml-1.5 align-[-3px] ${r.riskLevel === "HIGH" ? "text-rose-500" : "text-amber-500"}`} aria-label={riskTitle(r)} />}
           <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")} · {fmtDate(r.initiatedAt)}</div>
         </div>
@@ -813,28 +873,11 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
                 {line("Último evento", r.lastEvent ? `${r.lastEvent}${r.lastEventAt ? ` · ${fmtDate(r.lastEventAt)}` : ""}` : "—")}
                 {line("Falou com o suporte", supportLabel(r))}
               </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Risco de fraude (Shopify)</p>
-                {r.riskLevel ? (
-                  <>
-                    <div className="flex items-center gap-2 py-2 text-sm">
-                      <Pill cls={RISK[r.riskLevel]?.cls ?? RISK.NONE.cls} icon={risky(r) ? AlertTriangle : undefined}>Risco {RISK[r.riskLevel]?.label.toLowerCase() ?? r.riskLevel}</Pill>
-                      {r.riskRecommendation && <span className="text-muted-foreground">Recomendação: {RECOMMENDATION[r.riskRecommendation] ?? r.riskRecommendation}</span>}
-                    </div>
-                    {r.riskFacts.length > 0 && (
-                      <ul className="space-y-1 text-xs">
-                        {[...r.riskFacts].sort((a, b) => (a.sentiment === "POSITIVE" ? 1 : 0) - (b.sentiment === "POSITIVE" ? 1 : 0)).map((f, i) => (
-                          <li key={i} className="flex gap-1.5">
-                            <span className={f.sentiment === "POSITIVE" ? "text-emerald-600" : f.sentiment === "NEGATIVE" ? "text-rose-600" : "text-amber-600"}>
-                              {f.sentiment === "POSITIVE" ? "✓" : f.sentiment === "NEGATIVE" ? "✕" : "•"}
-                            </span>
-                            <span className="text-muted-foreground">{f.description}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                ) : <p className="text-sm text-muted-foreground py-2">Sem análise (pedido com mais de 60 dias ou fora da Shopify).</p>}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Risco de fraude (Shopify)</p>
+                {r.riskLevel
+                  ? <Pill cls={RISK[r.riskLevel]?.cls ?? RISK.NONE.cls} icon={risky(r) ? AlertTriangle : undefined}>Risco {RISK[r.riskLevel]?.label.toLowerCase() ?? r.riskLevel}</Pill>
+                  : <span className="text-xs text-muted-foreground" title="Pedido com mais de 60 dias ou fora da Shopify">Sem análise</span>}
               </div>
               <div className="flex flex-wrap gap-2">
                 {r.adminUrl && (
@@ -842,15 +885,10 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
                     Abrir na Shopify <ExternalLink className="size-3.5" />
                   </a>
                 )}
-                {r.trackingUrl && (
-                  <a href={r.trackingUrl} target="_blank" rel="noreferrer" className="h-9 px-3 rounded-lg border border-border text-sm font-medium inline-flex items-center gap-1.5 hover:bg-muted">
-                    <Truck className="size-3.5" /> Rastreio
-                  </a>
-                )}
                 {r.conversationId && (
-                  <Link to="/atendimento" className="h-9 px-3 rounded-lg border border-border text-sm font-medium inline-flex items-center gap-1.5 hover:bg-muted">
+                  <ConvLink id={r.conversationId} className="h-9 px-3 rounded-lg border border-border text-sm font-medium inline-flex items-center gap-1.5 hover:bg-muted">
                     <Headphones className="size-3.5" /> Atendimento
-                  </Link>
+                  </ConvLink>
                 )}
               </div>
             </div>

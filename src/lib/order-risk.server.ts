@@ -12,10 +12,23 @@ const QUERY = `query($after: String, $q: String) {
     pageInfo { hasNextPage endCursor }
     edges { node {
       legacyResourceId name createdAt displayFinancialStatus
+      transactions(first: 3) { kind status paymentDetails { __typename ... on CardPaymentDetails { company } } }
       risk { recommendation assessments { riskLevel provider { title } facts { description sentiment } } }
     } }
   }
 }`;
+
+// Bandeira do pagamento aprovado: a do cartão (Visa, Mastercard…) ou o meio
+// quando não é cartão (PayPal, Shop Pay Parcelado).
+function paymentBrand(transactions: any[] | null | undefined): string | null {
+  const t = (transactions ?? []).find((x) => (x.kind === "SALE" || x.kind === "AUTHORIZATION") && x.status === "SUCCESS") ?? transactions?.[0];
+  const p = t?.paymentDetails;
+  if (!p) return null;
+  if (p.__typename === "CardPaymentDetails") return p.company ?? "Cartão";
+  if (p.__typename === "PaypalWalletPaymentDetails") return "PayPal";
+  if (p.__typename === "ShopPayInstallmentsPaymentDetails") return "Shop Pay Parcelado";
+  return null;
+}
 
 export async function syncOrderRisks(shopId: string, userId: string, domain: string, token: string, sinceDays = 3) {
   const since = new Date(Date.now() - sinceDays * 86_400_000).toISOString().slice(0, 10);
@@ -39,6 +52,7 @@ export async function syncOrderRisks(shopId: string, userId: string, domain: str
         order_created_at: n.createdAt ?? null, risk_level: own?.riskLevel ?? null, recommendation: n.risk?.recommendation ?? null,
         facts: ((own?.facts ?? []) as any[]).map((f) => ({ description: f.description, sentiment: f.sentiment })),
         financial_status: n.displayFinancialStatus ?? null,
+        payment_brand: paymentBrand(n.transactions),
         updated_at: new Date().toISOString(),
       };
     });

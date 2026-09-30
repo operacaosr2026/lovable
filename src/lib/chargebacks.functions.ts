@@ -35,6 +35,8 @@ export type ChargebackRow = {
 // Risco de fraude (Shopify) × o que aconteceu com o pedido, por nível.
 export type RiskSummary = {
   levels: { level: string; orders: number; chargebacks: number; refunds: number }[];
+  // Mesma conta por bandeira do pagamento (Visa, Mastercard, PayPal…).
+  brands: { brand: string; orders: number; chargebacks: number; refunds: number }[];
   total: number; since: string | null; matured: number;   // matured = pedidos com 25+ dias (já deu tempo de virar disputa)
 };
 
@@ -98,7 +100,7 @@ export const getChargebacks = createServerFn({ method: "GET" })
     const allShops = (shopsRes.data ?? []) as { id: string; name: string }[];
     const shopIds = data.scope === "ativas" ? activeIds : allShops.map((s) => s.id);
     const shopName = new Map(allShops.map((s) => [s.id, s.name]));
-    if (!shopIds.length) return { rows: [] as ChargebackRow[], shops: [] as { id: string; name: string }[], riskSummary: { levels: [], total: 0, since: null, matured: 0 } as RiskSummary };
+    if (!shopIds.length) return { rows: [] as ChargebackRow[], shops: [] as { id: string; name: string }[], riskSummary: { levels: [], brands: [], total: 0, since: null, matured: 0 } as RiskSummary };
 
     const { data: disputes, error } = await selectAll<{
       id: string; shop_id: string; order_external_id: string | null; type: string; status: string | null; reason: string | null;
@@ -216,9 +218,10 @@ export const getChargebacks = createServerFn({ method: "GET" })
     }
 
     // Risco de fraude: dos pedidos das disputas (pra lista) e de todos (correlação).
-    const { data: risks } = await selectAll<{ shop_id: string; order_external_id: string; order_created_at: string | null; risk_level: string | null; recommendation: string | null; facts: any; financial_status: string | null }>(
-      supabaseAdmin.from("shop_order_risks").select("shop_id,order_external_id,order_created_at,risk_level,recommendation,facts,financial_status")
+    const { data: risks, error: risksErr } = await selectAll<{ shop_id: string; order_external_id: string; order_created_at: string | null; risk_level: string | null; recommendation: string | null; facts: any; financial_status: string | null; payment_brand: string | null }>(
+      supabaseAdmin.from("shop_order_risks").select("shop_id,order_external_id,order_created_at,risk_level,recommendation,facts,financial_status,payment_brand")
         .eq("user_id", ownerId).in("shop_id", shopIds));
+    if (risksErr) console.error("chargebacks: risco de fraude", risksErr.message);
     const riskBy = new Map(risks.map((r) => [`${r.shop_id}:${r.order_external_id}`, r]));
     const cbKeys = new Set(disputes.filter((d) => d.type === "chargeback" && d.order_external_id).map((d) => `${d.shop_id}:${d.order_external_id}`));
     const riskExt = [...new Set(risks.map((r) => r.order_external_id))];
@@ -242,9 +245,18 @@ export const getChargebacks = createServerFn({ method: "GET" })
       g.orders++; if (cbKeys.has(key)) g.chargebacks++; if (refunded.has(key)) g.refunds++;
       byLevel.set(level, g);
     }
+    const byBrand = new Map<string, { brand: string; orders: number; chargebacks: number; refunds: number }>();
+    for (const r of risks) {
+      const brand = r.payment_brand ?? "Outro / sem dado";
+      const g = byBrand.get(brand) ?? { brand, orders: 0, chargebacks: 0, refunds: 0 };
+      const key = `${r.shop_id}:${r.order_external_id}`;
+      g.orders++; if (cbKeys.has(key)) g.chargebacks++; if (refunded.has(key)) g.refunds++;
+      byBrand.set(brand, g);
+    }
     const created = risks.map((r) => r.order_created_at).filter(Boolean).sort() as string[];
     const riskSummary: RiskSummary = {
       levels: ["LOW", "MEDIUM", "HIGH", "NONE"].map((l) => byLevel.get(l)).filter(Boolean) as RiskSummary["levels"],
+      brands: [...byBrand.values()].sort((a, b) => b.orders - a.orders),
       total: risks.length, since: created[0] ?? null,
       matured: created.filter((c) => Date.now() - new Date(c).getTime() >= 25 * 86_400_000).length,
     };
