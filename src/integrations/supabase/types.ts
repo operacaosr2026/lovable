@@ -53,10 +53,16 @@ export type Database = {
         };
         Relationships: [];
       };
+      chargeback_settings: {
+        Row: { id: string; owner_id: string; dunning_enabled: boolean; dunning_steps: Json; dunning_final_wait_days: number; updated_at: string; updated_by: string | null };
+        Insert: { id?: string; owner_id: string; dunning_enabled?: boolean; dunning_steps?: Json; dunning_final_wait_days?: number; updated_at?: string; updated_by?: string | null };
+        Update: { id?: string; owner_id?: string; dunning_enabled?: boolean; dunning_steps?: Json; dunning_final_wait_days?: number; updated_at?: string; updated_by?: string | null };
+        Relationships: [];
+      };
       chargeback_alert_followups: {
-        Row: { id: string; shop_id: string; order_external_id: string; user_id: string; status: string; recovered_amount: number | null; note: string | null; updated_at: string; updated_by: string | null };
-        Insert: { id?: string; shop_id: string; order_external_id: string; user_id: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null };
-        Update: { id?: string; shop_id?: string; order_external_id?: string; user_id?: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null };
+        Row: { id: string; shop_id: string; order_external_id: string; user_id: string; status: string; recovered_amount: number | null; note: string | null; updated_at: string; updated_by: string | null; dunning_step: number; dunning_started_at: string | null; dunning_last_at: string | null; dunning_paused: boolean; dunning_stop_reason: string | null; };
+        Insert: { id?: string; shop_id: string; order_external_id: string; user_id: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; };
+        Update: { id?: string; shop_id?: string; order_external_id?: string; user_id?: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; };
         Relationships: [];
       };
       shop_order_risks: {

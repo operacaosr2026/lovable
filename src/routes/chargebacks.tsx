@@ -17,6 +17,7 @@ import { getChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/char
 import { getDisputeEvidence, draftDisputeRebuttal, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
 import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
 import { AlertsTab } from "@/components/chargebacks/AlertsTab";
+import { SettingsTab } from "@/components/chargebacks/SettingsTab";
 
 export const Route = createFileRoute("/chargebacks")({
   beforeLoad: requireAuth,
@@ -156,7 +157,7 @@ const CARD = "rounded-2xl border border-border/70 bg-card shadow-[0_1px_3px_rgba
 
 function ChargebacksPage() {
   const fn = useServerFn(getChargebacks);
-  const [tab, setTab] = useState<"chargebacks" | "alertas">("chargebacks");
+  const [tab, setTab] = useState<"chargebacks" | "alertas" | "config">("chargebacks");
   const [scope, setScope] = useState<"ativas" | "todas">("ativas");
   const [type, setType] = useState<(typeof TYPES)[number][0]>("chargeback");
   const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("tudo");
@@ -231,7 +232,7 @@ function ChargebacksPage() {
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Chargebacks</h1>
-          <Seg value={tab} options={[["chargebacks", "Disputas"], ["alertas", "Alertas"]] as const} onChange={setTab} />
+          <Seg value={tab} options={[["chargebacks", "Disputas"], ["alertas", "Alertas"], ["config", "Configurações"]] as const} onChange={setTab} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {tab === "chargebacks" && <>
@@ -244,6 +245,8 @@ function ChargebacksPage() {
 
       {tab === "alertas" ? (
         <AlertsTab />
+      ) : tab === "config" ? (
+        <SettingsTab />
       ) : q.isLoading ? (
         <div className="py-24 grid place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
       ) : q.isError ? (

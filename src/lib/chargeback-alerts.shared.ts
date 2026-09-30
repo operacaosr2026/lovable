@@ -1,0 +1,58 @@
+// Tipos e textos dos Alertas de chargeback usados no cliente e no servidor.
+
+export const ALERT_STATUSES = ["a_contatar", "contatado", "recuperado", "sem_retorno", "nao_recuperavel"] as const;
+export type AlertStatus = (typeof ALERT_STATUSES)[number];
+
+export type AlertRow = {
+  shopId: string; shopName: string; orderExternalId: string; orderNumber: string | null; orderDate: string | null;
+  network: string; refundedAt: string | null; refundedAmount: number; currency: string; note: string | null;
+  customerName: string | null; customerFirstName: string | null; customerEmail: string | null; product: string | null;
+  deliveryStatus: string | null; deliveredAt: string | null; trackingCode: string | null; trackingUrl: string | null;
+  lastEvent: string | null; conversationId: string | null;
+  status: AlertStatus; recoveredAmount: number | null; followupNote: string | null; followupAt: string | null;
+  dunningStep: number; dunningLastAt: string | null; dunningPaused: boolean; dunningStopReason: string | null;
+};
+
+// Sequência de cobrança: days do 1º = dias depois da entrega; dos demais = dias depois do anterior.
+export type DunningStep = { subject: string; body: string; days: number };
+export type ChargebackSettings = { dunningEnabled: boolean; dunningSteps: DunningStep[]; dunningFinalWaitDays: number };
+export const DEFAULT_CHARGEBACK_SETTINGS: ChargebackSettings = { dunningEnabled: false, dunningSteps: [], dunningFinalWaitDays: 7 };
+
+export const DUNNING_VARS = [
+  ["{nome}", "Primeiro nome do cliente"],
+  ["{nome_completo}", "Nome completo do cliente"],
+  ["{pedido}", "Número do pedido (#WK1137)"],
+  ["{produto}", "Produto(s) do pedido"],
+  ["{valor}", "Valor reembolsado ($99.90)"],
+  ["{data_pedido}", "Data da compra"],
+  ["{data_reembolso}", "Data do reembolso"],
+  ["{data_entrega}", "Data da entrega"],
+  ["{codigo_rastreio}", "Código de rastreio"],
+  ["{link_rastreio}", "Link do rastreio"],
+] as const;
+
+// Datas em inglês (os clientes são dos EUA): "September 26, 2026".
+function usDate(iso: string | null) {
+  if (!iso) return "";
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T12:00:00Z`) : new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+}
+
+export function dunningVars(r: AlertRow): Record<string, string> {
+  return {
+    "{nome}": r.customerFirstName ?? r.customerName ?? "",
+    "{nome_completo}": r.customerName ?? "",
+    "{pedido}": r.orderNumber ?? `#${r.orderExternalId}`,
+    "{produto}": r.product ?? "",
+    "{valor}": `$${r.refundedAmount.toFixed(2)}`,
+    "{data_pedido}": usDate(r.orderDate),
+    "{data_reembolso}": usDate(r.refundedAt),
+    "{data_entrega}": usDate(r.deliveredAt),
+    "{codigo_rastreio}": r.trackingCode ?? "",
+    "{link_rastreio}": r.trackingUrl ?? "",
+  };
+}
+
+export function renderDunning(text: string, vars: Record<string, string>) {
+  return text.replace(/\{[a-z_]+\}/gi, (m) => vars[m.toLowerCase()] ?? m);
+}

@@ -4,12 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  BellRing, CircleCheck, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, StickyNote, Wallet,
+  BellRing, CircleCheck, Pause, Play, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, StickyNote, Wallet,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  getChargebackAlerts, saveAlertFollowup, ALERT_STATUSES, type AlertRow, type AlertStatus,
-} from "@/lib/chargeback-alerts.functions";
+import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings } from "@/lib/chargeback-alerts.functions";
+import { ALERT_STATUSES, type AlertRow, type AlertStatus } from "@/lib/chargeback-alerts.shared";
 
 // Chargebacks > Alertas: pedidos reembolsados pelo Disputifier por alerta de
 // pré-chargeback (CDRN/Ethoca/RDR). Como o pedido quase sempre foi entregue, a
@@ -36,12 +35,12 @@ const DELIVERY: Record<string, string> = {
   returned: "Devolvido", problem: "Problema", waiting_customer: "Esperando cliente",
 };
 
-// Só as lojas ativas (as que contam na meta do mês).
-const scope = "ativas" as const;
-
 export function AlertsTab() {
   const fn = useServerFn(getChargebackAlerts);
-  const q = useQuery({ queryKey: ["chargeback-alerts", scope], queryFn: () => fn({ data: { scope } }) });
+  const q = useQuery({ queryKey: ["chargeback-alerts"], queryFn: () => fn() });
+  const settingsFn = useServerFn(getChargebackSettings);
+  const settings = useQuery({ queryKey: ["chargeback-settings"], queryFn: () => settingsFn() });
+  const seq = { enabled: !!settings.data?.dunningEnabled, total: settings.data?.dunningSteps.filter((st) => st.subject && st.body).length ?? 0 };
   const [statusFilter, setStatusFilter] = useState<AlertStatus | "todos">("todos");
   const [search, setSearch] = useState("");
 
@@ -108,11 +107,11 @@ export function AlertsTab() {
               </tr>
             </thead>
             <tbody>
-              {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} />)}
+              {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} seq={seq} />)}
             </tbody>
           </table>
           <div className="lg:hidden divide-y divide-border/60">
-            {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} mobile />)}
+            {list.map((r) => <AlertLine key={`${r.shopId}:${r.orderExternalId}`} r={r} seq={seq} mobile />)}
           </div>
         </>)}
       </div>
@@ -136,14 +135,14 @@ export function AlertsTab() {
   );
 }
 
-function AlertLine({ r, mobile }: { r: AlertRow; mobile?: boolean }) {
+function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; total: number }; mobile?: boolean }) {
   const router = useRouter();
   const qc = useQueryClient();
   const saveFn = useServerFn(saveAlertFollowup);
   const save = useMutation({
-    mutationFn: (v: { status: AlertStatus; recoveredAmount?: number | null; note?: string | null }) =>
-      saveFn({ data: { shopId: r.shopId, orderExternalId: r.orderExternalId, status: v.status, recoveredAmount: v.recoveredAmount ?? null, note: v.note ?? r.followupNote } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["chargeback-alerts", scope] }),
+    mutationFn: (v: { status: AlertStatus; recoveredAmount?: number | null; note?: string | null; dunningPaused?: boolean }) =>
+      saveFn({ data: { shopId: r.shopId, orderExternalId: r.orderExternalId, status: v.status, recoveredAmount: v.recoveredAmount ?? r.recoveredAmount, note: "note" in v ? v.note : r.followupNote, dunningPaused: v.dunningPaused } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chargeback-alerts"] }),
     onError: (e: any) => toast.error(e?.message ?? "Erro ao salvar"),
   });
   const delivered = r.deliveryStatus === "delivered";
@@ -186,6 +185,7 @@ function AlertLine({ r, mobile }: { r: AlertRow; mobile?: boolean }) {
       {ALERT_STATUSES.map((st) => <option key={st} value={st}>{STATUS[st].label}</option>)}
     </select>
     {r.status === "recuperado" && r.recoveredAmount != null && <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">{money(r.recoveredAmount)}</div>}
+    <DunningInfo r={r} seq={seq} busy={save.isPending} onPause={(p) => save.mutate({ status: r.status, dunningPaused: p })} />
   </>;
   const notes = <FollowupPopover r={r} saving={save.isPending} onSave={(v) => save.mutate({ status: r.status, ...v })} />;
   const contact = (
@@ -228,6 +228,32 @@ function AlertLine({ r, mobile }: { r: AlertRow; mobile?: boolean }) {
       <td className="py-3 px-2">{notes}</td>
       <td className="py-3 px-2 text-center">{contact}</td>
     </tr>
+  );
+}
+
+// Progresso da cobrança automática (Configurações > Sequência de cobrança).
+function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: boolean; total: number }; busy: boolean; onPause: (paused: boolean) => void }) {
+  const open = r.status === "a_contatar" || r.status === "contatado";
+  if (!seq.enabled && !r.dunningStep) return null;
+  if (!r.dunningStep && (!open || r.status !== "a_contatar" || r.deliveryStatus !== "delivered")) return null;
+  const err = r.dunningStopReason?.startsWith("erro") ? r.dunningStopReason.slice(6) : null;
+  const label = r.dunningStopReason === "respondeu" ? "Cliente respondeu"
+    : r.dunningStopReason === "fim" ? `Sequência concluída (${r.dunningStep})`
+    : r.dunningPaused ? `Cobrança pausada${r.dunningStep ? ` · ${r.dunningStep}/${seq.total}` : ""}`
+    : err ? "Erro no envio"
+    : r.dunningStep ? `E-mail ${r.dunningStep}/${seq.total}${r.dunningLastAt ? ` · ${fmtDate(r.dunningLastAt)}` : ""}`
+    : "Cobrança na fila";
+  const canToggle = open && r.dunningStopReason !== "respondeu" && r.dunningStopReason !== "fim";
+  return (
+    <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground" title={err ?? undefined}>
+      <span className={err ? "text-destructive" : r.dunningStopReason === "respondeu" ? "text-sky-700 dark:text-sky-400" : ""}>{label}</span>
+      {canToggle && (
+        <button disabled={busy} onClick={() => onPause(!r.dunningPaused)} title={r.dunningPaused ? "Retomar cobrança automática" : "Pausar cobrança automática"}
+          className="size-5 rounded grid place-items-center hover:bg-muted hover:text-foreground disabled:opacity-50">
+          {r.dunningPaused ? <Play className="size-3" /> : <Pause className="size-3" />}
+        </button>
+      )}
+    </div>
   );
 }
 
