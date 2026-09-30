@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -94,8 +93,8 @@ export function AlertsTab() {
         {!list.length ? <p className="text-sm text-muted-foreground text-center py-10">Nenhum alerta nesse filtro</p> : (<>
           <table className="hidden lg:table w-full table-fixed text-sm">
             <colgroup>
-              <col className="w-[11%]" /><col className="w-[17%]" /><col className="w-[7%]" /><col className="w-[10%]" />
-              <col className="w-[15%]" /><col className="w-[12%]" /><col className="w-[16%]" /><col className="w-[12%]" />
+              <col className="w-[12%]" /><col className="w-[19%]" /><col className="w-[8%]" /><col className="w-[11%]" />
+              <col className="w-[16%]" /><col className="w-[14%]" /><col className="w-[20%]" />
             </colgroup>
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border">
@@ -106,7 +105,6 @@ export function AlertsTab() {
                 <th className="font-medium py-2.5 px-2 text-center">Entrega</th>
                 <th className="font-medium py-2.5 px-2 text-center">Cobrança</th>
                 <th className="font-medium py-2.5 px-2 text-left">Notas</th>
-                <th className="font-medium py-2.5 px-2 text-center">Contato</th>
               </tr>
             </thead>
             <tbody>
@@ -139,7 +137,6 @@ export function AlertsTab() {
 }
 
 function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; total: number }; mobile?: boolean }) {
-  const router = useRouter();
   const qc = useQueryClient();
   const saveFn = useServerFn(saveAlertFollowup);
   const save = useMutation({
@@ -150,7 +147,6 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
   });
   const delivered = r.deliveryStatus === "delivered";
   const dl = r.orderNumber ? (r.deliveryStatus ? DELIVERY[r.deliveryStatus] ?? r.deliveryStatus : "Sem rastreio") : "—";
-  const go = (href: string) => router.history.push(href);
 
   const order = <>
     <span className="font-semibold">{r.orderNumber ?? `#${r.orderExternalId}`}</span>
@@ -191,21 +187,6 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
     <DunningInfo r={r} seq={seq} busy={save.isPending} onPause={(p) => save.mutate({ status: r.status, dunningPaused: p })} />
   </>;
   const notes = <FollowupPopover r={r} saving={save.isPending} onSave={(v) => save.mutate({ status: r.status, ...v })} />;
-  const contact = (
-    <div className="inline-flex gap-1.5">
-      <button onClick={() => { if (r.orderNumber) go(`/atendimento?novo=${encodeURIComponent(r.orderNumber)}`); }} disabled={!r.orderNumber}
-        title="Abre uma mensagem nova no Atendimento pra este cliente"
-        className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50">
-        <Mail className="size-3.5" /> Contatar
-      </button>
-      {r.conversationId && (
-        <button onClick={() => go(`/atendimento?c=${r.conversationId}`)} title="Abrir a conversa com este cliente"
-          className="h-8 w-8 rounded-lg border border-border grid place-items-center hover:bg-muted text-primary">
-          <Headphones className="size-3.5" />
-        </button>
-      )}
-    </div>
-  );
 
   if (mobile) return (
     <div className="py-3.5 space-y-2.5">
@@ -215,7 +196,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       </div>
       <div className="flex items-center gap-2 min-w-0"><div className="min-w-0 flex-1">{product}</div>{network}</div>
       <div>{delivery}</div>
-      <div className="flex items-center justify-between gap-2 flex-wrap"><div>{status}</div>{contact}</div>
+      <div>{status}</div>
       <div>{notes}</div>
     </div>
   );
@@ -229,7 +210,6 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       <td className="py-3 px-2 text-center">{delivery}</td>
       <td className="py-3 px-2 text-center">{status}</td>
       <td className="py-3 px-2">{notes}</td>
-      <td className="py-3 px-2 text-center">{contact}</td>
     </tr>
   );
 }
