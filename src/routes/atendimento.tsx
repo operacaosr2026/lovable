@@ -155,6 +155,17 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   }, []);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [composeOpen, setComposeOpen] = useState(false);
+  // Rastreamento > "Avisar cliente": ?novo=<nº do pedido> abre a Nova mensagem
+  // já com o pedido buscado (e-mail do cliente e {rastreio} dele).
+  const [composeOrder, setComposeOrder] = useState<string | null>(null);
+  useEffect(() => {
+    const novo = new URLSearchParams(window.location.search).get("novo");
+    if (novo) {
+      setComposeOrder(novo);
+      setComposeOpen(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   // "#4532" ou número → procura o pedido e traz o e-mail do comprador.
   const [orderQuery, setOrderQuery] = useState("");
@@ -522,7 +533,8 @@ function Inboxes({ status }: { status: ZohoStatus }) {
 
       <NewMessageDialog
         open={composeOpen}
-        onOpenChange={setComposeOpen}
+        onOpenChange={(o) => { setComposeOpen(o); if (!o) setComposeOrder(null); }}
+        initialOrder={composeOrder}
         onSent={(id) => { refreshAll(); if (id) setSelectedId(id); }}
       />
     </PageShell>
@@ -664,7 +676,9 @@ function ConversationRow({ c, fixedTags, active, checked, onCheck, onOpen }: {
   );
 }
 
-function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpenChange: (o: boolean) => void; onSent: (id: string | null) => void }) {
+function NewMessageDialog({ open, onOpenChange, onSent, initialOrder }: {
+  open: boolean; onOpenChange: (o: boolean) => void; onSent: (id: string | null) => void; initialOrder?: string | null;
+}) {
   const sendFn = useSupportFn(sendSupportNewMessage, "sendSupportNewMessage");
   const orderFn = useSupportFn(findOrderCustomers, "findOrderCustomers");
   const [to, setTo] = useState("");
@@ -682,6 +696,15 @@ function NewMessageDialog({ open, onOpenChange, onSent }: { open: boolean; onOpe
   const searchOrder = () => { const q = order.trim(); if (q.length >= 2 && !lookup.isPending) lookup.mutate(q); };
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
+  // Veio do Rastreamento com um pedido: busca na hora e sugere o assunto.
+  useEffect(() => {
+    if (!open || !initialOrder) return;
+    setOrder(initialOrder);
+    setOrderEmails(null);
+    lookup.mutate(initialOrder);
+    setSubject((s) => s || `Update on your order ${initialOrder.startsWith("#") ? initialOrder : `#${initialOrder}`}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialOrder]);
   const att = useAttachments();
   const send = useMutation({
     mutationFn: () => sendFn({ data: { to: to.trim(), subject: subject.trim(), text, attachments: att.refs } }),

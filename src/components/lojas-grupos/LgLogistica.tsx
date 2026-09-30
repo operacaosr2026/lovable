@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
 import { syncTrack123ForShops, getTrack123Integrations } from "@/lib/track123.functions";
 import { listShopDomains } from "@/lib/shop-orders.functions";
 import { buildTrackingMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers, Copy } from "lucide-react";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers, Copy, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -356,6 +357,15 @@ export function LgLogistica({
     return buildTrackingMessage(blocks);
   }, [selectedOrders, domainsQuery.data]);
 
+  // Avisar cliente: abre a Nova mensagem do Atendimento com o pedido já buscado
+  // (e-mail do cliente e {rastreio} das mensagens salvas vêm dele).
+  const router = useRouter();
+  const notifyCustomer = () => {
+    const o = selectedOrders[0];
+    if (!o || selectedOrders.length !== 1) return;
+    router.history.push(`/atendimento?novo=${encodeURIComponent(orderLabel(o))}`);
+  };
+
   const copySupplierMessage = async () => {
     if (!supplierMessage) return;
     try {
@@ -548,6 +558,10 @@ export function LgLogistica({
             <span className="font-medium">{selectedOrders.length}</span> {selectedOrders.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
           </span>
           <div className="flex-1" />
+          <Button size="sm" variant="outline" onClick={notifyCustomer} disabled={selectedOrders.length !== 1}
+            title={selectedOrders.length === 1 ? "Abre uma mensagem nova no Atendimento para o cliente deste pedido" : "Selecione um pedido só para avisar o cliente"}>
+            <Mail className="size-4" /> Avisar cliente
+          </Button>
           <Button size="sm" variant="outline" onClick={copySupplierMessage}>
             <Copy className="size-4" /> Copiar mensagem pro fornecedor
           </Button>

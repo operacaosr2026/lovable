@@ -28,6 +28,14 @@ export type ChargebackRow = {
   // De onde vieram os dados do pedido: nosso banco, Shopify (só pra esta aba),
   // Shopify sem acesso (pedido > 60 dias sem read_all_orders) ou disputa sem pedido.
   orderSource: "sistema" | "shopify" | "sem_acesso" | "sem_pedido";
+  // Análise de fraude da Shopify do pedido (LOW/MEDIUM/HIGH) e os motivos.
+  riskLevel: string | null; riskRecommendation: string | null; riskFacts: { description: string; sentiment: string }[];
+};
+
+// Risco de fraude (Shopify) × o que aconteceu com o pedido, por nível.
+export type RiskSummary = {
+  levels: { level: string; orders: number; chargebacks: number; refunds: number }[];
+  total: number; since: string | null; matured: number;   // matured = pedidos com 25+ dias (já deu tempo de virar disputa)
 };
 
 // Pedido de disputa que não está em shop_orders (feito antes da loja entrar no
@@ -90,7 +98,7 @@ export const getChargebacks = createServerFn({ method: "GET" })
     const allShops = (shopsRes.data ?? []) as { id: string; name: string }[];
     const shopIds = data.scope === "ativas" ? activeIds : allShops.map((s) => s.id);
     const shopName = new Map(allShops.map((s) => [s.id, s.name]));
-    if (!shopIds.length) return { rows: [] as ChargebackRow[], shops: [] as { id: string; name: string }[] };
+    if (!shopIds.length) return { rows: [] as ChargebackRow[], shops: [] as { id: string; name: string }[], riskSummary: { levels: [], total: 0, since: null, matured: 0 } as RiskSummary };
 
     const { data: disputes, error } = await selectAll<{
       id: string; shop_id: string; order_external_id: string | null; type: string; status: string | null; reason: string | null;
@@ -207,10 +215,45 @@ export const getChargebacks = createServerFn({ method: "GET" })
       if (!convBy.has(c.customer_email.toLowerCase())) convBy.set(c.customer_email.toLowerCase(), c.id);
     }
 
+    // Risco de fraude: dos pedidos das disputas (pra lista) e de todos (correlação).
+    const { data: risks } = await selectAll<{ shop_id: string; order_external_id: string; order_created_at: string | null; risk_level: string | null; recommendation: string | null; facts: any; financial_status: string | null }>(
+      supabaseAdmin.from("shop_order_risks").select("shop_id,order_external_id,order_created_at,risk_level,recommendation,facts,financial_status")
+        .eq("user_id", ownerId).in("shop_id", shopIds));
+    const riskBy = new Map(risks.map((r) => [`${r.shop_id}:${r.order_external_id}`, r]));
+    const cbKeys = new Set(disputes.filter((d) => d.type === "chargeback" && d.order_external_id).map((d) => `${d.shop_id}:${d.order_external_id}`));
+    const riskExt = [...new Set(risks.map((r) => r.order_external_id))];
+    const { data: fin } = riskExt.length
+      ? await selectAllIn<{ shop_id: string; external_id: string; shopify_financial_status: string | null }>(riskExt, (c) =>
+          supabaseAdmin.from("shop_orders").select("shop_id,external_id,shopify_financial_status").eq("user_id", ownerId).in("external_id", c))
+      : { data: [] as { shop_id: string; external_id: string; shopify_financial_status: string | null }[] };
+    // Reembolso: status do nosso banco (atualizado pelos webhooks); pedido que não
+    // está no banco usa o status da Shopify guardado junto com o risco.
+    const inDb = new Set(fin.map((f) => `${f.shop_id}:${f.external_id}`));
+    const refunded = new Set(fin.filter((f) => f.shopify_financial_status === "refunded" || f.shopify_financial_status === "partially_refunded").map((f) => `${f.shop_id}:${f.external_id}`));
+    for (const r of risks) {
+      const key = `${r.shop_id}:${r.order_external_id}`;
+      if (!inDb.has(key) && (r.financial_status === "REFUNDED" || r.financial_status === "PARTIALLY_REFUNDED")) refunded.add(key);
+    }
+    const byLevel = new Map<string, { level: string; orders: number; chargebacks: number; refunds: number }>();
+    for (const r of risks) {
+      const level = r.risk_level ?? "NONE";
+      const g = byLevel.get(level) ?? { level, orders: 0, chargebacks: 0, refunds: 0 };
+      const key = `${r.shop_id}:${r.order_external_id}`;
+      g.orders++; if (cbKeys.has(key)) g.chargebacks++; if (refunded.has(key)) g.refunds++;
+      byLevel.set(level, g);
+    }
+    const created = risks.map((r) => r.order_created_at).filter(Boolean).sort() as string[];
+    const riskSummary: RiskSummary = {
+      levels: ["LOW", "MEDIUM", "HIGH", "NONE"].map((l) => byLevel.get(l)).filter(Boolean) as RiskSummary["levels"],
+      total: risks.length, since: created[0] ?? null,
+      matured: created.filter((c) => Date.now() - new Date(c).getTime() >= 25 * 86_400_000).length,
+    };
+
     const rows: ChargebackRow[] = disputes.map((d) => {
       const o: any = d.order_external_id ? orderBy.get(`${d.shop_id}:${d.order_external_id}`) : null;
       const t = o?.id ? trackBy.get(o.id) : undefined;
       const snap = d.order_external_id ? snapByKey.get(`${d.shop_id}:${d.order_external_id}`) : undefined;
+      const risk = d.order_external_id ? riskBy.get(`${d.shop_id}:${d.order_external_id}`) : undefined;
       const email = emailOf(o);
       const domain = domainByShop.get(d.shop_id);
       const days = o?.order_date ? Math.round((new Date(d.initiated_at).getTime() - new Date(`${o.order_date}T12:00:00Z`).getTime()) / 86_400_000) : null;
@@ -231,8 +274,10 @@ export const getChargebacks = createServerFn({ method: "GET" })
         conversationId: email ? convBy.get(email) ?? null : null,
         adminUrl: domain && d.order_external_id ? `https://${domain}/admin/orders/${d.order_external_id}` : null,
         orderSource: !d.order_external_id ? "sem_pedido" : o ? (o.fromShopify ? "shopify" : "sistema") : snap?.unavailable ? "sem_acesso" : "sem_pedido",
+        riskLevel: risk?.risk_level ?? null, riskRecommendation: risk?.recommendation ?? null,
+        riskFacts: Array.isArray(risk?.facts) ? risk!.facts : [],
       };
     });
     const shops = allShops.filter((s) => shopIds.includes(s.id));
-    return { rows, shops };
+    return { rows, shops, riskSummary };
   });

@@ -53,6 +53,21 @@ export type Database = {
         };
         Relationships: [];
       };
+      shop_order_risks: {
+        Row: {
+          shop_id: string; order_external_id: string; user_id: string; order_name: string | null; order_created_at: string | null;
+          risk_level: string | null; recommendation: string | null; facts: Json; updated_at: string; financial_status: string | null;
+        };
+        Insert: {
+          shop_id: string; order_external_id: string; user_id: string; order_name?: string | null; order_created_at?: string | null;
+          risk_level?: string | null; recommendation?: string | null; facts?: Json; updated_at?: string; financial_status?: string | null;
+        };
+        Update: {
+          shop_id?: string; order_external_id?: string; user_id?: string; order_name?: string | null; order_created_at?: string | null;
+          risk_level?: string | null; recommendation?: string | null; facts?: Json; updated_at?: string; financial_status?: string | null;
+        };
+        Relationships: [];
+      };
       support_templates: {
         Row: { id: string; owner_id: string; title: string; body: string; created_at: string; updated_at: string };
         Insert: { id?: string; owner_id: string; title: string; body: string; created_at?: string; updated_at?: string };

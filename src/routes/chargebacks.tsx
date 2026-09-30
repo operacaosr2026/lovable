@@ -13,7 +13,7 @@ import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { getChargebacks, type ChargebackRow } from "@/lib/chargebacks.functions";
+import { getChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
 
 export const Route = createFileRoute("/chargebacks")({
   beforeLoad: requireAuth,
@@ -52,6 +52,18 @@ const STATUS: Record<string, { label: string; cls: string; icon: typeof Hourglas
   charge_refunded: { label: "Reembolsado",         cls: "bg-muted text-muted-foreground",                    icon: CircleCheck },
 };
 const statusMeta = (s: string | null) => STATUS[s ?? ""] ?? { label: s ?? "—", cls: "bg-muted text-muted-foreground", icon: Hourglass };
+
+// Análise de fraude da Shopify (o ⚠ da lista de pedidos).
+const RISK: Record<string, { label: string; cls: string }> = {
+  LOW:    { label: "Baixo",       cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
+  MEDIUM: { label: "Médio",       cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  HIGH:   { label: "Alto",        cls: "bg-rose-500/10 text-rose-700 dark:text-rose-400" },
+  NONE:   { label: "Sem análise", cls: "bg-muted text-muted-foreground" },
+};
+const RECOMMENDATION: Record<string, string> = { ACCEPT: "aceitar", INVESTIGATE: "investigar", CANCEL: "cancelar" };
+const risky = (r: ChargebackRow) => r.riskLevel === "MEDIUM" || r.riskLevel === "HIGH";
+const riskTitle = (r: ChargebackRow) =>
+  `Shopify: risco ${RISK[r.riskLevel ?? "NONE"]?.label.toLowerCase() ?? r.riskLevel}${r.riskRecommendation ? ` — ${RECOMMENDATION[r.riskRecommendation] ?? r.riskRecommendation}` : ""}`;
 
 const DELIVERY: Record<string, string> = {
   pending_shipment: "Aguardando envio", shipped: "Em trânsito", in_transit: "Em trânsito", delivered: "Entregue",
@@ -267,11 +279,18 @@ function ChargebacksPage() {
               iconFor={(label) => { const T = deliveryTone(label).icon; return <T className="size-4" />; }} />
             <BarListCard title="Dias da compra até a disputa" rows={base} dim="days" filter={filter} onPick={toggle} withIcons
               order={["Até 14 dias", "15 a 29 dias", "30 a 44 dias", "45 dias ou mais", "Sem data do pedido"]}
-              iconFor={() => <CalendarDays className="size-4" />} />
+              iconFor={(label) => {
+                // Faixa de dias no lugar do ícone (cada linha diferente, leitura rápida).
+                const tag = ({ "Até 14 dias": "0–14", "15 a 29 dias": "15–29", "30 a 44 dias": "30–44", "45 dias ou mais": "45+" } as Record<string, string>)[label];
+                return tag ? <span className="text-[10px] font-bold tabular-nums leading-none">{tag}</span> : <CalendarDays className="size-4" />;
+              }} />
             <BarListCard title="Falou com o suporte antes?" rows={base} dim="support" filter={filter} onPick={toggle} withIcons
               order={["Sim", "Não"]}
               iconFor={(label) => label === "Sim" ? <CircleCheck className="size-4 text-emerald-600" /> : label === "Não" ? <CircleX className="size-4 text-rose-500" /> : <MessagesSquare className="size-4" />} />
           </div>
+
+          {/* ── Risco de fraude × resultado ── */}
+          {q.data?.riskSummary && q.data.riskSummary.total > 0 && <RiskCard summary={q.data.riskSummary} />}
 
           {/* ── Lista ── */}
           <div className={`${CARD} p-5`}>
@@ -345,9 +364,12 @@ function ChargebacksPage() {
                         <tr key={r.id} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button")) setDetail(r); }}
                           title="Ver detalhes" className="border-b border-border/60 last:border-0 hover:bg-muted/30 cursor-pointer">
                           <td className="py-3 px-2 whitespace-nowrap">
-                            {r.adminUrl
-                              ? <a href={r.adminUrl} target="_blank" rel="noreferrer" className="font-semibold hover:text-primary inline-flex items-center gap-1.5">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}<ExternalLink className="size-3.5 text-muted-foreground" /></a>
-                              : <span className="font-semibold">{r.orderNumber ?? "—"}</span>}
+                            <div className="flex items-center gap-1.5">
+                              {r.adminUrl
+                                ? <a href={r.adminUrl} target="_blank" rel="noreferrer" className="font-semibold hover:text-primary inline-flex items-center gap-1.5">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}<ExternalLink className="size-3.5 text-muted-foreground" /></a>
+                                : <span className="font-semibold">{r.orderNumber ?? "—"}</span>}
+                              {risky(r) && <span title={riskTitle(r)}><AlertTriangle className={`size-4 ${r.riskLevel === "HIGH" ? "text-rose-500" : "text-amber-500"}`} /></span>}
+                            </div>
                             <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")}{r.type === "inquiry" ? " · inquiry" : ""}</div>
                           </td>
                           <td className="py-3 px-2 max-w-[260px]">
@@ -418,6 +440,70 @@ function ChargebacksPage() {
 
 // ─── Peças ───────────────────────────────────────────────────────────────────
 
+// Risco de fraude da Shopify (o ⚠ da lista de pedidos) × o que aconteceu:
+// quantos de cada nível viraram chargeback ou reembolso.
+function RiskCard({ summary }: { summary: RiskSummary }) {
+  const rate = (n: number, total: number) => (total ? (n / total) * 100 : 0);
+  const fmtPct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+  const low = summary.levels.find((l) => l.level === "LOW");
+  const maxRate = Math.max(0.1, ...summary.levels.map((l) => rate(l.chargebacks, l.orders)));
+  return (
+    <div className={`${CARD} p-5`}>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-4">
+        <div>
+          <h2 className="text-base font-semibold">Risco de fraude (Shopify) × resultado</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            O aviso "Este pedido pode ser fraudulento" da Shopify, nos pedidos desde {fmtDate(summary.since)}: quantos de cada nível viraram chargeback ou reembolso.
+          </p>
+        </div>
+        <span className="text-[11px] text-muted-foreground shrink-0" title="Chargeback leva semanas pra chegar: os pedidos recentes ainda podem virar disputa">
+          {summary.matured} de {summary.total} pedidos já têm 25+ dias
+        </span>
+      </div>
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="text-xs text-muted-foreground border-b border-border text-left">
+              <th className="font-medium py-2 px-1.5">Risco</th>
+              <th className="font-medium py-2 px-1.5 text-right">Pedidos</th>
+              <th className="font-medium py-2 px-1.5 text-right">Chargebacks</th>
+              <th className="font-medium py-2 px-1.5 w-[30%]">% chargeback</th>
+              <th className="font-medium py-2 px-1.5 text-right">Reembolsos</th>
+              <th className="font-medium py-2 px-1.5 text-right">% reembolso</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.levels.map((l) => {
+              const cbRate = rate(l.chargebacks, l.orders);
+              const vsLow = low && l.level !== "LOW" && low.orders && rate(low.chargebacks, low.orders) > 0 && cbRate > 0
+                ? cbRate / rate(low.chargebacks, low.orders) : null;
+              const meta = RISK[l.level] ?? RISK.NONE;
+              return (
+                <tr key={l.level} className="border-b border-border/60 last:border-0">
+                  <td className="py-2.5 px-1.5"><Pill cls={meta.cls} icon={l.level === "MEDIUM" || l.level === "HIGH" ? AlertTriangle : undefined}>{meta.label}</Pill></td>
+                  <td className="py-2.5 px-1.5 text-right tabular-nums">{l.orders}</td>
+                  <td className="py-2.5 px-1.5 text-right tabular-nums font-semibold">{l.chargebacks}</td>
+                  <td className="py-2.5 px-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-primary/70 to-primary" style={{ width: `${(cbRate / maxRate) * 100}%` }} />
+                      </div>
+                      <span className="text-xs tabular-nums w-12 text-right font-medium">{fmtPct(cbRate)}</span>
+                    </div>
+                    {vsLow != null && <p className="text-[10px] text-muted-foreground mt-0.5">{vsLow.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}× o risco baixo</p>}
+                  </td>
+                  <td className="py-2.5 px-1.5 text-right tabular-nums">{l.refunds}</td>
+                  <td className="py-2.5 px-1.5 text-right tabular-nums text-muted-foreground">{fmtPct(rate(l.refunds, l.orders))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // Cartão da lista no celular: toca pra abrir os detalhes.
 function MobileItem({ r, onOpen }: { r: ChargebackRow; onOpen: () => void }) {
   const st = statusMeta(r.status);
@@ -433,6 +519,7 @@ function MobileItem({ r, onOpen }: { r: ChargebackRow; onOpen: () => void }) {
           {r.adminUrl
             ? <a href={r.adminUrl} target="_blank" rel="noreferrer" className="font-semibold inline-flex items-center gap-1.5">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}<ExternalLink className="size-3.5 text-muted-foreground" /></a>
             : <span className="font-semibold">{r.orderNumber ?? "—"}</span>}
+          {risky(r) && <AlertTriangle className={`inline size-4 ml-1.5 align-[-3px] ${r.riskLevel === "HIGH" ? "text-rose-500" : "text-amber-500"}`} aria-label={riskTitle(r)} />}
           <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")} · {fmtDate(r.initiatedAt)}</div>
         </div>
         <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>
@@ -725,6 +812,29 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
                 ) : "—")}
                 {line("Último evento", r.lastEvent ? `${r.lastEvent}${r.lastEventAt ? ` · ${fmtDate(r.lastEventAt)}` : ""}` : "—")}
                 {line("Falou com o suporte", supportLabel(r))}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Risco de fraude (Shopify)</p>
+                {r.riskLevel ? (
+                  <>
+                    <div className="flex items-center gap-2 py-2 text-sm">
+                      <Pill cls={RISK[r.riskLevel]?.cls ?? RISK.NONE.cls} icon={risky(r) ? AlertTriangle : undefined}>Risco {RISK[r.riskLevel]?.label.toLowerCase() ?? r.riskLevel}</Pill>
+                      {r.riskRecommendation && <span className="text-muted-foreground">Recomendação: {RECOMMENDATION[r.riskRecommendation] ?? r.riskRecommendation}</span>}
+                    </div>
+                    {r.riskFacts.length > 0 && (
+                      <ul className="space-y-1 text-xs">
+                        {[...r.riskFacts].sort((a, b) => (a.sentiment === "POSITIVE" ? 1 : 0) - (b.sentiment === "POSITIVE" ? 1 : 0)).map((f, i) => (
+                          <li key={i} className="flex gap-1.5">
+                            <span className={f.sentiment === "POSITIVE" ? "text-emerald-600" : f.sentiment === "NEGATIVE" ? "text-rose-600" : "text-amber-600"}>
+                              {f.sentiment === "POSITIVE" ? "✓" : f.sentiment === "NEGATIVE" ? "✕" : "•"}
+                            </span>
+                            <span className="text-muted-foreground">{f.description}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : <p className="text-sm text-muted-foreground py-2">Sem análise (pedido com mais de 60 dias ou fora da Shopify).</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 {r.adminUrl && (

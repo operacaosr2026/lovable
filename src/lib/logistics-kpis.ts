@@ -32,7 +32,7 @@ export function businessDaysSince(iso: string | null | undefined, nowMs: number)
   return count;
 }
 // Motivo extra (além do que o badge de status já mostra) pra sinalizar um pedido
-// parado: enviado há +7 dias sem atualização, ou pedido feito há +28 dias e ainda
+// parado: enviado há 5+ dias sem atualização, ou pedido feito há 15+ dias e ainda
 // sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro,
 // nem "esperando cliente" — a ação nesse caso já não é da loja.
 export function attentionReason(o: any, nowMs: number): string | null {
@@ -42,17 +42,18 @@ export function attentionReason(o: any, nowMs: number): string | null {
     // last_event_at (Track123) reflete o último evento real de rastreio; sem
     // integração ativa, cai pra shipped_at (data da postagem) como referência.
     const d = daysSince(o.last_event_at ?? o.shipped_at, nowMs);
-    if (d != null && d >= 7) return `${Math.floor(d)}d sem atualização`;
+    if (d != null && d >= 5) return `${Math.floor(d)}d sem atualização`;
   }
   if (status !== "delivered" && status !== "returned") {
     const d = daysSince(o.order_date, nowMs);
-    if (d != null && d >= 25) return `${Math.floor(d)}d sem entrega`;
+    if (d != null && d >= 15) return `${Math.floor(d)}d sem entrega`;
   }
   return null;
 }
 // Precisa de atenção: pendente de envio há mais de 3 dias úteis, marcado como
-// problema, parado sem atualização de rastreio há +7 dias, ou feito há +25
-// dias e ainda não entregue. "Esperando cliente" fica de fora — a bola já não
+// problema, parado sem atualização de rastreio há 5+ dias, ou feito há 15+
+// dias e ainda não entregue (antes era 7/25 — a maioria dos chargebacks abre
+// antes de 15 dias da compra, então 25 avisava tarde demais). "Esperando cliente" fica de fora — a bola já não
 // está com a loja. Pendente de envio recente (até 3 dias úteis) é normal, não
 // precisa aparecer aqui ainda.
 export function needsAttention(o: any, nowMs: number): boolean {

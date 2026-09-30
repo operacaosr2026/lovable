@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { syncOrderRisks } from "@/lib/order-risk.server";
 import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
@@ -451,6 +452,10 @@ async function processShop(s: any, today: string) {
           await notifyRefundsFailed(s.user_id, s.shopify_store_id).catch(() => {});
           throw e;
         }
+        // Risco de fraude da Shopify dos pedidos recentes (aba Chargebacks).
+        // Falha aqui não derruba o resto do sync.
+        await syncOrderRisks(s.shop_id, s.user_id, store.shop_domain, store.access_token)
+          .catch((e) => console.error("risco de fraude", s.shop_id, e));
         const lagDays = payoutLagDaysFor(s, store.board_payout_days);
         await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
         await markCashSynced(s.shop_id);
