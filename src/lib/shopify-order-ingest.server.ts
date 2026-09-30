@@ -3,6 +3,7 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { orderDateFor } from "@/lib/order-date";
 import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
 import { emitEvent } from "@/lib/notify.server";
+import { isRecoveryOrder } from "@/lib/recovery-order";
 
 // Push "Nova venda": loja + número + valor; o toque abre os pedidos do grupo
 // da loja. Só pedido que acabou de entrar (não reprocessamento de antigo).
@@ -31,6 +32,8 @@ async function notifyNewSale(ownerId: string, shopId: string, o: any) {
 // telas abertas.
 export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ changedOwners: string[] }> {
   if (!o?.id || !o?.created_at) return { changedOwners: [] };
+  // Pedido de cobrança dos Alertas (tag recuperacao-alerta) não é venda: fica fora de shop_orders.
+  if (isRecoveryOrder(o)) return { changedOwners: [] };
 
   const paused = await getPausedShopifyStoreIds();
   if (paused.has(storeId)) return { changedOwners: [] };

@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info, Bold, Italic, Link2, Truck } from "lucide-react";
+import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info, Bold, Italic, Link2, Truck, CreditCard } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -57,12 +57,12 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
       el.setSelectionRange(start, start + core.length);
     });
   };
-  // Link com texto: [texto](url). Sem seleção, usa "Track your order".
-  const link = (i: number, url: string) => {
+  // Link com texto: [texto](url). Sem seleção, usa o texto padrão do link escolhido.
+  const link = (i: number, url: string, fallback = "Track your order") => {
     const el = bodies.current[i];
     if (!el) return;
     const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? a;
-    const label = el.value.slice(a, b).trim() || "Track your order";
+    const label = el.value.slice(a, b).trim() || fallback;
     const md = `[${label}](${url})`;
     upd(i, { body: el.value.slice(0, a) + md + el.value.slice(b) });
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + md.length, a + md.length); });
@@ -97,6 +97,7 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
         <p>• Envia das 9h às 20h no horário de Nova York, um e-mail por vez, com 30 minutos de intervalo (sem rajada, pra não parecer robô). Quem espera há mais tempo sai primeiro.</p>
         <p>• A sequência para quando o cliente responde (segue na mão pelo Atendimento), quando alguém muda o status ou pausa a cobrança do pedido.</p>
         <p>• Terminou a sequência sem resposta: depois dos dias abaixo o status vira <b>Sem retorno</b>.</p>
+        <p>• <b>{"{link_pagamento}"}</b>: no 1º e-mail que usar, o sistema cria na loja um pedido "Payment for order #…" (sem envio) e manda o link do checkout. Quando o cliente paga, o pedido vira <b>Recuperado</b> sozinho, é dado como atendido na Shopify e o valor volta pro lucro — sem aparecer em Pedidos, Logística ou Rastreio.</p>
       </div>
 
       <div className="space-y-3">
@@ -126,7 +127,7 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
             <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-border bg-muted/40">
               <IconBtn title="Negrito (*texto*)" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(i, "*")}><Bold className="size-3.5" /></IconBtn>
               <IconBtn title="Itálico (_texto_)" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(i, "_")}><Italic className="size-3.5" /></IconBtn>
-              <LinkButton onPick={(url) => link(i, url)} />
+              <LinkButton onPick={(url, fallback) => link(i, url, fallback)} />
               <span className="text-[11px] text-muted-foreground ml-1.5 hidden sm:inline">Selecione o texto e clique · *negrito* · _itálico_ · [texto](link)</span>
             </div>
             <textarea ref={(el) => { bodies.current[i] = el; }} onFocus={() => setFocused(i)} value={s.body} onChange={(e) => upd(i, { body: e.target.value })}
@@ -186,7 +187,7 @@ function PreviewDialog({ step, index, onClose }: { step: DunningStep | null; ind
   const rows = q.data?.rows ?? [];
   const [pick, setPick] = useState<string | null>(null);
   const sample = rows.find((r) => `${r.shopId}:${r.orderExternalId}` === pick) ?? rows.find((r) => r.deliveryStatus === "delivered") ?? rows[0];
-  const vars = sample ? dunningVars(sample) : {};
+  const vars = sample ? dunningVars(sample, { preview: true }) : {};
   return (
     <Dialog open={!!step} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-2xl">
@@ -222,10 +223,10 @@ function PreviewDialog({ step, index, onClose }: { step: DunningStep | null; ind
   );
 }
 
-function LinkButton({ onPick }: { onPick: (url: string) => void }) {
+function LinkButton({ onPick }: { onPick: (url: string, fallback?: string) => void }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
-  const pick = (u: string) => { onPick(u); setOpen(false); setUrl(""); };
+  const pick = (u: string, fallback?: string) => { onPick(u, fallback); setOpen(false); setUrl(""); };
   const valid = /^https?:\/\/\S+$/.test(url.trim());
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -233,10 +234,14 @@ function LinkButton({ onPick }: { onPick: (url: string) => void }) {
         <IconBtn title="Link com texto (selecione o texto antes)" onMouseDown={(e) => e.preventDefault()}><Link2 className="size-3.5" /></IconBtn>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 space-y-2" onOpenAutoFocus={(e) => e.preventDefault()}>
-        <p className="text-xs text-muted-foreground">O texto selecionado vira o link (sem seleção: "Track your order").</p>
-        <button onClick={() => pick("{link_rastreio}")}
+        <p className="text-xs text-muted-foreground">O texto selecionado vira o link.</p>
+        <button onClick={() => pick("{link_rastreio}", "Track your order")}
           className="w-full h-9 px-3 rounded-lg border border-border text-sm inline-flex items-center gap-2 hover:bg-muted">
           <Truck className="size-4 text-primary" /> Link do rastreio
+        </button>
+        <button onClick={() => pick("{link_pagamento}", "Complete your payment")}
+          className="w-full h-9 px-3 rounded-lg border border-border text-sm inline-flex items-center gap-2 hover:bg-muted">
+          <CreditCard className="size-4 text-primary" /> Link de pagamento
         </button>
         <div className="flex gap-1.5">
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"

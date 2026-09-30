@@ -361,9 +361,16 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
 // Progresso da cobrança automática (Configurações > Sequência de cobrança).
 function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: boolean; total: number }; busy: boolean; onPause: (paused: boolean) => void }) {
   const open = r.status === "a_contatar" || r.status === "contatado";
-  if (!seq.enabled && !r.dunningStep) return null;
+  if (!seq.enabled && !r.dunningStep && !r.recoveryOrderName) return null;
   if (!r.dunningStep && (!open || r.status !== "a_contatar" || r.deliveryStatus !== "delivered")) return null;
   const err = r.dunningStopReason?.startsWith("erro") ? r.dunningStopReason.slice(6) : null;
+  if (r.recoveryOrderName) {
+    return (
+      <div className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400" title={r.recoveryError ?? undefined}>
+        Pago no pedido {r.recoveryOrderName}{!r.recoveryFulfilled && <span className="text-amber-600 dark:text-amber-400"> · falta dar como atendido</span>}
+      </div>
+    );
+  }
   const label = r.dunningStopReason === "respondeu" ? "Cliente respondeu"
     : r.dunningStopReason === "fim" ? `Sequência concluída (${r.dunningStep})`
     : r.dunningPaused ? `Cobrança pausada${r.dunningStep ? ` · ${r.dunningStep}/${seq.total}` : ""}`

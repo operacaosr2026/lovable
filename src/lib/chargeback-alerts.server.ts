@@ -4,6 +4,7 @@ import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { getZohoAccount, sendZohoMail } from "@/lib/zoho-mail.server";
+import { ensureRecoveryLink, checkRecoveryPayments } from "@/lib/chargeback-recovery.server";
 import {
   DEFAULT_CHARGEBACK_SETTINGS, dunningVars, renderDunning, dunningTextToHtml,
   type AlertRow, type AlertStatus, type ChargebackSettings, type DunningStep,
@@ -58,7 +59,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
     selectAllIn<{ order_id: string; last_event_label: string | null }>(orderIds, (c) =>
       supabaseAdmin.from("shop_order_tracking").select("order_id,last_event_label").in("order_id", c)),
     selectAllIn<any>(extIds, (c) => supabaseAdmin.from("chargeback_alert_followups")
-      .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason,dunning_started_at,dunning_replied_at,dunning_replied_step,recovered_at,recovered_step")
+      .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason,dunning_started_at,dunning_replied_at,dunning_replied_step,recovered_at,recovered_step,recovery_draft_id,recovery_invoice_url,recovery_order_id,recovery_order_name,recovery_fulfilled,recovery_error")
       .eq("user_id", ownerId).in("order_external_id", c)),
     emails.length
       ? selectAllIn<{ id: string; customer_email: string; last_message_at: string | null }>(emails, (c) =>
@@ -92,6 +93,9 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       dunningStep: fu?.dunning_step ?? 0, dunningLastAt: fu?.dunning_last_at ?? null, dunningPaused: fu?.dunning_paused ?? false, dunningStopReason: fu?.dunning_stop_reason ?? null,
       dunningStartedAt: fu?.dunning_started_at ?? null, repliedAt: fu?.dunning_replied_at ?? null, repliedStep: fu?.dunning_replied_step ?? null,
       recoveredAt: fu?.recovered_at ?? null, recoveredStep: fu?.recovered_step ?? null,
+      recoveryDraftId: fu?.recovery_draft_id ?? null, recoveryInvoiceUrl: fu?.recovery_invoice_url ?? null,
+      recoveryOrderId: fu?.recovery_order_id ?? null, recoveryOrderName: fu?.recovery_order_name ?? null,
+      recoveryFulfilled: fu?.recovery_fulfilled ?? false, recoveryError: fu?.recovery_error ?? null,
     };
   }).sort((a, b) => (b.refundedAt ?? "").localeCompare(a.refundedAt ?? ""));
 }
@@ -218,6 +222,8 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
       .match(key).eq("dunning_step", r.dunningStep).eq("dunning_paused", false).in("status", ["a_contatar", "contatado"]).select("id");
     if (!claimed?.length) continue;
     try {
+      // E-mail com {link_pagamento}: cria (ou reaproveita) o pedido de cobrança na Shopify antes.
+      if (`${step.subject}\n${step.body}`.includes("{link_pagamento}")) await ensureRecoveryLink(ownerId, r);
       await sendDunningEmail(ownerId, ownerId, r.customerEmail!, step, r);
       sent++;
       canSend = false;   // próximo só daqui a 30 min
@@ -264,7 +270,8 @@ export async function tagAlertConversations(ownerId: string, rows: AlertRow[]) {
   return todo.length;
 }
 
-// Roda depois do sync do Zoho: tag nas conversas + sequência de cobrança (se ligada).
+// Roda depois do sync do Zoho: tag nas conversas, pagamentos dos pedidos de cobrança
+// e sequência de cobrança (se ligada).
 export async function runAllChargebackDunning() {
   const { data } = await supabaseAdmin.from("zoho_mail_accounts").select("owner_id").not("refresh_token", "is", null);
   const out: Record<string, unknown> = {};
@@ -272,7 +279,9 @@ export async function runAllChargebackDunning() {
     try {
       const rows = await loadAlerts(a.owner_id, await alertShopIds(a.owner_id));
       const tagged = await tagAlertConversations(a.owner_id, rows);
-      out[a.owner_id] = { tagged, ...(await runChargebackDunning(a.owner_id, rows)) };
+      // Pagamentos antes da sequência: quem pagou vira Recuperado e não recebe mais e-mail.
+      const paid = await checkRecoveryPayments(a.owner_id, rows);
+      out[a.owner_id] = { tagged, paid, ...(await runChargebackDunning(a.owner_id, rows)) };
     } catch (e: any) { out[a.owner_id] = { error: String(e?.message ?? e) }; }
   }
   return out;

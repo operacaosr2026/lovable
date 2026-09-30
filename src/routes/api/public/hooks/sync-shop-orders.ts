@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { syncOrderRisks } from "@/lib/order-risk.server";
 import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { isRecoveryOrder } from "@/lib/recovery-order";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
@@ -286,7 +287,7 @@ async function syncOrdersOnlyForShop(s: any, today: string) {
     .eq("id", s.shopify_store_id).maybeSingle();
   if (!store?.access_token || !store?.shop_domain) return;
   try {
-    const orders = await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`);
+    const orders = (await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`)).filter((o: any) => !isRecoveryOrder(o));
     if (orders.length) {
       const rows = orders.map((o: any) => ({
         user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
@@ -381,7 +382,7 @@ async function processShop(s: any, today: string) {
       .eq("id", s.shopify_store_id).maybeSingle();
     if (store?.access_token && store?.shop_domain) {
       try {
-        const orders = await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`);
+        const orders = (await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`)).filter((o: any) => !isRecoveryOrder(o));
         if (orders.length) {
           const rows = orders.map((o: any) => ({
             user_id: s.user_id, shop_id: s.shop_id, source: "shopify",

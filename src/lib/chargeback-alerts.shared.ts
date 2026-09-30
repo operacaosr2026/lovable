@@ -12,6 +12,9 @@ export type AlertRow = {
   status: AlertStatus; recoveredAmount: number | null; followupNote: string | null; followupAt: string | null;
   dunningStep: number; dunningLastAt: string | null; dunningPaused: boolean; dunningStopReason: string | null;
   dunningStartedAt: string | null; repliedAt: string | null; repliedStep: number | null; recoveredAt: string | null; recoveredStep: number | null;
+  // Pedido de cobrança na Shopify (link de pagamento) — chargeback-recovery.server.ts.
+  recoveryDraftId: string | null; recoveryInvoiceUrl: string | null; recoveryOrderId: string | null; recoveryOrderName: string | null;
+  recoveryFulfilled: boolean; recoveryError: string | null;
 };
 
 // Sequência de cobrança: days do 1º = dias depois da entrega; dos demais = dias depois do anterior.
@@ -30,6 +33,7 @@ export const DUNNING_VARS = [
   ["{data_entrega}", "Data da entrega"],
   ["{codigo_rastreio}", "Código de rastreio"],
   ["{link_rastreio}", "Link do rastreio"],
+  ["{link_pagamento}", "Link de pagamento (checkout da loja, criado no 1º envio que usar)"],
 ] as const;
 
 // Datas em inglês (os clientes são dos EUA): "September 26, 2026".
@@ -39,7 +43,8 @@ function usDate(iso: string | null) {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York" });
 }
 
-export function dunningVars(r: AlertRow): Record<string, string> {
+// preview: sem link de pagamento ainda, usa um endereço de exemplo (o de verdade é criado no envio).
+export function dunningVars(r: AlertRow, opts: { preview?: boolean } = {}): Record<string, string> {
   return {
     "{nome}": r.customerFirstName ?? r.customerName ?? "",
     "{nome_completo}": r.customerName ?? "",
@@ -51,6 +56,7 @@ export function dunningVars(r: AlertRow): Record<string, string> {
     "{data_entrega}": usDate(r.deliveredAt),
     "{codigo_rastreio}": r.trackingCode ?? "",
     "{link_rastreio}": r.trackingUrl ?? "",
+    "{link_pagamento}": r.recoveryInvoiceUrl ?? (opts.preview ? "https://checkout.shopify.com/link-de-pagamento-criado-no-envio" : ""),
   };
 }
 

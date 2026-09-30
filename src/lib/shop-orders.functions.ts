@@ -3,6 +3,7 @@ import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
 import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
@@ -574,7 +575,8 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
     // (dispute_evidences não entra: a Shopify só libera pra apps públicos de disputa.)
     // read_all_orders: pedidos com mais de 60 dias (sem ela a Shopify só libera os últimos 60).
     // read_reports: visitas da loja (sessões) pro cálculo de conversão.
-    const scopes = "read_orders,read_all_orders,read_products,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers";
+    // write_merchant_managed_fulfillment_orders: dar o pedido de cobrança dos Alertas como atendido (sem rastreio).
+    const scopes = "read_orders,read_all_orders,read_products,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders";
     const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
     const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
       `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
@@ -764,7 +766,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     const todayForSince = isoDate(new Date());
     const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
     const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
-    const orders = await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`);
+    const orders = (await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`)).filter((o: any) => !isRecoveryOrder(o));
 
     if (orders.length) {
       const rows = orders.map((o: any) => {
@@ -1208,12 +1210,15 @@ export const notifyRefundsFailed = createServerOnlyFn(async (ownerId: string, sh
 //    pedido a cada reembolso e o sync de 10 em 10 min regrava os últimos 30 dias.
 //  - Chargebacks: shop_order_disputes (sincronizado pelo cron de 10 em 10 min),
 //    tipo chargeback, aberto dentro do período.
+//  - Recuperação dos Alertas: o que o cliente pagou no pedido de cobrança
+//    ("Payment for order #X", fora de shop_orders) abate o reembolso, no dia do
+//    pagamento — o dinheiro voltou, sem custo de produto.
 // Mesmo formato de retorno da versão antiga ao vivo, então o cálculo do lucro
 // não muda.
 export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   ownerId: string, shopIds: string[], fromISO: string, toISO: string,
 ) => {
-  const [refundOrders, disputes] = await Promise.all([
+  const [refundOrders, disputes, recoveries] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_orders")
       .select("shop_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
       .eq("user_id", ownerId).in("shop_id", shopIds)
@@ -1223,6 +1228,10 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
       .select("shop_id,amount,initiated_at")
       .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
       .gte("initiated_at", fromISO).lte("initiated_at", toISO)),
+    selectAll(supabaseAdmin.from("chargeback_alert_followups")
+      .select("id,shop_id,recovered_amount,recovery_paid_at")
+      .eq("user_id", ownerId).in("shop_id", shopIds).not("recovery_order_id", "is", null)
+      .gte("recovery_paid_at", `${fromISO}T00:00:00Z`).lte("recovery_paid_at", `${toISO}T23:59:59Z`)),
   ]);
   if (refundOrders.error) throw new Error(refundOrders.error.message);
   if (disputes.error) throw new Error(disputes.error.message);
@@ -1244,6 +1253,14 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
     row.cbAmt += amt;
     const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
     row.cbByDate[date] = (row.cbByDate[date] ?? 0) + amt;
+  }
+  for (const r of (recoveries.data ?? []) as any[]) {
+    const row = byShop.get(r.shop_id);
+    if (!row) continue;
+    const amt = Number(r.recovered_amount ?? 0);
+    const date = orderDateFor(r.recovery_paid_at);
+    row.refAmt -= amt;
+    row.refByDate[date] = (row.refByDate[date] ?? 0) - amt;
   }
   return [...byShop.values()];
 });
