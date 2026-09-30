@@ -237,7 +237,6 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
 // e o resultado de cada e-mail (depois de qual e-mail o cliente respondeu / pagou).
 function DunningMetrics({ rows, sendsByStep, seq }: { rows: AlertRow[]; sendsByStep: Record<number, number>; seq: { enabled: boolean; total: number } }) {
   const inSeq = rows.filter((r) => r.dunningStep > 0);
-  if (!seq.enabled && !inSeq.length) return null;
   const replied = inSeq.filter((r) => r.repliedAt);
   const recovered = rows.filter((r) => r.status === "recuperado" && (r.recoveredStep ?? 0) > 0);
   const manual = rows.filter((r) => r.status === "recuperado" && !((r.recoveredStep ?? 0) > 0));
