@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info, Bold, Italic } from "lucide-react";
+import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info, Bold, Italic, Link2, Truck } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getChargebackSettings, saveChargebackSettings, getChargebackAlerts } from "@/lib/chargeback-alerts.functions";
@@ -55,6 +56,16 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
       const start = a + lead.length + mark.length;
       el.setSelectionRange(start, start + core.length);
     });
+  };
+  // Link com texto: [texto](url). Sem seleção, usa "Track your order".
+  const link = (i: number, url: string) => {
+    const el = bodies.current[i];
+    if (!el) return;
+    const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? a;
+    const label = el.value.slice(a, b).trim() || "Track your order";
+    const md = `[${label}](${url})`;
+    upd(i, { body: el.value.slice(0, a) + md + el.value.slice(b) });
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + md.length, a + md.length); });
   };
   const insertVar = (v: string) => {
     const i = Math.min(focused, steps.length - 1);
@@ -115,7 +126,8 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
             <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-border bg-muted/40">
               <IconBtn title="Negrito (*texto*)" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(i, "*")}><Bold className="size-3.5" /></IconBtn>
               <IconBtn title="Itálico (_texto_)" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(i, "_")}><Italic className="size-3.5" /></IconBtn>
-              <span className="text-[11px] text-muted-foreground ml-1.5">Selecione o texto e clique · *negrito* · _itálico_</span>
+              <LinkButton onPick={(url) => link(i, url)} />
+              <span className="text-[11px] text-muted-foreground ml-1.5 hidden sm:inline">Selecione o texto e clique · *negrito* · _itálico_ · [texto](link)</span>
             </div>
             <textarea ref={(el) => { bodies.current[i] = el; }} onFocus={() => setFocused(i)} value={s.body} onChange={(e) => upd(i, { body: e.target.value })}
               rows={8} placeholder={"Hi {nome},\n\nWe noticed your order {pedido} was refunded, but tracking shows it was delivered on {data_entrega}…"}
@@ -210,6 +222,35 @@ function PreviewDialog({ step, index, onClose }: { step: DunningStep | null; ind
   );
 }
 
-function IconBtn({ children, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button {...p} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30">{children}</button>;
+function LinkButton({ onPick }: { onPick: (url: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const pick = (u: string) => { onPick(u); setOpen(false); setUrl(""); };
+  const valid = /^https?:\/\/\S+$/.test(url.trim());
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <IconBtn title="Link com texto (selecione o texto antes)" onMouseDown={(e) => e.preventDefault()}><Link2 className="size-3.5" /></IconBtn>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-2" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <p className="text-xs text-muted-foreground">O texto selecionado vira o link (sem seleção: "Track your order").</p>
+        <button onClick={() => pick("{link_rastreio}")}
+          className="w-full h-9 px-3 rounded-lg border border-border text-sm inline-flex items-center gap-2 hover:bg-muted">
+          <Truck className="size-4 text-primary" /> Link do rastreio
+        </button>
+        <div className="flex gap-1.5">
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"
+            onKeyDown={(e) => { if (e.key === "Enter" && valid) { e.preventDefault(); pick(url.trim()); } }}
+            className={`${INPUT} h-9 px-2.5`} />
+          <button disabled={!valid} onClick={() => pick(url.trim())}
+            className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 shrink-0">OK</button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
+
+const IconBtn = forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(({ children, ...p }, ref) => (
+  <button ref={ref} type="button" {...p} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30">{children}</button>
+));
+IconBtn.displayName = "IconBtn";

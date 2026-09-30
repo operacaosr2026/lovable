@@ -60,7 +60,7 @@ export function renderDunning(text: string, vars: Record<string, string>) {
 // Texto do e-mail → HTML. Formatação no estilo WhatsApp: *negrito* (ou **negrito**)
 // e _itálico_. Links viram clicáveis (e não são formatados por dentro).
 function escHtml(t: string) {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 // Marcador só vale colado no texto e com espaço/pontuação em volta (não pega
 // "5*3" nem nomes_com_underline).
@@ -70,9 +70,17 @@ const IT = /(^|[\s(["'])_(\S(?:[^_\n]*?\S)?)_(?=$|[\s.,!?;:)\]"'])/g;
 function inlineFormat(t: string) {
   return t.replace(B2, "$1<b>$2</b>").replace(B1, "$1<b>$2</b>").replace(IT, "$1<i>$2</i>");
 }
+// Links: [texto](https://…) vira o texto clicável; endereço solto também vira link.
+// Os links saem do texto antes da formatação (o * e _ de dentro da URL não contam)
+// e voltam no fim — assim *[texto](url)* fica em negrito.
+const MD_LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const BARE_URL = /https?:\/\/[^\s<]+/g;
 export function dunningTextToHtml(text: string) {
-  const html = text.split(/(https?:\/\/[^\s<]+)/g)
-    .map((part, i) => (i % 2 ? `<a href="${escHtml(part)}">${escHtml(part)}</a>` : inlineFormat(escHtml(part))))
-    .join("");
+  const links: string[] = [];
+  const hold = (html: string) => `\u0000${links.push(html) - 1}\u0000`;
+  const withLinks = text
+    .replace(MD_LINK, (_, label: string, url: string) => hold(`<a href="${escHtml(url)}">${inlineFormat(escHtml(label))}</a>`))
+    .replace(BARE_URL, (url) => hold(`<a href="${escHtml(url)}">${escHtml(url)}</a>`));
+  const html = inlineFormat(escHtml(withLinks)).replace(/\u0000(\d+)\u0000/g, (_, n) => links[Number(n)]);
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${html.replace(/\r?\n/g, "<br>")}</div>`;
 }
