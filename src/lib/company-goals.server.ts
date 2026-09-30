@@ -87,7 +87,11 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
         const end = monthEndOf(current);
         const diasRestantes = Math.max(0, Math.round((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000));
         realizado = acc.lucro;
-        projecao = acc.lucro + (acc.mediaUltimos3 ?? 0) * diasRestantes;
+        // Lucro até ontem + média dos últimos 3 dias fechados × dias que faltam
+        // contando hoje (o parcial de hoje não entra) — mesma conta da aba Atual.
+        projecao = acc.hojeEmAndamento
+          ? acc.lucroFechado + (acc.mediaUltimos3 ?? 0) * (diasRestantes + 1)
+          : acc.lucro + (acc.mediaUltimos3 ?? 0) * diasRestantes;
       } else {
         realizado = 0;
         projecao = 0;

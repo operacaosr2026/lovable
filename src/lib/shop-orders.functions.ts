@@ -570,7 +570,8 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
       replace_placeholder_id: data.replace_placeholder_id ?? null,
     });
     if (error) throw new Error(error.message);
-    const scopes = "read_orders,read_products,read_shopify_payments_payouts,read_shopify_payments_disputes";
+    // dispute_evidences: ler o que foi enviado nas disputas e (no futuro) enviar a resposta pelo sistema.
+    const scopes = "read_orders,read_products,read_shopify_payments_payouts,read_shopify_payments_disputes,read_shopify_payments_dispute_evidences,write_shopify_payments_dispute_evidences";
     const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
     const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
       `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +

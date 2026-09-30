@@ -45,7 +45,7 @@ export function ConnectStoreDialog({ open, onClose, onConnected, initialName, re
               https://lojas-one.vercel.app/api/public/shopify/callback
             </code>
             <p>Em <strong>Admin API access scopes</strong>, marque:</p>
-            <code className="block bg-background rounded px-2 py-1 text-[11px] break-all">read_orders,read_products,read_shopify_payments_payouts,read_shopify_payments_disputes</code>
+            <code className="block bg-background rounded px-2 py-1 text-[11px] break-all">read_orders,read_products,read_shopify_payments_payouts,read_shopify_payments_disputes,read_shopify_payments_dispute_evidences,write_shopify_payments_dispute_evidences</code>
             <p>Salve, vá em <strong>API credentials</strong> e copie <strong>Client ID</strong> e <strong>Client secret</strong>.</p>
           </div>
           <div>

@@ -384,7 +384,9 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved, onRemoved }: {
   // Progresso: realizado do mês (só o atual tem; meses futuros começam em 0).
   const alvo = goal?.meta ?? (Number(meta) || 0);
   const realizado = goal?.realizado ?? 0;
-  const pctProg = alvo > 0 ? Math.max(0, Math.min(100, (realizado / alvo) * 100)) : 0;
+  // O número mostra quanto passou da meta (ex.: 141%); só a barra para em 100%.
+  const pctReal = alvo > 0 ? Math.max(0, (realizado / alvo) * 100) : 0;
+  const pctProg = Math.min(100, pctReal);
 
   return (
     <div className={cn(
@@ -414,7 +416,7 @@ function PlanRow({ month, isCurrent, goal, suggestion, onSaved, onRemoved }: {
           <div className="h-2 rounded-full bg-muted overflow-hidden flex-1">
             <div className={cn("h-full rounded-full", pctProg >= 100 ? "bg-success" : "bg-primary")} style={{ width: `${pctProg}%` }} />
           </div>
-          <span className="text-xs font-semibold text-foreground w-10 text-right tabular-nums">{Math.round(pctProg)}%</span>
+          <span className="text-xs font-semibold text-foreground w-12 text-right tabular-nums">{Math.round(pctReal)}%</span>
         </div>
         <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">
           <span className="font-semibold text-foreground">{fmtUsdInt(realizado)}</span> de {fmtUsdInt(alvo)}
@@ -711,7 +713,13 @@ export function CompanyGoals() {
     const diasRestantes = Math.max(0, daysBetween(today, savedGoal.prazo));
     const vencida = daysBetween(today, savedGoal.prazo) <= 0 && !batida;
 
-    const projecaoFinal = lucroAcumulado + (accData.mediaUltimos3 ?? 0) * diasRestantes;
+    // Projeção: lucro até ontem + média dos últimos 3 dias fechados × dias que
+    // faltam contando hoje (o parcial de hoje, ainda em andamento, não entra).
+    // Ex.: 30/09 → 13.908 (até 29/09) + 587 (média 27–29/09) × 1 = 14.495.
+    const hojeAberto = !!accData.hojeEmAndamento;
+    const baseProjecao = hojeAberto ? accData.lucroFechado ?? lucroAcumulado : lucroAcumulado;
+    const diasProjecao = hojeAberto && daysBetween(today, savedGoal.prazo) >= 0 ? diasRestantes + 1 : diasRestantes;
+    const projecaoFinal = baseProjecao + (accData.mediaUltimos3 ?? 0) * diasProjecao;
     const percentProjecao = meta > 0 ? (projecaoFinal / meta) * 100 : 0;
     const lucroNecessarioPorDia = diasRestantes > 0 ? lucroRestante / diasRestantes : 0;
 
@@ -756,13 +764,18 @@ export function CompanyGoals() {
     if (!real.length || !d || !savedGoal) return real.map((p) => ({ ...p, lucroProjetado: null }));
 
     const points = real.map((p) => ({ ...p, lucroProjetado: null as number | null }));
-    const lastValue = real[real.length - 1].lucroAcumulado;
-    // ponte: repete o último valor real como início da linha projetada, pra elas se conectarem
-    points[points.length - 1] = { ...points[points.length - 1], lucroProjetado: lastValue };
+    const mediaDia = accData?.mediaUltimos3 ?? 0;
+    // Hoje em andamento: a projeção sai de ontem (último dia fechado) e hoje vale
+    // ontem + média; senão, sai do último ponto real.
+    const hojeAberto = !!accData?.hojeEmAndamento && points.length >= 2 && daysBetween(isoToday(), savedGoal.prazo) >= 0;
+    const bridgeIdx = hojeAberto ? points.length - 2 : points.length - 1;
+    const lastValue = real[bridgeIdx].lucroAcumulado;
+    // ponte: repete o valor real como início da linha projetada, pra elas se conectarem
+    points[bridgeIdx] = { ...points[bridgeIdx], lucroProjetado: lastValue };
+    if (hojeAberto) points[points.length - 1] = { ...points[points.length - 1], lucroProjetado: Math.round((lastValue + mediaDia) * 100) / 100 };
 
     if (!d.vencida && d.diasRestantes > 0) {
-      const mediaDia = accData?.mediaUltimos3 ?? 0;
-      let cum = lastValue;
+      let cum = hojeAberto ? lastValue + mediaDia : lastValue;
       let cur = isoToday();
       for (let i = 1; i <= d.diasRestantes; i++) {
         cur = addDaysIso(cur, 1);

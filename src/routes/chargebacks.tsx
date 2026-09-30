@@ -6,7 +6,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import {
   ShieldAlert, ShieldCheck, Hourglass, CircleX, CircleCheck, Trophy, Scale, ExternalLink, X, Loader2, Truck, Package,
   ChevronDown, ChevronRight, ArrowUp, ArrowDown, CalendarDays, MessagesSquare, Search, SlidersHorizontal, Download,
-  AlertTriangle, Headphones, Copy,
+  AlertTriangle, Headphones, Copy, CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -14,6 +14,8 @@ import { requireAuth } from "@/lib/route-guards";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { getChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
+import { getDisputeEvidence, draftDisputeRebuttal, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
+import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
 
 export const Route = createFileRoute("/chargebacks")({
   beforeLoad: requireAuth,
@@ -128,7 +130,14 @@ const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "
 const AXIS = { fill: "var(--color-muted-foreground)", fontSize: 11 };
 
 const money = (n: number) => `US$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—");
+// Data só (aaaa-mm-dd) é o dia como veio, sem fuso: new Date("2026-09-26") é
+// meia-noite UTC e no Brasil virava 25/09.
+const fmtDate = (iso: string | null) => {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+};
 const daysLeft = (iso: string | null) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000) : null);
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0);
 const monthKey = (iso: string) => iso.slice(0, 7);
@@ -351,12 +360,12 @@ function ChargebacksPage() {
                       <th className="font-medium py-2.5 px-2">Pedido</th>
                       <th className="font-medium py-2.5 px-2">Produto</th>
                       <th className="font-medium py-2.5 px-2">Motivo</th>
-                      <th className="font-medium py-2.5 px-2 text-right">Valor</th>
-                      <th className="font-medium py-2.5 px-2">Status</th>
-                      <th className="font-medium py-2.5 px-2">Aberto em</th>
-                      <th className="font-medium py-2.5 px-2">Prazo</th>
-                      <th className="font-medium py-2.5 px-2">Entrega</th>
-                      <th className="font-medium py-2.5 px-2">Suporte</th>
+                      <th className="font-medium py-2.5 px-2 text-center">Valor</th>
+                      <th className="font-medium py-2.5 px-2 text-center">Status</th>
+                      <th className="font-medium py-2.5 px-2 text-center">Aberto em</th>
+                      <th className="font-medium py-2.5 px-2 text-center">Prazo</th>
+                      <th className="font-medium py-2.5 px-2 text-center">Entrega</th>
+                      <th className="font-medium py-2.5 px-2 text-center">Suporte</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -384,8 +393,8 @@ function ChargebacksPage() {
                             </div>
                           </td>
                           <td className="py-3 px-2">{reasonLabel(r.reason)}</td>
-                          <td className="py-3 px-2 text-right tabular-nums font-semibold whitespace-nowrap">{money(r.amount)}</td>
-                          <td className="py-3 px-2">
+                          <td className="py-3 px-2 text-center tabular-nums font-semibold whitespace-nowrap">{money(r.amount)}</td>
+                          <td className="py-3 px-2 text-center">
                             {/* "Aguardando resposta" em duas linhas, pra coluna não ficar larga. */}
                             {r.status === "needs_response" ? (
                               <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg font-medium leading-tight ${st.cls}`}>
@@ -393,18 +402,18 @@ function ChargebacksPage() {
                               </span>
                             ) : <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>}
                           </td>
-                          <td className="py-3 px-2 whitespace-nowrap">
+                          <td className="py-3 px-2 text-center whitespace-nowrap">
                             {fmtDate(r.initiatedAt)}
                             {r.daysToDispute != null && <div className="text-xs text-muted-foreground">{r.daysToDispute}d após a compra</div>}
                           </td>
-                          <td className="py-3 px-2 whitespace-nowrap">
+                          <td className="py-3 px-2 text-center whitespace-nowrap">
                             {left == null ? <span className="text-muted-foreground">—</span> : (
                               <span className={`font-medium ${left <= 2 ? "text-rose-600" : left <= 5 ? "text-amber-600" : ""}`}>
                                 {fmtDate(r.evidenceDueBy)} · {left < 0 ? "vencido" : left === 0 ? "hoje" : `${left}d`}
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-2">
+                          <td className="py-3 px-2 text-center">
                             <Pill cls={dt.cls} icon={dt.icon}>{dl}{deliveryDays(r) != null && <span className="opacity-70">· {deliveryDays(r)}d</span>}</Pill>
                             {r.trackingCode && (
                               <div className="mt-1">
@@ -414,7 +423,7 @@ function ChargebacksPage() {
                               </div>
                             )}
                           </td>
-                          <td className="py-3 px-2">
+                          <td className="py-3 px-2 text-center">
                             {r.conversationId
                               ? <ConvLink id={r.conversationId} title="Abrir a conversa no Atendimento"><Pill cls="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">Sim</Pill></ConvLink>
                               : r.orderNumber ? <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400">Não</Pill>
@@ -455,6 +464,35 @@ function ConvLink({ id, className, title, children }: { id: string; className?: 
   );
 }
 
+// Ícone simples de cada bandeira (SVG próprio, sem imagem de fora).
+function BrandIcon({ brand }: { brand: string }) {
+  const box = "w-9 h-6 rounded-md grid place-items-center shrink-0 overflow-hidden";
+  const b = brand.toLowerCase();
+  if (b === "visa") return (
+    <span className={`${box} bg-[#1a1f71]`}><span className="text-white text-[9px] font-extrabold italic tracking-tight">VISA</span></span>
+  );
+  if (b === "mastercard") return (
+    <span className={`${box} bg-[#f3f4f6] dark:bg-white/10`}>
+      <svg viewBox="0 0 24 16" className="w-6 h-4" aria-hidden><circle cx="9" cy="8" r="6" fill="#eb001b" /><circle cx="15" cy="8" r="6" fill="#f79e1b" fillOpacity="0.9" /></svg>
+    </span>
+  );
+  if (b === "american express" || b === "amex") return (
+    <span className={`${box} bg-[#2e77bc]`}><span className="text-white text-[7px] font-black leading-[7px] text-center">AMERICAN<br />EXPRESS</span></span>
+  );
+  if (b.startsWith("shop pay")) return (
+    <span className={`${box} bg-[#5a31f4]`}><span className="text-white text-[12px] font-black">S</span></span>
+  );
+  if (b === "paypal") return (
+    <span className={`${box} bg-[#f3f4f6] dark:bg-white/10`}><span className="text-[13px] font-black italic"><span className="text-[#003087]">P</span><span className="text-[#009cde] -ml-[3px]">P</span></span></span>
+  );
+  if (b === "discover") return (
+    <span className={`${box} bg-[#f3f4f6] dark:bg-white/10 relative`}>
+      <span className="text-[6.5px] font-extrabold text-[#231f20] dark:text-white tracking-tight">DISC<span className="inline-block size-[6px] rounded-full bg-[#f76f20] align-middle mx-[0.5px]" />VER</span>
+    </span>
+  );
+  return <span className={`${box} bg-muted text-muted-foreground`}><CreditCard className="size-3.5" /></span>;
+}
+
 // % de chargeback (tabelas dos cards de risco e bandeira) — só o número.
 function RateBar({ label }: { value: number; max: number; label: string }) {
   return <span className="text-sm tabular-nums font-medium">{label}</span>;
@@ -466,15 +504,11 @@ function BrandCard({ summary }: { summary: RiskSummary }) {
   const rate = (n: number, total: number) => (total ? (n / total) * 100 : 0);
   const fmtPct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
   const totalOrders = summary.brands.reduce((s, b) => s + b.orders, 0);
-  const avg = rate(summary.brands.reduce((s, b) => s + b.chargebacks, 0), totalOrders);
   const maxRate = Math.max(0.1, ...summary.brands.map((b) => rate(b.chargebacks, b.orders)));
   return (
     <div className={`${CARD} p-5`}>
-      <div className="mb-4">
+      <div className="mb-1">
         <h2 className="text-base font-semibold">Bandeira × chargeback</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Bandeira do cartão (ou meio de pagamento) dos pedidos desde {fmtDate(summary.since)}. Média geral: {fmtPct(avg)} de chargeback.
-        </p>
       </div>
       <div className="-mx-1">
         <table className="w-full text-sm">
@@ -492,7 +526,9 @@ function BrandCard({ summary }: { summary: RiskSummary }) {
               const cbRate = rate(b.chargebacks, b.orders);
               return (
                 <tr key={b.brand} className="border-b border-border/60 last:border-0">
-                  <td className="py-2.5 px-1 font-medium">{b.brand}</td>
+                  <td className="py-2.5 px-1 font-medium">
+                    <span className="inline-flex items-center gap-2.5"><BrandIcon brand={b.brand} />{b.brand}</span>
+                  </td>
                   <td className="py-2.5 px-1 text-center tabular-nums whitespace-nowrap">
                     {b.orders} <span className="text-[11px] text-muted-foreground">· {fmtPct(rate(b.orders, totalOrders))}</span>
                   </td>
@@ -500,7 +536,9 @@ function BrandCard({ summary }: { summary: RiskSummary }) {
                   <td className="py-2.5 px-1 text-center">
                     <RateBar value={cbRate} max={maxRate} label={fmtPct(cbRate)} />
                   </td>
-                  <td className="py-2.5 px-1 text-center tabular-nums">{b.refunds}</td>
+                  <td className="py-2.5 px-1 text-center tabular-nums whitespace-nowrap">
+                    {b.refunds} <span className="text-xs text-muted-foreground">· {fmtPct(rate(b.refunds, b.orders))}</span>
+                  </td>
                 </tr>
               );
             })}
@@ -519,16 +557,11 @@ function RiskCard({ summary }: { summary: RiskSummary }) {
   const maxRate = Math.max(0.1, ...summary.levels.map((l) => rate(l.chargebacks, l.orders)));
   return (
     <div className={`${CARD} p-5`}>
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-4">
-        <div>
-          <h2 className="text-base font-semibold">Risco de fraude (Shopify) × resultado</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            O aviso "Este pedido pode ser fraudulento" da Shopify, nos pedidos desde {fmtDate(summary.since)}: quantos de cada nível viraram chargeback ou reembolso.
-          </p>
-        </div>
-        <span className="text-[11px] text-muted-foreground shrink-0" title="Chargeback leva semanas pra chegar: os pedidos recentes ainda podem virar disputa">
-          {summary.matured} de {summary.total} pedidos já têm 25+ dias
-        </span>
+      <div className="mb-2">
+        <h2 className="text-base font-semibold">Risco de fraude (Shopify) × resultado</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          O aviso de fraude da Shopify nos pedidos desde {fmtDate(summary.since)}: quantos de cada nível viraram chargeback ou reembolso.
+        </p>
       </div>
       <div className="-mx-1">
         <table className="w-full text-sm">
@@ -548,7 +581,9 @@ function RiskCard({ summary }: { summary: RiskSummary }) {
               return (
                 <tr key={l.level} className="border-b border-border/60 last:border-0">
                   <td className="py-2.5 px-1"><Pill cls={meta.cls} icon={l.level === "MEDIUM" || l.level === "HIGH" ? AlertTriangle : undefined}>{meta.label}</Pill></td>
-                  <td className="py-2.5 px-1 text-center tabular-nums">{l.orders}</td>
+                  <td className="py-2.5 px-1 text-center tabular-nums whitespace-nowrap">
+                    {l.orders} <span className="text-[11px] text-muted-foreground">· {fmtPct(rate(l.orders, summary.total))}</span>
+                  </td>
                   <td className="py-2.5 px-1 text-center tabular-nums font-semibold">{l.chargebacks}</td>
                   <td className="py-2.5 px-1 text-center">
                     <RateBar value={cbRate} max={maxRate} label={fmtPct(cbRate)} />
@@ -825,6 +860,108 @@ function BarListCard({ title, rows, dim, filter, onPick, limit, order, right, wi
   );
 }
 
+// Documentos pra responder a disputa na Shopify: 6 PDFs em inglês montados com
+// as provas do sistema (envio, conversa, produto, compra, políticas) + o texto de
+// defesa escrito pela IA, que dá pra revisar antes de baixar.
+function DisputeDocs({ disputeId }: { disputeId: string }) {
+  const evidenceFn = useServerFn(getDisputeEvidence);
+  const rebuttalFn = useServerFn(draftDisputeRebuttal);
+  const [ev, setEv] = useState<DisputeEvidence | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<EvidenceDocKey | "all" | null>(null);
+  const [text, setText] = useState("");
+  const [writing, setWriting] = useState(false);
+
+  const load = async () => {
+    if (ev || loading) return ev;
+    setLoading(true);
+    try { const e = await evidenceFn({ data: { disputeId } }); setEv(e); return e; }
+    catch (e: any) { toast.error(e?.message ?? "Erro ao juntar as provas"); return null; }
+    finally { setLoading(false); }
+  };
+  const download = async (key: EvidenceDocKey) => {
+    const e = ev ?? await load();
+    if (!e) return;
+    if (key === "rebuttal" && !text.trim()) return toast.error("Gere e revise o texto de defesa primeiro");
+    setBusy(key);
+    try { await downloadEvidenceDoc(key, e, text); } catch { toast.error("Erro ao gerar o PDF"); } finally { setBusy(null); }
+  };
+  const downloadAll = async () => {
+    const e = ev ?? await load();
+    if (!e) return;
+    setBusy("all");
+    try {
+      for (const d of EVIDENCE_DOCS) if (d.key !== "rebuttal" || text.trim()) await downloadEvidenceDoc(d.key, e, text);
+    } catch { toast.error("Erro ao gerar os PDFs"); } finally { setBusy(null); }
+  };
+  const write = async () => {
+    setWriting(true);
+    try { const r = await rebuttalFn({ data: { disputeId } }); setText(r.text); }
+    catch (e: any) { toast.error(e?.message ?? "Erro ao escrever o texto"); }
+    finally { setWriting(false); }
+  };
+
+  if (!ev) {
+    return (
+      <div className="rounded-xl border border-border p-3.5 space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Documentos para a Shopify</p>
+        <p className="text-xs text-muted-foreground">Monta os 6 documentos em PDF (em inglês) com as provas do sistema: envio e rastreio, conversa com o cliente, produto, dados da compra, políticas da loja e o texto de defesa.</p>
+        <button onClick={load} disabled={loading}
+          className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5 disabled:opacity-60">
+          {loading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} {loading ? "Juntando as provas…" : "Preparar documentos"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-border p-3.5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Documentos para a Shopify</p>
+        <button onClick={downloadAll} disabled={!!busy} className="text-xs font-medium text-primary hover:underline disabled:opacity-60">
+          {busy === "all" ? "Baixando…" : "Baixar todos"}
+        </button>
+      </div>
+      <div className="space-y-1">
+        {EVIDENCE_DOCS.filter((d) => d.key !== "rebuttal").map((d) => (
+          <div key={d.key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="min-w-0 truncate">{d.label}{d.key === "communication" && !ev.communications.length && <span className="text-xs text-muted-foreground"> · sem contato do cliente</span>}</span>
+            <button onClick={() => download(d.key)} disabled={!!busy}
+              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted shrink-0 disabled:opacity-60">
+              {busy === d.key ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} PDF
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-border pt-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">Texto de defesa</span>
+          <button onClick={write} disabled={writing}
+            className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-60">
+            {writing ? <Loader2 className="size-3.5 animate-spin" /> : null} {writing ? "Escrevendo… (até ~30s)" : text ? "Escrever de novo" : "Escrever com IA"}
+          </button>
+        </div>
+        {text && (
+          <>
+            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={12}
+              className="w-full resize-y rounded-lg bg-background border border-border p-2.5 text-xs leading-relaxed outline-none focus:border-primary" />
+            <p className="text-[11px] text-muted-foreground">Revise antes de enviar: a IA usa só os dados do sistema, mas confira datas e fatos.</p>
+            <div className="flex gap-2">
+              <button onClick={() => download("rebuttal")} disabled={!!busy}
+                className="h-8 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-60">
+                <Download className="size-3.5" /> PDF
+              </button>
+              <button onClick={() => navigator.clipboard?.writeText(text).then(() => toast.success("Texto copiado"))}
+                className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted">
+                <Copy className="size-3.5" /> Copiar texto
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Detalhes de um chargeback (botão "Ver").
 function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: () => void }) {
   const copy = (text: string) => { navigator.clipboard?.writeText(text).then(() => toast.success("Copiado")).catch(() => {}); };
@@ -879,6 +1016,7 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
                   ? <Pill cls={RISK[r.riskLevel]?.cls ?? RISK.NONE.cls} icon={risky(r) ? AlertTriangle : undefined}>Risco {RISK[r.riskLevel]?.label.toLowerCase() ?? r.riskLevel}</Pill>
                   : <span className="text-xs text-muted-foreground" title="Pedido com mais de 60 dias ou fora da Shopify">Sem análise</span>}
               </div>
+              <DisputeDocs key={r.id} disputeId={r.id} />
               <div className="flex flex-wrap gap-2">
                 {r.adminUrl && (
                   <a href={r.adminUrl} target="_blank" rel="noreferrer" className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5">

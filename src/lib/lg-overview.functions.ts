@@ -107,7 +107,8 @@ async function computeAccumulatedLucro(
 
   // Hoje ainda está em andamento (pedidos/ads seguem chegando ao longo do dia), então
   // não conta como "dia fechado" pras médias — senão ela cai artificialmente cedo no dia.
-  const closedDays = end_date === isoToday() ? days.slice(0, -1) : days;
+  const hojeEmAndamento = end_date === isoToday();
+  const closedDays = hojeEmAndamento ? days.slice(0, -1) : days;
 
   const last3 = closedDays.slice(-3);
   const mediaUltimos3 = last3.length > 0
@@ -122,7 +123,12 @@ async function computeAccumulatedLucro(
   const lucroOntem = Math.round((lucroByDate.get(ontem) ?? 0) * 100) / 100;
   const pedidosOntem = pedidosByDate.get(ontem) ?? 0;
 
-  return { lucro, pedidos: orders.length, chartData, mediaUltimos3, mediaGeral, cpa, lucroOntem, pedidosOntem };
+  // Projeção da meta: lucro até ontem (dias fechados) + média dos últimos 3 dias
+  // fechados × dias que faltam, contando hoje (o parcial de hoje não entra).
+  return {
+    lucro, pedidos: orders.length, chartData, mediaUltimos3, mediaGeral, cpa, lucroOntem, pedidosOntem,
+    lucroFechado: Math.round(lucroFechado * 100) / 100, hojeEmAndamento,
+  };
 }
 
 // Pro servidor das metas da empresa (company-goals.server.ts) usar a mesma conta.
