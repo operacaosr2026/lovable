@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  AlertTriangle, Brain, CheckCircle2, ChevronRight, CircleDollarSign, Clock, ExternalLink, FileText, FlaskConical, Headphones,
+  AlertTriangle, CheckCircle2, ChevronRight, CircleDollarSign, Clock, ExternalLink, FileText, FlaskConical, Headphones,
   Loader2, Megaphone, MoreHorizontal, Package, PackageSearch, RotateCcw, Settings2, ShieldAlert, Sparkles, Target, Truck, X,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
@@ -131,13 +131,12 @@ function InteligenciaPage() {
     ? (b.tip.valor_envolvido ?? 0) - (a.tip.valor_envolvido ?? 0)
     : PRIO[prioOf(a.tip)].rank - PRIO[prioOf(b.tip)].rank || (b.tip.valor_envolvido ?? 0) - (a.tip.valor_envolvido ?? 0));
   const catCounts = Object.keys(CAT).map((c) => ({ c, n: inTab.filter((i) => catOf(i.tip) === c).length })).filter((x) => x.n > 0);
-  const destaques = report?.result.destaques_do_dia ?? [];
 
   return (
     <PageShell>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Brain className="size-6 text-primary" /> Inteligência</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Inteligência</h1>
           {report && <span className="text-[11px] px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium">IA analisou seus dados {whenLabel(report.createdAt)}</span>}
         </div>
         <Button onClick={() => run.mutate()} disabled={run.isPending}>
@@ -153,21 +152,6 @@ function InteligenciaPage() {
         </div>
       ) : (
         <>
-          {destaques.length > 0 && (
-            <div className="flex flex-wrap gap-2.5 mb-5">
-              {destaques.slice(0, 3).map((d, i) => {
-                const Icon = CAT[d.categoria]?.icon ?? AlertTriangle;
-                const p = PRIO[d.nivel] ?? PRIO.medio;
-                return (
-                  <div key={i} className="premium-card px-3.5 py-2.5 flex items-center gap-2.5">
-                    <span className={`size-8 rounded-lg grid place-items-center ${p.icon}`}><Icon className="size-4" /></span>
-                    <span className="text-xs leading-tight"><strong className="block text-sm">{d.numero}</strong><span className="text-muted-foreground">{d.texto}</span></span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="flex flex-wrap gap-2">
               {([["agora", "Agora"], ["acompanhando", "Acompanhando"], ["testando", "Testando"], ["concluido", "Concluído"]] as [Tab, string][]).map(([k, label]) => (
@@ -194,8 +178,6 @@ function InteligenciaPage() {
             </div>
           )}
 
-          <SectionTitle tab={tab} />
-
           <div className="space-y-3">
             {tab === "testando" && testsRunning.map((t, i) => <TestRow key={`t${i}`} test={t} onOpen={() => setOpenTest(t)} />)}
             {tab === "concluido" && testsDone.map((t, i) => <TestRow key={`d${i}`} test={t} onOpen={() => setOpenTest(t)} />)}
@@ -219,21 +201,6 @@ function InteligenciaPage() {
       )}
       <TestDrawer test={openTest} onClose={() => setOpenTest(null)} />
     </PageShell>
-  );
-}
-
-function SectionTitle({ tab }: { tab: Tab }) {
-  const t = {
-    agora: ["Precisa da sua atenção", "Recomendações da IA baseadas nos seus dados mais recentes.", "bg-destructive"],
-    acompanhando: ["A IA está acompanhando", "Sinais detectados que ainda não pedem ação imediata.", "bg-amber-400"],
-    testando: ["Testando agora", "Ações que você decidiu fazer ou testar.", "bg-primary"],
-    concluido: ["O que já aprendemos", "Testes encerrados e ações concluídas.", "bg-success"],
-  }[tab];
-  return (
-    <div className="mb-3">
-      <h2 className="text-base font-semibold flex items-center gap-2"><span className={`size-2 rounded-full ${t[2]}`} /> {t[0]}</h2>
-      <p className="text-xs text-muted-foreground">{t[1]}</p>
-    </div>
   );
 }
 
