@@ -152,31 +152,33 @@ function InteligenciaPage() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="flex flex-wrap gap-2">
+          {/* Estados de trabalho à esquerda; categoria e ordem à direita — uma linha só */}
+          <div className="flex flex-col-reverse md:flex-row md:items-end justify-between gap-3 border-b border-border mb-5">
+            <div className="flex gap-6 overflow-x-auto">
               {([["agora", "Agora"], ["acompanhando", "Acompanhando"], ["testando", "Testando"], ["concluido", "Concluído"]] as [Tab, string][]).map(([k, label]) => (
                 <button key={k} type="button" onClick={() => { setTab(k); setCat(null); }}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${tab === k ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:bg-surface"}`}>
-                  {label} ({counts[k]})
+                  className={`pb-3 -mb-px border-b-2 text-sm font-medium whitespace-nowrap flex items-center gap-1.5 transition-colors ${tab === k ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+                  {label}
+                  <span className={`text-[11px] min-w-5 h-5 px-1.5 rounded-full grid place-items-center tabular-nums ${tab === k ? "bg-primary text-primary-foreground" : "bg-surface text-muted-foreground"}`}>{counts[k]}</span>
                 </button>
               ))}
             </div>
-            {(tab === "agora" || tab === "acompanhando") && (
-              <label className="text-xs text-muted-foreground flex items-center gap-2">Ordenar por:
-                <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground">
-                  <option value="prioridade">Prioridade</option><option value="valor">Valor</option>
+            <div className="flex items-center gap-2 pb-2.5">
+              {catCounts.length > 1 && (
+                <select value={cat ?? ""} onChange={(e) => setCat(e.target.value || null)} aria-label="Categoria"
+                  className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs">
+                  <option value="">Todas as categorias ({inTab.length})</option>
+                  {catCounts.map(({ c, n }) => <option key={c} value={c}>{CAT[c].label} ({n})</option>)}
                 </select>
-              </label>
-            )}
-          </div>
-          {catCounts.length > 1 && (
-            <div className="flex flex-wrap gap-1.5 mb-5">
-              <button type="button" onClick={() => setCat(null)} className={`px-2.5 py-1 rounded-md text-xs border ${!cat ? "bg-primary/10 text-primary border-primary/30" : "border-border text-muted-foreground"}`}>Todos ({inTab.length})</button>
-              {catCounts.map(({ c, n }) => (
-                <button key={c} type="button" onClick={() => setCat(c)} className={`px-2.5 py-1 rounded-md text-xs border ${cat === c ? "bg-primary/10 text-primary border-primary/30" : "border-border text-muted-foreground"}`}>{CAT[c].label} ({n})</button>
-              ))}
+              )}
+              {(tab === "agora" || tab === "acompanhando") && (
+                <select value={sort} onChange={(e) => setSort(e.target.value as any)} aria-label="Ordenar por"
+                  className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs">
+                  <option value="prioridade">Ordenar: prioridade</option><option value="valor">Ordenar: valor</option>
+                </select>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="space-y-3">
             {tab === "testando" && testsRunning.map((t, i) => <TestRow key={`t${i}`} test={t} onOpen={() => setOpenTest(t)} />)}
