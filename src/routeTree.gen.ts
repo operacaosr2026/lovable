@@ -31,6 +31,7 @@ import { Route as SettingsNotificacoesRouteImport } from "./routes/settings.noti
 import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
 import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
 import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
+import { Route as SettingsFeriadosRouteImport } from "./routes/settings.feriados";
 import { Route as SettingsAuditoriaRouteImport } from "./routes/settings.auditoria";
 import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
@@ -162,6 +163,11 @@ const SettingsIntegracoesRoute = SettingsIntegracoesRouteImport.update({
 const SettingsGeralRoute = SettingsGeralRouteImport.update({
   id: "/geral",
   path: "/geral",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsFeriadosRoute = SettingsFeriadosRouteImport.update({
+  id: "/feriados",
+  path: "/feriados",
   getParentRoute: () => SettingsRoute,
 } as any);
 const SettingsAuditoriaRoute = SettingsAuditoriaRouteImport.update({
@@ -299,6 +305,7 @@ export interface FileRoutesByFullPath {
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
+  "/settings/feriados": typeof SettingsFeriadosRoute;
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
@@ -342,6 +349,7 @@ export interface FileRoutesByTo {
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
+  "/settings/feriados": typeof SettingsFeriadosRoute;
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
@@ -385,6 +393,7 @@ export interface FileRoutesById {
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
+  "/settings/feriados": typeof SettingsFeriadosRoute;
   "/settings/geral": typeof SettingsGeralRoute;
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
@@ -433,6 +442,7 @@ export interface FileRouteTypes {
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
+    | "/settings/feriados"
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
@@ -476,6 +486,7 @@ export interface FileRouteTypes {
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
+    | "/settings/feriados"
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
@@ -518,6 +529,7 @@ export interface FileRouteTypes {
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
+    | "/settings/feriados"
     | "/settings/geral"
     | "/settings/integracoes"
     | "/settings/members"
@@ -732,6 +744,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsGeralRouteImport;
       parentRoute: typeof SettingsRoute;
     };
+    "/settings/feriados": {
+      id: "/settings/feriados";
+      path: "/feriados";
+      fullPath: "/settings/feriados";
+      preLoaderRoute: typeof SettingsFeriadosRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/settings/auditoria": {
       id: "/settings/auditoria";
       path: "/auditoria";
@@ -905,6 +924,7 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 
 interface SettingsRouteChildren {
   SettingsAuditoriaRoute: typeof SettingsAuditoriaRoute;
+  SettingsFeriadosRoute: typeof SettingsFeriadosRoute;
   SettingsGeralRoute: typeof SettingsGeralRoute;
   SettingsIntegracoesRoute: typeof SettingsIntegracoesRoute;
   SettingsMembersRoute: typeof SettingsMembersRoute;
@@ -915,6 +935,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAuditoriaRoute: SettingsAuditoriaRoute,
+  SettingsFeriadosRoute: SettingsFeriadosRoute,
   SettingsGeralRoute: SettingsGeralRoute,
   SettingsIntegracoesRoute: SettingsIntegracoesRoute,
   SettingsMembersRoute: SettingsMembersRoute,

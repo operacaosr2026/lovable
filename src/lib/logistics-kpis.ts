@@ -22,16 +22,29 @@ export function businessDaysSince(iso: string | null | undefined, nowMs: number)
   if (!iso) return 0;
   return businessDaysBetween(iso, new Date(nowMs).toISOString());
 }
-// Dias úteis (seg-sex) de uma data até outra — não conta o dia de início.
+// Feriados do TM Postagem (Configurações → Feriados): `holidays` = dia de
+// semana que não conta; `workdays` = sábado/domingo que conta (compensação
+// chinesa). Datas "YYYY-MM-DD".
+export type PostingCalendar = { holidays: Set<string>; workdays: Set<string> };
+export function postingCalendar(rows: { day: string; kind: string }[] | null | undefined): PostingCalendar {
+  const cal: PostingCalendar = { holidays: new Set(), workdays: new Set() };
+  for (const r of rows ?? []) (r.kind === "workday" ? cal.workdays : cal.holidays).add(String(r.day).slice(0, 10));
+  return cal;
+}
+
+// Dias úteis (seg-sex, menos feriados, mais dias de compensação) de uma data
+// até outra — não conta o dia de início.
 // Ex.: pedido na sexta, postado na quarta = 3 (seg, ter, qua).
-export function businessDaysBetween(fromIso: string, toIso: string): number {
+export function businessDaysBetween(fromIso: string, toIso: string, cal?: PostingCalendar): number {
   const cur = new Date(fromIso.slice(0, 10) + "T00:00:00Z");
   const end = new Date(toIso.slice(0, 10) + "T00:00:00Z");
   let count = 0;
   while (cur < end) {
     cur.setUTCDate(cur.getUTCDate() + 1);
     const day = cur.getUTCDay();
-    if (day !== 0 && day !== 6) count++;
+    const iso = cur.toISOString().slice(0, 10);
+    const weekday = day !== 0 && day !== 6;
+    if (cal?.workdays.has(iso) || (weekday && !cal?.holidays.has(iso))) count++;
   }
   return count;
 }
@@ -70,14 +83,14 @@ export function needsAttention(o: any, nowMs: number): boolean {
 // retorno de listLogisticsOrders, já no recorte desejado (período/loja/busca).
 // Contagens usam todos os pedidos; tempos médios ignoram os marcados "fora do
 // KPI" (ex.: pedido parado esperando cliente não infla a média).
-export function computeLogisticsKpis(orders: any[], nowMs: number) {
+export function computeLogisticsKpis(orders: any[], nowMs: number, cal?: PostingCalendar) {
   const kpiOrders = orders.filter((o) => !o.kpi_excluded);
 
-  // Tempo médio de postagem: dias ÚTEIS (sem sáb/dom) entre o pedido
+  // Tempo médio de postagem: dias ÚTEIS (sem sáb/dom nem feriados) entre o pedido
   // (order_date) e a postagem (shipped_at = 1ª movimentação real do rastreio).
   const postingDurations = kpiOrders
     .filter((o) => o.order_date && o.shipped_at && String(o.shipped_at).slice(0, 10) >= String(o.order_date).slice(0, 10))
-    .map((o) => businessDaysBetween(o.order_date, o.shipped_at));
+    .map((o) => businessDaysBetween(o.order_date, o.shipped_at, cal));
 
   // Tempo médio de entrega: dias entre postagem (shipped_at) e entrega (delivered_at)
   const deliveryDurations = kpiOrders
@@ -121,7 +134,7 @@ export type LogisticsTrendPoint = {
   avgPostingDays: number | null; avgDeliveryDays: number | null;
 };
 
-export function computeLogisticsTrend(orders: any[], nowMs: number, today: string, days = 7): LogisticsTrendPoint[] {
+export function computeLogisticsTrend(orders: any[], nowMs: number, today: string, days = 7, cal?: PostingCalendar): LogisticsTrendPoint[] {
   const dates = Array.from({ length: days }, (_, i) => addDaysIso(today, i - (days - 1)));
   const kpiOrders = orders.filter((o) => !o.kpi_excluded);
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -143,7 +156,7 @@ export function computeLogisticsTrend(orders: any[], nowMs: number, today: strin
       });
     const posting = kpiOrders
       .filter((o) => o.order_date && dayOf(o.shipped_at) && dayOf(o.shipped_at)! <= d && dayOf(o.shipped_at)! >= dayOf(o.order_date)!)
-      .map((o) => businessDaysBetween(o.order_date, o.shipped_at));
+      .map((o) => businessDaysBetween(o.order_date, o.shipped_at, cal));
     const delivery = kpiOrders
       .filter((o) => dayOf(o.shipped_at) && dayOf(o.delivered_at) && dayOf(o.delivered_at)! <= d)
       .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
@@ -158,7 +171,7 @@ export function computeLogisticsTrend(orders: any[], nowMs: number, today: strin
     };
   });
 
-  const current = computeLogisticsKpis(orders, nowMs);
+  const current = computeLogisticsKpis(orders, nowMs, cal);
   points[points.length - 1] = {
     ...points[points.length - 1],
     attention: current.attention, pending: current.pending,

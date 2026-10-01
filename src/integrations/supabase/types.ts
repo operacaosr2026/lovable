@@ -1366,6 +1366,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      posting_holidays: {
+        Row: {
+          created_at: string | null;
+          day: string;
+          id: string;
+          kind: string;
+          name: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string | null;
+          day: string;
+          id?: string;
+          kind?: string;
+          name?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string | null;
+          day?: string;
+          id?: string;
+          kind?: string;
+          name?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       product_checklist_items: {
         Row: {
           checked: boolean;

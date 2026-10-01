@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Settings as SettingsIcon, Users, Shield, Plug, ScrollText, Bell } from "lucide-react";
+import { Settings as SettingsIcon, Users, Shield, Plug, ScrollText, Bell, CalendarOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMyAccess } from "@/hooks/useMyAccess";
 import { MEMBER_SETTINGS_PAGES } from "@/components/AppLayout";
@@ -28,6 +28,7 @@ const NAV = [
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
   { to: "/settings/notificacoes", label: "Notificações", icon: Bell, desc: "Sino, celular e o que receber" },
   { to: "/settings/integracoes", label: "Integrações", icon: Plug, desc: "Shopify, Meta Ads e Track123" },
+  { to: "/settings/feriados", label: "Feriados", icon: CalendarOff, desc: "Dias que não contam no TM Postagem" },
   { to: "/settings/auditoria", label: "Auditoria", icon: ScrollText, desc: "Quem fez o quê no sistema" },
 ];
 

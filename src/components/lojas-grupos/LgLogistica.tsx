@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis } from "@/lib/logistics-kpis";
+import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis, postingCalendar } from "@/lib/logistics-kpis";
+import { listPostingHolidays } from "@/lib/posting-holidays.functions";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,8 @@ export function LgLogistica({
   const listFn   = useServerFn(listLogisticsOrders);
   const updateFn = useServerFn(updateOrderLogistics);
   const syncFn   = useServerFn(syncTrack123ForShops);
+  const listHolidaysFn = useServerFn(listPostingHolidays);
+  const { data: holidays } = useQuery({ queryKey: ["posting-holidays"], queryFn: () => listHolidaysFn(), staleTime: 5 * 60_000 });
   const integrationsFn = useServerFn(getTrack123Integrations);
 
   const { data: orders = [], isLoading } = useQuery({
@@ -289,7 +292,7 @@ export function LgLogistica({
   const kpiScopedOrders = !searchTerm ? shopScopedOrders
     : shopScopedOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
   // Mesma conta do Dashboard (ver logistics-kpis.ts).
-  const shared = computeLogisticsKpis(kpiScopedOrders, nowMs);
+  const shared = computeLogisticsKpis(kpiScopedOrders, nowMs, postingCalendar(holidays));
   const kpis = { pending: shared.pending, shipped: shared.shipped, delivered: shared.delivered, problem: shared.problem };
   const attentionCount = shared.attention;
   const waitingCustomerCount = shared.waitingCustomer;

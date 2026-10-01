@@ -17,7 +17,8 @@ import { getDashboardOverview } from "@/lib/lg-cards.functions";
 import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
-import { computeLogisticsKpis, computeLogisticsTrend } from "@/lib/logistics-kpis";
+import { computeLogisticsKpis, computeLogisticsTrend, postingCalendar } from "@/lib/logistics-kpis";
+import { listPostingHolidays } from "@/lib/posting-holidays.functions";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -656,8 +657,11 @@ function Dashboard() {
     queryFn: () => listTasksFn(),
     enabled: !!session,
   });
-  const opsKpis = useMemo(() => computeLogisticsKpis(logisticsOrders as any[], Date.now()), [logisticsOrders]);
-  const opsTrend = useMemo(() => computeLogisticsTrend(logisticsOrders as any[], Date.now(), isoTodayUS()), [logisticsOrders]);
+  const listHolidaysFn = useServerFn(listPostingHolidays);
+  const { data: holidays } = useQuery({ queryKey: ["posting-holidays"], queryFn: () => listHolidaysFn(), enabled: !!session, staleTime: 5 * 60_000 });
+  const postingCal = useMemo(() => postingCalendar(holidays), [holidays]);
+  const opsKpis = useMemo(() => computeLogisticsKpis(logisticsOrders as any[], Date.now(), postingCal), [logisticsOrders, postingCal]);
+  const opsTrend = useMemo(() => computeLogisticsTrend(logisticsOrders as any[], Date.now(), isoTodayUS(), 7, postingCal), [logisticsOrders, postingCal]);
   const tasksTrend = useMemo(() => opsTrend.map((p, i) => ({
     label: p.label,
     // Tarefas em aberto no fim de cada dia (criada até o dia e ainda não concluída nele);
