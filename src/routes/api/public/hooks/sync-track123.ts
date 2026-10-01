@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { reportSystemError, clearSystemError, shopLabel } from "@/lib/system-errors.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runTrack123Sync } from "@/lib/track123-sync.server";
@@ -78,8 +79,10 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
             }
             processed++;
             await broadcast(integ.user_id, "orders", { shop_id: integ.shop_id });
+            await clearSystemError(integ.user_id, `track123_run:${integ.shop_id}`);
           } catch (e) {
             console.error("track123 sync fail", integ.shop_id, e);
+            await reportSystemError(integ.user_id, `track123_run:${integ.shop_id}`, `Rastreio (Track123) não sincronizou — ${await shopLabel(integ.shop_id)}`, e);
           }
         }));
         if (skippedByBudget) console.error(`sync-track123: orçamento de tempo esgotado, ${skippedByBudget} loja(s) ficam pra próxima rodada.`);

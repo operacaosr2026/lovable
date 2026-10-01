@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { computeAccumulatedLucroServer } from "@/lib/lg-overview.functions";
 
@@ -111,7 +112,8 @@ export async function freezeAllCompanyGoals() {
   const { data } = await supabaseAdmin.from("company_goals").select("user_id").is("realizado_final", null);
   const owners = [...new Set(((data ?? []) as any[]).map((r) => r.user_id as string))];
   for (const o of owners) {
-    try { await freezeClosedCompanyGoals(o); } catch (e) { console.error("company-goals freeze fail", o, e); }
+    try { await freezeClosedCompanyGoals(o); await clearSystemError(o, "job:goals_freeze"); }
+    catch (e) { console.error("company-goals freeze fail", o, e); await reportSystemError(o, "job:goals_freeze", "Metas: realizado do mês fechado não foi congelado", e); }
   }
   return { owners: owners.length };
 }

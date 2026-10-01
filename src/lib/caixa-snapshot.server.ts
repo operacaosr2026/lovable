@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 import { selectAll } from "@/lib/select-all";
 import { isoTodayUS } from "@/lib/timezone";
 import { computeShopsReceivable } from "@/lib/shop-orders.functions";
@@ -31,13 +32,15 @@ export async function runCaixaSnapshots() {
       selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id,kind,amount,auto_kind")
         .eq("user_id", ownerId).in("shop_id", ids).eq("reconciled", true)
         .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync")),
-      computeShopsReceivable(supabaseAdmin, ownerId, ids).catch((e) => {
+      computeShopsReceivable(supabaseAdmin, ownerId, ids).catch(async (e) => {
         console.error("caixa-snapshot: a receber falhou", ownerId, e);
+        await reportSystemError(ownerId, "job:caixa_receivable", "Foto diária do Caixa pulada: \"a receber\" indisponível", e);
         return null;
       }),
     ]);
     // Sem o "a receber" a foto sairia errada — pula o dono e loga.
     if (!receivable) continue;
+    await clearSystemError(ownerId, "job:caixa_receivable");
     const saldo = new Map<string, number>(ownerShops.map((s) => [s.id, Number(s.opening_balance ?? 0)]));
     for (const e of (entries ?? []) as any[]) {
       if (e.auto_kind === "meta_ads_spend") continue;

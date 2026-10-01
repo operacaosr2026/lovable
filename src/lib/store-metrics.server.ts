@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import {
   getShopifyCreds, fetchShopifyPayouts, refreshStoreBalance,
@@ -93,7 +94,11 @@ export async function runStoreMetricsDaily() {
       try {
         await Promise.all([refreshStoreBalance(s.user_id, s.id), computeStoreBoardMetrics(s.user_id, s.id)]);
         ok++;
-      } catch (e) { console.error("store-metrics-daily fail", s.id, e); }
+        await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
+      } catch (e) {
+        console.error("store-metrics-daily fail", s.id, e);
+        await reportSystemError(s.user_id, `job:store_metrics:${s.id}`, "Números do Banco de Lojas não atualizaram (saldo / pedidos por dia)", e);
+      }
     }));
   }
   return { stores: list.length, ok };

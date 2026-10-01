@@ -3,6 +3,7 @@ import { orderNumberVariants, orderNumbersInText } from "@/lib/order-numbers";
 import { fetchWithRetry } from "@/lib/http";
 import type { Database } from "@/integrations/supabase/types";
 import { selectAll, selectAllIn } from "@/lib/select-all";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 
 // Atendimento: conversa com a API do Zoho Mail (OAuth, listar, ler, responder)
 // e espelha os cabeçalhos dos e-mails em support_messages / support_conversations.
@@ -243,15 +244,22 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
 
     const { touched, newInbound } = await upsertMessages(ownerId, own, parsed);
     await recomputeConversations(ownerId, touched, { firstSync });
-    try { await assignConversationShops(ownerId, touched); } catch (e) { console.error("assign shops", e); }
-    try { await autoResolveStale(ownerId); } catch (e) { console.error("auto resolve", e); }
+    try { await assignConversationShops(ownerId, touched); await clearSystemError(ownerId, "support_assign_shops"); }
+    catch (e) { console.error("assign shops", e); await reportSystemError(ownerId, "support_assign_shops", "Atendimento: loja das conversas não foi identificada", e, "/atendimento"); }
+    try { await autoResolveStale(ownerId); await clearSystemError(ownerId, "support_auto_resolve"); }
+    catch (e) { console.error("auto resolve", e); await reportSystemError(ownerId, "support_auto_resolve", "Atendimento: conversas paradas não foram resolvidas automaticamente", e, "/atendimento"); }
 
     // IA nos e-mails novos: tags automáticas + tradução pro português (falha aqui não derruba a sincronização).
     try {
       const { runSupportAiTagging, runSupportAutoTranslate } = await import("@/lib/support-ai.server");
-      await Promise.all([runSupportAiTagging(acc), runSupportAutoTranslate(acc)]);
+      const [tag, tr] = await Promise.allSettled([runSupportAiTagging(acc), runSupportAutoTranslate(acc)]);
+      for (const [r, key, title] of [[tag, "support_ai_tags", "Atendimento: tags automáticas (IA) falharam"], [tr, "support_ai_translate", "Atendimento: tradução automática (IA) falhou"]] as const) {
+        if (r.status === "rejected") await reportSystemError(ownerId, key, title, r.reason, "/atendimento");
+        else await clearSystemError(ownerId, key);
+      }
     } catch (e) {
       console.error("support ai tagging", e);
+      await reportSystemError(ownerId, "support_ai_tags", "Atendimento: IA dos e-mails falhou", e, "/atendimento");
     }
 
     // Push "E-mail novo" (fora a 1ª sincronização, que traz 30 dias de uma vez).

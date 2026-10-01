@@ -110,6 +110,8 @@ export async function runSupportAiTagging(acc: ZohoAccount) {
 
   const tagsByConv = new Map<string, string[]>();
   let classified = 0;
+  let failed = 0;
+  let lastError = "";
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
     for (let m = queue.shift(); m; m = queue.shift()) {
       try {
@@ -125,6 +127,7 @@ export async function runSupportAiTagging(acc: ZohoAccount) {
         // Falha temporária (limite de uso, instabilidade): devolve pra próxima rodada.
         const retry = e instanceof Anthropic.RateLimitError || e instanceof Anthropic.InternalServerError || e instanceof Anthropic.APIConnectionError;
         if (retry) await supabaseAdmin.from("support_messages").update({ ai_checked: false }).eq("id", m.id);
+        else { failed++; lastError = e instanceof Error ? e.message : String(e); }
         console.error("support ai tag", m.id, e);
       }
     }
@@ -142,6 +145,8 @@ export async function runSupportAiTagging(acc: ZohoAccount) {
       ai_tags: [...new Set([...conv.ai_tags, ...added])],
     }).eq("id", convId);
   }
+  // Erro que não é passageiro: avisa no sino (quem chama trata).
+  if (failed) throw new Error(`Tags automáticas falharam em ${failed} e-mail(s): ${lastError}`.slice(0, 300));
   return { classified, conversations: tagsByConv.size };
 }
 
@@ -203,6 +208,8 @@ export async function runSupportAutoTranslate(acc: ZohoAccount) {
     .order("sent_at", { ascending: false }).limit(PER_RUN);
   const queue = (pending ?? []).filter((m) => !AUTOMATED_SENDER.test(m.from_email ?? ""));
   let translated = 0;
+  let failed = 0;
+  let lastError = "";
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
     for (let m = queue.shift(); m; m = queue.shift()) {
       try {
@@ -215,9 +222,12 @@ export async function runSupportAutoTranslate(acc: ZohoAccount) {
         await supabaseAdmin.from("support_messages").update({ content_pt: pt }).eq("id", m.id).is("content_pt", null);
         translated++;
       } catch (e) {
+        failed++;
+        lastError = e instanceof Error ? e.message : String(e);
         console.error("support auto translate", m.id, e);
       }
     }
   }));
+  if (failed) throw new Error(`Tradução automática falhou em ${failed} e-mail(s): ${lastError}`.slice(0, 300));
   return { translated };
 }

@@ -19,7 +19,7 @@ import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
-  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp,
+  Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp, AlertTriangle,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -64,6 +64,7 @@ const SECTION_LABELS: Record<Section, string> = {
   nt_disputas: "Disputas",
   nt_rastreio: "Rastreio",
   nt_atendimento: "Atendimento",
+  nt_sistema: "Erros do sistema",
   nt_tarefas: "Tarefas",
   nt_vendas: "Nova venda",
   nt_email: "E-mail novo no Atendimento",
@@ -78,13 +79,14 @@ const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedi
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
 const AT_SUBTABS: Section[] = ["at_caixa", "at_kpi", "at_config"];
 // Tipos de notificação (aparecem quando "Notificações" está marcado).
-const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro"];
+const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_sistema", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro"];
 const NT_HINTS: Partial<Record<Section, string>> = {
   nt_meta: "Falha de pagamento, token vencendo e conta com erro",
   nt_shopify: "Sincronização, reembolsos e acesso negado",
   nt_disputas: "Chargeback e inquiry aguardando resposta",
   nt_rastreio: "Track123 com erro ou sem atualizar",
   nt_atendimento: "Zoho Mail com erro ou parado",
+  nt_sistema: "Rotina automática que falhou (sync, webhook, jobs, cobrança, IA)",
   nt_tarefas: "Tarefa criada para a pessoa (só no celular)",
   nt_vendas: "Cada pedido novo (só no celular)",
   nt_email: "Cliente mandou e-mail (só no celular)",
@@ -274,7 +276,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
-  nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_tarefas: CheckSquare,
+  nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_sistema: AlertTriangle, nt_tarefas: CheckSquare,
   nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, cfg_seguranca: Shield, cfg_integracoes: Plug,
   shops: Store, projects: FolderKanban, sops: Workflow,
 };

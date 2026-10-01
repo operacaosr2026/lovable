@@ -4,6 +4,7 @@ import { orderDateFor } from "@/lib/order-date";
 import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
 import { emitEvent } from "@/lib/notify.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
+import { tracked } from "@/lib/system-errors.server";
 
 // Push "Nova venda": loja + número + valor; o toque abre os pedidos do grupo
 // da loja. Só pedido que acabou de entrar (não reprocessamento de antigo).
@@ -72,8 +73,8 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
 
     // Previsão de pagamento ao fornecedor no Caixa (dia do pedido + D+N) na hora,
     // em vez de só quando alguém abre a aba Pedidos. Falha aqui não derruba o webhook.
-    await recomputeOrderCostForecast(s.user_id, s.shop_id, orderDate)
-      .catch((e) => console.error("webhook: previsão de custo falhou", s.shop_id, orderDate, e));
+    await tracked(s.user_id, `cost_forecast:${s.shop_id}`, "Previsão de pagamento ao fornecedor (Caixa) não recalculou",
+      () => recomputeOrderCostForecast(s.user_id, s.shop_id, orderDate));
 
     let trackingChanged = false;
     const fulfillments = (o.fulfillments ?? []) as any[];

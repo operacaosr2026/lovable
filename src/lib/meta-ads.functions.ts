@@ -537,6 +537,8 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
   }
 
   let inserted = 0;
+  // Falhas por conta: a rodada segue nas outras e lança no fim (vira aviso no sino).
+  const billingErrors: string[] = [];
   for (const [adAccountId, accRows] of byAccount) {
     const shopIds = [...new Set(accRows.map((r) => r.shop_id as string))];
     const now = new Date().toISOString();
@@ -566,7 +568,11 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
     for (let page = 0; page < 10 && url; page++) {
       const res = await fetchWithRetry(url);
       const json: any = await res.json();
-      if (!res.ok || json.error) { console.error("meta billing", adAccountId, json?.error?.message ?? res.status); failed = true; break; }
+      if (!res.ok || json.error) {
+        console.error("meta billing", adAccountId, json?.error?.message ?? res.status);
+        billingErrors.push(`${adAccountId}: ${json?.error?.message ?? `HTTP ${res.status}`}`);
+        failed = true; break;
+      }
       for (const ev of (json.data ?? []) as any[]) {
         if (ev.event_type !== "ad_account_billing_charge") continue;
         let extra: any = {};
@@ -612,7 +618,7 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
       if (toInsert.length) {
         await Promise.all([...new Set(toInsert.map((r) => r.shop_id as string))].map((id) => ensureAdsCategory(ownerId, id)));
         const { error } = await supabaseAdmin.from("shop_cash_entries").insert(toInsert);
-        if (error) { console.error("meta billing insert", adAccountId, error.message); continue; }
+        if (error) { console.error("meta billing insert", adAccountId, error.message); billingErrors.push(`${adAccountId}: ${error.message}`); continue; }
         inserted += toInsert.length;
       }
     }
@@ -621,6 +627,7 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
       .update({ billing_started_at: firstSeen, billing_synced_until: now, billing_seen_tx: nextSeen })
       .in("id", accRows.map((r) => r.id));
   }
+  if (billingErrors.length) throw new Error(billingErrors.join("; ").slice(0, 400));
   return { inserted };
 });
 

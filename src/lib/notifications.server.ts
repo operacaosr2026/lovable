@@ -10,7 +10,7 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
 const SHOPIFY_STALE_HOURS = 13;
-const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:"];
+const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors"];
 
 const TRACK123_STALE_HOURS = 4;   // cron roda de hora em hora
 const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
@@ -343,6 +343,23 @@ export async function refreshSystemNotifications(ownerId: string) {
         link: "/atendimento",
       });
     }
+  }
+
+  // Alertas de chargeback com erro na cobrança: link de pagamento que a Shopify
+  // recusou, pedido pago que não foi dado como atendido, ou e-mail da sequência
+  // que não saiu. Um aviso só, com os primeiros pedidos; some quando zerar.
+  const { data: alertErrs } = await supabaseAdmin.from("chargeback_alert_followups")
+    .select("order_external_id,recovery_error,dunning_stop_reason").eq("user_id", ownerId)
+    .or("recovery_error.not.is.null,dunning_stop_reason.like.erro:*");
+  if (alertErrs?.length) {
+    const lines = (alertErrs as any[]).slice(0, 3).map((r) =>
+      `#${r.order_external_id}: ${String(r.recovery_error ?? r.dunning_stop_reason).replace(/^erro:\s*/, "")}`);
+    want.set("system:alerts_errors", {
+      level: "error",
+      title: `Cobrança dos Alertas com erro em ${alertErrs.length} pedido${alertErrs.length === 1 ? "" : "s"}`,
+      body: lines.join(" · ").slice(0, 240),
+      link: "/chargebacks",
+    });
   }
 
   const current = must(await supabaseAdmin.from("app_notifications")

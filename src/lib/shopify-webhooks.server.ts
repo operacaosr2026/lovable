@@ -41,6 +41,7 @@ export async function ensureShopifyWebhooks(store: Store): Promise<{ created: st
     created.push(topic);
   }
   if (errors.length && !created.length && errors.length === SHOPIFY_WEBHOOK_TOPICS.length) throw new Error(`Shopify criar webhooks: ${errors.join("; ")}`);
-  if (errors.length) console.error("ensureShopifyWebhooks", store.shop_domain, errors.join("; "));
+  // Algum tópico não foi criado: lança pra virar aviso no sino (Erros do sistema).
+  if (errors.length) throw new Error(`Shopify criar webhooks (${created.length} ok): ${errors.join("; ")}`.slice(0, 500));
   return { created };
 }

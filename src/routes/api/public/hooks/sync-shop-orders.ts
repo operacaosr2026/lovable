@@ -6,6 +6,7 @@ import { isRecoveryOrder } from "@/lib/recovery-order";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
+import { reportSystemError, clearSystemError, tracked, shopLabel, reportPaginationCap } from "@/lib/system-errors.server";
 import { upsertShopDisputes } from "@/lib/shopify-disputes.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
@@ -27,7 +28,9 @@ function addDays(date: string, days: number) {
 // esgotar a Shopify (`url` ainda não-vazio) — sem isso, uma loja de alto
 // volume tinha dado mais antigo do período silenciosamente descartado.
 function warnPaginationCap(fnName: string, domain: string, url: string) {
-  if (url) console.error(`[sync-shop-orders] ${fnName}(${domain}): atingiu o teto de páginas antes de esgotar a listagem — dado do período pode estar incompleto.`);
+  if (!url) return;
+  console.error(`[sync-shop-orders] ${fnName}(${domain}): atingiu o teto de páginas antes de esgotar a listagem — dado do período pode estar incompleto.`);
+  reportPaginationCap(fnName, domain);
 }
 
 async function fetchOrders(domain: string, token: string, sinceISO: string) {
@@ -342,8 +345,10 @@ async function syncOrdersOnlyForShop(s: any, today: string) {
         }
       }
     }
+    await clearSystemError(s.user_id, `orders_sync:${s.shop_id}`);
   } catch (e: any) {
     console.error("orders-only sync fail", s.shop_id, e);
+    await reportSystemError(s.user_id, `orders_sync:${s.shop_id}`, `Pedidos não sincronizaram — ${await shopLabel(s.shop_id)}`, e);
   }
 }
 
@@ -441,7 +446,8 @@ async function processShop(s: any, today: string) {
         }
         // Webhooks de pedido (tempo real): cria os que faltarem. Falha aqui não
         // derruba o sync — o de 10 em 10 min continua cobrindo.
-        await ensureShopifyWebhooks(store as any).catch((e) => console.error("ensureShopifyWebhooks", s.shopify_store_id, e));
+        await tracked(s.user_id, `webhooks:${s.shopify_store_id}`, `Webhooks da Shopify não configurados — ${store.name ?? store.shop_domain}`,
+          () => ensureShopifyWebhooks(store as any));
         await syncPayoutsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, cutoff);
         await updatePayoutLag(s.shop_id, s.user_id, store.shop_domain, store.access_token);
         // As telas leem chargeback/reembolso do banco (getGroupRefundsAndChargebacks):
@@ -455,8 +461,8 @@ async function processShop(s: any, today: string) {
         }
         // Risco de fraude da Shopify dos pedidos recentes (aba Chargebacks).
         // Falha aqui não derruba o resto do sync.
-        await syncOrderRisks(s.shop_id, s.user_id, store.shop_domain, store.access_token)
-          .catch((e) => console.error("risco de fraude", s.shop_id, e));
+        await tracked(s.user_id, `risk:${s.shop_id}`, `Risco de fraude não sincronizou — ${store.name ?? store.shop_domain}`,
+          () => syncOrderRisks(s.shop_id, s.user_id, store.shop_domain as string, store.access_token as string));
         const lagDays = payoutLagDaysFor(s, store.board_payout_days);
         await syncPendingTransactionsForShop(s.shop_id, s.user_id, store.shop_domain, store.access_token, lagDays);
         await markCashSynced(s.shop_id);
@@ -538,11 +544,15 @@ async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boo
     try {
       const r: any = await syncShopifyFeesForShop(supabaseAdmin, ownerId, { shop_id: shopId, pages: 2 });
       if ((r?.synced ?? 0) > 0 || (r?.updated ?? 0) > 0) changed = true;
-    } catch (e) { console.error("costs: fees fail", shopId, e); }
+      await clearSystemError(ownerId, `fees:${shopId}`);
+    } catch (e) {
+      console.error("costs: fees fail", shopId, e);
+      await reportSystemError(ownerId, `fees:${shopId}`, `Taxas da Shopify não sincronizaram — ${await shopLabel(shopId)}`, e);
+    }
     // Saldo da Shopify Payments guardado: o "A receber" do Caixa só lê (getStoreBalances).
     if (storeId) {
-      try { await refreshStoreBalance(ownerId, storeId); }
-      catch (e) { console.error("costs: balance fail", shopId, e); }
+      await tracked(ownerId, `balance:${shopId}`, `Saldo da Shopify não atualizou — ${await shopLabel(shopId)}`,
+        () => refreshStoreBalance(ownerId, storeId));
     }
   }
   if (hasMeta) {
@@ -550,7 +560,11 @@ async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boo
       // Hoje + 2 dias pra trás: a Meta ainda ajusta o gasto de ontem.
       const r = await syncMetaAdsSpendForShop(ownerId, { shop_id: shopId, since_days: 2 });
       if (r.synced > 0) changed = true;
-    } catch (e) { console.error("costs: meta fail", shopId, e); }
+      await clearSystemError(ownerId, `meta_spend:${shopId}`);
+    } catch (e) {
+      console.error("costs: meta fail", shopId, e);
+      await reportSystemError(ownerId, `meta_spend:${shopId}`, `Gasto da Meta não sincronizou — ${await shopLabel(shopId)}`, e);
+    }
   }
   return changed;
 }
@@ -614,7 +628,11 @@ async function runCostsSync(request: Request, only: { ads: boolean; fees: boolea
       try {
         const r = await syncMetaBillingCharges(owner);
         if (r.inserted > 0) { billingInserted += r.inserted; changedOwners.add(owner); }
-      } catch (e) { console.error("costs: meta billing fail", owner, e); }
+        await clearSystemError(owner, "meta_billing");
+      } catch (e) {
+        console.error("costs: meta billing fail", owner, e);
+        await reportSystemError(owner, "meta_billing", "Cobranças do cartão da Meta não entraram no Caixa", e);
+      }
     }
   }
   await Promise.all([...changedOwners].map((owner) => broadcast(owner, "orders")));
@@ -673,12 +691,22 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
       else await processShop(s, today);
       processed++;
       if (!ordersOnly && s.user_id) syncedOwners.add(s.user_id);
-    } catch (e) { console.error("shop fail", s.shop_id, e); }
+      await clearSystemError(s.user_id, `shop_sync:${s.shop_id}`);
+    } catch (e) {
+      console.error("shop fail", s.shop_id, e);
+      await reportSystemError(s.user_id, `shop_sync:${s.shop_id}`, `Sincronização da loja falhou — ${await shopLabel(s.shop_id)}`, e);
+    }
   };
   while (queue.length) {
     if (Date.now() - start > TIME_BUDGET_MS) {
       skippedByBudget = queue.length;
       console.error(`sync-shop-orders: orçamento de tempo (${TIME_BUDGET_MS}ms) estourado, ${skippedByBudget} loja(s) não processadas nesta rodada — pegas na próxima.`);
+      const mode = payoutsOnly ? "repasses" : ordersOnly ? "pedidos" : "completa";
+      for (const owner of new Set(queue.map((s: any) => s.user_id as string))) {
+        const names = await Promise.all(queue.filter((s: any) => s.user_id === owner).map((s: any) => shopLabel(s.shop_id)));
+        await reportSystemError(owner, `sync_budget:${mode}`, `Sincronização ${mode} não terminou a tempo`,
+          `${names.length} loja(s) ficaram para a próxima rodada: ${names.join(", ")}`);
+      }
       break;
     }
     const batch: any[] = [];
@@ -693,6 +721,10 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
   }
   // Caixa/Dashboard abertos recarregam sozinhos depois do sync completo (1x por
   // hora). O leve de 10 em 10 min não avisa: pedido novo já chega pelo webhook.
+  if (!skippedByBudget) {
+    const mode = payoutsOnly ? "repasses" : ordersOnly ? "pedidos" : "completa";
+    for (const owner of new Set(all.map((s: any) => s.user_id as string))) await clearSystemError(owner, `sync_budget:${mode}`);
+  }
   await Promise.all([...syncedOwners].map((owner) => broadcast(owner, "orders")));
   return new Response(JSON.stringify({ processed, skippedByBudget, today, payoutsOnly, ordersOnly }), { headers: { "Content-Type": "application/json" } });
 }

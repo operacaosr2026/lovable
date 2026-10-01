@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshEstornoDisputeCounts } from "@/lib/estorno-daily.server";
+import { tracked } from "@/lib/system-errors.server";
 
 // Grava disputas (chargeback e inquiry) da Shopify Payments em
 // shop_order_disputes — usado pelo sync completo (de hora em hora) e pelo
@@ -24,6 +25,6 @@ export async function upsertShopDisputes(shopId: string, userId: string, dispute
     .upsert(rows as any[], { onConflict: "shop_id,shopify_dispute_id" });
   if (error) throw new Error(error.message);
   // Chargeback novo já entra na taxa de estorno (sem esperar a meia-noite).
-  await refreshEstornoDisputeCounts(userId, shopId)
-    .catch((e) => console.error("estorno: recontagem de chargebacks falhou", shopId, e));
+  await tracked(userId, `estorno_recount:${shopId}`, "Taxa de estorno não recontou o chargeback novo",
+    () => refreshEstornoDisputeCounts(userId, shopId));
 }

@@ -6,6 +6,7 @@ import { broadcast } from "@/lib/realtime.server";
 import { upsertShopDisputes } from "@/lib/shopify-disputes.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
 import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 
 // Recebe os webhooks da Shopify (orders/create, orders/updated) de uma loja —
 // cadastrados por ensureShopifyWebhooks. Autenticidade pela assinatura HMAC
@@ -26,7 +27,7 @@ export const Route = createFileRoute("/api/public/hooks/shopify/$storeId")({
       POST: async ({ request, params }) => {
         const rawBody = await request.text();
         const { data: store } = await supabaseAdmin.from("shopify_stores")
-          .select("id,shop_domain,client_secret")
+          .select("id,user_id,name,shop_domain,client_secret")
           .eq("id", params.storeId).maybeSingle();
         if (!store?.client_secret) return new Response("Unknown store", { status: 404 });
         if (!validHmac(rawBody, store.client_secret, request.headers.get("x-shopify-hmac-sha256"))) {
@@ -59,7 +60,11 @@ export const Route = createFileRoute("/api/public/hooks/shopify/$storeId")({
                   .eq("shop_id", l.shop_id).eq("source", "shopify").eq("external_id", String(dispute.order_id)).maybeSingle();
                 if (ord?.order_date) {
                   await recomputeOrderCostForecast(l.user_id, l.shop_id, ord.order_date)
-                    .catch((e) => console.error("dispute webhook: previsão de custo", l.shop_id, e));
+                    .then(() => clearSystemError(l.user_id, `cost_forecast:${l.shop_id}`))
+                    .catch(async (e) => {
+                      console.error("dispute webhook: previsão de custo", l.shop_id, e);
+                      await reportSystemError(l.user_id, `cost_forecast:${l.shop_id}`, "Previsão de custo do Caixa não recalculou após chargeback", e);
+                    });
                 }
               }
             }
@@ -67,9 +72,11 @@ export const Route = createFileRoute("/api/public/hooks/shopify/$storeId")({
               await refreshSystemNotifications(o).catch((e) => console.error("dispute webhook notifications", o, e));
               await Promise.all([broadcast(o, "orders", { store_id: store.id }), broadcast(o, "notifications")]);
             }));
+            await clearSystemError(store.user_id, `webhook_dispute:${store.id}`);
             return Response.json({ ok: true });
           } catch (e) {
             console.error("shopify webhook dispute fail", store.id, topic, e);
+            await reportSystemError(store.user_id, `webhook_dispute:${store.id}`, `Disputa recebida da Shopify não foi gravada — ${store.name ?? store.shop_domain}`, e);
             return new Response("Dispute ingest failed", { status: 500 });
           }
         }
@@ -82,10 +89,12 @@ export const Route = createFileRoute("/api/public/hooks/shopify/$storeId")({
         try {
           const { changedOwners } = await ingestShopifyOrder(store.id, order);
           await Promise.all(changedOwners.map((owner) => broadcast(owner, "orders", { store_id: store.id })));
+          await clearSystemError(store.user_id, `webhook_order:${store.id}`);
           return Response.json({ ok: true });
         } catch (e) {
           // 500 = a Shopify tenta de novo mais tarde (e o sync de 10 em 10 min cobre).
           console.error("shopify webhook ingest fail", store.id, topic, e);
+          await reportSystemError(store.user_id, `webhook_order:${store.id}`, `Pedido recebido da Shopify não foi gravado — ${store.name ?? store.shop_domain}`, e);
           return new Response("Ingest failed", { status: 500 });
         }
       },

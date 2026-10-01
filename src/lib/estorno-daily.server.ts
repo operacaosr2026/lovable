@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 import { selectAll } from "@/lib/select-all";
 import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
 import { fetchWithRetry } from "@/lib/http";
@@ -104,8 +105,13 @@ async function saveEstornoStats(ownerId: string, stats: Map<string, EstornoStats
       chargeback_orders_prev: st.prevPedidos, chargeback_count_prev: st.prevEstornos,
       chargeback_stats_at: now,
     }).eq("user_id", ownerId).eq("shop_id", shopId);
-    if (error) console.error("estorno-daily: falha ao gravar", shopId, error.message);
-    else saved++;
+    if (error) {
+      console.error("estorno-daily: falha ao gravar", shopId, error.message);
+      await reportSystemError(ownerId, `job:estorno_save:${shopId}`, "Taxa de estorno não foi gravada", error.message);
+    } else {
+      saved++;
+      await clearSystemError(ownerId, `job:estorno_save:${shopId}`);
+    }
   }));
   return saved;
 }
