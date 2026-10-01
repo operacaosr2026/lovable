@@ -638,16 +638,17 @@ function Dashboard() {
   });
 
   // Indicadores de operação ao lado do gráfico — mesmos pedidos e mesma conta
-  // da aba Rastreamento (listLogisticsOrders + computeLogisticsKpis), no
-  // período selecionado aqui; tarefas pendentes vêm da aba Tarefas.
+  // da aba Rastreamento (listLogisticsOrders + computeLogisticsKpis), sempre com
+  // o histórico todo (ignora o filtro de período: no começo do mês ficavam
+  // zerados); tarefas pendentes vêm da aba Tarefas.
   const navigate = useNavigate();
   const listLogisticsFn = useServerFn(listLogisticsOrders);
   const listTasksFn = useServerFn(listTasks);
   const opsShopIds: string[] = (data as any)?.shopIds ?? [];
   const opsCardIds: string[] = (data as any)?.cardIds ?? [];
   const { data: logisticsOrders = [], isLoading: logisticsLoading } = useQuery({
-    queryKey: ["lg-logistics", "dashboard", opsShopIds.join(","), from, to],
-    queryFn: () => listLogisticsFn({ data: { shop_ids: opsShopIds, from, to } }),
+    queryKey: ["lg-logistics", "dashboard", opsShopIds.join(",")],
+    queryFn: () => listLogisticsFn({ data: { shop_ids: opsShopIds, from: "2000-01-01", to: isoTodayUS() } }),
     enabled: !!session && opsShopIds.length > 0,
   });
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery({
