@@ -5,6 +5,7 @@ import {
   getShopifyCreds, fetchShopifyPayouts, refreshStoreBalance,
 } from "@/lib/shop-orders.functions";
 import { fetchWithRetry } from "@/lib/http";
+import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 
 // Números da Shopify guardados em shopify_stores pra as telas só lerem, sem
 // chamar a Shopify na abertura (ver *_store_cached_metrics.sql):
@@ -85,8 +86,11 @@ export async function getStoreBoardMetrics(ownerId: string, storeId: string) {
 
 // 1x por dia (junto com o estorno, meia-noite NY): todas as lojas Shopify,
 // inclusive as pausadas — o Banco de Lojas mostra os badges delas também.
+// Loja pausada (ex.: Cemitério) que a Shopify fechou responde 402 "Unavailable
+// Shop" pra sempre: não vira aviso no sino, os números só ficam no último valor.
 export async function runStoreMetricsDaily() {
   const { data: stores } = await supabaseAdmin.from("shopify_stores").select("id,user_id").not("access_token", "is", null);
+  const paused = await getPausedShopifyStoreIds();
   let ok = 0;
   const list = (stores ?? []) as any[];
   for (let i = 0; i < list.length; i += 4) {
@@ -97,6 +101,10 @@ export async function runStoreMetricsDaily() {
         await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
       } catch (e) {
         console.error("store-metrics-daily fail", s.id, e);
+        if (paused.has(s.id) && /\b402\b/.test(String((e as any)?.message ?? e))) {
+          await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
+          return;
+        }
         await reportSystemError(s.user_id, `job:store_metrics:${s.id}`, "Números do Banco de Lojas não atualizaram (saldo / pedidos por dia)", e);
       }
     }));
