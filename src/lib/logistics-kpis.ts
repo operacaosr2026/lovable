@@ -20,9 +20,13 @@ export function daysSince(iso: string | null | undefined, nowMs: number): number
 // pedido em si, só os dias que já se passaram desde então.
 export function businessDaysSince(iso: string | null | undefined, nowMs: number): number {
   if (!iso) return 0;
-  const cur = new Date(iso + "T00:00:00Z");
-  const now = new Date(nowMs);
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return businessDaysBetween(iso, new Date(nowMs).toISOString());
+}
+// Dias úteis (seg-sex) de uma data até outra — não conta o dia de início.
+// Ex.: pedido na sexta, postado na quarta = 3 (seg, ter, qua).
+export function businessDaysBetween(fromIso: string, toIso: string): number {
+  const cur = new Date(fromIso.slice(0, 10) + "T00:00:00Z");
+  const end = new Date(toIso.slice(0, 10) + "T00:00:00Z");
   let count = 0;
   while (cur < end) {
     cur.setUTCDate(cur.getUTCDate() + 1);
@@ -69,11 +73,11 @@ export function needsAttention(o: any, nowMs: number): boolean {
 export function computeLogisticsKpis(orders: any[], nowMs: number) {
   const kpiOrders = orders.filter((o) => !o.kpi_excluded);
 
-  // Tempo médio de postagem: dias entre o pedido (order_date) e a etiqueta (shipped_at)
+  // Tempo médio de postagem: dias ÚTEIS (sem sáb/dom) entre o pedido
+  // (order_date) e a postagem (shipped_at = 1ª movimentação real do rastreio).
   const postingDurations = kpiOrders
-    .filter((o) => o.order_date && o.shipped_at)
-    .map((o) => (new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()) / 86_400_000)
-    .filter((d) => d >= 0);
+    .filter((o) => o.order_date && o.shipped_at && String(o.shipped_at).slice(0, 10) >= String(o.order_date).slice(0, 10))
+    .map((o) => businessDaysBetween(o.order_date, o.shipped_at));
 
   // Tempo médio de entrega: dias entre postagem (shipped_at) e entrega (delivered_at)
   const deliveryDurations = kpiOrders
@@ -138,9 +142,8 @@ export function computeLogisticsTrend(orders: any[], nowMs: number, today: strin
         return { ...o, delivery_status: status, last_event_at: lastEvent && lastEvent <= d ? o.last_event_at : null };
       });
     const posting = kpiOrders
-      .filter((o) => o.order_date && dayOf(o.shipped_at) && dayOf(o.shipped_at)! <= d)
-      .map((o) => (new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()) / 86_400_000)
-      .filter((x) => x >= 0);
+      .filter((o) => o.order_date && dayOf(o.shipped_at) && dayOf(o.shipped_at)! <= d && dayOf(o.shipped_at)! >= dayOf(o.order_date)!)
+      .map((o) => businessDaysBetween(o.order_date, o.shipped_at));
     const delivery = kpiOrders
       .filter((o) => dayOf(o.shipped_at) && dayOf(o.delivered_at) && dayOf(o.delivered_at)! <= d)
       .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
