@@ -70,13 +70,17 @@ function ProjectionEndLabel(props: any) {
   const rawY = vb ? vb.y + vb.height / 2 : (props.cy ?? props.y);
   if (x == null || rawY == null || Number.isNaN(x) || Number.isNaN(rawY)) return null;
   // Nunca deixa o selo estourar o topo do gráfico, mesmo quando o ponto fica muito perto da borda superior.
-  const y = Math.max(rawY, 34);
+  const y = Math.max(rawY, 38);
   const text = String(props.value);
   const width = text.length * 6.5 + 18;
+  // O ponto é o último do gráfico: o selo cresce pra esquerda (borda direita
+  // só um pouco além do ponto) pra não estourar a lateral, e fica com folga
+  // acima do ponto pra não encostar nele.
+  const left = x + 12 - width;
   return (
     <g>
-      <rect x={x - width / 2} y={y - 32} width={width} height={22} rx={11} fill={props.fill} />
-      <text x={x} y={y - 17} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{text}</text>
+      <rect x={left} y={y - 36} width={width} height={22} rx={11} fill={props.fill} />
+      <text x={left + width / 2} y={y - 21} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{text}</text>
     </g>
   );
 }
