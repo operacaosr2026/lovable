@@ -32,6 +32,8 @@ const STAGE_RULES: [Stage, RegExp][] = [
   ["exportacao", /export|出口|released by customs at origin/i],
   ["alfandega_destino", /destination.*(clearance|customs)|(clearance|customs).*destination|import released|under clearance|customs clearance|目的国清关|等待清关|海关查验|进口海关|海关允许进口|clearance processing/i],
   ["voo", /airport|airline|airway bill|flight|启运|抵达|航空公司|飞机|departure from the starting port|departed from origin country|shipment arrived at airport/i],
+  // Evento com local nos EUA (China Post: "US, 邮件到达处理中心", "【US Oklahoma】") já é a etapa local.
+  ["transporte_local", /(^|【|,\s*)US[\s,，】]/],
   ["origem", /sorting center|picked up|收取邮件|取件|consignment received|warehouse|sort facility|完成分拣|处理中心|loaded on vehicle|shipment (arrived at|departed from) facility|in transit to next facility|transit point|邮件离开|邮件到达|正在发往/i],
   ["transito", /facility|hub|in transit|departed|arrived|delay in transit|经转局/i],
 ];
