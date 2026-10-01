@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { getStoreBalances } from "@/lib/shop-orders.functions";
 import { getStoreBoardMetrics } from "@/lib/store-metrics.server";
+import { getPausedShopifyStores } from "@/lib/sync-pause.server";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const StoreIdInput = z.object({ shopify_store_id: z.string().uuid() });
 
@@ -17,6 +19,14 @@ export const getStoreHoldBalance = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => StoreIdInput.parse(d))
   .handler(async ({ context, data }) => {
+    // Loja pausada sem o badge "Em Hold" na coluna (ex.: Cemitério): último valor, sem chamar a Shopify.
+    const p = (await getPausedShopifyStores(context.ownerId)).get(data.shopify_store_id);
+    if (p && !p.hold) {
+      const { data: r } = await supabaseAdmin.from("shopify_stores")
+        .select("payments_balance,payments_balance_currency")
+        .eq("id", data.shopify_store_id).eq("user_id", context.ownerId).maybeSingle();
+      return { amount: r?.payments_balance != null ? Number(r.payments_balance) : 0, currency: r?.payments_balance_currency ?? null };
+    }
     const balances = await getStoreBalances(context.ownerId, [data.shopify_store_id], 36 * 60 * 60_000);
     const b = balances.get(data.shopify_store_id);
     return { amount: b?.amount ?? 0, currency: b?.currency ?? null };

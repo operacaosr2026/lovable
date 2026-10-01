@@ -5,7 +5,7 @@ import {
   getShopifyCreds, fetchShopifyPayouts, refreshStoreBalance,
 } from "@/lib/shop-orders.functions";
 import { fetchWithRetry } from "@/lib/http";
-import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
+import { getPausedShopifyStores } from "@/lib/sync-pause.server";
 
 // Números da Shopify guardados em shopify_stores pra as telas só lerem, sem
 // chamar a Shopify na abertura (ver *_store_cached_metrics.sql):
@@ -75,31 +75,36 @@ export async function getStoreBoardMetrics(ownerId: string, storeId: string) {
   const { data: r } = await supabaseAdmin.from("shopify_stores")
     .select("board_avg_orders,board_payout_days,board_metrics_at")
     .eq("id", storeId).eq("user_id", ownerId).maybeSingle();
-  if (r?.board_metrics_at && Date.now() - new Date(r.board_metrics_at).getTime() < BOARD_MAX_AGE_MS) {
-    return {
-      avgPerDay: r.board_avg_orders != null ? Number(r.board_avg_orders) : 0,
-      payoutDays: r.board_payout_days != null ? Number(r.board_payout_days) : null,
-    };
-  }
+  const stored = {
+    avgPerDay: r?.board_avg_orders != null ? Number(r.board_avg_orders) : 0,
+    payoutDays: r?.board_payout_days != null ? Number(r.board_payout_days) : null,
+  };
+  if (r?.board_metrics_at && Date.now() - new Date(r.board_metrics_at).getTime() < BOARD_MAX_AGE_MS) return stored;
+  // Loja pausada fica no último valor, sem chamar a Shopify.
+  if ((await getPausedShopifyStores(ownerId)).has(storeId)) return stored;
   return computeStoreBoardMetrics(ownerId, storeId);
 }
 
-// 1x por dia (junto com o estorno, meia-noite NY): todas as lojas Shopify,
-// menos as pausadas (coluna do Banco de Lojas com "Pausar sincronização", ex.:
-// Cemitério) — os números delas ficam no último valor. Aviso antigo de uma loja
-// que foi pausada depois sai do sino.
+// 1x por dia (junto com o estorno, meia-noite NY): todas as lojas Shopify.
+// Pausadas (coluna do Banco de Lojas com "Pausar sincronização"): só o saldo, e
+// só se a coluna mostra o badge "Em Hold" (ex.: Hold); as outras (ex.:
+// Cemitério) ficam no último valor e o aviso antigo delas sai do sino.
 export async function runStoreMetricsDaily() {
   const { data: stores } = await supabaseAdmin.from("shopify_stores").select("id,user_id").not("access_token", "is", null);
-  const paused = await getPausedShopifyStoreIds();
-  for (const s of (stores ?? []) as any[]) {
-    if (paused.has(s.id)) await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
-  }
+  const paused = await getPausedShopifyStores();
   let ok = 0;
-  const list = ((stores ?? []) as any[]).filter((s) => !paused.has(s.id));
+  const list: any[] = [];
+  for (const s of (stores ?? []) as any[]) {
+    if (paused.has(s.id) && !paused.get(s.id)!.hold) await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
+    else list.push(s);
+  }
   for (let i = 0; i < list.length; i += 4) {
     await Promise.all(list.slice(i, i + 4).map(async (s) => {
       try {
-        await Promise.all([refreshStoreBalance(s.user_id, s.id), computeStoreBoardMetrics(s.user_id, s.id)]);
+        await Promise.all([
+          refreshStoreBalance(s.user_id, s.id),
+          paused.has(s.id) ? null : computeStoreBoardMetrics(s.user_id, s.id),
+        ]);
         ok++;
         await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
       } catch (e) {
