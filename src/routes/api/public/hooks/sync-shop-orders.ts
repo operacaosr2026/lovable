@@ -515,14 +515,14 @@ async function processShop(s: any, today: string) {
   }
 }
 
-// api/ssr.js tem maxDuration=60s. Processar todas as lojas sequencialmente
+// api/ssr.js tem maxDuration=300s (vercel.json, Fluid compute). Processar todas as lojas sequencialmente
 // (cada uma com várias chamadas paginadas à Shopify) pode passar disso — e
 // quando o Vercel mata a função no meio do loop, isso não é um erro
 // capturável pelo try/catch por loja, as lojas restantes simplesmente não
 // sincronizam e nada fica registrado. Corta a rodada antes do limite: as
 // lojas que sobrarem são pegas na próxima chamada (pg_cron roda a cada
 // 10min pro sync leve de pedidos, então o atraso é pequeno).
-const TIME_BUDGET_MS = 50_000;
+const TIME_BUDGET_MS = 270_000;
 const SYNC_CONCURRENCY = 3;
 const FULL_RESYNC_AFTER_MS = 2 * 60 * 60_000;
 

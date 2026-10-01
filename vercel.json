@@ -2,10 +2,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
   "framework": null,
+  "fluid": true,
   "functions": {
     "api/ssr.js": {
       "includeFiles": "dist/server/**",
-      "maxDuration": 60
+      "maxDuration": 300
     }
   },
   "rewrites": [
