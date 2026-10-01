@@ -4,6 +4,11 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getShopifyCreds } from "@/lib/shop-orders.functions";
+import { fetchWithRetry } from "@/lib/http";
+import { isRecoveryOrder } from "@/lib/recovery-order";
+import { orderDateFor } from "@/lib/order-date";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -148,6 +153,46 @@ function monthsAgoISO(months: number) {
   return d.toISOString().slice(0, 10);
 }
 
+// Pedidos de antes de cada loja ser conectada ao sistema não estão em
+// shop_orders (o sync só busca daqui pra frente — ex.: Woovah tinha 227 pedidos
+// antes do 1º do banco). Pra aba Vendas mostrar o histórico, busca só esse
+// intervalo direto na Shopify, por loja — leitura, nada é gravado no banco.
+// Loja que não responde (fechada, 402) fica só com o que o banco tem.
+async function shopifyOrdersBeforeDb(ownerId: string, sinceDate: string) {
+  const { data: links } = await supabaseAdmin.from("shop_order_settings")
+    .select("shop_id,shopify_store_id").eq("user_id", ownerId).not("shopify_store_id", "is", null);
+  const out: { order_date: string; line_items: any[] }[] = [];
+  await Promise.all(((links ?? []) as any[]).map(async (l) => {
+    try {
+      const { data: first } = await supabaseAdmin.from("shop_orders").select("created_at_shopify")
+        .eq("user_id", ownerId).eq("shop_id", l.shop_id)
+        .order("created_at_shopify", { ascending: true }).limit(1).maybeSingle();
+      const firstAt = first?.created_at_shopify ? Date.parse(first.created_at_shopify) : null;
+      if (firstAt != null && new Date(firstAt).toISOString().slice(0, 10) < sinceDate) return;
+      const { domain, token } = await getShopifyCreds(null, ownerId, l.shopify_store_id);
+      let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&fields=created_at,line_items,tags`
+        + `&created_at_min=${encodeURIComponent(`${sinceDate}T00:00:00Z`)}`
+        + (firstAt != null ? `&created_at_max=${encodeURIComponent(new Date(firstAt).toISOString())}` : "");
+      for (let i = 0; i < 40 && url; i++) {
+        const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token } });
+        if (!res.ok) throw new Error(`Shopify ${res.status}`);
+        const json: any = await res.json();
+        for (const o of json.orders ?? []) {
+          // created_at_max inclui o próprio 1º pedido do banco — não contar 2x.
+          if (firstAt != null && Date.parse(o.created_at) >= firstAt) continue;
+          if (isRecoveryOrder(o)) continue;
+          out.push({ order_date: orderDateFor(o.created_at), line_items: o.line_items ?? [] });
+        }
+        const m = (res.headers.get("link") ?? "").match(/<([^>]+)>;\s*rel="next"/);
+        url = m ? m[1] : "";
+      }
+    } catch (e) {
+      console.error("getProductMonthlySales: histórico da Shopify falhou", l.shop_id, e);
+    }
+  }));
+  return out;
+}
+
 export const getProductMonthlySales = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -171,9 +216,10 @@ export const getProductMonthlySales = createServerFn({ method: "GET" })
       .from("shop_orders").select("order_date,line_items:raw->line_items")
       .eq("user_id", ownerId).gte("order_date", since));
     if (error) throw new Error(error.message);
+    const older = await shopifyOrdersBeforeDb(ownerId, since);
 
     const byMonth = new Map<string, { units: number; revenue: number; pedidos: number }>();
-    for (const o of (orders ?? []) as any[]) {
+    for (const o of [...((orders ?? []) as any[]), ...older]) {
       const lineItems = o.line_items ?? [];
       let units = 0, revenue = 0, matched = false;
       for (const li of lineItems) {
