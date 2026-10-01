@@ -36,21 +36,19 @@ export const syncShopifyVisitors = createServerFn({ method: "POST" })
     const { shop_domain, access_token } = store as { shop_domain: string; access_token: string };
     const today = new Date().toISOString().slice(0, 10);
 
+    // ShopifyQL novo (a sintaxe antiga "DIMENSIONS BY … METRICS" e os tipos
+    // TableData/QueryRootError saíram da API): SHOW … TIMESERIES day, resposta em
+    // tableData.rows como objetos { day, sessions } e erros em parseErrors.
     const gql = `{
-      shopifyqlQuery(query: "FROM sessions SINCE ${data.since_date} UNTIL ${today} DIMENSIONS BY day METRICS sessions") {
-        ... on TableData {
-          rowData
-          columns { name dataType }
-        }
-        ... on QueryRootError {
-          parseError { code message }
-        }
+      shopifyqlQuery(query: "FROM sessions SHOW sessions TIMESERIES day SINCE ${data.since_date} UNTIL ${today}") {
+        parseErrors
+        tableData { columns { name dataType } rows }
       }
     }`;
 
     let resp: Response;
     try {
-      resp = await fetchWithRetry(`https://${shop_domain}/admin/api/2024-01/graphql.json`, {
+      resp = await fetchWithRetry(`https://${shop_domain}/admin/api/2026-07/graphql.json`, {
         method:  "POST",
         headers: {
           "X-Shopify-Access-Token": access_token,
@@ -65,22 +63,18 @@ export const syncShopifyVisitors = createServerFn({ method: "POST" })
     if (!resp.ok) return { synced: 0, error: `http_${resp.status}` };
 
     const json = await resp.json() as any;
+    if (json?.errors?.length) return { synced: 0, error: "query_error" };
     const queryResult = json?.data?.shopifyqlQuery;
-    if (!queryResult || queryResult.parseError) return { synced: 0, error: "query_error" };
+    if (!queryResult || queryResult.parseErrors?.length) return { synced: 0, error: "query_error" };
 
-    const { columns, rowData } = queryResult;
-    if (!columns || !rowData) return { synced: 0, error: "no_data" };
+    const tableRows = queryResult.tableData?.rows as { day?: string; sessions?: string | number }[] | undefined;
+    if (!tableRows) return { synced: 0, error: "no_data" };
 
-    const cols     = columns as { name: string }[];
-    const dayIdx     = cols.findIndex((c) => c.name === "day");
-    const sessionIdx = cols.findIndex((c) => c.name === "sessions");
-    if (dayIdx < 0 || sessionIdx < 0) return { synced: 0, error: "unexpected_columns" };
-
-    const rows = (rowData as any[][]).map((r) => ({
+    const rows = tableRows.filter((r) => r.day).map((r) => ({
       shop_id:  data.shop_id,
       user_id:  ownerId,
-      date:     String(r[dayIdx]).slice(0, 10),
-      sessions: Number(r[sessionIdx]) || 0,
+      date:     String(r.day).slice(0, 10),
+      sessions: Number(r.sessions) || 0,
     }));
 
     if (rows.length === 0) return { synced: 0 };
