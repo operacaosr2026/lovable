@@ -10,7 +10,7 @@ export const NOTIFICATION_CATEGORIES = [
   { key: "nt_disputas", label: "Disputas", desc: "Chargeback e inquiry aguardando resposta", prefixes: ["dispute:"] },
   { key: "nt_rastreio", label: "Rastreio", desc: "Track123 com erro ou sem atualizar", prefixes: ["track123:"] },
   { key: "nt_atendimento", label: "Atendimento", desc: "Zoho Mail com erro ou parado", prefixes: ["zoho_mail:"] },
-  { key: "nt_consultor", label: "Consultor", desc: "Análise semanal da IA com dicas novas", prefixes: ["consultor:"] },
+  { key: "nt_consultor", label: "Inteligência", desc: "Análise semanal da Inteligência com dicas novas", prefixes: ["consultor:"] },
   { key: "nt_sistema", label: "Erros do sistema", desc: "Rotina automática que falhou (sincronização, webhook, job diário, cobrança dos Alertas, IA…)", prefixes: ["system:"] },
 
   // Eventos: só no celular (no sino encheriam a lista — ele é pra problemas).

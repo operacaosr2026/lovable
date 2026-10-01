@@ -50,7 +50,7 @@ const SECTION_LABELS: Record<Section, string> = {
   lojas_grupos: "Lojas e Grupos",
   atendimento: "Atendimento",
   chargebacks: "Chargebacks",
-  consultor: "Consultor",
+  consultor: "Inteligência",
   notificacoes: "Notificações (sino)",
   lg_dashboard: "Dashboard",
   lg_diario: "Diário",
@@ -72,7 +72,7 @@ const SECTION_LABELS: Record<Section, string> = {
   nt_email: "E-mail novo no Atendimento",
   nt_metas: "Metas",
   nt_lucro: "Lucro do dia",
-  nt_consultor: "Consultor",
+  nt_consultor: "Inteligência",
   cfg_seguranca: "Segurança",
   cfg_integracoes: "Integrações",
 };
@@ -95,7 +95,7 @@ const NT_HINTS: Partial<Record<Section, string>> = {
   nt_email: "Cliente mandou e-mail (só no celular)",
   nt_metas: "Meta do mês atingida (só no celular)",
   nt_lucro: "Lucro de hoje nos horários que a pessoa escolher (só no celular)",
-  nt_consultor: "Análise semanal da IA com dicas novas",
+  nt_consultor: "Análise semanal da Inteligência com dicas novas",
 };
 const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 

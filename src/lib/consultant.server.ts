@@ -393,8 +393,8 @@ export async function runConsultantWeekly() {
     try {
       const r = await runConsultant(owner);
       await raiseNotification(owner, "consultor:analise", {
-        level: "info", title: `Consultor: ${r.result.dicas.length} dica(s) nova(s) da semana`,
-        body: r.result.resumo.slice(0, 200), link: "/consultor",
+        level: "info", title: `Inteligência: ${r.result.dicas.length} dica(s) nova(s) da semana`,
+        body: r.result.resumo.slice(0, 200), link: "/inteligencia",
       });
       out.push({ owner, ok: true });
     } catch (e: any) {

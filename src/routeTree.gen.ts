@@ -15,6 +15,7 @@ import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as MetasRouteImport } from "./routes/metas";
 import { Route as LoginRouteImport } from "./routes/login";
+import { Route as InteligenciaRouteImport } from "./routes/inteligencia";
 import { Route as GratitudeRouteImport } from "./routes/gratitude";
 import { Route as ConsultorRouteImport } from "./routes/consultor";
 import { Route as ChargebacksRouteImport } from "./routes/chargebacks";
@@ -85,6 +86,11 @@ const MetasRoute = MetasRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: "/login",
   path: "/login",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const InteligenciaRoute = InteligenciaRouteImport.update({
+  id: "/inteligencia",
+  path: "/inteligencia",
   getParentRoute: () => rootRouteImport,
 } as any);
 const GratitudeRoute = GratitudeRouteImport.update({
@@ -310,6 +316,7 @@ export interface FileRoutesByFullPath {
   "/chargebacks": typeof ChargebacksRoute;
   "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
+  "/inteligencia": typeof InteligenciaRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/projects": typeof ProjectsRouteWithChildren;
@@ -359,6 +366,7 @@ export interface FileRoutesByTo {
   "/chargebacks": typeof ChargebacksRoute;
   "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
+  "/inteligencia": typeof InteligenciaRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/tarefas": typeof TarefasRoute;
@@ -402,6 +410,7 @@ export interface FileRoutesById {
   "/chargebacks": typeof ChargebacksRoute;
   "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
+  "/inteligencia": typeof InteligenciaRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/projects": typeof ProjectsRouteWithChildren;
@@ -453,6 +462,7 @@ export interface FileRouteTypes {
     | "/chargebacks"
     | "/consultor"
     | "/gratitude"
+    | "/inteligencia"
     | "/login"
     | "/metas"
     | "/projects"
@@ -502,6 +512,7 @@ export interface FileRouteTypes {
     | "/chargebacks"
     | "/consultor"
     | "/gratitude"
+    | "/inteligencia"
     | "/login"
     | "/metas"
     | "/tarefas"
@@ -544,6 +555,7 @@ export interface FileRouteTypes {
     | "/chargebacks"
     | "/consultor"
     | "/gratitude"
+    | "/inteligencia"
     | "/login"
     | "/metas"
     | "/projects"
@@ -594,6 +606,7 @@ export interface RootRouteChildren {
   ChargebacksRoute: typeof ChargebacksRoute;
   ConsultorRoute: typeof ConsultorRoute;
   GratitudeRoute: typeof GratitudeRoute;
+  InteligenciaRoute: typeof InteligenciaRoute;
   LoginRoute: typeof LoginRoute;
   MetasRoute: typeof MetasRoute;
   ProjectsRoute: typeof ProjectsRouteWithChildren;
@@ -657,6 +670,13 @@ declare module "@tanstack/react-router" {
       path: "/login";
       fullPath: "/login";
       preLoaderRoute: typeof LoginRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/inteligencia": {
+      id: "/inteligencia";
+      path: "/inteligencia";
+      fullPath: "/inteligencia";
+      preLoaderRoute: typeof InteligenciaRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/gratitude": {
@@ -1067,6 +1087,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChargebacksRoute: ChargebacksRoute,
   ConsultorRoute: ConsultorRoute,
   GratitudeRoute: GratitudeRoute,
+  InteligenciaRoute: InteligenciaRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
