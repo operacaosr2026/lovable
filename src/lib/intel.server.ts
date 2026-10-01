@@ -1,20 +1,11 @@
-import { createServerFn } from "@tanstack/react-start";
-import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoTodayUS } from "@/lib/timezone";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
-import { auditSupplier, type AuditOrderInput } from "@/lib/intel/supplier-audit";
-import { postingCalendar } from "@/lib/logistics-kpis";
+import type { AuditOrderInput } from "@/lib/intel/supplier-audit";
 
-// Inteligência SRX — dados das lojas ativas (grupos ativos de Lojas e Grupos).
-// Acesso: admin, ou membro com a permissão "consultor" (aba Inteligência).
-
-function assertAccess(context: any) {
-  if (context.role !== "admin" && !context.permissions.some((p: any) => p.section === "consultor")) {
-    throw new Error("Sem acesso à Inteligência");
-  }
-}
+// Inteligência SRX — pedidos das lojas ativas (grupos ativos de Lojas e Grupos)
+// com rastreio e chargeback, pra auditoria do fornecedor (supplier-audit.ts).
 
 // Pedidos dos últimos 100 dias das lojas ativas, com rastreio e chargeback.
 export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[]> {
@@ -52,17 +43,3 @@ export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[
     };
   });
 }
-
-export const getSupplierAudit = createServerFn({ method: "GET" })
-  .middleware([requireOwnerContext])
-  .handler(async ({ context }) => {
-    assertAccess(context);
-    const [orders, { data: holidays }] = await Promise.all([
-      loadAuditOrders(context.ownerId),
-      supabaseAdmin.from("posting_holidays").select("day,kind").eq("user_id", context.ownerId),
-    ]);
-    const audit = auditSupplier(orders, { cal: postingCalendar(holidays as any) });
-    // Tela recebe só os envios com algum sinal (os normais entram só nas contas).
-    const { envios, ...rest } = audit;
-    return { ...rest, envios: envios.filter((e) => e.severity !== "normal") };
-  });

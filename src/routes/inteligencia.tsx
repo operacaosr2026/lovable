@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AlertTriangle, Brain, CheckCircle2, ChevronDown, FlaskConical, Loader2, Sparkles, XCircle } from "lucide-react";
-import { SupplierSection } from "@/components/intel/SupplierSection";
 import { useAuth } from "@/lib/auth";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -17,14 +16,26 @@ export const Route = createFileRoute("/inteligencia")({
   component: ConsultorPage,
 });
 
-// Objetivo da dica (análises antigas tinham "area" no lugar).
-const OBJETIVO: Record<string, string> = {
-  lucro: "Aumentar lucro", chargeback: "Diminuir chargeback", reembolso: "Diminuir reembolso",
-  atendimento: "Melhorar atendimento", metas: "Ajustar metas", logistica: "Logística", outros: "Outros",
-  pagamento: "Pagamento", produtos: "Produtos", anuncios: "Anúncios", lojas: "Lojas", paises: "Países",
+// Categoria da dica (análises antigas tinham objetivo/area no lugar).
+const CATEGORIA: Record<string, string> = {
+  chargeback: "Chargeback", rastreamento: "Rastreamento", fornecedor: "Fornecedor", atendimento: "Atendimento",
+  reembolso: "Reembolso", financeiro: "Financeiro", ads: "Ads", metas: "Metas", operacao: "Operação",
+  lucro: "Financeiro", logistica: "Rastreamento", outros: "Operação", pagamento: "Chargeback", produtos: "Operação", anuncios: "Ads", lojas: "Operação", paises: "Operação",
 };
-const IMPACT: Record<string, string> = { alto: "Impacto alto", medio: "Impacto médio", baixo: "Impacto baixo" };
+const catOf = (t: ConsultantTip) => t.categoria ?? t.objetivo ?? t.area ?? "operacao";
+const PRIORIDADE: Record<string, { label: string; cls: string }> = {
+  critico: { label: "Crítico", cls: "bg-destructive text-destructive-foreground border-destructive" },
+  alto: { label: "Alto", cls: "border-destructive/40 text-destructive" },
+  medio: { label: "Médio", cls: "border-warning/40 text-warning" },
+  baixo: { label: "Baixo", cls: "border-border text-muted-foreground" },
+  oportunidade: { label: "Oportunidade", cls: "border-success/40 text-success" },
+};
+const prioOf = (t: ConsultantTip) => t.prioridade ?? (t.impacto === "alto" ? "alto" : t.impacto === "medio" ? "medio" : "baixo");
 const CONF: Record<string, string> = { alta: "Confiança alta", media: "Confiança média", baixa: "Confiança baixa" };
+const RESULTADO: Record<string, string> = {
+  funcionou: "funcionou", provavelmente_funcionou: "provavelmente funcionou", inconclusivo: "ainda inconclusivo",
+  provavelmente_nao_funcionou: "provavelmente não funcionou", nao_funcionou: "não funcionou",
+};
 const STATUS: { key: TipStatus; label: string }[] = [
   { key: "testando", label: "Vou testar" }, { key: "feita", label: "Feito" }, { key: "ignorada", label: "Ignorar" },
 ];
@@ -68,7 +79,7 @@ function ConsultorPage() {
             <Brain className="size-6 text-primary" /> Inteligência
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {greeting(user)} Estes são os pontos da operação das lojas ativas que pedem atenção.
+            {greeting(user)} A IA analisa a operação das lojas ativas — chargeback, rastreio, fornecedor e atendimento primeiro — e sugere testes. Você decide se faz sentido.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -84,9 +95,6 @@ function ConsultorPage() {
         </div>
       </div>
 
-      <SupplierSection />
-
-      <h2 className="text-lg font-semibold mt-8 mb-3 flex items-center gap-2"><Sparkles className="size-4 text-primary" /> Análise da IA</h2>
       {!q.isLoading && <ContextCard initial={q.data?.context ?? ""} />}
 
       {q.isLoading ? (
@@ -110,12 +118,12 @@ function ConsultorPage() {
               <ul className="space-y-3">
                 {report.result.testes_avaliados.map((t, i) => (
                   <li key={i} className="flex gap-3 text-sm">
-                    {t.resultado === "funcionou" ? <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
-                      : t.resultado === "nao_funcionou" ? <XCircle className="size-4 text-destructive shrink-0 mt-0.5" />
+                    {/(^|_)funcionou$/.test(t.resultado) && !/nao_funcionou/.test(t.resultado) ? <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
+                      : /nao_funcionou/.test(t.resultado) ? <XCircle className="size-4 text-destructive shrink-0 mt-0.5" />
                       : <AlertTriangle className="size-4 text-warning shrink-0 mt-0.5" />}
                     <div>
                       <p className="font-medium">{t.titulo} · <span className="text-muted-foreground font-normal">
-                        {t.resultado === "funcionou" ? "funcionou" : t.resultado === "nao_funcionou" ? "não funcionou" : "ainda inconclusivo"}</span></p>
+                        {RESULTADO[t.resultado] ?? t.resultado}</span></p>
                       <p className="text-muted-foreground">{t.explicacao}</p>
                     </div>
                   </li>
@@ -125,13 +133,13 @@ function ConsultorPage() {
           )}
 
           {(() => {
-            const objs = [...new Set(report.result.dicas.map((t) => t.objetivo ?? t.area ?? "outros"))];
+            const objs = [...new Set(report.result.dicas.map(catOf))];
             return objs.length > 1 && (
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant={filter == null ? "default" : "outline"} onClick={() => setFilter(null)}>Todas ({report.result.dicas.length})</Button>
                 {objs.map((o) => (
                   <Button key={o} size="sm" variant={filter === o ? "default" : "outline"} onClick={() => setFilter(o)}>
-                    {OBJETIVO[o] ?? o} ({report.result.dicas.filter((t) => (t.objetivo ?? t.area) === o).length})
+                    {CATEGORIA[o] ?? o} ({report.result.dicas.filter((t) => catOf(t) === o).length})
                   </Button>
                 ))}
               </div>
@@ -139,7 +147,7 @@ function ConsultorPage() {
           })()}
 
           <div className="grid gap-4 lg:grid-cols-2">
-            {report.result.dicas.map((tip, i) => (filter && (tip.objetivo ?? tip.area) !== filter) ? null : (
+            {report.result.dicas.map((tip, i) => (filter && catOf(tip) !== filter) ? null : (
               <TipCard key={i} tip={tip} status={report.tipsStatus[String(i)]?.status ?? null}
                 saving={setStatus.isPending}
                 onStatus={(s) => setStatus.mutate({ index: i, status: report.tipsStatus[String(i)]?.status === s ? null : s })} />
@@ -148,7 +156,7 @@ function ConsultorPage() {
 
           <details className="premium-card p-5 text-xs">
             <summary className="cursor-pointer text-sm font-medium flex items-center gap-1.5">
-              <ChevronDown className="size-4" /> Números que a IA recebeu
+              <ChevronDown className="size-4" /> Por que a IA está dizendo isso? Ver os números que ela usou
             </summary>
             <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words text-muted-foreground">{JSON.stringify(report.facts, null, 2)}</pre>
           </details>
@@ -162,24 +170,36 @@ function TipCard({ tip, status, saving, onStatus }: {
   tip: ConsultantTip; status: TipStatus | null; saving: boolean; onStatus: (s: TipStatus) => void;
 }) {
   const muted = status === "ignorada" || status === "feita";
+  const prio = PRIORIDADE[prioOf(tip)] ?? PRIORIDADE.baixo;
+  const orders = tip.pedidos_afetados ?? [];
   return (
     <section className={`premium-card p-5 flex flex-col gap-3 ${muted ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{OBJETIVO[tip.objetivo ?? tip.area ?? "outros"] ?? tip.objetivo}</span>
-        <span className={`px-2 py-0.5 rounded-full border ${tip.impacto === "alto" ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground"}`}>{IMPACT[tip.impacto]}</span>
+        <span className={`px-2 py-0.5 rounded-full border font-semibold ${prio.cls}`}>{prio.label}</span>
+        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{CATEGORIA[catOf(tip)] ?? catOf(tip)}</span>
         <span className="px-2 py-0.5 rounded-full border border-border text-muted-foreground">{CONF[tip.confianca]}</span>
         {tip.amostra_pequena && (
           <span className="px-2 py-0.5 rounded-full border border-warning/40 text-warning inline-flex items-center gap-1">
             <AlertTriangle className="size-3" /> Amostra pequena
           </span>
         )}
+        {!!tip.valor_envolvido && tip.valor_tipo !== "nenhum" && (
+          <span className="px-2 py-0.5 rounded-full border border-border font-medium tabular-nums">
+            ${tip.valor_envolvido.toLocaleString("en-US", { maximumFractionDigits: 0 })} {tip.valor_tipo === "estimado" ? "estimado" : "em jogo"}
+          </span>
+        )}
       </div>
       <h3 className="font-semibold leading-snug">{tip.titulo}</h3>
       <dl className="text-sm space-y-2">
         <div><dt className="text-xs font-medium text-muted-foreground">O que vi</dt><dd>{tip.o_que_vi}</dd></div>
-        <div><dt className="text-xs font-medium text-muted-foreground">Hipótese</dt><dd>{tip.hipotese}</dd></div>
+        <div><dt className="text-xs font-medium text-muted-foreground">Possível causa</dt><dd>{tip.possivel_causa ?? tip.hipotese}</dd></div>
         <div><dt className="text-xs font-medium text-muted-foreground">Teste sugerido</dt><dd>{tip.teste}</dd></div>
         <div><dt className="text-xs font-medium text-muted-foreground">Como medir</dt><dd>{tip.como_medir}</dd></div>
+        {tip.resultado_esperado && <div><dt className="text-xs font-medium text-muted-foreground">Resultado esperado</dt><dd>{tip.resultado_esperado}</dd></div>}
+        {orders.length > 0 && (
+          <div><dt className="text-xs font-medium text-muted-foreground">Pedidos ({orders.length})</dt>
+            <dd className="text-xs font-mono text-muted-foreground break-words">{orders.join(" · ")}</dd></div>
+        )}
       </dl>
       <div className="flex flex-wrap gap-2 mt-auto pt-1">
         {STATUS.map((s) => (
