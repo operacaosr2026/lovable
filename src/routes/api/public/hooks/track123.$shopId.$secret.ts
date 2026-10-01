@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { timingSafeEqualString } from "@/lib/cron-auth";
-import { applyTrackingTargetToOrder, isOlderEvent } from "@/lib/track123-sync.server";
+import { applyTrackingTargetToOrder, finalTrackingTarget, isOlderEvent } from "@/lib/track123-sync.server";
 
 /**
  * Track123 webhook receiver (secret in path).
@@ -92,7 +92,7 @@ export const Route = createFileRoute("/api/public/hooks/track123/$shopId/$secret
           // ignora, pra não voltar o pedido pra um status anterior.
           if (isOlderEvent(lastAt, tracking.last_event_at)) { processed++; continue; }
 
-          const target = matchRule(lastLabel) ?? matchRule(it?.status);
+          const target = finalTrackingTarget(matchRule(lastLabel) ?? matchRule(it?.status), it?.status, lastLabel, true);
 
           const update: any = {
             tracking_status: it?.status ?? null,
@@ -111,7 +111,7 @@ export const Route = createFileRoute("/api/public/hooks/track123/$shopId/$secret
           else if (target === "problem" && !tracking.problem_at) update.problem_at = lastAt ?? nowIso;
 
           await supabaseAdmin.from("shop_order_tracking").update(update).eq("id", tracking.id);
-          await applyTrackingTargetToOrder(supabaseAdmin, tracking.order_id, target, lastAt);
+          await applyTrackingTargetToOrder(supabaseAdmin, tracking.order_id, target, lastAt, events);
           processed++;
         }
 

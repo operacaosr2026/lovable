@@ -12,17 +12,27 @@ const TRACK123_API_BASE = "https://api.track123.com/gateway/open-api/tk/v2.1";
 //  - só preenche datas vazias (filtro .is(null)), pra reprocessar o mesmo
 //    evento — webhook repetido, sync de novo — não empurrar a data pra "hoje";
 //  - entrega usa a data do evento real e marca delivery_status = delivered.
+//  - postagem = 1ª movimentação real da transportadora, pulando "informação
+//    eletrônica recebida"/etiqueta criada (definição do TM Postagem). Substitui
+//    a data da etiqueta que a Shopify grava (sempre anterior); data posterior
+//    (ajuste à mão) fica. Sem movimentação ainda, não preenche — antes gravava
+//    o dia em que o sync percebia, e como a fila do Track123 leva dias pra
+//    passar por todo mundo a postagem caía depois da entrega.
 export async function applyTrackingTargetToOrder(
   supabase: typeof supabaseAdmin,
   orderId: string,
   target: string | null,
   eventAt: string | null,
+  events?: any[] | null,
 ) {
   const nowDate = isoTodayUS();
   const eventDate = eventDateUS(eventAt) ?? nowDate;
-  if (target === "shipped") {
-    await supabase.from("shop_orders").update({ shipped_at: nowDate }).eq("id", orderId).is("shipped_at", null);
-  } else if (target === "delivered") {
+  const postedDate = firstCarrierEventDateUS(events);
+  if (postedDate) {
+    await supabase.from("shop_orders").update({ shipped_at: postedDate })
+      .eq("id", orderId).or(`shipped_at.is.null,shipped_at.lt.${postedDate}`);
+  }
+  if (target === "delivered") {
     await supabase.from("shop_orders").update({ delivered_at: eventDate, delivery_status: "delivered" })
       .eq("id", orderId).is("delivered_at", null);
   } else if (target === "problem") {
@@ -47,6 +57,56 @@ export function eventDateUS(eventAt: string | null | undefined): string | null {
   if (!/[T ]\d{2}:\d{2}/.test(eventAt)) return eventAt.slice(0, 10);
   const ms = Date.parse(eventAt);
   return Number.isFinite(ms) ? isoDateUS(ms) : eventAt.slice(0, 10);
+}
+
+// "Entregue" vem do status geral do Track123 (o "Entregue" no topo da página
+// de rastreio), não do texto do histórico: regra "delivered" casando por
+// trecho pegava "Delivered to local carrier" (repasse entre transportadoras)
+// e o pedido saía da fila do sync como entregue, ainda em trânsito (#WV1330).
+// Exceção: evento que COMEÇA com "Delivered" é entrega ao cliente ("Delivered,
+// Front Door/Porch", "Delivered, In/At Mailbox"…) — o status geral às vezes
+// fica dias em "Out for delivery" depois disso (#L2-1050).
+export function labelSaysDelivered(label: string | null | undefined): boolean {
+  if (!label) return false;
+  const t = label.trim().toLowerCase();
+  if (!/^delivered\b/.test(t)) return false;
+  if (/^delivered\s+to\b/.test(t)) return false;
+  if (/\b(not|un|attempt\w*|fail\w*)\s*(to be\s*)?deliver/.test(t)) return false;
+  return true;
+}
+
+export function track123SaysDelivered(transitStatus: string | null | undefined, lastLabel: string | null | undefined): boolean {
+  const ts = (transitStatus ?? "").toLowerCase().replace(/\s+/g, "");
+  if (ts.includes("delivered") && !ts.includes("undelivered")) return true;
+  return labelSaysDelivered(lastLabel);
+}
+
+// Alvo final depois das regras do usuário: entregue só com o status geral
+// dizendo entregue; regra "delivered" sem isso = pacote andando (shipped).
+export function finalTrackingTarget(
+  target: string | null, transitStatus: string | null | undefined, lastLabel: string | null | undefined, hasTrackingNumber: boolean,
+): string | null {
+  if (track123SaysDelivered(transitStatus, lastLabel)) return "delivered";
+  if (target === "delivered") return hasTrackingNumber ? "shipped" : null;
+  return target;
+}
+
+// Evento que é só a transportadora recebendo a info eletrônica / etiqueta
+// criada — o pacote ainda não foi postado.
+const INFO_ONLY_EVENT = /information received|info received|信息已收到|label created|pre-shipment|electronic information|order created/i;
+
+// Dia (Nova York) da 1ª movimentação real do pacote no histórico do Track123.
+// Aceita os formatos do MCP (event_detail/event_time_utc), da Open API
+// (eventDetail/eventTimeZeroUTC) e do webhook (statusDescription/date).
+export function firstCarrierEventDateUS(events: any[] | null | undefined): string | null {
+  let first: string | null = null;
+  for (const e of events ?? []) {
+    const detail = String(e?.event_detail ?? e?.eventDetail ?? e?.statusDescription ?? e?.context ?? e?.description ?? "");
+    if (!detail || INFO_ONLY_EVENT.test(detail)) continue;
+    const at = track123EventUtc(e?.event_time_utc, e?.eventTimeZeroUTC ?? e?.date ?? e?.eventTime ?? e?.time ?? e?.event_time);
+    if (at && Number.isFinite(Date.parse(at)) && (!first || Date.parse(at) < Date.parse(first))) first = at;
+  }
+  return eventDateUS(first);
 }
 
 // Evento mais antigo que o já gravado = chegou fora de ordem (webhook atrasado
@@ -167,14 +227,16 @@ export async function runTrack123Sync(shopId: string, apiKey: string, supabase: 
       };
       if (logistics.courierCode) update.carrier = logistics.courierCode;
 
-      const target = matchRule(lastLabel) ?? matchRule(item.transitStatus) ?? matchRule(item.transitSubStatus);
+      const target = finalTrackingTarget(
+        matchRule(lastLabel) ?? matchRule(item.transitStatus) ?? matchRule(item.transitSubStatus),
+        item.transitStatus, lastLabel, true);
       const nowIso = new Date().toISOString();
       if (target === "shipped" && !t.shipped_at) update.shipped_at = nowIso;
       else if (target === "delivered" && !t.delivered_at) update.delivered_at = lastAt ?? nowIso;
       else if (target === "problem" && !t.problem_at) update.problem_at = lastAt ?? nowIso;
 
       await supabase.from("shop_order_tracking").update(update).eq("id", t.id);
-      await applyTrackingTargetToOrder(supabase, t.order_id, target, lastAt);
+      await applyTrackingTargetToOrder(supabase, t.order_id, target, lastAt, events);
       updated++;
     }
 
