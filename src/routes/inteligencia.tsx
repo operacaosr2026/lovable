@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
-import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -76,18 +75,12 @@ const fmtDay = (iso?: string) => {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toDateString() === new Date().toDateString() ? "hoje" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
 };
-function greeting(user: any) {
-  const h = new Date().getHours();
-  return { hi: h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite", name: String(user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "").split(" ")[0] };
-}
-
 type Tab = "agora" | "acompanhando" | "testando" | "concluido";
 type TipItem = { tip: ConsultantTip; index: number; status: TipStatus | null };
 type DrawerTab = "geral" | "pedidos" | "padroes" | "dados" | "historico";
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 function InteligenciaPage() {
-  const { user } = useAuth();
   const qc = useQueryClient();
   const getFn = useServerFn(getConsultant);
   const runFn = useServerFn(runConsultantNow);
@@ -138,22 +131,18 @@ function InteligenciaPage() {
     ? (b.tip.valor_envolvido ?? 0) - (a.tip.valor_envolvido ?? 0)
     : PRIO[prioOf(a.tip)].rank - PRIO[prioOf(b.tip)].rank || (b.tip.valor_envolvido ?? 0) - (a.tip.valor_envolvido ?? 0));
   const catCounts = Object.keys(CAT).map((c) => ({ c, n: inTab.filter((i) => catOf(i.tip) === c).length })).filter((x) => x.n > 0);
-  const g = greeting(user);
   const destaques = report?.result.destaques_do_dia ?? [];
 
   return (
     <PageShell>
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Brain className="size-6 text-primary" /> Inteligência</h1>
           {report && <span className="text-[11px] px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium">IA analisou seus dados {whenLabel(report.createdAt)}</span>}
         </div>
-        <div className="flex flex-col items-start sm:items-end gap-1">
-          <Button onClick={() => run.mutate()} disabled={run.isPending}>
-            {run.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando… (1-2 min)</> : <><Sparkles className="size-4" /> Analisar agora</>}
-          </Button>
-          {report && <span className="text-[11px] text-muted-foreground">Última análise: {whenLabel(report.createdAt)}</span>}
-        </div>
+        <Button onClick={() => run.mutate()} disabled={run.isPending}>
+          {run.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando… (1-2 min)</> : <><Sparkles className="size-4" /> Analisar agora</>}
+        </Button>
       </div>
 
       {q.isLoading ? (
@@ -164,14 +153,8 @@ function InteligenciaPage() {
         </div>
       ) : (
         <>
-          <div className="mb-4">
-            <p className="text-2xl font-bold tracking-tight">{g.hi}{g.name && <>, <span className="text-primary">{g.name}</span></>}.</p>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {counts.agora === 0 ? "Nada exige sua decisão agora." : `Encontrei ${counts.agora} ${counts.agora === 1 ? "coisa importante que precisa" : "coisas importantes que precisam"} da sua atenção hoje.`}
-            </p>
-          </div>
-          {(destaques.length > 0 || counts.testando > 0) && (
-            <div className="flex flex-wrap gap-2.5 mb-6">
+          {destaques.length > 0 && (
+            <div className="flex flex-wrap gap-2.5 mb-5">
               {destaques.slice(0, 3).map((d, i) => {
                 const Icon = CAT[d.categoria]?.icon ?? AlertTriangle;
                 const p = PRIO[d.nivel] ?? PRIO.medio;
@@ -182,12 +165,6 @@ function InteligenciaPage() {
                   </div>
                 );
               })}
-              {counts.testando > 0 && (
-                <button type="button" onClick={() => setTab("testando")} className="premium-card px-3.5 py-2.5 flex items-center gap-2.5 text-left">
-                  <span className="size-8 rounded-lg grid place-items-center bg-primary/10 text-primary"><FlaskConical className="size-4" /></span>
-                  <span className="text-xs leading-tight"><strong className="block text-sm">{counts.testando} {counts.testando === 1 ? "teste" : "testes"}</strong><span className="text-muted-foreground">em andamento</span></span>
-                </button>
-              )}
             </div>
           )}
 
