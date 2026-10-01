@@ -718,11 +718,15 @@ export function CompanyGoals() {
 
     // Projeção: lucro até ontem + média dos últimos 3 dias fechados × dias que
     // faltam contando hoje (o parcial de hoje, ainda em andamento, não entra).
-    // Ex.: 30/09 → 13.908 (até 29/09) + 587 (média 27–29/09) × 1 = 14.495.
+    // Hoje vale o maior entre a média e o parcial real de hoje — senão, quando o
+    // dia já rendeu mais que a média (ex.: último dia do mês), a projeção fica
+    // abaixo do próprio realizado.
     const hojeAberto = !!accData.hojeEmAndamento;
-    const baseProjecao = hojeAberto ? accData.lucroFechado ?? lucroAcumulado : lucroAcumulado;
-    const diasProjecao = hojeAberto && daysBetween(today, savedGoal.prazo) >= 0 ? diasRestantes + 1 : diasRestantes;
-    const projecaoFinal = baseProjecao + (accData.mediaUltimos3 ?? 0) * diasProjecao;
+    const media = accData.mediaUltimos3 ?? 0;
+    const lucroFechado = accData.lucroFechado ?? lucroAcumulado;
+    const projecaoFinal = hojeAberto && daysBetween(today, savedGoal.prazo) >= 0
+      ? lucroFechado + Math.max(media, lucroAcumulado - lucroFechado) + media * diasRestantes
+      : lucroAcumulado + media * diasRestantes;
     const percentProjecao = meta > 0 ? (projecaoFinal / meta) * 100 : 0;
     const lucroNecessarioPorDia = diasRestantes > 0 ? lucroRestante / diasRestantes : 0;
 
@@ -775,10 +779,12 @@ export function CompanyGoals() {
     const lastValue = real[bridgeIdx].lucroAcumulado;
     // ponte: repete o valor real como início da linha projetada, pra elas se conectarem
     points[bridgeIdx] = { ...points[bridgeIdx], lucroProjetado: lastValue };
-    if (hojeAberto) points[points.length - 1] = { ...points[points.length - 1], lucroProjetado: Math.round((lastValue + mediaDia) * 100) / 100 };
+    // Hoje conta o maior entre a média e o parcial real (projeção nunca abaixo do realizado).
+    const hojeProjetado = hojeAberto ? Math.max(lastValue + mediaDia, real[real.length - 1].lucroAcumulado) : lastValue;
+    if (hojeAberto) points[points.length - 1] = { ...points[points.length - 1], lucroProjetado: Math.round(hojeProjetado * 100) / 100 };
 
     if (!d.vencida && d.diasRestantes > 0) {
-      let cum = hojeAberto ? lastValue + mediaDia : lastValue;
+      let cum = hojeProjetado;
       let cur = isoToday();
       for (let i = 1; i <= d.diasRestantes; i++) {
         cur = addDaysIso(cur, 1);
