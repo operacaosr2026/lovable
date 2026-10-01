@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Button } from "@/components/ui/button";
-import { getConsultant, runConsultantNow, setConsultantTipStatus, saveConsultantContext, type TipStatus } from "@/lib/consultant.functions";
+import { getConsultant, runConsultantNow, setConsultantTipStatus, type TipStatus } from "@/lib/consultant.functions";
 import type { ConsultantTip } from "@/lib/consultant.server";
 
 export const Route = createFileRoute("/inteligencia")({
@@ -95,7 +95,6 @@ function ConsultorPage() {
         </div>
       </div>
 
-      {!q.isLoading && <ContextCard initial={q.data?.context ?? ""} />}
 
       {q.isLoading ? (
         <div className="premium-card p-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
@@ -208,44 +207,6 @@ function TipCard({ tip, status, saving, onStatus }: {
           </Button>
         ))}
       </div>
-    </section>
-  );
-}
-
-// O que a IA precisa saber: vai junto com os números em toda análise.
-function ContextCard({ initial }: { initial: string }) {
-  const qc = useQueryClient();
-  const saveFn = useServerFn(saveConsultantContext);
-  const [text, setText] = useState(initial);
-  const [open, setOpen] = useState(!initial);
-  const save = useMutation({
-    mutationFn: () => saveFn({ data: { context: text } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Salvo — vale a partir da próxima análise"); setOpen(false); },
-    onError: (e: any) => toast.error(e.message ?? "Falha ao salvar"),
-  });
-  return (
-    <section className="premium-card p-5 mb-5">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
-        <span className="text-sm font-semibold">O que a IA precisa saber</span>
-        <ChevronDown className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {!open ? (
-        <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line">{initial || "Nada ainda."}</p>
-      ) : (
-        <div className="mt-3 space-y-2">
-          <p className="text-xs text-muted-foreground">
-            Decisões que você já tomou e testes que está fazendo — a IA respeita e acompanha.
-            Ex.: "Todo anúncio fica na conta da Loja 2 de propósito." · "PayPal desligado em outubro como teste."
-          </p>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} maxLength={4000}
-            className="w-full rounded-md border border-border bg-background p-3 text-sm" />
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || text === initial}>
-              {save.isPending ? <Loader2 className="size-4 animate-spin" /> : "Salvar"}
-            </Button>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

@@ -28,7 +28,7 @@ export const getConsultant = createServerFn({ method: "GET" })
     const { data: history, error } = await supabaseAdmin.from("consultant_reports")
       .select("id,created_at").eq("user_id", context.ownerId).order("created_at", { ascending: false }).limit(30);
     // Migration ainda não rodada: página vazia em vez de erro.
-    if (error?.code === "42P01" || error?.code === "PGRST205") return { report: null, history: [], context: "" };
+    if (error?.code === "42P01" || error?.code === "PGRST205") return { report: null, history: [] };
     if (error) throw new Error(error.message);
     const id = data.report_id ?? history?.[0]?.id;
     let report: ConsultantReport | null = null;
@@ -40,11 +40,9 @@ export const getConsultant = createServerFn({ method: "GET" })
         result: r.result as any, tipsStatus: (r.tips_status ?? {}) as any, facts: (r.facts ?? {}) as Record<string, any>,
       };
     }
-    const { data: settings } = await supabaseAdmin.from("consultant_settings").select("context")
-      .eq("user_id", context.ownerId).maybeSingle();
     // Abriu a página: o aviso "análise nova" sai do sino.
     await resolveNotification(context.ownerId, "consultor:analise").catch(() => {});
-    return { report, history: (history ?? []).map((h) => ({ id: h.id, createdAt: h.created_at })), context: settings?.context ?? "" };
+    return { report, history: (history ?? []).map((h) => ({ id: h.id, createdAt: h.created_at })) };
   });
 
 export const runConsultantNow = createServerFn({ method: "POST" })
@@ -74,17 +72,5 @@ export const setConsultantTipStatus = createServerFn({ method: "POST" })
     const { error: upErr } = await supabaseAdmin.from("consultant_reports").update({ tips_status: tips as any })
       .eq("user_id", context.ownerId).eq("id", data.report_id);
     if (upErr) throw new Error(upErr.message);
-    return { ok: true };
-  });
-
-// O que a IA precisa saber (decisões tomadas, testes por conta própria).
-export const saveConsultantContext = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ context: z.string().max(4000) }).parse(d))
-  .handler(async ({ context, data }) => {
-    assertAccess(context);
-    const { error } = await supabaseAdmin.from("consultant_settings")
-      .upsert({ user_id: context.ownerId, context: data.context, updated_at: new Date().toISOString() });
-    if (error) throw new Error(error.message);
     return { ok: true };
   });
