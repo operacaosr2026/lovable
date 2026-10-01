@@ -3,6 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
+  Lightbulb,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -37,6 +38,7 @@ export const navItems: NavItem[] = [
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
   { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks" },
+  { to: "/consultor", label: "Consultor", icon: Lightbulb, section: "consultor" },
 ];
 
 // Aba do menu dona do endereço (pra bloquear quem abre o link direto sem permissão).
@@ -67,6 +69,7 @@ const ALL_PAGES = [
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/atendimento", label: "Atendimento", icon: Headphones },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert },
+  { to: "/consultor", label: "Consultor", icon: Lightbulb },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/settings/members", label: "Membros", icon: Users },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },

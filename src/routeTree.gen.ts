@@ -16,6 +16,7 @@ import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as MetasRouteImport } from "./routes/metas";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as GratitudeRouteImport } from "./routes/gratitude";
+import { Route as ConsultorRouteImport } from "./routes/consultor";
 import { Route as ChargebacksRouteImport } from "./routes/chargebacks";
 import { Route as AtendimentoRouteImport } from "./routes/atendimento";
 import { Route as IndexRouteImport } from "./routes/index";
@@ -51,6 +52,7 @@ import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/pub
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
 import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
 import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
+import { Route as ApiPublicHooksConsultantWeeklyRouteImport } from "./routes/api/public/hooks/consultant-weekly";
 import { Route as ApiPublicHooksCaixaSnapshotRouteImport } from "./routes/api/public/hooks/caixa-snapshot";
 import { Route as ApiPublicHooksShopifyStoreIdRouteImport } from "./routes/api/public/hooks/shopify.$storeId";
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
@@ -88,6 +90,11 @@ const LoginRoute = LoginRouteImport.update({
 const GratitudeRoute = GratitudeRouteImport.update({
   id: "/gratitude",
   path: "/gratitude",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ConsultorRoute = ConsultorRouteImport.update({
+  id: "/consultor",
+  path: "/consultor",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ChargebacksRoute = ChargebacksRouteImport.update({
@@ -272,6 +279,12 @@ const ApiPublicHooksEstornoDailyRoute =
     path: "/api/public/hooks/estorno-daily",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksConsultantWeeklyRoute =
+  ApiPublicHooksConsultantWeeklyRouteImport.update({
+    id: "/api/public/hooks/consultant-weekly",
+    path: "/api/public/hooks/consultant-weekly",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicHooksCaixaSnapshotRoute =
   ApiPublicHooksCaixaSnapshotRouteImport.update({
     id: "/api/public/hooks/caixa-snapshot",
@@ -295,6 +308,7 @@ export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
   "/chargebacks": typeof ChargebacksRoute;
+  "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -328,6 +342,7 @@ export interface FileRoutesByFullPath {
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
@@ -342,6 +357,7 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
   "/chargebacks": typeof ChargebacksRoute;
+  "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -368,6 +384,7 @@ export interface FileRoutesByTo {
   "/shops/products": typeof ShopsProductsIndexRoute;
   "/shops/sops": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
@@ -383,6 +400,7 @@ export interface FileRoutesById {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
   "/chargebacks": typeof ChargebacksRoute;
+  "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
@@ -416,6 +434,7 @@ export interface FileRoutesById {
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
@@ -432,6 +451,7 @@ export interface FileRouteTypes {
     | "/"
     | "/atendimento"
     | "/chargebacks"
+    | "/consultor"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -465,6 +485,7 @@ export interface FileRouteTypes {
     | "/shops/products/"
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-shop-orders"
@@ -479,6 +500,7 @@ export interface FileRouteTypes {
     | "/"
     | "/atendimento"
     | "/chargebacks"
+    | "/consultor"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -505,6 +527,7 @@ export interface FileRouteTypes {
     | "/shops/products"
     | "/shops/sops"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-shop-orders"
@@ -519,6 +542,7 @@ export interface FileRouteTypes {
     | "/"
     | "/atendimento"
     | "/chargebacks"
+    | "/consultor"
     | "/gratitude"
     | "/login"
     | "/metas"
@@ -552,6 +576,7 @@ export interface FileRouteTypes {
     | "/shops/products/"
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-shop-orders"
@@ -567,6 +592,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AtendimentoRoute: typeof AtendimentoRoute;
   ChargebacksRoute: typeof ChargebacksRoute;
+  ConsultorRoute: typeof ConsultorRoute;
   GratitudeRoute: typeof GratitudeRoute;
   LoginRoute: typeof LoginRoute;
   MetasRoute: typeof MetasRoute;
@@ -577,6 +603,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
+  ApiPublicHooksConsultantWeeklyRoute: typeof ApiPublicHooksConsultantWeeklyRoute;
   ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
   ApiPublicHooksNotificationsRefreshRoute: typeof ApiPublicHooksNotificationsRefreshRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
@@ -637,6 +664,13 @@ declare module "@tanstack/react-router" {
       path: "/gratitude";
       fullPath: "/gratitude";
       preLoaderRoute: typeof GratitudeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/consultor": {
+      id: "/consultor";
+      path: "/consultor";
+      fullPath: "/consultor";
+      preLoaderRoute: typeof ConsultorRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/chargebacks": {
@@ -884,6 +918,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksEstornoDailyRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/api/public/hooks/consultant-weekly": {
+      id: "/api/public/hooks/consultant-weekly";
+      path: "/api/public/hooks/consultant-weekly";
+      fullPath: "/api/public/hooks/consultant-weekly";
+      preLoaderRoute: typeof ApiPublicHooksConsultantWeeklyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/hooks/caixa-snapshot": {
       id: "/api/public/hooks/caixa-snapshot";
       path: "/api/public/hooks/caixa-snapshot";
@@ -1024,6 +1065,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AtendimentoRoute: AtendimentoRoute,
   ChargebacksRoute: ChargebacksRoute,
+  ConsultorRoute: ConsultorRoute,
   GratitudeRoute: GratitudeRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
@@ -1034,6 +1076,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
+  ApiPublicHooksConsultantWeeklyRoute: ApiPublicHooksConsultantWeeklyRoute,
   ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,
   ApiPublicHooksNotificationsRefreshRoute:
     ApiPublicHooksNotificationsRefreshRoute,

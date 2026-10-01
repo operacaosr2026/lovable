@@ -20,6 +20,7 @@ export const SECTIONS = [
   "lojas_grupos",
   "atendimento",
   "chargebacks",
+  "consultor",
   // Sino de notificações.
   "notificacoes",
   // Subabas de Lojas e Grupos (grupo aberto).
@@ -46,6 +47,7 @@ export const SECTIONS = [
   "nt_email",
   "nt_metas",
   "nt_lucro",
+  "nt_consultor",
   // Páginas de Configurações liberáveis pra membro (Membros e Auditoria são só
   // do admin; Notificações segue a seção "notificacoes").
   "cfg_seguranca",

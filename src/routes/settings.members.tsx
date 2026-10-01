@@ -20,6 +20,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
   Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp, AlertTriangle,
+  Lightbulb,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -49,6 +50,7 @@ const SECTION_LABELS: Record<Section, string> = {
   lojas_grupos: "Lojas e Grupos",
   atendimento: "Atendimento",
   chargebacks: "Chargebacks",
+  consultor: "Consultor",
   notificacoes: "Notificações (sino)",
   lg_dashboard: "Dashboard",
   lg_diario: "Diário",
@@ -70,6 +72,7 @@ const SECTION_LABELS: Record<Section, string> = {
   nt_email: "E-mail novo no Atendimento",
   nt_metas: "Metas",
   nt_lucro: "Lucro do dia",
+  nt_consultor: "Consultor",
   cfg_seguranca: "Segurança",
   cfg_integracoes: "Integrações",
 };
@@ -79,7 +82,7 @@ const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedi
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
 const AT_SUBTABS: Section[] = ["at_caixa", "at_kpi", "at_config"];
 // Tipos de notificação (aparecem quando "Notificações" está marcado).
-const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_sistema", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro"];
+const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_sistema", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro", "nt_consultor"];
 const NT_HINTS: Partial<Record<Section, string>> = {
   nt_meta: "Falha de pagamento, token vencendo e conta com erro",
   nt_shopify: "Sincronização, reembolsos e acesso negado",
@@ -92,11 +95,12 @@ const NT_HINTS: Partial<Record<Section, string>> = {
   nt_email: "Cliente mandou e-mail (só no celular)",
   nt_metas: "Meta do mês atingida (só no celular)",
   nt_lucro: "Lucro de hoje nos horários que a pessoa escolher (só no celular)",
+  nt_consultor: "Análise semanal da IA com dicas novas",
 };
 const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "consultor", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
@@ -272,12 +276,12 @@ function MembersPage() {
 
 const SECTION_ICONS: Partial<Record<Section, any>> = {
   dashboard: LayoutDashboard, metas: Target, tarefas: CheckSquare, produtos: Package, caixa: Wallet,
-  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, notificacoes: Bell,
+  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, consultor: Lightbulb, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
   nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_sistema: AlertTriangle, nt_tarefas: CheckSquare,
-  nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, cfg_seguranca: Shield, cfg_integracoes: Plug,
+  nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, nt_consultor: Lightbulb, cfg_seguranca: Shield, cfg_integracoes: Plug,
   shops: Store, projects: FolderKanban, sops: Workflow,
 };
 

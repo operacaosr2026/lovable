@@ -1366,6 +1366,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      consultant_reports: {
+        Row: {
+          created_at: string;
+          facts: Json;
+          id: string;
+          model: string | null;
+          period_from: string;
+          period_to: string;
+          result: Json;
+          tips_status: Json;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          facts: Json;
+          id?: string;
+          model?: string | null;
+          period_from: string;
+          period_to: string;
+          result: Json;
+          tips_status?: Json;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          facts?: Json;
+          id?: string;
+          model?: string | null;
+          period_from?: string;
+          period_to?: string;
+          result?: Json;
+          tips_status?: Json;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       posting_holidays: {
         Row: {
           created_at: string | null;
