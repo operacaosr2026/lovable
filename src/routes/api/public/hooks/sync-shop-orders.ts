@@ -524,6 +524,7 @@ async function processShop(s: any, today: string) {
 // 10min pro sync leve de pedidos, então o atraso é pequeno).
 const TIME_BUDGET_MS = 50_000;
 const SYNC_CONCURRENCY = 3;
+const FULL_RESYNC_AFTER_MS = 2 * 60 * 60_000;
 
 // Custos do dia (gasto Meta Ads + taxas Shopify Payments). Sem isso, eles só
 // entravam no banco quando alguém abria o Dashboard de Lojas e Grupos — até lá
@@ -642,7 +643,23 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
   // (esse sync leve roda a cada 10min via pg_cron). Muda o ponto de partida
   // a cada janela de 10min pra todo mundo ser coberto ao longo do tempo.
   const startIdx = all.length ? Math.floor(Date.now() / (10 * 60_000)) % all.length : 0;
-  const queue = all.map((_, step) => all[(startIdx + step) % all.length]);
+  let queue = all.map((_, step) => all[(startIdx + step) % all.length]);
+
+  // Sync completo: roda em 3 rodadas seguidas em cada horário (pg_cron 11:00/15/30
+  // e 23:00/15/30 UTC). Começa pela loja sincronizada há mais tempo e pula as que
+  // já sincronizaram nas últimas 2h — as rodadas extras só pegam quem ficou de
+  // fora pelo orçamento de tempo, em vez de essa loja esperar 12h (e ficar em
+  // "Atenção" nas Integrações).
+  if (!payoutsOnly && !ordersOnly) {
+    const storeIds = [...new Set(queue.map((s: any) => s.shopify_store_id).filter(Boolean))] as string[];
+    const { data: stores } = storeIds.length
+      ? await supabaseAdmin.from("shopify_stores").select("id,last_sync_at").in("id", storeIds)
+      : { data: [] as { id: string; last_sync_at: string | null }[] };
+    const lastSync = new Map((stores ?? []).map((st) => [st.id, st.last_sync_at ? Date.parse(st.last_sync_at) : 0]));
+    const at = (s: any) => (s.shopify_store_id ? lastSync.get(s.shopify_store_id) ?? 0 : 0);
+    queue = queue.filter((s: any) => !s.shopify_store_id || Date.now() - at(s) > FULL_RESYNC_AFTER_MS)
+      .sort((a: any, b: any) => at(a) - at(b));
+  }
 
   // Lojas em paralelo, até SYNC_CONCURRENCY por vez: uma de cada vez, cada loja
   // leva ~10 s (várias consultas paginadas à Shopify) e só cabiam ~4 no

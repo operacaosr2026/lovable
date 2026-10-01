@@ -9,6 +9,7 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Chaves geradas por refreshSystemNotifications (recalculadas a cada leitura).
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
+const SHOPIFY_STALE_HOURS = 13;
 const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:"];
 
 const TRACK123_STALE_HOURS = 4;   // cron roda de hora em hora
@@ -165,7 +166,7 @@ export async function refreshSystemNotifications(ownerId: string) {
       supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name,last_sync_status,last_sync_error,account_status")
         .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("enabled", true),
       storeIds.length
-        ? supabaseAdmin.from("shopify_stores").select("id,name,shop_domain,last_sync_status,last_sync_error")
+        ? supabaseAdmin.from("shopify_stores").select("id,name,shop_domain,last_sync_at,last_sync_status,last_sync_error")
             .eq("user_id", ownerId).in("id", storeIds)
         : Promise.resolve({ data: [] as any[] }),
       supabaseAdmin.from("track123_integrations").select("shop_id,last_sync_at,last_sync_status,last_sync_error")
@@ -241,8 +242,21 @@ export async function refreshSystemNotifications(ownerId: string) {
 
     const shopByStore = new Map((settings ?? []).filter((s: any) => s.shopify_store_id).map((s: any) => [s.shopify_store_id as string, s.shop_id as string]));
     for (const st of (storesRes.data ?? []) as any[]) {
-      if (st.last_sync_status !== "error") continue;
       const shopId = shopByStore.get(st.id);
+      // Parada sem erro: o sync completo roda 2x por dia (com rodadas de
+      // repescagem); passou de 13h sem sincronizar é porque algo travou — mesmo
+      // limite do "Atenção" em Configurações > Integrações.
+      const staleH = st.last_sync_at ? (Date.now() - Date.parse(st.last_sync_at)) / 3_600_000 : null;
+      if (st.last_sync_status !== "error" && staleH != null && staleH > SHOPIFY_STALE_HOURS) {
+        want.set(`shopify_sync:${st.id}`, {
+          level: "warning",
+          title: `Shopify sem sincronizar há ${Math.floor(staleH)}h — ${st.name}`,
+          body: "Repasses, chargebacks e reembolsos dessa loja podem estar desatualizados. Se continuar, confira a loja em Integrações.",
+          link: shopId ? linkFor(shopId, "integracoes") : null,
+        });
+        continue;
+      }
+      if (st.last_sync_status !== "error") continue;
       want.set(`shopify_sync:${st.id}`, {
         level: "error",
         title: `Shopify com erro de sincronização — ${st.name}`,
