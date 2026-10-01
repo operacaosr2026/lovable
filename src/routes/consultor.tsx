@@ -7,7 +7,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, FlaskConical, Lightbulb, Load
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Button } from "@/components/ui/button";
-import { getConsultant, runConsultantNow, setConsultantTipStatus, type TipStatus } from "@/lib/consultant.functions";
+import { getConsultant, runConsultantNow, setConsultantTipStatus, saveConsultantContext, type TipStatus } from "@/lib/consultant.functions";
 import type { ConsultantTip } from "@/lib/consultant.server";
 
 export const Route = createFileRoute("/consultor")({
@@ -15,9 +15,11 @@ export const Route = createFileRoute("/consultor")({
   component: ConsultorPage,
 });
 
-const AREA: Record<string, string> = {
-  pagamento: "Pagamento", chargeback: "Chargeback", produtos: "Produtos", anuncios: "Anúncios",
-  lojas: "Lojas", logistica: "Logística", paises: "Países", outros: "Outros",
+// Objetivo da dica (análises antigas tinham "area" no lugar).
+const OBJETIVO: Record<string, string> = {
+  lucro: "Aumentar lucro", chargeback: "Diminuir chargeback", reembolso: "Diminuir reembolso",
+  atendimento: "Melhorar atendimento", metas: "Ajustar metas", logistica: "Logística", outros: "Outros",
+  pagamento: "Pagamento", produtos: "Produtos", anuncios: "Anúncios", lojas: "Lojas", paises: "Países",
 };
 const IMPACT: Record<string, string> = { alto: "Impacto alto", medio: "Impacto médio", baixo: "Impacto baixo" };
 const CONF: Record<string, string> = { alta: "Confiança alta", media: "Confiança média", baixa: "Confiança baixa" };
@@ -36,6 +38,7 @@ function ConsultorPage() {
   const q = useQuery({ queryKey: ["consultant", reportId], queryFn: () => getFn({ data: { report_id: reportId } }) });
   const report = q.data?.report ?? null;
   const history = q.data?.history ?? [];
+  const [filter, setFilter] = useState<string | null>(null);
 
   const run = useMutation({
     mutationFn: () => runFn(),
@@ -72,6 +75,8 @@ function ConsultorPage() {
         </div>
       </div>
 
+      {!q.isLoading && <ContextCard initial={q.data?.context ?? ""} />}
+
       {q.isLoading ? (
         <div className="premium-card p-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
       ) : !report ? (
@@ -107,8 +112,22 @@ function ConsultorPage() {
             </section>
           )}
 
+          {(() => {
+            const objs = [...new Set(report.result.dicas.map((t) => t.objetivo ?? t.area ?? "outros"))];
+            return objs.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant={filter == null ? "default" : "outline"} onClick={() => setFilter(null)}>Todas ({report.result.dicas.length})</Button>
+                {objs.map((o) => (
+                  <Button key={o} size="sm" variant={filter === o ? "default" : "outline"} onClick={() => setFilter(o)}>
+                    {OBJETIVO[o] ?? o} ({report.result.dicas.filter((t) => (t.objetivo ?? t.area) === o).length})
+                  </Button>
+                ))}
+              </div>
+            );
+          })()}
+
           <div className="grid gap-4 lg:grid-cols-2">
-            {report.result.dicas.map((tip, i) => (
+            {report.result.dicas.map((tip, i) => (filter && (tip.objetivo ?? tip.area) !== filter) ? null : (
               <TipCard key={i} tip={tip} status={report.tipsStatus[String(i)]?.status ?? null}
                 saving={setStatus.isPending}
                 onStatus={(s) => setStatus.mutate({ index: i, status: report.tipsStatus[String(i)]?.status === s ? null : s })} />
@@ -134,7 +153,7 @@ function TipCard({ tip, status, saving, onStatus }: {
   return (
     <section className={`premium-card p-5 flex flex-col gap-3 ${muted ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{AREA[tip.area] ?? tip.area}</span>
+        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{OBJETIVO[tip.objetivo ?? tip.area ?? "outros"] ?? tip.objetivo}</span>
         <span className={`px-2 py-0.5 rounded-full border ${tip.impacto === "alto" ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground"}`}>{IMPACT[tip.impacto]}</span>
         <span className="px-2 py-0.5 rounded-full border border-border text-muted-foreground">{CONF[tip.confianca]}</span>
         {tip.amostra_pequena && (
@@ -157,6 +176,44 @@ function TipCard({ tip, status, saving, onStatus }: {
           </Button>
         ))}
       </div>
+    </section>
+  );
+}
+
+// O que a IA precisa saber: vai junto com os números em toda análise.
+function ContextCard({ initial }: { initial: string }) {
+  const qc = useQueryClient();
+  const saveFn = useServerFn(saveConsultantContext);
+  const [text, setText] = useState(initial);
+  const [open, setOpen] = useState(!initial);
+  const save = useMutation({
+    mutationFn: () => saveFn({ data: { context: text } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Salvo — vale a partir da próxima análise"); setOpen(false); },
+    onError: (e: any) => toast.error(e.message ?? "Falha ao salvar"),
+  });
+  return (
+    <section className="premium-card p-5 mb-5">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
+        <span className="text-sm font-semibold">O que a IA precisa saber</span>
+        <ChevronDown className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {!open ? (
+        <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line">{initial || "Nada ainda."}</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Decisões que você já tomou e testes que está fazendo — a IA respeita e acompanha.
+            Ex.: "Todo anúncio fica na conta da Loja 2 de propósito." · "PayPal desligado em outubro como teste."
+          </p>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} maxLength={4000}
+            className="w-full rounded-md border border-border bg-background p-3 text-sm" />
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || text === initial}>
+              {save.isPending ? <Loader2 className="size-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

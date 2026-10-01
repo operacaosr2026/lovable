@@ -1366,6 +1366,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      consultant_settings: {
+        Row: { context: string; updated_at: string; user_id: string };
+        Insert: { context?: string; updated_at?: string; user_id: string };
+        Update: { context?: string; updated_at?: string; user_id?: string };
+        Relationships: [];
+      };
       consultant_reports: {
         Row: {
           created_at: string;
