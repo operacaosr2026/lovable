@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchMessageContent, type ZohoAccount } from "@/lib/zoho-mail.server";
+import { withAiCredit } from "@/lib/ai-credit.server";
 
 // Atendimento: tags automáticas com IA (Claude). Cada e-mail novo de cliente é
 // lido uma vez e recebe tags da lista fixa (Configurações > Tags). Roda no fim
@@ -46,7 +47,7 @@ export async function classifyEmail(opts: { subject: string | null; text: string
     additionalProperties: false,
   };
   const isOpus5 = MODEL === "claude-opus-5";
-  const response = await anthropic().beta.messages.create({
+  const response = await withAiCredit(() => anthropic().beta.messages.create({
     model: MODEL,
     max_tokens: 2048,
     system: SYSTEM,
@@ -61,7 +62,7 @@ export async function classifyEmail(opts: { subject: string | null; text: string
     },
     // Se o filtro de segurança recusar, o próprio servidor refaz em outro modelo.
     ...(isOpus5 ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-  });
+  }));
   if (response.stop_reason === "refusal") return [];
   const text = response.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") return [];
@@ -159,12 +160,12 @@ Responda só com a tradução, sem comentários. Se o texto já estiver em portu
 
 export async function translateToPortuguese(text: string): Promise<string> {
   if (!text.trim()) return "";
-  const response = await anthropic().messages.create({
+  const response = await withAiCredit(() => anthropic().messages.create({
     model: MODEL,
     max_tokens: 4096,
     system: TRANSLATE_SYSTEM,
     messages: [{ role: "user", content: `<email>\n${text}\n</email>` }],
-  });
+  }));
   if (response.stop_reason === "refusal") throw new Error("A IA não conseguiu traduzir este e-mail");
   return response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }
@@ -178,12 +179,12 @@ Reply only with the translated text, with no comments. If the text is already in
 
 export async function translateReplyToEnglish(text: string): Promise<string> {
   if (!text.trim()) return "";
-  const response = await anthropic().messages.create({
+  const response = await withAiCredit(() => anthropic().messages.create({
     model: MODEL,
     max_tokens: 4096,
     system: REPLY_SYSTEM,
     messages: [{ role: "user", content: `<reply>\n${text}\n</reply>` }],
-  });
+  }));
   if (response.stop_reason === "refusal") throw new Error("A IA não conseguiu traduzir este texto");
   return response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }

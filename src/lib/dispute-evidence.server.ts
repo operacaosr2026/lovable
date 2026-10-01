@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { withAiCredit } from "@/lib/ai-credit.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
 import { emailText } from "@/lib/support-ai.server";
@@ -184,7 +185,7 @@ export async function writeRebuttal(ev: DisputeEvidence): Promise<string> {
   const facts = { ...ev, policies: ev.policies.map((p) => ({ title: p.title, excerpt: p.body.slice(0, 1500) })) };
   const client = new Anthropic();
   // Fallback no servidor: se o modelo recusar, a própria API tenta de novo em outro.
-  const response = await client.beta.messages.create({
+  const response = await withAiCredit(() => client.beta.messages.create({
     model: "claude-opus-5",
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -193,7 +194,7 @@ export async function writeRebuttal(ev: DisputeEvidence): Promise<string> {
     fallbacks: "default",
     system: REBUTTAL_SYSTEM,
     messages: [{ role: "user", content: `Write the rebuttal letter for this dispute.\n\n<evidence>\n${JSON.stringify(facts, null, 1)}\n</evidence>` }],
-  } as any) as Anthropic.Beta.BetaMessage;
+  } as any)) as Anthropic.Beta.BetaMessage;
   if (response.stop_reason === "refusal") throw new Error("A IA não conseguiu escrever o texto desta vez. Tente de novo.");
   const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
   if (!text) throw new Error("A IA devolveu um texto vazio. Tente de novo.");
