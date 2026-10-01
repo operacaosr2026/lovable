@@ -1,11 +1,13 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
+import { RECOVERY_ORDER_TAG } from "@/lib/recovery-order";
 
 // Análise de fraude da Shopify (o ⚠ "Este pedido pode ser fraudulento" da lista
 // de pedidos): nível e recomendação da própria Shopify + os motivos. Guarda em
 // shop_order_risks pra aba Chargebacks cruzar risco × chargeback/reembolso.
 // A Shopify fecha a análise logo depois da compra, então o sync de hora em hora
-// só relê os pedidos dos últimos dias.
+// só relê os pedidos dos últimos dias. O pedido de cobrança dos Alertas não
+// entra (não é venda).
 
 const QUERY = `query($after: String, $q: String) {
   orders(first: 100, after: $after, query: $q) {
@@ -35,10 +37,10 @@ export async function syncOrderRisks(shopId: string, userId: string, domain: str
   let after: string | null = null;
   let saved = 0;
   for (let page = 0; page < 40; page++) {
-    const res = await fetchWithRetry(`https://${domain}/admin/api/2024-10/graphql.json`, {
+    const res = await fetchWithRetry(`https://${domain}/admin/api/2026-07/graphql.json`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
-      body: JSON.stringify({ query: QUERY, variables: { after, q: `created_at:>=${since}` } }),
+      body: JSON.stringify({ query: QUERY, variables: { after, q: `created_at:>=${since} -tag:${RECOVERY_ORDER_TAG}` } }),
     });
     if (!res.ok) throw new Error(`Shopify risco ${res.status}`);
     const json: any = await res.json();

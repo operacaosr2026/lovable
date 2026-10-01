@@ -14,7 +14,7 @@ import type { AlertRow } from "@/lib/chargeback-alerts.shared";
 // O pedido pago não entra em shop_orders (recovery-order.ts); o valor abate o
 // reembolso no lucro (getGroupRefundsAndChargebacks).
 
-const API = "2024-10";
+const API = "2026-07";
 
 async function shopCreds(shopId: string) {
   const { data: set } = await supabaseAdmin.from("shop_order_settings").select("shopify_store_id").eq("shop_id", shopId).maybeSingle();
