@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
+import { selectAll } from "@/lib/select-all";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
 import { isRecoveryOrder } from "@/lib/recovery-order";
@@ -154,7 +155,8 @@ function monthsAgoISO(months: number) {
 // Aba Vendas do produto: pedidos direto da API da Shopify, de todas as lojas
 // com Shopify conectada (ativas ou não) — não usa shop_orders, que só tem os
 // pedidos de depois de cada loja ser conectada (Woovah tinha 227 antes disso).
-// Só leitura. Loja que não responde (fechada, 402) fica de fora.
+// Só leitura. Loja que não responde (fechada, 402 — ex.: Serafinie) usa o que
+// o banco tem dela, senão as vendas antigas dela sumiam da aba.
 async function shopifyOrdersSince(ownerId: string, sinceDate: string) {
   const { data: stores } = await supabaseAdmin.from("shopify_stores")
     .select("id,shop_domain,access_token").eq("user_id", ownerId).not("access_token", "is", null);
@@ -180,7 +182,15 @@ async function shopifyOrdersSince(ownerId: string, sinceDate: string) {
         url = m ? m[1] : "";
       }
     } catch (e) {
-      console.error("getProductMonthlySales: Shopify falhou", st.shop_domain, e);
+      console.error("getProductMonthlySales: Shopify falhou, usando o banco", st.shop_domain, e);
+      const { data: links } = await supabaseAdmin.from("shop_order_settings")
+        .select("shop_id").eq("user_id", ownerId).eq("shopify_store_id", st.id);
+      const shopIds = ((links ?? []) as any[]).map((l) => l.shop_id);
+      if (!shopIds.length) return;
+      const { data: rows } = await selectAll(supabaseAdmin.from("shop_orders")
+        .select("order_date,line_items:raw->line_items")
+        .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", sinceDate));
+      for (const r of (rows ?? []) as any[]) out.push({ order_date: r.order_date, line_items: r.line_items ?? [] });
     }
   }));
   return out;
