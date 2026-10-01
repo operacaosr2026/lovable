@@ -70,17 +70,16 @@ function ProjectionEndLabel(props: any) {
   const rawY = vb ? vb.y + vb.height / 2 : (props.cy ?? props.y);
   if (x == null || rawY == null || Number.isNaN(x) || Number.isNaN(rawY)) return null;
   // Nunca deixa o selo estourar o topo do gráfico, mesmo quando o ponto fica muito perto da borda superior.
-  const y = Math.max(rawY, 38);
   const text = String(props.value);
   const width = text.length * 6.5 + 18;
-  // O ponto é o último do gráfico: o selo cresce pra esquerda (borda direita
-  // só um pouco além do ponto) pra não estourar a lateral, e fica com folga
-  // acima do ponto pra não encostar nele.
-  const left = x + 12 - width;
+  // O ponto é o último do gráfico: o selo fica ao lado dele, na margem direita
+  // (reservada no AreaChart), centralizado na altura do ponto — não cobre linha nenhuma.
+  const left = x + 9;
+  const top = Math.max(rawY - 11, 2);
   return (
     <g>
-      <rect x={left} y={y - 36} width={width} height={22} rx={11} fill={props.fill} />
-      <text x={left + width / 2} y={y - 21} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{text}</text>
+      <rect x={left} y={top} width={width} height={22} rx={11} fill={props.fill} />
+      <text x={left + width / 2} y={top + 15} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{text}</text>
     </g>
   );
 }
@@ -971,7 +970,7 @@ export function CompanyGoals() {
                           <>
                             <div className="group relative flex-1 min-h-[180px]">
                               <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData} margin={{ top: 44, right: 46, left: -8, bottom: 0 }}>
+                                <AreaChart data={chartData} margin={{ top: 16, right: 92, left: -8, bottom: 0 }}>
                                   <defs>
                                     <linearGradient id="lg-goal-progress-grad" x1="0" y1="0" x2="0" y2="1">
                                       <stop offset="5%"  stopColor="var(--color-primary)" stopOpacity={0.25} />
