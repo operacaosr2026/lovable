@@ -292,7 +292,8 @@ export function LgLogistica({
   const kpiScopedOrders = !searchTerm ? shopScopedOrders
     : shopScopedOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
   // Mesma conta do Dashboard (ver logistics-kpis.ts).
-  const shared = computeLogisticsKpis(kpiScopedOrders, nowMs, postingCalendar(holidays));
+  const postingCal = postingCalendar(holidays);
+  const shared = computeLogisticsKpis(kpiScopedOrders, nowMs, postingCal);
   const kpis = { pending: shared.pending, shipped: shared.shipped, delivered: shared.delivered, problem: shared.problem };
   const attentionCount = shared.attention;
   const waitingCustomerCount = shared.waitingCustomer;
@@ -312,7 +313,7 @@ export function LgLogistica({
   // atual), não só dentro do recorte ativo. O status/loja de cada linha
   // continuam visíveis na tabela pra mostrar onde ele foi encontrado.
   const byStatus = statusFilter === "todos" ? allOrders
-    : statusFilter === "atencao" ? allOrders.filter((o) => needsAttention(o, nowMs))
+    : statusFilter === "atencao" ? allOrders.filter((o) => needsAttention(o, nowMs, postingCal))
     : allOrders.filter((o) => inBucket(o, statusFilter));
   const byShop = shopFilter === "todas" ? byStatus : byStatus.filter((o) => o.shop_id === shopFilter);
   const visibleOrders = !searchTerm ? byShop

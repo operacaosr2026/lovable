@@ -59,8 +59,8 @@ function FeriadosPage() {
       <header>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Feriados</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          O TM Postagem conta só dias úteis entre o pedido e a postagem. Feriados não contam; sábado ou domingo
-          marcado como dia de compensação conta.
+          O TM Postagem e o "Precisa de atenção" (pedido pendente há mais de 3 dias úteis) contam só dias úteis.
+          Feriados não contam; sábado ou domingo marcado como dia de compensação conta.
         </p>
       </header>
 
@@ -102,7 +102,7 @@ function FeriadosPage() {
         {q.isLoading ? (
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
         ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma data. Hoje o TM Postagem desconta só sábado e domingo.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma data. Hoje só sábado e domingo são descontados.</p>
         ) : (
           <ul className="divide-y divide-border">
             {rows.map((h) => (

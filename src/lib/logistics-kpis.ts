@@ -18,9 +18,9 @@ export function daysSince(iso: string | null | undefined, nowMs: number): number
 }
 // Dias úteis (seg-sex) entre a data do pedido e agora — não conta a data do
 // pedido em si, só os dias que já se passaram desde então.
-export function businessDaysSince(iso: string | null | undefined, nowMs: number): number {
+export function businessDaysSince(iso: string | null | undefined, nowMs: number, cal?: PostingCalendar): number {
   if (!iso) return 0;
-  return businessDaysBetween(iso, new Date(nowMs).toISOString());
+  return businessDaysBetween(iso, new Date(nowMs).toISOString(), cal);
 }
 // Feriados do TM Postagem (Configurações → Feriados): `holidays` = dia de
 // semana que não conta; `workdays` = sábado/domingo que conta (compensação
@@ -72,10 +72,11 @@ export function attentionReason(o: any, nowMs: number): string | null {
 // dias e ainda não entregue (antes era 7/25 — a maioria dos chargebacks abre
 // antes de 15 dias da compra, então 25 avisava tarde demais). "Esperando cliente" fica de fora — a bola já não
 // está com a loja. Pendente de envio recente (até 3 dias úteis) é normal, não
-// precisa aparecer aqui ainda.
-export function needsAttention(o: any, nowMs: number): boolean {
+// precisa aparecer aqui ainda. Feriados (Configurações → Feriados) não contam
+// nesses 3 dias — senão a Golden Week acusava todo pedido como parado.
+export function needsAttention(o: any, nowMs: number, cal?: PostingCalendar): boolean {
   const status = o.delivery_status ?? "pending_shipment";
-  if (status === "pending_shipment") return businessDaysSince(o.order_date, nowMs) > 3;
+  if (status === "pending_shipment") return businessDaysSince(o.order_date, nowMs, cal) > 3;
   return status === "problem" || attentionReason(o, nowMs) != null;
 }
 
@@ -105,7 +106,7 @@ export function computeLogisticsKpis(orders: any[], nowMs: number, cal?: Posting
     delivered: orders.filter((o) => inBucket(o, "delivered")).length,
     problem:   orders.filter((o) => inBucket(o, "problem")).length,
     waitingCustomer: orders.filter((o) => inBucket(o, "waiting_customer")).length,
-    attention: orders.filter((o) => needsAttention(o, nowMs)).length,
+    attention: orders.filter((o) => needsAttention(o, nowMs, cal)).length,
     avgPostingDays: avg(postingDurations),
     avgDeliveryDays: avg(deliveryDurations),
   };
@@ -164,7 +165,7 @@ export function computeLogisticsTrend(orders: any[], nowMs: number, today: strin
     return {
       date: d,
       label: WEEKDAY_LETTER[new Date(`${d}T12:00:00Z`).getUTCDay()],
-      attention: asOf.filter((o) => needsAttention(o, endMs)).length,
+      attention: asOf.filter((o) => needsAttention(o, endMs, cal)).length,
       pending: asOf.filter((o) => inBucket(o, "pending")).length,
       avgPostingDays: avg(posting),
       avgDeliveryDays: avg(delivery),
