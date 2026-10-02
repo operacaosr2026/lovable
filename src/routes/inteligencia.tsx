@@ -13,7 +13,7 @@ import { requireAuth } from "@/lib/route-guards";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getConsultant, runConsultantNow, requestConsultantAnalysis, setConsultantTipStatus, type TipStatus, type ConsultantReport } from "@/lib/consultant.functions";
+import { getConsultant, runConsultantNow, requestConsultantAnalysis, setConsultantTipStatus, endConsultantTest, type TipStatus, type ConsultantReport } from "@/lib/consultant.functions";
 import { getIntelOrders, type IntelOrder } from "@/lib/intel.functions";
 import type { ConsultantTip, ConsultantTest } from "@/lib/consultant.server";
 
@@ -105,18 +105,13 @@ function InteligenciaPage() {
     },
     onError: (e: any) => toast.error(e.message ?? "A análise falhou"),
   });
-  // Encerrar teste marcado na tela (origem = "<report_id>:<índice>"): sai de
-  // Testando já e não entra mais na próxima análise.
+  // Encerrar teste: sai de Testando e não entra mais na próxima análise.
+  const endFn = useServerFn(endConsultantTest);
   const endTest = useMutation({
-    mutationFn: async (origem: string) => {
-      const [rid, idx] = origem.split(":");
-      await statusFn({ data: { report_id: rid, index: Number(idx), status: "feita" } });
-      setHiddenTests((h) => [...h, origem]);
-    },
+    mutationFn: (t: ConsultantTest) => endFn({ data: { report_id: report!.id, titulo: t.titulo, origem: t.origem || null } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Teste encerrado"); },
     onError: (e: any) => toast.error(e.message ?? "Falha ao encerrar"),
   });
-  const [hiddenTests, setHiddenTests] = useState<string[]>([]);
   const run = useMutation({
     mutationFn: () => runFn(),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Análise pronta"); },
@@ -143,7 +138,7 @@ function InteligenciaPage() {
     testando: items.filter((i) => i.status === "testando"),
     concluido: items.filter((i) => i.status === "feita" || i.status === "ignorada"),
   };
-  const testsRunning = tests.filter((t) => !RESULT[t.resultado]?.done && !(t.origem && hiddenTests.includes(t.origem)));
+  const testsRunning = tests.filter((t) => !RESULT[t.resultado]?.done);
   const testsDone = tests.filter((t) => RESULT[t.resultado]?.done);
   const counts: Record<Tab, number> = {
     agora: byTab.agora.length,
@@ -212,7 +207,7 @@ function InteligenciaPage() {
 
           <div className="space-y-3">
             {tab === "testando" && testsRunning.map((t, i) => <TestRow key={`t${i}`} test={t} onOpen={() => setOpenTest(t)}
-              onEnd={t.origem ? () => endTest.mutate(t.origem!) : undefined} />)}
+              onEnd={() => endTest.mutate(t)} />)}
             {tab === "concluido" && testsDone.map((t, i) => <TestRow key={`d${i}`} test={t} onOpen={() => setOpenTest(t)} />)}
             {visible.map((item) => (
               <TipCard key={item.index} item={item} saving={setStatus.isPending}

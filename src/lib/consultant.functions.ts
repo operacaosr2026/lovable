@@ -62,6 +62,41 @@ export const requestConsultantAnalysis = createServerFn({ method: "POST" })
     return runRequestedAnalysis(context.ownerId, data.pedido);
   });
 
+// Encerrar teste (aba Testando). Teste marcado na tela (origem "<report>:<índice>"):
+// a dica vira "feita". Teste que veio do contexto do dono: entra no contexto
+// como encerrado, pra IA não avaliar mais. Nos dois casos sai da análise atual.
+export const endConsultantTest = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    report_id: z.string().uuid(), titulo: z.string().min(1).max(300), origem: z.string().max(80).nullable().optional(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    assertAccess(context);
+    const owner = context.ownerId;
+    const now = new Date().toISOString();
+    const [rid, idx] = (data.origem ?? "").split(":");
+    if (rid && idx != null && /^[0-9a-f-]{36}$/.test(rid)) {
+      const { data: r } = await supabaseAdmin.from("consultant_reports").select("tips_status").eq("user_id", owner).eq("id", rid).maybeSingle();
+      if (r) {
+        const tips = { ...((r.tips_status ?? {}) as Record<string, unknown>), [String(Number(idx))]: { status: "feita", at: now } };
+        await supabaseAdmin.from("consultant_reports").update({ tips_status: tips as any }).eq("user_id", owner).eq("id", rid);
+      }
+    } else {
+      const { data: st } = await supabaseAdmin.from("consultant_settings").select("context").eq("user_id", owner).maybeSingle();
+      const line = `Teste encerrado em ${now.slice(0, 10)}: "${data.titulo}" — não avaliar mais.`;
+      const { error } = await supabaseAdmin.from("consultant_settings")
+        .upsert({ user_id: owner, context: [st?.context?.trim(), line].filter(Boolean).join("\n"), updated_at: now });
+      if (error) throw new Error(error.message);
+    }
+    const { data: rep } = await supabaseAdmin.from("consultant_reports").select("result").eq("user_id", owner).eq("id", data.report_id).maybeSingle();
+    if (rep) {
+      const result = rep.result as any;
+      result.testes_avaliados = (result.testes_avaliados ?? []).filter((t: any) => t.titulo !== data.titulo);
+      await supabaseAdmin.from("consultant_reports").update({ result }).eq("user_id", owner).eq("id", data.report_id);
+    }
+    return { ok: true };
+  });
+
 export const setConsultantTipStatus = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
