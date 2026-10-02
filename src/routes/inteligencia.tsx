@@ -216,7 +216,7 @@ function InteligenciaPage() {
             ))}
             {visible.length === 0 && !(tab === "testando" && testsRunning.length) && !(tab === "concluido" && testsDone.length) && (
               <div className="premium-card p-6 text-sm text-muted-foreground text-center">
-                {tab === "agora" ? "Nada exige sua decisão agora." : tab === "testando" ? "Nenhum teste em andamento." : "Nada concluído ainda."}
+                {tab === "agora" ? "Nenhuma nova descoberta relevante nesta análise." : tab === "testando" ? "Nenhum teste em andamento." : "Nada concluído ainda."}
               </div>
             )}
           </div>

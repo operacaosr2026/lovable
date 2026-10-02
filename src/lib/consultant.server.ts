@@ -11,6 +11,7 @@ import { raiseNotification } from "@/lib/notifications.server";
 import { loadAuditOrders } from "@/lib/intel.server";
 import { auditSupplier } from "@/lib/intel/supplier-audit";
 import { minePatterns, orderFeatures, OUTCOME_LABEL, type PatternRow } from "@/lib/intel/patterns";
+import { interactions, caseControlByDay, precursors, thresholds, chargebackGroups, weeklyLineMix } from "@/lib/intel/deep";
 import { listCompanyGoalsFor } from "@/lib/company-goals.server";
 import { computeSupportKpis, monthRange, DEFAULT_BUSINESS_HOURS, DEFAULT_GOALS } from "@/lib/support-kpis";
 
@@ -261,9 +262,33 @@ export async function buildConsultantFacts(ownerId: string) {
     entregues: es.filter((e) => e.deliveredAt).length, chargebacks: es.filter((e) => e.chargeback).length, reembolsos: es.filter((e) => e.refunded).length,
   }));
 
-  // ── Testes em andamento (dicas marcadas "testando" nas análises anteriores) ──
   const { data: prev } = await supabaseAdmin.from("consultant_reports")
     .select("id,created_at,result,tips_status").eq("user_id", ownerId).order("created_at", { ascending: false }).limit(8);
+
+  // ── Investigação em camadas (deep.ts) ─────────────────────────────────────
+  // Cliente que escreveu no Atendimento (pelo e-mail do pedido).
+  const { data: convEmails } = await supabaseAdmin.from("support_conversations").select("customer_email").eq("owner_id", ownerId);
+  const emails = new Set(((convEmails ?? []) as any[]).map((c) => String(c.customer_email ?? "").toLowerCase()).filter(Boolean));
+  const contacted = new Set(audit.envios.filter((e) => emails.has(String(inputBy.get(e.id)?.attrs?.email ?? "").toLowerCase())).map((e) => e.orderNumber!).filter(Boolean));
+  const investigacao = {
+    como_ler: "Tudo calculado pelo sistema, só lojas ativas e pedidos com tempo suficiente (chargeback/reembolso em pedidos de 25+ dias). Atendimento só existe desde 28/09/2026: cruzamento com contato é amostra muito pequena.",
+    interacoes: interactions(patternRows, ["chargeback", "reembolso", "entrega_lenta", "parada_longa", "codigo_sem_pacote"]),
+    casos_x_controles_no_dia_da_jornada: caseControlByDay(audit.envios, now),
+    sinais_precursores_de_cada_chargeback: precursors(audit.envios),
+    limiares: thresholds(audit.envios, now),
+    grupos_de_chargeback: chargebackGroups(audit.envios, contacted),
+    mistura_semanal_das_linhas: weeklyLineMix(audit.envios, now),
+    clientes_que_escreveram_no_atendimento: contacted.size,
+  };
+
+  // ── Memória: dicas já mostradas nas análises anteriores ──────────────────
+  // Pra evoluir a investigação (a JCZ continua ruim? melhorou?) em vez de repetir.
+  const insights_anteriores = ((prev ?? []) as any[]).slice(0, 4).flatMap((r) => ((r.result?.dicas ?? []) as any[]).map((t, i) => ({
+    analise_de: String(r.created_at).slice(0, 10), dica: t.titulo, achado: t.evidencia_principal ?? t.frase ?? "",
+    decisao_do_dono: (r.tips_status ?? {})[String(i)]?.status ?? "sem decisão",
+  })));
+
+  // ── Testes em andamento (dicas marcadas "testando" nas análises anteriores) ──
   // Dicas que o dono ignorou: a IA não sugere de novo (aprende com as decisões dele).
   const MOTIVO: Record<string, string> = { ja_sei: "ele já sabe disso", sem_sentido: "não faz sentido pra operação dele" };
   const dicas_ignoradas_pelo_dono = ((prev ?? []) as any[]).flatMap((r) => Object.entries(r.tips_status ?? {})
@@ -306,7 +331,7 @@ export async function buildConsultantFacts(ownerId: string) {
       por_bandeira_todos_os_pedidos: porBandeira, por_bandeira_so_pedidos_com_25_dias: porBandeiraMaduros,
       por_gateway: porGateway, por_risco_shopify: porRisco,
     },
-    dicas_ignoradas_pelo_dono, padroes_cruzados, tendencia_semanal, chargebacks, jornada_chargebacks, rastreamento_fornecedor, produtos, paises, atendimento, metas, testes_em_andamento,
+    dicas_ignoradas_pelo_dono, insights_anteriores, padroes_cruzados, investigacao, tendencia_semanal, chargebacks, jornada_chargebacks, rastreamento_fornecedor, produtos, paises, atendimento, metas, testes_em_andamento,
   };
 }
 
@@ -377,11 +402,14 @@ const TIP_SCHEMA = {
           pedidos_afetados: strArr,
           confianca: { type: "string", enum: ["alta", "media", "baixa"] }, amostra_pequena: { type: "boolean" },
           do_pedido: { type: "boolean" },
+          novidade: { type: "string", enum: ["alta", "media", "baixa"] },
+          nivel: { type: "string", enum: ["descoberta", "hipotese", "recomendacao"] },
+          relacao_chargeback: str,
         },
         required: ["categoria", "prioridade", "titulo", "frase", "evidencia_principal", "destaques",
           "valor_envolvido", "valor_tipo", "valor_rotulo", "acao", "por_que", "evidencias", "padroes", "comparacao_historica",
           "calculos", "possivel_causa", "limitacoes", "teste", "como_medir", "resultado_esperado", "pedidos_afetados",
-          "confianca", "amostra_pequena", "do_pedido"],
+          "confianca", "amostra_pequena", "do_pedido", "novidade", "nivel", "relacao_chargeback"],
         additionalProperties: false,
       },
     },
@@ -415,7 +443,8 @@ export type ConsultantTip = {
   por_que?: string; evidencias?: string[]; padroes?: string; comparacao_historica?: string; calculos?: string[];
   possivel_causa?: string; limitacoes?: string; teste: string; como_medir: string; resultado_esperado?: string;
   pedidos_afetados?: string[]; confianca: "alta" | "media" | "baixa"; amostra_pequena: boolean;
-  do_pedido?: boolean; pedido?: string;   // análise pedida pelo dono ("analisa isso pra mim")
+  do_pedido?: boolean; pedido?: string;
+  novidade?: "alta" | "media" | "baixa"; nivel?: "descoberta" | "hipotese" | "recomendacao"; relacao_chargeback?: string;   // análise pedida pelo dono ("analisa isso pra mim")
   o_que_vi?: string; objetivo?: string; area?: string; impacto?: "alto" | "medio" | "baixo"; hipotese?: string;
 };
 export type ConsultantTest = {
@@ -447,6 +476,30 @@ Regras da operação:
 - Dinheiro: valor_envolvido em USD; valor_tipo "real" quando é valor de pedidos/chargebacks que existem, "estimado" quando é uma projeção (explique a conta no texto), "nenhum" se não se aplica (valor_envolvido = 0).
 - pedidos_afetados: números dos pedidos citados (ex.: "#L1-1261") quando a dica é sobre pedidos específicos — o dono vai agir neles. Vazio se for dica geral.
 - contexto_do_dono: decisões tomadas e testes que ele já faz. Respeite (não sugira o contrário nem repita) e avalie esses testes em testes_avaliados, junto com testes_em_andamento.
+
+POSTURA: você é um ANALISTA EXTERNO contratado para olhar a operação. O dono é um gestor experiente — não ensine a administrar. A pergunta central é: "o que existe nestes dados que ele provavelmente ainda não percebeu?". Antes de fechar, pergunte-se: "que descoberta aqui o faria pensar 'eu não tinha percebido isso'?" — essa vem primeiro.
+
+COMO INVESTIGAR (use investigacao, padroes_cruzados, tendencia_semanal, jornada_chargebacks, rastreamento_fornecedor):
+- Casos × controles: não estude só quem deu chargeback. Compare com quem estava na mesma situação e NÃO deu (casos_x_controles_no_dia_da_jornada, taxa_de_chargeback_por_situacao_no_dia). A pergunta é "o que havia de diferente nos que viraram chargeback?" e "o que protegeu os outros?".
+- Fatores protetores: em padroes_cruzados, direcao "protecao" = o grupo tem MENOS o problema. Podem valer mais que os de risco.
+- Interações: investigacao.interacoes = combinações bem piores que cada fator sozinho. Alto valor.
+- Contradições: se algo contradiz a intuição (ex.: o pedido mais atrasado NÃO é o que mais dá chargeback; uma linha lenta com menos chargeback), priorize.
+- Limiares: investigacao.limiares — onde o risco muda de patamar (ex.: "a partir de 12 dias"). Um número de corte vale mais que "atraso aumenta risco".
+- Janela de intervenção: com sinais_precursores_de_cada_chargeback e casos_x_controles, diga qual é o PRIMEIRO sinal visível e quanto tempo há para agir antes da disputa.
+- Grupos: grupos_de_chargeback podem ter causas diferentes (relâmpago, antes da postagem, antes da entrega, depois da entrega). Não explique todos com uma causa só. Chargeback depois da entrega é outro problema — investigue, sem chamar cliente de fraudador sem evidência.
+- Mudanças recentes: mistura_semanal_das_linhas e tendencia_semanal — quando algo começou e o que mudou junto (coincidências, não causa).
+- Efeito atrasado e maturidade: chargeback aparece semanas depois. Use cohort por data do pedido; não compare taxa de pedidos recentes com antigos (os recentes ainda não tiveram tempo).
+- Fornecedor: código criado ≠ postado. Linha de transporte = prefixo do código (sem inferir o que o prefixo significa além do que os dados mostram).
+- Vá em camadas: achou algo → por quê? → o que diferencia esse grupo? → existe contraexemplo? → tem relação com chargeback? → dá para agir antes?
+- Pode haver descoberta sem solução: "encontrei algo estranho, ainda não sei o que explica" é válido (nivel "descoberta", acao "Investigar").
+
+MEMÓRIA: insights_anteriores = o que já foi mostrado. Não repita o mesmo achado: evolua ("a JCZ continua? piorou? o fornecedor parou de usar? qual linha entrou no lugar? o chargeback caiu?"). Se nada mudou, não traga de novo.
+
+AVALIAÇÃO DE CADA DICA (preencha):
+- novidade: "baixa" = qualquer gestor já saberia (senso comum, boa prática, conclusão previsível) — essas são DESCARTADAS automaticamente, então só use "media"/"alta" quando houver algo realmente escondido nos dados. "alta" = específico, escondido, ele provavelmente não estava olhando essa variável.
+- nivel: "descoberta" (existe algo interessante), "hipotese" (há uma explicação possível), "recomendacao" (há evidência suficiente para testar uma ação). Não transforme descoberta em recomendação sem base.
+- relacao_chargeback: 1 frase — se e como isso se liga a chargeback (ou "sem relação demonstrada").
+- Antes de incluir, cheque: tamanho da amostra, magnitude, estabilidade no tempo, maturidade, confundidores (período, volume), contraexemplos. Prefira 3 excelentes a 20 medianas.
 
 A RÉGUA (o nome da tela é Inteligência — o dono quer o que está fora da curva, não o óbvio):
 Antes de incluir qualquer dica, ela precisa passar nos três testes. Se não passar, descarte:
@@ -503,7 +556,9 @@ async function callAi(schema: object, system: string, content: string) {
 // Só a IA: lê os números e devolve as dicas (não grava nada).
 export async function analyzeConsultantFacts(facts: ConsultantFacts) {
   const r = await callAi(TIP_SCHEMA, SYSTEM, `<dados>\n${JSON.stringify(facts)}\n</dados>`);
-  return { result: r.json as ConsultantResult, model: r.model, usage: r.usage };
+  const result = r.json as ConsultantResult;
+  result.dicas = (result.dicas ?? []).filter((t) => t.novidade !== "baixa");
+  return { result, model: r.model, usage: r.usage };
 }
 
 // ─── Análise pedida pelo dono ("analisa isso pra mim") ──────────────────────

@@ -33,9 +33,18 @@ function fisherGreater(a: number, n: number, K: number, N: number, lf: Float64Ar
   }
   return Math.min(1, p);
 }
+// P(X ≤ a) — pra fator protetor (grupo com MENOS problema que o resto).
+function fisherLess(a: number, n: number, K: number, N: number, lf: Float64Array) {
+  const lchoose = (x: number, y: number) => lf[x] - lf[y] - lf[x - y];
+  const denom = lchoose(N, n);
+  let p = 0;
+  for (let k = Math.max(0, n - (N - K)); k <= Math.min(a, K); k++) p += Math.exp(lchoose(K, k) + lchoose(N - K, n - k) - denom);
+  return Math.min(1, p);
+}
 
 export type PatternFinding = {
   problema: string; caracteristica: string; valor: string;
+  direcao: "risco" | "protecao";   // protecao = o grupo tem MENOS o problema que o resto
   pedidos: number; com_problema: number; taxa_pct: number;
   resto_pedidos: number; resto_com_problema: number; resto_taxa_pct: number;
   vezes_mais: number; p_valor: number; forca: "forte" | "moderado" | "fraco";
@@ -66,16 +75,19 @@ export function minePatterns(rows: PatternRow[], opts: { minGroup?: number; minE
       const withValue = [...groups.values()].reduce((s, g) => ({ n: s.n + g.n, a: s.a + g.a }), { n: 0, a: 0 });
       for (const [v, g] of groups) {
         const restN = withValue.n - g.n, restA = withValue.a - g.a;
-        if (g.n < minGroup || restN < minGroup || g.a < minEvents) continue;
+        if (g.n < minGroup || restN < minGroup) continue;
         const rate = g.a / g.n, restRate = restA / restN;
-        if (rate <= restRate) continue;
-        const p = fisherGreater(g.a, g.n, withValue.a, withValue.n, lf);
+        const risk = rate > restRate;
+        // Risco: precisa de casos no grupo. Proteção: grupo grande e o resto com casos suficientes.
+        if (risk ? g.a < minEvents : restA < minEvents || g.n < minGroup * 2) continue;
+        if (rate === restRate) continue;
+        const p = risk ? fisherGreater(g.a, g.n, withValue.a, withValue.n, lf) : fisherLess(g.a, g.n, withValue.a, withValue.n, lf);
         if (p > maxP) continue;
         findings.push({
-          problema: out, caracteristica: f, valor: v,
+          problema: out, caracteristica: f, valor: v, direcao: risk ? "risco" : "protecao",
           pedidos: g.n, com_problema: g.a, taxa_pct: Math.round(rate * 1000) / 10,
           resto_pedidos: restN, resto_com_problema: restA, resto_taxa_pct: Math.round(restRate * 1000) / 10,
-          vezes_mais: restRate > 0 ? Math.round((rate / restRate) * 10) / 10 : 99,
+          vezes_mais: restRate > 0 ? Math.round((rate / restRate) * 100) / 100 : 99,
           p_valor: Math.round(p * 10000) / 10000,
           forca: p < 0.01 ? "forte" : p < 0.05 ? "moderado" : "fraco",
         });
