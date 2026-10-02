@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings, saveChargebackSettings, createRecoveryPaymentLink } from "@/lib/chargeback-alerts.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ALERT_STATUSES, type AlertRow, type AlertStatus, type ChargebackSettings } from "@/lib/chargeback-alerts.shared";
+import { US_TIME_ZONE } from "@/lib/timezone";
 
 // Chargebacks > Alertas: pedidos reembolsados pelo Disputifier por alerta de
 // pré-chargeback (CDRN/Ethoca/RDR). Como o pedido quase sempre foi entregue, a
@@ -20,7 +21,7 @@ const fmtDate = (iso: string | null) => {
   if (!iso) return "—";
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
-  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: US_TIME_ZONE });
 };
 
 const STATUS: Record<AlertStatus, { label: string; cls: string }> = {

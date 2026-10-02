@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isoTodayUS } from "@/lib/timezone";
 
 type ShopStub = { id: string; name: string };
 
@@ -44,7 +45,7 @@ function SyncAllSection({ shops }: { shops: ShopStub[] }) {
     try {
       for (const shop of shops) {
         setProgress(`Sincronizando ${shop.name}...`);
-        const today    = isoDate(new Date());
+        const today    = isoTodayUS();
         const settings = await getSettFn({ data: { shop_id: shop.id } }).catch(() => null);
         const cutoff   = (settings as any)?.cashflow_start_date as string | null | undefined;
         const since    = cutoff && cutoff > addDays(today, -30) ? cutoff : addDays(today, -30);

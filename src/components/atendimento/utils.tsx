@@ -1,3 +1,4 @@
+import { US_TIME_ZONE, addDaysIso, formatTimeUS, isoDateUS, isoTodayUS, nyEndOfDay, nyStartOfDay } from "@/lib/timezone";
 import type { SupportStatus } from "@/lib/atendimento.functions";
 
 export const STATUS_META: Record<SupportStatus, { label: string; cls: string; dot: string }> = {
@@ -37,20 +38,17 @@ export function Avatar({ name, email, size = "md" }: { name: string | null | und
   );
 }
 
-// Lista: hoje → 14:32; ontem → Ontem; senão 12/09.
+// Lista: hoje → 14:32; ontem → Ontem; senão 12/09 (tudo no horário de Nova York).
 export function listTime(iso: string | null) {
   if (!iso) return "";
-  const d = new Date(iso);
-  const now = new Date();
-  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (sameDay(d, now)) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const y = new Date(now); y.setDate(now.getDate() - 1);
-  if (sameDay(d, y)) return "Ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const day = isoDateUS(iso), today = isoTodayUS();
+  if (day === today) return formatTimeUS(iso);
+  if (day === addDaysIso(today, -1)) return "Ontem";
+  return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 }
 
 export function fullTime(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE });
 }
 
 export function formatDuration(ms: number | null) {
@@ -76,22 +74,16 @@ export function formatBytes(n: number) {
   return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
 }
 
-// Período do filtro → início/fim (horário local).
+// Período do filtro → início/fim (dias de Nova York).
 export function resolvePeriod(period: string, custom?: { from: string; to: string }) {
-  const start = new Date(); start.setHours(0, 0, 0, 0);
-  const end = new Date(); end.setHours(23, 59, 59, 999);
-  const days = (n: number) => { start.setDate(start.getDate() - (n - 1)); };
+  const today = isoTodayUS();
+  let from = addDaysIso(today, -29), to = today;
   switch (period) {
-    case "hoje": break;
-    case "ontem": start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); break;
-    case "7d": days(7); break;
-    case "mes": start.setDate(1); break;
-    case "custom":
-      if (custom) {
-        return { from: new Date(`${custom.from}T00:00:00`).toISOString(), to: new Date(`${custom.to}T23:59:59.999`).toISOString() };
-      }
-      days(30); break;
-    default: days(30);
+    case "hoje": from = today; break;
+    case "ontem": from = to = addDaysIso(today, -1); break;
+    case "7d": from = addDaysIso(today, -6); break;
+    case "mes": from = `${today.slice(0, 7)}-01`; break;
+    case "custom": if (custom) { from = custom.from; to = custom.to; } break;
   }
-  return { from: start.toISOString(), to: end.toISOString() };
+  return { from: nyStartOfDay(from).toISOString(), to: nyEndOfDay(to).toISOString() };
 }

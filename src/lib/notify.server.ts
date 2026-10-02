@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resolveWorkspaceAccess } from "@/integrations/supabase/workspace-middleware";
 import { allowedCategories, categoryOfKey, type NotificationCategory } from "@/lib/notification-categories";
 import { sendPushToUser } from "@/lib/push.server";
+import { US_TIME_ZONE } from "@/lib/timezone";
 
 // Motor das notificações: um aviso novo no sino (ou que voltou depois de
 // resolvido) vira push pras pessoas certas. O próprio sino já deduplica por
@@ -38,7 +39,7 @@ export async function getUserNotificationPrefs(userId: string): Promise<UserNoti
     dndEnabled: data?.dnd_enabled ?? false,
     dndStart: data?.dnd_start ?? DEFAULT_DND.start,
     dndEnd: data?.dnd_end ?? DEFAULT_DND.end,
-    timezone: data?.timezone ?? "America/Sao_Paulo",
+    timezone: US_TIME_ZONE,   // todo o sistema no horário de Nova York (o fuso salvo pelo aparelho não vale)
     profitTimes: data?.profit_times ?? DEFAULT_PROFIT_TIMES,
   };
 }

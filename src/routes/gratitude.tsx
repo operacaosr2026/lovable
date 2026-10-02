@@ -12,6 +12,7 @@ import { requireAuth } from "@/lib/route-guards";
 import { Heart, ChevronLeft, ChevronRight, Trash2, Loader2, Check } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
+import { isoTodayUS } from "@/lib/timezone";
 
 export const Route = createFileRoute("/gratitude")({
   beforeLoad: requireAuth,
@@ -42,7 +43,7 @@ const PROMPTS = [
 ];
 
 function GratitudePage() {
-  const today = toDateStr(new Date());
+  const today = isoTodayUS();
   const [selectedDate, setSelectedDate] = useState(today);
   const [draft, setDraft] = useState("");
   const [saved, setSaved] = useState(false);

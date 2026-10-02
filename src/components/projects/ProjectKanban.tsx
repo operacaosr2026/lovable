@@ -15,6 +15,7 @@ import {
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { isoDateUS, isoTodayUS, nyParts, nyWallTime } from "@/lib/timezone";
 
 const COLUMNS = [
   { id: "todo",  label: "A fazer",   tint: "oklch(0.97 0.012 250)", accent: "oklch(0.55 0.2 250)" },
@@ -42,17 +43,16 @@ const FREQ_LABEL: Record<Frequency, string> = {
 
 function fmtDue(due: string | null) {
   if (!due) return null;
-  const d = new Date(due);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const day = new Date(d); day.setHours(0, 0, 0, 0);
-  const diff = Math.round((day.getTime() - today.getTime()) / 86400000);
-  const time = d.toTimeString().slice(0, 5);
+  // Dia e hora em Nova York.
+  const dayIso = isoDateUS(due);
+  const diff = Math.round((Date.parse(`${dayIso}T12:00:00Z`) - Date.parse(`${isoTodayUS()}T12:00:00Z`)) / 86400000);
+  const time = nyParts(due).hm;
   const hasTime = time !== "23:59" && time !== "00:00";
   let label: string;
   if (diff === 0) label = "Hoje";
   else if (diff === 1) label = "Amanhã";
   else if (diff === -1) label = "Ontem";
-  else label = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  else label = `${dayIso.slice(8, 10)}/${dayIso.slice(5, 7)}`;
   return hasTime ? `${label} · ${time}` : label;
 }
 
@@ -241,8 +241,8 @@ function TaskEditor({ task, onClose, onSave, onDelete }: {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
   const [status, setStatus] = useState(task.status);
-  const [dueDate, setDueDate] = useState(task.due_at ? task.due_at.slice(0, 10) : "");
-  const [dueTime, setDueTime] = useState(task.due_at ? new Date(task.due_at).toTimeString().slice(0, 5) : "");
+  const [dueDate, setDueDate] = useState(task.due_at ? isoDateUS(task.due_at) : "");
+  const [dueTime, setDueTime] = useState(task.due_at ? nyParts(task.due_at).hm : "");
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist ?? []);
   const [newCheck, setNewCheck] = useState("");
   const [freq, setFreq] = useState<Frequency | "">(task.recurrence_frequency ?? "");
@@ -255,7 +255,7 @@ function TaskEditor({ task, onClose, onSave, onDelete }: {
     let due_at: string | null = null;
     if (dueDate) {
       const t = dueTime || "23:59";
-      due_at = new Date(`${dueDate}T${t}:00`).toISOString();
+      due_at = nyWallTime(dueDate, t).toISOString();   // horário de Nova York
     }
     await onSave({
       title: title.trim() || task.title,

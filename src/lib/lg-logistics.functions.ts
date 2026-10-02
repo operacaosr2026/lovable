@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
+import { isoTodayUS } from "@/lib/timezone";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -120,9 +121,9 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
   .handler(async ({ context, data }: any) => {
     const { order_id, ...patch } = data;
     const extra: Record<string, string> = {};
-    if (patch.delivery_status === "shipped") extra.shipped_at = new Date().toISOString().slice(0, 10);
-    if (patch.delivery_status === "delivered") extra.delivered_at = new Date().toISOString().slice(0, 10);
-    if (patch.delivery_status === "problem") extra.problem_at = new Date().toISOString().slice(0, 10);
+    if (patch.delivery_status === "shipped") extra.shipped_at = isoTodayUS();
+    if (patch.delivery_status === "delivered") extra.delivered_at = isoTodayUS();
+    if (patch.delivery_status === "problem") extra.problem_at = isoTodayUS();
     const { error } = await supabaseAdmin
       .from("shop_orders")
       .update({ ...patch, ...extra } as any)

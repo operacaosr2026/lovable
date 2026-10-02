@@ -423,6 +423,9 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
   return (
     <div className="border-t border-border p-3 space-y-2">
       <AttachmentChips files={att.files} onRemove={att.remove} />
+      {/https?:\/\/\S*track/i.test(text) && (
+        <p className="text-[11px] text-muted-foreground px-1">O link de rastreio vai no e-mail como o texto clicável <span className="text-primary font-semibold underline">Track your order here</span> — o cliente não vê a URL.</p>
+      )}
       {/* Caixa ocupa a largura toda; anexar, assinatura e Enviar ficam na barra de baixo. */}
       <div className="rounded-xl border border-border bg-background focus-within:border-primary transition-colors">
         <TemplateTextarea

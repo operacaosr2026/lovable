@@ -2,40 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { computeNextDueAt } from "@/lib/recurrence";
 
 const STATUSES = ["todo", "doing", "done"] as const;
 const FREQUENCIES = ["daily", "weekly", "monthly", "custom"] as const;
 
-function computeNextDueAt(
-  current: string | null,
-  frequency: typeof FREQUENCIES[number],
-  weekdays: number[],
-  time: string | null,
-): string {
-  const base = current ? new Date(current) : new Date();
-  const next = new Date(base);
-  if (frequency === "daily") next.setDate(next.getDate() + 1);
-  else if (frequency === "weekly") next.setDate(next.getDate() + 7);
-  else if (frequency === "monthly") next.setMonth(next.getMonth() + 1);
-  else if (frequency === "custom") {
-    const days = (weekdays ?? []).filter((d) => d >= 0 && d <= 6).sort((a, b) => a - b);
-    if (days.length === 0) next.setDate(next.getDate() + 1);
-    else {
-      const cur = base.getDay();
-      let delta = 7;
-      for (const d of days) {
-        const diff = (d - cur + 7) % 7 || 7;
-        if (diff < delta) delta = diff;
-      }
-      next.setDate(base.getDate() + delta);
-    }
-  }
-  if (time && /^\d{2}:\d{2}$/.test(time)) {
-    const [h, m] = time.split(":").map(Number);
-    next.setHours(h, m, 0, 0);
-  }
-  return next.toISOString();
-}
+// Próxima ocorrência no horário de Nova York (lib/recurrence.ts).
 
 const ChecklistItem = z.object({ id: z.string(), text: z.string().max(200), done: z.boolean() });
 

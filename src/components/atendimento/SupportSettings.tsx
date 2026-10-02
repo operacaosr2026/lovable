@@ -16,7 +16,7 @@ import { fullTime } from "./utils";
 import { BUSINESS_TIMEZONES, DEFAULT_BUSINESS_HOURS, businessHoursLabel, type BusinessHours } from "@/lib/support-kpis";
 import { useSupportFn } from "./demo";
 
-export type ConfigTab = "integracao" | "assinatura" | "mensagens" | "tags" | "metas" | "autoresposta";
+export type ConfigTab = "integracao" | "assinatura" | "mensagens" | "tags" | "metas" | "autoresposta" | "treino";
 type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 
 // Atendimento > Configurações: conexão com o Zoho (admin) e assinatura dos e-mails.
@@ -27,7 +27,8 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
     { key: "mensagens", label: "Mensagens salvas", desc: "Respostas prontas", icon: MessageSquareText },
     { key: "tags", label: "Tags", desc: "Etiquetas das conversas", icon: Tag },
     { key: "metas", label: "Metas", desc: "Horário comercial e tempos-alvo", icon: Target },
-    { key: "autoresposta", label: "Resposta automática", desc: "Rastreio e treino da IA", icon: Bot },
+    { key: "autoresposta", label: "Resposta automática", desc: "E-mails de rastreio", icon: Bot },
+    { key: "treino", label: "Treino da IA", desc: "Placar e o que a IA aprendeu", icon: Sparkles },
   ];
   return (
     <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
@@ -44,7 +45,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
         ))}
       </nav>
       <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 max-w-2xl">
-        {tab === "integracao" ? <Integration status={status} /> : tab === "mensagens" ? <TemplatesSettings /> : tab === "tags" ? <TagsSettings /> : tab === "metas" ? <GoalsSettings /> : tab === "autoresposta" ? <AutoReplySettings /> : <Signature />}
+        {tab === "integracao" ? <Integration status={status} /> : tab === "mensagens" ? <TemplatesSettings /> : tab === "tags" ? <TagsSettings /> : tab === "metas" ? <GoalsSettings /> : tab === "autoresposta" ? <AutoReplySettings /> : tab === "treino" ? <TrainingPanel /> : <Signature />}
       </div>
     </div>
   );
@@ -423,7 +424,6 @@ function AutoReplySettings() {
         <Switch checked={aiAvailable && on} disabled={!aiAvailable || toggle.isPending || q.isLoading} onCheckedChange={(v) => toggle.mutate(v)} />
       </div>
 
-      <TrainingPanel />
     </div>
   );
 }
@@ -435,9 +435,9 @@ function TrainingPanel() {
   const d = q.data as Awaited<ReturnType<typeof getSupportTraining>> | undefined;
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <div className="space-y-4 pt-2">
+    <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold flex items-center gap-1.5"><Sparkles className="size-4 text-primary" /> Treino da IA</h3>
+        <h2 className="text-base font-semibold">Treino da IA</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
           Em todo e-mail que chega, a IA escreve a resposta que daria — aparece na Caixa como <strong>Sugestão da IA</strong> (nada é enviado).
           Quando a equipe responde, ela compara com o que vocês mandaram e aprende a diferença; uma vez por dia junta tudo no manual abaixo.

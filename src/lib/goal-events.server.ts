@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isoTodayUS } from "@/lib/timezone";
+import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 import { companyShopIdsForMonth, monthStartOf } from "@/lib/company-goals.server";
 import { computeAccumulatedLucroServer } from "@/lib/lg-overview.functions";
 import { resolveWorkspaceAccess } from "@/integrations/supabase/workspace-middleware";
@@ -67,7 +67,7 @@ export async function checkProfitReports(ownerId: string) {
   for (const st of rows) {
     if (!st.profit_times?.length) continue;
     let local: { date: string; hhmm: string };
-    try { local = localNow(st.timezone); } catch { continue; }
+    try { local = localNow(US_TIME_ZONE); } catch { continue; }   // horários do lucro em Nova York
     const now = minutes(local.hhmm);
     const due = st.profit_times.filter((t) => now >= minutes(t) && now - minutes(t) < PROFIT_WINDOW_MIN);
     if (!due.length) continue;

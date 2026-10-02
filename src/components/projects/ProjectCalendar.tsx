@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { listProjectTasks } from "@/lib/project-tasks.functions";
+import { isoDateUS } from "@/lib/timezone";
 
 export function ProjectCalendar({ projectId }: { projectId: string }) {
   const list = useServerFn(listProjectTasks);
@@ -25,8 +26,9 @@ export function ProjectCalendar({ projectId }: { projectId: string }) {
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(cursor.getFullYear(), cursor.getMonth(), d);
       const dayTasks = tasks.filter((t: any) => {
-        const td = new Date(t.due_at);
-        return td.getFullYear() === date.getFullYear() && td.getMonth() === date.getMonth() && td.getDate() === d;
+        if (!t.due_at) return false;
+        // Dia do vencimento em Nova York.
+        return isoDateUS(t.due_at) === `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       });
       arr.push({ date, tasks: dayTasks });
     }

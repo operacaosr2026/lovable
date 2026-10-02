@@ -2,39 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { computeNextDueAt } from "@/lib/recurrence";
+import { isoDateUS, isoTodayUS, addDaysIso } from "@/lib/timezone";
 
 export const ROUTINE_FREQUENCIES = ["daily", "weekly", "monthly", "custom"] as const;
 
-function computeNextDueAt(
-  current: string | null,
-  frequency: typeof ROUTINE_FREQUENCIES[number],
-  weekdays: number[],
-  time: string | null,
-): string {
-  const base = current ? new Date(current) : new Date();
-  const next = new Date(base);
-  if (frequency === "daily") next.setDate(next.getDate() + 1);
-  else if (frequency === "weekly") next.setDate(next.getDate() + 7);
-  else if (frequency === "monthly") next.setMonth(next.getMonth() + 1);
-  else if (frequency === "custom") {
-    const days = (weekdays ?? []).filter((d) => d >= 0 && d <= 6).sort((a, b) => a - b);
-    if (days.length === 0) next.setDate(next.getDate() + 1);
-    else {
-      const cur = base.getDay();
-      let delta = 7;
-      for (const d of days) {
-        const diff = (d - cur + 7) % 7 || 7;
-        if (diff < delta) delta = diff;
-      }
-      next.setDate(base.getDate() + delta);
-    }
-  }
-  if (time && /^\d{2}:\d{2}$/.test(time)) {
-    const [h, m] = time.split(":").map(Number);
-    next.setHours(h, m, 0, 0);
-  }
-  return next.toISOString();
-}
+// Próxima ocorrência no horário de Nova York (lib/recurrence.ts).
 
 const RoutineInput = z.object({
   shop_id: z.string().uuid(),
@@ -58,18 +31,17 @@ export const listShopRoutines = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
 
     const ids = (routines ?? []).map((r: any) => r.id);
-    const since = new Date(); since.setDate(since.getDate() - 60);
     const logsByRoutine: Record<string, string[]> = {};
     if (ids.length) {
       const { data: logs } = await context.supabase
         .from("shop_routine_logs").select("routine_id,completed_on")
-        .in("routine_id", ids).gte("completed_on", since.toISOString().slice(0, 10));
+        .in("routine_id", ids).gte("completed_on", addDaysIso(isoTodayUS(), -60));
       for (const l of logs ?? []) {
         const k = (l as any).routine_id;
         (logsByRoutine[k] ??= []).push((l as any).completed_on);
       }
     }
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayKey = isoTodayUS();
     const now = new Date();
     return {
       routines: (routines ?? []).map((r: any) => {
@@ -130,19 +102,19 @@ export const completeShopRoutine = createServerFn({ method: "POST" })
       .from("shop_routines").select("*").eq("id", data.id).maybeSingle();
     if (!r) throw new Error("Rotina não encontrada");
 
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const today = isoTodayUS();
+    const yesterday = addDaysIso(today, -1);
     const { data: existingLog } = await context.supabase
       .from("shop_routine_logs").select("id")
       .eq("routine_id", data.id).eq("completed_on", today).maybeSingle();
 
     if (!existingLog) {
       await context.supabase.from("shop_routine_logs").insert({
-        user_id: context.userId, routine_id: data.id,
+        user_id: context.userId, routine_id: data.id, completed_on: today,
       });
     }
 
-    const lastDate = r.last_completed_at ? new Date(r.last_completed_at).toISOString().slice(0, 10) : null;
+    const lastDate = r.last_completed_at ? isoDateUS(r.last_completed_at) : null;
     let streak = r.streak ?? 0;
     if (lastDate === today) {
       // already counted today

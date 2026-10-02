@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Plus, Trash2, X, Repeat, Clock, CheckCircle2, Circle, Flame, Pencil } from "lucide-react";
+import { addDaysIso, formatDateUS, formatTimeUS, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import {
   listShopRoutines, createShopRoutine, updateShopRoutine, completeShopRoutine, deleteShopRoutine,
   ROUTINE_FREQUENCIES,
@@ -38,7 +39,7 @@ export function ShopRoutines({ shopId }: { shopId: string }) {
       const prev = qc.getQueryData<any>(queryKey);
       qc.setQueryData<any>(queryKey, (old: any) => {
         if (!old?.routines) return old;
-        const todayKey = new Date().toISOString().slice(0, 10);
+        const todayKey = isoTodayUS();
         return {
           ...old,
           routines: old.routines.map((r: any) =>
@@ -133,22 +134,18 @@ export function ShopRoutines({ shopId }: { shopId: string }) {
   );
 }
 
+// Horário de Nova York.
 function formatNextDue(iso: string) {
-  const d = new Date(iso);
-  const today = new Date(); today.setHours(0,0,0,0);
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-  const dKey = new Date(d); dKey.setHours(0,0,0,0);
-  const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  if (dKey.getTime() === tomorrow.getTime()) return `amanhã ${time}`;
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + ` ${time}`;
+  const time = formatTimeUS(iso);
+  if (isoDateUS(iso) === addDaysIso(isoTodayUS(), 1)) return `amanhã ${time}`;
+  return formatDateUS(iso, { day: "2-digit", month: "short" }) + ` ${time}`;
 }
 
 function RoutineCard({ r, onComplete, onEdit, onDelete }: any) {
   const recent = (r.recent_logs ?? []) as string[];
   const days: { date: string; done: boolean }[] = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
+    const key = addDaysIso(isoTodayUS(), -i);
     days.push({ date: key, done: recent.includes(key) });
   }
   return (

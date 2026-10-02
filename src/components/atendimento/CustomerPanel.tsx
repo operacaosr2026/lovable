@@ -7,6 +7,7 @@ import {
 } from "@/lib/atendimento.functions";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
+import { formatDateUS } from "@/lib/timezone";
 import { useSupportTags } from "./useSupportTags";
 
 // Tags da lista fixa (Configurações > Tags): cor pela posição, uma diferente
@@ -157,7 +158,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
             ) : customer.data && (
               <div className="grid grid-cols-2 gap-px rounded-xl border border-border bg-border overflow-hidden">
                 <Stat label="Total de pedidos" value={String(customer.data.ordersCount)} />
-                <Stat label="Primeiro pedido" value={customer.data.firstOrderAt ? new Date(customer.data.firstOrderAt).toLocaleDateString("pt-BR") : "—"} />
+                <Stat label="Primeiro pedido" value={customer.data.firstOrderAt ? formatDateUS(customer.data.firstOrderAt) : "—"} />
                 <Stat label="Valor total" value={
                   Object.keys(customer.data.totals).length
                     ? Object.entries(customer.data.totals).map(([cur, v]) => <span key={cur} className="block">{formatMoney(v, cur)}</span>)
@@ -197,7 +198,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                     <p className="text-sm font-semibold">{o.number ? (String(o.number).startsWith("#") ? o.number : `#${o.number}`) : "Pedido"}</p>
                     <p className="text-sm font-semibold">{formatMoney(o.revenue, o.currency)}</p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{new Date(o.date).toLocaleDateString("pt-BR")}{o.store ? ` · ${o.store}` : ""}</p>
+                  <p className="text-[11px] text-muted-foreground">{formatDateUS(o.date)}{o.store ? ` · ${o.store}` : ""}</p>
                   <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Cancelado</span>}
                     {o.financial && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{FINANCIAL[o.financial] ?? o.financial}</span>}

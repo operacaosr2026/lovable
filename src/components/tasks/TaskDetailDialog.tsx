@@ -17,6 +17,7 @@ import {
 import { updateProjectTask, deleteProjectTask } from "@/lib/project-tasks.functions";
 import { updateShopTask, deleteShopTask } from "@/lib/shop-tasks.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { isoDateUS, nyParts, nyWallTime } from "@/lib/timezone";
 
 type ChecklistItem = { id: string; text: string; done: boolean };
 
@@ -33,9 +34,8 @@ type Props = {
 
 function fmtDateTimeLocal(iso: string | null | undefined) {
   if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // Horário de Nova York no campo (não o do navegador).
+  return `${isoDateUS(iso)}T${nyParts(iso).hm}`;
 }
 
 function humanSize(bytes: number | null | undefined) {
@@ -111,7 +111,7 @@ export function TaskDetailDialog({
       const patch: Record<string, any> = {
         title,
         description,
-        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        due_at: dueAt ? nyWallTime(dueAt.slice(0, 10), dueAt.slice(11, 16)).toISOString() : null,
         checklist,
         status,
       };

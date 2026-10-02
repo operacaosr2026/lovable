@@ -348,6 +348,14 @@ const EVAL_META: Record<string, { label: string; cls: string }> = {
   parecida: { label: "IA chegou perto", cls: "text-primary" },
   diferente: { label: "IA respondeu diferente", cls: "text-warning" },
 };
+// URL de rastreio aparece como no e-mail enviado: "Track your order here" clicável.
+function LinkedText({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s]+[^\s.,;:!?)])/g);
+  return <>{parts.map((p, i) => i % 2
+    ? <a key={i} href={p} target="_blank" rel="noreferrer" className="text-primary font-semibold underline">{/track/i.test(p) ? "Track your order here" : p}</a>
+    : <span key={i}>{p}</span>)}</>;
+}
+
 function DraftCard({ m, defaultOpen, onUse }: { m: SupportMessage; defaultOpen: boolean; onUse?: (text: string) => void }) {
   const [open, setOpen] = useState(defaultOpen);
   const [lang, setLang] = useState<"pt" | "en">("pt");
@@ -366,7 +374,7 @@ function DraftCard({ m, defaultOpen, onUse }: { m: SupportMessage; defaultOpen: 
       {open && (
         <div className="px-3 pb-3 space-y-2">
           {e.pendente && e.observacao && <p className="text-[11px] text-warning">{e.observacao}</p>}
-          <p className="text-sm whitespace-pre-wrap">{text}</p>
+          <p className="text-sm whitespace-pre-wrap"><LinkedText text={text} /></p>
           <div className="flex items-center gap-2">
             <button onClick={() => setLang(lang === "pt" ? "en" : "pt")} className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:bg-muted flex items-center gap-1">
               <Languages className="size-3.5" /> {lang === "pt" ? "Ver em inglês" : "Ver em português"}

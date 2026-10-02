@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
 import { selectAll } from "@/lib/select-all";
+import { addDaysIso, isoTodayUS, nyEndOfDay, nyParts, nyStartOfDay } from "@/lib/timezone";
 
 /* ==================== READ ==================== */
 
@@ -12,18 +13,13 @@ export const getDashboard = createServerFn({ method: "GET" })
     const { supabase, userId, ownerId } = context;
     const shopFilter = getSectionResourceFilter(context, "shops");
 
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(today.getDate() - 6);
-    const sevenStr = sevenDaysAgo.toISOString().slice(0, 10);
+    // Dias de Nova York (o servidor roda em UTC).
+    const todayStr = isoTodayUS();
+    const sevenStr = addDaysIso(todayStr, -6);
+    const weekStartStr = addDaysIso(todayStr, -nyParts(Date.now()).weekday);
 
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - today.getDay());
-    const weekStartStr = weekStart.toISOString().slice(0, 10);
-
-    const todayEnd = `${todayStr}T23:59:59.999Z`;
-    const todayStart = `${todayStr}T00:00:00.000Z`;
+    const todayEnd = nyEndOfDay(todayStr).toISOString();
+    const todayStart = nyStartOfDay(todayStr).toISOString();
 
     const [
       profile, stores, revenues, gratitude, shopTasksToday,
@@ -75,7 +71,7 @@ export const upsertGratitude = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ content: z.string().trim().min(1).max(2000) }).parse(d))
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoTodayUS();
     const { error } = await supabase
       .from("gratitude_entries")
       .upsert(

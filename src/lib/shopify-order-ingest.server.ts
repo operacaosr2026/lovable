@@ -5,6 +5,7 @@ import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
 import { emitEvent } from "@/lib/notify.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { tracked } from "@/lib/system-errors.server";
+import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 
 // Push "Nova venda": loja + número + valor; o toque abre os pedidos do grupo
 // da loja. Só pedido que acabou de entrar (não reprocessamento de antigo).
@@ -101,7 +102,7 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
         }
         if (!row.delivery_status || row.delivery_status === "pending_shipment") {
           patch.delivery_status = "shipped";
-          patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10);
+          patch.shipped_at = fWithTrack.created_at ? isoDateUS(String(fWithTrack.created_at)) : isoTodayUS();
         }
         if (Object.keys(patch).length) {
           await supabaseAdmin.from("shop_orders").update(patch).eq("id", row.id);

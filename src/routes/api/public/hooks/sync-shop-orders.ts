@@ -17,6 +17,7 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { ensureShopifyWebhooks } from "@/lib/shopify-webhooks.server";
 import { orderDateFor } from "@/lib/order-date";
 import { broadcast } from "@/lib/realtime.server";
+import { isoTodayUS } from "@/lib/timezone";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -643,7 +644,7 @@ async function runSync(request: Request, opts: { payoutsOnly: boolean; ordersOnl
   const unauthorized = verifyCronApiKey(request);
   if (unauthorized) return unauthorized;
   const start = Date.now();
-  const today = isoDate(new Date());
+  const today = isoTodayUS();
   const { payoutsOnly, ordersOnly } = opts;
   const { data: settings, error } = await supabaseAdmin
     .from("shop_order_settings").select("*").eq("automation_enabled", true);

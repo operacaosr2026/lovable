@@ -7,6 +7,7 @@ import {
   AlertTriangle, CheckCircle2, ChevronRight, CircleDollarSign, Clock, ExternalLink, FileText, FlaskConical, Headphones,
   Loader2, Megaphone, MessageSquareText, MoreHorizontal, Package, PackageSearch, RotateCcw, Settings2, ShieldAlert, Sparkles, Target, Truck, X,
 } from "lucide-react";
+import { US_TIME_ZONE, formatTimeUS, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -65,16 +66,17 @@ const CB_REASON: Record<string, string> = {
 const usd = (x: number) => `$${x.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 const usd2 = (x: number) => `US$ ${x.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const n1 = (x: number) => x.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+// Horários no fuso de Nova York (o do sistema).
 function whenLabel(iso: string) {
-  const d = new Date(iso);
-  const hm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return d.toDateString() === new Date().toDateString() ? `hoje às ${hm}` : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${hm}`;
+  const day = isoDateUS(iso), hm = formatTimeUS(iso);
+  return day === isoTodayUS() ? `hoje às ${hm}` : `${day.slice(8, 10)}/${day.slice(5, 7)} às ${hm}`;
 }
 const fmtDay = (iso?: string) => {
   if (!iso) return "";
-  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toDateString() === new Date().toDateString() ? "hoje" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  if (!dateOnly && Number.isNaN(Date.parse(iso))) return iso;
+  const day = dateOnly ? iso : isoDateUS(iso);
+  return day === isoTodayUS() ? "hoje" : new Date(`${day}T12:00:00Z`).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" }).replace(".", "");
 };
 type Tab = "agora" | "testando" | "concluido";
 type TipItem = { tip: ConsultantTip; index: number; status: TipStatus | null };
@@ -598,7 +600,7 @@ function Milestones({ order }: { order: IntelOrder }) {
             <span className={`size-3 rounded-full mt-1 ${x.bad ? "bg-destructive" : "bg-success"}`} />
             {i < items.length - 1 && <span className="w-px h-6 bg-success/40" />}
           </div>
-          <span className="text-xs text-muted-foreground w-12 shrink-0 tabular-nums mt-0.5">{new Date(x.at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</span>
+          <span className="text-xs text-muted-foreground w-12 shrink-0 tabular-nums mt-0.5">{new Date(x.at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: US_TIME_ZONE })}</span>
           <span className={`flex-1 ${x.bad ? "font-medium" : ""}`}>{x.label}</span>
           {x.bad && order.deliveredToChargebackDays != null && <span className="text-[11px] px-1.5 rounded bg-destructive/10 text-destructive">+{n1(order.deliveredToChargebackDays)} dias</span>}
         </li>
@@ -613,7 +615,7 @@ function AllEvents({ order }: { order: IntelOrder }) {
       {order.steps.map((x, i) => (
         <li key={i} className="ml-4 pb-3">
           <span className={`absolute -left-[5px] mt-1.5 size-2.5 rounded-full ${x.kind === "chargeback" ? "bg-destructive" : x.stage === "entregue" ? "bg-success" : x.stage === "info" ? "bg-border" : "bg-primary"}`} />
-          <p className="text-[11px] text-muted-foreground tabular-nums">{new Date(x.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>
+          <p className="text-[11px] text-muted-foreground tabular-nums">{new Date(x.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE })}</p>
           <p className="font-medium">{x.label}</p>
           {x.detail && <p className="text-xs text-muted-foreground">{x.detail}</p>}
         </li>

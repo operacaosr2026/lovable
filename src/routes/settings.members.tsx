@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { formatDateUS } from "@/lib/timezone";
 
 export const Route = createFileRoute("/settings/members")({
   beforeLoad: async () => {
@@ -219,7 +220,7 @@ function MembersPage() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{inv.email}</div>
                     <div className="text-xs text-muted-foreground truncate">
-                      Expira em {new Date(inv.expires_at).toLocaleDateString("pt-BR")} · {inv.permissions.length} permissões
+                      Expira em {formatDateUS(inv.expires_at)} · {inv.permissions.length} permissões
                     </div>
                   </div>
                   <button

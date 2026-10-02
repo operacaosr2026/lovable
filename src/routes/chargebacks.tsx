@@ -18,6 +18,7 @@ import { getDisputeEvidence, draftDisputeRebuttal, type DisputeEvidence } from "
 import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
 import { AlertsTab } from "@/components/chargebacks/AlertsTab";
 import { SettingsTab } from "@/components/chargebacks/SettingsTab";
+import { US_TIME_ZONE, isoTodayUS, nyStartOfDay } from "@/lib/timezone";
 
 export const Route = createFileRoute("/chargebacks")({
   beforeLoad: requireAuth,
@@ -138,7 +139,7 @@ const fmtDate = (iso: string | null) => {
   if (!iso) return "—";
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
-  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: US_TIME_ZONE });
 };
 const daysLeft = (iso: string | null) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000) : null);
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0);
@@ -172,7 +173,7 @@ function ChargebacksPage() {
     const now = new Date();
     const from = period === "30" ? new Date(now.getTime() - 30 * 86_400_000)
       : period === "90" ? new Date(now.getTime() - 90 * 86_400_000)
-      : period === "ano" ? new Date(now.getFullYear(), 0, 1) : null;
+      : period === "ano" ? nyStartOfDay(`${isoTodayUS().slice(0, 4)}-01-01`) : null;
     return typed.filter((r) => !from || new Date(r.initiatedAt) >= from);
   }, [typed, period]);
   const list = useMemo(() => {
@@ -221,7 +222,7 @@ function ChargebacksPage() {
     const blob = new Blob(["﻿" + [head.map(esc).join(";"), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `chargebacks-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `chargebacks-${isoTodayUS()}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };

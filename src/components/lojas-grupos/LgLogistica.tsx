@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis, postingCalendar } from "@/lib/logistics-kpis";
 import { listPostingHolidays } from "@/lib/posting-holidays.functions";
+import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -180,7 +181,7 @@ export function LgLogistica({
 
   const nowMs = Date.now();
   const { from, to } = (() => {
-    const today = isoDate(new Date());
+    const today = isoTodayUS();
     if (period === "hoje")   return { from: today, to: today };
     if (period === "ontem")  { const y = addD(today, -1); return { from: y, to: y }; }
     if (period === "7d")     return { from: addD(today, -6), to: today };
@@ -247,7 +248,7 @@ export function LgLogistica({
   // rodada, mas cada rodada confere ~30 pedidos por loja (limite do Track123) —
   // não garantia que tudo estava em dia. Agora: % dos rastreios em aberto (mesma
   // janela de 30 dias do sync) conferidos na última hora, por loja no tooltip.
-  const syncWindowStart = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const syncWindowStart = isoDateUS(Date.now() - 30 * 86_400_000);
   const freshSince = new Date(Date.now() - 60 * 60_000).toISOString();
   const openTracked = (orders as any[]).filter((o) => (shopFilter === "todas" || o.shop_id === shopFilter)
     && o.tracking_checked_at && o.order_date >= syncWindowStart

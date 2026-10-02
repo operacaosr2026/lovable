@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { US_TIME_ZONE, isoDateUS } from "@/lib/timezone";
+import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -776,7 +776,7 @@ export const getMetaAdsMetrics = createServerFn({ method: "POST" })
   .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const today = isoDate(new Date());
+    const today = isoTodayUS();
     const since30 = addDays(today, -30);
     const since7 = addDays(today, -7);
 

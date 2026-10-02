@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
+import { isoTodayUS } from "@/lib/timezone";
 
 export const syncShopifyVisitors = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -34,7 +35,7 @@ export const syncShopifyVisitors = createServerFn({ method: "POST" })
     if (!store?.access_token) return { synced: 0, error: "no_token" };
 
     const { shop_domain, access_token } = store as { shop_domain: string; access_token: string };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoTodayUS();
 
     // ShopifyQL novo (a sintaxe antiga "DIMENSIONS BY … METRICS" e os tipos
     // TableData/QueryRootError saíram da API): SHOW … TIMESERIES day, resposta em

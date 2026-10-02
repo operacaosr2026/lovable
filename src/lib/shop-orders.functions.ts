@@ -5,7 +5,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
-import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
+import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -763,7 +763,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
     const { domain, token } = await getShopifyCreds(context.supabase, context.ownerId, settings.shopify_store_id);
-    const todayForSince = isoDate(new Date());
+    const todayForSince = isoTodayUS();
     const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
     const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
     const orders = (await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`)).filter((o: any) => !isRecoveryOrder(o));
@@ -836,7 +836,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
         }
         if (!existing?.delivery_status || existing.delivery_status === "pending_shipment") {
           patch.delivery_status = "shipped";
-          patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : isoDate(new Date());
+          patch.shipped_at = fWithTrack.created_at ? isoDateUS(String(fWithTrack.created_at)) : isoTodayUS();
         }
         if (Object.keys(patch).length) {
           await context.supabase.from("shop_orders").update(patch)
@@ -860,7 +860,7 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     // configurável por loja — ver getShopPaymentDays). Sync covers the last
     // `since_days`, so processing dates from (today - since_days + delay) up
     // to (today + delay) may have changed.
-    const today = isoDate(new Date());
+    const today = isoTodayUS();
     const { data: settingsFull } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
     const paymentDays = await getShopPaymentDays(context.supabase, data.shop_id);
@@ -1134,7 +1134,7 @@ export const getShopifyPendingBalance = createServerFn({ method: "GET" })
     // Payouts já sincronizados no banco com datas reais da Shopify — exclui os
     // que já foram depositados (status "paid"): esse valor já caiu, não é mais
     // "a receber", e contar ele de novo duplicaria com o saldo ao vivo.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoTodayUS();
     const { data: upcomingEntries } = await selectAll(context.supabase.from("shop_cash_entries")
       .select("shopify_payout_id,date,amount")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
@@ -1386,7 +1386,7 @@ export const getGroupShopifyPayoutLag = createServerFn({ method: "GET" })
 export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof supabaseAdmin, ownerId: string, shopIds: string[]) => {
     const context = { supabase, ownerId };
     const data = { shop_ids: shopIds };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoTodayUS();
     // As duas consultas em paralelo (antes uma esperava a outra).
     const [{ data: entries }, { data: settings }] = await Promise.all([
       selectAll(context.supabase.from("shop_cash_entries")
@@ -1648,7 +1648,7 @@ export const updateUnitCost = createServerFn({ method: "POST" })
     note: z.string().max(200).optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
-    const today = isoDate(new Date());
+    const today = isoTodayUS();
     if (data.mode === "all") {
       await context.supabase.from("shop_product_cost_history")
         .delete().eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
