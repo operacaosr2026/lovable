@@ -65,100 +65,10 @@ export function SupportKpisView({ month }: { month: string }) {
           footer={k && <Split a={["Há mais de 12h", int(k.cards.open.over12h)]} b={["Há mais de 36h", int(k.cards.open.over36h)]} />} />
       </div>
 
-      {/* ── Por loja | Por tag ── */}
-      <div className="grid xl:grid-cols-5 gap-3">
-        <Card title="Conversas por loja" className="xl:col-span-3">
-          {!k ? <Skeleton h={260} /> : !k.stores.length ? <Empty h={260} text="Nenhum e-mail de loja identificada no mês" /> : (
-            <>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={k.byStoreDaily} margin={{ top: 8, right: 4, left: -20, bottom: 0 }} barCategoryGap="22%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                  <XAxis dataKey="date" tickFormatter={fmtDay} tick={AXIS} axisLine={false} tickLine={false} minTickGap={18} />
-                  <YAxis allowDecimals={false} tick={AXIS} axisLine={false} tickLine={false} />
-                  <Tooltip content={<StackTip stores={k.stores} />} cursor={{ fill: "var(--color-muted)", opacity: 0.5 }} />
-                  {k.stores.map((s, i) => (
-                    <Bar key={s.id} dataKey={s.id} stackId="lojas" name={s.name} fill={slot(s.color)}
-                      stroke="var(--color-card)" strokeWidth={1}
-                      radius={i === k.stores.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-2">
-                {k.stores.map((s) => (
-                  <span key={s.id} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="size-2.5 rounded-full" style={{ background: slot(s.color) }} />{s.name}
-                  </span>
-                ))}
-              </div>
-              {k.unassigned > 0 && (
-                <p className="text-[11px] text-muted-foreground text-center mt-2">
-                  {k.unassigned} conversa{k.unassigned > 1 ? "s" : ""} ainda sem loja identificada — defina a loja no painel do cliente.
-                </p>
-              )}
-            </>
-          )}
-        </Card>
-
-        <TagsCard k={k} className="xl:col-span-2" />
-      </div>
-
-      {/* ── Chegada | Desempenho por loja ── */}
-      <div className="grid xl:grid-cols-5 gap-3">
-        <ArrivalsCard k={k} className="xl:col-span-2" />
-        <Card title="Desempenho por loja" className="xl:col-span-3">
-          {!k ? <Skeleton h={220} /> : !k.storeTable.length ? <Empty h={220} text="Nenhuma loja com e-mails no mês" /> : (
-            <div className="overflow-x-auto -mx-1">
-              <table className="w-full text-xs table-fixed">
-                {/* As 4 colunas de números com a mesma largura; a loja fica com o resto. */}
-                <colgroup>
-                  <col />
-                  <col className="w-[17%]" /><col className="w-[17%]" /><col className="w-[17%]" /><col className="w-[17%]" />
-                </colgroup>
-                <thead>
-                  <tr className="text-[11px] text-muted-foreground border-b border-border">
-                    <th className="text-left font-medium py-2 px-1">Loja</th>
-                    <th className="text-center font-medium py-2 px-1">E-mails enviados</th>
-                    <th className="text-center font-medium py-2 px-1">E-mails recebidos</th>
-                    <th className="text-center font-medium py-2 px-1">Respondidos</th>
-                    <th className="text-center font-medium py-2 px-1">Em aberto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {k.storeTable.map((r) => {
-                    const color = k.stores.find((s) => s.id === r.id)?.color ?? 99;
-                    const d = pctDelta(r.received, r.receivedPrev);
-                    return (
-                      <tr key={r.id} className="border-b border-border/60 last:border-0">
-                        <td className="py-2 px-1">
-                          <span className="flex items-center gap-2 min-w-0">
-                            <span className="size-6 rounded-full grid place-items-center text-[10px] font-bold text-white shrink-0" style={{ background: slot(color) }}>
-                              {r.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-                            </span>
-                            <span className="font-medium truncate">{r.name}</span>
-                          </span>
-                        </td>
-                        <td className="py-2 px-1 text-center tabular-nums">{int(r.started)}</td>
-                        <td className="py-2 px-1 text-center tabular-nums whitespace-nowrap">
-                          {/* A variação fica ao lado sem tirar o número do centro. */}
-                          <span className="relative inline-block">
-                            <span className="font-semibold">{int(r.received)}</span>
-                            {d != null && d !== 0 && (
-                              <span className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 text-[10px] text-muted-foreground inline-flex items-center">
-                                {d > 0 ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}{Math.abs(d)}%
-                              </span>
-                            )}
-                          </span>
-                        </td>
-                        <td className="py-2 px-1 text-center tabular-nums">{int(r.replied)}</td>
-                        <td className="py-2 px-1 text-center tabular-nums">{int(r.open)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+      {/* ── Por tag | Chegada ── */}
+      <div className="grid xl:grid-cols-2 gap-3">
+        <TagsCard k={k} className="" />
+        <ArrivalsCard k={k} className="" />
       </div>
     </div>
   );
@@ -398,26 +308,6 @@ function SimpleTip({ active, payload, label }: any) {
     <div className="rounded-xl bg-popover border border-border px-3 py-2 shadow-lg text-xs">
       <p className="text-muted-foreground mb-0.5">{label}</p>
       <p><span className="font-semibold">{payload[0].value}</span> e-mail{payload[0].value === 1 ? "" : "s"}</p>
-    </div>
-  );
-}
-
-function StackTip({ active, payload, label, stores }: any) {
-  if (!active || !payload?.length) return null;
-  const total = payload.reduce((s: number, p: any) => s + (p.value ?? 0), 0);
-  return (
-    <div className="rounded-xl bg-popover border border-border px-3 py-2 shadow-lg text-xs min-w-[160px]">
-      <p className="text-muted-foreground mb-1">{fmtDay(label)} · {total} e-mail{total === 1 ? "" : "s"}</p>
-      {[...payload].reverse().map((p: any) => {
-        const s = stores.find((x: any) => x.id === p.dataKey);
-        return (
-          <div key={p.dataKey} className="flex items-center gap-2">
-            <span className="size-2 rounded-full" style={{ background: slot(s?.color ?? 99) }} />
-            <span className="text-muted-foreground">{s?.name}</span>
-            <span className="font-semibold ml-auto pl-3 tabular-nums">{p.value}</span>
-          </div>
-        );
-      })}
     </div>
   );
 }
