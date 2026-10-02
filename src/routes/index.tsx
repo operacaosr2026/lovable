@@ -41,7 +41,7 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
   errorComponent: ({ error }) => (
     <div className="p-8 text-sm text-muted-foreground">
-      Erro ao carregar: {error?.message ?? "tente recarregar"}
+      Erro ao carregar: {error instanceof Error ? error.message : "tente recarregar"}
     </div>
   ),
 });

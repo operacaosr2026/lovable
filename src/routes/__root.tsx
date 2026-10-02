@@ -44,10 +44,10 @@ function NotFoundComponent() {
 // Nesse caso recarrega sozinho, uma vez, já na versão nova.
 const STALE_CHUNK = /dynamically imported module|Importing a module script failed|error loading dynamically imported|Loading chunk|Failed to fetch dynamically/i;
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  const staleChunk = STALE_CHUNK.test(String(error?.message ?? error));
+  const staleChunk = STALE_CHUNK.test(String(error instanceof Error ? error.message : error));
   useEffect(() => {
     if (!staleChunk) return;
     try {
