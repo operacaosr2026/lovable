@@ -118,7 +118,7 @@ function InteligenciaPage() {
     onError: (e: any) => toast.error(e.message ?? "A análise falhou"),
   });
   const setStatus = useMutation({
-    mutationFn: (v: { index: number; status: TipStatus | null }) => statusFn({ data: { report_id: report!.id, ...v } }),
+    mutationFn: (v: { index: number; status: TipStatus | null; motivo?: "ja_sei" | "sem_sentido" }) => statusFn({ data: { report_id: report!.id, ...v } }),
     onSuccess: (_r, v) => {
       qc.invalidateQueries({ queryKey: ["consultant"] });
       toast.success(v.status === "testando" ? "Movido para Testando" : v.status === "ignorada" ? "Ignorada" : v.status === "feita" ? "Concluída" : "Voltou para Agora");
@@ -212,7 +212,7 @@ function InteligenciaPage() {
             {visible.map((item) => (
               <TipCard key={item.index} item={item} saving={setStatus.isPending}
                 onOpen={(t) => setOpenTip({ item, tab: t })}
-                onStatus={(status) => setStatus.mutate({ index: item.index, status })} />
+                onStatus={(status, motivo) => setStatus.mutate({ index: item.index, status, motivo })} />
             ))}
             {visible.length === 0 && !(tab === "testando" && testsRunning.length) && !(tab === "concluido" && testsDone.length) && (
               <div className="premium-card p-6 text-sm text-muted-foreground text-center">
@@ -235,7 +235,7 @@ function InteligenciaPage() {
 // ─── Card da recomendação ─────────────────────────────────────────────────────
 const META_ICONS = [FileText, Package, Clock];
 function TipCard({ item, saving, onOpen, onStatus }: {
-  item: TipItem; saving: boolean; onOpen: (tab: DrawerTab) => void; onStatus: (s: TipStatus | null) => void;
+  item: TipItem; saving: boolean; onOpen: (tab: DrawerTab) => void; onStatus: (s: TipStatus | null, motivo?: "ja_sei" | "sem_sentido") => void;
 }) {
   const { tip, status } = item;
   const p = PRIO[prioOf(tip)];
@@ -286,7 +286,8 @@ function TipCard({ item, saving, onOpen, onStatus }: {
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label="Mais opções"><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {!status && <DropdownMenuItem onClick={() => onStatus("ignorada")}>Ignorar</DropdownMenuItem>}
+                {!status && <DropdownMenuItem onClick={() => onStatus("ignorada", "ja_sei")}>Já sei disso</DropdownMenuItem>}
+                {!status && <DropdownMenuItem onClick={() => onStatus("ignorada", "sem_sentido")}>Não faz sentido</DropdownMenuItem>}
                 {!status && <DropdownMenuItem onClick={() => onStatus("feita")}>Já fiz</DropdownMenuItem>}
                 {status && <DropdownMenuItem onClick={() => onStatus(null)}>Voltar para Agora</DropdownMenuItem>}
               </DropdownMenuContent>

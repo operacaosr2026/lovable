@@ -265,9 +265,12 @@ export async function buildConsultantFacts(ownerId: string) {
   const { data: prev } = await supabaseAdmin.from("consultant_reports")
     .select("id,created_at,result,tips_status").eq("user_id", ownerId).order("created_at", { ascending: false }).limit(8);
   // Dicas que o dono ignorou: a IA não sugere de novo (aprende com as decisões dele).
-  const dicas_ignoradas_pelo_dono = [...new Set(((prev ?? []) as any[]).flatMap((r) => Object.entries(r.tips_status ?? {})
+  const MOTIVO: Record<string, string> = { ja_sei: "ele já sabe disso", sem_sentido: "não faz sentido pra operação dele" };
+  const dicas_ignoradas_pelo_dono = ((prev ?? []) as any[]).flatMap((r) => Object.entries(r.tips_status ?? {})
     .filter(([, s]: any) => s?.status === "ignorada")
-    .map(([i]) => (r.result?.dicas ?? [])[Number(i)]?.titulo).filter(Boolean)))];
+    .map(([i, s]: any) => { const t = (r.result?.dicas ?? [])[Number(i)]; return t ? { dica: t.titulo, sobre: t.frase ?? "", motivo: MOTIVO[s.motivo] ?? "descartada" } : null; })
+    .filter(Boolean))
+    .filter((x: any, i: number, arr: any[]) => arr.findIndex((y) => y.dica === x.dica) === i);
   const testes_em_andamento = ((prev ?? []) as any[]).flatMap((r) => Object.entries(r.tips_status ?? {})
     .filter(([, s]: any) => s?.status === "testando")
     .map(([i, s]: any) => {
@@ -453,7 +456,8 @@ Antes de incluir qualquer dica, ela precisa passar nos três testes. Se não pas
 Proibido: "você precisa bater a meta", "mantenha o ritmo", "acompanhe/observe X", "o faturamento subiu", dica que só reformula um número, conselho genérico de e-commerce. Metas só se houver algo escondido (ex.: chargebacks de setembro que ainda vão cair em outubro e tiram US$ X do lucro do mês).
 De onde vem a inteligência: padroes_cruzados (característica do pedido × problema, com quantas vezes mais e a força estatística), tendencia_semanal (o que mudou de uma semana para outra), jornada_chargebacks (o que os chargebacks têm em comum) e desvios contra o normal em rastreamento_fornecedor. Cruze esses sinais entre si e explique o mecanismo provável (ex.: "linha de transporte X + região Y → entrega lenta → disputa antes da entrega").
 NUNCA faça dica que seja tarefa operacional que outra tela já cobre. Isto NÃO é dica: contestar/responder disputa, juntar prova para disputa, segurar ou cancelar envio de pedido já disputado, cobrar o fornecedor por um pedido parado específico, listar pedidos pendentes/parados/sem postagem/sem código, responder conversas abertas. Isso já aparece em Pendências, Rastreamento e Chargebacks.
-dicas_ignoradas_pelo_dono: ele já descartou essas — não repita nem com outras palavras. pedidos_afetados só com poucos exemplos que ilustram um padrão (pode ficar vazio).
+dicas_ignoradas_pelo_dono: ele já descartou essas — não repita nem com outras palavras. Motivo "ele já sabe disso" vale para o ASSUNTO inteiro (ex.: descartou "pague o fornecedor no mesmo dia" → nada sobre prazo/dia de pagamento ao fornecedor).
+SENSO COMUM NÃO É INTELIGÊNCIA: não traga o que qualquer operador de dropshipping já sabe — pagar o fornecedor rápido acelera a postagem, fim de semana atrasa, prazo claro/aviso proativo reduz disputa, responder rápido reduz chargeback, frete internacional demora, cliente reclama de atraso. Só entra se o dado revelar algo contraintuitivo (o contrário do esperado, ou um efeito muito maior do que se imagina) ou um número que muda a decisão dele. pedidos_afetados só com poucos exemplos que ilustram um padrão (pode ficar vazio).
 Achado "fraco" pode ser acaso: só use se combinar com outro sinal, e diga isso. Prefira os "forte"/"moderado" com mais pedidos.
 Exemplos do nível esperado (ilustrativos — use só o que os dados mostrarem): "a linha de transporte JCZ entrega 2,3x mais devagar que a ZS e concentra os chargebacks de 'não recebido' — peça ao fornecedor para usar a ZS"; "pedidos pagos ao fornecedor com 3+ dias de atraso têm 3x mais código sem pacote — pague no mesmo dia"; "compras feitas dentro do app do Instagram têm 4x mais reembolso"; "disputas abrem no dia ~9 e a entrega normal sai no dia ~13: a janela de prevenção é entre o dia 5 e o 8".
 

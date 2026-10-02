@@ -103,6 +103,8 @@ export const setConsultantTipStatus = createServerFn({ method: "POST" })
     report_id: z.string().uuid(),
     index: z.number().int().min(0).max(50),
     status: z.enum(["testando", "feita", "ignorada"]).nullable(),
+    // Motivo ao ignorar: "ja_sei" (a IA deixa de sugerir o assunto) ou "sem_sentido".
+    motivo: z.enum(["ja_sei", "sem_sentido"]).nullable().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     assertAccess(context);
@@ -111,7 +113,7 @@ export const setConsultantTipStatus = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!r) throw new Error("Análise não encontrada");
     const tips = { ...((r.tips_status ?? {}) as Record<string, unknown>) };
-    if (data.status) tips[String(data.index)] = { status: data.status, at: new Date().toISOString() };
+    if (data.status) tips[String(data.index)] = { status: data.status, at: new Date().toISOString(), ...(data.motivo ? { motivo: data.motivo } : {}) };
     else delete tips[String(data.index)];
     const { error: upErr } = await supabaseAdmin.from("consultant_reports").update({ tips_status: tips as any })
       .eq("user_id", context.ownerId).eq("id", data.report_id);
