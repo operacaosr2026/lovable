@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { runConsultant, type ConsultantResult } from "@/lib/consultant.server";
+import { runConsultant, runRequestedAnalysis, type ConsultantResult } from "@/lib/consultant.server";
 import { resolveNotification } from "@/lib/notifications.server";
 
 // Página Consultor (ver consultant.server.ts). Acesso: admin, ou membro com a
@@ -51,6 +51,15 @@ export const runConsultantNow = createServerFn({ method: "POST" })
     assertAccess(context);
     const r = await runConsultant(context.ownerId);
     return { id: r.id };
+  });
+
+// "Pedir análise": investigação nova sobre o que o dono escrever.
+export const requestConsultantAnalysis = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ pedido: z.string().trim().min(5).max(800) }).parse(d))
+  .handler(async ({ context, data }) => {
+    assertAccess(context);
+    return runRequestedAnalysis(context.ownerId, data.pedido);
   });
 
 export const setConsultantTipStatus = createServerFn({ method: "POST" })

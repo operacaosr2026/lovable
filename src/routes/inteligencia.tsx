@@ -5,14 +5,15 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   AlertTriangle, CheckCircle2, ChevronRight, CircleDollarSign, Clock, ExternalLink, FileText, FlaskConical, Headphones,
-  Loader2, Megaphone, MoreHorizontal, Package, PackageSearch, RotateCcw, Settings2, ShieldAlert, Sparkles, Target, Truck, X,
+  Loader2, Megaphone, MessageSquareText, MoreHorizontal, Package, PackageSearch, RotateCcw, Settings2, ShieldAlert, Sparkles, Target, Truck, X,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getConsultant, runConsultantNow, setConsultantTipStatus, type TipStatus, type ConsultantReport } from "@/lib/consultant.functions";
+import { getConsultant, runConsultantNow, requestConsultantAnalysis, setConsultantTipStatus, type TipStatus, type ConsultantReport } from "@/lib/consultant.functions";
 import { getIntelOrders, type IntelOrder } from "@/lib/intel.functions";
 import type { ConsultantTip, ConsultantTest } from "@/lib/consultant.server";
 
@@ -93,6 +94,17 @@ function InteligenciaPage() {
   const [openTip, setOpenTip] = useState<{ item: TipItem; tab: DrawerTab } | null>(null);
   const [openTest, setOpenTest] = useState<ConsultantTest | null>(null);
 
+  const askFn = useServerFn(requestConsultantAnalysis);
+  const [askOpen, setAskOpen] = useState(false);
+  const ask = useMutation({
+    mutationFn: (pedido: string) => askFn({ data: { pedido } }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["consultant"] });
+      setTab("agora");
+      toast.success(r.added ? `Análise pronta: ${r.added} ${r.added === 1 ? "dica nova" : "dicas novas"} em Agora` : "Análise pronta");
+    },
+    onError: (e: any) => toast.error(e.message ?? "A análise falhou"),
+  });
   const run = useMutation({
     mutationFn: () => runFn(),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Análise pronta"); },
@@ -139,10 +151,17 @@ function InteligenciaPage() {
           <h1 className="text-2xl font-bold tracking-tight">Inteligência</h1>
           {report && <span className="text-[11px] px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium">IA analisou seus dados {whenLabel(report.createdAt)}</span>}
         </div>
-        <Button onClick={() => run.mutate()} disabled={run.isPending}>
-          {run.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando… (1-2 min)</> : <><Sparkles className="size-4" /> Analisar agora</>}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setAskOpen(true)} disabled={ask.isPending}>
+            {ask.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando seu pedido…</> : <><MessageSquareText className="size-4" /> Pedir análise</>}
+          </Button>
+          <Button onClick={() => run.mutate()} disabled={run.isPending}>
+            {run.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando… (1-2 min)</> : <><Sparkles className="size-4" /> Analisar agora</>}
+          </Button>
+        </div>
       </div>
+
+      <AskDialog open={askOpen} onOpenChange={setAskOpen} onSubmit={(pedido) => { setAskOpen(false); ask.mutate(pedido); }} />
 
       {q.isLoading ? (
         <div className="premium-card p-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
@@ -227,7 +246,7 @@ function TipCard({ item, saving, onOpen, onStatus }: {
               <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold mb-1.5">
                 <span className={`px-2 py-0.5 rounded ${p.chip}`}>{p.label}</span>
                 <span className="px-2 py-0.5 rounded bg-primary/10 text-primary">{c.label}</span>
-                <span className="px-2 py-0.5 rounded border border-border text-muted-foreground font-medium">Confiança {CONF[tip.confianca]?.label.toLowerCase()}</span>
+                {tip.do_pedido && <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground inline-flex items-center gap-1"><MessageSquareText className="size-3" /> SEU PEDIDO</span>}
                 {status === "testando" && <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground">EM ANDAMENTO</span>}
                 {status === "feita" && <span className="px-2 py-0.5 rounded bg-success text-white">FEITO</span>}
                 {status === "ignorada" && <span className="px-2 py-0.5 rounded bg-surface text-muted-foreground">IGNORADA</span>}
@@ -367,6 +386,12 @@ function TipDrawer({ open, report, saving, onClose, onStatus }: {
           {tab === "geral" && (
             <>
               <div>
+                {tip.pedido && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 mb-4">
+                    <p className="text-xs font-medium text-primary flex items-center gap-1.5 mb-0.5"><MessageSquareText className="size-3.5" /> Você pediu</p>
+                    <p className="text-sm">{tip.pedido}</p>
+                  </div>
+                )}
                 <h4 className="font-semibold mb-1">Por que a IA está sugerindo isso?</h4>
                 <p className="text-muted-foreground">{tip.por_que ?? tip.o_que_vi}</p>
               </div>
@@ -580,5 +605,38 @@ function AllEvents({ order }: { order: IntelOrder }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+// "Pedir análise": o dono escreve o que quer investigar; a IA faz uma análise nova.
+const ASK_EXAMPLES = [
+  "Analisa os pedidos de setembro que ainda não foram entregues",
+  "Os chargebacks têm alguma coisa em comum no rastreio?",
+  "O fornecedor está demorando mais para postar nesta semana?",
+];
+function AskDialog({ open, onOpenChange, onSubmit }: { open: boolean; onOpenChange: (v: boolean) => void; onSubmit: (pedido: string) => void }) {
+  const [text, setText] = useState("");
+  const ok = text.trim().length >= 5;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Pedir análise</DialogTitle>
+          <DialogDescription>Escreva o que você quer que a IA investigue. Ela analisa os pedidos, o rastreio, os chargebacks e o atendimento das lojas ativas e traz as dicas para a aba Agora.</DialogDescription>
+        </DialogHeader>
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={800} autoFocus
+          placeholder="Ex.: analisa os pedidos parados há mais de 10 dias"
+          className="w-full rounded-lg border border-border bg-background p-3 text-sm" />
+        <div className="flex flex-wrap gap-1.5">
+          {ASK_EXAMPLES.map((e) => (
+            <button key={e} type="button" onClick={() => setText(e)} className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-surface">{e}</button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button disabled={!ok} onClick={() => { onSubmit(text.trim()); setText(""); }}><Sparkles className="size-4" /> Analisar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
