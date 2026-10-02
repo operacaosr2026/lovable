@@ -576,10 +576,11 @@ export const getSupportSettings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
-    const { data } = await supabaseAdmin.from("support_settings").select(`signature,signature_enabled,tags,ai_tags_enabled,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", context.ownerId).maybeSingle();
+    const { data } = await supabaseAdmin.from("support_settings").select(`signature,signature_enabled,tags,ai_tags_enabled,auto_reply_tracking,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", context.ownerId).maybeSingle();
     return {
       signature: data?.signature ?? "",
       signatureEnabled: data?.signature_enabled ?? true,
+      autoReplyTracking: (data as any)?.auto_reply_tracking ?? false,
       tags: data?.tags ?? [...DEFAULT_TAGS],
       aiTagsEnabled: data?.ai_tags_enabled ?? true,
       goals: {
@@ -603,6 +604,7 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     signatureEnabled: z.boolean().optional(),
     tags: z.array(TagName).max(100).optional(),
     aiTagsEnabled: z.boolean().optional(),
+    autoReplyTracking: z.boolean().optional(),
     goals: z.object({
       firstResponseMin: z.number().int().min(1).max(60 * 24 * 30),
       resolutionMin: z.number().int().min(1).max(60 * 24 * 90),
@@ -620,6 +622,7 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     if (data.signature !== undefined) row.signature = data.signature.trim() || null;
     if (data.signatureEnabled !== undefined) row.signature_enabled = data.signatureEnabled;
     if (data.aiTagsEnabled !== undefined) row.ai_tags_enabled = data.aiTagsEnabled;
+    if (data.autoReplyTracking !== undefined) row.auto_reply_tracking = data.autoReplyTracking;
     if (data.goals) {
       row.goal_first_response_min = data.goals.firstResponseMin;
       row.goal_resolution_min = data.goals.resolutionMin;
@@ -634,6 +637,23 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.from("support_settings").upsert(row, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// Últimas respostas automáticas (enviadas e puladas, com o motivo) — Configurações → Resposta automática.
+export const listSupportAutoReplies = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    assertSub(context, "at_config");
+    const { data, error } = await supabaseAdmin.from("support_messages")
+      .select("id,conversation_id,subject,from_email,from_name,sent_at,auto_reply,auto_reply_at,auto_reply_text")
+      .eq("owner_id", context.ownerId).not("auto_reply", "is", null).not("auto_reply", "like", "fora:%")
+      .order("auto_reply_at", { ascending: false }).limit(30);
+    if (error?.code === "42703") return [];   // migration ainda não rodada
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((m: any) => ({
+      id: m.id, conversationId: m.conversation_id, subject: m.subject, from: m.from_name || m.from_email,
+      receivedAt: m.sent_at, at: m.auto_reply_at, result: m.auto_reply as string, text: m.auto_reply_text as string | null,
+    }));
   });
 
 // Renomeia (to) ou apaga (to = null) uma tag: na lista fixa e em todas as conversas.

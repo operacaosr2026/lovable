@@ -10,6 +10,7 @@ export type Database = {
     Tables: {
       support_settings: {
         Row: {
+          auto_reply_tracking: boolean;
           owner_id: string;
           signature: string | null;
           signature_enabled: boolean;
@@ -24,6 +25,7 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          auto_reply_tracking?: boolean;
           owner_id: string;
           signature?: string | null;
           signature_enabled?: boolean;
@@ -38,6 +40,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          auto_reply_tracking?: boolean;
           owner_id?: string;
           signature?: string | null;
           signature_enabled?: boolean;
@@ -283,6 +286,9 @@ export type Database = {
       };
       support_messages: {
         Row: {
+          auto_reply: string | null;
+          auto_reply_at: string | null;
+          auto_reply_text: string | null;
           id: string;
           owner_id: string;
           conversation_id: string;
@@ -304,6 +310,9 @@ export type Database = {
           created_at: string;
         };
         Insert: {
+          auto_reply?: string | null;
+          auto_reply_at?: string | null;
+          auto_reply_text?: string | null;
           id?: string;
           owner_id: string;
           conversation_id: string;
@@ -325,6 +334,9 @@ export type Database = {
           created_at?: string;
         };
         Update: {
+          auto_reply?: string | null;
+          auto_reply_at?: string | null;
+          auto_reply_text?: string | null;
           id?: string;
           owner_id?: string;
           conversation_id?: string;
