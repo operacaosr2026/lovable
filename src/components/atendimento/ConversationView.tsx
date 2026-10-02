@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft, Check, ChevronDown, Download, Languages, Loader2, MailOpen, MoreVertical, Paperclip, ShieldAlert, Star, Tag, Trash2,
+  Bot,
 } from "lucide-react";
 import {
   deleteSupportConversations, getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
@@ -288,6 +289,13 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
         <p className={`text-[10px] text-muted-foreground mt-1.5 ${out ? "text-right" : ""}`}>
           {fullTime(m.sent_at)}{out ? " · enviado" : ""}
         </p>
+        {!out && m.auto_reply && !m.auto_reply.startsWith("fora:") && (
+          m.auto_reply === "enviado" ? (
+            <p className="text-[11px] mt-1 text-success font-medium flex items-center gap-1"><Bot className="size-3.5" /> Respondido automaticamente{m.auto_reply_at ? ` · ${fullTime(m.auto_reply_at)}` : ""}</p>
+          ) : (
+            <p className="text-[11px] mt-1 text-warning font-medium flex items-center gap-1"><Bot className="size-3.5" /> Ficou pra equipe: {m.auto_reply.replace(/^pulado:\s*/, "")}</p>
+          )
+        )}
       </div>
     </div>
   );

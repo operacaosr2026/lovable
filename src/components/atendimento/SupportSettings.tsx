@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Bot, Check, CheckCircle2, Loader2, MessageSquareText, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
 import {
-  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate, listSupportAutoReplies,
+  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate,
   type getZohoStatus, type SupportTemplate,
 } from "@/lib/atendimento.functions";
 import { TemplateEditor, type TemplateDraft } from "./Composer";
@@ -396,9 +396,7 @@ function AutoReplySettings() {
   const qc = useQueryClient();
   const getFn = useSupportFn(getSupportSettings, "getSupportSettings");
   const saveFn = useSupportFn(saveSupportSettings, "saveSupportSettings");
-  const listFn = useSupportFn(listSupportAutoReplies, "listSupportAutoReplies");
   const q = useQuery({ queryKey: ["support-settings"], queryFn: () => getFn() });
-  const list = useQuery({ queryKey: ["support-auto-replies"], queryFn: () => listFn(), refetchInterval: 60_000 });
   const on = !!(q.data as any)?.autoReplyTracking;
   const aiAvailable = !!(q.data as any)?.aiAvailable;
   const toggle = useMutation({
@@ -406,12 +404,11 @@ function AutoReplySettings() {
     onSuccess: (_r, v) => { toast.success(v ? "Resposta automática ligada" : "Resposta automática desligada"); qc.invalidateQueries({ queryKey: ["support-settings"] }); },
     onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
   });
-  const rows = (list.data ?? []) as { id: string; subject: string | null; from: string; receivedAt: string; at: string; result: string; text: string | null }[];
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-base font-semibold">Resposta automática</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">E-mail que chega com a tag <strong>Rastreio</strong> é respondido sozinho em até 5 minutos, a qualquer hora, com a situação real do pedido (etapa, último evento, link de rastreio).</p>
+        <p className="text-xs text-muted-foreground mt-0.5">E-mail que chega com a tag <strong>Rastreio</strong> é respondido sozinho em até 5 minutos, a qualquer hora, com a situação real do pedido (etapa, último evento, link de rastreio). O que foi respondido e o que ficou pra equipe aparece na própria Caixa.</p>
       </div>
       <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
         <Bot className="size-4 text-primary mt-0.5 shrink-0" />
@@ -426,28 +423,6 @@ function AutoReplySettings() {
         <Switch checked={aiAvailable && on} disabled={!aiAvailable || toggle.isPending || q.isLoading} onCheckedChange={(v) => toggle.mutate(v)} />
       </div>
 
-      <div>
-        <h3 className="text-sm font-semibold mb-2">Últimas avaliadas</h3>
-        {list.isLoading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : !rows.length ? (
-          <p className="text-xs text-muted-foreground">Nenhuma ainda.</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {rows.map((r) => (
-              <li key={r.id} className="px-3 py-2.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.result === "enviado" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>
-                    {r.result === "enviado" ? "RESPONDIDO" : "PRA EQUIPE"}
-                  </span>
-                  <span className="font-medium truncate flex-1">{r.from} · {r.subject ?? "(sem assunto)"}</span>
-                  <span className="text-muted-foreground shrink-0">{fullTime(r.at)}</span>
-                </div>
-                {r.result !== "enviado" && <p className="text-muted-foreground mt-1">{r.result.replace(/^pulado:\s*/, "Motivo: ")}</p>}
-                {r.text && <p className="text-muted-foreground mt-1 whitespace-pre-line line-clamp-3">{r.text}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }

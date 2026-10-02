@@ -145,6 +145,8 @@ export type SupportConversation = {
   last_message_at: string | null; last_inbound_at: string | null; last_outbound_at: string | null;
   message_count: number; unread_count: number; status: SupportStatus; favorite: boolean; tags: string[];
   note: string | null; resolved_at: string | null; ai_tags: string[]; shop_id: string | null;
+  // Resposta automática do último e-mail do cliente (support-autoreply.server.ts).
+  auto_reply?: "enviado" | "equipe" | null;
 };
 
 // Horário comercial salvo (Configurações > Metas); sem linha, o padrão.
@@ -203,6 +205,15 @@ export const listSupportConversations = createServerFn({ method: "GET" })
 
     // "aguardando_cliente" (status antigo, foi juntado a "em atendimento").
     for (const c of convRes.data) if (!SUPPORT_STATUSES.includes(c.status)) c.status = "em_atendimento";
+    // Resposta automática do último e-mail do cliente avaliado (selo na lista).
+    const { data: autos, error: autoErr } = await supabaseAdmin.from("support_messages")
+      .select("conversation_id,auto_reply,sent_at").eq("owner_id", ownerId).eq("direction", "in")
+      .not("auto_reply", "is", null).not("auto_reply", "like", "fora:%").gte("sent_at", data.from);
+    if (!autoErr) {
+      const last = new Map<string, { r: string; t: string }>();
+      for (const a of (autos ?? []) as any[]) { const p = last.get(a.conversation_id); if (!p || a.sent_at > p.t) last.set(a.conversation_id, { r: a.auto_reply, t: a.sent_at }); }
+      for (const c of convRes.data) { const a = last.get(c.id); if (a) c.auto_reply = a.r === "enviado" ? "enviado" : "equipe"; }
+    }
     const conversations = convRes.data.sort((a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""));
     return {
       conversations,
@@ -352,6 +363,8 @@ export type SupportMessage = {
   from_name: string | null; to_emails: string | null; subject: string | null; summary: string | null;
   sent_at: string; is_read: boolean; has_attachment: boolean; content_html: string | null; content_pt?: string | null;
   attachments: { id: string; name: string; size: number }[];
+  // E-mail do cliente: "enviado" (respondido automaticamente) ou "pulado: motivo" (ficou pra equipe).
+  auto_reply?: string | null; auto_reply_at?: string | null;
 };
 
 export const getSupportConversation = createServerFn({ method: "GET" })
@@ -367,10 +380,13 @@ export const getSupportConversation = createServerFn({ method: "GET" })
       .select("id,message_id,folder_id,direction,from_email,from_name,to_emails,subject,summary,sent_at,is_read,has_attachment,content_html,content_pt")
       .eq("conversation_id", data.id).eq("owner_id", ownerId).order("sent_at", { ascending: false }).limit(30);
     const msgs = (rows ?? []).reverse();
+    // Resposta automática de cada e-mail do cliente (coluna nova: sem a migration, segue sem).
+    const { data: autos } = await supabaseAdmin.from("support_messages").select("id,auto_reply,auto_reply_at").in("id", msgs.map((m: any) => m.id));
+    const autoBy = new Map(((autos ?? []) as any[]).map((a) => [a.id, a]));
 
     // Corpo (1ª vez: busca no Zoho e guarda) e anexos, 4 por vez.
     const acc = await getZohoAccount(ownerId);
-    const out: SupportMessage[] = msgs.map((m) => ({ ...(m as any), attachments: [] }));
+    const out: SupportMessage[] = msgs.map((m: any) => ({ ...m, attachments: [], auto_reply: autoBy.get(m.id)?.auto_reply ?? null, auto_reply_at: autoBy.get(m.id)?.auto_reply_at ?? null }));
     if (acc?.refresh_token && acc.account_id) {
       const queue = [...out];
       await Promise.all(Array.from({ length: 4 }, async () => {
@@ -637,23 +653,6 @@ export const saveSupportSettings = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.from("support_settings").upsert(row, { onConflict: "owner_id" });
     if (error) throw new Error(error.message);
     return { ok: true };
-  });
-
-// Últimas respostas automáticas (enviadas e puladas, com o motivo) — Configurações → Resposta automática.
-export const listSupportAutoReplies = createServerFn({ method: "GET" })
-  .middleware([requireOwnerContext])
-  .handler(async ({ context }) => {
-    assertSub(context, "at_config");
-    const { data, error } = await supabaseAdmin.from("support_messages")
-      .select("id,conversation_id,subject,from_email,from_name,sent_at,auto_reply,auto_reply_at,auto_reply_text")
-      .eq("owner_id", context.ownerId).not("auto_reply", "is", null).not("auto_reply", "like", "fora:%")
-      .order("auto_reply_at", { ascending: false }).limit(30);
-    if (error?.code === "42703") return [];   // migration ainda não rodada
-    if (error) throw new Error(error.message);
-    return (data ?? []).map((m: any) => ({
-      id: m.id, conversationId: m.conversation_id, subject: m.subject, from: m.from_name || m.from_email,
-      receivedAt: m.sent_at, at: m.auto_reply_at, result: m.auto_reply as string, text: m.auto_reply_text as string | null,
-    }));
   });
 
 // Renomeia (to) ou apaga (to = null) uma tag: na lista fixa e em todas as conversas.
