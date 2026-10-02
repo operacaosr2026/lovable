@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import { ArrowDown, ArrowUp, CircleCheck, Clock, Mail, MailWarning, Minus, Tag, Timer, ChevronDown } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleCheck, Clock, Mail, MailWarning, Minus, Tag, Timer, ChevronDown, Landmark, PackageSearch, Repeat } from "lucide-react";
+import type { SupportExtraKpis } from "@/lib/support-kpis-extra.server";
 import { getSupportKpis } from "@/lib/atendimento.functions";
 import { businessHoursLabel, type KpiGoals, type SupportKpis } from "@/lib/support-kpis";
 import { useSupportFn } from "./demo";
@@ -24,7 +25,7 @@ const fmtDay = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS_SHORT[Number(d
 const MONTHS_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const int = (n: number) => n.toLocaleString("pt-BR");
 
-type Kpis = SupportKpis & { partial: boolean; goals: KpiGoals };
+type Kpis = SupportKpis & { partial: boolean; goals: KpiGoals; extra?: SupportExtraKpis | null };
 
 export function SupportKpisView({ month }: { month: string }) {
   const kpiFn = useSupportFn(getSupportKpis, "getSupportKpis");
@@ -65,6 +66,23 @@ export function SupportKpisView({ month }: { month: string }) {
           footer={k && <Split a={["Há mais de 12h", int(k.cards.open.over12h)]} b={["Há mais de 36h", int(k.cards.open.over36h)]} />} />
       </div>
 
+      {/* ── Efeito no dinheiro: contato → banco, contatos por 100 pedidos, recontato ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <MiniStat icon={Landmark} tone="bg-destructive/10 text-destructive" label="Contato → foi ao banco"
+          value={!k ? undefined : !k.extra ? "—" : k.extra.contactToBank.contacted ? `${k.extra.contactToBank.wentToBank} de ${k.extra.contactToBank.contacted}` : "—"}
+          sub={k?.extra ? `clientes que escreveram e depois abriram chargeback ou alerta${k.extra.contactToBank.avgDaysToBank != null ? ` · ${k.extra.contactToBank.avgDaysToBank.toLocaleString("pt-BR")} dias depois, em média` : ""}` : undefined}
+          foot={k?.extra ? `Dos ${k.extra.contactToBank.bankEvents} chargebacks do mês, ${k.extra.contactToBank.bankWithContactBefore} escreveram antes · ${k.extra.contactToBank.refunded} viraram reembolso` : undefined} />
+        <MiniStat icon={PackageSearch} tone="bg-primary/10 text-primary" label="Contatos por 100 pedidos"
+          value={!k ? undefined : k.extra?.contactRate.value == null ? "—" : k.extra.contactRate.value.toLocaleString("pt-BR")}
+          delta={k?.extra ? ppDelta(k.extra.contactRate.value, k.extra.contactRate.prev) : null} deltaUnit=" p.p." deltaTone="lower" vs={vs}
+          sub={k?.extra ? `${k.extra.contactRate.contacts} conversas · ${k.extra.contactRate.orders} pedidos` : undefined}
+          foot={k?.extra?.contactRate.rastreio != null ? `Sobre rastreio: ${k.extra.contactRate.rastreio.toLocaleString("pt-BR")} por 100 pedidos` : undefined} />
+        <MiniStat icon={Repeat} tone="bg-warning/15 text-warning" label="Recontato"
+          value={!k ? undefined : k.extra?.recontact.value == null ? "—" : `${k.extra.recontact.value.toLocaleString("pt-BR")}%`}
+          delta={k?.extra ? ppDelta(k.extra.recontact.value, k.extra.recontact.prev) : null} deltaUnit=" p.p." deltaTone="lower" vs={vs}
+          sub={k?.extra ? `${k.extra.recontact.recontacted} de ${k.extra.recontact.conversations} conversas: o cliente escreveu 2+ vezes` : undefined} />
+      </div>
+
       {/* ── Por tag | Chegada ── */}
       <div className="grid xl:grid-cols-2 gap-3">
         <TagsCard k={k} className="" />
@@ -75,6 +93,35 @@ export function SupportKpisView({ month }: { month: string }) {
 }
 
 // ─── Peças ────────────────────────────────────────────────────────────────────
+
+function MiniStat({ icon: Icon, tone, label, value, sub, foot, delta, deltaUnit = "%", deltaTone = "neutral", vs }: {
+  icon: typeof Mail; tone: string; label: string; value: string | undefined; sub?: string; foot?: string;
+  delta?: number | null; deltaUnit?: string; deltaTone?: "lower" | "higher" | "neutral"; vs?: string;
+}) {
+  const good = delta == null || delta === 0 || deltaTone === "neutral" ? null : deltaTone === "lower" ? delta < 0 : delta > 0;
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 flex items-start gap-3 min-w-0">
+      <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${tone}`}><Icon className="size-[18px]" /></div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{label}</p>
+        <p className="text-2xl font-bold tracking-tight leading-tight">
+          {value ?? <span className="inline-block w-16 h-6 rounded bg-muted animate-pulse align-middle" />}
+        </p>
+        {delta != null && vs && (
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <span className={`inline-flex items-center font-semibold ${good == null ? "text-foreground" : good ? "text-success" : "text-destructive"}`}>
+              {delta > 0 ? <ArrowUp className="size-3" /> : delta < 0 ? <ArrowDown className="size-3" /> : <Minus className="size-3" />}
+              {delta > 0 ? "+" : ""}{delta.toLocaleString("pt-BR")}{deltaUnit}
+            </span>
+            <span className="truncate">{vs}</span>
+          </p>
+        )}
+        {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+        {foot && <p className="text-[11px] text-muted-foreground mt-1 pt-1 border-t border-border">{foot}</p>}
+      </div>
+    </div>
+  );
+}
 
 const pctDelta = (cur: number | null, prev: number | null) => (cur == null || prev == null || prev === 0 ? null : Math.round(((cur - prev) / prev) * 100));
 const ppDelta = (cur: number | null, prev: number | null) => (cur == null || prev == null ? null : Math.round((cur - prev) * 10) / 10);

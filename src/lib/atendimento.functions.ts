@@ -13,6 +13,7 @@ import {
   type BusinessHours, type KpiConversation, type KpiMessage,
 } from "@/lib/support-kpis";
 import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
+import { supportExtraKpis } from "@/lib/support-kpis-extra.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -242,7 +243,10 @@ export const getSupportKpis = createServerFn({ method: "GET" })
     ]);
     if (msgs.error) throw new Error(msgs.error.message);
     if (convs.error) throw new Error(convs.error.message);
+    // Efeito no dinheiro (contato → banco, contatos por 100 pedidos, recontato); não derruba a tela se falhar.
+    const extra = await supportExtraKpis(ownerId, range, activeShops).catch((e) => { console.error("support extra kpis", e); return null; });
     return {
+      extra,
       ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data), activeShops),
       partial: range.partial,
       goals: {
