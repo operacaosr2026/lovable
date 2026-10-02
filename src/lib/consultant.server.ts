@@ -231,7 +231,8 @@ export async function buildConsultantFacts(ownerId: string) {
       outcomes: {
         // Só conta "não teve" quando já deu tempo de ter (senão fica null).
         chargeback: e.chargeback ? true : age(e.createdAt) >= 25 ? false : null,
-        reembolso: e.refunded ? true : age(e.createdAt) >= 20 ? false : null,
+        foi_ao_banco: e.chargeback || at?.alertRefundAt ? true : age(e.createdAt) >= 25 ? false : null,
+        reembolso: e.refunded && !at?.alertRefundAt ? true : age(e.createdAt) >= 20 ? false : null,
         postagem_lenta: e.bdOrderToMove != null ? e.bdOrderToMove > 3 : age(e.createdAt) > 5 ? true : null,
         codigo_sem_pacote: !e.codeAt ? null : e.bdCodeToMove != null ? e.bdCodeToMove > 2 : age(e.codeAt) > 4 ? true : null,
         parada_longa: sinceMove == null ? null : (e.maxGapDays ?? 0) > 5 || (!e.deliveredAt && (e.daysSinceLastEvent ?? 0) > 5) ? true
@@ -270,13 +271,19 @@ export async function buildConsultantFacts(ownerId: string) {
   const { data: convEmails } = await supabaseAdmin.from("support_conversations").select("customer_email").eq("owner_id", ownerId);
   const emails = new Set(((convEmails ?? []) as any[]).map((c) => String(c.customer_email ?? "").toLowerCase()).filter(Boolean));
   const contacted = new Set(audit.envios.filter((e) => emails.has(String(inputBy.get(e.id)?.attrs?.email ?? "").toLowerCase())).map((e) => e.orderNumber!).filter(Boolean));
+  // Pra investigação, reembolso por alerta entra como "foi ao banco" (mesmo comportamento do cliente).
+  const bankEnvios = audit.envios.map((e) => {
+    const alertAt = inputBy.get(e.id)?.attrs?.alertRefundAt;
+    return e.chargeback || !alertAt ? e : { ...e, chargeback: { reason: "alerta (reembolso automático)", initiatedAt: alertAt } };
+  });
   const investigacao = {
     como_ler: "Tudo calculado pelo sistema, só lojas ativas e pedidos com tempo suficiente (chargeback/reembolso em pedidos de 25+ dias). Atendimento só existe desde 28/09/2026: cruzamento com contato é amostra muito pequena.",
-    interacoes: interactions(patternRows, ["chargeback", "reembolso", "entrega_lenta", "parada_longa", "codigo_sem_pacote"]),
-    casos_x_controles_no_dia_da_jornada: caseControlByDay(audit.envios, now),
-    sinais_precursores_de_cada_chargeback: precursors(audit.envios),
-    limiares: thresholds(audit.envios, now),
-    grupos_de_chargeback: chargebackGroups(audit.envios, contacted),
+    nota: "Em casos×controles, precursores, limiares e grupos, 'chargeback' = foi ao banco (chargeback ou reembolso automático por alerta).",
+    interacoes: interactions(patternRows, ["foi_ao_banco", "chargeback", "reembolso", "entrega_lenta", "parada_longa", "codigo_sem_pacote"]),
+    casos_x_controles_no_dia_da_jornada: caseControlByDay(bankEnvios, now),
+    sinais_precursores_de_cada_chargeback: precursors(bankEnvios),
+    limiares: thresholds(bankEnvios, now),
+    grupos_de_chargeback: chargebackGroups(bankEnvios, contacted),
     mistura_semanal_das_linhas: weeklyLineMix(audit.envios, now),
     clientes_que_escreveram_no_atendimento: contacted.size,
   };

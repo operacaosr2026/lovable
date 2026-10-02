@@ -19,7 +19,8 @@ export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[
       .select("id,shop_id,external_id,order_number,revenue,created_at_shopify,paid_at,delivered_at,shopify_financial_status,fulfillments:raw->fulfillments,"
         + "state:raw->shipping_address->>province_code,ship_zip:raw->shipping_address->>zip,bill_zip:raw->billing_address->>zip,"
         + "landing:raw->>landing_site,ua:raw->client_details->>user_agent,cust_at:raw->customer->>created_at,email:raw->>email,"
-        + "phone:raw->>phone,ship_phone:raw->shipping_address->>phone,items:raw->line_items,mkt:raw->>buyer_accepts_marketing")
+        + "phone:raw->>phone,ship_phone:raw->shipping_address->>phone,items:raw->line_items,mkt:raw->>buyer_accepts_marketing,"
+        + "refunds:raw->refunds,tags:raw->>tags")
       .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", since)
       .filter("raw->>cancelled_at", "is", null)),
     selectAll<any>(supabaseAdmin.from("shop_order_disputes")
@@ -55,6 +56,12 @@ export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[
         quantity: (o.items ?? []).reduce((s: number, li: any) => s + Number(li.quantity ?? 0), 0) || null,
         acceptsMarketing: o.mkt == null ? null : o.mkt === "true", brand: riskBy.get(`${o.shop_id}:${o.external_id}`)?.payment_brand ?? null,
         risk: riskBy.get(`${o.shop_id}:${o.external_id}`)?.risk_level ?? null,
+        alertRefundAt: (() => {
+          const alertRe = /ethoca|cdrn|rdr|verifi|alert/i;
+          const r = ((o.refunds ?? []) as any[]).find((x) => alertRe.test(String(x?.note ?? "")));
+          if (r) return r.created_at ?? r.processed_at ?? null;
+          return alertRe.test(String(o.tags ?? "")) && (o.refunds ?? [])[0] ? ((o.refunds ?? [])[0].created_at ?? null) : null;
+        })(),
       },
     };
   });

@@ -11,7 +11,8 @@ export type PatternRow = {
 };
 
 export const OUTCOME_LABEL: Record<string, string> = {
-  chargeback: "chargeback", reembolso: "reembolso", postagem_lenta: "postagem lenta (> 3 dias úteis do pedido)",
+  chargeback: "chargeback", foi_ao_banco: "foi ao banco (chargeback ou reembolso automático por alerta Ethoca/CDRN/RDR)",
+  reembolso: "reembolso pedido pelo cliente ou feito pela loja (sem os de alerta)", postagem_lenta: "postagem lenta (> 3 dias úteis do pedido)",
   codigo_sem_pacote: "código criado sem o pacote andar (> 2 dias úteis)", parada_longa: "parada longa no trânsito (> 5 dias sem evento)",
   entrega_lenta: "entrega lenta (> 15 dias da 1ª movimentação)",
 };

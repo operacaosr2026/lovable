@@ -68,6 +68,9 @@ export type AuditOrderInput = {
     state: string | null; billingZip: string | null; shippingZip: string | null; landing: string | null; userAgent: string | null;
     customerCreatedAt: string | null; email: string | null; phone: string | null; size: string | null; quantity: number | null;
     acceptsMarketing: boolean | null; brand: string | null; risk: string | null;
+    // Reembolso automático por alerta (Ethoca/CDRN/RDR): o cliente foi ao banco,
+    // o alerta devolveu antes de virar disputa.
+    alertRefundAt: string | null;
   };
 };
 
