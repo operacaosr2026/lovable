@@ -63,6 +63,12 @@ export type AuditOrderInput = {
   deliveredAt: string | null;      // shop_orders.delivered_at (fallback sem timeline)
   financialStatus: string | null;
   chargeback: { reason: string | null; initiatedAt: string } | null;
+  // Características do pedido pro cruzamento de dados (patterns.ts).
+  attrs?: {
+    state: string | null; billingZip: string | null; shippingZip: string | null; landing: string | null; userAgent: string | null;
+    customerCreatedAt: string | null; email: string | null; phone: string | null; size: string | null; quantity: number | null;
+    acceptsMarketing: boolean | null; brand: string | null; risk: string | null;
+  };
 };
 
 export type TimelineStep = { at: string; kind: string; label: string; detail?: string; stage?: Stage };

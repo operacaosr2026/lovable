@@ -16,7 +16,10 @@ export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[
   const [{ data: shops }, ordersRes, disputesRes] = await Promise.all([
     supabaseAdmin.from("shops").select("id,name").in("id", shopIds),
     selectAll<any>(supabaseAdmin.from("shop_orders")
-      .select("id,shop_id,external_id,order_number,revenue,created_at_shopify,paid_at,delivered_at,shopify_financial_status,fulfillments:raw->fulfillments")
+      .select("id,shop_id,external_id,order_number,revenue,created_at_shopify,paid_at,delivered_at,shopify_financial_status,fulfillments:raw->fulfillments,"
+        + "state:raw->shipping_address->>province_code,ship_zip:raw->shipping_address->>zip,bill_zip:raw->billing_address->>zip,"
+        + "landing:raw->>landing_site,ua:raw->client_details->>user_agent,cust_at:raw->customer->>created_at,email:raw->>email,"
+        + "phone:raw->>phone,ship_phone:raw->shipping_address->>phone,items:raw->line_items,mkt:raw->>buyer_accepts_marketing")
       .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", since)
       .filter("raw->>cancelled_at", "is", null)),
     selectAll<any>(supabaseAdmin.from("shop_order_disputes")
@@ -30,6 +33,11 @@ export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[
         .select("order_id,tracking_status,timeline").in("order_id", c))
     : { data: [] as any[] };
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
+  const { data: risks } = orders.length
+    ? await selectAllIn<any>(orders.map((o) => o.external_id), (c) => supabaseAdmin.from("shop_order_risks")
+        .select("shop_id,order_external_id,risk_level,payment_brand").eq("user_id", ownerId).in("order_external_id", c))
+    : { data: [] as any[] };
+  const riskBy = new Map((risks ?? []).map((r: any) => [`${r.shop_id}:${r.order_external_id}`, r]));
   const cbBy = new Map((disputesRes.data ?? []).map((d: any) => [`${d.shop_id}:${d.order_external_id}`, d]));
   const shopName = new Map(((shops ?? []) as any[]).map((s) => [s.id, s.name as string]));
   return orders.map((o) => {
@@ -40,6 +48,14 @@ export async function loadAuditOrders(ownerId: string): Promise<AuditOrderInput[
       createdAt: o.created_at_shopify, paidAt: o.paid_at, fulfillments: o.fulfillments ?? [],
       trackingStatus: t?.tracking_status ?? null, timeline: t?.timeline ?? null, deliveredAt: o.delivered_at,
       financialStatus: o.shopify_financial_status, chargeback: cb ? { reason: cb.reason, initiatedAt: cb.initiated_at } : null,
+      attrs: {
+        state: o.state ?? null, billingZip: o.bill_zip ?? null, shippingZip: o.ship_zip ?? null, landing: o.landing ?? null,
+        userAgent: o.ua ?? null, customerCreatedAt: o.cust_at ?? null, email: o.email ?? null, phone: o.phone || o.ship_phone || null,
+        size: (o.items ?? [])[0]?.variant_title ?? null,
+        quantity: (o.items ?? []).reduce((s: number, li: any) => s + Number(li.quantity ?? 0), 0) || null,
+        acceptsMarketing: o.mkt == null ? null : o.mkt === "true", brand: riskBy.get(`${o.shop_id}:${o.external_id}`)?.payment_brand ?? null,
+        risk: riskBy.get(`${o.shop_id}:${o.external_id}`)?.risk_level ?? null,
+      },
     };
   });
 }

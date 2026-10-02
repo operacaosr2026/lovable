@@ -10,6 +10,7 @@ import { withAiCredit } from "@/lib/ai-credit.server";
 import { raiseNotification } from "@/lib/notifications.server";
 import { loadAuditOrders } from "@/lib/intel.server";
 import { auditSupplier } from "@/lib/intel/supplier-audit";
+import { minePatterns, orderFeatures, OUTCOME_LABEL, type PatternRow } from "@/lib/intel/patterns";
 import { listCompanyGoalsFor } from "@/lib/company-goals.server";
 import { computeSupportKpis, monthRange, DEFAULT_BUSINESS_HOURS, DEFAULT_GOALS } from "@/lib/support-kpis";
 
@@ -183,7 +184,8 @@ export async function buildConsultantFacts(ownerId: string) {
 
   // ── Rastreamento / fornecedor (supplier-audit.ts) ─────────────────────────
   // Código criado não é pedido enviado: postagem = 1ª movimentação real.
-  const audit = auditSupplier(await loadAuditOrders(ownerId), { cal });
+  const auditInputs = await loadAuditOrders(ownerId);
+  const audit = auditSupplier(auditInputs, { cal });
   const d1 = (x: number | null) => (x == null ? null : r2(x));
   const ageDays = (iso: string) => r2((Date.now() - Date.parse(iso)) / DAY);
   const SEVR: Record<string, number> = { altamente_suspeito: 3, suspeito: 2, atencao: 1, normal: 0 };
@@ -200,11 +202,9 @@ export async function buildConsultantFacts(ownerId: string) {
     score_confiabilidade: { valor: audit.score.valor, label: audit.score.label, fatores: audit.score.fatores.map((f) => ({ fator: f.label, pct: f.valor, peso: f.peso, n: f.n })) },
     envios_por_classificacao: audit.contagem,
     // Pedidos ainda não entregues com sinal — onde dá pra agir agora.
-    em_aberto_com_sinal: audit.envios.filter((e) => !e.deliveredAt && SEVR[e.severity] >= 1)
-      .sort((x, y) => SEVR[y.severity] - SEVR[x.severity] || y.revenue - x.revenue).slice(0, 25).map(orderLine),
     em_aberto_com_sinal_total: audit.envios.filter((e) => !e.deliveredAt && SEVR[e.severity] >= 1).length,
     em_aberto_com_sinal_valor: r2(audit.envios.filter((e) => !e.deliveredAt && SEVR[e.severity] >= 1).reduce((s, e) => s + e.revenue, 0)),
-    entregues_suspeitos: audit.envios.filter((e) => e.deliveredAt && SEVR[e.severity] >= 2).slice(0, 15).map(orderLine),
+    entregues_suspeitos_total: audit.envios.filter((e) => e.deliveredAt && SEVR[e.severity] >= 2).length,
     sinais_x_perda_pedidos_25_dias: audit.sinaisVsPerda.map((x) => ({ sinal: x.sinal, com_sinal: x.com, sem_sinal: x.sem })),
   };
   // Jornada de cada chargeback das lojas ativas (pedido no período carregado).
@@ -217,9 +217,57 @@ export async function buildConsultantFacts(ownerId: string) {
     maior_parada_dias: d1(e.maxGapDays), sinais: e.flags.map((f) => f.text),
   }));
 
+  // ── Cruzamento de dados (patterns.ts): característica × problema ──────────
+  const inputBy = new Map(auditInputs.map((o) => [o.id, o]));
+  const now = Date.now();
+  const age = (iso: string) => (now - Date.parse(iso)) / DAY;
+  const patternRows: PatternRow[] = audit.envios.map((e) => {
+    const inp = inputBy.get(e.id)!;
+    const at = inp.attrs;
+    const sinceMove = e.firstMoveAt ? age(e.firstMoveAt) : null;
+    return {
+      features: at ? orderFeatures({ ...at, createdAt: e.createdAt, revenue: e.revenue, trackingCode: e.trackingCode, codeAt: e.codeAt, paidAt: inp.paidAt }) : {},
+      outcomes: {
+        // Só conta "não teve" quando já deu tempo de ter (senão fica null).
+        chargeback: e.chargeback ? true : age(e.createdAt) >= 25 ? false : null,
+        reembolso: e.refunded ? true : age(e.createdAt) >= 20 ? false : null,
+        postagem_lenta: e.bdOrderToMove != null ? e.bdOrderToMove > 3 : age(e.createdAt) > 5 ? true : null,
+        codigo_sem_pacote: !e.codeAt ? null : e.bdCodeToMove != null ? e.bdCodeToMove > 2 : age(e.codeAt) > 4 ? true : null,
+        parada_longa: sinceMove == null ? null : (e.maxGapDays ?? 0) > 5 || (!e.deliveredAt && (e.daysSinceLastEvent ?? 0) > 5) ? true
+          : e.deliveredAt || sinceMove >= 12 ? false : null,
+        entrega_lenta: sinceMove == null ? null : e.dMoveToDelivery != null ? e.dMoveToDelivery > 15 : sinceMove > 15 ? true : null,
+      },
+    };
+  });
+  const mined = minePatterns(patternRows);
+  const padroes_cruzados = {
+    como_ler: "Cada achado: pedidos com a característica (valor) têm o problema X vezes mais que o resto. forca: forte (p<0,01), moderado (p<0,05), fraco (p<0,1 — pode ser acaso). Só pedidos das lojas ativas, últimos 100 dias.",
+    problemas: Object.fromEntries(Object.entries(mined.base).map(([k, v]) => [k, { descricao: OUTCOME_LABEL[k] ?? k, ...v }])),
+    achados: mined.achados.slice(0, 40),
+  };
+
+  // ── Tendência semanal (semana da compra) ─────────────────────────────────
+  const weekOf = (iso: string) => { const d = new Date(iso); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const med = (xs: number[]) => { const v = [...xs].sort((x, y) => x - y); return v.length ? r2(v[Math.floor(v.length / 2)]) : null; };
+  const weeks = new Map<string, typeof audit.envios>();
+  for (const e of audit.envios) { const w = weekOf(e.createdAt); weeks.set(w, [...(weeks.get(w) ?? []), e]); }
+  const tendencia_semanal = [...weeks.entries()].sort(([x], [y]) => x.localeCompare(y)).slice(-10).map(([w, es]) => ({
+    semana_de: w, pedidos: es.length,
+    mediana_pedido_ate_1a_mov_dias_uteis: med(es.filter((e) => e.bdOrderToMove != null).map((e) => e.bdOrderToMove!)),
+    // Código que ainda não andou e já tem 4+ dias conta como "sem pacote" (senão a semana recente parece melhor do que é).
+    pct_codigo_sem_pacote_2_dias_uteis: (() => { const c = es.filter((e) => e.codeAt && (e.bdCodeToMove != null || age(e.codeAt) > 4)); return c.length ? r2((c.filter((e) => e.bdCodeToMove == null || e.bdCodeToMove > 2).length / c.length) * 100) : null; })(),
+    semana_incompleta: age(w) < 14,
+    mediana_1a_mov_ate_entrega_dias: med(es.filter((e) => e.dMoveToDelivery != null).map((e) => e.dMoveToDelivery!)),
+    entregues: es.filter((e) => e.deliveredAt).length, chargebacks: es.filter((e) => e.chargeback).length, reembolsos: es.filter((e) => e.refunded).length,
+  }));
+
   // ── Testes em andamento (dicas marcadas "testando" nas análises anteriores) ──
   const { data: prev } = await supabaseAdmin.from("consultant_reports")
     .select("id,created_at,result,tips_status").eq("user_id", ownerId).order("created_at", { ascending: false }).limit(8);
+  // Dicas que o dono ignorou: a IA não sugere de novo (aprende com as decisões dele).
+  const dicas_ignoradas_pelo_dono = [...new Set(((prev ?? []) as any[]).flatMap((r) => Object.entries(r.tips_status ?? {})
+    .filter(([, s]: any) => s?.status === "ignorada")
+    .map(([i]) => (r.result?.dicas ?? [])[Number(i)]?.titulo).filter(Boolean)))];
   const testes_em_andamento = ((prev ?? []) as any[]).flatMap((r) => Object.entries(r.tips_status ?? {})
     .filter(([, s]: any) => s?.status === "testando")
     .map(([i, s]: any) => {
@@ -255,7 +303,7 @@ export async function buildConsultantFacts(ownerId: string) {
       por_bandeira_todos_os_pedidos: porBandeira, por_bandeira_so_pedidos_com_25_dias: porBandeiraMaduros,
       por_gateway: porGateway, por_risco_shopify: porRisco,
     },
-    chargebacks, jornada_chargebacks, rastreamento_fornecedor, produtos, paises, atendimento, metas, testes_em_andamento,
+    dicas_ignoradas_pelo_dono, padroes_cruzados, tendencia_semanal, chargebacks, jornada_chargebacks, rastreamento_fornecedor, produtos, paises, atendimento, metas, testes_em_andamento,
   };
 }
 
@@ -403,7 +451,11 @@ Antes de incluir qualquer dica, ela precisa passar nos três testes. Se não pas
 2. Diz ONDE agir: quais pedidos/clientes, quanto dinheiro, o que fazer e até quando.
 3. Não repete o que ele já sabe ou que outra tela já mostra como tarefa: meta que ele definiu, faturamento/lucro/KPI do painel, decisões do contexto_do_dono, disputas aguardando resposta (aba Chargebacks mostra com prazo), pedidos em "Precisa de atenção" (aba Rastreamento), conversas em aberto (Atendimento). Pedido específico só entra quando você achou algo que essas telas não mostram: lote com o mesmo problema, cruzamento com atendimento/pagamento, a janela antes de o pedido virar problema, sinal do fornecedor.
 Proibido: "você precisa bater a meta", "mantenha o ritmo", "acompanhe/observe X", "o faturamento subiu", dica que só reformula um número, conselho genérico de e-commerce. Metas só se houver algo escondido (ex.: chargebacks de setembro que ainda vão cair em outubro e tiram US$ X do lucro do mês).
-Exemplos do nível esperado: "24 pedidos de 25–27/09 com código e sem postagem, 2 já com disputa — cobre o fornecedor por este lote"; "8 clientes com pedido não entregue já mandaram e-mail, 1 falando em reembolso — responda estes primeiro"; "disputas de 'não recebido' abrem em média no dia 8,6 e a entrega normal sai no dia ~13: há uma janela de prevenção entre o dia 5 e o 8".
+De onde vem a inteligência: padroes_cruzados (característica do pedido × problema, com quantas vezes mais e a força estatística), tendencia_semanal (o que mudou de uma semana para outra), jornada_chargebacks (o que os chargebacks têm em comum) e desvios contra o normal em rastreamento_fornecedor. Cruze esses sinais entre si e explique o mecanismo provável (ex.: "linha de transporte X + região Y → entrega lenta → disputa antes da entrega").
+NUNCA faça dica que seja tarefa operacional que outra tela já cobre. Isto NÃO é dica: contestar/responder disputa, juntar prova para disputa, segurar ou cancelar envio de pedido já disputado, cobrar o fornecedor por um pedido parado específico, listar pedidos pendentes/parados/sem postagem/sem código, responder conversas abertas. Isso já aparece em Pendências, Rastreamento e Chargebacks.
+dicas_ignoradas_pelo_dono: ele já descartou essas — não repita nem com outras palavras. pedidos_afetados só com poucos exemplos que ilustram um padrão (pode ficar vazio).
+Achado "fraco" pode ser acaso: só use se combinar com outro sinal, e diga isso. Prefira os "forte"/"moderado" com mais pedidos.
+Exemplos do nível esperado (ilustrativos — use só o que os dados mostrarem): "a linha de transporte JCZ entrega 2,3x mais devagar que a ZS e concentra os chargebacks de 'não recebido' — peça ao fornecedor para usar a ZS"; "pedidos pagos ao fornecedor com 3+ dias de atraso têm 3x mais código sem pacote — pague no mesmo dia"; "compras feitas dentro do app do Instagram têm 4x mais reembolso"; "disputas abrem no dia ~9 e a entrega normal sai no dia ~13: a janela de prevenção é entre o dia 5 e o 8".
 
 Dicas (a tela é uma central de decisões: o dono olha em 10 segundos e sabe onde agir):
 - Sem número mínimo nem máximo: entram todas as que passam na régua e nenhuma que não passe (se só 1 passar, mande 1; se nenhuma, a lista vazia). Ordene da mais importante para a menos.
