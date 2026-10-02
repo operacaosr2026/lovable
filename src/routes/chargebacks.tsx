@@ -14,7 +14,7 @@ import { requireAuth } from "@/lib/route-guards";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { getChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
-import { getDisputeEvidence, draftDisputeRebuttal, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
+import { getDisputeEvidence, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
 import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
 import { AlertsTab, DunningToggle } from "@/components/chargebacks/AlertsTab";
 import { SettingsTab } from "@/components/chargebacks/SettingsTab";
@@ -297,10 +297,10 @@ function ChargebacksPage() {
                 const img = base.find((r) => productLabel(r) === label)?.productImage;
                 return img ? <img src={img} alt="" className="size-full object-cover" /> : <Package className="size-4" />;
               }} />
-            <BarListCard title="Entrega × data da disputa" rows={base} dim="atDispute" filter={filter} onPick={toggle} withIcons
+            <BarListCard title="Entrega × data da disputa" subtitle="O pedido chegou antes ou depois do cliente abrir a disputa? Entregue antes dá pra contestar com a prova de entrega." rows={base} dim="atDispute" filter={filter} onPick={toggle} withIcons
               order={["Entregue antes da disputa", "Entregue depois da disputa", "Entregue (sem data)", "Em trânsito", "Nunca foi despachado"]}
               iconFor={(label) => { const T = deliveryTone(label).icon; return <T className="size-4" />; }} />
-            <BarListCard title="Dias da compra até a disputa" rows={base} dim="days" filter={filter} onPick={toggle} withIcons
+            <BarListCard title="Dias da compra até a disputa" subtitle="Quantos dias se passaram entre a compra e o cliente abrir a disputa no banco." rows={base} dim="days" filter={filter} onPick={toggle} withIcons
               order={["Até 14 dias", "15 a 29 dias", "30 a 44 dias", "45 dias ou mais", "Sem data do pedido"]}
               iconFor={(label) => {
                 // Faixa de dias no lugar do ícone (cada linha diferente, leitura rápida).
@@ -818,8 +818,8 @@ function Evolution({ rows, months }: { rows: ChargebackRow[]; months: string[] }
 }
 
 // Barras horizontais (quantidade por categoria, uma cor só); clicar filtra a lista.
-function BarListCard({ title, rows, dim, filter, onPick, limit, order, right, withIcons, iconFor, big }: {
-  title: string; rows: ChargebackRow[]; dim: Dim; filter: { dim: Dim; value: string } | null;
+function BarListCard({ title, subtitle, rows, dim, filter, onPick, limit, order, right, withIcons, iconFor, big }: {
+  title: string; subtitle?: string; rows: ChargebackRow[]; dim: Dim; filter: { dim: Dim; value: string } | null;
   onPick: (dim: Dim, value: string) => void; limit?: number; order?: string[]; right?: ReactNode;
   withIcons?: boolean; iconFor?: (label: string) => ReactNode; big?: boolean;
 }) {
@@ -837,7 +837,7 @@ function BarListCard({ title, rows, dim, filter, onPick, limit, order, right, wi
   const total = rows.length || 1;
 
   return (
-    <CardShell title={title} right={right}>
+    <CardShell title={title} subtitle={subtitle} right={right}>
       {!items.length ? <Empty /> : (
         <div className={big ? "space-y-4" : "space-y-2.5"}>
           {items.map((i) => {
@@ -874,17 +874,13 @@ function BarListCard({ title, rows, dim, filter, onPick, limit, order, right, wi
   );
 }
 
-// Documentos pra responder a disputa na Shopify: 6 PDFs em inglês montados com
-// as provas do sistema (envio, conversa, produto, compra, políticas) + o texto de
-// defesa escrito pela IA, que dá pra revisar antes de baixar.
+// Documentos pra responder a disputa na Shopify: os 4 PDFs em inglês dos campos
+// de prova (conversa, frete, comprovante de serviço, outras provas).
 function DisputeDocs({ disputeId }: { disputeId: string }) {
   const evidenceFn = useServerFn(getDisputeEvidence);
-  const rebuttalFn = useServerFn(draftDisputeRebuttal);
   const [ev, setEv] = useState<DisputeEvidence | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<EvidenceDocKey | "all" | null>(null);
-  const [text, setText] = useState("");
-  const [writing, setWriting] = useState(false);
 
   const load = async () => {
     if (ev || loading) return ev;
@@ -896,30 +892,22 @@ function DisputeDocs({ disputeId }: { disputeId: string }) {
   const download = async (key: EvidenceDocKey) => {
     const e = ev ?? await load();
     if (!e) return;
-    if (key === "rebuttal" && !text.trim()) return toast.error("Gere e revise o texto de defesa primeiro");
     setBusy(key);
-    try { await downloadEvidenceDoc(key, e, text); } catch { toast.error("Erro ao gerar o PDF"); } finally { setBusy(null); }
+    try { await downloadEvidenceDoc(key, e); } catch { toast.error("Erro ao gerar o PDF"); } finally { setBusy(null); }
   };
   const downloadAll = async () => {
     const e = ev ?? await load();
     if (!e) return;
     setBusy("all");
-    try {
-      for (const d of EVIDENCE_DOCS) if (d.key !== "rebuttal" || text.trim()) await downloadEvidenceDoc(d.key, e, text);
-    } catch { toast.error("Erro ao gerar os PDFs"); } finally { setBusy(null); }
-  };
-  const write = async () => {
-    setWriting(true);
-    try { const r = await rebuttalFn({ data: { disputeId } }); setText(r.text); }
-    catch (e: any) { toast.error(e?.message ?? "Erro ao escrever o texto"); }
-    finally { setWriting(false); }
+    try { for (const d of EVIDENCE_DOCS) await downloadEvidenceDoc(d.key, e); }
+    catch { toast.error("Erro ao gerar os PDFs"); } finally { setBusy(null); }
   };
 
   if (!ev) {
     return (
       <div className="rounded-xl border border-border p-3.5 space-y-2">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Documentos para a Shopify</p>
-        <p className="text-xs text-muted-foreground">Monta os 6 documentos em PDF (em inglês) com as provas do sistema: envio e rastreio, conversa com o cliente, produto, dados da compra, políticas da loja e o texto de defesa.</p>
+        <p className="text-xs text-muted-foreground">Monta os 4 documentos em PDF (em inglês) com as provas do sistema: comunicação com o cliente, documentação de frete, comprovante de serviço e outras provas (políticas da loja).</p>
         <button onClick={load} disabled={loading}
           className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5 disabled:opacity-60">
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} {loading ? "Juntando as provas…" : "Preparar documentos"}
@@ -935,42 +923,21 @@ function DisputeDocs({ disputeId }: { disputeId: string }) {
           {busy === "all" ? "Baixando…" : "Baixar todos"}
         </button>
       </div>
-      <div className="space-y-1">
-        {EVIDENCE_DOCS.filter((d) => d.key !== "rebuttal").map((d) => (
-          <div key={d.key} className="flex items-center justify-between gap-2 text-sm">
-            <span className="min-w-0 truncate">{d.label}{d.key === "communication" && !ev.communications.length && <span className="text-xs text-muted-foreground"> · sem contato do cliente</span>}</span>
+      <div className="space-y-2">
+        {EVIDENCE_DOCS.map((d) => (
+          <div key={d.key} className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm truncate">{d.label}</p>
+              <p className="text-[11px] text-muted-foreground truncate">
+                {d.key === "communication" && !ev.communications.length ? "Sem contato do cliente" : d.hint}
+              </p>
+            </div>
             <button onClick={() => download(d.key)} disabled={!!busy}
               className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted shrink-0 disabled:opacity-60">
               {busy === d.key ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} PDF
             </button>
           </div>
         ))}
-      </div>
-      <div className="border-t border-border pt-3 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium">Texto de defesa</span>
-          <button onClick={write} disabled={writing}
-            className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-60">
-            {writing ? <Loader2 className="size-3.5 animate-spin" /> : null} {writing ? "Escrevendo… (até ~30s)" : text ? "Escrever de novo" : "Escrever com IA"}
-          </button>
-        </div>
-        {text && (
-          <>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={12}
-              className="w-full resize-y rounded-lg bg-background border border-border p-2.5 text-xs leading-relaxed outline-none focus:border-primary" />
-            <p className="text-[11px] text-muted-foreground">Revise antes de enviar: a IA usa só os dados do sistema, mas confira datas e fatos.</p>
-            <div className="flex gap-2">
-              <button onClick={() => download("rebuttal")} disabled={!!busy}
-                className="h-8 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-60">
-                <Download className="size-3.5" /> PDF
-              </button>
-              <button onClick={() => navigator.clipboard?.writeText(text).then(() => toast.success("Texto copiado"))}
-                className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted">
-                <Copy className="size-3.5" /> Copiar texto
-              </button>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );

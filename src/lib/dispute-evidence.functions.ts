@@ -1,13 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
-import { collectEvidence, writeRebuttal } from "@/lib/dispute-evidence.server";
+import { collectEvidence } from "@/lib/dispute-evidence.server";
 
 // Aba Chargebacks > "Documentos para a Shopify": junta as provas de uma disputa
-// (envio/rastreio, conversa com o cliente, produto, dados da compra, políticas
-// da loja) pra virar 6 PDFs em inglês (quem lê é o banco nos EUA) e um texto de
-// defesa escrito pela IA com base só nesses fatos. A lógica fica em
-// dispute-evidence.server.ts (só servidor).
+// (conversa com o cliente, frete, compra/produto, políticas da loja) pra virar
+// os 4 PDFs em inglês dos campos da Shopify (quem lê é o banco nos EUA). A
+// lógica fica em dispute-evidence.server.ts (só servidor).
 
 export type DisputeEvidence = {
   store: { name: string; domain: string | null; supportEmail: string | null };
@@ -26,7 +25,7 @@ export type DisputeEvidence = {
   payment: { method: string | null; last4: string | null; avs: string | null; cvv: string | null; riskLevel: string | null; riskFacts: { description: string; sentiment: string }[] };
   products: { title: string; description: string | null; imageUrl: string | null; productType: string | null }[];
   communications: { sentAt: string; direction: "in" | "out"; from: string | null; to: string | null; subject: string | null; body: string }[];
-  policies: { title: string; body: string }[];
+  policies: { title: string; body: string; kind: "shipping" | "other" }[];
   limited: boolean;   // pedido antigo (fora do sistema): menos dados disponíveis
 };
 
@@ -41,14 +40,4 @@ export const getDisputeEvidence = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     assertAccess(context);
     return collectEvidence(context.ownerId, data.disputeId);
-  });
-
-export const draftDisputeRebuttal = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ disputeId: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    assertAccess(context);
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error("Texto de defesa indisponível: falta a chave da IA (ANTHROPIC_API_KEY)");
-    const ev = await collectEvidence(context.ownerId, data.disputeId);
-    return { text: await writeRebuttal(ev) };
   });

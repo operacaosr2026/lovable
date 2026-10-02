@@ -2,8 +2,8 @@ import { jsPDF } from "jspdf";
 import type { DisputeEvidence } from "@/lib/dispute-evidence.functions";
 
 // PDFs da resposta de chargeback (aba Chargebacks > "Documentos para a
-// Shopify"): um arquivo por tipo de prova, em inglês (quem lê é o banco nos EUA).
-// Gerados no navegador com jsPDF.
+// Shopify"): um arquivo por campo de prova da Shopify, em inglês (quem lê é o
+// banco nos EUA). Gerados no navegador com jsPDF.
 
 const REASON_EN: Record<string, string> = {
   product_not_received: "Product not received", product_unacceptable: "Product unacceptable / not as described",
@@ -12,12 +12,10 @@ const REASON_EN: Record<string, string> = {
 };
 
 export const EVIDENCE_DOCS = [
-  { key: "shipping", file: "Shipping_Documentation.pdf", label: "Comprovante de envio / rastreio" },
-  { key: "communication", file: "Customer_Communication.pdf", label: "Comunicação com o cliente" },
-  { key: "product", file: "Product_Description.pdf", label: "Descrição do produto" },
-  { key: "order", file: "Order_Details.pdf", label: "Dados da compra" },
-  { key: "policy", file: "Refund_Policy.pdf", label: "Política de reembolso / troca" },
-  { key: "rebuttal", file: "Rebuttal_Letter.pdf", label: "Texto de defesa" },
+  { key: "communication", file: "Customer_Communication.pdf", label: "Comunicação com o cliente", hint: "E-mails recebidos e enviados" },
+  { key: "shipping", file: "Shipping_Documentation.pdf", label: "Documentação de frete", hint: "Política de frete e rastreio" },
+  { key: "service", file: "Proof_of_Service.pdf", label: "Comprovante de serviço", hint: "Dados da compra, produto e IP do cliente" },
+  { key: "other", file: "Additional_Evidence.pdf", label: "Outras provas", hint: "Reembolso, privacidade, termos, contato e aviso legal" },
 ] as const;
 export type EvidenceDocKey = (typeof EVIDENCE_DOCS)[number]["key"];
 
@@ -135,6 +133,12 @@ async function imageAsJpeg(url: string): Promise<string | null> {
 
 function shipping(ev: DisputeEvidence) {
   const d = new Doc(ev, "Shipping Documentation");
+  const ship = ev.policies.filter((p) => p.kind === "shipping");
+  d.section("Shipping policy");
+  if (ev.store.domain) d.para(`Published on our store (${ev.store.domain}) and available to the customer at the time of purchase.`, { color: 60, gap: 8 });
+  if (!ship.length) d.para("No shipping policy text available.", { color: 110 });
+  for (const p of ship) { if (ship.length > 1) d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
+  d.rule();
   d.section("Shipment");
   d.kv("Carrier", ev.shipping.carrier);
   d.kv("Tracking number", ev.shipping.trackingNumber);
@@ -172,8 +176,8 @@ function communication(ev: DisputeEvidence) {
   return d;
 }
 
-async function product(ev: DisputeEvidence) {
-  const d = new Doc(ev, "Product Description");
+async function productSection(d: Doc, ev: DisputeEvidence) {
+  d.section("Product description");
   for (let i = 0; i < ev.order.items.length; i++) {
     const it = ev.order.items[i];
     const p = ev.products[i];
@@ -189,11 +193,11 @@ async function product(ev: DisputeEvidence) {
     d.rule();
   }
   if (ev.store.domain) d.para(`The product is sold as described on our store (${ev.store.domain}). The item shipped matches the product, variant and quantity purchased.`, { color: 60 });
-  return d;
 }
 
-function order(ev: DisputeEvidence) {
-  const d = new Doc(ev, "Order Details");
+// Comprovante de serviço: dados da compra (com IP do cliente) + descrição do produto.
+async function service(ev: DisputeEvidence) {
+  const d = new Doc(ev, "Proof of Service");
   d.section("Order");
   d.kv("Order number", ev.order.number);
   d.kv("Order date", dateEn(ev.order.createdAt, true));
@@ -219,32 +223,28 @@ function order(ev: DisputeEvidence) {
     for (const f of positive) d.para(`- ${f.description}`, { gap: 2 });
   }
   if (ev.limited) { d.y += 8; d.para("Note: some order details are unavailable for this order.", { size: 9, color: 110 }); }
+  d.y += 6;
+  d.rule();
+  await productSection(d, ev);
   return d;
 }
 
-function policy(ev: DisputeEvidence) {
-  const d = new Doc(ev, "Refund and Shipping Policy");
+// Outras provas: as políticas escritas que não entraram nos outros documentos.
+function other(ev: DisputeEvidence) {
+  const d = new Doc(ev, "Additional Evidence - Store Policies");
+  const rest = ev.policies.filter((p) => p.kind !== "shipping");
   if (ev.store.domain) d.para(`The following policies are published on our store (${ev.store.domain}) and were available to the customer at the time of purchase.`, { color: 60, gap: 10 });
-  if (!ev.policies.length) d.para("No policy text available.", { color: 110 });
-  for (const p of ev.policies) { d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
+  if (!rest.length) d.para("No policy text available.", { color: 110 });
+  for (const p of rest) { d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
   return d;
 }
 
-function rebuttal(ev: DisputeEvidence, text: string) {
-  const d = new Doc(ev, "Dispute Response");
-  d.para(text, { gap: 12 });
-  d.para(`${ev.store.name}${ev.store.supportEmail ? ` - ${ev.store.supportEmail}` : ""}`, { color: 60 });
-  return d;
-}
-
-// Gera e baixa um documento. O de defesa usa o texto (revisado) passado aqui.
-export async function downloadEvidenceDoc(key: EvidenceDocKey, ev: DisputeEvidence, rebuttalText?: string) {
+// Gera e baixa um documento.
+export async function downloadEvidenceDoc(key: EvidenceDocKey, ev: DisputeEvidence) {
   const file = EVIDENCE_DOCS.find((x) => x.key === key)!.file;
-  const doc = key === "shipping" ? shipping(ev)
-    : key === "communication" ? communication(ev)
-    : key === "product" ? await product(ev)
-    : key === "order" ? order(ev)
-    : key === "policy" ? policy(ev)
-    : rebuttal(ev, rebuttalText ?? "");
+  const doc = key === "communication" ? communication(ev)
+    : key === "shipping" ? shipping(ev)
+    : key === "service" ? await service(ev)
+    : other(ev);
   doc.save(`${(ev.order.number ?? "order").replace(/^#/, "")}_${file}`);
 }
