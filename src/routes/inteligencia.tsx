@@ -76,7 +76,7 @@ const fmtDay = (iso?: string) => {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toDateString() === new Date().toDateString() ? "hoje" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
 };
-type Tab = "agora" | "acompanhando" | "testando" | "concluido";
+type Tab = "agora" | "testando" | "concluido";
 type TipItem = { tip: ConsultantTip; index: number; status: TipStatus | null };
 type DrawerTab = "geral" | "pedidos" | "padroes" | "dados" | "historico";
 
@@ -127,15 +127,14 @@ function InteligenciaPage() {
     };
   }, [report]);
   const byTab: Record<Tab, TipItem[]> = {
-    agora: items.filter((i) => !i.status && (i.tip.estado ?? "agora") === "agora"),
-    acompanhando: items.filter((i) => !i.status && i.tip.estado === "acompanhando"),
+    agora: items.filter((i) => !i.status),
     testando: items.filter((i) => i.status === "testando"),
     concluido: items.filter((i) => i.status === "feita" || i.status === "ignorada"),
   };
   const testsRunning = tests.filter((t) => !RESULT[t.resultado]?.done);
   const testsDone = tests.filter((t) => RESULT[t.resultado]?.done);
   const counts: Record<Tab, number> = {
-    agora: byTab.agora.length, acompanhando: byTab.acompanhando.length,
+    agora: byTab.agora.length,
     testando: byTab.testando.length + testsRunning.length, concluido: byTab.concluido.length + testsDone.length,
   };
   const inTab = byTab[tab];
@@ -174,7 +173,7 @@ function InteligenciaPage() {
           {/* Estados de trabalho à esquerda; categoria e ordem à direita — uma linha só */}
           <div className="flex flex-col-reverse md:flex-row md:items-end justify-between gap-3 border-b border-border mb-5">
             <div className="flex gap-6 overflow-x-auto">
-              {([["agora", "Agora"], ["acompanhando", "Acompanhando"], ["testando", "Testando"], ["concluido", "Concluído"]] as [Tab, string][]).map(([k, label]) => (
+              {([["agora", "Agora"], ["testando", "Testando"], ["concluido", "Concluído"]] as [Tab, string][]).map(([k, label]) => (
                 <button key={k} type="button" onClick={() => { setTab(k); setCat(null); }}
                   className={`pb-3 -mb-px border-b-2 text-sm font-medium whitespace-nowrap flex items-center gap-1.5 transition-colors ${tab === k ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                   {label}
@@ -190,7 +189,7 @@ function InteligenciaPage() {
                   {catCounts.map(({ c, n }) => <option key={c} value={c}>{CAT[c].label} ({n})</option>)}
                 </select>
               )}
-              {(tab === "agora" || tab === "acompanhando") && (
+              {tab === "agora" && (
                 <select value={sort} onChange={(e) => setSort(e.target.value as any)} aria-label="Ordenar por"
                   className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs">
                   <option value="prioridade">Ordenar: prioridade</option><option value="valor">Ordenar: valor</option>
@@ -209,7 +208,7 @@ function InteligenciaPage() {
             ))}
             {visible.length === 0 && !(tab === "testando" && testsRunning.length) && !(tab === "concluido" && testsDone.length) && (
               <div className="premium-card p-6 text-sm text-muted-foreground text-center">
-                {tab === "agora" ? "Nada exige sua decisão agora." : tab === "acompanhando" ? "Nada sendo acompanhado." : tab === "testando" ? "Nenhum teste em andamento." : "Nada concluído ainda."}
+                {tab === "agora" ? "Nada exige sua decisão agora." : tab === "testando" ? "Nenhum teste em andamento." : "Nada concluído ainda."}
               </div>
             )}
           </div>
