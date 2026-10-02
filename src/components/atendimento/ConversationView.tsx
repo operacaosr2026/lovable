@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft, Check, ChevronDown, Download, Languages, Loader2, MailOpen, MoreVertical, Paperclip, ShieldAlert, Star, Tag, Trash2,
-  Bot,
+  Bot, Sparkles,
 } from "lucide-react";
 import {
   deleteSupportConversations, getSupportConversation, getSupportCustomer, markConversationRead, sendSupportReply, translateSupportMessage, updateSupportConversations,
@@ -92,6 +92,8 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
   });
 
   const [sending, setSending] = useState(false);
+  // "Usar" na sugestão da IA: joga o texto na caixa de resposta.
+  const [inject, setInject] = useState<{ text: string; n: number } | null>(null);
   const onSend = async (text: string, attachments: any[], mode: SendMode) => {
     setSending(true);
     try {
@@ -213,15 +215,18 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
         {conv.message_count > q.data!.messages.length && (
           <p className="text-center text-[11px] text-muted-foreground">Mostrando as últimas {q.data!.messages.length} mensagens</p>
         )}
-        {q.data!.messages.map((m) => <Bubble key={m.id} m={m} fg={fg} />)}
+        {q.data!.messages.map((m, i, all) => (
+          <Bubble key={m.id} m={m} fg={fg} isLastIn={!all.slice(i + 1).some((x) => x.direction === "in")}
+            onUseDraft={(text) => setInject((p) => ({ text, n: (p?.n ?? 0) + 1 }))} />
+        ))}
       </div>
 
-      <Composer customerName={name.split(" ")[0]} customerEmail={conv.customer_email} conversationId={conv.id} onSend={onSend} sending={sending} />
+      <Composer customerName={name.split(" ")[0]} customerEmail={conv.customer_email} conversationId={conv.id} onSend={onSend} sending={sending} inject={inject} />
     </div>
   );
 }
 
-function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
+function Bubble({ m, fg, isLastIn, onUseDraft }: { m: SupportMessage; fg: string; isLastIn?: boolean; onUseDraft?: (text: string) => void }) {
   const out = m.direction === "out";
   const translateFn = useSupportFn(translateSupportMessage, "translateSupportMessage");
   // Todo e-mail abre em português — do cliente e os nossos já enviados
@@ -296,6 +301,7 @@ function Bubble({ m, fg }: { m: SupportMessage; fg: string }) {
             <p className="text-[11px] mt-1 text-warning font-medium flex items-center gap-1"><Bot className="size-3.5" /> Ficou pra equipe: {m.auto_reply.replace(/^pulado:\s*/, "")}</p>
           )
         )}
+        {!out && m.ai_draft && <DraftCard m={m} defaultOpen={!!isLastIn && !!m.ai_draft_eval?.pendente} onUse={onUseDraft} />}
       </div>
     </div>
   );
@@ -331,5 +337,47 @@ function AttachmentLink({ messageId, att }: { messageId: string; att: { id: stri
       {att.size > 0 && <span className="text-muted-foreground shrink-0">{formatBytes(att.size)}</span>}
       <Download className="size-3 text-muted-foreground shrink-0" />
     </button>
+  );
+}
+
+// Treino da IA: o que a IA responderia a este e-mail (nada é enviado). Antes da
+// resposta da equipe: "Usar" joga o texto (inglês) na caixa de resposta. Depois:
+// como a sugestão se saiu comparada com o que a equipe mandou.
+const EVAL_META: Record<string, { label: string; cls: string }> = {
+  igual: { label: "IA acertou", cls: "text-success" },
+  parecida: { label: "IA chegou perto", cls: "text-primary" },
+  diferente: { label: "IA respondeu diferente", cls: "text-warning" },
+};
+function DraftCard({ m, defaultOpen, onUse }: { m: SupportMessage; defaultOpen: boolean; onUse?: (text: string) => void }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [lang, setLang] = useState<"pt" | "en">("pt");
+  const e = m.ai_draft_eval ?? {};
+  const done = e.semelhanca ? EVAL_META[e.semelhanca] : null;
+  const text = lang === "pt" && m.ai_draft_pt ? m.ai_draft_pt : m.ai_draft!;
+  return (
+    <div className="mt-2 rounded-xl border border-primary/25 bg-background/70">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium text-left">
+        <Sparkles className="size-3.5 text-primary shrink-0" />
+        <span className="text-primary">Sugestão da IA</span>
+        {e.pendente && e.confianca && <span className="text-muted-foreground font-normal">· confiança {e.confianca}</span>}
+        {done && <span className={`${done.cls} font-normal truncate`}>· {done.label}{e.o_que_mudou ? `: ${e.o_que_mudou}` : ""}</span>}
+        <ChevronDown className={`size-3.5 ml-auto shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2">
+          {e.pendente && e.observacao && <p className="text-[11px] text-warning">{e.observacao}</p>}
+          <p className="text-sm whitespace-pre-wrap">{text}</p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setLang(lang === "pt" ? "en" : "pt")} className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:bg-muted flex items-center gap-1">
+              <Languages className="size-3.5" /> {lang === "pt" ? "Ver em inglês" : "Ver em português"}
+            </button>
+            {e.pendente && onUse && (
+              <button onClick={() => { onUse(m.ai_draft!); toast.success("Sugestão na caixa de resposta — revise e envie"); }}
+                className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[11px] font-medium ml-auto">Usar</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

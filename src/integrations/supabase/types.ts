@@ -284,8 +284,18 @@ export type Database = {
         };
         Relationships: [];
       };
+      support_playbook: {
+        Row: { based_on: number; owner_id: string; rules: Json; updated_at: string };
+        Insert: { based_on?: number; owner_id: string; rules?: Json; updated_at?: string };
+        Update: { based_on?: number; owner_id?: string; rules?: Json; updated_at?: string };
+        Relationships: [];
+      };
       support_messages: {
         Row: {
+          ai_draft: string | null;
+          ai_draft_at: string | null;
+          ai_draft_eval: Json | null;
+          ai_draft_pt: string | null;
           auto_reply: string | null;
           auto_reply_at: string | null;
           auto_reply_text: string | null;
@@ -310,6 +320,10 @@ export type Database = {
           created_at: string;
         };
         Insert: {
+          ai_draft?: string | null;
+          ai_draft_at?: string | null;
+          ai_draft_eval?: Json | null;
+          ai_draft_pt?: string | null;
           auto_reply?: string | null;
           auto_reply_at?: string | null;
           auto_reply_text?: string | null;
@@ -334,6 +348,10 @@ export type Database = {
           created_at?: string;
         };
         Update: {
+          ai_draft?: string | null;
+          ai_draft_at?: string | null;
+          ai_draft_eval?: Json | null;
+          ai_draft_pt?: string | null;
           auto_reply?: string | null;
           auto_reply_at?: string | null;
           auto_reply_text?: string | null;

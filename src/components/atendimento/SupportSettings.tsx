@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Bot, Check, CheckCircle2, Loader2, MessageSquareText, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
 import {
-  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate,
+  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate, getSupportTraining,
   type getZohoStatus, type SupportTemplate,
 } from "@/lib/atendimento.functions";
 import { TemplateEditor, type TemplateDraft } from "./Composer";
@@ -27,7 +27,7 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
     { key: "mensagens", label: "Mensagens salvas", desc: "Respostas prontas", icon: MessageSquareText },
     { key: "tags", label: "Tags", desc: "Etiquetas das conversas", icon: Tag },
     { key: "metas", label: "Metas", desc: "Horário comercial e tempos-alvo", icon: Target },
-    { key: "autoresposta", label: "Resposta automática", desc: "E-mails de rastreio", icon: Bot },
+    { key: "autoresposta", label: "Resposta automática", desc: "Rastreio e treino da IA", icon: Bot },
   ];
   return (
     <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
@@ -423,6 +423,99 @@ function AutoReplySettings() {
         <Switch checked={aiAvailable && on} disabled={!aiAvailable || toggle.isPending || q.isLoading} onCheckedChange={(v) => toggle.mutate(v)} />
       </div>
 
+      <TrainingPanel />
+    </div>
+  );
+}
+
+// Treino da IA (support-learning.server.ts): placar por tag e o manual aprendido.
+function TrainingPanel() {
+  const fn = useSupportFn(getSupportTraining, "getSupportTraining");
+  const q = useQuery({ queryKey: ["support-training"], queryFn: () => fn(), refetchInterval: 120_000 });
+  const d = q.data as Awaited<ReturnType<typeof getSupportTraining>> | undefined;
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <div className="space-y-4 pt-2">
+      <div>
+        <h3 className="text-sm font-semibold flex items-center gap-1.5"><Sparkles className="size-4 text-primary" /> Treino da IA</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Em todo e-mail que chega, a IA escreve a resposta que daria — aparece na Caixa como <strong>Sugestão da IA</strong> (nada é enviado).
+          Quando a equipe responde, ela compara com o que vocês mandaram e aprende a diferença; uma vez por dia junta tudo no manual abaixo.
+        </p>
+      </div>
+      {q.isLoading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : (
+        <>
+          <div className="rounded-xl border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th className="text-left font-medium px-3 py-2">Tag</th>
+                  <th className="text-right font-medium px-2 py-2">Comparados</th>
+                  <th className="text-right font-medium px-2 py-2">Iguais</th>
+                  <th className="text-right font-medium px-2 py-2">Parecidos</th>
+                  <th className="text-right font-medium px-2 py-2">Diferentes</th>
+                  <th className="text-left font-medium px-3 py-2 w-40">Acerto</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {!d?.tags.length && (
+                  <tr><td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">Nenhuma comparação ainda — aparece aqui assim que a equipe responder um e-mail que já tem sugestão da IA.</td></tr>
+                )}
+                {d?.tags.map((t) => (
+                  <Fragment key={t.tag}>
+                    <tr className="cursor-pointer hover:bg-muted/30" onClick={() => setOpen(open === t.tag ? null : t.tag)}>
+                      <td className="px-3 py-2 font-medium">{t.tag}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{t.total}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-success">{t.igual}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{t.parecida}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-warning">{t.diferente}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div className={`h-full ${(t.acerto ?? 0) >= 80 ? "bg-success" : (t.acerto ?? 0) >= 50 ? "bg-primary" : "bg-warning"}`} style={{ width: `${t.acerto ?? 0}%` }} />
+                          </div>
+                          <span className="tabular-nums w-9 text-right">{t.acerto ?? "—"}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                    {open === t.tag && (
+                      <tr><td colSpan={6} className="px-3 py-2 bg-muted/20">
+                        {!t.ultimas.length ? <p className="text-muted-foreground">Sem diferenças registradas.</p> : (
+                          <ul className="space-y-1">
+                            {t.ultimas.map((u, i) => <li key={i} className="text-muted-foreground"><span className="text-foreground">{fullTime(u.at)}:</span> {u.o_que_mudou}</li>)}
+                          </ul>
+                        )}
+                      </td></tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Acerto = iguais + parecidos (mesma decisão da equipe). {d?.pendentes ? `${d.pendentes} sugestões esperando a resposta da equipe pra comparar.` : ""}</p>
+
+          <div>
+            <h3 className="text-sm font-semibold">O que a IA aprendeu</h3>
+            <p className="text-[11px] text-muted-foreground mb-2">{d?.playbookAt ? `Manual atualizado em ${fullTime(d.playbookAt)} — tirado das respostas reais da equipe.` : "O manual sai na primeira rodada depois da atualização."}</p>
+            {d?.playbook && (
+              <div className="space-y-3 rounded-xl border border-border px-4 py-3 text-xs">
+                {d.playbook.gerais.length > 0 && (
+                  <div>
+                    <p className="font-semibold mb-1">Geral</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">{d.playbook.gerais.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                  </div>
+                )}
+                {d.playbook.por_tag.map((t) => (
+                  <div key={t.tag}>
+                    <p className="font-semibold mb-1">{t.tag}</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">{t.regras.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

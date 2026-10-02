@@ -84,7 +84,8 @@ async function mark(id: string, auto_reply: string, text?: string) {
 }
 
 // Pedidos do cliente (pelo e-mail e pelo nº citado) com a situação real do rastreio.
-async function ordersFor(ownerId: string, email: string, texts: (string | null)[]) {
+// detailed (rascunhos do treino): também produtos, valor, pagamento e chargeback.
+export async function ordersFor(ownerId: string, email: string, texts: (string | null)[], opts: { detailed?: boolean } = {}) {
   const { data: ids } = await supabaseAdmin.rpc("shop_order_ids_by_email", { p_user_id: ownerId, p_email: email.toLowerCase() });
   const idList = [...((ids ?? []) as string[])];
   const nums = [...new Set(texts.flatMap((t) => orderNumbersInText(t)))];
@@ -94,13 +95,17 @@ async function ordersFor(ownerId: string, email: string, texts: (string | null)[
   }
   if (!idList.length) return [];
   const { data: orders } = await supabaseAdmin.from("shop_orders")
-    .select("id,shop_id,order_number,created_at_shopify,tracking_code,tracking_url,delivered_at,shopify_financial_status,first_name:raw->customer->>first_name,cancelled_at:raw->>cancelled_at")
+    .select("id,shop_id,external_id,order_number,created_at_shopify,tracking_code,tracking_url,delivered_at,shopify_financial_status,first_name:raw->customer->>first_name,cancelled_at:raw->>cancelled_at" + (opts.detailed ? ",items:raw->line_items,total:raw->>total_price,refunds:raw->refunds" : ""))
     .eq("user_id", ownerId).in("id", idList).order("created_at_shopify", { ascending: false }).limit(3);
   const list = (orders ?? []) as any[];
-  const [{ data: tracks }, { data: integs }] = await Promise.all([
+  const [{ data: tracks }, { data: integs }, { data: disputes }] = await Promise.all([
     supabaseAdmin.from("shop_order_tracking").select("order_id,timeline,tracking_status").in("order_id", list.map((o) => o.id)),
     supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", [...new Set(list.map((o) => o.shop_id))]),
+    opts.detailed
+      ? supabaseAdmin.from("shop_order_disputes").select("shop_id,order_external_id,type,status,reason,amount,initiated_at").eq("user_id", ownerId).in("order_external_id", list.map((o) => o.external_id).filter(Boolean))
+      : Promise.resolve({ data: [] as any[] }),
   ]);
+  const disputeBy = new Map(((disputes ?? []) as any[]).map((d) => [`${d.shop_id}:${d.order_external_id}`, d]));
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
   const tplBy = new Map((integs ?? []).map((i: any) => [i.shop_id, i.tracking_link_template]));
   const now = Date.now();
@@ -123,6 +128,16 @@ async function ordersFor(ownerId: string, email: string, texts: (string | null)[
         : stageOf(last!.detail) === "saiu_entrega" ? "out for delivery" : "in transit",
       last_carrier_event: last ? { on: fmtUS(last.ms), what: last.detail, where: last.place } : null,
       days_without_update: last && !delivered ? Math.round((now - last.ms) / DAY) : null,
+      ...(opts.detailed ? (() => {
+        const d: any = disputeBy.get(`${o.shop_id}:${o.external_id}`);
+        return {
+          financial_status: o.shopify_financial_status ?? null,
+          total: o.total ?? null,
+          items: ((o.items ?? []) as any[]).map((i) => `${i.quantity ?? 1}x ${i.title ?? i.name ?? ""}${i.variant_title ? ` (${i.variant_title})` : ""}`),
+          refunds: ((o.refunds ?? []) as any[]).map((r) => ({ on: r?.created_at ? fmtUS(Date.parse(r.created_at)) : null, note: r?.note ?? null })),
+          dispute: d ? { type: d.type, status: d.status, reason: d.reason, amount: d.amount, opened_on: fmtUS(Date.parse(d.initiated_at)) } : null,
+        };
+      })() : {}),
       _firstName: o.first_name ?? null,
     };
   });

@@ -420,6 +420,7 @@ const demoApi = {
     return { ...computeSupportKpis(s.messages, s.conversations, DEMO_SHOPS, s.tags, range, demoHours), partial: range.partial, goals: { ...s.goals } };
   },
   listSupportShops: async () => DEMO_SHOPS,
+  getSupportTraining: async () => ({ tags: [], pendentes: 0, playbook: null, playbookAt: null }),
   getSupportSettings: async () => ({ signature: db().signature, signatureEnabled: db().signatureEnabled, tags: [...db().tags], aiTagsEnabled: db().aiTagsEnabled, autoReplyTracking: false, aiAvailable: true, goals: { ...db().goals }, businessHours: { ...demoHours }, senderName: "Você" }),
   saveSupportSettings: async ({ data }: { data: { signature?: string; signatureEnabled?: boolean; tags?: string[]; aiTagsEnabled?: boolean; goals?: KpiGoals; businessHours?: BusinessHours } }) => {
     if (data.goals) db().goals = { ...data.goals };

@@ -365,6 +365,9 @@ export type SupportMessage = {
   attachments: { id: string; name: string; size: number }[];
   // E-mail do cliente: "enviado" (respondido automaticamente) ou "pulado: motivo" (ficou pra equipe).
   auto_reply?: string | null; auto_reply_at?: string | null;
+  // Treino da IA (support-learning.server.ts): o que a IA responderia e a comparação com a resposta da equipe.
+  ai_draft?: string | null; ai_draft_pt?: string | null;
+  ai_draft_eval?: { pendente?: boolean; confianca?: string; observacao?: string; semelhanca?: string; o_que_mudou?: string; licoes?: string[] } | null;
 };
 
 export const getSupportConversation = createServerFn({ method: "GET" })
@@ -381,12 +384,15 @@ export const getSupportConversation = createServerFn({ method: "GET" })
       .eq("conversation_id", data.id).eq("owner_id", ownerId).order("sent_at", { ascending: false }).limit(30);
     const msgs = (rows ?? []).reverse();
     // Resposta automática de cada e-mail do cliente (coluna nova: sem a migration, segue sem).
-    const { data: autos } = await supabaseAdmin.from("support_messages").select("id,auto_reply,auto_reply_at").in("id", msgs.map((m: any) => m.id));
+    const ids = msgs.map((m: any) => m.id);
+    let { data: autos, error: autoErr } = await supabaseAdmin.from("support_messages").select("id,auto_reply,auto_reply_at,ai_draft,ai_draft_pt,ai_draft_eval").in("id", ids);
+    if (autoErr) ({ data: autos } = await supabaseAdmin.from("support_messages").select("id,auto_reply,auto_reply_at").in("id", ids) as any);
     const autoBy = new Map(((autos ?? []) as any[]).map((a) => [a.id, a]));
 
     // Corpo (1ª vez: busca no Zoho e guarda) e anexos, 4 por vez.
     const acc = await getZohoAccount(ownerId);
-    const out: SupportMessage[] = msgs.map((m: any) => ({ ...m, attachments: [], auto_reply: autoBy.get(m.id)?.auto_reply ?? null, auto_reply_at: autoBy.get(m.id)?.auto_reply_at ?? null }));
+    const out: SupportMessage[] = msgs.map((m: any) => ({ ...m, attachments: [], auto_reply: autoBy.get(m.id)?.auto_reply ?? null, auto_reply_at: autoBy.get(m.id)?.auto_reply_at ?? null,
+      ai_draft: autoBy.get(m.id)?.ai_draft ?? null, ai_draft_pt: autoBy.get(m.id)?.ai_draft_pt ?? null, ai_draft_eval: autoBy.get(m.id)?.ai_draft_eval ?? null }));
     if (acc?.refresh_token && acc.account_id) {
       const queue = [...out];
       await Promise.all(Array.from({ length: 4 }, async () => {
@@ -562,9 +568,14 @@ export const uploadSupportAttachment = createServerFn({ method: "POST" })
     return uploadZohoAttachment(acc, data.fileName, Buffer.from(data.base64, "base64"));
   });
 
+// URL vira link; a de rastreio aparece como "Track your order here" (igual à resposta automática).
 function textToHtml(text: string) {
   const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${esc.replace(/\r?\n/g, "<br>")}</div>`;
+  const linked = esc.replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (u) => {
+    const label = /track/i.test(u) ? "Track your order here" : u;
+    return `<a href="${u.replace(/"/g, "&quot;")}" style="color:#2563eb${label === u ? "" : ";font-weight:bold"}">${label}</a>`;
+  });
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${linked.replace(/\r?\n/g, "<br>")}</div>`;
 }
 
 async function senderName(userId: string) {
@@ -806,4 +817,13 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
         tracking: o.tracking_code, trackingUrl: buildTrackingUrl(templateByShop.get(o.shop_id), o.tracking_code) ?? o.tracking_url, carrier: o.carrier, cancelled: !!o.cancelled_at,
       })),
     };
+  });
+
+// Treino da IA: placar por tag (rascunho × resposta da equipe) e o manual aprendido.
+export const getSupportTraining = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    assertSub(context, "at_config");
+    const { supportTrainingStats } = await import("@/lib/support-learning.server");
+    return supportTrainingStats(context.ownerId);
   });

@@ -272,6 +272,15 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
         console.error("support auto reply", e);
         await reportSystemError(ownerId, "support_auto_reply", "Atendimento: resposta automática de rastreio falhou", e, "/atendimento");
       }
+      // Treino da IA: rascunho em todo e-mail + comparação com a resposta da equipe + manual diário (nada é enviado).
+      try {
+        const { runSupportLearning } = await import("@/lib/support-learning.server");
+        await runSupportLearning(acc, { budgetMs: 100_000 });
+        await clearSystemError(ownerId, "support_learning");
+      } catch (e) {
+        console.error("support learning", e);
+        await reportSystemError(ownerId, "support_learning", "Atendimento: treino da IA (sugestões de resposta) falhou", e, "/atendimento");
+      }
     }
 
     // Push "E-mail novo" (fora a 1ª sincronização, que traz 30 dias de uma vez).

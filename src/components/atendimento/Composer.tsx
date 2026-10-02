@@ -1,7 +1,7 @@
-import { useRef, useState, type TextareaHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type TextareaHTMLAttributes } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Languages, Loader2, MessageSquareText, Paperclip, Pencil, Plus, Save, Search, Send, Trash2, Undo2, X } from "lucide-react";
+import { ChevronDown, Languages, Truck, Loader2, MessageSquareText, Paperclip, Pencil, Plus, Save, Search, Send, Trash2, Undo2, X } from "lucide-react";
 import {
   translateSupportReply, uploadSupportAttachment, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate, getSupportCustomer,
   type SupportTemplate,
@@ -68,6 +68,42 @@ export function AttachmentChips({ files, onRemove }: { files: UploadedAttachment
 
 // Escreve em português → botão troca o texto pela versão em inglês; "Desfazer"
 // volta o português. O envio continua manual.
+// Link de rastreio do pedido na caixa de resposta, numa linha só — no envio vira
+// o texto clicável "Track your order here". Vários pedidos: escolhe qual.
+function TrackingLinkButton({ text, setText, customerEmail, conversationId }: {
+  text: string; setText: (t: string) => void; customerEmail?: string | null; conversationId?: string | null;
+}) {
+  const customerFn = useSupportFn(getSupportCustomer, "getSupportCustomer");
+  const email = (customerEmail ?? "").trim().toLowerCase();
+  const q = useQuery({
+    queryKey: conversationId ? ["support-customer", email, conversationId] : ["support-customer", email],
+    queryFn: () => customerFn({ data: conversationId ? { email, conversationId } : { email } }),
+    enabled: email.includes("@"), staleTime: 60_000,
+  });
+  const orders = (q.data?.orders ?? []).filter((o) => !o.cancelled && o.trackingUrl);
+  const insert = (url: string) => {
+    const t = text.replace(/\s+$/, "");
+    setText(t ? `${t}\n\n${url}\n` : `${url}\n`);
+  };
+  const cls = "h-8 px-2 rounded-lg flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50";
+  const label = <><Truck className="size-3.5" /> Link de rastreio</>;
+  if (orders.length > 1) return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><button type="button" className={cls}>{label}</button></DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {orders.map((o) => <DropdownMenuItem key={o.id} onClick={() => insert(o.trackingUrl!)}>{o.number}</DropdownMenuItem>)}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  return (
+    <button type="button" className={cls} disabled={q.isLoading}
+      title={orders.length ? "Coloca o link de rastreio no texto (vai como “Track your order here”)" : "Sem pedido com rastreio para este cliente"}
+      onClick={() => orders[0] ? insert(orders[0].trackingUrl!) : toast.warning("Nenhum pedido deste cliente tem rastreio ainda.")}>
+      {label}
+    </button>
+  );
+}
+
 export function TranslateToEnglish({ text, setText }: { text: string; setText: (t: string) => void }) {
   const translateFn = useSupportFn(translateSupportReply, "translateSupportReply");
   const [busy, setBusy] = useState(false);
@@ -366,7 +402,8 @@ export function SavedReplies({ text, setText, customerName, customerEmail, order
 
 export type SendMode = "em_atendimento" | "resolvido";
 
-export function Composer({ customerName, customerEmail, conversationId, onSend, sending }: {
+export function Composer({ customerName, customerEmail, conversationId, onSend, sending, inject }: {
+  inject?: { text: string; n: number } | null;   // "Usar" na sugestão da IA
   customerName: string;
   customerEmail?: string | null;
   conversationId?: string | null;
@@ -374,6 +411,7 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
   onSend: (text: string, attachments: ReturnType<typeof useAttachments>["refs"], mode: SendMode) => Promise<boolean>;
 }) {
   const [text, setText] = useState("");
+  useEffect(() => { if (inject) setText(inject.text); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const att = useAttachments();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -405,6 +443,7 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
           </button>
           <SavedReplies text={text} setText={setText} customerName={customerName} customerEmail={customerEmail} conversationId={conversationId} />
           <TranslateToEnglish text={text} setText={setText} />
+          <TrackingLinkButton text={text} setText={setText} customerEmail={customerEmail} conversationId={conversationId} />
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
           <div className="flex-1" />
           <div className="flex shrink-0">
