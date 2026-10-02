@@ -96,6 +96,60 @@ async function ordersFor(ownerId: string, email: string, texts: (string | null)[
   });
 }
 
+export type AutoReplyDecision =
+  | { kind: "fora" | "pulado"; motivo: string; corpo?: string; orders?: unknown[] }
+  | { kind: "responder"; motivo: string; corpo: string; orders: unknown[]; html: string | null };
+
+// Decide o que fazer com um e-mail do cliente (checagens + IA), sem enviar nem marcar.
+// preview = teste: ignora "já respondido" (e-mails antigos que a equipe já respondeu)
+// e não grava o conteúdo baixado.
+export async function decideAutoReply(acc: ZohoAccount, m: any, client: Anthropic, opts: { preview?: boolean } = {}): Promise<AutoReplyDecision> {
+  const ownerId = acc.owner_id;
+  const { data: conv } = await supabaseAdmin.from("support_conversations")
+    .select("id,customer_email,customer_name,tags,ai_tags,last_outbound_at").eq("id", m.conversation_id).maybeSingle();
+  if (!conv) return { kind: "pulado", motivo: "conversa não encontrada" };
+  const tags = [...(conv.tags ?? []), ...(conv.ai_tags ?? [])];
+  if (!tags.some((t) => /rastreio|tracking/i.test(t))) return { kind: "fora", motivo: "sem tag Rastreio" };
+  if (!opts.preview && conv.last_outbound_at && conv.last_outbound_at > m.sent_at) return { kind: "pulado", motivo: "já respondido" };
+  if (tags.some((t) => HUMAN_TAGS.test(t))) return { kind: "pulado", motivo: "fala em reembolso/disputa" };
+  // Recontato: o mesmo cliente já tinha escrito antes (qualquer conversa, 60 dias).
+  const { data: before } = await supabaseAdmin.from("support_messages").select("id")
+    .eq("owner_id", ownerId).eq("direction", "in").ilike("from_email", conv.customer_email)
+    .lt("sent_at", new Date(Date.parse(m.sent_at) - 60_000).toISOString())
+    .gte("sent_at", new Date(Date.parse(m.sent_at) - 60 * DAY).toISOString()).neq("id", m.id).limit(1);
+  if ((before ?? []).length) return { kind: "pulado", motivo: "cliente já escreveu antes" };
+
+  let html = m.content_html as string | null;
+  if (html == null) {
+    html = await fetchMessageContent(acc, m.folder_id, m.message_id);
+    if (!opts.preview) await supabaseAdmin.from("support_messages").update({ content_html: html }).eq("id", m.id);
+  }
+  const orders = await ordersFor(ownerId, conv.customer_email, [m.subject, m.summary, emailText(html ?? "", 3000)]);
+  if (orders.some((o) => o.cancelled_or_refunded)) return { kind: "pulado", motivo: "pedido cancelado/reembolsado", orders };
+  const name = (conv.customer_name || orders[0]?._firstName || "").split(" ")[0];
+  const facts = orders.map(({ _firstName, ...o }) => o);
+  const response = await withAiCredit(() => client.beta.messages.create({
+    model: MODEL, max_tokens: 2000,
+    betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
+    output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+    system: SYSTEM,
+    messages: [{ role: "user", content: `<customer_first_name>${name || "(unknown)"}</customer_first_name>
+<orders>
+${JSON.stringify(facts)}
+</orders>
+<email>
+Subject: ${m.subject ?? ""}
+
+${emailText(html ?? "", 4000)}
+</email>` }],
+  } as any)) as Anthropic.Beta.BetaMessage;
+  if (response.stop_reason === "refusal") return { kind: "pulado", motivo: "a IA não quis responder", orders: facts };
+  const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("");
+  const out = JSON.parse(text) as { responder: boolean; motivo: string; corpo: string };
+  if (!out.responder || !out.corpo.trim()) return { kind: "pulado", motivo: out.motivo || "precisa de humano", corpo: out.corpo, orders: facts };
+  return { kind: "responder", motivo: out.motivo, corpo: out.corpo.trim(), orders: facts, html };
+}
+
 export async function runSupportAutoReply(acc: ZohoAccount) {
   const ownerId = acc.owner_id;
   const { data: st } = await supabaseAdmin.from("support_settings").select("auto_reply_tracking,signature,signature_enabled").eq("owner_id", ownerId).maybeSingle();
@@ -110,53 +164,22 @@ export async function runSupportAutoReply(acc: ZohoAccount) {
   const client = new Anthropic();
 
   for (const m of (msgs ?? []) as any[]) {
-    const { data: conv } = await supabaseAdmin.from("support_conversations")
-      .select("id,customer_email,customer_name,tags,ai_tags,last_outbound_at").eq("id", m.conversation_id).maybeSingle();
-    if (!conv) { await mark(m.id, "pulado: conversa não encontrada"); skipped++; continue; }
-    const tags = [...(conv.tags ?? []), ...(conv.ai_tags ?? [])];
-    if (!tags.some((t) => /rastreio|tracking/i.test(t))) { await mark(m.id, "fora: sem tag Rastreio"); continue; }
-    if (conv.last_outbound_at && conv.last_outbound_at > m.sent_at) { await mark(m.id, "pulado: já respondido"); skipped++; continue; }
-    if (tags.some((t) => HUMAN_TAGS.test(t))) { await mark(m.id, "pulado: fala em reembolso/disputa"); skipped++; continue; }
-    // Recontato: o mesmo cliente já tinha escrito antes (qualquer conversa, 60 dias).
-    const { data: before } = await supabaseAdmin.from("support_messages").select("id")
-      .eq("owner_id", ownerId).eq("direction", "in").ilike("from_email", conv.customer_email)
-      .lt("sent_at", new Date(Date.parse(m.sent_at) - 60_000).toISOString())
-      .gte("sent_at", new Date(Date.parse(m.sent_at) - 60 * DAY).toISOString()).neq("id", m.id).limit(1);
-    if ((before ?? []).length) { await mark(m.id, "pulado: cliente já escreveu antes"); skipped++; continue; }
-
     try {
-      let html = m.content_html as string | null;
-      if (html == null) {
-        html = await fetchMessageContent(acc, m.folder_id, m.message_id);
-        await supabaseAdmin.from("support_messages").update({ content_html: html }).eq("id", m.id);
-      }
-      const orders = await ordersFor(ownerId, conv.customer_email, [m.subject, m.summary, emailText(html ?? "", 3000)]);
-      if (orders.some((o) => o.cancelled_or_refunded)) { await mark(m.id, "pulado: pedido cancelado/reembolsado"); skipped++; continue; }
-      const name = (conv.customer_name || orders[0]?._firstName || "").split(" ")[0];
-      const facts = orders.map(({ _firstName, ...o }) => o);
-      const response = await withAiCredit(() => client.beta.messages.create({
-        model: MODEL, max_tokens: 2000,
-        betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
-        output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-        system: SYSTEM,
-        messages: [{ role: "user", content: `<customer_first_name>${name || "(unknown)"}</customer_first_name>\n<orders>\n${JSON.stringify(facts)}\n</orders>\n<email>\nSubject: ${m.subject ?? ""}\n\n${emailText(html ?? "", 4000)}\n</email>` }],
-      } as any)) as Anthropic.Beta.BetaMessage;
-      if (response.stop_reason === "refusal") { await mark(m.id, "pulado: a IA não quis responder"); skipped++; continue; }
-      const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("");
-      const out = JSON.parse(text) as { responder: boolean; motivo: string; corpo: string };
-      if (!out.responder || !out.corpo.trim()) { await mark(m.id, `pulado: ${out.motivo || "precisa de humano"}`); skipped++; continue; }
+      const d = await decideAutoReply(acc, m, client);
+      if (d.kind !== "responder") { await mark(m.id, `${d.kind}: ${d.motivo}`); if (d.kind === "pulado") skipped++; continue; }
+      const { data: conv } = await supabaseAdmin.from("support_conversations").select("id,customer_email").eq("id", m.conversation_id).single();
 
       // Mesmo formato da resposta manual: Re:, assinatura e a mensagem do cliente citada.
       const baseSubject = (m.subject ?? "").trim();
       const subject = /^(re|res|aw)\s*:/i.test(baseSubject) ? baseSubject : `Re: ${baseSubject || "Your order"}`;
-      let body = textToHtml(out.corpo.trim());
+      let body = textToHtml(d.corpo);
       if (st.signature_enabled && st.signature?.trim()) body += `<br><div style="color:#555">${textToHtml(st.signature.replace(/\{nome\}/gi, "Customer Support"))}</div>`;
       const when = new Date(m.sent_at).toLocaleString("en-US", { timeZone: US_TIME_ZONE, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
       const who = m.from_name ? `${m.from_name} &lt;${m.from_email}&gt;` : m.from_email;
-      body += `<br><div>On ${when}, ${who} wrote:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${html ?? ""}</blockquote>`;
-      await sendZohoMail(acc, { to: conv.customer_email, subject, html: body, replyToMessageId: m.message_id });
-      await mark(m.id, "enviado", out.corpo.trim());
-      await supabaseAdmin.from("support_conversations").update({ status: "em_atendimento", updated_at: new Date().toISOString() }).eq("id", conv.id);
+      body += `<br><div>On ${when}, ${who} wrote:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${d.html ?? ""}</blockquote>`;
+      await sendZohoMail(acc, { to: conv!.customer_email, subject, html: body, replyToMessageId: m.message_id });
+      await mark(m.id, "enviado", d.corpo);
+      await supabaseAdmin.from("support_conversations").update({ status: "em_atendimento", updated_at: new Date().toISOString() }).eq("id", conv!.id);
       sent++;
     } catch (e: any) {
       console.error("support auto reply", m.id, e);
