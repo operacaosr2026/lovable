@@ -210,13 +210,25 @@ function expandOccurrences(
 //   saldo real de hoje  +  entradas/saídas reais já datadas no futuro  −  gastos simulados (expandidos)
 // Não expande recorrência de lançamentos REAIS (isso é feito só na tela do
 // Caixa, no cliente) — só dos gastos simulados, que são o ponto do simulador.
-export const getCaixaSimulation = createServerFn({ method: "GET" })
+// Com imported_payouts (planilhas de payout importadas no simulador), os
+// "Depósito Shopify" do caixa saem da projeção e entram só os da planilha.
+// POST: a lista de payouts pode estourar o tamanho da URL de um GET.
+export const getCaixaSimulation = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     to:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     show_pending: z.boolean().optional().default(false),
     weekend_supplier_to_monday: z.boolean().optional().default(false),
+    imported_payouts: z.array(z.object({
+      date:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      amount: z.number(),
+    })).max(5000).nullable().optional().default(null),
+    // Modo Isolado do simulador: saldo de partida digitado à mão, no lugar do
+    // saldo real do Caixa.
+    starting_balance_override: z.number().nullable().optional().default(null),
+    // Também do Modo Isolado: estimativas de Ads ficam guardadas mas fora da projeção.
+    skip_ad_estimates: z.boolean().optional().default(false),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
@@ -250,11 +262,14 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
       // show_pending esteja ligado (mesmo toggle "Mostrar pendentes" do Caixa).
       realFuture = ((futureRes.data ?? []) as any[]).filter((e) => {
         if (e.category !== "Depósito Shopify") return true;
+        if (data.imported_payouts) return false;
         if (data.show_pending) return true;
         if (e.source === "shopify_pending_sync") return false;
         return /trânsito|agendado/i.test(e.description ?? "");
       });
     }
+
+    if (data.starting_balance_override != null) startingBalance = data.starting_balance_override;
 
     const { data: simExpenses } = await supabaseAdmin
       .from("simulated_expenses")
@@ -272,6 +287,12 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
     const entradaAdsByDate  = new Map<string, number>();
     const saidaRealByDate   = new Map<string, number>();
     const saidaSimByDate    = new Map<string, number>();
+    const entradaPlanilhaByDate = new Map<string, number>();
+    // Mesmo corte dos lançamentos reais: hoje e antes já estão no saldo inicial.
+    for (const p of data.imported_payouts ?? []) {
+      if (p.date <= today || p.date < data.from || p.date > data.to) continue;
+      entradaPlanilhaByDate.set(p.date, (entradaPlanilhaByDate.get(p.date) ?? 0) + p.amount);
+    }
     for (const e of realFuture) {
       const map = e.kind === "income" ? entradaRealByDate : saidaRealByDate;
       const isSupplierCost = e.kind === "expense" && e.category === "Fornecedor";
@@ -300,7 +321,7 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
     // simular esse gasto no caixa cadastra separadamente em "Gastos
     // simulados" (evita contar o mesmo gasto duas vezes). Nem toda venda cai
     // como receita (recusa, cancelamento etc.), daí a % de conversão.
-    for (const ae of (adEstimates ?? []) as any[]) {
+    for (const ae of (data.skip_ad_estimates ? [] : (adEstimates ?? [])) as any[]) {
       const spendDates = expandDailyRange(ae.start_date, ae.end_date, data.from, data.to);
       const salesPerDay = Number(ae.daily_spend) / Number(ae.cpa);
       const conversionRate = Number(ae.conversion_rate ?? 100) / 100;
@@ -313,11 +334,11 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
 
     const series: {
       date: string; saldo: number; entrada: number; saida: number;
-      entradaReal: number; entradaAds: number; saidaReal: number; saidaSim: number;
+      entradaReal: number; entradaPlanilha: number; entradaAds: number; saidaReal: number; saidaSim: number;
     }[] = [];
     const statement: {
       date: string; entrada: number; saida: number; total: number;
-      entradaReal: number; entradaAds: number; saidaReal: number; saidaSim: number;
+      entradaReal: number; entradaPlanilha: number; entradaAds: number; saidaReal: number; saidaSim: number;
     }[] = [];
     let running = startingBalance;
     const d = new Date(data.from + "T00:00:00Z");
@@ -329,16 +350,17 @@ export const getCaixaSimulation = createServerFn({ method: "GET" })
       // isso jogava o gasto de hoje pro dia seguinte na projeção.
       const dateStr = d.toISOString().slice(0, 10);
       const entradaReal = entradaRealByDate.get(dateStr) ?? 0;
+      const entradaPlanilha = entradaPlanilhaByDate.get(dateStr) ?? 0;
       const entradaAds  = entradaAdsByDate.get(dateStr) ?? 0;
       const saidaReal   = saidaRealByDate.get(dateStr) ?? 0;
       const saidaSim    = saidaSimByDate.get(dateStr) ?? 0;
-      const entrada = entradaReal + entradaAds;
+      const entrada = entradaReal + entradaPlanilha + entradaAds;
       const saida   = saidaReal + saidaSim;
       running += entrada - saida;
       const total = Math.round(running * 100) / 100;
-      const row = { date: dateStr, saldo: total, entrada, saida, entradaReal, entradaAds, saidaReal, saidaSim };
+      const row = { date: dateStr, saldo: total, entrada, saida, entradaReal, entradaPlanilha, entradaAds, saidaReal, saidaSim };
       series.push(row);
-      if (entrada > 0 || saida > 0) statement.push({ date: dateStr, entrada, saida, total, entradaReal, entradaAds, saidaReal, saidaSim });
+      if (entrada > 0 || saida > 0) statement.push({ date: dateStr, entrada, saida, total, entradaReal, entradaPlanilha, entradaAds, saidaReal, saidaSim });
       d.setUTCDate(d.getUTCDate() + 1);
     }
 

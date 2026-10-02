@@ -57,6 +57,13 @@ function getPeriodRange(period: string, custom?: { from: string; to: string }) {
   let from = today, to = today;
   if (period === "ontem") { from = addDays(today, -1); to = addDays(today, -1); }
   if (period === "7d")    { from = addDays(today, -6); }
+  // Última semana fechada, segunda a domingo: na segunda pega até ontem; no
+  // domingo pega a semana antes da atual.
+  if (period === "semana_anterior") {
+    const sinceMonday = (new Date(today + "T00:00:00Z").getUTCDay() + 6) % 7;
+    from = addDays(today, -sinceMonday - 7);
+    to = addDays(from, 6);
+  }
   if (period === "30d")   { from = addDays(today, -29); }
   if (period === "mes")   {
     from = `${today.slice(0, 7)}-01`; to = today;
@@ -730,7 +737,7 @@ function Dashboard() {
           </span>
           <div className="flex items-center gap-1.5">
             {isFetching && <div className="size-3.5 rounded-full border-2 border-border border-t-primary animate-spin" />}
-            <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
+            <DateRangePicker period={period} setPeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} withLastWeek />
           </div>
         </div>
       </div>

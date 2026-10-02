@@ -34,6 +34,9 @@ export const SECTIONS = [
   "at_caixa",
   "at_kpi",
   "at_config",
+  // Banco de Lojas: badges dos cards (hold, pedidos/dia, payout, nota) e aba
+  // Pedidos da janela da loja.
+  "bl_indicadores",
   // Tipos de notificação (sino + push), dentro de "notificacoes" — ver
   // src/lib/notification-categories.ts.
   "nt_meta",

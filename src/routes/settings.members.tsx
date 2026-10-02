@@ -62,6 +62,7 @@ const SECTION_LABELS: Record<Section, string> = {
   at_caixa: "Caixa",
   at_kpi: "KPI",
   at_config: "Configurações",
+  bl_indicadores: "Indicadores das lojas",
   nt_meta: "Meta Facebook",
   nt_shopify: "Shopify",
   nt_disputas: "Disputas",
@@ -98,7 +99,12 @@ const NT_HINTS: Partial<Record<Section, string>> = {
   nt_lucro: "Lucro de hoje nos horários que a pessoa escolher (só no celular)",
   nt_consultor: "Análise semanal da Inteligência com dicas novas",
 };
-const SUBTABS: Partial<Record<Section, Section[]>> = { lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
+// Subpermissões de Banco de Lojas (aparecem quando Banco de Lojas está marcado).
+const BL_SUBTABS: Section[] = ["bl_indicadores"];
+const SUB_HINTS: Partial<Record<Section, string>> = {
+  bl_indicadores: "Hold, pedidos/dia, payout e nota nos cards; aba Pedidos da loja",
+};
+const SUBTABS: Partial<Record<Section, Section[]>> = { banco_lojas: BL_SUBTABS, lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
 const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "consultor", "notificacoes"];
@@ -280,7 +286,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, consultor: Lightbulb, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
-  at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings,
+  at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings, bl_indicadores: BarChart3,
   nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_sistema: AlertTriangle, nt_tarefas: CheckSquare,
   nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, nt_consultor: Lightbulb, cfg_seguranca: Shield, cfg_integracoes: Plug,
   shops: Store, projects: FolderKanban, sops: Workflow,
@@ -337,7 +343,7 @@ function PermissionsForm({
   };
 
   const PAGE_TABS = TAB_SECTIONS.filter((t) => t !== "notificacoes");
-  const ALL_TABS = [...TAB_SECTIONS, ...LG_SUBTABS, ...AT_SUBTABS, ...NT_TYPES];
+  const ALL_TABS = [...TAB_SECTIONS, ...BL_SUBTABS, ...LG_SUBTABS, ...AT_SUBTABS, ...NT_TYPES];
   const allTabs = ALL_TABS.every((t) => has(t, null));
   const setAllTabs = (on: boolean) => {
     const rest = value.filter((p) => !ALL_TABS.includes(p.section));
@@ -368,7 +374,7 @@ function PermissionsForm({
             {SUBTABS[t] && has(t, null) && (
               <div className="divide-y divide-border border-t border-border">
                 {SUBTABS[t]!.map((st) => (
-                  <PermRow key={st} section={st} indent checked={has(st, null)} onChange={() => toggle(st, null)} />
+                  <PermRow key={st} section={st} indent checked={has(st, null)} onChange={() => toggle(st, null)} hint={SUB_HINTS[st]} />
                 ))}
               </div>
             )}

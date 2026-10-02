@@ -3841,6 +3841,7 @@ export type Database = {
       };
       store_board_columns: {
         Row: {
+          color: string | null;
           created_at: string | null;
           excluded_from_caixa: boolean;
           features: string[];
@@ -3852,6 +3853,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          color?: string | null;
           created_at?: string | null;
           excluded_from_caixa?: boolean;
           features?: string[];
@@ -3863,6 +3865,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          color?: string | null;
           created_at?: string | null;
           excluded_from_caixa?: boolean;
           features?: string[];
@@ -3871,6 +3874,238 @@ export type Database = {
           position?: number;
           sync_paused?: boolean;
           updated_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      store_credentials: {
+        Row: {
+          created_at: string;
+          id: string;
+          label: string;
+          position: number;
+          shopify_store_id: string;
+          updated_at: string;
+          user_id: string;
+          value: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          label: string;
+          position?: number;
+          shopify_store_id: string;
+          updated_at?: string;
+          user_id: string;
+          value?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          label?: string;
+          position?: number;
+          shopify_store_id?: string;
+          updated_at?: string;
+          user_id?: string;
+          value?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_credentials_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      store_production: {
+        Row: {
+          shopify_store_id: string;
+          updated_at: string;
+          user_id: string;
+          values: Json;
+        };
+        Insert: {
+          shopify_store_id: string;
+          updated_at?: string;
+          user_id: string;
+          values?: Json;
+        };
+        Update: {
+          shopify_store_id?: string;
+          updated_at?: string;
+          user_id?: string;
+          values?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_production_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: true;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      store_production_files: {
+        Row: {
+          created_at: string;
+          id: string;
+          mime: string | null;
+          name: string;
+          path: string;
+          shopify_store_id: string;
+          size: number;
+          uploaded_by: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          mime?: string | null;
+          name: string;
+          path: string;
+          shopify_store_id: string;
+          size?: number;
+          uploaded_by?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          mime?: string | null;
+          name?: string;
+          path?: string;
+          shopify_store_id?: string;
+          size?: number;
+          uploaded_by?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_production_files_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      store_production_policies: {
+        Row: {
+          content: string;
+          created_at: string;
+          id: string;
+          position: number;
+          shopify_store_id: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          content?: string;
+          created_at?: string;
+          id?: string;
+          position?: number;
+          shopify_store_id: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          content?: string;
+          created_at?: string;
+          id?: string;
+          position?: number;
+          shopify_store_id?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_production_policies_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      store_production_tasks: {
+        Row: {
+          assignee_id: string | null;
+          checklist: Json;
+          created_at: string;
+          description: string | null;
+          done: boolean;
+          due_date: string | null;
+          id: string;
+          position: number;
+          shopify_store_id: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          assignee_id?: string | null;
+          checklist?: Json;
+          created_at?: string;
+          description?: string | null;
+          done?: boolean;
+          due_date?: string | null;
+          id?: string;
+          position?: number;
+          shopify_store_id: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          assignee_id?: string | null;
+          checklist?: Json;
+          created_at?: string;
+          description?: string | null;
+          done?: boolean;
+          due_date?: string | null;
+          id?: string;
+          position?: number;
+          shopify_store_id?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_production_tasks_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      store_production_templates: {
+        Row: {
+          credentials: Json;
+          fields: Json;
+          tasks: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          credentials?: Json;
+          fields?: Json;
+          tasks?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          credentials?: Json;
+          fields?: Json;
+          tasks?: Json;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [];

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { requireOwnerContext, assertStoreIndicators } from "@/integrations/supabase/workspace-middleware";
 import { getStoreBalances } from "@/lib/shop-orders.functions";
 import { getStoreBoardMetrics } from "@/lib/store-metrics.server";
 import { getPausedShopifyStores } from "@/lib/sync-pause.server";
@@ -19,6 +19,7 @@ export const getStoreHoldBalance = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => StoreIdInput.parse(d))
   .handler(async ({ context, data }) => {
+    assertStoreIndicators(context);
     // Loja pausada sem o badge "Em Hold" na coluna (ex.: Cemitério): último valor, sem chamar a Shopify.
     const p = (await getPausedShopifyStores(context.ownerId)).get(data.shopify_store_id);
     if (p && !p.hold) {
@@ -37,6 +38,7 @@ export const getStoreAvgDailyOrders = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => StoreIdInput.parse(d))
   .handler(async ({ context, data }) => {
+    assertStoreIndicators(context);
     const m = await getStoreBoardMetrics(context.ownerId, data.shopify_store_id);
     return { avgPerDay: m.avgPerDay, totalOrders: Math.round(m.avgPerDay * 7) };
   });
@@ -46,6 +48,7 @@ export const getStorePayoutTime = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => StoreIdInput.parse(d))
   .handler(async ({ context, data }) => {
+    assertStoreIndicators(context);
     const m = await getStoreBoardMetrics(context.ownerId, data.shopify_store_id);
     return { avgDays: m.payoutDays };
   });

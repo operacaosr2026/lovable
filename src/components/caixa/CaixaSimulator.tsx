@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical, ChevronDown, Megaphone } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, CheckCircle2, FlaskConical, ChevronDown, Megaphone, Upload, RotateCcw, FileSpreadsheet, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -13,6 +13,7 @@ import {
   getCaixaSimulation, SIM_RECURRENCE,
 } from "@/lib/caixa-simulator.functions";
 import { isoTodayUS } from "@/lib/timezone";
+import { parsePayoutFile, type PayoutRow } from "@/lib/payout-sheet";
 
 const RECURRENCE_LABELS: Record<(typeof SIM_RECURRENCE)[number], string> = {
   none: "Uma vez",
@@ -46,8 +47,24 @@ function fmtAxis(v: number) {
 
 type StatementRow = {
   date: string; entrada: number; saida: number; total: number;
-  entradaReal: number; entradaAds: number; saidaReal: number; saidaSim: number;
+  entradaReal: number; entradaPlanilha: number; entradaAds: number; saidaReal: number; saidaSim: number;
 };
+
+type PayoutSheet = { id: string; name: string; rows: PayoutRow[] };
+
+// Planilhas ficam só neste navegador (não vão pro banco): sobrevivem ao reload
+// até alguém remover ou resetar.
+const SHEETS_STORAGE_KEY = "caixa-simulator:payout-sheets";
+// Modo Isolado: saldo atual digitado à mão em vez do saldo real do Caixa.
+const ISOLATED_STORAGE_KEY = "caixa-simulator:isolated";
+function loadStored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -67,6 +84,43 @@ export function CaixaSimulator() {
   const [showPending, setShowPending] = useState(false);
   const [weekendSupplierToMonday, setWeekendSupplierToMonday] = useState(false);
   const [openWeeks, setOpenWeeks] = useState<Set<number>>(new Set([0]));
+  const [payoutSheets, setPayoutSheets] = useState<PayoutSheet[]>([]);
+  const [sheetsLoaded, setSheetsLoaded] = useState(false);
+  const [importFrom, setImportFrom] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [isolated, setIsolated] = useState(false);
+  const [manualBalance, setManualBalance] = useState(0);
+  const [balanceDraft, setBalanceDraft] = useState("0");
+  useEffect(() => {
+    setPayoutSheets(loadStored<PayoutSheet[]>(SHEETS_STORAGE_KEY, []));
+    const iso = loadStored(ISOLATED_STORAGE_KEY, { on: false, balance: 0 });
+    setIsolated(iso.on);
+    setManualBalance(iso.balance);
+    setBalanceDraft(String(iso.balance));
+    setSheetsLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!sheetsLoaded) return;
+    try { localStorage.setItem(SHEETS_STORAGE_KEY, JSON.stringify(payoutSheets)); } catch {}
+  }, [payoutSheets, sheetsLoaded]);
+  useEffect(() => {
+    if (!sheetsLoaded) return;
+    try { localStorage.setItem(ISOLATED_STORAGE_KEY, JSON.stringify({ on: isolated, balance: manualBalance })); } catch {}
+  }, [isolated, manualBalance, sheetsLoaded]);
+  // Com planilha importada ou no Modo Isolado, payout vem só das planilhas
+  // (lista vazia = nenhum payout) — os "Depósito Shopify" do Caixa saem.
+  const usingSheets = payoutSheets.length > 0 || isolated;
+  const importedPayouts = useMemo(
+    () => (usingSheets ? payoutSheets.flatMap((s) => s.rows) : null),
+    [payoutSheets, usingSheets],
+  );
+  const commitBalance = () => {
+    const n = parseFloat(balanceDraft.replace(",", "."));
+    if (isNaN(n)) { setBalanceDraft(String(manualBalance)); return; }
+    setManualBalance(n);
+    setBalanceDraft(String(n));
+  };
   const toggleWeek = (idx: number) => setOpenWeeks((prev) => {
     const next = new Set(prev);
     next.has(idx) ? next.delete(idx) : next.add(idx);
@@ -99,8 +153,14 @@ export function CaixaSimulator() {
   }) as { data: any[] };
 
   const { data: simulation, isLoading: simLoading } = useQuery({
-    queryKey: ["caixa-simulation", periodDays, showPending, weekendSupplierToMonday],
-    queryFn: () => simFn({ data: { from, to, show_pending: showPending, weekend_supplier_to_monday: weekendSupplierToMonday } }),
+    queryKey: ["caixa-simulation", periodDays, showPending, weekendSupplierToMonday, importedPayouts, isolated ? manualBalance : null],
+    queryFn: () => simFn({ data: {
+      from, to, show_pending: showPending, weekend_supplier_to_monday: weekendSupplierToMonday,
+      imported_payouts: importedPayouts,
+      starting_balance_override: isolated ? manualBalance : null,
+      skip_ad_estimates: isolated,
+    } }),
+    enabled: sheetsLoaded,
   }) as { data: any; isLoading: boolean };
 
   const refresh = () => {
@@ -228,6 +288,63 @@ export function CaixaSimulator() {
     resetAdForm();
   };
 
+  const importSheets = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setImporting(true);
+    const added: PayoutSheet[] = [];
+    for (const file of Array.from(files)) {
+      try {
+        const rows = await parsePayoutFile(file, importFrom || null);
+        added.push({ id: crypto.randomUUID(), name: file.name.replace(/\.(xlsx|xls|csv)$/i, ""), rows });
+      } catch (e: any) {
+        toast.error(e.message ?? `Erro ao ler ${file.name}`);
+      }
+    }
+    if (added.length) {
+      setPayoutSheets((prev) => [...prev, ...added]);
+      toast.success(`${added.length} planilha${added.length === 1 ? "" : "s"} importada${added.length === 1 ? "" : "s"}`);
+    }
+    setImporting(false);
+  };
+
+  // Volta o simulador ao estado inicial: tira as planilhas, opções e período, e
+  // apaga os gastos simulados e estimativas de Ads cadastrados.
+  const resetAll = async () => {
+    const ok = await confirm({
+      title: "Resetar simulador",
+      description: `Remove as planilhas de payout, sai do Modo Isolado, volta as opções ao padrão e apaga ${expenses.length} gasto(s) simulado(s) e ${adEstimates.length} estimativa(s) de Ads. Não dá pra desfazer.`,
+      confirmText: "Resetar",
+      cancelText: "Cancelar",
+      variant: "destructive",
+    });
+    if (!ok) return;
+    setResetting(true);
+    try {
+      await Promise.all([
+        ...expenses.map((e) => deleteFn({ data: { id: e.id } })),
+        ...adEstimates.map((e) => deleteAdFn({ data: { id: e.id } })),
+      ]);
+      setPayoutSheets([]);
+      setImportFrom("");
+      setPeriodDays(15);
+      setShowPending(false);
+      setWeekendSupplierToMonday(false);
+      setOpenWeeks(new Set([0]));
+      setIsolated(false);
+      setManualBalance(0);
+      setBalanceDraft("0");
+      resetForm();
+      resetAdForm();
+      toast.success("Simulador resetado");
+    } catch (e: any) {
+      toast.error(e.message ?? "Erro ao resetar");
+    } finally {
+      setResetting(false);
+      refresh();
+      refreshAds();
+    }
+  };
+
   const series = simulation?.series ?? [];
   const zeroOffset = useMemo(() => {
     const values = series.map((s: any) => Number(s.saldo) || 0);
@@ -246,7 +363,7 @@ export function CaixaSimulator() {
   const weeks = useMemo(() => {
     const allDays: StatementRow[] = (series ?? []).map((s: any) => ({
       date: s.date, entrada: s.entrada, saida: s.saida, total: s.saldo,
-      entradaReal: s.entradaReal ?? 0, entradaAds: s.entradaAds ?? 0,
+      entradaReal: s.entradaReal ?? 0, entradaPlanilha: s.entradaPlanilha ?? 0, entradaAds: s.entradaAds ?? 0,
       saidaReal: s.saidaReal ?? 0, saidaSim: s.saidaSim ?? 0,
     }));
     const days = allDays.slice(0, extratoWeeks * 7);
@@ -271,12 +388,52 @@ export function CaixaSimulator() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={() => {
+            // Ao ligar, parte do saldo real que está na tela, pra só ajustar.
+            if (!isolated && simulation) {
+              const real = Math.round(Number(simulation.startingBalance) * 100) / 100;
+              setManualBalance(real);
+              setBalanceDraft(String(real));
+            }
+            setIsolated((v) => !v);
+          }}
+          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+            isolated ? "border-amber-500/40 bg-amber-500/10 text-amber-600" : "border-border text-muted-foreground hover:text-foreground"
+          }`}
+          title="Usa um saldo atual digitado à mão em vez do saldo real do Caixa"
+        >
+          <Unplug className="size-3.5" /> Modo Isolado {isolated ? "ligado" : "desligado"}
+        </button>
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Saldo atual</div>
-          <div className="text-xl font-semibold">{simulation ? fmt(simulation.startingBalance) : "—"}</div>
-        </div>
+        {isolated ? (
+          <div className="rounded-2xl border border-dashed border-amber-500/50 bg-amber-500/5 p-4">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-amber-600 font-medium mb-1">
+              <Unplug className="size-3.5" /> Saldo atual · manual
+            </div>
+            <div className="flex items-center gap-1 text-xl font-semibold">
+              <span className="text-muted-foreground">$</span>
+              <input
+                value={balanceDraft}
+                onChange={(e) => setBalanceDraft(e.target.value)}
+                onBlur={commitBalance}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                inputMode="decimal"
+                className="min-w-0 flex-1 bg-transparent outline-none border-b border-amber-500/40 focus:border-amber-500"
+              />
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">Desconectado do Caixa</div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-border bg-surface p-4">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Saldo atual</div>
+            <div className="text-xl font-semibold">{simulation ? fmt(simulation.startingBalance) : "—"}</div>
+          </div>
+        )}
         <div className="rounded-2xl border border-border bg-surface p-4">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Gastos simulados</div>
           <div className="text-xl font-semibold text-destructive">{simulation ? fmt(simulation.simulatedTotal) : "—"}</div>
@@ -310,10 +467,14 @@ export function CaixaSimulator() {
         <div className="flex flex-wrap items-center justify-between gap-y-2 mb-3">
           <p className="text-sm font-semibold text-foreground">Saldo projetado</p>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <label
+              className={`flex items-center gap-1.5 text-xs text-muted-foreground select-none ${usingSheets ? "opacity-50" : "cursor-pointer"}`}
+              title={usingSheets ? "Os payouts vêm só das planilhas" : undefined}
+            >
               <input
                 type="checkbox"
                 checked={showPending}
+                disabled={usingSheets}
                 onChange={(e) => setShowPending(e.target.checked)}
                 className="size-3.5 accent-primary"
               />
@@ -341,6 +502,13 @@ export function CaixaSimulator() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={resetAll}
+              disabled={resetting}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors disabled:opacity-50"
+            >
+              <RotateCcw className="size-3.5" /> {resetting ? "Resetando..." : "Resetar"}
+            </button>
           </div>
         </div>
 
@@ -369,6 +537,72 @@ export function CaixaSimulator() {
               <Area type="monotone" dataKey="saldo" stroke="url(#sim-stroke)" strokeWidth={2} fill="url(#sim-grad)" dot={false} activeDot={{ r: 4 }} />
             </AreaChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Payouts por planilha */}
+      <div className="rounded-2xl border border-border bg-surface p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <FileSpreadsheet className="size-4 text-muted-foreground" /> Payouts por planilha
+          </p>
+          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${
+            usingSheets ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground"
+          }`}>
+            {usingSheets ? `Usando planilhas${isolated ? " (Modo Isolado)" : ""}` : "Usando Depósitos Shopify do Caixa"}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Com pelo menos uma planilha (ou no Modo Isolado), os "Depósito Shopify" do Caixa saem da projeção e entram só os payouts das planilhas
+          (colunas "Payout Date" e "Net", somadas por dia). Payouts de hoje para trás são ignorados — já estão no saldo.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div
+            className="h-9 flex items-center gap-1.5 px-2 rounded-lg bg-background border border-border focus-within:border-primary/50"
+            title="Opcional — ignora payouts antes desta data"
+          >
+            <span className="text-xs text-muted-foreground shrink-0">a partir de</span>
+            <input
+              type="date"
+              value={importFrom}
+              onChange={(e) => setImportFrom(e.target.value)}
+              className="h-full text-sm outline-none bg-transparent"
+            />
+          </div>
+          <label className={`h-9 flex items-center gap-1.5 px-3 rounded-lg border border-primary/40 bg-primary/10 text-primary text-sm ${importing ? "opacity-50" : "cursor-pointer hover:bg-primary/15"}`}>
+            <Upload className="size-3.5" /> {importing ? "Importando..." : "Importar planilhas"}
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              multiple
+              disabled={importing}
+              className="hidden"
+              onChange={(e) => { importSheets(e.target.files); e.target.value = ""; }}
+            />
+          </label>
+        </div>
+        {payoutSheets.length > 0 && (
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {payoutSheets.map((sh) => {
+              const total = sh.rows.reduce((s, r) => s + r.amount, 0);
+              return (
+                <div key={sh.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  <span className="font-medium text-foreground truncate">{sh.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {sh.rows.length} {sh.rows.length === 1 ? "dia" : "dias"} · {shortDate(sh.rows[0].date)} – {shortDate(sh.rows[sh.rows.length - 1].date)}
+                  </span>
+                  <span className="ml-auto text-emerald-600 shrink-0">{fmt(total)}</span>
+                  <button
+                    onClick={() => setPayoutSheets((prev) => prev.filter((x) => x.id !== sh.id))}
+                    className="p-1 rounded text-muted-foreground hover:text-destructive"
+                    title="Remover planilha"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -476,8 +710,19 @@ export function CaixaSimulator() {
         )}
       </div>
 
-      {/* Estimativa de vendas via investimento em Ads */}
-      <div className="rounded-2xl border border-border bg-surface p-4">
+      {/* Estimativa de vendas via investimento em Ads — fora da projeção no Modo Isolado */}
+      <div className="relative">
+      {isolated && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-amber-500/40 bg-background text-amber-600 shadow-sm">
+            <Unplug className="size-3.5" /> Desativada no Modo Isolado
+          </span>
+        </div>
+      )}
+      <div
+        className={`rounded-2xl border border-border bg-surface p-4 ${isolated ? "blur-[2px] opacity-60 pointer-events-none select-none" : ""}`}
+        aria-disabled={isolated}
+      >
         <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1.5">
           <Megaphone className="size-4 text-muted-foreground" /> Estimativa de vendas (Ads)
         </p>
@@ -616,6 +861,7 @@ export function CaixaSimulator() {
           </>
         )}
       </div>
+      </div>
 
       {/* Extrato — agrupado por semana, expande pra ver os dias */}
       {weeks.length > 0 && (
@@ -658,12 +904,19 @@ export function CaixaSimulator() {
                               {s.entrada > 0 ? (
                                 <>
                                   <div className="text-emerald-600">{fmt(s.entrada)}</div>
-                                  {s.entradaReal > 0 && s.entradaAds > 0 && (
+                                  {[s.entradaReal, s.entradaPlanilha, s.entradaAds].filter((v) => v > 0).length > 1 && (
                                     <div className="text-[10px] text-muted-foreground font-normal leading-tight">
-                                      real {fmt(s.entradaReal)} · ads {fmt(s.entradaAds)}
+                                      {[
+                                        s.entradaReal > 0 && `real ${fmt(s.entradaReal)}`,
+                                        s.entradaPlanilha > 0 && `planilha ${fmt(s.entradaPlanilha)}`,
+                                        s.entradaAds > 0 && `ads ${fmt(s.entradaAds)}`,
+                                      ].filter(Boolean).join(" · ")}
                                     </div>
                                   )}
-                                  {s.entradaReal === 0 && s.entradaAds > 0 && (
+                                  {s.entradaPlanilha > 0 && s.entradaReal === 0 && s.entradaAds === 0 && (
+                                    <div className="text-[10px] text-primary font-normal leading-tight">planilha</div>
+                                  )}
+                                  {s.entradaAds > 0 && s.entradaReal === 0 && s.entradaPlanilha === 0 && (
                                     <div className="text-[10px] text-sky-600 font-normal leading-tight">estimado (ads)</div>
                                   )}
                                 </>

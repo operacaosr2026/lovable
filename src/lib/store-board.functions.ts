@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { requireOwnerContext, assertStoreIndicators } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const DEFAULT_COLUMN_NAME = "Novo";
@@ -10,7 +10,7 @@ export const listBoardColumns = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await supabaseAdmin
       .from("store_board_columns")
-      .select("id,name,position,features,excluded_from_caixa,sync_paused")
+      .select("*")
       .eq("user_id", context.ownerId)
       .order("position", { ascending: true });
     if (error) throw new Error(error.message);
@@ -20,7 +20,7 @@ export const listBoardColumns = createServerFn({ method: "GET" })
     const { data: created, error: createErr } = await supabaseAdmin
       .from("store_board_columns")
       .insert({ user_id: context.ownerId, name: DEFAULT_COLUMN_NAME, position: 0 })
-      .select("id,name,position,features,excluded_from_caixa,sync_paused")
+      .select("*")
       .single();
     if (createErr) throw new Error(createErr.message);
     return [created];
@@ -42,7 +42,7 @@ export const createBoardColumn = createServerFn({ method: "POST" })
     const { data: row, error } = await supabaseAdmin
       .from("store_board_columns")
       .insert({ user_id: context.ownerId, name: data.name, position })
-      .select("id,name,position,features,excluded_from_caixa,sync_paused")
+      .select("*")
       .single();
     if (error) throw new Error(error.message);
     return row;
@@ -57,6 +57,7 @@ export const setBoardColumnFeatures = createServerFn({ method: "POST" })
     features: z.array(z.enum(BOARD_COLUMN_FEATURES)),
   }).parse(d))
   .handler(async ({ context, data }) => {
+    assertStoreIndicators(context);
     const { error } = await supabaseAdmin
       .from("store_board_columns")
       .update({ features: data.features })
@@ -94,6 +95,24 @@ export const setBoardColumnSyncPaused = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin
       .from("store_board_columns")
       .update({ sync_paused: data.paused })
+      .eq("id", data.id)
+      .eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const BOARD_COLUMN_COLORS = ["rose", "orange", "amber", "emerald", "teal", "sky", "blue", "violet", "pink", "slate"] as const;
+
+export const setBoardColumnColor = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid(),
+    color: z.enum(BOARD_COLUMN_COLORS).nullable(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await supabaseAdmin
+      .from("store_board_columns")
+      .update({ color: data.color })
       .eq("id", data.id)
       .eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
@@ -172,6 +191,7 @@ export const setStoreBoardNote = createServerFn({ method: "POST" })
     note: z.string().trim().max(200).nullable(),
   }).parse(d))
   .handler(async ({ context, data }) => {
+    assertStoreIndicators(context);
     const { error } = await supabaseAdmin
       .from("shopify_stores")
       .update({ board_note: data.note || null })

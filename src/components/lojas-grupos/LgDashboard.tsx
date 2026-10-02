@@ -153,11 +153,13 @@ function CustomTooltip({ active, payload, label }: any) {
 // ─── Date range picker (reusable) ────────────────────────────────────────────
 
 export function DateRangePicker({
-  period, setPeriod, customRange, setCustomRange, onApply, withLast5Days,
+  period, setPeriod, customRange, setCustomRange, onApply, withLast5Days, withLastWeek,
 }: {
   period: string;
   /** Mostra "Últimos 5 dias" (valor "5d") — quem usa trata o período. */
   withLast5Days?: boolean;
+  /** Mostra "Semana anterior" (valor "semana_anterior", seg–dom) — quem usa trata o período. */
+  withLastWeek?: boolean;
   setPeriod: (p: string) => void;
   customRange: { from: string; to: string } | undefined;
   setCustomRange: (r: { from: string; to: string } | undefined) => void;
@@ -188,6 +190,7 @@ export function DateRangePicker({
           <option value="ontem">Ontem</option>
           {withLast5Days && <option value="5d">Últimos 5 dias</option>}
           <option value="7d">Últimos 7 dias</option>
+          {withLastWeek && <option value="semana_anterior">Semana anterior</option>}
           <option value="30d">Últimos 30 dias</option>
           <option value="mes">Este mês</option>
           <option value="custom">Personalizado</option>

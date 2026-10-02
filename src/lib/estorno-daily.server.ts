@@ -4,7 +4,7 @@ import { selectAll } from "@/lib/select-all";
 import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
 import { fetchWithRetry } from "@/lib/http";
 
-function addDaysISO(iso: string, n: number) {
+export function addDaysISO(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
@@ -35,7 +35,7 @@ function nyBound(date: string, end: boolean) {
   return `${date}T${end ? "23:59:59" : "00:00:00"}${off}`;
 }
 
-async function shopifyPaidOrdersCount(domain: string, token: string, from: string, to: string) {
+export async function shopifyPaidOrdersCount(domain: string, token: string, from: string, to: string) {
   const count = async (financialStatus: string) => {
     const url = `https://${domain}/admin/api/2024-10/orders/count.json?status=any&financial_status=${financialStatus}` +
       `&created_at_min=${encodeURIComponent(nyBound(from, false))}&created_at_max=${encodeURIComponent(nyBound(to, true))}`;

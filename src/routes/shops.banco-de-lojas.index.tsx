@@ -4,17 +4,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
-  Plus, ShoppingBag, ExternalLink, Pencil, Trash2, X, List, Layers, Search, Filter, ChevronDown,
+  Plus, ShoppingBag, ExternalLink, Trash2, List, Layers, Search, Filter, ChevronDown,
   ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
-import { listShopifyStores, renameShopifyStore, deleteShopifyStore } from "@/lib/shop-orders.functions";
+import { listShopifyStores, deleteShopifyStore } from "@/lib/shop-orders.functions";
 import { listBoardColumns } from "@/lib/store-board.functions";
 import { ConnectStoreDialog } from "@/components/shops/ShopIntegrations";
 import { StoreBoard, columnTone, ToneIcon } from "@/components/shops/StoreBoard";
+import { StoreDetailsDialog } from "@/components/shops/StoreDetailsDialog";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type ViewMode = "esteira" | "lista";
@@ -35,7 +35,7 @@ function BancoDeLojasIndex() {
   const deleteFn = useServerFn(deleteShopifyStore);
   const listColumnsFn = useServerFn(listBoardColumns);
   const [openConnect, setOpenConnect] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<any>(null);
   const [search, setSearch] = useState("");
   // Filtro por etapa (coluna da esteira); null = todas.
@@ -50,6 +50,8 @@ function BancoDeLojasIndex() {
     queryKey: ["board-columns"],
     queryFn: () => listColumnsFn(),
   });
+  // Pela lista ao vivo, pra o popup refletir o nome novo logo após renomear.
+  const viewing = viewingId ? (stores as any[]).find((s) => s.id === viewingId) ?? null : null;
   const columnNameById = new Map((columns as any[]).map((c) => [c.id, c.name as string]));
   // Mesma ordem da Esteira: agrupado por coluna (na ordem das colunas) e,
   // dentro da coluna, pela posição do card — lojas órfãs (sem coluna válida)
@@ -156,7 +158,7 @@ function BancoDeLojasIndex() {
         // pra cada card ficar alinhado com a coluna de baixo.
         <div className="flex gap-2.5 mb-4">
           {kpiColumns.map((c) => {
-            const tone = columnTone(c.name);
+            const tone = columnTone(c.name, c.color);
             const n = countIn(c.id);
             const pct = stores.length > 0 ? Math.round((n / stores.length) * 100) : 0;
             const pill = n === 0
@@ -198,7 +200,7 @@ function BancoDeLojasIndex() {
           </button>
         </div>
       ) : view === "esteira" ? (
-        <StoreBoard onEditStore={(store) => setEditing(store)} search={search} columnFilter={columnFilter} />
+        <StoreBoard onDeleteStore={handleDelete} onOpenStore={(store) => setViewingId(store.id)} search={search} columnFilter={columnFilter} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 content-start">
           {sortedStores.map((store: any) => (
@@ -206,7 +208,7 @@ function BancoDeLojasIndex() {
               key={store.id}
               store={store}
               columnName={columnNameById.get(store.board_column_id) ?? null}
-              onEdit={() => setEditing(store)}
+              onOpen={() => setViewingId(store.id)}
               onDelete={() => handleDelete(store)}
             />
           ))}
@@ -214,21 +216,13 @@ function BancoDeLojasIndex() {
         </div>
       )}
 
-      {editing && (
-        <RenameStoreDialog
-          store={editing}
-          onClose={() => setEditing(null)}
-          onRenamed={() => {
-            qc.invalidateQueries({ queryKey: ["shopify-stores"] });
-            setEditing(null);
-          }}
-          onDelete={() => {
-            setEditing(null);
-            handleDelete(editing);
-          }}
+      {viewing && (
+        <StoreDetailsDialog
+          store={viewing}
+          onClose={() => setViewingId(null)}
           onConnect={() => {
-            setConnecting(editing);
-            setEditing(null);
+            setConnecting(viewing);
+            setViewingId(null);
           }}
         />
       )}
@@ -260,12 +254,12 @@ function BancoDeLojasIndex() {
   );
 }
 
-function StoreCard({ store, columnName, onEdit, onDelete }: { store: any; columnName: string | null; onEdit: () => void; onDelete: () => void }) {
+function StoreCard({ store, columnName, onOpen, onDelete }: { store: any; columnName: string | null; onOpen: () => void; onDelete: () => void }) {
   const domain = store.shop_domain ?? "";
   const storeUrl = domain ? `https://${domain}` : null;
 
   return (
-    <div className="group relative rounded-2xl border border-border bg-surface p-5 flex items-start gap-3">
+    <div onClick={onOpen} className="group relative rounded-2xl border border-border bg-surface p-5 flex items-start gap-3 cursor-pointer hover:border-primary/30 transition-colors">
       <div className="size-11 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
         <ShoppingBag className="size-5" />
       </div>
@@ -290,20 +284,14 @@ function StoreCard({ store, columnName, onEdit, onDelete }: { store: any; column
             href={storeUrl}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
             <ExternalLink className="size-3" /> Abrir loja
           </a>
         )}
       </div>
-      <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={onEdit}
-          className="size-7 rounded-md grid place-items-center hover:bg-muted text-muted-foreground hover:text-foreground"
-          title="Editar nome"
-        >
-          <Pencil className="size-3.5" />
-        </button>
+      <div onClick={(e) => e.stopPropagation()} className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={onDelete}
           className="size-7 rounded-md grid place-items-center hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
@@ -311,83 +299,6 @@ function StoreCard({ store, columnName, onEdit, onDelete }: { store: any; column
         >
           <Trash2 className="size-3.5" />
         </button>
-      </div>
-    </div>
-  );
-}
-
-function RenameStoreDialog({ store, onClose, onRenamed, onDelete, onConnect }: { store: any; onClose: () => void; onRenamed: () => void; onDelete: () => void; onConnect: () => void }) {
-  const [name, setName] = useState(store?.name ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const renameFn = useServerFn(renameShopifyStore);
-  useEscapeToClose(onClose);
-
-  const rename = useMutation({
-    mutationFn: () => renameFn({ data: { id: store.id, name: name.trim() } }),
-    onSuccess: onRenamed,
-    onError: (e: any) => setError(e?.message ?? "Erro ao salvar"),
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-2xl bg-popover border border-border shadow-xl"
-      >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <div className="text-base font-semibold">{store.is_placeholder ? "Loja para produzir" : "Editar loja"}</div>
-          <button onClick={onClose} className="size-7 rounded-md grid place-items-center hover:bg-muted text-muted-foreground">
-            <X className="size-4" />
-          </button>
-        </div>
-        <div className="p-5 space-y-3">
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">Nome</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nome da loja"
-              className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50"
-              autoFocus
-            />
-          </div>
-          {store.is_placeholder ? (
-            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Essa loja ainda não existe na Shopify. Quando criá-la lá, conecte aqui os dados (domínio, Client ID e Client Secret) para ela virar uma loja de verdade nesta mesma coluna.
-              </p>
-              <button
-                onClick={onConnect}
-                className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
-              >
-                Conectar na Shopify
-              </button>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Domínio e credenciais estão vinculados à autorização Shopify e não podem ser alterados aqui. Para trocá-los, reconecte a loja.
-            </p>
-          )}
-          {error && <p className="text-xs text-destructive">{error}</p>}
-        </div>
-        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-border">
-          <button
-            onClick={onDelete}
-            className="h-9 px-3 rounded-lg text-sm text-destructive hover:bg-destructive/10 flex items-center gap-1.5"
-          >
-            <Trash2 className="size-3.5" /> Excluir loja
-          </button>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="h-9 px-4 rounded-lg text-sm hover:bg-muted">Cancelar</button>
-            <button
-              onClick={() => rename.mutate()}
-              disabled={rename.isPending || !name.trim()}
-              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-            >
-              Salvar
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

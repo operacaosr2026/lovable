@@ -17,12 +17,14 @@ import {
 import { toast } from "sonner";
 import {
   listBoardColumns, createBoardColumn, renameBoardColumn, deleteBoardColumn,
-  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setBoardColumnSyncPaused, setStoreBoardNote,
-  type BOARD_COLUMN_FEATURES,
+  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setBoardColumnSyncPaused, setBoardColumnColor, setStoreBoardNote,
+  BOARD_COLUMN_COLORS, type BOARD_COLUMN_FEATURES,
 } from "@/lib/store-board.functions";
 import { listShopifyStores, createPlaceholderStore } from "@/lib/shop-orders.functions";
 import { getStoreHoldBalance, getStoreAvgDailyOrders, getStorePayoutTime } from "@/lib/store-board-metrics.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useMyAccess } from "@/hooks/useMyAccess";
+import { listProductionProgress } from "@/lib/store-production.functions";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
@@ -37,7 +39,8 @@ type Store = {
   is_placeholder: boolean;
 };
 type ColumnFeature = (typeof BOARD_COLUMN_FEATURES)[number];
-type Column = { id: string; name: string; position: number; features: ColumnFeature[]; excluded_from_caixa: boolean; sync_paused: boolean };
+type Column = { id: string; name: string; position: number; features: ColumnFeature[]; excluded_from_caixa: boolean; sync_paused: boolean; color: ColumnColor | null };
+type ColumnColor = (typeof BOARD_COLUMN_COLORS)[number];
 
 const FEATURE_LABELS: Record<ColumnFeature, string> = {
   hold: "Em Hold",
@@ -48,8 +51,8 @@ const FEATURE_LABELS: Record<ColumnFeature, string> = {
 const FEATURE_ORDER: ColumnFeature[] = ["hold", "avg_orders", "payout_time", "note"];
 
 // search: filtra as lojas por nome/domínio; columnFilter: mostra só essa coluna.
-export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
-  onEditStore: (store: any) => void; search?: string; columnFilter?: string | null;
+export function StoreBoard({ onDeleteStore, onOpenStore, search = "", columnFilter = null }: {
+  onDeleteStore: (store: any) => void; onOpenStore: (store: any) => void; search?: string; columnFilter?: string | null;
 }) {
   const qc = useQueryClient();
   const listColumnsFn = useServerFn(listBoardColumns);
@@ -63,6 +66,7 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
   const setFeaturesFn = useServerFn(setBoardColumnFeatures);
   const setExcludedFn = useServerFn(setBoardColumnExcludedFromCaixa);
   const setSyncPausedFn = useServerFn(setBoardColumnSyncPaused);
+  const setColorFn = useServerFn(setBoardColumnColor);
   const confirm = useConfirm();
 
   const { data: columnsData } = useQuery({ queryKey: ["board-columns"], queryFn: () => listColumnsFn() });
@@ -101,7 +105,10 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
 
   const addPlaceholder = useMutation({
     mutationFn: (input: { name: string; board_column_id: string }) => createPlaceholderFn({ data: input }),
-    onSuccess: () => refreshStores(),
+    onSuccess: () => {
+      refreshStores();
+      qc.invalidateQueries({ queryKey: ["production-progress"] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -139,6 +146,9 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
   const setSyncPaused = useMutation({
     mutationFn: (input: { id: string; paused: boolean }) => setSyncPausedFn({ data: input }),
   });
+  const setColor = useMutation({
+    mutationFn: (input: { id: string; color: ColumnColor | null }) => setColorFn({ data: input }),
+  });
 
   const setColumnFeaturesLocal = (id: string, features: ColumnFeature[]) => {
     const prevColumns = columns;
@@ -164,15 +174,24 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
     });
   };
 
+  const setColumnColorLocal = (id: string, color: ColumnColor | null) => {
+    const prevColumns = columns;
+    setColumns((prev) => prev.map((c) => (c.id === id ? { ...c, color } : c)));
+    setColor.mutate({ id, color }, {
+      onSuccess: () => qc.invalidateQueries({ queryKey: ["board-columns"] }),
+      onError: (e: any) => { toast.error(e.message); setColumns(prevColumns); },
+    });
+  };
+
   // Optimistic column edits: update local state immediately, let the request
   // reconcile in the background instead of waiting on invalidate+refetch.
   const addColumn = (name: string) => {
     const tempId = `temp-${crypto.randomUUID()}`;
-    setColumns((prev) => [...prev, { id: tempId, name, position: prev.length, features: [], excluded_from_caixa: false, sync_paused: false }]);
+    setColumns((prev) => [...prev, { id: tempId, name, position: prev.length, features: [], excluded_from_caixa: false, sync_paused: false, color: null }]);
     setBoard((prev) => ({ ...prev, [tempId]: [] }));
     createColumn.mutate(name, {
       onSuccess: (row: any) => {
-        setColumns((prev) => prev.map((c) => (c.id === tempId ? { id: row.id, name: row.name, position: row.position, features: row.features, excluded_from_caixa: row.excluded_from_caixa, sync_paused: row.sync_paused ?? false } : c)));
+        setColumns((prev) => prev.map((c) => (c.id === tempId ? { id: row.id, name: row.name, position: row.position, features: row.features, excluded_from_caixa: row.excluded_from_caixa, sync_paused: row.sync_paused ?? false, color: row.color ?? null } : c)));
         setBoard((prev) => {
           const { [tempId]: items, ...rest } = prev;
           const settled = items ?? [];
@@ -323,12 +342,14 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
               key={col.id}
               column={col}
               stores={visible(board[col.id] ?? [])}
-              onEditStore={onEditStore}
+              onDeleteStore={onDeleteStore}
+              onOpenStore={onOpenStore}
               onAddStore={(name) => addPlaceholder.mutate({ name, board_column_id: col.id })}
               onRename={(name) => renameColumnLocal(col.id, name)}
               onFeaturesChange={(features) => setColumnFeaturesLocal(col.id, features)}
               onExcludedFromCaixaChange={(excluded) => setColumnExcludedFromCaixaLocal(col.id, excluded)}
               onSyncPausedChange={(paused) => setColumnSyncPausedLocal(col.id, paused)}
+              onColorChange={(color) => setColumnColorLocal(col.id, color)}
               onDelete={async () => {
                 if ((board[col.id] ?? []).length > 0) {
                   toast.error("Mova ou remova as lojas desta coluna antes de excluí-la.");
@@ -344,7 +365,7 @@ export function StoreBoard({ onEditStore, search = "", columnFilter = null }: {
       </div>
 
       <DragOverlay>
-        {activeCard && <StoreDragCard store={activeCard} tone={columnTone(columns.find((c) => c.id === dragSourceCol.current)?.name ?? "")} dragging />}
+        {activeCard && <StoreDragCard store={activeCard} tone={(() => { const c = columns.find((c) => c.id === dragSourceCol.current); return columnTone(c?.name ?? "", c?.color); })()} dragging />}
         {activeColumn && (
           <div className="rounded-2xl border border-primary/40 bg-card shadow-xl w-[260px] px-4 py-3 font-bold text-sm">
             {activeColumn.name}
@@ -380,8 +401,32 @@ const TONES: { match: RegExp; tone: ColumnTone }[] = [
 ];
 const DEFAULT_TONE: ColumnTone = { icon: Layers, dot: "bg-primary", iconText: "text-primary", chip: "bg-primary/10", head: "bg-primary/[0.06]", body: "bg-primary/[0.02]", stripe: "border-l-primary/60", desc: null, trend: "up" };
 
-export function columnTone(name: string): ColumnTone {
-  return TONES.find((t) => t.match.test(name))?.tone ?? DEFAULT_TONE;
+type ColorClasses = Pick<ColumnTone, "dot" | "iconText" | "chip" | "head" | "body" | "stripe">;
+
+// Classes literais (o Tailwind só gera o que aparece escrito no código).
+const COLOR_TONES: Record<ColumnColor, ColorClasses> = {
+  rose: { dot: "bg-rose-500", iconText: "text-rose-500", chip: "bg-rose-500/10", head: "bg-rose-500/[0.07]", body: "bg-rose-500/[0.02]", stripe: "border-l-rose-400" },
+  orange: { dot: "bg-orange-500", iconText: "text-orange-500", chip: "bg-orange-500/10", head: "bg-orange-500/[0.08]", body: "bg-orange-500/[0.02]", stripe: "border-l-orange-400" },
+  amber: { dot: "bg-amber-500", iconText: "text-amber-500", chip: "bg-amber-500/10", head: "bg-amber-500/[0.08]", body: "bg-amber-500/[0.02]", stripe: "border-l-amber-400" },
+  emerald: { dot: "bg-emerald-500", iconText: "text-emerald-500", chip: "bg-emerald-500/10", head: "bg-emerald-500/[0.07]", body: "bg-emerald-500/[0.02]", stripe: "border-l-emerald-500" },
+  teal: { dot: "bg-teal-500", iconText: "text-teal-500", chip: "bg-teal-500/10", head: "bg-teal-500/[0.07]", body: "bg-teal-500/[0.02]", stripe: "border-l-teal-400" },
+  sky: { dot: "bg-sky-500", iconText: "text-sky-500", chip: "bg-sky-500/10", head: "bg-sky-500/[0.07]", body: "bg-sky-500/[0.02]", stripe: "border-l-sky-400" },
+  blue: { dot: "bg-blue-500", iconText: "text-blue-500", chip: "bg-blue-500/10", head: "bg-blue-500/[0.07]", body: "bg-blue-500/[0.02]", stripe: "border-l-blue-400" },
+  violet: { dot: "bg-violet-500", iconText: "text-violet-500", chip: "bg-violet-500/10", head: "bg-violet-500/[0.07]", body: "bg-violet-500/[0.02]", stripe: "border-l-violet-400" },
+  pink: { dot: "bg-pink-500", iconText: "text-pink-500", chip: "bg-pink-500/10", head: "bg-pink-500/[0.07]", body: "bg-pink-500/[0.02]", stripe: "border-l-pink-400" },
+  slate: { dot: "bg-slate-500", iconText: "text-slate-500", chip: "bg-slate-500/10", head: "bg-slate-500/[0.08]", body: "bg-slate-500/[0.02]", stripe: "border-l-slate-400" },
+};
+const COLOR_LABELS: Record<ColumnColor, string> = {
+  rose: "Vermelho", orange: "Laranja", amber: "Amarelo", emerald: "Verde", teal: "Verde-água",
+  sky: "Azul-claro", blue: "Azul", violet: "Roxo", pink: "Rosa", slate: "Cinza",
+};
+
+// color: cor escolhida no menu da coluna; sobrepõe só as cores, mantendo
+// ícone/descrição que vêm do nome.
+export function columnTone(name: string, color?: string | null): ColumnTone {
+  const base = TONES.find((t) => t.match.test(name))?.tone ?? DEFAULT_TONE;
+  const custom = color ? COLOR_TONES[color as ColumnColor] : undefined;
+  return custom ? { ...base, ...custom } : base;
 }
 
 export function ToneIcon({ tone, className = "size-5" }: { tone: ColumnTone; className?: string }) {
@@ -390,17 +435,21 @@ export function ToneIcon({ tone, className = "size-5" }: { tone: ColumnTone; cla
   return <Icon className={`${className} ${tone.iconText}`} />;
 }
 
-function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeaturesChange, onExcludedFromCaixaChange, onSyncPausedChange, onDelete }: {
+function BoardColumn({ column, stores, onDeleteStore, onOpenStore, onAddStore, onRename, onFeaturesChange, onExcludedFromCaixaChange, onSyncPausedChange, onColorChange, onDelete }: {
   column: Column;
   stores: Store[];
-  onEditStore: (store: any) => void;
+  onDeleteStore: (store: any) => void;
+  onOpenStore: (store: any) => void;
   onAddStore?: (name: string) => void;
   onRename: (name: string) => void;
   onFeaturesChange: (features: ColumnFeature[]) => void;
   onExcludedFromCaixaChange: (excluded: boolean) => void;
   onSyncPausedChange: (paused: boolean) => void;
+  onColorChange: (color: ColumnColor | null) => void;
   onDelete: () => void;
 }) {
+  // Badges e configuração deles só pra quem tem "Indicadores das lojas".
+  const showIndicators = useMyAccess().canAccessSection("bl_indicadores");
   const isPending = column.id.startsWith("temp-");
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -411,7 +460,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
     id: `col-${column.id}`,
     data: { type: "column-drop", columnId: column.id },
   });
-  const tone = columnTone(column.name);
+  const tone = columnTone(column.name, column.color);
 
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(column.name);
@@ -519,8 +568,32 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
               <DropdownMenuItem onSelect={() => setRenaming(true)}>
                 <Pencil className="size-3.5" /> Renomear
               </DropdownMenuItem>
+              <div className="px-2 pt-1.5 pb-2">
+                <p className="text-xs text-muted-foreground mb-1.5">Cor</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onColorChange(null)}
+                    title="Automática (pelo nome)"
+                    className={`size-5 rounded-full border border-dashed border-muted-foreground/60 grid place-items-center ${!column.color ? "ring-2 ring-offset-1 ring-offset-popover ring-foreground/60" : ""}`}
+                  >
+                    {!column.color && <Check className="size-3 text-muted-foreground" />}
+                  </button>
+                  {BOARD_COLUMN_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => onColorChange(c)}
+                      title={COLOR_LABELS[c]}
+                      className={`size-5 rounded-full grid place-items-center ${COLOR_TONES[c].dot} ${column.color === c ? "ring-2 ring-offset-1 ring-offset-popover ring-foreground/60" : ""}`}
+                    >
+                      {column.color === c && <Check className="size-3 text-white" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <DropdownMenuSeparator />
-              {FEATURE_ORDER.map((f) => (
+              {showIndicators && FEATURE_ORDER.map((f) => (
                 <DropdownMenuCheckboxItem
                   key={f}
                   checked={column.features.includes(f)}
@@ -568,7 +641,7 @@ function BoardColumn({ column, stores, onEditStore, onAddStore, onRename, onFeat
       >
         <SortableContext items={stores.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           {stores.map((s) => (
-            <StoreDragCard key={s.id} store={s} tone={tone} features={column.features} onEdit={() => onEditStore(s)} />
+            <StoreDragCard key={s.id} store={s} tone={tone} features={showIndicators ? column.features : undefined} onDelete={() => onDeleteStore(s)} onOpen={() => onOpenStore(s)} />
           ))}
         </SortableContext>
 
@@ -612,8 +685,8 @@ function ShopifyMark({ muted }: { muted?: boolean }) {
   );
 }
 
-function StoreDragCard({ store, tone, features, onEdit, dragging }: {
-  store: Store; tone?: ColumnTone; features?: ColumnFeature[]; onEdit?: () => void; dragging?: boolean;
+function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
+  store: Store; tone?: ColumnTone; features?: ColumnFeature[]; onDelete?: () => void; onOpen?: () => void; dragging?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: store.id,
@@ -636,6 +709,7 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
       style={style}
       {...(dragging ? {} : attributes)}
       {...(dragging ? {} : listeners)}
+      onClick={dragging ? undefined : onOpen}
       className={`rounded-xl bg-card border border-border border-l-4 ${t.stripe} p-2.5 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow ${store.is_placeholder ? "border-dashed" : ""} ${dragging ? "shadow-xl w-[280px]" : ""}`}
     >
       <div className="flex items-start gap-2.5">
@@ -662,18 +736,28 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
                 <ExternalLink className="size-4" />
               </a>
             )}
-            {onEdit && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="size-6 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Editar loja"
-              >
-                <MoreVertical className="size-4" />
-              </button>
+            {onDelete && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="size-6 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title="Mais opções"
+                  >
+                    <MoreVertical className="size-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
+                    <Trash2 className="size-3.5" /> Excluir loja
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         )}
       </div>
+      {!dragging && <ProductionProgress storeId={store.id} />}
       {!dragging && !store.is_placeholder && features && features.length > 0 && (
         <div className="mt-2.5 flex flex-col gap-1.5" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           {features.includes("hold") && <FeatureBadge feature="hold" store={store} />}
@@ -688,6 +772,26 @@ function StoreDragCard({ store, tone, features, onEdit, dragging }: {
           {features.includes("note") && <FeatureBadge feature="note" store={store} />}
         </div>
       )}
+    </div>
+  );
+}
+
+// Só aparece enquanto a loja tem etapa de produção aberta.
+function ProductionProgress({ storeId }: { storeId: string }) {
+  const fn = useServerFn(listProductionProgress);
+  const { data } = useQuery({ queryKey: ["production-progress"], queryFn: () => fn(), staleTime: 60_000 });
+  const p = data?.[storeId];
+  if (!p) return null;
+  const pct = Math.round((p.done / p.total) * 100);
+  return (
+    <div className="mt-2.5" title={`Produção: ${p.done} de ${p.total} etapas`}>
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+        <span>Produção</span>
+        <span className="tabular-nums">{p.done}/{p.total}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

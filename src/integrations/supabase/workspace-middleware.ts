@@ -62,3 +62,10 @@ export function getSectionResourceFilter(
   if (entries.some((e) => e.resource_id === null)) return "all";
   return entries.map((e) => e.resource_id as string);
 }
+
+// Banco de Lojas: badges dos cards e aba Pedidos (Configurações > Membros).
+export function assertStoreIndicators(context: { role: WorkspaceRole; permissions: WorkspacePermission[] }) {
+  if (context.role !== "admin" && !context.permissions.some((p) => p.section === "bl_indicadores")) {
+    throw new Error("Sem acesso aos indicadores das lojas");
+  }
+}
