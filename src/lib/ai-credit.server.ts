@@ -38,7 +38,9 @@ export async function withAiCredit<T>(fn: () => Promise<T>): Promise<T> {
     if (isAiCreditError(e)) {
       creditAlertRaised = true;
       await reportSystemErrorAll(KEY, TITLE,
-        `As funções de IA (tags e tradução do Atendimento, defesa de chargeback, Consultor) pararam. Adicione saldo em ${BILLING_URL}`);
+        `As funções de IA (tags e tradução do Atendimento, defesa de chargeback, Inteligência) pararam. Adicione saldo em ${BILLING_URL}`);
+      // Na tela, mensagem clara em vez do JSON da Anthropic.
+      throw new Error(`A IA está sem saldo na Anthropic. Adicione créditos em ${BILLING_URL.replace("https://", "")} e tente de novo.`);
     }
     throw e;
   }
