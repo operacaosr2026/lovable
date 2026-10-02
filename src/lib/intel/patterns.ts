@@ -128,7 +128,8 @@ export function orderFeatures(a: {
     regiao_destino: a.state ? REGION[a.state] ?? "outra" : null,
     estado_destino: a.state,
     cobranca_diferente_da_entrega: a.billingZip && a.shippingZip ? (a.billingZip.slice(0, 5) !== a.shippingZip.slice(0, 5) ? "sim" : "não") : null,
-    veio_de_anuncio_meta: a.landing ? (/[?&]_fbc=|fbclid=/.test(a.landing) ? "sim" : "não") : null,
+    // Sem "veio de anúncio do Meta": todo comprador vem do Meta; o _fbc no link só
+    // diz se o rastreio do clique sobreviveu (Safari etc.), não a origem.
     aparelho: !ua ? null : /iPhone|iPad/.test(ua) ? "iPhone/iPad" : /Android/.test(ua) ? "Android" : "computador",
     navegador_dentro_do_app: !ua ? null : /Instagram/.test(ua) ? "Instagram" : /FBAN|FBAV|FB_IAB|FBIOS/.test(ua) ? "Facebook" : "navegador comum",
     conta_criada_na_compra: accountAgeH == null ? null : accountAgeH < 1 ? "sim" : "não (cliente antigo)",
