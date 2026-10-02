@@ -99,7 +99,7 @@ function InteligenciaPage() {
   const ask = useMutation({
     mutationFn: (pedido: string) => askFn({ data: { pedido } }),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ["consultant"] });
+      qc.invalidateQueries({ queryKey: ["consultant"] }); qc.invalidateQueries({ queryKey: ["nav-badges"] });
       setTab("agora");
       toast.success(r.added ? `Análise pronta: ${r.added} ${r.added === 1 ? "dica nova" : "dicas novas"} em Agora` : "Análise pronta");
     },
@@ -109,18 +109,18 @@ function InteligenciaPage() {
   const endFn = useServerFn(endConsultantTest);
   const endTest = useMutation({
     mutationFn: (t: ConsultantTest) => endFn({ data: { report_id: report!.id, titulo: t.titulo, origem: t.origem || null } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Teste encerrado"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); toast.success("Teste encerrado"); },
     onError: (e: any) => toast.error(e.message ?? "Falha ao encerrar"),
   });
   const run = useMutation({
     mutationFn: () => runFn(),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Análise pronta"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); toast.success("Análise pronta"); },
     onError: (e: any) => toast.error(e.message ?? "A análise falhou"),
   });
   const setStatus = useMutation({
     mutationFn: (v: { index: number; status: TipStatus | null; motivo?: "ja_sei" | "sem_sentido" }) => statusFn({ data: { report_id: report!.id, ...v } }),
     onSuccess: (_r, v) => {
-      qc.invalidateQueries({ queryKey: ["consultant"] });
+      qc.invalidateQueries({ queryKey: ["consultant"] }); qc.invalidateQueries({ queryKey: ["nav-badges"] });
       toast.success(v.status === "testando" ? "Movido para Testando" : v.status === "ignorada" ? "Ignorada" : v.status === "feita" ? "Concluída" : "Voltou para Agora");
     },
     onError: (e: any) => toast.error(e.message ?? "Falha ao salvar"),

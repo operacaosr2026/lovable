@@ -281,6 +281,8 @@ export function AppLayout() {
   const badgeFor: Record<string, number | null | undefined> = {
     "/tarefas": badges.data?.tarefas,
     "/atendimento": badges.data?.atendimento,
+    "/chargebacks": badges.data?.chargebacks,
+    "/inteligencia": badges.data?.inteligencia,
   };
 
   const visibleNavItems = navItems.filter((item) => !item.section || canAccessSection(item.section));
