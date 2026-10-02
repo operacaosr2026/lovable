@@ -105,6 +105,18 @@ function InteligenciaPage() {
     },
     onError: (e: any) => toast.error(e.message ?? "A análise falhou"),
   });
+  // Encerrar teste marcado na tela (origem = "<report_id>:<índice>"): sai de
+  // Testando já e não entra mais na próxima análise.
+  const endTest = useMutation({
+    mutationFn: async (origem: string) => {
+      const [rid, idx] = origem.split(":");
+      await statusFn({ data: { report_id: rid, index: Number(idx), status: "feita" } });
+      setHiddenTests((h) => [...h, origem]);
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Teste encerrado"); },
+    onError: (e: any) => toast.error(e.message ?? "Falha ao encerrar"),
+  });
+  const [hiddenTests, setHiddenTests] = useState<string[]>([]);
   const run = useMutation({
     mutationFn: () => runFn(),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); toast.success("Análise pronta"); },
@@ -131,7 +143,7 @@ function InteligenciaPage() {
     testando: items.filter((i) => i.status === "testando"),
     concluido: items.filter((i) => i.status === "feita" || i.status === "ignorada"),
   };
-  const testsRunning = tests.filter((t) => !RESULT[t.resultado]?.done);
+  const testsRunning = tests.filter((t) => !RESULT[t.resultado]?.done && !(t.origem && hiddenTests.includes(t.origem)));
   const testsDone = tests.filter((t) => RESULT[t.resultado]?.done);
   const counts: Record<Tab, number> = {
     agora: byTab.agora.length,
@@ -199,7 +211,8 @@ function InteligenciaPage() {
           </div>
 
           <div className="space-y-3">
-            {tab === "testando" && testsRunning.map((t, i) => <TestRow key={`t${i}`} test={t} onOpen={() => setOpenTest(t)} />)}
+            {tab === "testando" && testsRunning.map((t, i) => <TestRow key={`t${i}`} test={t} onOpen={() => setOpenTest(t)}
+              onEnd={t.origem ? () => endTest.mutate(t.origem!) : undefined} />)}
             {tab === "concluido" && testsDone.map((t, i) => <TestRow key={`d${i}`} test={t} onOpen={() => setOpenTest(t)} />)}
             {visible.map((item) => (
               <TipCard key={item.index} item={item} saving={setStatus.isPending}
@@ -291,7 +304,7 @@ function TipCard({ item, saving, onOpen, onStatus }: {
 }
 
 // ─── Testes ───────────────────────────────────────────────────────────────────
-function TestRow({ test, onOpen }: { test: ConsultantTest; onOpen: () => void }) {
+function TestRow({ test, onOpen, onEnd }: { test: ConsultantTest; onOpen: () => void; onEnd?: () => void }) {
   const r = RESULT[test.resultado] ?? RESULT.inconclusivo;
   return (
     <section className="premium-card p-4 flex items-center gap-3">
@@ -306,6 +319,12 @@ function TestRow({ test, onOpen }: { test: ConsultantTest; onOpen: () => void })
         {test.resumo_curto && <p className="text-xs text-muted-foreground mt-0.5 truncate">{test.resumo_curto}</p>}
       </div>
       <Button size="sm" variant="outline" onClick={onOpen}>Ver teste</Button>
+      {onEnd && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label="Mais opções"><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end"><DropdownMenuItem onClick={onEnd}>Encerrar teste</DropdownMenuItem></DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </section>
   );
 }
