@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Info, Bold, Italic, Link2, Truck, CreditCard } from "lucide-react";
+import { Loader2, Mail, Plus, Trash2, ArrowUp, ArrowDown, Eye, Lightbulb, Bold, Italic, Link2, Truck, CreditCard, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -20,7 +20,7 @@ export function SettingsTab() {
   const q = useQuery({ queryKey: ["chargeback-settings"], queryFn: () => fn() });
   if (q.isLoading) return <div className="py-24 grid place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>;
   if (q.isError || !q.data) return <p className="text-sm text-destructive py-10 text-center">{(q.error as any)?.message ?? "Erro ao carregar"}</p>;
-  return <div className="max-w-3xl space-y-4"><DunningSettings initial={q.data} /></div>;
+  return <div className="space-y-4"><DunningSettings initial={q.data} /></div>;
 }
 
 function DunningSettings({ initial }: { initial: ChargebackSettings }) {
@@ -32,6 +32,9 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
   const dirty = JSON.stringify(cfg) !== JSON.stringify(initial);
   const bodies = useRef<(HTMLTextAreaElement | null)[]>([]);
   const [focused, setFocused] = useState(0);
+  // E-mails recolhidos por padrão (a lista fica curta); abre clicando no cabeçalho.
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const toggleOpen = (i: number) => setOpen((o) => { const n = new Set(o); if (n.has(i)) n.delete(i); else n.add(i); return n; });
 
   const save = useMutation({
     mutationFn: (c: ChargebackSettings) => saveFn({ data: c }),
@@ -42,7 +45,14 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
   const steps = cfg.dunningSteps;
   const setSteps = (s: DunningStep[]) => setCfg({ ...cfg, dunningSteps: s });
   const upd = (i: number, p: Partial<DunningStep>) => setSteps(steps.map((s, j) => (j === i ? { ...s, ...p } : s)));
-  const move = (i: number, d: -1 | 1) => { const s = [...steps]; [s[i], s[i + d]] = [s[i + d], s[i]]; setSteps(s); };
+  const move = (i: number, d: -1 | 1) => {
+    const s = [...steps]; [s[i], s[i + d]] = [s[i + d], s[i]]; setSteps(s);
+    setOpen((o) => { const n = new Set(o); const a = o.has(i), b = o.has(i + d); n.delete(i); n.delete(i + d); if (a) n.add(i + d); if (b) n.add(i); return n; });
+  };
+  const remove = (i: number) => {
+    setSteps(steps.filter((_, j) => j !== i));
+    setOpen((o) => new Set([...o].filter((j) => j !== i).map((j) => (j > i ? j - 1 : j))));
+  };
   // Envolve a seleção com o marcador (*negrito*, _itálico_); sem seleção, insere o par e põe o cursor no meio.
   const wrap = (i: number, mark: string) => {
     const el = bodies.current[i];
@@ -69,47 +79,90 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
   };
   const insertVar = (v: string) => {
     const i = Math.min(focused, steps.length - 1);
-    const el = bodies.current[i];
-    if (i < 0 || !el) return;
+    if (i < 0) return;
+    const el = open.has(i) ? bodies.current[i] : null;
+    // E-mail recolhido: abre e põe o campo no fim do texto.
+    if (!el) { upd(i, { body: steps[i].body + v }); setOpen((o) => new Set(o).add(i)); return; }
     const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? a;
     upd(i, { body: el.value.slice(0, a) + v + el.value.slice(b) });
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + v.length, a + v.length); });
   };
 
   return (
-    <div className={`${CARD} p-5 space-y-5`}>
+    <div className={`${CARD} p-5 sm:p-6 space-y-5`}>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-semibold flex items-center gap-2"><Mail className="size-4 text-primary" />Sequência de cobrança dos Alertas</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Quando um pedido reembolsado por alerta é <strong className="text-foreground font-medium">entregue</strong>, os e-mails abaixo saem sozinhos pelo Atendimento, um de cada vez.
-          </p>
+        <div className="flex items-start gap-4 min-w-0">
+          <div className="size-14 rounded-2xl grid place-items-center shrink-0 bg-violet-500/10 text-violet-600 dark:text-violet-400"><Mail className="size-6" /></div>
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold tracking-tight">Sequência de cobrança dos Alertas</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Quando um pedido reembolsado por alerta é <strong className="text-foreground font-medium">entregue</strong>, os e-mails abaixo saem sozinhos pelo Atendimento, um de cada vez.
+            </p>
+          </div>
         </div>
-        <label className="flex items-center gap-2 text-sm font-medium shrink-0 cursor-pointer">
-          {cfg.dunningEnabled ? "Ligada" : "Desligada"}
+        <label className="flex items-center gap-2.5 text-sm font-medium shrink-0 cursor-pointer">
+          {cfg.dunningEnabled ? "Ativada" : "Desativada"}
           <Switch checked={cfg.dunningEnabled} onCheckedChange={(v) => setCfg({ ...cfg, dunningEnabled: v })} />
         </label>
       </div>
 
-      <div className="rounded-xl bg-muted/50 p-3.5 text-xs text-muted-foreground space-y-1">
-        <p className="flex items-center gap-1.5 font-medium text-foreground"><Info className="size-3.5" />Como funciona</p>
-        <p>• Só pedidos de lojas ativas, com status <b>A contatar</b> e rastreio <b>Entregue</b>. No 1º envio o status vira <b>Contatado</b>.</p>
-        <p>• Envia das 9h às 20h no horário de Nova York, um e-mail por vez, com 30 minutos de intervalo (sem rajada, pra não parecer robô). Quem espera há mais tempo sai primeiro.</p>
-        <p>• A sequência para quando o cliente responde (segue na mão pelo Atendimento), quando alguém muda o status ou pausa a cobrança do pedido.</p>
-        <p>• Terminou a sequência sem resposta: depois dos dias abaixo o status vira <b>Sem retorno</b>.</p>
-        <p>• <b>{"{link_pagamento}"}</b>: no 1º e-mail que usar, o sistema cria na loja um pedido "Payment for order #…" (sem envio) e manda o link do checkout. Quando o cliente paga, o pedido vira <b>Recuperado</b> sozinho, é dado como atendido na Shopify e o valor volta pro lucro — sem aparecer em Pedidos, Logística ou Rastreio.</p>
+      <div className="rounded-2xl bg-violet-500/[0.06] border border-violet-500/10 overflow-hidden">
+        <div className="p-4 sm:p-5 space-y-3">
+          <p className="flex items-center gap-2.5 font-bold">
+            <span className="size-8 rounded-lg grid place-items-center bg-violet-500/10 text-violet-600 dark:text-violet-400"><Lightbulb className="size-4" /></span>
+            Como funciona?
+          </p>
+          <ol className="space-y-2.5 text-sm text-foreground/80">
+            {[
+              <>Só pedidos de lojas ativas, com status <b className="text-foreground">A contatar</b> e rastreio <b className="text-foreground">Entregue</b>. No 1º envio o status vira <b className="text-foreground">Contatado</b>.</>,
+              <>Envia das 9h às 20h (fuso Nova York), um e-mail por vez, com 30 min de intervalo. Quem espera há mais tempo sai primeiro.</>,
+              <>A próxima etapa só é enviada se o cliente não responder.</>,
+              <>Se o cliente responder, a sequência para e a conversa segue na mão do Atendimento (a IA não responde conversas com a tag Chargeback). Também para se alguém mudar o status ou pausar a cobrança do pedido.</>,
+              <>Sem resposta {cfg.dunningFinalWaitDays} dia{cfg.dunningFinalWaitDays === 1 ? "" : "s"} depois do último e-mail, o status vira <b className="text-foreground">Sem retorno</b>.</>,
+            ].map((t, i) => (
+              <li key={i} className="flex items-start gap-3">
+                <span className="size-6 rounded-md grid place-items-center shrink-0 bg-violet-500/10 text-violet-700 dark:text-violet-400 text-xs font-semibold">{i + 1}</span>
+                <span className="pt-0.5">{t}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <p className="flex items-start gap-2.5 px-4 sm:px-5 py-3 bg-violet-500/[0.07] border-t border-violet-500/10 text-xs text-foreground/80">
+          <Link2 className="size-4 shrink-0 text-violet-600 dark:text-violet-400" />
+          <span>
+            <b className="text-violet-700 dark:text-violet-400">Link de pagamento</b>: só é criado clicando em <b>Gerar link</b> na aba Alertas (ou no envio, se o e-mail usar {"{link_pagamento}"}).
+            Quando o cliente paga, o pedido vira <b>Recuperado</b> sozinho, é dado como atendido na Shopify e o valor volta pro lucro — sem aparecer em Pedidos, Logística ou Rastreio.
+          </span>
+        </p>
       </div>
 
       <div className="space-y-3">
+        {steps.length > 1 && (
+          <div className="flex justify-end">
+            <button onClick={() => setOpen(open.size === steps.length ? new Set() : new Set(steps.map((_, i) => i)))}
+              className="h-8 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1.5">
+              <ChevronsUpDown className="size-3.5" />{open.size === steps.length ? "Recolher todos" : "Expandir todos"}
+            </button>
+          </div>
+        )}
         {steps.map((s, i) => (
-          <div key={i} className="rounded-xl border border-border p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 text-sm flex-wrap">
-                <span className="font-semibold whitespace-nowrap">E-mail {i + 1}</span>
+          <div key={i} className="rounded-xl border border-border">
+            <div className="flex items-center justify-between gap-2 flex-wrap p-3 pl-2">
+              <div className="flex items-center gap-2 text-sm flex-wrap min-w-0 flex-1">
+                <button onClick={() => toggleOpen(i)} title={open.has(i) ? "Recolher" : "Expandir"}
+                  className="flex items-center gap-2 min-w-0 rounded-lg px-1.5 py-1 hover:bg-muted">
+                  <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform ${open.has(i) ? "" : "-rotate-90"}`} />
+                  <span className="font-semibold whitespace-nowrap">E-mail {i + 1}</span>
+                </button>
                 <span className="text-muted-foreground">·</span>
                 <input type="number" min={0} max={90} value={s.days} onChange={(e) => upd(i, { days: Math.max(0, Math.min(90, Number(e.target.value) || 0)) })}
                   className={NUM} />
                 <span className="text-muted-foreground">{i === 0 ? "dias depois da entrega" : "dias depois do e-mail anterior"}</span>
+                {!open.has(i) && (
+                  <button onClick={() => toggleOpen(i)} className="min-w-0 flex-1 text-left truncate text-muted-foreground hover:text-foreground">
+                    · {s.subject.trim() || <i>sem assunto</i>}
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <button onClick={() => setPreview(i)} disabled={!s.subject.trim() && !s.body.trim()}
@@ -118,9 +171,10 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
                 </button>
                 <IconBtn title="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" /></IconBtn>
                 <IconBtn title="Descer" disabled={i === steps.length - 1} onClick={() => move(i, 1)}><ArrowDown className="size-3.5" /></IconBtn>
-                <IconBtn title="Remover" onClick={() => setSteps(steps.filter((_, j) => j !== i))}><Trash2 className="size-3.5" /></IconBtn>
+                <IconBtn title="Remover" onClick={() => remove(i)}><Trash2 className="size-3.5" /></IconBtn>
               </div>
             </div>
+            {open.has(i) && <div className="px-4 pb-4 space-y-3">
             <input value={s.subject} onChange={(e) => upd(i, { subject: e.target.value })} placeholder="Assunto (ex.: About your order {pedido})"
               className={`${INPUT} h-10 px-3`} />
             <div className="rounded-lg border border-border focus-within:border-primary overflow-hidden">
@@ -139,9 +193,10 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
               }}
               className="w-full bg-background text-sm outline-none p-3 resize-y leading-relaxed block" />
             </div>
+            </div>}
           </div>
         ))}
-        <button onClick={() => { setSteps([...steps, { subject: "", body: "", days: steps.length ? 3 : 0 }]); setFocused(steps.length); }} disabled={steps.length >= 10}
+        <button onClick={() => { setSteps([...steps, { subject: "", body: "", days: steps.length ? 3 : 0 }]); setFocused(steps.length); setOpen((o) => new Set(o).add(steps.length)); }} disabled={steps.length >= 10}
           className="w-full h-10 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 inline-flex items-center justify-center gap-1.5 disabled:opacity-50">
           <Plus className="size-4" /> Adicionar e-mail
         </button>

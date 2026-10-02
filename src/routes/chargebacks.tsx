@@ -16,7 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { getChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
 import { getDisputeEvidence, draftDisputeRebuttal, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
 import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
-import { AlertsTab } from "@/components/chargebacks/AlertsTab";
+import { AlertsTab, DunningToggle } from "@/components/chargebacks/AlertsTab";
 import { SettingsTab } from "@/components/chargebacks/SettingsTab";
 import { US_TIME_ZONE, isoTodayUS, nyStartOfDay } from "@/lib/timezone";
 
@@ -241,6 +241,7 @@ function ChargebacksPage() {
             <Seg value={type} options={TYPES} onChange={(v) => { setType(v); setFilter(null); }} />
             <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44" />
           </>}
+          {tab === "alertas" && <DunningToggle />}
         </div>
       </div>
 

@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  BellRing, CircleCheck, Pause, Play, Reply, DollarSign, Clock, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check,
+  BellRing, CircleCheck, ArrowUp, ArrowDown, ArrowRight, Database, Pause, Play, Reply, DollarSign, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings, saveChargebackSettings, createRecoveryPaymentLink } from "@/lib/chargeback-alerts.functions";
@@ -65,11 +65,15 @@ export function AlertsTab() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Stat icon={BellRing} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400" label="Alertas" value={String(rows.length)} sub={`${money(sum(rows, (r) => r.refundedAmount))} reembolsados`} />
-        <Stat icon={Truck} tone="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" label="Entregues" value={String(delivered.length)} sub={`${money(sum(delivered, (r) => r.refundedAmount))} dá pra cobrar`} />
-        <Stat icon={Mail} tone="bg-amber-500/10 text-amber-600 dark:text-amber-400" label="A contatar" value={String(toContact.length)} sub={`${contacted.length} já contatado${contacted.length === 1 ? "" : "s"}`}
+        <Stat icon={BellRing} color="violet" label="Alertas" value={String(rows.length)} sub={`${money(sum(rows, (r) => r.refundedAmount))} reembolsados`}
+          trend={trendOf(rows.map((r) => r.refundedAt))} upIsBad spark={sparkOf(rows.map((r) => r.refundedAt))} />
+        <Stat icon={Truck} color="emerald" label="Entregues" value={String(delivered.length)} sub={`${money(sum(delivered, (r) => r.refundedAmount))} dá pra cobrar`}
+          trend={trendOf(delivered.map((r) => r.deliveredAt ?? r.refundedAt))} spark={sparkOf(delivered.map((r) => r.deliveredAt ?? r.refundedAt))} />
+        <Stat icon={Mail} color="amber" label="A contatar" value={String(toContact.length)} sub={`${contacted.length} já contatado${contacted.length === 1 ? "" : "s"}`}
+          trend={trendOf(toContact.map((r) => r.refundedAt))} upIsBad spark={sparkOf(toContact.map((r) => r.refundedAt))}
           onClick={() => setStatusFilter(statusFilter === "a_contatar" ? "todos" : "a_contatar")} active={statusFilter === "a_contatar"} />
-        <Stat icon={HandCoins} tone="bg-sky-500/10 text-sky-600 dark:text-sky-400" label="Recuperado" value={money(sum(recovered, (r) => r.recoveredAmount ?? 0))} sub={`${recovered.length} pedido${recovered.length === 1 ? "" : "s"}`}
+        <Stat icon={HandCoins} color="sky" label="Recuperado" value={money(sum(recovered, (r) => r.recoveredAmount ?? 0))} sub={`${recovered.length} pedido${recovered.length === 1 ? "" : "s"}`}
+          spark={sparkOf(recovered.map((r) => r.recoveredAt ?? r.followupAt), recovered.map((r) => r.recoveredAmount ?? 0))}
           onClick={() => setStatusFilter(statusFilter === "recuperado" ? "todos" : "recuperado")} active={statusFilter === "recuperado"} />
       </div>
 
@@ -217,17 +221,16 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
   );
 }
 
-// Métricas da sequência de cobrança: funil (cobrados → responderam → recuperados)
-// e o resultado de cada e-mail (depois de qual e-mail o cliente respondeu / pagou).
-const PERIODS = [["7", "Últimos 7 dias"], ["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["all", "Todo o período"]] as const;
-
-function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { step: number; sentAt: string }[]; settings: ChargebackSettings | undefined }) {
+// Liga/desliga a cobrança automática — fica no cabeçalho da página, ao lado das abas.
+export function DunningToggle() {
+  const alertsFn = useServerFn(getChargebackAlerts);
+  const settingsFn = useServerFn(getChargebackSettings);
+  const rows = useQuery({ queryKey: ["chargeback-alerts"], queryFn: () => alertsFn(), refetchInterval: 2 * 60_000 }).data?.rows ?? [];
+  const settings = useQuery({ queryKey: ["chargeback-settings"], queryFn: () => settingsFn() }).data;
   const qc = useQueryClient();
   const confirm = useConfirm();
   const saveFn = useServerFn(saveChargebackSettings);
-  const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("90");
   const enabled = !!settings?.dunningEnabled;
-  const total = settings?.dunningSteps.filter((st) => st.subject && st.body).length ?? 0;
   const toggle = useMutation({
     mutationFn: (on: boolean) => saveFn({ data: { ...settings!, dunningEnabled: on } }),
     onSuccess: (_, on) => { toast.success(on ? "Cobrança automática ativada" : "Cobrança automática desativada"); qc.invalidateQueries({ queryKey: ["chargeback-settings"] }); },
@@ -249,105 +252,153 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
     toggle.mutate(!enabled);
   };
 
-  const inSeq = rows.filter((r) => r.dunningStep > 0);
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <span className={`h-10 px-3.5 rounded-xl border inline-flex items-center gap-2 text-sm font-medium ${enabled ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-border bg-card text-muted-foreground"}`}>
+        <span className={`size-2 rounded-full ${enabled ? "bg-emerald-500" : "bg-muted-foreground/60"}`} />{enabled ? "Cobrança ligada" : "Cobrança desligada"}
+      </span>
+      <button onClick={onToggle} disabled={!settings || toggle.isPending}
+        className={`h-10 px-3.5 rounded-xl text-sm font-medium inline-flex items-center gap-2 disabled:opacity-60 ${enabled ? "border border-border bg-card hover:bg-muted" : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"}`}>
+        {toggle.isPending ? <Loader2 className="size-4 animate-spin" /> : enabled ? <Pause className="size-4" /> : <Play className="size-4" />}
+        {enabled ? "Desativar" : "Ativar cobrança"}
+      </button>
+    </div>
+  );
+}
+
+// Métricas da sequência de cobrança: funil (cobrados → responderam → recuperados)
+// e o resultado de cada e-mail (depois de qual e-mail o cliente respondeu / pagou).
+const PERIODS = [["7", "Últimos 7 dias"], ["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["all", "Todo o período"]] as const;
+type Period = (typeof PERIODS)[number][0];
+const sinceOf = (p: Period) => (p === "all" ? "" : new Date(Date.now() - Number(p) * 86_400_000).toISOString());
+
+function PeriodSelect({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
+  return (
+    <div className="relative shrink-0 self-start sm:self-auto">
+      <CalendarDays className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <select value={value} onChange={(e) => onChange(e.target.value as Period)}
+        className="h-10 pl-9 pr-9 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary cursor-pointer appearance-none">
+        {PERIODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+      <ChevronDown className="size-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+    </div>
+  );
+}
+
+const STEP_TONES = [
+  "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+];
+
+function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { step: number; sentAt: string }[]; settings: ChargebackSettings | undefined }) {
+  const [period, setPeriod] = useState<Period>("90");
+  const [detailPeriod, setDetailPeriod] = useState<Period>("90");
+  const total = settings?.dunningSteps.filter((st) => st.subject && st.body).length ?? 0;
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+
+  // Resumo: pedidos que entraram na sequência no período escolhido.
+  const since = sinceOf(period);
+  const inSeq = rows.filter((r) => r.dunningStep > 0 && (r.dunningStartedAt ?? r.dunningLastAt ?? "") >= since);
   const replied = inSeq.filter((r) => r.repliedAt);
-  const recovered = rows.filter((r) => r.status === "recuperado" && (r.recoveredStep ?? 0) > 0);
-  const manual = rows.filter((r) => r.status === "recuperado" && !((r.recoveredStep ?? 0) > 0));
-  const noReturn = inSeq.filter((r) => r.dunningStopReason === "fim");
+  const recovered = inSeq.filter((r) => r.status === "recuperado" && (r.recoveredStep ?? 0) > 0);
   const charged = inSeq.reduce((t, r) => t + r.refundedAmount, 0);
   const got = recovered.reduce((t, r) => t + (r.recoveredAmount ?? 0), 0);
-  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
   const hours = replied.map((r) => (Date.parse(r.repliedAt!) - Date.parse(r.dunningStartedAt ?? r.repliedAt!)) / 3_600_000).filter((h) => h >= 0);
   const avgH = hours.length ? hours.reduce((a, b) => a + b, 0) / hours.length : null;
-  const avgLabel = avgH == null ? "—" : avgH < 48 ? `${Math.round(avgH)}h` : `${Math.round(avgH / 24)} dias`;
+  const avgLabel = avgH == null ? "" : ` · responde em ${avgH < 48 ? `${Math.round(avgH)}h` : `${Math.round(avgH / 24)} dias`}`;
 
   // Detalhamento por e-mail, no período escolhido.
-  const since = period === "all" ? "" : new Date(Date.now() - Number(period) * 86_400_000).toISOString();
-  const inRange = (iso: string | null) => !!iso && iso >= since;
+  const dSince = sinceOf(detailPeriod);
+  const inRange = (iso: string | null) => !!iso && iso >= dSince;
+  const allReplied = rows.filter((r) => r.dunningStep > 0 && r.repliedAt);
+  const allRecovered = rows.filter((r) => r.status === "recuperado" && (r.recoveredStep ?? 0) > 0);
+  const manual = rows.filter((r) => r.status === "recuperado" && !((r.recoveredStep ?? 0) > 0));
+  const noReturn = rows.filter((r) => r.dunningStep > 0 && r.dunningStopReason === "fim");
   const nSteps = Math.max(total, ...sends.map((x) => x.step), 0);
 
   const tiles: { icon: typeof Mail; tone: string; label: string; value: string; sub: string }[] = [
     { icon: Mail, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400", label: "Cobrados", value: String(inSeq.length), sub: `${money(charged)} em cobrança` },
-    { icon: Reply, tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400", label: "Responderam", value: String(replied.length), sub: `${pct(replied.length, inSeq.length)} dos cobrados` },
+    { icon: Reply, tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400", label: "Responderam", value: String(replied.length), sub: `${pct(replied.length, inSeq.length)} dos cobrados${avgLabel}` },
     { icon: CircleCheck, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", label: "Recuperados", value: String(recovered.length), sub: `${pct(recovered.length, inSeq.length)} dos cobrados` },
     { icon: DollarSign, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400", label: "Valor recuperado", value: money(got), sub: `${pct(got, charged)} do valor cobrado` },
-    { icon: Clock, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400", label: "Tempo até responder", value: avgLabel, sub: "média depois do 1º e-mail" },
   ];
   return (
-    <div className={`${CARD} p-5 sm:p-6 space-y-5`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="size-14 rounded-2xl grid place-items-center shrink-0 bg-violet-500/10 text-violet-600 dark:text-violet-400"><Mail className="size-6" /></div>
-          <div className="min-w-0">
-            <h2 className="text-xl font-bold tracking-tight">Cobrança automática</h2>
+    <>
+      <div className={`${CARD} p-5 sm:p-6 space-y-5`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="size-10 rounded-xl grid place-items-center shrink-0 bg-violet-500/10 text-violet-600 dark:text-violet-400"><Database className="size-5" /></div>
+            <h3 className="text-lg font-bold">Resumo da cobrança</h3>
           </div>
+          <PeriodSelect value={period} onChange={setPeriod} />
         </div>
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-          <span className={`h-10 px-4 rounded-full inline-flex items-center gap-2 text-sm font-medium ${enabled ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
-            <span className={`size-2 rounded-full ${enabled ? "bg-emerald-500" : "bg-muted-foreground/60"}`} />{enabled ? "Ligada" : "Desligada"}
-          </span>
-          <button onClick={onToggle} disabled={!settings || toggle.isPending}
-            className={`h-10 px-5 rounded-xl text-sm font-medium inline-flex items-center gap-2 disabled:opacity-60 ${enabled ? "border border-border hover:bg-muted" : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"}`}>
-            {toggle.isPending && <Loader2 className="size-4 animate-spin" />}{enabled ? "Desativar" : "Ativar cobrança automática"}
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-        {tiles.map(({ icon: Icon, tone, label, value, sub }) => (
-          <div key={label} className="rounded-2xl border border-border/70 p-4 flex items-center gap-3.5 min-w-0">
-            <div className={`size-12 rounded-full grid place-items-center shrink-0 ${tone}`}><Icon className="size-5" /></div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground/80 truncate">{label}</p>
-              <p className="text-2xl font-bold leading-tight tabular-nums truncate">{value}</p>
-              <p className="text-xs text-muted-foreground truncate">{sub}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {tiles.map(({ icon: Icon, tone, label, value, sub }) => (
+            <div key={label} className="rounded-2xl border border-border/70 bg-muted/20 p-4 flex items-center gap-3.5 min-w-0">
+              <div className={`size-12 rounded-full grid place-items-center shrink-0 ${tone}`}><Icon className="size-5" /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground/80 truncate">{label}</p>
+                <p className="text-2xl font-bold leading-tight tabular-nums truncate">{value}</p>
+                <p className="text-xs text-muted-foreground truncate" title={sub}>{sub}</p>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      <div className="rounded-2xl border border-border/70 p-4 sm:p-5">
+      <div className={`${CARD} p-5 sm:p-6`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h3 className="font-bold">Detalhamento por e-mail</h3>
+            <h3 className="text-lg font-bold">Detalhamento por e-mail</h3>
+            <p className="text-sm text-muted-foreground">Acompanhe o desempenho de cada e-mail no processo de cobrança.</p>
           </div>
-          <div className="relative shrink-0 self-start sm:self-auto">
-            <CalendarDays className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select value={period} onChange={(e) => setPeriod(e.target.value as (typeof PERIODS)[number][0])}
-              className="h-10 pl-9 pr-9 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary cursor-pointer appearance-none">
-              {PERIODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
-            <ChevronDown className="size-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+          <PeriodSelect value={detailPeriod} onChange={setDetailPeriod} />
         </div>
         {!nSteps ? <p className="text-sm text-muted-foreground text-center py-6">Nenhum e-mail na sequência — escreva em Configurações</p> : (
-          <table className="w-full text-sm table-fixed">
-            <thead>
-              <tr className="text-xs font-semibold text-foreground/80 bg-muted/60">
-                <th className="py-3 px-4 text-left rounded-l-lg">E-mail</th>
-                <th className="py-3 px-3 text-left">Enviados</th>
-                <th className="py-3 px-3 text-left">Respostas</th>
-                <th className="py-3 px-3 text-left">Recuperados</th>
-                <th className="py-3 px-3 text-left rounded-r-lg">Valor recuperado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: nSteps }, (_, i) => i + 1).map((n) => {
-                const sent = sends.filter((x) => x.step === n && inRange(x.sentAt)).length;
-                const rep = replied.filter((r) => r.repliedStep === n && inRange(r.repliedAt)).length;
-                const rec = recovered.filter((r) => r.recoveredStep === n && inRange(r.recoveredAt));
-                return (
-                  <tr key={n} className="border-b border-border/60 last:border-0">
-                    <td className="py-3 px-4 font-semibold">E-mail {n}</td>
-                    <td className="py-3 px-3 tabular-nums">{sent}</td>
-                    <td className="py-3 px-3 tabular-nums">{rep}{sent > 0 && <span className="text-xs text-muted-foreground ml-1">({pct(rep, sent)})</span>}</td>
-                    <td className="py-3 px-3 tabular-nums">{rec.length}{sent > 0 && <span className="text-xs text-muted-foreground ml-1">({pct(rec.length, sent)})</span>}</td>
-                    <td className="py-3 px-3 tabular-nums">{money(rec.reduce((t, r) => t + (r.recoveredAmount ?? 0), 0))}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm table-fixed">
+              <thead>
+                <tr className="text-xs font-semibold text-foreground/80 bg-muted/60">
+                  <th className="py-3 px-4 text-left rounded-l-lg w-[20%]">E-mail</th>
+                  <th className="py-3 px-3 text-left">Enviados</th>
+                  <th className="py-3 px-3 text-left">Respostas</th>
+                  <th className="py-3 px-3 text-left">Recuperados</th>
+                  <th className="py-3 px-3 text-left">Valor recuperado</th>
+                  <th className="py-3 px-3 text-left rounded-r-lg w-[22%]">Taxa de resposta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: nSteps }, (_, i) => i + 1).map((n) => {
+                  const sent = sends.filter((x) => x.step === n && inRange(x.sentAt)).length;
+                  const rep = allReplied.filter((r) => r.repliedStep === n && inRange(r.repliedAt)).length;
+                  const rec = allRecovered.filter((r) => r.recoveredStep === n && inRange(r.recoveredAt));
+                  const rate = sent ? Math.min(100, Math.round((rep / sent) * 100)) : 0;
+                  return (
+                    <tr key={n} className="border-b border-border/60 last:border-0">
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-3 font-semibold">
+                          <span className={`size-8 rounded-lg grid place-items-center shrink-0 ${STEP_TONES[(n - 1) % STEP_TONES.length]}`}><Mail className="size-4" /></span>
+                          E-mail {n}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 tabular-nums">{sent}</td>
+                      <td className="py-3 px-3 tabular-nums">{rep}</td>
+                      <td className="py-3 px-3 tabular-nums">{rec.length}{sent > 0 && <span className="text-xs text-muted-foreground ml-1">({pct(rec.length, sent)})</span>}</td>
+                      <td className="py-3 px-3 tabular-nums">{money(rec.reduce((t, r) => t + (r.recoveredAmount ?? 0), 0))}</td>
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-3">
+                          <span className="tabular-nums w-9 shrink-0">{rate}%</span>
+                          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${rate}%` }} /></div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
         {(noReturn.length > 0 || manual.length > 0) && (
           <p className="text-xs text-muted-foreground mt-3">
@@ -356,7 +407,7 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
           </p>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -429,17 +480,94 @@ function PaymentLink({ r }: { r: AlertRow }) {
   );
 }
 
-function Stat({ icon: Icon, tone, label, value, sub, onClick, active }: {
-  icon: typeof BellRing; tone: string; label: string; value: string; sub: string; onClick?: () => void; active?: boolean;
+// Variação dos últimos 30 dias contra os 30 anteriores.
+type Trend = { dir: "up" | "down" | "flat"; label: string };
+function trendOf(dates: (string | null)[]): Trend {
+  const now = Date.now(), d30 = 30 * 86_400_000;
+  let cur = 0, prev = 0;
+  for (const iso of dates) {
+    if (!iso) continue;
+    const age = now - Date.parse(iso);
+    if (age < d30) cur++;
+    else if (age < 2 * d30) prev++;
+  }
+  if (cur === prev) return { dir: "flat", label: "0%" };
+  if (!prev) return { dir: "up", label: "novo" };
+  const p = Math.round(((cur - prev) / prev) * 100);
+  return { dir: p > 0 ? "up" : "down", label: `${Math.abs(p)}%` };
+}
+
+// Minigráfico: total acumulado semana a semana nas últimas 12 semanas.
+function sparkOf(dates: (string | null)[], weights?: number[]): number[] {
+  const WEEKS = 12, week = 7 * 86_400_000, start = Date.now() - WEEKS * week;
+  const pts = Array<number>(WEEKS + 1).fill(0);
+  dates.forEach((iso, i) => {
+    if (!iso) return;
+    const t = Date.parse(iso);
+    if (t < start) return;
+    const b = Math.min(WEEKS, Math.ceil((t - start) / week));
+    pts[b] += weights?.[i] ?? 1;
+  });
+  for (let i = 1; i <= WEEKS; i++) pts[i] += pts[i - 1];
+  return pts;
+}
+
+const COLORS = {
+  violet:  { icon: "bg-violet-500/10 text-violet-600 dark:text-violet-400",   line: "text-violet-500" },
+  emerald: { icon: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", line: "text-emerald-500" },
+  amber:   { icon: "bg-amber-500/10 text-amber-600 dark:text-amber-400",       line: "text-amber-500" },
+  sky:     { icon: "bg-sky-500/10 text-sky-600 dark:text-sky-400",             line: "text-sky-500" },
+};
+
+function Sparkline({ pts, className }: { pts: number[]; className: string }) {
+  const id = useId();
+  const max = Math.max(...pts, 1);
+  const xy = pts.map((v, i) => [(i / (pts.length - 1)) * 100, 38 - (v / max) * 32] as const);
+  // Curva suave (Catmull-Rom → Bézier).
+  let d = `M${xy[0][0]},${xy[0][1]}`;
+  for (let i = 0; i < xy.length - 1; i++) {
+    const [p0, p1, p2, p3] = [xy[i - 1] ?? xy[i], xy[i], xy[i + 1], xy[i + 2] ?? xy[i + 1]];
+    d += ` C${p1[0] + (p2[0] - p0[0]) / 6},${p1[1] + (p2[1] - p0[1]) / 6} ${p2[0] - (p3[0] - p1[0]) / 6},${p2[1] - (p3[1] - p1[1]) / 6} ${p2[0]},${p2[1]}`;
+  }
+  return (
+    <svg viewBox="0 0 100 40" preserveAspectRatio="none" className={`pointer-events-none ${className}`} aria-hidden>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${d} L100,40 L0,40 Z`} fill={`url(#${id})`} />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Stat({ icon: Icon, color, label, value, sub, trend, upIsBad, spark, onClick, active }: {
+  icon: typeof BellRing; color: keyof typeof COLORS; label: string; value: string; sub: string;
+  trend?: Trend; upIsBad?: boolean; spark?: number[]; onClick?: () => void; active?: boolean;
 }) {
   const Tag = onClick ? "button" : "div";
+  const c = COLORS[color];
+  const TrendIcon = trend?.dir === "up" ? ArrowUp : trend?.dir === "down" ? ArrowDown : ArrowRight;
+  const trendCls = !trend || trend.dir === "flat" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+    : (trend.dir === "up") !== !!upIsBad ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+    : "bg-rose-500/10 text-rose-700 dark:text-rose-400";
   return (
     <Tag onClick={onClick}
-      className={`${CARD} p-5 flex items-start gap-3.5 min-w-0 text-left transition-colors ${active ? "ring-2 ring-primary/30 border-primary/50" : ""} ${onClick ? "hover:border-primary/40 cursor-pointer" : ""}`}>
-      <div className={`size-12 rounded-2xl grid place-items-center shrink-0 ${tone}`}><Icon className="size-6" /></div>
-      <div className="min-w-0">
+      className={`${CARD} relative overflow-hidden p-5 pb-7 flex items-start gap-3.5 min-w-0 text-left transition-colors ${active ? "ring-2 ring-primary/30 border-primary/50" : ""} ${onClick ? "hover:border-primary/40 cursor-pointer" : ""}`}>
+      {spark && <Sparkline pts={spark} className={`absolute bottom-0 right-0 w-3/5 h-16 ${c.line}`} />}
+      <div className={`relative size-12 rounded-full grid place-items-center shrink-0 ${c.icon}`}><Icon className="size-6" /></div>
+      <div className="relative min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground/80 truncate">{label}</p>
-        <p className="text-3xl font-bold tracking-tight leading-none mt-0.5">{value}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="text-3xl font-bold tracking-tight leading-none truncate">{value}</p>
+          {trend && (
+            <span className={`inline-flex items-center gap-0.5 h-5 px-1.5 rounded-md text-[11px] font-semibold shrink-0 ${trendCls}`} title="Últimos 30 dias contra os 30 anteriores">
+              <TrendIcon className="size-3" />{trend.label}
+            </span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground mt-1.5 truncate">{sub}</p>
       </div>
     </Tag>
