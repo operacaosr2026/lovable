@@ -68,8 +68,8 @@ export function AttachmentChips({ files, onRemove }: { files: UploadedAttachment
 
 // Escreve em português → botão troca o texto pela versão em inglês; "Desfazer"
 // volta o português. O envio continua manual.
-// Link de rastreio do pedido na caixa de resposta, numa linha só — no envio vira
-// o texto clicável "Track your order here". Vários pedidos: escolhe qual.
+// Link de rastreio do pedido na caixa de resposta, numa linha só — aparece (e vai
+// no e-mail) como o texto clicável "Track your order here". Vários pedidos: escolhe qual.
 function TrackingLinkButton({ text, setText, customerEmail, conversationId }: {
   text: string; setText: (t: string) => void; customerEmail?: string | null; conversationId?: string | null;
 }) {
@@ -400,6 +400,24 @@ export function SavedReplies({ text, setText, customerName, customerEmail, order
   );
 }
 
+// Na caixa de resposta a URL de rastreio aparece como "Track your order here"
+// (igual ao e-mail); a URL fica guardada e volta no envio. Vários links: "(2)", "(3)"…
+const TRACK_LABEL = "Track your order here";
+const URL_RE = /https?:\/\/[^\s<]+[^\s<.,;:!?)]/g;
+const LABEL_RE = /Track your order here(?: \((\d+)\))?/g;
+function useTrackingLabels() {
+  const links = useRef<string[]>([]);
+  const collapse = (t: string) => t.replace(URL_RE, (u) => {
+    if (!/track/i.test(u)) return u;
+    let i = links.current.indexOf(u);
+    if (i < 0) i = links.current.push(u) - 1;
+    return i ? `${TRACK_LABEL} (${i + 1})` : TRACK_LABEL;
+  });
+  const expand = (t: string) => t.replace(LABEL_RE, (m, n) => links.current[n ? Number(n) - 1 : 0] ?? m);
+  const reset = () => { links.current = []; };
+  return { collapse, expand, reset };
+}
+
 export type SendMode = "em_atendimento" | "resolvido";
 
 export function Composer({ customerName, customerEmail, conversationId, onSend, sending, inject }: {
@@ -410,21 +428,23 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
   sending: boolean;
   onSend: (text: string, attachments: ReturnType<typeof useAttachments>["refs"], mode: SendMode) => Promise<boolean>;
 }) {
-  const [text, setText] = useState("");
+  const track = useTrackingLabels();
+  const [text, setRawText] = useState("");
+  const setText = (t: string) => setRawText(track.collapse(t));
   useEffect(() => { if (inject) setText(inject.text); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const att = useAttachments();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const send = async (mode: SendMode) => {
     if (!text.trim() || sending || att.uploading) return;
-    if (await onSend(text, att.refs, mode)) { setText(""); att.clear(); }
+    if (await onSend(track.expand(text), att.refs, mode)) { setRawText(""); track.reset(); att.clear(); }
   };
 
   return (
     <div className="border-t border-border p-3 space-y-2">
       <AttachmentChips files={att.files} onRemove={att.remove} />
-      {/https?:\/\/\S*track/i.test(text) && (
-        <p className="text-[11px] text-muted-foreground px-1">O link de rastreio vai no e-mail como o texto clicável <span className="text-primary font-semibold underline">Track your order here</span> — o cliente não vê a URL.</p>
+      {text.includes(TRACK_LABEL) && (
+        <p className="text-[11px] text-muted-foreground px-1"><span className="text-primary font-semibold underline">Track your order here</span> é o link de rastreio do pedido — vai clicável no e-mail, o cliente não vê a URL.</p>
       )}
       {/* Caixa ocupa a largura toda; anexar, assinatura e Enviar ficam na barra de baixo. */}
       <div className="rounded-xl border border-border bg-background focus-within:border-primary transition-colors">
@@ -445,7 +465,7 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
             {att.uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
           </button>
           <SavedReplies text={text} setText={setText} customerName={customerName} customerEmail={customerEmail} conversationId={conversationId} />
-          <TranslateToEnglish text={text} setText={setText} />
+          <TranslateToEnglish text={track.expand(text)} setText={setText} />
           <TrackingLinkButton text={text} setText={setText} customerEmail={customerEmail} conversationId={conversationId} />
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { att.add(e.target.files); e.target.value = ""; }} />
           <div className="flex-1" />
