@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Bot, Check, CheckCircle2, ChevronDown, Loader2, MessageSquareText, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
 import {
-  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate, getSupportTraining,
+  changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate, getSupportTraining, previewSupportAutoReply,
   type getZohoStatus, type SupportTemplate,
 } from "@/lib/atendimento.functions";
 import { TemplateEditor, type TemplateDraft } from "./Composer";
@@ -424,6 +424,7 @@ function AutoReplySettings() {
         <Switch checked={aiAvailable && on} disabled={!aiAvailable || toggle.isPending || q.isLoading} onCheckedChange={(v) => toggle.mutate(v)} />
       </div>
       <AutoReplyScript script={(q.data as any)?.autoReplyScript} />
+      {aiAvailable && <AutoReplyExamples />}
 
     </div>
   );
@@ -457,6 +458,61 @@ function AutoReplyScript({ script }: { script?: { pt: string; en: string } }) {
           <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed font-sans bg-muted/30 rounded-lg p-3 max-h-[480px] overflow-y-auto">{script[lang]}</pre>
         </div>
       )}
+    </div>
+  );
+}
+
+// Exemplo: o que a IA faria com os últimos e-mails de rastreio (nada é enviado),
+// ao lado do que a equipe mandou.
+const KIND_LABEL: Record<string, { label: string; cls: string }> = {
+  responder: { label: "Responderia sozinha", cls: "bg-success/10 text-success" },
+  pulado: { label: "Deixaria pra equipe", cls: "bg-warning/10 text-warning" },
+  fora: { label: "Fora da resposta automática", cls: "bg-muted text-muted-foreground" },
+};
+function AutoReplyExamples() {
+  const fn = useSupportFn(previewSupportAutoReply, "previewSupportAutoReply");
+  const run = useMutation({ mutationFn: () => fn(), onError: (e: any) => toast.error(e.message ?? "O teste falhou") });
+  const items = run.data as Awaited<ReturnType<typeof previewSupportAutoReply>> | undefined;
+  return (
+    <div className="rounded-xl border border-border px-4 py-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Exemplo com e-mails reais</p>
+          <p className="text-[11px] text-muted-foreground">Pega os 3 últimos e-mails de rastreio e mostra o que a IA faria — nada é enviado.</p>
+        </div>
+        <button type="button" onClick={() => run.mutate()} disabled={run.isPending}
+          className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 shrink-0 disabled:opacity-50">
+          {run.isPending ? <><Loader2 className="size-3.5 animate-spin" /> Testando…</> : <><Sparkles className="size-3.5" /> {items ? "Testar de novo" : "Ver exemplo"}</>}
+        </button>
+      </div>
+      {items && !items.length && <p className="text-xs text-muted-foreground">Nenhum e-mail com a tag Rastreio nos últimos 14 dias.</p>}
+      {items?.map((it, i) => {
+        const k = KIND_LABEL[it.kind] ?? KIND_LABEL.fora;
+        return (
+          <div key={i} className="rounded-lg border border-border p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-medium truncate">{it.subject || "(sem assunto)"} <span className="text-muted-foreground font-normal">· {it.from}</span></p>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${k.cls}`}>{k.label}</span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-3 text-xs">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Cliente escreveu</p>
+                <p className="whitespace-pre-wrap text-muted-foreground line-clamp-[12]">{it.cliente}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-primary mb-1">IA {it.kind === "responder" ? "responderia" : "não responderia"}</p>
+                {it.kind === "responder" && it.resposta
+                  ? <p className="whitespace-pre-wrap">{it.resposta.split(/(Track your order here)/g).map((p, j) => j % 2 ? <span key={j} className="text-primary font-semibold underline">{p}</span> : p)}</p>
+                  : <p className="text-muted-foreground">Motivo: {it.motivo}</p>}
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Equipe mandou</p>
+                <p className="whitespace-pre-wrap text-muted-foreground line-clamp-[12]">{it.equipe || "(ainda sem resposta)"}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

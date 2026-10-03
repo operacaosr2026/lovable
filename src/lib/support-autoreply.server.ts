@@ -264,3 +264,39 @@ export async function runSupportAutoReply(acc: ZohoAccount) {
   }
   return { sent, skipped };
 }
+
+// Só o que foi escrito: sem o e-mail citado embaixo.
+const withoutQuote = (t: string) => { const i = t.search(/(^|\n)\s*(-{2,}\s*On .{4,120}wrote|On .{4,120}wrote:)/i); return (i > 0 ? t.slice(0, i) : t).trim().slice(0, 1500); };
+
+// Teste em Configurações → Resposta automática: o que a IA faria com os últimos
+// e-mails de rastreio que chegaram (nada é enviado nem gravado), ao lado do que
+// a equipe mandou de verdade.
+export async function previewSupportAutoReply(acc: ZohoAccount, n = 3) {
+  const ownerId = acc.owner_id;
+  const since = new Date(Date.now() - 14 * DAY).toISOString();
+  const { data: convs } = await supabaseAdmin.from("support_conversations").select("id")
+    .eq("owner_id", ownerId).or("tags.cs.{Rastreio},ai_tags.cs.{Rastreio}").gte("updated_at", since)
+    .order("updated_at", { ascending: false }).limit(15);
+  const ids = (convs ?? []).map((c) => c.id);
+  if (!ids.length) return [];
+  const { data: msgs } = await supabaseAdmin.from("support_messages")
+    .select("id,conversation_id,message_id,folder_id,subject,summary,sent_at,from_email,from_name,content_html,content_pt,direction")
+    .eq("owner_id", ownerId).in("conversation_id", ids).gte("sent_at", since).order("sent_at", { ascending: true });
+  const byConv = new Map<string, any[]>();
+  for (const m of msgs ?? []) { const l = byConv.get(m.conversation_id) ?? []; l.push(m); byConv.set(m.conversation_id, l); }
+  // Último e-mail do cliente de cada conversa, mais recentes primeiro.
+  const picks = [...byConv.values()].map((l) => {
+    const i = l.map((x) => x.direction).lastIndexOf("in");
+    return i < 0 ? null : { m: l[i], team: l.slice(i + 1).find((x) => x.direction === "out") ?? null };
+  }).filter(Boolean).sort((a, b) => b!.m.sent_at.localeCompare(a!.m.sent_at)).slice(0, n) as { m: any; team: any }[];
+  const client = new Anthropic();
+  return Promise.all(picks.map(async ({ m, team }) => {
+    const d = await decideAutoReply(acc, m, client, { preview: true });
+    return {
+      subject: m.subject as string | null, sent_at: m.sent_at as string, from: (m.from_name || m.from_email) as string,
+      cliente: ((m.content_pt as string | null) || emailText(("html" in d ? d.html : null) ?? m.content_html ?? "", 1500) || m.summary || "").slice(0, 1500),
+      kind: d.kind, motivo: d.motivo, resposta: d.corpo ? plainReply(d.corpo) : null,
+      equipe: team ? withoutQuote(emailText(team.content_html ?? "", 3000) || team.summary || "") : null,
+    };
+  }));
+}

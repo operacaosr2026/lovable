@@ -822,6 +822,17 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
   });
 
 // Treino da IA: placar por tag (rascunho × resposta da equipe) e o manual aprendido.
+// Teste da resposta automática com os últimos e-mails de rastreio (nada é enviado).
+export const previewSupportAutoReply = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    assertSub(context, "at_config");
+    if (!supportAiAvailable()) throw new Error("Falta a chave da IA (ANTHROPIC_API_KEY)");
+    const acc = await requireAccount(context.ownerId);
+    const { previewSupportAutoReply: run } = await import("@/lib/support-autoreply.server");
+    return run(acc);
+  });
+
 export const getSupportTraining = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
