@@ -5,6 +5,7 @@ import { fetchMessageContent, type ZohoAccount } from "@/lib/zoho-mail.server";
 import { emailText } from "@/lib/support-ai.server";
 import { ordersFor } from "@/lib/support-autoreply.server";
 import { withAiCredit } from "@/lib/ai-credit.server";
+import { batchJson, batchParams, pendingBatches, submitBatch, type BatchItemResult, type BatchRow } from "@/lib/ai-batch.server";
 
 // Atendimento: treino da IA com as respostas da equipe. Roda no fim de cada
 // sincronização do Zoho (a cada 5 min), sem enviar nada:
@@ -14,6 +15,9 @@ import { withAiCredit } from "@/lib/ai-credit.server";
 //  2. Comparação: quando a equipe responde, a resposta real é comparada com o
 //     rascunho (igual / parecida / diferente + o que mudou + lição).
 //  3. Manual: uma vez por dia, as lições e as respostas reais viram regras por tag.
+// Comparação e manual vão em lote (Batch API, metade do preço — ai-batch.server.ts):
+// o resultado chega em alguns minutos. Sem pedido na Shopify, o e-mail não ganha
+// rascunho (aviso de sistema, fornecedor…).
 // Placar por tag em Configurações → Resposta automática.
 // Rascunho às cegas: o exemplo e o histórico usados são só de antes do e-mail.
 
@@ -143,6 +147,10 @@ async function draftFor(acc: ZohoAccount, client: Anthropic, box: Mailbox, pairs
   const examples = [...same.slice(0, 4), ...prior.filter((p) => !same.includes(p)).slice(0, Math.max(0, 5 - Math.min(4, same.length)))];
   const history = (box.byConv.get(m.conversation_id) ?? []).filter((x) => x.sent_at < m.sent_at).slice(-6);
   const orders = await ordersFor(acc.owner_id, conv.customer_email, [m.subject, m.summary, txt(m, 3000)], { detailed: true });
+  if (!orders.length) {
+    if (write) await supabaseAdmin.from("support_messages").update({ ai_draft_eval: { sem_pedido: true, at: new Date().toISOString() } }).eq("id", m.id);
+    return null;
+  }
   const name = (conv.customer_name || orders[0]?._firstName || "").split(" ")[0];
   const facts = orders.map(({ _firstName, ...o }) => o);
   const manual = playbook
@@ -192,27 +200,54 @@ const EVAL_SCHEMA = {
   additionalProperties: false,
 };
 
-async function evalFor(acc: ZohoAccount, client: Anthropic, box: Mailbox, m: Msg, write = true): Promise<boolean | DraftEval> {
-  const prev = (m.ai_draft_eval ?? {}) as any;
-  const base = { confianca: prev.confianca, observacao: prev.observacao };
+type EvalResult = { semelhanca: "igual" | "parecida" | "diferente"; o_que_mudou: string; licoes: string[] };
+
+// Prepara a comparação. Sem resposta da equipe ainda: null (e grava "juntou"/"sem_resposta" quando é o caso).
+async function evalPrep(acc: ZohoAccount, box: Mailbox, m: Msg, write = true) {
   const { reply, superseded } = teamReplyFor(box, m);
   const tags = tagsOf(box.convBy.get(m.conversation_id));
-  const save = async (e: Omit<DraftEval, "at">) => { if (write) await supabaseAdmin.from("support_messages").update({ ai_draft_eval: { ...base, ...e, tags, at: new Date().toISOString() } }).eq("id", m.id); };
   if (!reply) {
-    if (superseded) { await save({ semelhanca: "juntou" }); return false; }           // cliente escreveu de novo antes da resposta: vale o e-mail seguinte
-    if (Date.now() - Date.parse(m.sent_at) > 7 * DAY) { await save({ semelhanca: "sem_resposta" }); return false; }
-    return false;                                                                       // ainda sem resposta da equipe
+    if (superseded) await saveEval(m.id, m.ai_draft_eval, { semelhanca: "juntou", tags }, write);   // cliente escreveu de novo antes da resposta: vale o e-mail seguinte
+    else if (Date.now() - Date.parse(m.sent_at) > 7 * DAY) await saveEval(m.id, m.ai_draft_eval, { semelhanca: "sem_resposta", tags }, write);
+    return null;                                                                                    // ainda sem resposta da equipe
   }
   if (reply.content_html == null) {
     reply.content_html = await fetchMessageContent(acc, reply.folder_id, reply.message_id);
     await supabaseAdmin.from("support_messages").update({ content_html: reply.content_html }).eq("id", reply.id);
   }
-  const r = await ai<{ semelhanca: "igual" | "parecida" | "diferente"; o_que_mudou: string; licoes: string[] }>(client, EVAL_SYSTEM,
-    `<tags>${tags.join(", ") || "-"}</tags>\n<email_do_cliente>\n${txt(m, 2500)}\n</email_do_cliente>\n<rascunho_da_ia>\n${m.ai_draft}\n</rascunho_da_ia>\n<resposta_da_equipe>\n${txt(reply, 2500)}\n</resposta_da_equipe>`,
-    EVAL_SCHEMA, { effort: "low", max: 1500 });
-  const e = { semelhanca: r.semelhanca, o_que_mudou: r.o_que_mudou.trim(), licoes: r.licoes.map((l) => l.trim()).filter(Boolean), reply_id: reply.id };
-  await save(e);
-  return write ? true : { ...e, tags, at: new Date().toISOString() };
+  const content = `<tags>${tags.join(", ") || "-"}</tags>\n<email_do_cliente>\n${txt(m, 2500)}\n</email_do_cliente>\n<rascunho_da_ia>\n${m.ai_draft}\n</rascunho_da_ia>\n<resposta_da_equipe>\n${txt(reply, 2500)}\n</resposta_da_equipe>`;
+  return { content, reply, tags };
+}
+
+// Guarda a comparação mantendo confiança/observação do rascunho (sai o "pendente").
+async function saveEval(id: string, prev: any, e: Omit<DraftEval, "at">, write = true) {
+  const full = { confianca: prev?.confianca, observacao: prev?.observacao, ...e, at: new Date().toISOString() };
+  if (write) await supabaseAdmin.from("support_messages").update({ ai_draft_eval: full }).eq("id", id);
+  return full;
+}
+const evalFields = (r: EvalResult) => ({ semelhanca: r.semelhanca, o_que_mudou: r.o_que_mudou.trim(), licoes: r.licoes.map((l) => l.trim()).filter(Boolean) });
+
+// Na hora (só o teste em Configurações, que não grava).
+async function evalFor(acc: ZohoAccount, client: Anthropic, box: Mailbox, m: Msg, write = true): Promise<boolean | DraftEval> {
+  const p = await evalPrep(acc, box, m, write);
+  if (!p) return false;
+  const r = await ai<EvalResult>(client, EVAL_SYSTEM, p.content, EVAL_SCHEMA, { effort: "low", max: 1500 });
+  const e = await saveEval(m.id, m.ai_draft_eval, { ...evalFields(r), reply_id: p.reply.id, tags: p.tags }, write);
+  return write ? true : (e as DraftEval);
+}
+
+// Lote pronto: grava cada comparação; a que falhou volta pra fila (sai a marca do lote).
+export async function applySupportEvalBatch(row: BatchRow, results: Map<string, BatchItemResult>) {
+  const ids = Object.keys(row.items);
+  const { data } = await supabaseAdmin.from("support_messages").select("id,ai_draft_eval").in("id", ids);
+  for (const msg of data ?? []) {
+    const prev = msg.ai_draft_eval as any;
+    if (prev?.batch !== row.batch_id) continue;
+    const r = results.get(msg.id);
+    const it = row.items[msg.id];
+    if (r?.ok) await saveEval(msg.id, prev, { ...evalFields(batchJson<EvalResult>(r.message)), reply_id: it.reply_id, tags: it.tags });
+    else { const { batch: _b, ...rest } = prev; await supabaseAdmin.from("support_messages").update({ ai_draft_eval: rest }).eq("id", msg.id); }
+  }
 }
 
 // ─── 3. Manual (uma vez por dia) ──────────────────────────────────────────────
@@ -233,7 +268,7 @@ const PLAYBOOK_SCHEMA = {
   additionalProperties: false,
 };
 
-async function rebuildPlaybook(client: Anthropic, ownerId: string, box: Mailbox, pairs: ReturnType<typeof teamPairs>, write = true) {
+function playbookContent(box: Mailbox, pairs: ReturnType<typeof teamPairs>) {
   const recent = pairs.filter((p) => Date.parse(p.outMsg.sent_at) > Date.now() - 60 * DAY);
   const perTag = new Map<string, number>();
   const chosen = recent.filter((p) => {
@@ -246,11 +281,21 @@ async function rebuildPlaybook(client: Anthropic, ownerId: string, box: Mailbox,
     .filter((m) => (m.ai_draft_eval as any)?.licoes?.length)
     .sort((a, b) => String((a.ai_draft_eval as any).at).localeCompare(String((b.ai_draft_eval as any).at)))
     .map((m) => `(${String((m.ai_draft_eval as any).at).slice(0, 10)} · ${((m.ai_draft_eval as any).tags ?? []).join(", ") || "-"}) ${(m.ai_draft_eval as any).licoes.join(" | ")}`);
-  const r = await ai<Playbook>(client, PLAYBOOK_SYSTEM,
-    `<respostas_da_equipe>\n${chosen.map((p) => `tags: ${p.tags.join(", ") || "-"}\nCLIENTE: ${txt(p.inMsg, 600)}\nEQUIPE: ${txt(p.outMsg, 800)}`).join("\n\n")}\n</respostas_da_equipe>\n<licoes>\n${lessons.join("\n") || "(nenhuma ainda)"}\n</licoes>`,
-    PLAYBOOK_SCHEMA, { effort: "high", max: 8000 });
+  return `<respostas_da_equipe>\n${chosen.map((p) => `tags: ${p.tags.join(", ") || "-"}\nCLIENTE: ${txt(p.inMsg, 600)}\nEQUIPE: ${txt(p.outMsg, 800)}`).join("\n\n")}\n</respostas_da_equipe>\n<licoes>\n${lessons.join("\n") || "(nenhuma ainda)"}\n</licoes>`;
+}
+
+// Na hora (só o teste em Configurações, que não grava).
+async function rebuildPlaybook(client: Anthropic, ownerId: string, box: Mailbox, pairs: ReturnType<typeof teamPairs>, write = true) {
+  const r = await ai<Playbook>(client, PLAYBOOK_SYSTEM, playbookContent(box, pairs), PLAYBOOK_SCHEMA, { effort: "high", max: 8000 });
   if (write) await supabaseAdmin.from("support_playbook").upsert({ owner_id: ownerId, rules: r as any, based_on: pairs.length, updated_at: new Date().toISOString() });
   return r;
+}
+
+export async function applyPlaybookBatch(row: BatchRow, results: Map<string, BatchItemResult>) {
+  const r = results.get("playbook");
+  if (!r?.ok) throw new Error(r ? r.error : "lote sem resultado");
+  const { error } = await supabaseAdmin.from("support_playbook").upsert({ owner_id: row.owner_id, rules: batchJson<Playbook>(r.message) as any, based_on: row.items.based_on ?? 0, updated_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
 }
 
 // ─── Rodada ───────────────────────────────────────────────────────────────────
@@ -266,29 +311,41 @@ export async function runSupportLearning(acc: ZohoAccount, opts: { budgetMs?: nu
 
   // Manual: o primeiro assim que houver respostas; depois 1x por dia, se houve comparação nova.
   const lastEvalAt = box.msgs.reduce((mx, m) => { const a = (m.ai_draft_eval as any)?.reply_id ? String((m.ai_draft_eval as any).at) : ""; return a > mx ? a : mx; }, "");
-  if (pairs.length >= 3 && (!pb.rules || (Date.now() - Date.parse(pb.updated_at!) > 20 * 3_600_000 && lastEvalAt > pb.updated_at!))) {
-    await rebuildPlaybook(client, acc.owner_id, box, pairs);
+  // Em lote; não manda outro enquanto o anterior não voltar.
+  if (pairs.length >= 3 && (!pb.rules || (Date.now() - Date.parse(pb.updated_at!) > 20 * 3_600_000 && lastEvalAt > pb.updated_at!))
+    && !(await pendingBatches("support_playbook", acc.owner_id)).length) {
+    await submitBatch(acc.owner_id, "support_playbook", [{ custom_id: "playbook",
+      params: batchParams({ model: MODEL, max_tokens: 8000, system: PLAYBOOK_SYSTEM, content: playbookContent(box, pairs), effort: "high", schema: PLAYBOOK_SCHEMA }) }],
+      { based_on: pairs.length });
     playbook = true;
   }
-  const rules = playbook ? (await loadPlaybook(acc.owner_id)).rules : pb.rules;
+  const rules = pb.rules;
 
-  // Comparações pendentes (rascunho feito, equipe já respondeu).
-  const toEval = box.msgs.filter((m) => m.direction === "in" && m.ai_draft && (m.ai_draft_eval as any)?.pendente);
-  for (let i = 0; i < toEval.length && Date.now() < deadline; i += PER_RUN) {
-    const r = await Promise.allSettled(toEval.slice(i, i + PER_RUN).map((m) => evalFor(acc, client, box, m)));
-    evals += r.filter((x) => x.status === "fulfilled" && x.value).length;
-    const fail = r.find((x) => x.status === "rejected") as PromiseRejectedResult | undefined;
-    if (fail) throw fail.reason;
+  // Comparações pendentes (rascunho feito, equipe já respondeu) — num lote só; a
+  // marca "batch" evita mandar de novo enquanto o lote não volta.
+  const toEval = box.msgs.filter((m) => m.direction === "in" && m.ai_draft && (m.ai_draft_eval as any)?.pendente && !(m.ai_draft_eval as any)?.batch);
+  const reqs: { m: Msg; custom_id: string; params: Record<string, unknown>; item: { reply_id: string; tags: string[] } }[] = [];
+  for (const m of toEval) {
+    if (Date.now() > deadline) break;
+    const p = await evalPrep(acc, box, m);
+    if (p) reqs.push({ m, custom_id: m.id, item: { reply_id: p.reply.id, tags: p.tags },
+      params: batchParams({ model: MODEL, max_tokens: 1500, system: EVAL_SYSTEM, content: p.content, effort: "low", schema: EVAL_SCHEMA }) });
+  }
+  const batchId = await submitBatch(acc.owner_id, "support_eval", reqs.map(({ custom_id, params }) => ({ custom_id, params })),
+    Object.fromEntries(reqs.map((r) => [r.custom_id, r.item])));
+  if (batchId) {
+    await Promise.all(reqs.map((r) => supabaseAdmin.from("support_messages").update({ ai_draft_eval: { ...(r.m.ai_draft_eval ?? {}), batch: batchId } }).eq("id", r.m.id)));
+    evals = reqs.length;
   }
 
   // Rascunhos: e-mails do cliente sem rascunho (fora os respondidos automaticamente), novos primeiro.
   const since = new Date(Date.now() - WINDOW_DAYS * DAY).toISOString();
   const toDraft = box.msgs
-    .filter((m) => m.direction === "in" && !m.ai_draft && m.auto_reply !== "enviado" && m.sent_at >= since)
+    .filter((m) => m.direction === "in" && !m.ai_draft && m.auto_reply !== "enviado" && m.sent_at >= since && !(m.ai_draft_eval as any)?.sem_pedido)
     .sort((a, b) => b.sent_at.localeCompare(a.sent_at));
   for (let i = 0; i < toDraft.length && Date.now() < deadline; i += PER_RUN) {
     const r = await Promise.allSettled(toDraft.slice(i, i + PER_RUN).map((m) => draftFor(acc, client, box, pairs, rules, m)));
-    drafts += r.filter((x) => x.status === "fulfilled").length;
+    drafts += r.filter((x) => x.status === "fulfilled" && x.value).length;
     const fail = r.find((x) => x.status === "rejected") as PromiseRejectedResult | undefined;
     if (fail) throw fail.reason;
   }

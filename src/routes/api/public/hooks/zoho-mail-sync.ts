@@ -4,6 +4,7 @@ import { syncAllZohoMailboxes } from "@/lib/zoho-mail.server";
 import { runAllChargebackDunning } from "@/lib/chargeback-alerts.server";
 import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { collectAiBatches } from "@/lib/ai-batch-collect.server";
 
 // Disparado a cada 5 min pelo pg_cron (ver *_atendimento_zoho.sql): puxa os
 // e-mails novos do Zoho de cada workspace conectado. Depois roda a sequência de
@@ -15,6 +16,8 @@ export const Route = createFileRoute("/api/public/hooks/zoho-mail-sync")({
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         try {
+          // Lotes de IA prontos (comparações, manual do Atendimento, Consultor) — não depende do Zoho.
+          const batches = await collectAiBatches();
           const mail = await syncAllZohoMailboxes();
           let dunning: unknown;
           try { dunning = await runAllChargebackDunning(); }
@@ -26,7 +29,7 @@ export const Route = createFileRoute("/api/public/hooks/zoho-mail-sync")({
           }
           const { data: accs } = await supabaseAdmin.from("zoho_mail_accounts").select("owner_id");
           for (const a of accs ?? []) await clearSystemError(a.owner_id, "zoho_round");
-          return Response.json({ mail, dunning });
+          return Response.json({ mail, dunning, batches });
         } catch (e: any) {
           console.error("zoho-mail-sync fail", e);
           const { data: accs } = await supabaseAdmin.from("zoho_mail_accounts").select("owner_id");

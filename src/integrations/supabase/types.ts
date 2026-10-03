@@ -8,6 +8,42 @@ export type Database = {
   };
   public: {
     Tables: {
+      ai_batches: {
+        Row: {
+          batch_id: string;
+          created_at: string;
+          done_at: string | null;
+          error: string | null;
+          id: string;
+          items: Json;
+          kind: string;
+          owner_id: string;
+          status: string;
+        };
+        Insert: {
+          batch_id: string;
+          created_at?: string;
+          done_at?: string | null;
+          error?: string | null;
+          id?: string;
+          items?: Json;
+          kind: string;
+          owner_id: string;
+          status?: string;
+        };
+        Update: {
+          batch_id?: string;
+          created_at?: string;
+          done_at?: string | null;
+          error?: string | null;
+          id?: string;
+          items?: Json;
+          kind?: string;
+          owner_id?: string;
+          status?: string;
+        };
+        Relationships: [];
+      };
       support_settings: {
         Row: {
           auto_reply_tracking: boolean;

@@ -8,6 +8,8 @@ import { getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { postingCalendar } from "@/lib/logistics-kpis";
 import { withAiCredit } from "@/lib/ai-credit.server";
 import { raiseNotification } from "@/lib/notifications.server";
+import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
+import { batchJson, batchParams, pendingBatches, submitBatch, type BatchItemResult, type BatchRow } from "@/lib/ai-batch.server";
 import { loadAuditOrders } from "@/lib/intel.server";
 import { auditSupplier } from "@/lib/intel/supplier-audit";
 import { minePatterns, orderFeatures, OUTCOME_LABEL, type PatternRow } from "@/lib/intel/patterns";
@@ -647,7 +649,8 @@ export async function runConsultant(ownerId: string) {
 }
 
 // Rodada semanal (cron de segunda): todo dono com loja ativa, sem análise nos
-// últimos 6 dias. Avisa no sino quando sai.
+// últimos 6 dias. Vai em lote (Batch API, metade do preço): a análise chega em
+// alguns minutos e é gravada por applyConsultantBatch, que avisa no sino.
 export async function runConsultantWeekly() {
   const { data: shops } = await supabaseAdmin.from("shops").select("user_id");
   const owners = [...new Set(((shops ?? []) as any[]).map((s) => s.user_id as string))];
@@ -656,16 +659,40 @@ export async function runConsultantWeekly() {
     const { data: last } = await supabaseAdmin.from("consultant_reports").select("created_at")
       .eq("user_id", owner).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (last && Date.now() - Date.parse(last.created_at) < 6 * DAY) continue;
+    if ((await pendingBatches("consultant", owner)).length) continue;
     try {
-      const r = await runConsultant(owner);
-      await raiseNotification(owner, "consultor:analise", {
-        level: "info", title: `Inteligência: ${r.result.dicas.length} dica(s) nova(s) da semana`,
-        body: r.result.resumo.slice(0, 200), link: "/inteligencia",
-      });
+      const facts = await buildConsultantFacts(owner);
+      await submitBatch(owner, "consultant", [{ custom_id: "semanal",
+        params: batchParams({ model: MODEL, max_tokens: 32000, system: SYSTEM, content: `<dados>\n${JSON.stringify(facts)}\n</dados>`, effort: "high", schema: TIP_SCHEMA }) }],
+        { facts });
       out.push({ owner, ok: true });
     } catch (e: any) {
       out.push({ owner, ok: false, error: String(e?.message ?? e) });
     }
   }
   return out;
+}
+
+// Lote da análise semanal pronto: grava a análise e avisa no sino.
+export async function applyConsultantBatch(row: BatchRow, results: Map<string, BatchItemResult>) {
+  const r = results.get("semanal");
+  try {
+    if (!r?.ok) throw new Error(r ? r.error : "lote sem resultado");
+    const facts = row.items.facts as ConsultantFacts;
+    const result = batchJson<ConsultantResult>(r.message);
+    result.dicas = (result.dicas ?? []).filter((t) => t.novidade !== "baixa");
+    const { error } = await supabaseAdmin.from("consultant_reports").insert({
+      user_id: row.owner_id, period_from: facts.periodo.ultimos_30d[0], period_to: facts.periodo.ultimos_30d[1],
+      model: r.message.model ?? MODEL, facts: facts as any, result: result as any,
+    });
+    if (error) throw new Error(error.message);
+    await raiseNotification(row.owner_id, "consultor:analise", {
+      level: "info", title: `Inteligência: ${result.dicas.length} dica(s) nova(s) da semana`,
+      body: result.resumo.slice(0, 200), link: "/inteligencia",
+    });
+    await clearSystemError(row.owner_id, "job:consultant_weekly");
+  } catch (e) {
+    await reportSystemError(row.owner_id, "job:consultant_weekly", "Inteligência: análise da semana falhou", e, "/inteligencia");
+    throw e;
+  }
 }
