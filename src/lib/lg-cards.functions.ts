@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEstornoStats } from "@/lib/estorno-daily.server";
-import { attachLiveShopifyNames, costProductsFor, getDilutedRefundsAndChargebacks, getGroupRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, costProductsFor, getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
@@ -691,9 +691,9 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
-      // Diluídos por dia no mês (mesma regra do Dashboard de Lojas e Grupos).
-      getDilutedRefundsAndChargebacks(ownerId, shopIds, from, to).then((r) => r.rows),
-      getDilutedRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo).then((r) => r.rows),
+      // Um dia = diluídos no mês; vários dias = total real (mesma regra do Dashboard de Lojas e Grupos).
+      getPanelRefundsAndChargebacks(ownerId, shopIds, from, to),
+      getPanelRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
       costProductsFor(supabaseAdmin, ownerId),
     ]);
 

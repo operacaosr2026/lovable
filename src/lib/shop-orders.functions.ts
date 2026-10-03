@@ -1328,6 +1328,14 @@ export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
   }
   return { rows: [...byShop.values()], monthTotals };
 });
+// Reembolsos/chargebacks pros painéis: visão de um dia (Hoje, Ontem…) usa a
+// diluição acima — o lucro do dia mostra as campanhas; período de vários dias
+// (este mês, 7/30 dias…) desconta o total real que caiu no período, igual às Metas.
+export const getPanelRefundsAndChargebacks = createServerOnlyFn(async (
+  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
+) => (fromISO === toISO
+  ? (await getDilutedRefundsAndChargebacks(ownerId, shopIds, fromISO, toISO)).rows
+  : await getGroupRefundsAndChargebacks(ownerId, shopIds, fromISO, toISO)));
 // Último dia do mês "YYYY-MM", sem passar de hoje (mês corrente).
 function monthEndCapped(m: string, today: string) {
   const [y, mo] = m.split("-").map(Number);
@@ -2237,15 +2245,12 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       .eq("user_id", ownerId).in("shop_id", shop_ids);
 
     // Reembolsos e chargebacks do período (e do anterior, pros deltas), lidos do
-    // banco e diluídos por dia no mês (getDilutedRefundsAndChargebacks) — não
-    // derrubam o lucro do dia em que caíram.
-    const noRefunds = { rows: [] as any[], monthTotals: {} as Record<string, { reembolsos: number; chargebacks: number }> };
-    const dilutedPromise = !withCosts ? Promise.resolve(noRefunds) : getDilutedRefundsAndChargebacks(ownerId, shop_ids, from, to);
+    // banco: um dia = diluídos no mês; vários dias = total real (getPanelRefundsAndChargebacks).
     const shopifyPromise = !withCosts ? Promise.resolve([] as any[]) : Promise.all([
-      dilutedPromise,
-      withPrev ? getDilutedRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve(noRefunds),
-    ]).then(([curr, prev]) => curr.rows.map((c: any) => {
-      const p = prev.rows.find((x: any) => x.shop_id === c.shop_id);
+      getPanelRefundsAndChargebacks(ownerId, shop_ids, from, to),
+      withPrev ? getPanelRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve([] as any[]),
+    ]).then(([curr, prev]) => (curr as any[]).map((c: any) => {
+      const p = (prev as any[]).find((x: any) => x.shop_id === c.shop_id);
       return { refAmt: c.refAmt, prevRefAmt: p?.refAmt ?? 0, cbAmt: c.cbAmt, prevCbAmt: p?.cbAmt ?? 0, refByDate: c.refByDate, cbByDate: c.cbByDate };
     }));
 
@@ -2406,7 +2411,9 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     // Card "Custos Adicionais": total real do mês do fim do período, seja qual
     // for o filtro (hoje, ontem, 7 dias...).
     const todayUS = isoTodayUS();
-    const mesTotals = (await dilutedPromise).monthTotals[(to < todayUS ? to : todayUS).slice(0, 7)];
+    const mes = (to < todayUS ? to : todayUS).slice(0, 7);
+    const mesTotals = !withCosts ? undefined : await getGroupRefundsAndChargebacks(ownerId, shop_ids, `${mes}-01`, monthEndCapped(mes, todayUS))
+      .then((rows: any[]) => ({ reembolsos: rows.reduce((t, r) => t + r.refAmt, 0), chargebacks: rows.reduce((t, r) => t + r.cbAmt, 0) }));
 
     const goalsData = goalRes.data ?? [];
     const aggregatedGoal = goalsData.length === 0 ? null : {
