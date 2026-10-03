@@ -216,11 +216,15 @@ function useTemplateFill({ customerName, customerEmail, orderNumber, conversatio
 // Caixa de texto com atalho "/": digitar "/" (no começo ou depois de espaço)
 // abre as mensagens salvas filtradas pelo que vem depois; ↑↓ escolhe,
 // Enter/Tab insere no lugar do "/…", Esc fecha.
-export function TemplateTextarea({ value, onChange, onKeyDown, customerName, customerEmail, orderNumber, conversationId, className, ...rest }:
-  Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & TemplateContext & { value: string; onChange: (v: string) => void }) {
+// linkLabels: "Track your order here" aparece azul e sublinhado (camada por trás
+// do texto, com a mesma fonte/padding; a caixa fica com o texto transparente).
+export function TemplateTextarea({ value, onChange, onKeyDown, customerName, customerEmail, orderNumber, conversationId, className, linkLabels, ...rest }:
+  Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & TemplateContext & { value: string; onChange: (v: string) => void; linkLabels?: boolean }) {
   const listFn = useSupportFn(listSupportTemplates, "listSupportTemplates");
   const { fill } = useTemplateFill({ customerName, customerEmail, orderNumber, conversationId });
   const ref = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const mirror = linkLabels && value.includes(TRACK_LABEL);
   // Onde está o "/" e o que foi digitado depois dele (null = menu fechado).
   const [slash, setSlash] = useState<{ start: number; query: string } | null>(null);
   const [active, setActive] = useState(0);
@@ -268,11 +272,20 @@ export function TemplateTextarea({ value, onChange, onKeyDown, customerName, cus
           ))}
         </div>
       )}
+      {mirror && (
+        <div ref={mirrorRef} aria-hidden className={`${className ?? ""} absolute inset-0 overflow-hidden pointer-events-none whitespace-pre-wrap break-words text-foreground`}>
+          {value.split(/(Track your order here(?: \(\d+\))?)/g).map((p, i) => i % 2
+            ? <span key={i} className="text-primary underline">{p}</span>
+            : <span key={i}>{p}</span>)}
+          {"\n"}
+        </div>
+      )}
       <textarea
         {...rest}
         ref={ref}
         value={value}
-        className={className}
+        className={mirror ? `${className ?? ""} relative text-transparent caret-foreground selection:bg-primary/25` : className}
+        onScroll={(e) => { if (mirrorRef.current) mirrorRef.current.scrollTop = e.currentTarget.scrollTop; }}
         // A janela em volta (Nova mensagem) lê isso pra não fechar no Esc do menu.
         data-slash-open={slash ? "1" : undefined}
         onChange={(e) => { onChange(e.target.value); detect(e.target.value, e.target.selectionStart ?? e.target.value.length); }}
@@ -454,6 +467,7 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
           customerName={customerName}
           customerEmail={customerEmail}
           conversationId={conversationId}
+          linkLabels
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send("em_atendimento"); } }}
           placeholder={`Responder ${customerName}… pode escrever em português e traduzir  (/ = mensagens salvas · Ctrl+Enter envia)`}
           rows={4}
