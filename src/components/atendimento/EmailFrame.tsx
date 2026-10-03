@@ -84,7 +84,39 @@ export function useInlineImages(messageId: string | null | undefined, html: stri
   return urls;
 }
 
-// Na tradução (texto puro) as imagens do corpo aparecem embaixo.
+// Anexos que são imagem: mostra no corpo (baixa por /api/atendimento/attachment).
+// Até 10 MB cada; HEIC e outros formatos que o navegador não abre ficam só no botão de baixar.
+const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+export function useAttachmentImages(messageId: string | null | undefined, attachments: { id: string; name: string; size: number }[]) {
+  const imgs = useMemo(() => attachments.filter((a) => IMG_EXT.test(a.name) && a.size <= 10 * 1024 * 1024), [attachments]);
+  const key = imgs.map((a) => a.id).join(",");
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!messageId || !imgs.length) return;
+    let alive = true;
+    const made: string[] = [];
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const out: Record<string, string> = {};
+      await Promise.all(imgs.map(async (a) => {
+        try {
+          const res = await fetch(`/api/atendimento/attachment?message=${messageId}&attachment=${encodeURIComponent(a.id)}`, {
+            headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+          });
+          if (!res.ok) return;
+          const u = URL.createObjectURL(await res.blob());
+          made.push(u);
+          out[a.id] = u;
+        } catch { /* fica só o botão de baixar */ }
+      }));
+      if (alive) setUrls(out);
+    })();
+    return () => { alive = false; made.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [messageId, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return urls;
+}
+
+// Na tradução (texto puro) as imagens do corpo aparecem embaixo; anexos de imagem também.
 export function InlineImages({ urls }: { urls: Record<string, string> }) {
   const list = Object.values(urls);
   if (!list.length) return null;

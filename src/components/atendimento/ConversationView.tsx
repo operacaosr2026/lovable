@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { EmailFrame, InlineImages, QuotedText, useInlineImages } from "./EmailFrame";
+import { EmailFrame, InlineImages, QuotedText, useAttachmentImages, useInlineImages } from "./EmailFrame";
 import { Composer, type SendMode } from "./Composer";
 import { TagEditor } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
@@ -263,6 +263,7 @@ function Bubble({ m, fg, isLastIn, onUseDraft }: { m: SupportMessage; fg: string
   const showPt = mode === "pt" && !!pt;
   const demo = useIsDemo();
   const images = useInlineImages(demo ? null : m.id, m.content_html);
+  const attImages = useAttachmentImages(demo ? null : m.id, m.attachments);
 
   return (
     // Ocupa a largura toda; o recuo do lado oposto ainda mostra quem mandou.
@@ -288,6 +289,7 @@ function Bubble({ m, fg, isLastIn, onUseDraft }: { m: SupportMessage; fg: string
         ) : m.content_html != null
           ? <EmailFrame html={m.content_html} color={fg} images={images} />
           : <p className="text-sm whitespace-pre-wrap">{m.summary}</p>}
+        <InlineImages urls={attImages} />
         {m.attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             {m.attachments.map((a) => <AttachmentLink key={a.id} messageId={m.id} att={a} />)}
