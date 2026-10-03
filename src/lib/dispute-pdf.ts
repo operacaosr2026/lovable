@@ -15,7 +15,7 @@ export const EVIDENCE_DOCS = [
   { key: "communication", file: "Customer_Communication.pdf", label: "Comunicação com o cliente", hint: "E-mails recebidos e enviados" },
   { key: "shipping", file: "Shipping_Documentation.pdf", label: "Documentação de frete", hint: "Política de frete e rastreio" },
   { key: "service", file: "Proof_of_Service.pdf", label: "Comprovante de serviço", hint: "Dados da compra, produto e IP do cliente" },
-  { key: "other", file: "Additional_Evidence.pdf", label: "Outras provas", hint: "Reembolso, privacidade, termos, contato e aviso legal" },
+  { key: "other", file: "Additional_Evidence.pdf", label: "Outras provas", hint: "Texto de defesa do motivo + reembolso, privacidade, termos, contato e aviso legal" },
 ] as const;
 export type EvidenceDocKey = (typeof EVIDENCE_DOCS)[number]["key"];
 
@@ -36,6 +36,12 @@ function dateEn(iso: string | null | undefined, withTime = false) {
     ...(withTime && !m ? { hour: "2-digit", minute: "2-digit", timeZoneName: "short" } : {}),
   });
 }
+
+// Rastreio pro banco: nada que mostre origem na China, alfândega ou exportação
+// (eventos, local e transportadora consolidadora) — só os últimos eventos no destino.
+const ORIGIN_HINT = /china|chinese|cn|shenzhen|guangzhou|shanghai|beijing|hangzhou|yiwu|dongguan|fujian|zhejiang|jiangsu|guangdong|hong ?kong|origin|export|customs|starting port|jcex|jxc|yunexpress|yanwen|4px|cainiao/i;
+const US_CARRIER = /usps|ups|fedex|dhl|ontrac|lasership|amazon|uniuni|gofo|veho|spee-?dee/i;
+const TRACK_EVENTS = 3;
 
 class Doc {
   pdf = new jsPDF({ unit: "pt", format: "letter" });
@@ -96,14 +102,6 @@ class Doc {
     this.pdf.setDrawColor(230).setLineWidth(0.6).line(this.m, this.y, this.m + this.w, this.y);
     this.y += 12;
   }
-  image(dataUrl: string, maxW = 200, maxH = 200) {
-    const props = this.pdf.getImageProperties(dataUrl);
-    const k = Math.min(maxW / props.width, maxH / props.height, 1);
-    const w = props.width * k, h = props.height * k;
-    this.ensure(h + 10);
-    this.pdf.addImage(dataUrl, "JPEG", this.m, this.y, w, h);
-    this.y += h + 10;
-  }
   save(file: string) {
     const pages = this.pdf.getNumberOfPages();
     for (let i = 1; i <= pages; i++) {
@@ -115,22 +113,6 @@ class Doc {
   }
 }
 
-// Foto → JPEG (via canvas) pra caber no PDF; sem permissão de acesso (CORS), fica sem foto.
-async function imageAsJpeg(url: string): Promise<string | null> {
-  try {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    await new Promise<void>((ok, fail) => { img.onload = () => ok(); img.onerror = () => fail(new Error("img")); img.src = url; });
-    const scale = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
-    const c = document.createElement("canvas");
-    c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
-    const ctx = c.getContext("2d")!;
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL("image/jpeg", 0.85);
-  } catch { return null; }
-}
-
 function shipping(ev: DisputeEvidence) {
   const d = new Doc(ev, "Shipping Documentation");
   const ship = ev.policies.filter((p) => p.kind === "shipping");
@@ -140,7 +122,7 @@ function shipping(ev: DisputeEvidence) {
   for (const p of ship) { if (ship.length > 1) d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
   d.rule();
   d.section("Shipment");
-  d.kv("Carrier", ev.shipping.carrier);
+  if (ev.shipping.carrier && US_CARRIER.test(ev.shipping.carrier)) d.kv("Carrier", ev.shipping.carrier);
   d.kv("Tracking number", ev.shipping.trackingNumber);
   d.kv("Tracking link", ev.shipping.trackingUrl);
   d.kv("Shipped on", dateEn(ev.shipping.shippedAt));
@@ -148,9 +130,10 @@ function shipping(ev: DisputeEvidence) {
   if (ev.shipping.deliveredAt) d.kv("Delivered on", dateEn(ev.shipping.deliveredAt, true));
   d.section("Shipping address");
   d.para(ev.order.shippingAddress.join("\n") || "-");
-  d.section(`Tracking history (${ev.shipping.events.length} events, most recent first)`);
-  if (!ev.shipping.events.length) d.para("No carrier events available.", { color: 110 });
-  for (const e of ev.shipping.events) {
+  const events = ev.shipping.events.filter((e) => !ORIGIN_HINT.test(`${e.description} ${e.location ?? ""}`)).slice(0, TRACK_EVENTS);
+  d.section("Latest tracking events (most recent first)");
+  if (!events.length) d.para("No carrier events available.", { color: 110 });
+  for (const e of events) {
     d.para(`${e.time ?? "-"}${e.location ? `  |  ${e.location}` : ""}`, { size: 9, color: 110, gap: 0 });
     d.para(e.description, { gap: 8 });
   }
@@ -192,8 +175,6 @@ async function productSection(d: Doc, ev: DisputeEvidence) {
     const it = ev.order.items[i];
     const p = ev.products[i];
     d.section(p?.title ?? it.title);
-    const img = p?.imageUrl ? await imageAsJpeg(p.imageUrl) : null;
-    if (img) d.image(img, 220, 220);
     d.kv("Variant / size", it.variant);
     d.kv("Quantity", String(it.quantity));
     d.kv("Price", it.price ? `${ev.order.currency ?? "USD"} ${it.price}` : null);
@@ -240,9 +221,93 @@ async function service(ev: DisputeEvidence) {
 }
 
 // Outras provas: as políticas escritas que não entraram nos outros documentos.
+// Texto de defesa por motivo da disputa (aprovado pela operação). Frase com
+// dado que falta sai do texto — nunca afirma o que não temos.
+function rebuttal(ev: DisputeEvidence): string {
+  const day = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "");
+  const order = ev.order.number ?? "this order";
+  const placed = ev.order.createdAt ? ` on ${dateEn(ev.order.createdAt)}` : "";
+  const tracking = ev.shipping.trackingNumber;
+  const delivered = ev.shipping.deliveredAt;
+  const support = ev.store.supportEmail ?? "our support team";
+  const contacted = ev.communications.some((m) => m.direction === "in");
+  const replied = ev.communications.some((m) => m.direction === "out");
+  const emails = ev.notifications.length > 0;
+  const address = ev.order.shippingAddress.filter(Boolean).join(", ");
+  const deliveredLine = delivered
+    ? `delivered on ${dateEn(delivered)}${tracking ? ` (tracking ${tracking})` : ""}`
+    : tracking ? `shipped with tracking number ${tracking}` : "shipped";
+  const noContact = !contacted ? `The customer did not contact our support team (${support}) before filing this dispute.` : "";
+  const close = "We ask that the dispute be resolved in our favor.";
+  const lines = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(" ");
+
+  switch (ev.dispute.reason) {
+    case "product_not_received": {
+      if (delivered && day(delivered) <= day(ev.dispute.initiatedAt)) return lines(
+        "The cardholder claims the order was not received. Our records show otherwise.",
+        `Order ${order} was placed${placed} and shipped to the exact address provided at checkout${address ? ` (${address})` : ""}.`,
+        `${tracking ? `Tracking number ${tracking} confirms` : "Carrier tracking confirms"} the package was delivered on ${dateEn(delivered)}, before the dispute was filed.`,
+        emails && "The customer received our order confirmation and shipping confirmation emails, including the tracking link.",
+        !contacted && `At no point did the customer contact our support team (${support}) to report a missing package, which would have allowed us to investigate with the carrier.`,
+        "The goods were delivered as agreed, so this charge is valid.", close,
+      );
+      return lines(
+        "The cardholder claims the order was not received.",
+        `Order ${order} was placed${placed} and shipped promptly${tracking ? ` with tracking number ${tracking}` : ""}.`,
+        `The dispute was filed on ${dateEn(ev.dispute.initiatedAt)}, while the package was still within the delivery window stated in our Shipping Policy, which the customer accepted at checkout.`,
+        delivered ? `Tracking confirms the package was delivered on ${dateEn(delivered)}.` : "The latest tracking update shows the package moving normally through the carrier network.",
+        !contacted && `The customer did not contact our support team (${support}) before filing, which would have allowed us to help.`,
+        "We fulfilled the order as agreed.", close,
+      );
+    }
+    case "product_unacceptable": return lines(
+      "The cardholder claims the product was not as described.",
+      `Order ${order} was ${deliveredLine} and matches the product, variant and quantity shown on our store at the time of purchase (see Proof of Service).`,
+      "Our Refund and Return Policy, accepted at checkout, offers a clear way to request a return or exchange if a customer is not satisfied.",
+      !contacted ? `The customer never contacted our support team (${support}) to report a problem or to request a return, and went directly to the bank instead.`
+        : replied ? "As shown in Customer Communication, we responded to the customer and offered a solution under our policy." : "",
+      "No return was ever sent back to us.", close,
+    );
+    case "fraudulent": return lines(
+      "The cardholder claims this purchase was not authorized.",
+      `Order ${order} was placed${placed} with billing and shipping details that match the cardholder.`,
+      ev.payment.avs === "Y" && "The address verification (AVS) matched.",
+      ev.payment.cvv === "M" && "The card security code (CVV) matched.",
+      ev.order.ip && `The order was placed from IP address ${ev.order.ip}.`,
+      `The goods were shipped to the cardholder's own address and ${deliveredLine}.`,
+      emails && "Order and shipping confirmations were sent to the cardholder's email, and no one reported the purchase as unauthorized.",
+      "These facts indicate a legitimate purchase by the cardholder.", close,
+    );
+    case "credit_not_processed": return lines(
+      "The cardholder claims a refund was not processed.",
+      `Order ${order} was ${deliveredLine}.`,
+      "Under our Refund and Return Policy, accepted at checkout, a refund is issued once the returned item is received back in its original condition.",
+      !contacted ? `We have no record of a return request from the customer at ${support}.`
+        : replied ? "As shown in Customer Communication, the return process was explained to the customer." : "",
+      "No item was returned to us, so no refund is due.", close,
+    );
+    case "subscription_canceled": return lines(
+      "The cardholder claims to have canceled a subscription.",
+      `Order ${order} was a one-time purchase, not a subscription, placed${placed} and ${deliveredLine}.`,
+      "There was no recurring charge and nothing to cancel. The customer received exactly what was ordered.", close,
+    );
+    default: return lines(
+      `Order ${order} was placed${placed} by the cardholder and ${deliveredLine}${address ? ` to the address provided at checkout (${address})` : ""}.`,
+      emails && "The customer received our order and shipping confirmation emails.",
+      noContact,
+      "The charge corresponds to goods that were delivered as agreed under the policies the customer accepted at checkout.", close,
+    );
+  }
+}
+
+// Outras provas: o texto de defesa do motivo + as políticas que não entraram nos outros documentos.
 function other(ev: DisputeEvidence) {
-  const d = new Doc(ev, "Additional Evidence - Store Policies");
+  const d = new Doc(ev, "Additional Evidence");
+  d.section("Response to the dispute");
+  d.para(rebuttal(ev), { gap: 12 });
+  d.rule();
   const rest = ev.policies.filter((p) => p.kind !== "shipping");
+  d.section("Store policies");
   if (ev.store.domain) d.para(`The following policies are published on our store (${ev.store.domain}) and were available to the customer at the time of purchase.`, { color: 60, gap: 10 });
   if (!rest.length) d.para("No policy text available.", { color: 110 });
   for (const p of rest) { d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
