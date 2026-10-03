@@ -9,103 +9,59 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
-import { Route as TarefasRouteImport } from "./routes/tarefas";
-import { Route as ShopsRouteImport } from "./routes/shops";
-import { Route as SettingsRouteImport } from "./routes/settings";
-import { Route as ProjectsRouteImport } from "./routes/projects";
-import { Route as MetasRouteImport } from "./routes/metas";
-import { Route as LoginRouteImport } from "./routes/login";
-import { Route as InteligenciaRouteImport } from "./routes/inteligencia";
-import { Route as GratitudeRouteImport } from "./routes/gratitude";
-import { Route as ConsultorRouteImport } from "./routes/consultor";
-import { Route as ChargebacksRouteImport } from "./routes/chargebacks";
-import { Route as AtendimentoRouteImport } from "./routes/atendimento";
 import { Route as IndexRouteImport } from "./routes/index";
-import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
-import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
-import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
-import { Route as ShopsProductsRouteImport } from "./routes/shops.products";
-import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupos";
-import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
-import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
-import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
-import { Route as SettingsNotificacoesRouteImport } from "./routes/settings.notificacoes";
-import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
-import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
-import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
-import { Route as SettingsFeriadosRouteImport } from "./routes/settings.feriados";
-import { Route as SettingsAuditoriaRouteImport } from "./routes/settings.auditoria";
-import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as AtendimentoRouteImport } from "./routes/atendimento";
+import { Route as ChargebacksRouteImport } from "./routes/chargebacks";
+import { Route as ConsultorRouteImport } from "./routes/consultor";
+import { Route as GratitudeRouteImport } from "./routes/gratitude";
+import { Route as InteligenciaRouteImport } from "./routes/inteligencia";
+import { Route as LoginRouteImport } from "./routes/login";
+import { Route as MetasRouteImport } from "./routes/metas";
+import { Route as ProjectsRouteImport } from "./routes/projects";
+import { Route as SettingsRouteImport } from "./routes/settings";
+import { Route as ShopsRouteImport } from "./routes/shops";
+import { Route as TarefasRouteImport } from "./routes/tarefas";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
-import { Route as ShopsSopsIndexRouteImport } from "./routes/shops.sops.index";
-import { Route as ShopsProductsIndexRouteImport } from "./routes/shops.products.index";
-import { Route as ShopsLojasGruposIndexRouteImport } from "./routes/shops.lojas-grupos.index";
-import { Route as ShopsCaixaIndexRouteImport } from "./routes/shops.caixa.index";
-import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
-import { Route as ShopsSopsProcessIdRouteImport } from "./routes/shops.sops.$processId";
-import { Route as ShopsProductsProductIdRouteImport } from "./routes/shops.products.$productId";
-import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas-grupos.$cardId";
+import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
+import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as SettingsIndexRouteImport } from "./routes/settings.index";
+import { Route as SettingsAuditoriaRouteImport } from "./routes/settings.auditoria";
+import { Route as SettingsFeriadosRouteImport } from "./routes/settings.feriados";
+import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
+import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
+import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
+import { Route as SettingsNotificacoesRouteImport } from "./routes/settings.notificacoes";
+import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
+import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
+import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
+import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
+import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupos";
+import { Route as ShopsProductsRouteImport } from "./routes/shops.products";
 import { Route as ApiAtendimentoAttachmentRouteImport } from "./routes/api/atendimento/attachment";
-import { Route as ApiPublicZohoCallbackRouteImport } from "./routes/api/public/zoho/callback";
-import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
-import { Route as ApiPublicHooksZohoMailSyncRouteImport } from "./routes/api/public/hooks/zoho-mail-sync";
-import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
-import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
-import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
-import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
-import { Route as ApiPublicHooksConsultantWeeklyRouteImport } from "./routes/api/public/hooks/consultant-weekly";
+import { Route as ApiAtendimentoInlineRouteImport } from "./routes/api/atendimento/inline";
+import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
+import { Route as ShopsCaixaIndexRouteImport } from "./routes/shops.caixa.index";
+import { Route as ShopsLojasGruposIndexRouteImport } from "./routes/shops.lojas-grupos.index";
+import { Route as ShopsLojasGruposCardIdRouteImport } from "./routes/shops.lojas-grupos.$cardId";
+import { Route as ShopsProductsIndexRouteImport } from "./routes/shops.products.index";
+import { Route as ShopsProductsProductIdRouteImport } from "./routes/shops.products.$productId";
+import { Route as ShopsSopsIndexRouteImport } from "./routes/shops.sops.index";
+import { Route as ShopsSopsProcessIdRouteImport } from "./routes/shops.sops.$processId";
 import { Route as ApiPublicHooksCaixaSnapshotRouteImport } from "./routes/api/public/hooks/caixa-snapshot";
+import { Route as ApiPublicHooksConsultantWeeklyRouteImport } from "./routes/api/public/hooks/consultant-weekly";
+import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
+import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
+import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
+import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
+import { Route as ApiPublicHooksZohoMailSyncRouteImport } from "./routes/api/public/hooks/zoho-mail-sync";
+import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
+import { Route as ApiPublicZohoCallbackRouteImport } from "./routes/api/public/zoho/callback";
 import { Route as ApiPublicHooksShopifyStoreIdRouteImport } from "./routes/api/public/hooks/shopify.$storeId";
 import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
 
-const TarefasRoute = TarefasRouteImport.update({
-  id: "/tarefas",
-  path: "/tarefas",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ShopsRoute = ShopsRouteImport.update({
-  id: "/shops",
-  path: "/shops",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const SettingsRoute = SettingsRouteImport.update({
-  id: "/settings",
-  path: "/settings",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ProjectsRoute = ProjectsRouteImport.update({
-  id: "/projects",
-  path: "/projects",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const MetasRoute = MetasRouteImport.update({
-  id: "/metas",
-  path: "/metas",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const LoginRoute = LoginRouteImport.update({
-  id: "/login",
-  path: "/login",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const InteligenciaRoute = InteligenciaRouteImport.update({
-  id: "/inteligencia",
-  path: "/inteligencia",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const GratitudeRoute = GratitudeRouteImport.update({
-  id: "/gratitude",
-  path: "/gratitude",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ConsultorRoute = ConsultorRouteImport.update({
-  id: "/consultor",
-  path: "/consultor",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ChargebacksRoute = ChargebacksRouteImport.update({
-  id: "/chargebacks",
-  path: "/chargebacks",
+const IndexRoute = IndexRouteImport.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
 } as any);
 const AtendimentoRoute = AtendimentoRouteImport.update({
@@ -113,74 +69,74 @@ const AtendimentoRoute = AtendimentoRouteImport.update({
   path: "/atendimento",
   getParentRoute: () => rootRouteImport,
 } as any);
-const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+const ChargebacksRoute = ChargebacksRouteImport.update({
+  id: "/chargebacks",
+  path: "/chargebacks",
   getParentRoute: () => rootRouteImport,
 } as any);
-const ShopsIndexRoute = ShopsIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => ShopsRoute,
+const ConsultorRoute = ConsultorRouteImport.update({
+  id: "/consultor",
+  path: "/consultor",
+  getParentRoute: () => rootRouteImport,
 } as any);
-const SettingsIndexRoute = SettingsIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => SettingsRoute,
+const GratitudeRoute = GratitudeRouteImport.update({
+  id: "/gratitude",
+  path: "/gratitude",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const InteligenciaRoute = InteligenciaRouteImport.update({
+  id: "/inteligencia",
+  path: "/inteligencia",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const LoginRoute = LoginRouteImport.update({
+  id: "/login",
+  path: "/login",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const MetasRoute = MetasRouteImport.update({
+  id: "/metas",
+  path: "/metas",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: "/projects",
+  path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SettingsRoute = SettingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ShopsRoute = ShopsRouteImport.update({
+  id: "/shops",
+  path: "/shops",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const TarefasRoute = TarefasRouteImport.update({
+  id: "/tarefas",
+  path: "/tarefas",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: "/invite/$token",
+  path: "/invite/$token",
+  getParentRoute: () => rootRouteImport,
 } as any);
 const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => ProjectsRoute,
 } as any);
-const ShopsProductsRoute = ShopsProductsRouteImport.update({
-  id: "/products",
-  path: "/products",
-  getParentRoute: () => ShopsRoute,
+const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
+  id: "/$projectId",
+  path: "/$projectId",
+  getParentRoute: () => ProjectsRoute,
 } as any);
-const ShopsLojasGruposRoute = ShopsLojasGruposRouteImport.update({
-  id: "/lojas-grupos",
-  path: "/lojas-grupos",
-  getParentRoute: () => ShopsRoute,
-} as any);
-const ShopsCaixaRoute = ShopsCaixaRouteImport.update({
-  id: "/caixa",
-  path: "/caixa",
-  getParentRoute: () => ShopsRoute,
-} as any);
-const ShopsBancoDeLojasRoute = ShopsBancoDeLojasRouteImport.update({
-  id: "/banco-de-lojas",
-  path: "/banco-de-lojas",
-  getParentRoute: () => ShopsRoute,
-} as any);
-const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
-  id: "/seguranca",
-  path: "/seguranca",
-  getParentRoute: () => SettingsRoute,
-} as any);
-const SettingsNotificacoesRoute = SettingsNotificacoesRouteImport.update({
-  id: "/notificacoes",
-  path: "/notificacoes",
-  getParentRoute: () => SettingsRoute,
-} as any);
-const SettingsMembersRoute = SettingsMembersRouteImport.update({
-  id: "/members",
-  path: "/members",
-  getParentRoute: () => SettingsRoute,
-} as any);
-const SettingsIntegracoesRoute = SettingsIntegracoesRouteImport.update({
-  id: "/integracoes",
-  path: "/integracoes",
-  getParentRoute: () => SettingsRoute,
-} as any);
-const SettingsGeralRoute = SettingsGeralRouteImport.update({
-  id: "/geral",
-  path: "/geral",
-  getParentRoute: () => SettingsRoute,
-} as any);
-const SettingsFeriadosRoute = SettingsFeriadosRouteImport.update({
-  id: "/feriados",
-  path: "/feriados",
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => SettingsRoute,
 } as any);
 const SettingsAuditoriaRoute = SettingsAuditoriaRouteImport.update({
@@ -188,55 +144,60 @@ const SettingsAuditoriaRoute = SettingsAuditoriaRouteImport.update({
   path: "/auditoria",
   getParentRoute: () => SettingsRoute,
 } as any);
-const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
-  id: "/$projectId",
-  path: "/$projectId",
-  getParentRoute: () => ProjectsRoute,
+const SettingsFeriadosRoute = SettingsFeriadosRouteImport.update({
+  id: "/feriados",
+  path: "/feriados",
+  getParentRoute: () => SettingsRoute,
 } as any);
-const InviteTokenRoute = InviteTokenRouteImport.update({
-  id: "/invite/$token",
-  path: "/invite/$token",
-  getParentRoute: () => rootRouteImport,
+const SettingsGeralRoute = SettingsGeralRouteImport.update({
+  id: "/geral",
+  path: "/geral",
+  getParentRoute: () => SettingsRoute,
 } as any);
-const ShopsSopsIndexRoute = ShopsSopsIndexRouteImport.update({
-  id: "/sops/",
-  path: "/sops/",
+const SettingsIntegracoesRoute = SettingsIntegracoesRouteImport.update({
+  id: "/integracoes",
+  path: "/integracoes",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsMembersRoute = SettingsMembersRouteImport.update({
+  id: "/members",
+  path: "/members",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsNotificacoesRoute = SettingsNotificacoesRouteImport.update({
+  id: "/notificacoes",
+  path: "/notificacoes",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
+  id: "/seguranca",
+  path: "/seguranca",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const ShopsIndexRoute = ShopsIndexRouteImport.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => ShopsRoute,
 } as any);
-const ShopsProductsIndexRoute = ShopsProductsIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => ShopsProductsRoute,
-} as any);
-const ShopsLojasGruposIndexRoute = ShopsLojasGruposIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => ShopsLojasGruposRoute,
-} as any);
-const ShopsCaixaIndexRoute = ShopsCaixaIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => ShopsCaixaRoute,
-} as any);
-const ShopsBancoDeLojasIndexRoute = ShopsBancoDeLojasIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => ShopsBancoDeLojasRoute,
-} as any);
-const ShopsSopsProcessIdRoute = ShopsSopsProcessIdRouteImport.update({
-  id: "/sops/$processId",
-  path: "/sops/$processId",
+const ShopsBancoDeLojasRoute = ShopsBancoDeLojasRouteImport.update({
+  id: "/banco-de-lojas",
+  path: "/banco-de-lojas",
   getParentRoute: () => ShopsRoute,
 } as any);
-const ShopsProductsProductIdRoute = ShopsProductsProductIdRouteImport.update({
-  id: "/$productId",
-  path: "/$productId",
-  getParentRoute: () => ShopsProductsRoute,
+const ShopsCaixaRoute = ShopsCaixaRouteImport.update({
+  id: "/caixa",
+  path: "/caixa",
+  getParentRoute: () => ShopsRoute,
 } as any);
-const ShopsLojasGruposCardIdRoute = ShopsLojasGruposCardIdRouteImport.update({
-  id: "/$cardId",
-  path: "/$cardId",
-  getParentRoute: () => ShopsLojasGruposRoute,
+const ShopsLojasGruposRoute = ShopsLojasGruposRouteImport.update({
+  id: "/lojas-grupos",
+  path: "/lojas-grupos",
+  getParentRoute: () => ShopsRoute,
+} as any);
+const ShopsProductsRoute = ShopsProductsRouteImport.update({
+  id: "/products",
+  path: "/products",
+  getParentRoute: () => ShopsRoute,
 } as any);
 const ApiAtendimentoAttachmentRoute =
   ApiAtendimentoAttachmentRouteImport.update({
@@ -244,45 +205,55 @@ const ApiAtendimentoAttachmentRoute =
     path: "/api/atendimento/attachment",
     getParentRoute: () => rootRouteImport,
   } as any);
-const ApiPublicZohoCallbackRoute = ApiPublicZohoCallbackRouteImport.update({
-  id: "/api/public/zoho/callback",
-  path: "/api/public/zoho/callback",
+const ApiAtendimentoInlineRoute = ApiAtendimentoInlineRouteImport.update({
+  id: "/api/atendimento/inline",
+  path: "/api/atendimento/inline",
   getParentRoute: () => rootRouteImport,
 } as any);
-const ApiPublicShopifyCallbackRoute =
-  ApiPublicShopifyCallbackRouteImport.update({
-    id: "/api/public/shopify/callback",
-    path: "/api/public/shopify/callback",
-    getParentRoute: () => rootRouteImport,
-  } as any);
-const ApiPublicHooksZohoMailSyncRoute =
-  ApiPublicHooksZohoMailSyncRouteImport.update({
-    id: "/api/public/hooks/zoho-mail-sync",
-    path: "/api/public/hooks/zoho-mail-sync",
-    getParentRoute: () => rootRouteImport,
-  } as any);
-const ApiPublicHooksSyncTrack123Route =
-  ApiPublicHooksSyncTrack123RouteImport.update({
-    id: "/api/public/hooks/sync-track123",
-    path: "/api/public/hooks/sync-track123",
-    getParentRoute: () => rootRouteImport,
-  } as any);
-const ApiPublicHooksSyncShopOrdersRoute =
-  ApiPublicHooksSyncShopOrdersRouteImport.update({
-    id: "/api/public/hooks/sync-shop-orders",
-    path: "/api/public/hooks/sync-shop-orders",
-    getParentRoute: () => rootRouteImport,
-  } as any);
-const ApiPublicHooksNotificationsRefreshRoute =
-  ApiPublicHooksNotificationsRefreshRouteImport.update({
-    id: "/api/public/hooks/notifications-refresh",
-    path: "/api/public/hooks/notifications-refresh",
-    getParentRoute: () => rootRouteImport,
-  } as any);
-const ApiPublicHooksEstornoDailyRoute =
-  ApiPublicHooksEstornoDailyRouteImport.update({
-    id: "/api/public/hooks/estorno-daily",
-    path: "/api/public/hooks/estorno-daily",
+const ShopsBancoDeLojasIndexRoute = ShopsBancoDeLojasIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => ShopsBancoDeLojasRoute,
+} as any);
+const ShopsCaixaIndexRoute = ShopsCaixaIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => ShopsCaixaRoute,
+} as any);
+const ShopsLojasGruposIndexRoute = ShopsLojasGruposIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => ShopsLojasGruposRoute,
+} as any);
+const ShopsLojasGruposCardIdRoute = ShopsLojasGruposCardIdRouteImport.update({
+  id: "/$cardId",
+  path: "/$cardId",
+  getParentRoute: () => ShopsLojasGruposRoute,
+} as any);
+const ShopsProductsIndexRoute = ShopsProductsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => ShopsProductsRoute,
+} as any);
+const ShopsProductsProductIdRoute = ShopsProductsProductIdRouteImport.update({
+  id: "/$productId",
+  path: "/$productId",
+  getParentRoute: () => ShopsProductsRoute,
+} as any);
+const ShopsSopsIndexRoute = ShopsSopsIndexRouteImport.update({
+  id: "/sops/",
+  path: "/sops/",
+  getParentRoute: () => ShopsRoute,
+} as any);
+const ShopsSopsProcessIdRoute = ShopsSopsProcessIdRouteImport.update({
+  id: "/sops/$processId",
+  path: "/sops/$processId",
+  getParentRoute: () => ShopsRoute,
+} as any);
+const ApiPublicHooksCaixaSnapshotRoute =
+  ApiPublicHooksCaixaSnapshotRouteImport.update({
+    id: "/api/public/hooks/caixa-snapshot",
+    path: "/api/public/hooks/caixa-snapshot",
     getParentRoute: () => rootRouteImport,
   } as any);
 const ApiPublicHooksConsultantWeeklyRoute =
@@ -291,12 +262,47 @@ const ApiPublicHooksConsultantWeeklyRoute =
     path: "/api/public/hooks/consultant-weekly",
     getParentRoute: () => rootRouteImport,
   } as any);
-const ApiPublicHooksCaixaSnapshotRoute =
-  ApiPublicHooksCaixaSnapshotRouteImport.update({
-    id: "/api/public/hooks/caixa-snapshot",
-    path: "/api/public/hooks/caixa-snapshot",
+const ApiPublicHooksEstornoDailyRoute =
+  ApiPublicHooksEstornoDailyRouteImport.update({
+    id: "/api/public/hooks/estorno-daily",
+    path: "/api/public/hooks/estorno-daily",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksNotificationsRefreshRoute =
+  ApiPublicHooksNotificationsRefreshRouteImport.update({
+    id: "/api/public/hooks/notifications-refresh",
+    path: "/api/public/hooks/notifications-refresh",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicHooksSyncShopOrdersRoute =
+  ApiPublicHooksSyncShopOrdersRouteImport.update({
+    id: "/api/public/hooks/sync-shop-orders",
+    path: "/api/public/hooks/sync-shop-orders",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicHooksSyncTrack123Route =
+  ApiPublicHooksSyncTrack123RouteImport.update({
+    id: "/api/public/hooks/sync-track123",
+    path: "/api/public/hooks/sync-track123",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicHooksZohoMailSyncRoute =
+  ApiPublicHooksZohoMailSyncRouteImport.update({
+    id: "/api/public/hooks/zoho-mail-sync",
+    path: "/api/public/hooks/zoho-mail-sync",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicShopifyCallbackRoute =
+  ApiPublicShopifyCallbackRouteImport.update({
+    id: "/api/public/shopify/callback",
+    path: "/api/public/shopify/callback",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const ApiPublicZohoCallbackRoute = ApiPublicZohoCallbackRouteImport.update({
+  id: "/api/public/zoho/callback",
+  path: "/api/public/zoho/callback",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ApiPublicHooksShopifyStoreIdRoute =
   ApiPublicHooksShopifyStoreIdRouteImport.update({
     id: "/api/public/hooks/shopify/$storeId",
@@ -340,6 +346,7 @@ export interface FileRoutesByFullPath {
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
+  "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
@@ -383,6 +390,7 @@ export interface FileRoutesByTo {
   "/settings": typeof SettingsIndexRoute;
   "/shops": typeof ShopsIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
+  "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
@@ -434,6 +442,7 @@ export interface FileRoutesById {
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
+  "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
   "/shops/sops/$processId": typeof ShopsSopsProcessIdRoute;
@@ -486,6 +495,7 @@ export interface FileRouteTypes {
     | "/settings/"
     | "/shops/"
     | "/api/atendimento/attachment"
+    | "/api/atendimento/inline"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
@@ -529,6 +539,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/api/atendimento/attachment"
+    | "/api/atendimento/inline"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
@@ -579,6 +590,7 @@ export interface FileRouteTypes {
     | "/settings/"
     | "/shops/"
     | "/api/atendimento/attachment"
+    | "/api/atendimento/inline"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
     | "/shops/sops/$processId"
@@ -615,6 +627,7 @@ export interface RootRouteChildren {
   TarefasRoute: typeof TarefasRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
+  ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
   ApiPublicHooksConsultantWeeklyRoute: typeof ApiPublicHooksConsultantWeeklyRoute;
   ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
@@ -630,74 +643,11 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/tarefas": {
-      id: "/tarefas";
-      path: "/tarefas";
-      fullPath: "/tarefas";
-      preLoaderRoute: typeof TarefasRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/shops": {
-      id: "/shops";
-      path: "/shops";
-      fullPath: "/shops";
-      preLoaderRoute: typeof ShopsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/settings": {
-      id: "/settings";
-      path: "/settings";
-      fullPath: "/settings";
-      preLoaderRoute: typeof SettingsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/projects": {
-      id: "/projects";
-      path: "/projects";
-      fullPath: "/projects";
-      preLoaderRoute: typeof ProjectsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/metas": {
-      id: "/metas";
-      path: "/metas";
-      fullPath: "/metas";
-      preLoaderRoute: typeof MetasRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/login": {
-      id: "/login";
-      path: "/login";
-      fullPath: "/login";
-      preLoaderRoute: typeof LoginRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/inteligencia": {
-      id: "/inteligencia";
-      path: "/inteligencia";
-      fullPath: "/inteligencia";
-      preLoaderRoute: typeof InteligenciaRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/gratitude": {
-      id: "/gratitude";
-      path: "/gratitude";
-      fullPath: "/gratitude";
-      preLoaderRoute: typeof GratitudeRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/consultor": {
-      id: "/consultor";
-      path: "/consultor";
-      fullPath: "/consultor";
-      preLoaderRoute: typeof ConsultorRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/chargebacks": {
-      id: "/chargebacks";
-      path: "/chargebacks";
-      fullPath: "/chargebacks";
-      preLoaderRoute: typeof ChargebacksRouteImport;
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/atendimento": {
@@ -707,26 +657,82 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AtendimentoRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
+    "/chargebacks": {
+      id: "/chargebacks";
+      path: "/chargebacks";
+      fullPath: "/chargebacks";
+      preLoaderRoute: typeof ChargebacksRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/shops/": {
-      id: "/shops/";
-      path: "/";
-      fullPath: "/shops/";
-      preLoaderRoute: typeof ShopsIndexRouteImport;
-      parentRoute: typeof ShopsRoute;
+    "/consultor": {
+      id: "/consultor";
+      path: "/consultor";
+      fullPath: "/consultor";
+      preLoaderRoute: typeof ConsultorRouteImport;
+      parentRoute: typeof rootRouteImport;
     };
-    "/settings/": {
-      id: "/settings/";
-      path: "/";
-      fullPath: "/settings/";
-      preLoaderRoute: typeof SettingsIndexRouteImport;
-      parentRoute: typeof SettingsRoute;
+    "/gratitude": {
+      id: "/gratitude";
+      path: "/gratitude";
+      fullPath: "/gratitude";
+      preLoaderRoute: typeof GratitudeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/inteligencia": {
+      id: "/inteligencia";
+      path: "/inteligencia";
+      fullPath: "/inteligencia";
+      preLoaderRoute: typeof InteligenciaRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/login": {
+      id: "/login";
+      path: "/login";
+      fullPath: "/login";
+      preLoaderRoute: typeof LoginRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/metas": {
+      id: "/metas";
+      path: "/metas";
+      fullPath: "/metas";
+      preLoaderRoute: typeof MetasRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof ProjectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/settings": {
+      id: "/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof SettingsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/shops": {
+      id: "/shops";
+      path: "/shops";
+      fullPath: "/shops";
+      preLoaderRoute: typeof ShopsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/tarefas": {
+      id: "/tarefas";
+      path: "/tarefas";
+      fullPath: "/tarefas";
+      preLoaderRoute: typeof TarefasRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/invite/$token": {
+      id: "/invite/$token";
+      path: "/invite/$token";
+      fullPath: "/invite/$token";
+      preLoaderRoute: typeof InviteTokenRouteImport;
+      parentRoute: typeof rootRouteImport;
     };
     "/projects/": {
       id: "/projects/";
@@ -735,74 +741,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ProjectsIndexRouteImport;
       parentRoute: typeof ProjectsRoute;
     };
-    "/shops/products": {
-      id: "/shops/products";
-      path: "/products";
-      fullPath: "/shops/products";
-      preLoaderRoute: typeof ShopsProductsRouteImport;
-      parentRoute: typeof ShopsRoute;
+    "/projects/$projectId": {
+      id: "/projects/$projectId";
+      path: "/$projectId";
+      fullPath: "/projects/$projectId";
+      preLoaderRoute: typeof ProjectsProjectIdRouteImport;
+      parentRoute: typeof ProjectsRoute;
     };
-    "/shops/lojas-grupos": {
-      id: "/shops/lojas-grupos";
-      path: "/lojas-grupos";
-      fullPath: "/shops/lojas-grupos";
-      preLoaderRoute: typeof ShopsLojasGruposRouteImport;
-      parentRoute: typeof ShopsRoute;
-    };
-    "/shops/caixa": {
-      id: "/shops/caixa";
-      path: "/caixa";
-      fullPath: "/shops/caixa";
-      preLoaderRoute: typeof ShopsCaixaRouteImport;
-      parentRoute: typeof ShopsRoute;
-    };
-    "/shops/banco-de-lojas": {
-      id: "/shops/banco-de-lojas";
-      path: "/banco-de-lojas";
-      fullPath: "/shops/banco-de-lojas";
-      preLoaderRoute: typeof ShopsBancoDeLojasRouteImport;
-      parentRoute: typeof ShopsRoute;
-    };
-    "/settings/seguranca": {
-      id: "/settings/seguranca";
-      path: "/seguranca";
-      fullPath: "/settings/seguranca";
-      preLoaderRoute: typeof SettingsSegurancaRouteImport;
-      parentRoute: typeof SettingsRoute;
-    };
-    "/settings/notificacoes": {
-      id: "/settings/notificacoes";
-      path: "/notificacoes";
-      fullPath: "/settings/notificacoes";
-      preLoaderRoute: typeof SettingsNotificacoesRouteImport;
-      parentRoute: typeof SettingsRoute;
-    };
-    "/settings/members": {
-      id: "/settings/members";
-      path: "/members";
-      fullPath: "/settings/members";
-      preLoaderRoute: typeof SettingsMembersRouteImport;
-      parentRoute: typeof SettingsRoute;
-    };
-    "/settings/integracoes": {
-      id: "/settings/integracoes";
-      path: "/integracoes";
-      fullPath: "/settings/integracoes";
-      preLoaderRoute: typeof SettingsIntegracoesRouteImport;
-      parentRoute: typeof SettingsRoute;
-    };
-    "/settings/geral": {
-      id: "/settings/geral";
-      path: "/geral";
-      fullPath: "/settings/geral";
-      preLoaderRoute: typeof SettingsGeralRouteImport;
-      parentRoute: typeof SettingsRoute;
-    };
-    "/settings/feriados": {
-      id: "/settings/feriados";
-      path: "/feriados";
-      fullPath: "/settings/feriados";
-      preLoaderRoute: typeof SettingsFeriadosRouteImport;
+    "/settings/": {
+      id: "/settings/";
+      path: "/";
+      fullPath: "/settings/";
+      preLoaderRoute: typeof SettingsIndexRouteImport;
       parentRoute: typeof SettingsRoute;
     };
     "/settings/auditoria": {
@@ -812,75 +762,82 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsAuditoriaRouteImport;
       parentRoute: typeof SettingsRoute;
     };
-    "/projects/$projectId": {
-      id: "/projects/$projectId";
-      path: "/$projectId";
-      fullPath: "/projects/$projectId";
-      preLoaderRoute: typeof ProjectsProjectIdRouteImport;
-      parentRoute: typeof ProjectsRoute;
+    "/settings/feriados": {
+      id: "/settings/feriados";
+      path: "/feriados";
+      fullPath: "/settings/feriados";
+      preLoaderRoute: typeof SettingsFeriadosRouteImport;
+      parentRoute: typeof SettingsRoute;
     };
-    "/invite/$token": {
-      id: "/invite/$token";
-      path: "/invite/$token";
-      fullPath: "/invite/$token";
-      preLoaderRoute: typeof InviteTokenRouteImport;
-      parentRoute: typeof rootRouteImport;
+    "/settings/geral": {
+      id: "/settings/geral";
+      path: "/geral";
+      fullPath: "/settings/geral";
+      preLoaderRoute: typeof SettingsGeralRouteImport;
+      parentRoute: typeof SettingsRoute;
     };
-    "/shops/sops/": {
-      id: "/shops/sops/";
-      path: "/sops";
-      fullPath: "/shops/sops/";
-      preLoaderRoute: typeof ShopsSopsIndexRouteImport;
+    "/settings/integracoes": {
+      id: "/settings/integracoes";
+      path: "/integracoes";
+      fullPath: "/settings/integracoes";
+      preLoaderRoute: typeof SettingsIntegracoesRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/members": {
+      id: "/settings/members";
+      path: "/members";
+      fullPath: "/settings/members";
+      preLoaderRoute: typeof SettingsMembersRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/notificacoes": {
+      id: "/settings/notificacoes";
+      path: "/notificacoes";
+      fullPath: "/settings/notificacoes";
+      preLoaderRoute: typeof SettingsNotificacoesRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/seguranca": {
+      id: "/settings/seguranca";
+      path: "/seguranca";
+      fullPath: "/settings/seguranca";
+      preLoaderRoute: typeof SettingsSegurancaRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/shops/": {
+      id: "/shops/";
+      path: "/";
+      fullPath: "/shops/";
+      preLoaderRoute: typeof ShopsIndexRouteImport;
       parentRoute: typeof ShopsRoute;
     };
-    "/shops/products/": {
-      id: "/shops/products/";
-      path: "/";
-      fullPath: "/shops/products/";
-      preLoaderRoute: typeof ShopsProductsIndexRouteImport;
-      parentRoute: typeof ShopsProductsRoute;
-    };
-    "/shops/lojas-grupos/": {
-      id: "/shops/lojas-grupos/";
-      path: "/";
-      fullPath: "/shops/lojas-grupos/";
-      preLoaderRoute: typeof ShopsLojasGruposIndexRouteImport;
-      parentRoute: typeof ShopsLojasGruposRoute;
-    };
-    "/shops/caixa/": {
-      id: "/shops/caixa/";
-      path: "/";
-      fullPath: "/shops/caixa/";
-      preLoaderRoute: typeof ShopsCaixaIndexRouteImport;
-      parentRoute: typeof ShopsCaixaRoute;
-    };
-    "/shops/banco-de-lojas/": {
-      id: "/shops/banco-de-lojas/";
-      path: "/";
-      fullPath: "/shops/banco-de-lojas/";
-      preLoaderRoute: typeof ShopsBancoDeLojasIndexRouteImport;
-      parentRoute: typeof ShopsBancoDeLojasRoute;
-    };
-    "/shops/sops/$processId": {
-      id: "/shops/sops/$processId";
-      path: "/sops/$processId";
-      fullPath: "/shops/sops/$processId";
-      preLoaderRoute: typeof ShopsSopsProcessIdRouteImport;
+    "/shops/banco-de-lojas": {
+      id: "/shops/banco-de-lojas";
+      path: "/banco-de-lojas";
+      fullPath: "/shops/banco-de-lojas";
+      preLoaderRoute: typeof ShopsBancoDeLojasRouteImport;
       parentRoute: typeof ShopsRoute;
     };
-    "/shops/products/$productId": {
-      id: "/shops/products/$productId";
-      path: "/$productId";
-      fullPath: "/shops/products/$productId";
-      preLoaderRoute: typeof ShopsProductsProductIdRouteImport;
-      parentRoute: typeof ShopsProductsRoute;
+    "/shops/caixa": {
+      id: "/shops/caixa";
+      path: "/caixa";
+      fullPath: "/shops/caixa";
+      preLoaderRoute: typeof ShopsCaixaRouteImport;
+      parentRoute: typeof ShopsRoute;
     };
-    "/shops/lojas-grupos/$cardId": {
-      id: "/shops/lojas-grupos/$cardId";
-      path: "/$cardId";
-      fullPath: "/shops/lojas-grupos/$cardId";
-      preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport;
-      parentRoute: typeof ShopsLojasGruposRoute;
+    "/shops/lojas-grupos": {
+      id: "/shops/lojas-grupos";
+      path: "/lojas-grupos";
+      fullPath: "/shops/lojas-grupos";
+      preLoaderRoute: typeof ShopsLojasGruposRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/products": {
+      id: "/shops/products";
+      path: "/products";
+      fullPath: "/shops/products";
+      preLoaderRoute: typeof ShopsProductsRouteImport;
+      parentRoute: typeof ShopsRoute;
     };
     "/api/atendimento/attachment": {
       id: "/api/atendimento/attachment";
@@ -889,53 +846,74 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiAtendimentoAttachmentRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/api/public/zoho/callback": {
-      id: "/api/public/zoho/callback";
-      path: "/api/public/zoho/callback";
-      fullPath: "/api/public/zoho/callback";
-      preLoaderRoute: typeof ApiPublicZohoCallbackRouteImport;
+    "/api/atendimento/inline": {
+      id: "/api/atendimento/inline";
+      path: "/api/atendimento/inline";
+      fullPath: "/api/atendimento/inline";
+      preLoaderRoute: typeof ApiAtendimentoInlineRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/api/public/shopify/callback": {
-      id: "/api/public/shopify/callback";
-      path: "/api/public/shopify/callback";
-      fullPath: "/api/public/shopify/callback";
-      preLoaderRoute: typeof ApiPublicShopifyCallbackRouteImport;
-      parentRoute: typeof rootRouteImport;
+    "/shops/banco-de-lojas/": {
+      id: "/shops/banco-de-lojas/";
+      path: "/";
+      fullPath: "/shops/banco-de-lojas/";
+      preLoaderRoute: typeof ShopsBancoDeLojasIndexRouteImport;
+      parentRoute: typeof ShopsBancoDeLojasRoute;
     };
-    "/api/public/hooks/zoho-mail-sync": {
-      id: "/api/public/hooks/zoho-mail-sync";
-      path: "/api/public/hooks/zoho-mail-sync";
-      fullPath: "/api/public/hooks/zoho-mail-sync";
-      preLoaderRoute: typeof ApiPublicHooksZohoMailSyncRouteImport;
-      parentRoute: typeof rootRouteImport;
+    "/shops/caixa/": {
+      id: "/shops/caixa/";
+      path: "/";
+      fullPath: "/shops/caixa/";
+      preLoaderRoute: typeof ShopsCaixaIndexRouteImport;
+      parentRoute: typeof ShopsCaixaRoute;
     };
-    "/api/public/hooks/sync-track123": {
-      id: "/api/public/hooks/sync-track123";
-      path: "/api/public/hooks/sync-track123";
-      fullPath: "/api/public/hooks/sync-track123";
-      preLoaderRoute: typeof ApiPublicHooksSyncTrack123RouteImport;
-      parentRoute: typeof rootRouteImport;
+    "/shops/lojas-grupos/": {
+      id: "/shops/lojas-grupos/";
+      path: "/";
+      fullPath: "/shops/lojas-grupos/";
+      preLoaderRoute: typeof ShopsLojasGruposIndexRouteImport;
+      parentRoute: typeof ShopsLojasGruposRoute;
     };
-    "/api/public/hooks/sync-shop-orders": {
-      id: "/api/public/hooks/sync-shop-orders";
-      path: "/api/public/hooks/sync-shop-orders";
-      fullPath: "/api/public/hooks/sync-shop-orders";
-      preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
-      parentRoute: typeof rootRouteImport;
+    "/shops/lojas-grupos/$cardId": {
+      id: "/shops/lojas-grupos/$cardId";
+      path: "/$cardId";
+      fullPath: "/shops/lojas-grupos/$cardId";
+      preLoaderRoute: typeof ShopsLojasGruposCardIdRouteImport;
+      parentRoute: typeof ShopsLojasGruposRoute;
     };
-    "/api/public/hooks/notifications-refresh": {
-      id: "/api/public/hooks/notifications-refresh";
-      path: "/api/public/hooks/notifications-refresh";
-      fullPath: "/api/public/hooks/notifications-refresh";
-      preLoaderRoute: typeof ApiPublicHooksNotificationsRefreshRouteImport;
-      parentRoute: typeof rootRouteImport;
+    "/shops/products/": {
+      id: "/shops/products/";
+      path: "/";
+      fullPath: "/shops/products/";
+      preLoaderRoute: typeof ShopsProductsIndexRouteImport;
+      parentRoute: typeof ShopsProductsRoute;
     };
-    "/api/public/hooks/estorno-daily": {
-      id: "/api/public/hooks/estorno-daily";
-      path: "/api/public/hooks/estorno-daily";
-      fullPath: "/api/public/hooks/estorno-daily";
-      preLoaderRoute: typeof ApiPublicHooksEstornoDailyRouteImport;
+    "/shops/products/$productId": {
+      id: "/shops/products/$productId";
+      path: "/$productId";
+      fullPath: "/shops/products/$productId";
+      preLoaderRoute: typeof ShopsProductsProductIdRouteImport;
+      parentRoute: typeof ShopsProductsRoute;
+    };
+    "/shops/sops/": {
+      id: "/shops/sops/";
+      path: "/sops";
+      fullPath: "/shops/sops/";
+      preLoaderRoute: typeof ShopsSopsIndexRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/shops/sops/$processId": {
+      id: "/shops/sops/$processId";
+      path: "/sops/$processId";
+      fullPath: "/shops/sops/$processId";
+      preLoaderRoute: typeof ShopsSopsProcessIdRouteImport;
+      parentRoute: typeof ShopsRoute;
+    };
+    "/api/public/hooks/caixa-snapshot": {
+      id: "/api/public/hooks/caixa-snapshot";
+      path: "/api/public/hooks/caixa-snapshot";
+      fullPath: "/api/public/hooks/caixa-snapshot";
+      preLoaderRoute: typeof ApiPublicHooksCaixaSnapshotRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/public/hooks/consultant-weekly": {
@@ -945,11 +923,53 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksConsultantWeeklyRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/api/public/hooks/caixa-snapshot": {
-      id: "/api/public/hooks/caixa-snapshot";
-      path: "/api/public/hooks/caixa-snapshot";
-      fullPath: "/api/public/hooks/caixa-snapshot";
-      preLoaderRoute: typeof ApiPublicHooksCaixaSnapshotRouteImport;
+    "/api/public/hooks/estorno-daily": {
+      id: "/api/public/hooks/estorno-daily";
+      path: "/api/public/hooks/estorno-daily";
+      fullPath: "/api/public/hooks/estorno-daily";
+      preLoaderRoute: typeof ApiPublicHooksEstornoDailyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/notifications-refresh": {
+      id: "/api/public/hooks/notifications-refresh";
+      path: "/api/public/hooks/notifications-refresh";
+      fullPath: "/api/public/hooks/notifications-refresh";
+      preLoaderRoute: typeof ApiPublicHooksNotificationsRefreshRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/sync-shop-orders": {
+      id: "/api/public/hooks/sync-shop-orders";
+      path: "/api/public/hooks/sync-shop-orders";
+      fullPath: "/api/public/hooks/sync-shop-orders";
+      preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/sync-track123": {
+      id: "/api/public/hooks/sync-track123";
+      path: "/api/public/hooks/sync-track123";
+      fullPath: "/api/public/hooks/sync-track123";
+      preLoaderRoute: typeof ApiPublicHooksSyncTrack123RouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/hooks/zoho-mail-sync": {
+      id: "/api/public/hooks/zoho-mail-sync";
+      path: "/api/public/hooks/zoho-mail-sync";
+      fullPath: "/api/public/hooks/zoho-mail-sync";
+      preLoaderRoute: typeof ApiPublicHooksZohoMailSyncRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/shopify/callback": {
+      id: "/api/public/shopify/callback";
+      path: "/api/public/shopify/callback";
+      fullPath: "/api/public/shopify/callback";
+      preLoaderRoute: typeof ApiPublicShopifyCallbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/zoho/callback": {
+      id: "/api/public/zoho/callback";
+      path: "/api/public/zoho/callback";
+      fullPath: "/api/public/zoho/callback";
+      preLoaderRoute: typeof ApiPublicZohoCallbackRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/public/hooks/shopify/$storeId": {
@@ -1096,6 +1116,7 @@ const rootRouteChildren: RootRouteChildren = {
   TarefasRoute: TarefasRoute,
   InviteTokenRoute: InviteTokenRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
+  ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
   ApiPublicHooksConsultantWeeklyRoute: ApiPublicHooksConsultantWeeklyRoute,
   ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,

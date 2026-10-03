@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { EmailFrame, QuotedText } from "./EmailFrame";
+import { EmailFrame, InlineImages, QuotedText, useInlineImages } from "./EmailFrame";
 import { Composer, type SendMode } from "./Composer";
 import { TagEditor } from "./CustomerPanel";
 import { Avatar, STATUS_META, displayName, formatBytes, fullTime } from "./utils";
@@ -261,6 +261,8 @@ function Bubble({ m, fg, isLastIn, onUseDraft }: { m: SupportMessage; fg: string
     if (pt == null && !translating) { setFailed(false); translate(false); }
   };
   const showPt = mode === "pt" && !!pt;
+  const demo = useIsDemo();
+  const images = useInlineImages(demo ? null : m.id, m.content_html);
 
   return (
     // Ocupa a largura toda; o recuo do lado oposto ainda mostra quem mandou.
@@ -282,9 +284,9 @@ function Bubble({ m, fg, isLastIn, onUseDraft }: { m: SupportMessage; fg: string
           </button>
         </div>
         {showPt ? (
-          <QuotedText text={pt!} />
+          <><QuotedText text={pt!} /><InlineImages urls={images} /></>
         ) : m.content_html != null
-          ? <EmailFrame html={m.content_html} color={fg} />
+          ? <EmailFrame html={m.content_html} color={fg} images={images} />
           : <p className="text-sm whitespace-pre-wrap">{m.summary}</p>}
         {m.attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">

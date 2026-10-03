@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import { MoreHorizontal } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 // Corpo do e-mail num iframe isolado: sem scripts (sandbox), CSS do e-mail não
 // vaza pra página e links abrem em nova aba. O histórico citado ("Em ... escreveu")
@@ -47,14 +48,66 @@ export function QuotedText({ text }: { text: string }) {
   );
 }
 
-export function EmailFrame({ html, color }: { html: string; color: string }) {
+// Imagens coladas no corpo (inline): o Zoho manda "/mail/ImageDisplay?...&cid=X",
+// que só abre logado no Zoho. Busca cada uma em /api/atendimento/inline (com o
+// token da sessão) e devolve cid → endereço local (blob) pra mostrar.
+const INLINE_SRC = /src="(\/mail\/ImageDisplay\?[^"]*)"/g;
+const param = (src: string, k: string) => new URLSearchParams(src.replace(/&amp;/g, "&").split("?")[1] ?? "").get(k) ?? "";
+export function inlineImageRefs(html: string | null | undefined) {
+  return [...(html ?? "").matchAll(INLINE_SRC)].map((m) => ({ src: m[1], cid: param(m[1], "cid"), name: param(m[1], "f") })).filter((r) => r.cid);
+}
+export function useInlineImages(messageId: string | null | undefined, html: string | null | undefined) {
+  const refs = useMemo(() => inlineImageRefs(html), [html]);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!messageId || !refs.length) return;
+    let alive = true;
+    const made: string[] = [];
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const out: Record<string, string> = {};
+      await Promise.all(refs.map(async (r) => {
+        try {
+          const res = await fetch(`/api/atendimento/inline?message=${messageId}&cid=${encodeURIComponent(r.cid)}&f=${encodeURIComponent(r.name)}`, {
+            headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+          });
+          if (!res.ok) return;
+          const u = URL.createObjectURL(await res.blob());
+          made.push(u);
+          out[r.cid] = u;
+        } catch { /* fica sem a imagem */ }
+      }));
+      if (alive) setUrls(out);
+    })();
+    return () => { alive = false; made.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [messageId, refs]);
+  return urls;
+}
+
+// Na tradução (texto puro) as imagens do corpo aparecem embaixo.
+export function InlineImages({ urls }: { urls: Record<string, string> }) {
+  const list = Object.values(urls);
+  if (!list.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {list.map((u) => (
+        <a key={u} href={u} target="_blank" rel="noreferrer">
+          <img src={u} alt="" className="max-h-64 max-w-full rounded-lg border border-border" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+export function EmailFrame({ html, color, images = {} }: { html: string; color: string; images?: Record<string, string> }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(40);
   const [showQuote, setShowQuote] = useState(false);
   const hasQuote = HAS_QUOTE.test(html);
 
   const srcDoc = useMemo(() => {
-    const clean = DOMPurify.sanitize(html, { FORBID_TAGS: ["form", "input", "button", "textarea", "select"] });
+    const clean = DOMPurify.sanitize(html, { FORBID_TAGS: ["form", "input", "button", "textarea", "select"] })
+      .replace(INLINE_SRC, (all, src) => { const u = images[param(src, "cid")]; return u ? `src="${u}"` : all; });
     return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank">
 <style>
 html,body{margin:0;padding:0;background:transparent}
@@ -65,7 +118,7 @@ p{margin:0 0 .6em}
 a{color:#7c6af7}
 ${showQuote ? "" : `${QUOTE_SELECTORS}{display:none!important}`}
 </style></head><body>${clean}</body></html>`;
-  }, [html, color, showQuote]);
+  }, [html, color, showQuote, images]);
 
   useEffect(() => {
     const frame = ref.current;
