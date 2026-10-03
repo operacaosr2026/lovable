@@ -13,6 +13,7 @@ import {
   type BusinessHours, type KpiConversation, type KpiMessage,
 } from "@/lib/support-kpis";
 import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, translateToPortuguese } from "@/lib/support-ai.server";
+import { AUTO_REPLY_SCRIPT } from "@/lib/support-autoreply.server";
 import { supportExtraKpis } from "@/lib/support-kpis-extra.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -608,6 +609,7 @@ export const getSupportSettings = createServerFn({ method: "GET" })
       signature: data?.signature ?? "",
       signatureEnabled: data?.signature_enabled ?? true,
       autoReplyTracking: (data as any)?.auto_reply_tracking ?? false,
+      autoReplyScript: AUTO_REPLY_SCRIPT,
       tags: data?.tags ?? [...DEFAULT_TAGS],
       aiTagsEnabled: data?.ai_tags_enabled ?? true,
       goals: {

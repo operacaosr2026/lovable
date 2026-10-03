@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Bot, Check, CheckCircle2, Loader2, MessageSquareText, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
+import { AlertTriangle, Bot, Check, CheckCircle2, ChevronDown, Loader2, MessageSquareText, Pencil, Plug, PenLine, Plus, Sparkles, Tag, Target, Trash2, X } from "lucide-react";
 import {
   changeSupportTag, getSupportSettings, saveSupportSettings, setZohoSendAs, listSupportTemplates, saveSupportTemplate, deleteSupportTemplate, getSupportTraining,
   type getZohoStatus, type SupportTemplate,
@@ -423,7 +423,40 @@ function AutoReplySettings() {
         </div>
         <Switch checked={aiAvailable && on} disabled={!aiAvailable || toggle.isPending || q.isLoading} onCheckedChange={(v) => toggle.mutate(v)} />
       </div>
+      <AutoReplyScript script={(q.data as any)?.autoReplyScript} />
 
+    </div>
+  );
+}
+
+// Roteiro que a IA segue na resposta automática (só leitura). Português pra
+// ler; "Original" é o texto em inglês que a IA recebe de fato.
+function AutoReplyScript({ script }: { script?: { pt: string; en: string } }) {
+  const [open, setOpen] = useState(false);
+  const [lang, setLang] = useState<"pt" | "en">("pt");
+  if (!script) return null;
+  return (
+    <div className="rounded-xl border border-border">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-medium hover:bg-muted/40 rounded-xl">
+        Ver roteiro da IA
+        <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] text-muted-foreground">As instruções que a IA segue pra decidir se responde e como escreve.</p>
+            <div className="flex shrink-0 rounded-lg bg-muted p-0.5 text-[11px]">
+              {(["pt", "en"] as const).map((l) => (
+                <button key={l} type="button" onClick={() => setLang(l)}
+                  className={`px-2 py-0.5 rounded-md ${lang === l ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}>
+                  {l === "pt" ? "Português" : "Original (inglês)"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed font-sans bg-muted/30 rounded-lg p-3 max-h-[480px] overflow-y-auto">{script[lang]}</pre>
+        </div>
+      )}
     </div>
   );
 }
