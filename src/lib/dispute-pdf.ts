@@ -125,14 +125,26 @@ class Doc {
   }
 
   // Quadro de destaque: azul (por que a prova importa) ou verde (conclusão).
-  callout(title: string, text: string, tone: "blue" | "green" = "blue") {
-    if (!text.trim()) return;
-    const lines = this.wrap(text, this.w - 24, "normal", 9);
-    const h = 30 + lines.length * 11.5;
+  // `bullets`: tópicos antes do texto (cada um com "-", continuação recuada).
+  callout(title: string, text: string, tone: "blue" | "green" = "blue", bullets: string[] = []) {
+    if (!text.trim() && !bullets.length) return;
+    const lh = 11.5;
+    const rows: { t: string; first: boolean }[] = bullets.flatMap((b) =>
+      this.wrap(b, this.w - 36, "normal", 9).map((t, i) => ({ t, first: i === 0 })));
+    const gap = bullets.length && text.trim() ? 6 : 0;
+    const textLines = text.trim() ? this.wrap(text, this.w - 24, "normal", 9) : [];
+    const h = 30 + rows.length * lh + gap + textLines.length * lh;
     this.ensure(h + 14);
     this.box(this.m, this.y, this.w, h, tone === "blue" ? C.blueBg : C.greenBg, tone === "blue" ? C.blueLine : C.greenLine);
     this.font("bold", 8.5, C.text).text(latin1(title.toUpperCase()), this.m + 12, this.y + 16);
-    this.font("normal", 9, C.text).text(lines, this.m + 12, this.y + 29, { lineHeightFactor: 1.28 });
+    let y = this.y + 29;
+    for (const r of rows) {
+      if (r.first) this.font("normal", 9, C.text).text("-", this.m + 13, y);
+      this.font("normal", 9, C.text).text(r.t, this.m + 22, y);
+      y += lh;
+    }
+    y += gap;
+    if (textLines.length) this.font("normal", 9, C.text).text(textLines, this.m + 12, y, { lineHeightFactor: 1.28 });
     this.y += h + 16;
   }
 
@@ -174,6 +186,8 @@ class Doc {
     const lh = 11.5;
     let i = 0;
     while (i < lines.length) {
+      while (i > 0 && i < lines.length && !lines[i].t) i++;   // continuação não começa com linha em branco
+      if (i >= lines.length) break;
       this.ensure(40);
       const fitN = Math.max(1, Math.floor((this.bottom - this.y - 24) / lh));
       const chunk = lines.slice(i, i + fitN);
@@ -206,13 +220,20 @@ class Doc {
 }
 
 const tracking = (ev: DisputeEvidence) => ev.shipping.trackingNumber;
+// Hora do evento do rastreio ("2026-10-02 08:10:00 UTC") no mesmo formato das outras datas.
+const eventTime = (t: string | null) => {
+  if (!t) return "-";
+  const d = new Date(t.replace(" ", "T").replace(/\s*UTC$/, "Z"));
+  return Number.isNaN(d.getTime()) ? t : dateEn(d.toISOString(), true);
+};
 const shortCode = (s: string | null) => (!s ? "-" : s.length > 14 ? `${s.slice(0, 5)}...${s.slice(-4)}` : s);
 const cleanStatus = (s: string | null) => (s && ORIGIN_HINT.test(s) ? "In transit" : s);
 
 function shipping(ev: DisputeEvidence) {
   const d = new Doc(ev, "Shipping Documentation");
   const delivered = ev.shipping.deliveredAt;
-  d.summary([["Order", ev.order.number ?? "-"], ["Ordered", dateShort(ev.order.createdAt)], ["Shipped", dateShort(ev.shipping.shippedAt)], ["Tracking", shortCode(tracking(ev))]]);
+  d.summary([["Order", ev.order.number ?? "-"], ["Ordered", dateShort(ev.order.createdAt)], ["Shipped", dateShort(ev.shipping.shippedAt)],
+    delivered ? ["Delivered", dateShort(delivered)] : ["Tracking", shortCode(tracking(ev))]]);
   d.callout("Key timing", [
     ev.order.createdAt && `The order was placed on ${dateEn(ev.order.createdAt)}`,
     ev.shipping.shippedAt && `and the shipment was created on ${dateEn(ev.shipping.shippedAt)}`,
@@ -229,10 +250,17 @@ function shipping(ev: DisputeEvidence) {
     ["Destination", [ev.order.customerName, ev.order.shippingAddress.filter((l) => l !== ev.order.customerName).join(", ")].filter(Boolean).join(" - ")],
   ]);
 
-  const events = ev.shipping.events.filter((e) => !ORIGIN_HINT.test(`${e.description} ${e.location ?? ""}`)).slice(0, TRACK_EVENTS);
-  d.section(events.length > 1 ? "Latest tracking events" : "Tracking event");
-  if (!events.length) d.note("No carrier events available.");
-  else d.table(events.map((e) => [e.time ?? "-", `${e.description}${e.location ? ` (${e.location})` : ""}`]), 170);
+  // Linha do tempo (mais antigo primeiro): pedido → saiu do galpão → últimos 3 eventos
+  // do rastreio até a entrega (filtrados: nada de China/origem/alfândega).
+  const events = ev.shipping.events.filter((e) => !ORIGIN_HINT.test(`${e.description} ${e.location ?? ""}`)).slice(0, TRACK_EVENTS).reverse();
+  const timeline: [string, string][] = [];
+  if (ev.order.createdAt) timeline.push([dateEn(ev.order.createdAt, true), "Order placed by the customer"]);
+  if (ev.shipping.shippedAt) timeline.push([dateEn(ev.shipping.shippedAt, true), "Shipped from our warehouse"]);
+  for (const e of events) timeline.push([eventTime(e.time), `${e.description}${e.location ? ` (${e.location})` : ""}`]);
+  if (delivered && !events.some((e) => /deliver/i.test(e.description))) timeline.push([dateEn(delivered, true), "Delivered to the customer's shipping address"]);
+  d.section("Shipment timeline");
+  if (!timeline.length) d.note("No carrier events available.");
+  else d.table(timeline, 170);
 
   const ship = ev.policies.filter((p) => p.kind === "shipping");
   d.section("Published shipping policy");
@@ -402,7 +430,62 @@ function rebuttal(ev: DisputeEvidence): string {
   }
 }
 
-// Outras provas: o texto de defesa do motivo + as políticas que não entraram nos outros documentos.
+// Código de motivo da bandeira (Visa / Mastercard / Amex) pra cada motivo da Shopify.
+const REASON_CODES: Record<string, Record<"visa" | "mastercard" | "amex", [string, string]>> = {
+  product_not_received: { visa: ["13.1", "Merchandise/Services Not Received"], mastercard: ["4853", "Cardholder Dispute - Goods or Services Not Provided"], amex: ["C08", "Goods/Services Not Received"] },
+  product_unacceptable: { visa: ["13.3", "Not as Described or Defective Merchandise"], mastercard: ["4853", "Cardholder Dispute - Not as Described"], amex: ["C31", "Goods/Services Not as Described"] },
+  fraudulent: { visa: ["10.4", "Other Fraud - Card-Absent Environment"], mastercard: ["4837", "No Cardholder Authorization"], amex: ["F29", "Card Not Present"] },
+  credit_not_processed: { visa: ["13.6", "Credit Not Processed"], mastercard: ["4853", "Cardholder Dispute - Credit Not Processed"], amex: ["C02", "Credit Not Processed"] },
+  subscription_canceled: { visa: ["13.2", "Cancelled Recurring Transaction"], mastercard: ["4841", "Cancelled Recurring Transaction"], amex: ["C28", "Cancelled Recurring Billing"] },
+};
+const NETWORK_RULES = { visa: "Visa Compelling Evidence requirements", mastercard: "Mastercard chargeback rules", amex: "American Express dispute rules" };
+
+// "Conclusion & requested resolution" (fim de Outras provas): os fatos em tópicos
+// e o pedido de reversão com a regra da bandeira do motivo. Fato sem dado sai.
+function conclusion(ev: DisputeEvidence): { bullets: string[]; text: string } {
+  const method = `${ev.payment.method ?? ""}`;
+  const network = /visa/i.test(method) ? "visa" : /master/i.test(method) ? "mastercard" : /amex|american/i.test(method) ? "amex" : null;
+  const code = network ? REASON_CODES[ev.dispute.reason ?? ""]?.[network] : undefined;
+  const rule = network && code ? `Under ${NETWORK_RULES[network]} for Reason Code ${code[0]} (${code[1]})` : "Under the card network rules for this dispute reason";
+  const delivered = ev.shipping.deliveredAt;
+  const place = ev.order.shippingAddress.find((l) => /\b\d{5}\b/.test(l));   // "Fairview, TN 37062"
+  const deliveryNote = ev.shipping.events.find((e) => /deliver/i.test(e.description) && !ORIGIN_HINT.test(e.description))?.description;
+  const norm = (a: string[]) => a.filter((l) => l !== ev.order.customerName).join(" ").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const sameAddress = ev.order.billingAddress.length > 0 && norm(ev.order.billingAddress) === norm(ev.order.shippingAddress);
+  const positive = ev.payment.riskFacts.filter((f) => f.sentiment === "POSITIVE").map((f) => f.description.replace(/\.$/, ""));
+  const contacted = ev.communications.some((m) => m.direction === "in");
+
+  const bullets = [
+    delivered
+      ? `The package was confirmed delivered on ${dateEn(delivered)} at the cardholder's shipping address${place ? ` (${place})` : ""}${deliveryNote ? `, with the carrier noting: "${deliveryNote}"` : ""}.`
+      : ev.shipping.shippedAt && `The order was shipped on ${dateEn(ev.shipping.shippedAt)}${ev.shipping.trackingNumber ? ` with tracking number ${ev.shipping.trackingNumber}` : ""}, within the timeframe published in our Shipping Policy.`,
+    ev.payment.avs === "Y"
+      ? `The billing address and ZIP code match the card's registered address (AVS match)${ev.payment.cvv === "M" ? ", and the card security code (CVV) matched" : ""}.`
+      : sameAddress && "The billing address matches the shipping address provided at checkout.",
+    positive.length && `Shopify's fraud analysis confirms: ${positive.join("; ")}.`,
+    ev.payment.riskLevel === "LOW" && "The order was rated low risk, with no meaningful fraud indicators.",
+    ev.notifications.length && "Order and shipping confirmation emails were sent to the cardholder.",
+    !contacted && "The cardholder did not contact the merchant prior to filing this dispute.",
+  ].filter(Boolean) as string[];
+
+  const why = (() => {
+    switch (ev.dispute.reason) {
+      case "product_not_received": return delivered
+        ? "confirmed proof of delivery to the cardholder's address is sufficient to rebut the claim."
+        : "the merchant has shown the order was shipped promptly with tracking, within the delivery timeframe the cardholder accepted at checkout.";
+      case "product_unacceptable": return "the merchant has shown the item matched its description and the cardholder did not return it under the published return policy.";
+      case "fraudulent": return "the transaction details and the delivery to the cardholder's own address show that the cardholder participated in the transaction.";
+      case "credit_not_processed": return "no return was received, so no credit is due under the refund policy the cardholder accepted at checkout.";
+      case "subscription_canceled": return "this was a one-time purchase with no recurring billing, so there was nothing to cancel.";
+      default: return "the documentation provided shows the goods were delivered as agreed.";
+    }
+  })();
+  const amount = `$${ev.dispute.amount.toFixed(2)} ${ev.dispute.currency ?? "USD"}`;
+  return { bullets, text: `We respectfully request that this chargeback be reversed in full (${amount}) in favor of the merchant. ${rule}, ${why}` };
+}
+
+// Outras provas: o texto de defesa do motivo, as políticas que não entraram nos
+// outros documentos e a conclusão com o pedido de reversão.
 function other(ev: DisputeEvidence) {
   const d = new Doc(ev, "Additional Evidence");
   d.summary([["Store", ev.store.domain ?? ev.store.name], ["Order date", dateShort(ev.order.createdAt)], ["Dispute", REASON_EN[ev.dispute.reason ?? ""] ?? ev.dispute.reason ?? "-"], ["Amount", money(ev, ev.dispute.amount)]]);
@@ -412,6 +495,8 @@ function other(ev: DisputeEvidence) {
   if (ev.store.domain) d.note(`The following policies are published on our store (${ev.store.domain}) and were available to the customer at the time of purchase.`);
   if (!rest.length) d.note("No policy text available.");
   for (const p of rest) d.textBox(p.body, { bold: p.title });
+  const c = conclusion(ev);
+  d.callout("Conclusion & requested resolution", c.text, "green", c.bullets);
   return d;
 }
 
