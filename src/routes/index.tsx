@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, LabelList,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { getDashboardOverview } from "@/lib/lg-cards.functions";
 import { listCompanyGoals } from "@/lib/company-goals.functions";
@@ -122,16 +122,44 @@ type DailyPoint = { date: string; faturamento: number; anuncios: number; custo: 
 function Sparkline({ data, dataKey, color }: { data: DailyPoint[]; dataKey: keyof DailyPoint; color: string }) {
   if (data.length < 2) return <div className="h-full" />;
   const gradId = `dash-spark-${dataKey}`;
+  const values = data.map((d) => Number(d[dataKey]) || 0);
+  const max = Math.max(...values, 0), min = Math.min(...values, 0);
+  // Lucro negativo em algum dia: escala inclui o zero (linha tracejada), o trecho
+  // abaixo de zero fica vermelho e a área sai do zero — senão um dia negativo
+  // seguido de um positivo parecia lucro crescendo.
+  const hasNeg = min < 0;
+  const zeroAt = max === min ? 0 : max / (max - min);   // zero na área (que vai do zero aos valores)
+  // O degradê da linha usa a altura da própria linha (do maior ao menor valor).
+  const vMax = Math.max(...values), vMin = Math.min(...values);
+  const flat = vMax === vMin;
+  const lineZero = flat ? 0 : Math.min(1, Math.max(0, vMax / (vMax - vMin)));
+  const red = "var(--color-destructive)";
+  const stroke = !hasNeg ? color : flat ? (vMax < 0 ? red : color) : `url(#${gradId}-line)`;
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
         <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
+          {hasNeg ? (<>
+            <linearGradient id={`${gradId}-line`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset={lineZero} stopColor={color} /><stop offset={lineZero} stopColor={red} />
+            </linearGradient>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset={0} stopColor={color} stopOpacity={0.35} />
+              <stop offset={zeroAt} stopColor={color} stopOpacity={0.05} />
+              <stop offset={zeroAt} stopColor={red} stopOpacity={0.05} />
+              <stop offset={1} stopColor={red} stopOpacity={0.35} />
+            </linearGradient>
+          </>) : (
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          )}
         </defs>
-        <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.5} fill={`url(#${gradId})`} dot={false} isAnimationActive={false} />
+        <YAxis hide domain={[min, max]} />
+        {hasNeg && <ReferenceLine y={0} stroke="currentColor" strokeOpacity={0.25} strokeDasharray="3 3" />}
+        <Area type="monotone" dataKey={dataKey} baseValue={0} stroke={stroke} strokeWidth={1.5}
+          fill={`url(#${gradId})`} dot={false} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
