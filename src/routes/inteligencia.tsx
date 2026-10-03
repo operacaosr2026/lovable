@@ -90,6 +90,8 @@ function InteligenciaPage() {
   const statusFn = useServerFn(setConsultantTipStatus);
   const q = useQuery({ queryKey: ["consultant", null], queryFn: () => getFn({ data: { report_id: null } }) });
   const report = q.data?.report ?? null;
+  // Análise completa: 1 por dia (o servidor também barra).
+  const ranToday = !!q.data?.history?.[0] && isoDateUS(q.data.history[0].createdAt) === isoTodayUS();
   const [tab, setTab] = useState<Tab>("agora");
   const [cat, setCat] = useState<string | null>(null);
   const [sort, setSort] = useState<"prioridade" | "valor">("prioridade");
@@ -163,7 +165,7 @@ function InteligenciaPage() {
           <Button variant="outline" onClick={() => setAskOpen(true)} disabled={ask.isPending}>
             {ask.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando seu pedido…</> : <><MessageSquareText className="size-4" /> Pedir análise</>}
           </Button>
-          <Button onClick={() => run.mutate()} disabled={run.isPending}>
+          <Button onClick={() => run.mutate()} disabled={run.isPending || ranToday} title={ranToday ? "Já tem análise de hoje — a próxima pode ser feita amanhã" : undefined}>
             {run.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando… (1-2 min)</> : <><Sparkles className="size-4" /> Analisar agora</>}
           </Button>
         </div>

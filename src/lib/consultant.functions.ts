@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runConsultant, runRequestedAnalysis, type ConsultantResult } from "@/lib/consultant.server";
 import { resolveNotification } from "@/lib/notifications.server";
+import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 
 // Página Consultor (ver consultant.server.ts). Acesso: admin, ou membro com a
 // permissão "consultor".
@@ -49,6 +50,12 @@ export const runConsultantNow = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     assertAccess(context);
+    // Análise completa custa caro: no máximo 1 por dia (dia de Nova York).
+    const { data: last } = await supabaseAdmin.from("consultant_reports").select("created_at")
+      .eq("user_id", context.ownerId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (last && isoDateUS(last.created_at) === isoTodayUS()) {
+      throw new Error("Já tem uma análise de hoje. A próxima pode ser feita amanhã.");
+    }
     const r = await runConsultant(context.ownerId);
     return { id: r.id };
   });

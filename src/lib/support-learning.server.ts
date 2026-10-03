@@ -17,7 +17,8 @@ import { withAiCredit } from "@/lib/ai-credit.server";
 // Placar por tag em Configurações → Resposta automática.
 // Rascunho às cegas: o exemplo e o histórico usados são só de antes do e-mail.
 
-const MODEL = "claude-opus-5-5";
+// Roda em todo e-mail novo: Sonnet (metade do preço do Opus).
+const MODEL = "claude-sonnet-5-5";
 const DAY = 86_400_000;
 const WINDOW_DAYS = 30;          // e-mails sem rascunho dos últimos 30 dias (os novos primeiro)
 const PER_RUN = 4;
