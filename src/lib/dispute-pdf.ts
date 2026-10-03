@@ -3,10 +3,12 @@ import type { DisputeEvidence } from "@/lib/dispute-evidence.functions";
 
 // PDFs da resposta de chargeback (aba Chargebacks > "Documentos para a
 // Shopify"): um arquivo por campo de prova da Shopify, em inglês (quem lê é o
-// banco nos EUA). Gerados no navegador com jsPDF.
+// banco nos EUA). Gerados no navegador com jsPDF. Visual de "dossiê": marca +
+// título, faixa de resumo, quadro "por que essa prova importa", tabelas de
+// campo/valor e caixas de texto.
 
 const REASON_EN: Record<string, string> = {
-  product_not_received: "Product not received", product_unacceptable: "Product unacceptable / not as described",
+  product_not_received: "Product not received", product_unacceptable: "Product not as described",
   fraudulent: "Fraudulent", unrecognized: "Unrecognized", duplicate: "Duplicate", credit_not_processed: "Credit not processed",
   subscription_canceled: "Subscription canceled", general: "General", customer_initiated: "Customer initiated",
 };
@@ -23,7 +25,7 @@ export type EvidenceDocKey = (typeof EVIDENCE_DOCS)[number]["key"];
 const latin1 = (s: string) => s
   .replace(/[‘’‛]/g, "'").replace(/[“”‟]/g, '"')
   .replace(/[–—−]/g, "-").replace(/…/g, "...").replace(/[•●]/g, "-")
-  .replace(/ /g, " ").replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
+  .replace(/ /g, " ").replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
 
 // Data em inglês; "aaaa-mm-dd" sem fuso (senão vira o dia anterior no Brasil).
 function dateEn(iso: string | null | undefined, withTime = false) {
@@ -36,191 +38,291 @@ function dateEn(iso: string | null | undefined, withTime = false) {
     ...(withTime && !m ? { hour: "2-digit", minute: "2-digit", timeZoneName: "short" } : {}),
   });
 }
+// "Sep 27, 2026" pra faixa de resumo.
+function dateShort(iso: string | null | undefined) {
+  if (!iso) return "-";
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00Z` : iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+}
+const money = (ev: DisputeEvidence, v: string | number | null | undefined) =>
+  v == null || v === "" ? "-" : `$${Number(v).toFixed(2)} ${ev.order.currency ?? ev.dispute.currency ?? "USD"}`;
 
 // Rastreio pro banco: nada que mostre origem na China, alfândega ou exportação
-// (eventos, local e transportadora consolidadora) — só os últimos eventos no destino.
-const ORIGIN_HINT = /china|chinese|cn|shenzhen|guangzhou|shanghai|beijing|hangzhou|yiwu|dongguan|fujian|zhejiang|jiangsu|guangdong|hong ?kong|origin|export|customs|starting port|jcex|jxc|yunexpress|yanwen|4px|cainiao/i;
+// (eventos, local, status e transportadora consolidadora) — só os últimos eventos no destino.
+const ORIGIN_HINT = /china|chinese|\bcn\b|shenzhen|guangzhou|shanghai|beijing|hangzhou|yiwu|dongguan|fujian|zhejiang|jiangsu|guangdong|hong ?kong|origin|export|customs|starting port|jcex|jxc|yunexpress|yanwen|4px|cainiao/i;
 const US_CARRIER = /usps|ups|fedex|dhl|ontrac|lasership|amazon|uniuni|gofo|veho|spee-?dee/i;
 const TRACK_EVENTS = 3;
+
+type RGB = [number, number, number];
+const C = {
+  text: [17, 24, 39] as RGB, muted: [107, 114, 128] as RGB, line: [226, 232, 240] as RGB, soft: [248, 250, 252] as RGB,
+  blueBg: [239, 246, 255] as RGB, blueLine: [191, 219, 254] as RGB, greenBg: [240, 253, 244] as RGB, greenLine: [187, 247, 208] as RGB,
+};
 
 class Doc {
   pdf = new jsPDF({ unit: "pt", format: "letter" });
   y = 0;
-  readonly m = 54;                       // margem
-  readonly w = this.pdf.internal.pageSize.getWidth() - 108;
+  readonly m = 40;                                          // margem
+  readonly w = this.pdf.internal.pageSize.getWidth() - 80;
   readonly h = this.pdf.internal.pageSize.getHeight();
+  private readonly bottom = this.h - 50;
 
-  constructor(private ev: DisputeEvidence, private title: string) { this.header(); }
+  constructor(private ev: DisputeEvidence, title: string, subtitle?: string) { this.header(title, subtitle); }
 
-  private header() {
-    const { pdf, ev } = this;
-    pdf.setFont("helvetica", "bold").setFontSize(16).setTextColor(20);
-    pdf.text(latin1(this.title), this.m, 64);
-    pdf.setFont("helvetica", "normal").setFontSize(9.5).setTextColor(90);
-    const sub = [
-      ev.store.name + (ev.store.domain ? ` (${ev.store.domain})` : ""),
-      `Order ${ev.order.number ?? "-"}`,
-      `Dispute: ${REASON_EN[ev.dispute.reason ?? ""] ?? ev.dispute.reason ?? "-"}`,
-      `${ev.dispute.currency ?? "USD"} ${ev.dispute.amount.toFixed(2)}`,
-    ].join("  |  ");
-    pdf.text(latin1(sub), this.m, 80);
-    pdf.setDrawColor(220).setLineWidth(0.8).line(this.m, 90, this.m + this.w, 90);
-    this.y = 112;
+  private font(style: "normal" | "bold", size: number, color: RGB) {
+    this.pdf.setFont("helvetica", style).setFontSize(size).setTextColor(...color);
+    return this.pdf;
+  }
+  private wrap(text: string, width: number, style: "normal" | "bold", size: number): string[] {
+    this.pdf.setFont("helvetica", style).setFontSize(size);
+    return this.pdf.splitTextToSize(latin1(text), width) as string[];
+  }
+  private fit(text: string, width: number, style: "normal" | "bold", size: number) {
+    this.pdf.setFont("helvetica", style).setFontSize(size);
+    let t = latin1(text);
+    if (this.pdf.getTextWidth(t) <= width) return t;
+    while (t.length > 1 && this.pdf.getTextWidth(`${t}...`) > width) t = t.slice(0, -1);
+    return `${t}...`;
+  }
+  private box(x: number, y: number, w: number, h: number, fill: RGB, stroke: RGB) {
+    this.pdf.setFillColor(...fill).setDrawColor(...stroke).setLineWidth(0.7).rect(x, y, w, h, "FD");
   }
   private ensure(space: number) {
-    if (this.y + space <= this.h - 60) return;
+    if (this.y + space <= this.bottom) return;
     this.pdf.addPage();
-    this.y = 64;
+    this.y = 50;
   }
-  section(text: string) {
-    this.ensure(40);
-    this.y += 6;
-    this.pdf.setFont("helvetica", "bold").setFontSize(12).setTextColor(20).text(latin1(text), this.m, this.y);
-    this.y += 16;
+
+  private header(title: string, subtitle?: string) {
+    const { ev, m } = this;
+    const brand = latin1(ev.store.name || "").toUpperCase();
+    this.font("bold", 13, C.text).text(brand, m, 52);
+    const bw = this.pdf.getTextWidth(brand);
+    this.font("bold", 20, C.text).text(latin1(title.toUpperCase()), m + bw + 26, 54);
+    const sub = subtitle ?? [
+      `Order ${ev.order.number ?? "-"}`,
+      `Dispute reason: ${REASON_EN[ev.dispute.reason ?? ""] ?? ev.dispute.reason ?? "-"}`,
+      `${ev.dispute.currency ?? "USD"} ${ev.dispute.amount.toFixed(2)}`,
+    ].join(" | ");
+    this.font("normal", 8.5, C.muted).text(latin1(sub), m, 70);
+    this.y = 84;
   }
-  kv(label: string, value: string | null | undefined) {
-    const v = latin1(value && String(value).trim() ? String(value) : "-");
-    const lines = this.pdf.setFont("helvetica", "normal").setFontSize(10).splitTextToSize(v, this.w - 150) as string[];
-    this.ensure(lines.length * 13 + 4);
-    this.pdf.setFont("helvetica", "bold").setFontSize(10).setTextColor(70).text(latin1(label), this.m, this.y);
-    this.pdf.setFont("helvetica", "normal").setTextColor(20).text(lines, this.m + 150, this.y);
-    this.y += lines.length * 13 + 4;
+
+  // Faixa de resumo: até 4 colunas com rótulo pequeno e valor em destaque.
+  summary(cells: [string, string][]) {
+    const h = 46, cw = this.w / cells.length;
+    this.ensure(h + 14);
+    this.box(this.m, this.y, this.w, h, C.soft, C.line);
+    cells.forEach(([label, value], i) => {
+      const x = this.m + i * cw;
+      if (i) this.pdf.setDrawColor(...C.line).line(x, this.y, x, this.y + h);
+      this.font("normal", 7.5, C.muted).text(latin1(label.toUpperCase()), x + 10, this.y + 15);
+      // Valor longo (e-mail): diminui a fonte antes de cortar.
+      const size = [11, 10, 9, 8].find((sz) => { this.pdf.setFont("helvetica", "bold").setFontSize(sz); return this.pdf.getTextWidth(latin1(value || "-")) <= cw - 20; }) ?? 8;
+      this.font("bold", size, C.text).text(this.fit(value || "-", cw - 20, "bold", size), x + 10, this.y + 34);
+    });
+    this.y += h + 16;
   }
-  para(text: string, opts: { size?: number; color?: number; gap?: number } = {}) {
-    const size = opts.size ?? 10;
-    const lines = this.pdf.setFont("helvetica", "normal").setFontSize(size).splitTextToSize(latin1(text), this.w) as string[];
-    this.pdf.setTextColor(opts.color ?? 20);
-    for (const line of lines) {
-      this.ensure(size + 4);
-      this.pdf.text(line, this.m, this.y);
-      this.y += size + 3.5;
+
+  // Quadro de destaque: azul (por que a prova importa) ou verde (conclusão).
+  callout(title: string, text: string, tone: "blue" | "green" = "blue") {
+    if (!text.trim()) return;
+    const lines = this.wrap(text, this.w - 24, "normal", 9);
+    const h = 30 + lines.length * 11.5;
+    this.ensure(h + 14);
+    this.box(this.m, this.y, this.w, h, tone === "blue" ? C.blueBg : C.greenBg, tone === "blue" ? C.blueLine : C.greenLine);
+    this.font("bold", 8.5, C.text).text(latin1(title.toUpperCase()), this.m + 12, this.y + 16);
+    this.font("normal", 9, C.text).text(lines, this.m + 12, this.y + 29, { lineHeightFactor: 1.28 });
+    this.y += h + 16;
+  }
+
+  section(title: string) {
+    this.ensure(46);
+    this.font("bold", 10.5, C.text).text(latin1(title.toUpperCase()), this.m + 2, this.y + 6);
+    this.y += 14;
+  }
+
+  // Tabela campo/valor (linhas sem valor saem). Quebra de página entre linhas.
+  table(rows: [string, string | null | undefined][], labelW = 150) {
+    const list = rows.filter(([, v]) => v != null && String(v).trim() !== "");
+    for (const [label, value] of list) {
+      const lab = this.wrap(label, labelW - 16, "normal", 7.5);
+      const val = this.wrap(String(value), this.w - labelW - 18, "normal", 9);
+      const rh = Math.max(lab.length * 10, val.length * 11.5) + 14;
+      this.ensure(rh);
+      this.box(this.m, this.y, this.w, rh, [255, 255, 255], C.line);
+      this.pdf.setDrawColor(...C.line).line(this.m + labelW, this.y, this.m + labelW, this.y + rh);
+      this.font("normal", 7.5, C.muted).text(lab, this.m + 8, this.y + 15, { lineHeightFactor: 1.3 });
+      this.font("normal", 9, C.text).text(val, this.m + labelW + 9, this.y + 15, { lineHeightFactor: 1.28 });
+      this.y += rh;
     }
-    this.y += opts.gap ?? 6;
+    this.y += 14;
   }
-  rule() {
-    this.ensure(14);
-    this.pdf.setDrawColor(230).setLineWidth(0.6).line(this.m, this.y, this.m + this.w, this.y);
-    this.y += 12;
+
+  // Caixa cinza com texto corrido (e-mail, política, descrição); continua na próxima página.
+  textBox(text: string, opts: { bold?: string } = {}) {
+    // Parágrafos separados por linha em branco; quebra simples fica junta (ex.: assinatura).
+    const paras = latin1(text).replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const lines: { t: string; b?: boolean }[] = [];
+    // Título só se o texto ainda não começa com ele.
+    if (opts.bold && !(paras[0] ?? "").toLowerCase().includes(opts.bold.toLowerCase())) lines.push({ t: opts.bold, b: true }, { t: "" });
+    paras.forEach((p, i) => {
+      for (const row of p.split("\n")) for (const l of this.wrap(row.trim(), this.w - 28, "normal", 9)) lines.push({ t: l });
+      if (i < paras.length - 1) lines.push({ t: "" });
+    });
+    if (!lines.length) return;
+    const lh = 11.5;
+    let i = 0;
+    while (i < lines.length) {
+      this.ensure(40);
+      const fitN = Math.max(1, Math.floor((this.bottom - this.y - 24) / lh));
+      const chunk = lines.slice(i, i + fitN);
+      while (chunk.length && !chunk[chunk.length - 1].t && i + chunk.length < lines.length) chunk.pop();
+      const h = chunk.length * lh + 22;
+      this.box(this.m, this.y, this.w, h, C.soft, C.line);
+      chunk.forEach((l, k) => this.font(l.b ? "bold" : "normal", 9, C.text).text(l.t, this.m + 14, this.y + 18 + k * lh));
+      this.y += h;
+      i += chunk.length;
+      if (i < lines.length) { this.pdf.addPage(); this.y = 50; }
+    }
+    this.y += 14;
   }
+
+  note(text: string) {
+    const lines = this.wrap(text, this.w, "normal", 8.5);
+    this.ensure(lines.length * 11 + 8);
+    this.font("normal", 8.5, C.muted).text(lines, this.m + 2, this.y + 6, { lineHeightFactor: 1.3 });
+    this.y += lines.length * 11 + 10;
+  }
+
   save(file: string) {
     const pages = this.pdf.getNumberOfPages();
     for (let i = 1; i <= pages; i++) {
       this.pdf.setPage(i);
-      this.pdf.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(140);
-      this.pdf.text(latin1(`${this.ev.store.name} - Order ${this.ev.order.number ?? ""} - Page ${i} of ${pages}`), this.m, this.h - 30);
+      this.font("normal", 8, C.muted).text(latin1(`${this.ev.store.name} - Order ${this.ev.order.number ?? ""} - Page ${i} of ${pages}`), this.m, this.h - 26);
     }
     this.pdf.save(file);
   }
 }
 
+const tracking = (ev: DisputeEvidence) => ev.shipping.trackingNumber;
+const shortCode = (s: string | null) => (!s ? "-" : s.length > 14 ? `${s.slice(0, 5)}...${s.slice(-4)}` : s);
+const cleanStatus = (s: string | null) => (s && ORIGIN_HINT.test(s) ? "In transit" : s);
+
 function shipping(ev: DisputeEvidence) {
   const d = new Doc(ev, "Shipping Documentation");
-  const ship = ev.policies.filter((p) => p.kind === "shipping");
-  d.section("Shipping policy");
-  if (ev.store.domain) d.para(`Published on our store (${ev.store.domain}) and available to the customer at the time of purchase.`, { color: 60, gap: 8 });
-  if (!ship.length) d.para("No shipping policy text available.", { color: 110 });
-  for (const p of ship) { if (ship.length > 1) d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
-  d.rule();
-  d.section("Shipment");
-  if (ev.shipping.carrier && US_CARRIER.test(ev.shipping.carrier)) d.kv("Carrier", ev.shipping.carrier);
-  d.kv("Tracking number", ev.shipping.trackingNumber);
-  d.kv("Tracking link", ev.shipping.trackingUrl);
-  d.kv("Shipped on", dateEn(ev.shipping.shippedAt));
-  d.kv("Current status", ev.shipping.status);
-  if (ev.shipping.deliveredAt) d.kv("Delivered on", dateEn(ev.shipping.deliveredAt, true));
-  d.section("Shipping address");
-  d.para(ev.order.shippingAddress.join("\n") || "-");
+  const delivered = ev.shipping.deliveredAt;
+  d.summary([["Order", ev.order.number ?? "-"], ["Ordered", dateShort(ev.order.createdAt)], ["Shipped", dateShort(ev.shipping.shippedAt)], ["Tracking", shortCode(tracking(ev))]]);
+  d.callout("Key timing", [
+    ev.order.createdAt && `The order was placed on ${dateEn(ev.order.createdAt)}`,
+    ev.shipping.shippedAt && `and the shipment was created on ${dateEn(ev.shipping.shippedAt)}`,
+  ].filter(Boolean).join(" ") + "." + (delivered ? ` Carrier tracking shows the package delivered on ${dateEn(delivered)}.` : ""));
+
+  d.section("Shipment record");
+  d.table([
+    ["Carrier", ev.shipping.carrier && US_CARRIER.test(ev.shipping.carrier) ? ev.shipping.carrier : null],
+    ["Tracking number", tracking(ev)],
+    ["Tracking page", ev.shipping.trackingUrl],
+    ["Shipment record date", ev.shipping.shippedAt ? dateEn(ev.shipping.shippedAt) : null],
+    ["Current status", cleanStatus(ev.shipping.status)],
+    ["Delivered on", delivered ? dateEn(delivered, true) : null],
+    ["Destination", [ev.order.customerName, ev.order.shippingAddress.filter((l) => l !== ev.order.customerName).join(", ")].filter(Boolean).join(" - ")],
+  ]);
+
   const events = ev.shipping.events.filter((e) => !ORIGIN_HINT.test(`${e.description} ${e.location ?? ""}`)).slice(0, TRACK_EVENTS);
-  d.section("Latest tracking events (most recent first)");
-  if (!events.length) d.para("No carrier events available.", { color: 110 });
-  for (const e of events) {
-    d.para(`${e.time ?? "-"}${e.location ? `  |  ${e.location}` : ""}`, { size: 9, color: 110, gap: 0 });
-    d.para(e.description, { gap: 8 });
-  }
+  d.section(events.length > 1 ? "Latest tracking events" : "Tracking event");
+  if (!events.length) d.note("No carrier events available.");
+  else d.table(events.map((e) => [e.time ?? "-", `${e.description}${e.location ? ` (${e.location})` : ""}`]), 170);
+
+  const ship = ev.policies.filter((p) => p.kind === "shipping");
+  d.section("Published shipping policy");
+  if (ev.store.domain) d.note(`Published on our store (${ev.store.domain}) and accepted by the customer at checkout.`);
+  if (!ship.length) d.note("No shipping policy text available.");
+  for (const p of ship) d.textBox(p.body, { bold: ship.length > 1 ? p.title : undefined });
+
+  d.callout("Evidence position", delivered
+    ? `Carrier tracking confirms the package was delivered to the customer's shipping address on ${dateEn(delivered)}.`
+    : "This document supports timely order processing and the creation of shipment tracking to the customer's stated destination, within the timeframes published in our Shipping Policy.", "green");
   return d;
 }
 
 function communication(ev: DisputeEvidence) {
   const d = new Doc(ev, "Customer Communication");
-  d.kv("Customer", ev.order.customerName);
-  d.kv("Customer email", ev.order.email);
-  d.kv("Store support email", ev.store.supportEmail);
-  d.rule();
+  const inbound = ev.communications.some((m) => m.direction === "in");
+  const support = ev.store.supportEmail ?? "store support";
+  d.summary([["Customer", ev.order.customerName ?? "-"], ["Email", ev.order.email ?? "-"], ["Emails on record", String(ev.notifications.length + ev.communications.length)], ["Support", ev.store.supportEmail ?? "-"]]);
+  d.callout("Why this evidence matters", [
+    ev.notifications.length && "The store's automatic order and shipping confirmation emails were sent to the customer's email address, including the tracking information.",
+    ev.communications.length && "The record below shows every message exchanged with the customer about this order.",
+    !inbound && `The customer did not contact our support team (${support}) about this order before filing the dispute, although our contact details are published on the store.`,
+  ].filter(Boolean).join(" "));
+
   if (ev.notifications.length) {
-    d.section("Automatic emails sent to the customer by the store (Shopify)");
-    for (const n of ev.notifications) {
-      d.para(dateEn(n.sentAt, true), { size: 9, color: 110, gap: 0 });
-      d.para(n.message, { gap: 8 });
-    }
-    if (ev.shipping.trackingNumber) d.para(`Tracking number on file for this shipment: ${ev.shipping.trackingNumber}${ev.shipping.trackingUrl ? ` (${ev.shipping.trackingUrl})` : ""}.`, { color: 60, gap: 8 });
-    d.rule();
+    d.section("Automatic emails sent by the store");
+    d.table([
+      ...ev.notifications.map((n): [string, string] => [dateEn(n.sentAt, true), n.message]),
+      ["Tracking on file", tracking(ev) ? `${tracking(ev)}${ev.shipping.trackingUrl ? ` - ${ev.shipping.trackingUrl}` : ""}` : null],
+    ], 170);
   }
-  if (!ev.communications.length) {
-    d.para(`We have no record of the customer contacting our support team (${ev.store.supportEmail ?? "store support"}) about this order before or after filing the dispute. The customer was able to reach us at any time through the contact information published on our store.`);
-    return d;
-  }
-  d.section("Conversations with our support team");
   for (const m of ev.communications) {
-    d.section(`${m.direction === "in" ? "From customer" : "From store"} - ${dateEn(m.sentAt, true)}`);
-    d.kv("From", m.from); d.kv("To", m.to); d.kv("Subject", m.subject);
-    d.para(m.body, { gap: 10 });
-    d.rule();
+    d.section(`Email record - ${m.direction === "in" ? "from customer" : "from store"}`);
+    d.table([["From", m.from], ["To", m.to], ["Date", dateEn(m.sentAt, true)], ["Subject", m.subject]]);
+    d.textBox(m.body);
   }
   return d;
-}
-
-async function productSection(d: Doc, ev: DisputeEvidence) {
-  d.section("Product description");
-  for (let i = 0; i < ev.order.items.length; i++) {
-    const it = ev.order.items[i];
-    const p = ev.products[i];
-    d.section(p?.title ?? it.title);
-    d.kv("Variant / size", it.variant);
-    d.kv("Quantity", String(it.quantity));
-    d.kv("Price", it.price ? `${ev.order.currency ?? "USD"} ${it.price}` : null);
-    d.kv("SKU", it.sku);
-    if (p?.productType) d.kv("Product type", p.productType);
-    if (p?.description) { d.y += 4; d.para(p.description); }
-    d.rule();
-  }
-  if (ev.store.domain) d.para(`The product is sold as described on our store (${ev.store.domain}). The item shipped matches the product, variant and quantity purchased.`, { color: 60 });
 }
 
 // Comprovante de serviço: dados da compra (com IP do cliente) + descrição do produto.
-async function service(ev: DisputeEvidence) {
+function service(ev: DisputeEvidence) {
   const d = new Doc(ev, "Proof of Service");
-  d.section("Order");
-  d.kv("Order number", ev.order.number);
-  d.kv("Order date", dateEn(ev.order.createdAt, true));
-  d.kv("Order total", ev.order.total ? `${ev.order.currency ?? "USD"} ${ev.order.total}` : null);
-  d.kv("Items", ev.order.items.map((i) => `${i.quantity} x ${i.title}${i.variant ? ` (${i.variant})` : ""}`).join("\n"));
-  d.section("Customer");
-  d.kv("Name", ev.order.customerName);
-  d.kv("Email", ev.order.email);
-  d.kv("Phone", ev.order.phone);
-  d.kv("Shipping address", ev.order.shippingAddress.join("\n"));
-  d.kv("Billing address", ev.order.billingAddress.join("\n"));
-  d.section("Payment and verification");
-  d.kv("Payment method", ev.payment.method);
-  d.kv("Card ending in", ev.payment.last4);
-  d.kv("AVS result", ev.payment.avs ? `${ev.payment.avs}${ev.payment.avs === "Y" ? " (street address and ZIP match)" : ""}` : null);
-  d.kv("CVV result", ev.payment.cvv ? `${ev.payment.cvv}${ev.payment.cvv === "M" ? " (match)" : ""}` : null);
-  d.kv("Purchase IP address", ev.order.ip);
-  d.kv("Browser", ev.order.userAgent);
-  if (ev.payment.riskLevel) d.kv("Fraud analysis", `${ev.payment.riskLevel.charAt(0)}${ev.payment.riskLevel.slice(1).toLowerCase()} risk`);
-  const positive = ev.payment.riskFacts.filter((f) => f.sentiment === "POSITIVE");
-  if (positive.length) {
-    d.section("Verification checks passed");
-    for (const f of positive) d.para(`- ${f.description}`, { gap: 2 });
-  }
-  if (ev.limited) { d.y += 8; d.para("Note: some order details are unavailable for this order.", { size: 9, color: 110 }); }
-  d.y += 6;
-  d.rule();
-  await productSection(d, ev);
+  const units = ev.order.items.reduce((t, i) => t + i.quantity, 0);
+  d.summary([["Order", ev.order.number ?? "-"], ["Order date", dateShort(ev.order.createdAt)], ["Amount", money(ev, ev.order.total)], ["Items", String(units || "-")]]);
+  const positive = ev.payment.riskFacts.filter((f) => f.sentiment === "POSITIVE").map((f) => f.description.replace(/\.$/, ""));
+  d.callout("Why this evidence matters", [
+    "This record identifies the disputed transaction, the customer, the purchased item, and the billing and shipping information supplied with the order.",
+    ev.payment.avs === "Y" && "The address verification (AVS) matched.",
+    ev.payment.cvv === "M" && "The card security code (CVV) matched.",
+    positive.length && `The platform's verification record also shows: ${positive.join("; ")}.`,
+  ].filter(Boolean).join(" "));
+
+  d.section("Order details");
+  d.table([
+    ["Order number", ev.order.number],
+    ["Order date", ev.order.createdAt ? dateEn(ev.order.createdAt, true) : null],
+    ["Order total", ev.order.total ? money(ev, ev.order.total) : null],
+    ...ev.order.items.flatMap((it, i): [string, string | null][] => [
+      [ev.order.items.length > 1 ? `Product ${i + 1}` : "Product", ev.products[i]?.title ?? it.title],
+      ["Variant / size", it.variant],
+      ["Quantity", String(it.quantity)],
+      ["Price", it.price ? money(ev, it.price) : null],
+      ["SKU", it.sku],
+    ]),
+  ]);
+  d.section("Customer & address");
+  d.table([
+    ["Customer", ev.order.customerName], ["Email", ev.order.email], ["Phone", ev.order.phone],
+    ["Shipping address", ev.order.shippingAddress.join(", ")], ["Billing address", ev.order.billingAddress.join(", ")],
+  ]);
+  d.section("Payment & verification");
+  d.table([
+    ["Payment method", ev.payment.method],
+    ["Card ending in", ev.payment.last4],
+    ["AVS result", ev.payment.avs ? `${ev.payment.avs}${ev.payment.avs === "Y" ? " (street address and ZIP match)" : ""}` : null],
+    ["CVV result", ev.payment.cvv ? `${ev.payment.cvv}${ev.payment.cvv === "M" ? " (match)" : ""}` : null],
+    ["Purchase IP address", ev.order.ip],
+    ["Browser", ev.order.userAgent],
+    ["Fraud analysis", ev.payment.riskLevel ? `${ev.payment.riskLevel.charAt(0)}${ev.payment.riskLevel.slice(1).toLowerCase()} risk` : null],
+  ]);
+  d.section("Product description");
+  ev.order.items.forEach((it, i) => {
+    const p = ev.products[i];
+    d.textBox(p?.description ?? "No product description available.", { bold: `${p?.title ?? it.title}${it.variant ? ` - ${it.variant}` : ""}` });
+  });
+  if (ev.store.domain) d.note(`The product is sold as described on our store (${ev.store.domain}). The item shipped matches the product, variant and quantity purchased.`);
+  if (ev.limited) d.note("Note: some order details are unavailable for this order.");
   return d;
 }
 
-// Outras provas: as políticas escritas que não entraram nos outros documentos.
 // Texto de defesa por motivo da disputa (aprovado pela operação). Frase com
 // dado que falta sai do texto — nunca afirma o que não temos.
 function rebuttal(ev: DisputeEvidence): string {
@@ -303,14 +405,13 @@ function rebuttal(ev: DisputeEvidence): string {
 // Outras provas: o texto de defesa do motivo + as políticas que não entraram nos outros documentos.
 function other(ev: DisputeEvidence) {
   const d = new Doc(ev, "Additional Evidence");
-  d.section("Response to the dispute");
-  d.para(rebuttal(ev), { gap: 12 });
-  d.rule();
+  d.summary([["Store", ev.store.domain ?? ev.store.name], ["Order date", dateShort(ev.order.createdAt)], ["Dispute", REASON_EN[ev.dispute.reason ?? ""] ?? ev.dispute.reason ?? "-"], ["Amount", money(ev, ev.dispute.amount)]]);
+  d.callout("Response to the dispute", rebuttal(ev));
   const rest = ev.policies.filter((p) => p.kind !== "shipping");
   d.section("Store policies");
-  if (ev.store.domain) d.para(`The following policies are published on our store (${ev.store.domain}) and were available to the customer at the time of purchase.`, { color: 60, gap: 10 });
-  if (!rest.length) d.para("No policy text available.", { color: 110 });
-  for (const p of rest) { d.section(p.title); d.para(p.body, { size: 9.5, gap: 12 }); }
+  if (ev.store.domain) d.note(`The following policies are published on our store (${ev.store.domain}) and were available to the customer at the time of purchase.`);
+  if (!rest.length) d.note("No policy text available.");
+  for (const p of rest) d.textBox(p.body, { bold: p.title });
   return d;
 }
 
@@ -319,7 +420,7 @@ export async function downloadEvidenceDoc(key: EvidenceDocKey, ev: DisputeEviden
   const file = EVIDENCE_DOCS.find((x) => x.key === key)!.file;
   const doc = key === "communication" ? communication(ev)
     : key === "shipping" ? shipping(ev)
-    : key === "service" ? await service(ev)
+    : key === "service" ? service(ev)
     : other(ev);
   doc.save(`${(ev.order.number ?? "order").replace(/^#/, "")}_${file}`);
 }
