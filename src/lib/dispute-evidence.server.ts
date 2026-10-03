@@ -54,7 +54,7 @@ export async function collectEvidence(ownerId: string, disputeId: string): Promi
     domain && token ? shopify(domain, token, "shop.json?fields=name,domain,customer_email,email").catch(() => null) : null,
     domain && token ? shopify(domain, token, "policies.json").catch(() => null) : null,
     domain && token && d.order_external_id
-      ? shopifyGql(domain, token, `query($id: ID!) { order(id: $id) { transactions(first: 5) { kind status gateway paymentDetails { __typename ... on CardPaymentDetails { company number avsResultCode cvvResultCode } } } } }`,
+      ? shopifyGql(domain, token, `query($id: ID!) { order(id: $id) { transactions(first: 5) { kind status gateway paymentDetails { __typename ... on CardPaymentDetails { company number avsResultCode cvvResultCode } } } events(first: 100, sortKey: CREATED_AT) { nodes { createdAt message ... on BasicEvent { action } } } } }`,
           { id: `gid://shopify/Order/${d.order_external_id}` }).catch(() => null)
       : null,
   ]);
@@ -174,6 +174,11 @@ export async function collectEvidence(ownerId: string, disputeId: string): Promi
       from: m.from_name ? `${m.from_name} <${m.from_email ?? ""}>` : m.from_email, to: m.to_emails, subject: m.subject,
       body: htmlText(m.content_html, 8000) || m.summary || "",
     })).filter((m) => m.body),
+    // E-mails automáticos da Shopify ao cliente (confirmação do pedido, confirmação
+    // de envio…): também são contato com o cliente. Vêm dos eventos do pedido.
+    notifications: ((gql?.order?.events?.nodes ?? []) as any[])
+      .filter((e) => e.action === "mail_sent" && e.message)
+      .map((e) => ({ sentAt: String(e.createdAt), message: String(e.message).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() })),
     policies,
     limited: !raw,
   };

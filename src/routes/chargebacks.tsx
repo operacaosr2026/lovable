@@ -889,17 +889,19 @@ function DisputeDocs({ disputeId }: { disputeId: string }) {
     catch (e: any) { toast.error(e?.message ?? "Erro ao juntar as provas"); return null; }
     finally { setLoading(false); }
   };
+  // Cada download busca as provas de novo: política alterada na Shopify entra na hora.
+  const fresh = async () => {
+    try { const e = await evidenceFn({ data: { disputeId } }); setEv(e); return e; }
+    catch (e: any) { toast.error(e?.message ?? "Erro ao juntar as provas"); return null; }
+  };
   const download = async (key: EvidenceDocKey) => {
-    const e = ev ?? await load();
-    if (!e) return;
     setBusy(key);
-    try { await downloadEvidenceDoc(key, e); } catch { toast.error("Erro ao gerar o PDF"); } finally { setBusy(null); }
+    try { const e = await fresh(); if (e) await downloadEvidenceDoc(key, e); }
+    catch { toast.error("Erro ao gerar o PDF"); } finally { setBusy(null); }
   };
   const downloadAll = async () => {
-    const e = ev ?? await load();
-    if (!e) return;
     setBusy("all");
-    try { for (const d of EVIDENCE_DOCS) await downloadEvidenceDoc(d.key, e); }
+    try { const e = await fresh(); if (e) for (const d of EVIDENCE_DOCS) await downloadEvidenceDoc(d.key, e); }
     catch { toast.error("Erro ao gerar os PDFs"); } finally { setBusy(null); }
   };
 
@@ -929,7 +931,10 @@ function DisputeDocs({ disputeId }: { disputeId: string }) {
             <div className="min-w-0">
               <p className="text-sm truncate">{d.label}</p>
               <p className="text-[11px] text-muted-foreground truncate">
-                {d.key === "communication" && !ev.communications.length ? "Sem contato do cliente" : d.hint}
+                {d.key === "communication"
+                  ? [ev.notifications.length && `${ev.notifications.length} e-mail${ev.notifications.length === 1 ? "" : "s"} da Shopify`,
+                     ev.communications.length ? `${ev.communications.length} mensage${ev.communications.length === 1 ? "m" : "ns"} do Atendimento` : "sem conversa no Atendimento"].filter(Boolean).join(" · ")
+                  : d.hint}
               </p>
             </div>
             <button onClick={() => download(d.key)} disabled={!!busy}

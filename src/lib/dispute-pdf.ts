@@ -163,10 +163,20 @@ function communication(ev: DisputeEvidence) {
   d.kv("Customer email", ev.order.email);
   d.kv("Store support email", ev.store.supportEmail);
   d.rule();
+  if (ev.notifications.length) {
+    d.section("Automatic emails sent to the customer by the store (Shopify)");
+    for (const n of ev.notifications) {
+      d.para(dateEn(n.sentAt, true), { size: 9, color: 110, gap: 0 });
+      d.para(n.message, { gap: 8 });
+    }
+    if (ev.shipping.trackingNumber) d.para(`Tracking number on file for this shipment: ${ev.shipping.trackingNumber}${ev.shipping.trackingUrl ? ` (${ev.shipping.trackingUrl})` : ""}.`, { color: 60, gap: 8 });
+    d.rule();
+  }
   if (!ev.communications.length) {
     d.para(`We have no record of the customer contacting our support team (${ev.store.supportEmail ?? "store support"}) about this order before or after filing the dispute. The customer was able to reach us at any time through the contact information published on our store.`);
     return d;
   }
+  d.section("Conversations with our support team");
   for (const m of ev.communications) {
     d.section(`${m.direction === "in" ? "From customer" : "From store"} - ${dateEn(m.sentAt, true)}`);
     d.kv("From", m.from); d.kv("To", m.to); d.kv("Subject", m.subject);
