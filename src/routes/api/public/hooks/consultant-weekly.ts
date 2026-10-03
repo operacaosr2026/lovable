@@ -2,8 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runConsultantWeekly } from "@/lib/consultant.server";
 import { reportSystemErrorAll, clearSystemErrorAll } from "@/lib/system-errors.server";
+import { nyParts } from "@/lib/timezone";
 
-// Disparado toda segunda pelo pg_cron (ver *_consultant_reports.sql): análise
+// Disparado toda segunda às 12:00 e 13:00 UTC pelo pg_cron (ver *_consultant_monday_8am_ny.sql):
+// só segue na que for 8h de Nova York (muda com o horário de verão). Análise
 // semanal do Consultor pra cada dono com loja ativa.
 export const Route = createFileRoute("/api/public/hooks/consultant-weekly")({
   server: {
@@ -11,6 +13,8 @@ export const Route = createFileRoute("/api/public/hooks/consultant-weekly")({
       POST: async ({ request }) => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
+        const ny = nyParts(new Date());
+        if (ny.weekday !== 1 || ny.hour !== 8) return Response.json({ skipped: `não é segunda 8h em NY (${ny.iso} ${ny.hm})` });
         try {
           const out = await runConsultantWeekly();
           const failed = out.filter((o) => !o.ok);

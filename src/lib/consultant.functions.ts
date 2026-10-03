@@ -2,9 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { runConsultant, runRequestedAnalysis, type ConsultantResult } from "@/lib/consultant.server";
+import { runRequestedAnalysis, type ConsultantResult } from "@/lib/consultant.server";
 import { resolveNotification } from "@/lib/notifications.server";
-import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 
 // Página Consultor (ver consultant.server.ts). Acesso: admin, ou membro com a
 // permissão "consultor".
@@ -44,20 +43,6 @@ export const getConsultant = createServerFn({ method: "GET" })
     // Abriu a página: o aviso "análise nova" sai do sino.
     await resolveNotification(context.ownerId, "consultor:analise").catch(() => {});
     return { report, history: (history ?? []).map((h) => ({ id: h.id, createdAt: h.created_at })) };
-  });
-
-export const runConsultantNow = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .handler(async ({ context }) => {
-    assertAccess(context);
-    // Análise completa custa caro: no máximo 1 por dia (dia de Nova York).
-    const { data: last } = await supabaseAdmin.from("consultant_reports").select("created_at")
-      .eq("user_id", context.ownerId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (last && isoDateUS(last.created_at) === isoTodayUS()) {
-      throw new Error("Já tem uma análise de hoje. A próxima pode ser feita amanhã.");
-    }
-    const r = await runConsultant(context.ownerId);
-    return { id: r.id };
   });
 
 // "Pedir análise": investigação nova sobre o que o dono escrever.

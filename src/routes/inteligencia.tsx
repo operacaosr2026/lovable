@@ -14,7 +14,7 @@ import { requireAuth } from "@/lib/route-guards";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getConsultant, runConsultantNow, requestConsultantAnalysis, setConsultantTipStatus, endConsultantTest, type TipStatus, type ConsultantReport } from "@/lib/consultant.functions";
+import { getConsultant, requestConsultantAnalysis, setConsultantTipStatus, endConsultantTest, type TipStatus, type ConsultantReport } from "@/lib/consultant.functions";
 import { getIntelOrders, type IntelOrder } from "@/lib/intel.functions";
 import type { ConsultantTip, ConsultantTest } from "@/lib/consultant.server";
 
@@ -86,12 +86,9 @@ type DrawerTab = "geral" | "pedidos" | "padroes" | "dados" | "historico";
 function InteligenciaPage() {
   const qc = useQueryClient();
   const getFn = useServerFn(getConsultant);
-  const runFn = useServerFn(runConsultantNow);
   const statusFn = useServerFn(setConsultantTipStatus);
   const q = useQuery({ queryKey: ["consultant", null], queryFn: () => getFn({ data: { report_id: null } }) });
   const report = q.data?.report ?? null;
-  // Análise completa: 1 por dia (o servidor também barra).
-  const ranToday = !!q.data?.history?.[0] && isoDateUS(q.data.history[0].createdAt) === isoTodayUS();
   const [tab, setTab] = useState<Tab>("agora");
   const [cat, setCat] = useState<string | null>(null);
   const [sort, setSort] = useState<"prioridade" | "valor">("prioridade");
@@ -115,11 +112,6 @@ function InteligenciaPage() {
     mutationFn: (t: ConsultantTest) => endFn({ data: { report_id: report!.id, titulo: t.titulo, origem: t.origem || null } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); toast.success("Teste encerrado"); },
     onError: (e: any) => toast.error(e.message ?? "Falha ao encerrar"),
-  });
-  const run = useMutation({
-    mutationFn: () => runFn(),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["consultant"] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); toast.success("Análise pronta"); },
-    onError: (e: any) => toast.error(e.message ?? "A análise falhou"),
   });
   const setStatus = useMutation({
     mutationFn: (v: { index: number; status: TipStatus | null; motivo?: "ja_sei" | "sem_sentido" }) => statusFn({ data: { report_id: report!.id, ...v } }),
@@ -165,9 +157,6 @@ function InteligenciaPage() {
           <Button variant="outline" onClick={() => setAskOpen(true)} disabled={ask.isPending}>
             {ask.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando seu pedido…</> : <><MessageSquareText className="size-4" /> Pedir análise</>}
           </Button>
-          <Button onClick={() => run.mutate()} disabled={run.isPending || ranToday} title={ranToday ? "Já tem análise de hoje — a próxima pode ser feita amanhã" : undefined}>
-            {run.isPending ? <><Loader2 className="size-4 animate-spin" /> Analisando… (1-2 min)</> : <><Sparkles className="size-4" /> Analisar agora</>}
-          </Button>
         </div>
       </div>
 
@@ -177,7 +166,7 @@ function InteligenciaPage() {
         <div className="premium-card p-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
       ) : !report ? (
         <div className="premium-card p-8 text-center text-sm text-muted-foreground">
-          Nenhuma análise ainda. Clique em <strong>Analisar agora</strong>.
+          Nenhuma análise ainda. A análise sai sozinha toda segunda às 8h (Nova York).
         </div>
       ) : (
         <>
