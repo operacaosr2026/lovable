@@ -145,7 +145,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                     }}
                   >
                     <p className="text-xs font-semibold text-foreground leading-snug pr-5">{n.title}</p>
-                    {n.body && <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{n.body}</p>}
+                    {n.body && <p className="text-[11px] text-muted-foreground mt-1 leading-snug whitespace-pre-line">{n.body}</p>}
                     <p className="text-[10px] text-muted-foreground/70 mt-1.5 pr-24">{timeAgo(n.created_at)}</p>
                   </button>
                   <div className="absolute bottom-2.5 right-3">

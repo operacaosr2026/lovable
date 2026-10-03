@@ -3405,6 +3405,7 @@ export type Database = {
           installed_at: string | null;
           is_placeholder: boolean;
           policy_base: boolean;
+          setup_check_until: string | null;
           last_sync_at: string | null;
           last_sync_error: string | null;
           last_sync_status: string | null;
@@ -3435,6 +3436,7 @@ export type Database = {
           installed_at?: string | null;
           is_placeholder?: boolean;
           policy_base?: boolean;
+          setup_check_until?: string | null;
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           last_sync_status?: string | null;
@@ -3465,6 +3467,7 @@ export type Database = {
           installed_at?: string | null;
           is_placeholder?: boolean;
           policy_base?: boolean;
+          setup_check_until?: string | null;
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           last_sync_status?: string | null;

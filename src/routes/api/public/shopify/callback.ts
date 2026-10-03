@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { syncMirrorShop } from "@/lib/shop-orders.functions";
 import crypto from "crypto";
-import { checkStorePolicies } from "@/lib/store-policies.server";
+import { startStoreSetupCheck } from "@/lib/store-policies.server";
 import { fetchWithRetry } from "@/lib/http";
 
 function htmlMessage(title: string, message: string, ok: boolean) {
@@ -104,8 +104,8 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
 
         if (storeId) {
           await syncMirrorShop(st.user_id, storeId, st.name);
-          // Loja nova: confere as políticas com as da loja base (aviso no sino se diferente).
-          if (!existing) await checkStorePolicies(st.user_id, storeId).catch((e) => console.error("checkStorePolicies", e));
+          // Loja nova: confere políticas, apps, e-mail, endereço e notificações com a loja base (aviso no sino se diferente).
+          if (!existing) await startStoreSetupCheck(st.user_id, storeId).catch((e) => console.error("startStoreSetupCheck", e));
         }
         await supabaseAdmin.from("shopify_oauth_states").delete().eq("state", state);
 
