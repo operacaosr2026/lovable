@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
 import { syncTrack123ForShops, getTrack123Integrations } from "@/lib/track123.functions";
@@ -16,6 +15,8 @@ import { toast } from "sonner";
 import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis, postingCalendar } from "@/lib/logistics-kpis";
 import { listPostingHolidays } from "@/lib/posting-holidays.functions";
 import { isoDateUS, isoTodayUS } from "@/lib/timezone";
+import { notifyOrderCustomers, NOTIFY_TEMPLATE } from "@/lib/atendimento.functions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -362,13 +363,28 @@ export function LgLogistica({
     return buildTrackingMessage(blocks);
   }, [selectedOrders, domainsQuery.data]);
 
-  // Avisar cliente: abre a Nova mensagem do Atendimento com o pedido já buscado
-  // (e-mail do cliente e {rastreio} das mensagens salvas vêm dele).
-  const router = useRouter();
-  const notifyCustomer = () => {
-    const o = selectedOrders[0];
-    if (!o || selectedOrders.length !== 1) return;
-    router.history.push(`/atendimento?novo=${encodeURIComponent(orderLabel(o))}`);
+  // Avisar cliente: depois de confirmar, manda a mensagem salva NOTIFY_TEMPLATE
+  // pro cliente de cada pedido marcado (pelo Zoho, com a assinatura).
+  const confirm = useConfirm();
+  const notifyFn = useServerFn(notifyOrderCustomers);
+  const notify = useMutation({
+    mutationFn: (orderIds: string[]) => notifyFn({ data: { orderIds } }),
+    onSuccess: (r) => {
+      if (r.sent.length) toast.success(r.sent.length === 1 ? `E-mail enviado pro cliente do pedido ${r.sent[0]}` : `${r.sent.length} e-mails enviados`);
+      if (r.skipped.length) toast.warning(`Não enviado: ${r.skipped.map((x) => `${x.order} (${x.motivo})`).join(", ")}`, { duration: 10_000 });
+      setSelected(new Set());
+    },
+    onError: (e: any) => toast.error(e.message ?? "Falha ao enviar"),
+  });
+  const notifyCustomer = async () => {
+    if (!selectedOrders.length || notify.isPending) return;
+    const n = selectedOrders.length;
+    const ok = await confirm({
+      title: n === 1 ? `Avisar o cliente do pedido ${orderLabel(selectedOrders[0])}?` : `Avisar os clientes de ${n} pedidos?`,
+      description: `Vai enviar agora o e-mail "${NOTIFY_TEMPLATE}" (com o link de rastreio de cada pedido) ${n === 1 ? "pro cliente" : "pra cada cliente"}, pelo e-mail do suporte.`,
+      confirmText: n === 1 ? "Enviar e-mail" : `Enviar ${n} e-mails`,
+    });
+    if (ok) notify.mutate(selectedOrders.map((o) => o.id));
   };
 
   const copySupplierMessage = async () => {
@@ -563,9 +579,9 @@ export function LgLogistica({
             <span className="font-medium">{selectedOrders.length}</span> {selectedOrders.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
           </span>
           <div className="flex-1" />
-          <Button size="sm" variant="outline" onClick={notifyCustomer} disabled={selectedOrders.length !== 1}
-            title={selectedOrders.length === 1 ? "Abre uma mensagem nova no Atendimento para o cliente deste pedido" : "Selecione um pedido só para avisar o cliente"}>
-            <Mail className="size-4" /> Avisar cliente
+          <Button size="sm" variant="outline" onClick={notifyCustomer} disabled={notify.isPending}
+            title={`Envia o e-mail "${NOTIFY_TEMPLATE}" pro cliente de cada pedido marcado`}>
+            <Mail className="size-4" /> {notify.isPending ? "Enviando…" : selectedOrders.length > 1 ? `Avisar ${selectedOrders.length} clientes` : "Avisar cliente"}
           </Button>
           <Button size="sm" variant="outline" onClick={copySupplierMessage}>
             <Copy className="size-4" /> Copiar mensagem pro fornecedor

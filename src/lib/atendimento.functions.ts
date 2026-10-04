@@ -738,6 +738,53 @@ export const sendSupportReply = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Rastreamento > "Avisar cliente": manda a mensagem salva NOTIFY_TEMPLATE pro
+// cliente de cada pedido marcado ({nome} = primeiro nome, {rastreio} = link do
+// pedido), com a assinatura. Pedido sem e-mail ou sem rastreio fica de fora.
+export const NOTIFY_TEMPLATE = "ATUALIZAÇÃO DO PEDIDO (A CAMINHO)";
+export const notifyOrderCustomers = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ orderIds: z.array(z.string().uuid()).min(1).max(50) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertSub(context, "at_caixa");
+    const ownerId = context.ownerId;
+    const acc = await requireAccount(ownerId);
+    const { data: tpl } = await supabaseAdmin.from("support_templates").select("body")
+      .eq("owner_id", ownerId).eq("title", NOTIFY_TEMPLATE).maybeSingle();
+    if (!tpl) throw new Error(`Mensagem salva "${NOTIFY_TEMPLATE}" não encontrada (Atendimento → Mensagens salvas).`);
+    const { data: orders, error } = await supabaseAdmin.from("shop_orders")
+      .select("id,shop_id,order_number,tracking_code,tracking_url,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,ship_first:raw->shipping_address->>first_name,cancelled_at:raw->>cancelled_at")
+      .eq("user_id", ownerId).in("id", data.orderIds);
+    if (error) throw new Error(error.message);
+    const shopIds = [...new Set((orders ?? []).map((o: any) => o.shop_id))];
+    const { data: integs } = shopIds.length
+      ? await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds)
+      : { data: [] as { shop_id: string; tracking_link_template: string | null }[] };
+    const templateByShop = new Map((integs ?? []).map((i) => [i.shop_id, i.tracking_link_template]));
+
+    const sent: string[] = [];
+    const skipped: { order: string; motivo: string }[] = [];
+    for (const o of (orders ?? []) as any[]) {
+      const order = String(o.order_number ?? o.id.slice(0, 8));
+      const to = String(o.email ?? o.cust ?? "").trim().toLowerCase();
+      const link = buildTrackingUrl(templateByShop.get(o.shop_id), o.tracking_code) ?? o.tracking_url;
+      if (o.cancelled_at) { skipped.push({ order, motivo: "pedido cancelado" }); continue; }
+      if (!z.string().email().safeParse(to).success) { skipped.push({ order, motivo: "sem e-mail do cliente" }); continue; }
+      if (!link) { skipped.push({ order, motivo: "sem link de rastreio" }); continue; }
+      const name = String(o.first_name || o.ship_first || "").trim().split(/\s+/)[0] ?? "";
+      const text = tpl.body.replace(/\{nome\}/gi, name).replace(/^Hi ,/m, "Hi,").replace(/\{rastreio\}/gi, link);
+      try {
+        const html = await buildBody(ownerId, context.userId, text, true);
+        await sendZohoMail(acc, { to, subject: "Update on your order 📦", html });
+        sent.push(order);
+      } catch (e: any) {
+        skipped.push({ order, motivo: String(e?.message ?? e).slice(0, 120) });
+      }
+    }
+    if (sent.length) { try { await syncZohoMailbox(ownerId, { quick: true }); } catch { /* próxima sincronização */ } }
+    return { sent, skipped };
+  });
+
 export const sendSupportNewMessage = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
