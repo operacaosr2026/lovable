@@ -20,7 +20,7 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
     const { data: rows, error } = await selectAll(supabaseAdmin
       .from("shop_orders")
-      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded")
+      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
       .eq("user_id", context.ownerId)
       .in("shop_id", data.shop_ids)
       .gte("order_date", data.from)

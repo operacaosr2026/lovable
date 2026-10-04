@@ -777,6 +777,8 @@ export const notifyOrderCustomers = createServerFn({ method: "POST" })
         const html = await buildBody(ownerId, context.userId, text, true);
         await sendZohoMail(acc, { to, subject: "Update on your order 📦", html });
         sent.push(order);
+        // Rastreamento mostra "Cliente avisado em …" (e a confirmação avisa se já foi).
+        await supabaseAdmin.from("shop_orders").update({ customer_notified_at: new Date().toISOString() }).eq("id", o.id);
       } catch (e: any) {
         skipped.push({ order, motivo: String(e?.message ?? e).slice(0, 120) });
       }

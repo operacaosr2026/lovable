@@ -363,7 +363,10 @@ export function LgLogistica({
     return buildTrackingMessage(blocks);
   }, [selectedOrders, domainsQuery.data]);
 
-  // Avisar cliente: depois de confirmar, manda a mensagem salva NOTIFY_TEMPLATE
+  // "03/10 14:20" no horário de Nova York.
+const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+
+// Avisar cliente: depois de confirmar, manda a mensagem salva NOTIFY_TEMPLATE
   // pro cliente de cada pedido marcado (pelo Zoho, com a assinatura).
   const confirm = useConfirm();
   const notifyFn = useServerFn(notifyOrderCustomers);
@@ -371,6 +374,7 @@ export function LgLogistica({
     mutationFn: (orderIds: string[]) => notifyFn({ data: { orderIds } }),
     onSuccess: (r) => {
       if (r.sent.length) toast.success(r.sent.length === 1 ? `E-mail enviado pro cliente do pedido ${r.sent[0]}` : `${r.sent.length} e-mails enviados`);
+      qc.invalidateQueries({ queryKey: ["lg-logistics"] });
       if (r.skipped.length) toast.warning(`Não enviado: ${r.skipped.map((x) => `${x.order} (${x.motivo})`).join(", ")}`, { duration: 10_000 });
       setSelected(new Set());
     },
@@ -379,9 +383,13 @@ export function LgLogistica({
   const notifyCustomer = async () => {
     if (!selectedOrders.length || notify.isPending) return;
     const n = selectedOrders.length;
+    const already = selectedOrders.filter((o) => o.customer_notified_at);
+    const warn = already.length
+      ? ` Atenção: ${already.map((o) => `${orderLabel(o)} já foi avisado em ${fmtNotified(o.customer_notified_at)}`).join("; ")}.`
+      : "";
     const ok = await confirm({
       title: n === 1 ? `Avisar o cliente do pedido ${orderLabel(selectedOrders[0])}?` : `Avisar os clientes de ${n} pedidos?`,
-      description: `Vai enviar agora o e-mail "${NOTIFY_TEMPLATE}" (com o link de rastreio de cada pedido) ${n === 1 ? "pro cliente" : "pra cada cliente"}, pelo e-mail do suporte.`,
+      description: `Vai enviar agora o e-mail "${NOTIFY_TEMPLATE}" (com o link de rastreio de cada pedido) ${n === 1 ? "pro cliente" : "pra cada cliente"}, pelo e-mail do suporte.${warn}`,
       confirmText: n === 1 ? "Enviar e-mail" : `Enviar ${n} e-mails`,
     });
     if (ok) notify.mutate(selectedOrders.map((o) => o.id));
@@ -675,6 +683,11 @@ export function LgLogistica({
                 <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
                 {attentionReason(o, nowMs) && (
                   <p className="text-[10px] text-rose-600 mt-0.5">{attentionReason(o, nowMs)}</p>
+                )}
+                {o.customer_notified_at && (
+                  <p className="text-[10px] text-success mt-0.5 flex items-center gap-1" title="E-mail &quot;Update on your order&quot; enviado pelo Avisar cliente">
+                    <Mail className="size-3" /> Avisado {fmtNotified(o.customer_notified_at)}
+                  </p>
                 )}
               </div>
               <div className="text-xs text-muted-foreground truncate">{o.logistics_note || "—"}</div>

@@ -2810,6 +2810,7 @@ export type Database = {
           connection_id: string | null;
           created_at: string;
           created_at_shopify: string;
+          customer_notified_at: string | null;
           currency: string | null;
           delivered_at: string | null;
           delivery_status: string | null;
@@ -2840,6 +2841,7 @@ export type Database = {
           connection_id?: string | null;
           created_at?: string;
           created_at_shopify: string;
+          customer_notified_at?: string | null;
           currency?: string | null;
           delivered_at?: string | null;
           delivery_status?: string | null;
@@ -2870,6 +2872,7 @@ export type Database = {
           connection_id?: string | null;
           created_at?: string;
           created_at_shopify?: string;
+          customer_notified_at?: string | null;
           currency?: string | null;
           delivered_at?: string | null;
           delivery_status?: string | null;
