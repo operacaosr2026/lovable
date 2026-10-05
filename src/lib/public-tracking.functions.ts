@@ -1,23 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sanitizeEvents, buildSteps, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
 
-// Página pública de rastreio (/track/<código>), sem login, uma URL pra todas as
-// lojas: a loja sai do próprio pedido. Só lê o que o sync já gravou no banco —
-// não chama nenhuma API de rastreio. Devolve só dados do rastreio (nada de
-// nome, endereço, e-mail ou valor do cliente).
-export type PublicTrackingEvent = { at: string | null; description: string; location: string | null };
+// Página pública de rastreio (/track), sem login, uma URL pra todas as lojas e
+// sempre com a marca Voultie. Só lê o que o sync já gravou no banco — não chama
+// nenhuma API de rastreio. Do cliente, só a cidade/estado de destino (pro mapa);
+// nada de nome, endereço, e-mail ou valor.
 export type PublicTracking = {
-  storeName: string;
-  logoUrl: string | null;
   orderNumber: string | null;
   trackingNumber: string;
   status: string | null;   // mesmas chaves do 17track: InfoReceived, InTransit, OutForDelivery, Delivered…
-  events: PublicTrackingEvent[];
+  steps: DisplayStep[];
+  currentStep: number;
+  events: DisplayEvent[];
+  destination: string | null;
 };
-
-// "Loja 2 - Voultie Wear" → "Voultie Wear" (o prefixo é organização interna).
-const publicStoreName = (name: string | null | undefined) => (name ?? "").replace(/^\s*loja\s*\d+\s*[-–:]\s*/i, "").trim() || "Your order";
 
 // Status do Track123 ("Info received", "InfoReceived", "In transit"…) → chave única.
 function normalizeStatus(raw: string | null | undefined, delivered: boolean): string | null {
@@ -38,13 +36,19 @@ function normalizeStatus(raw: string | null | undefined, delivered: boolean): st
 
 // Timeline gravada nos formatos do MCP (event_time_utc/event_detail) e da Open API
 // do Track123 (eventTimeZeroUTC/eventDetail).
-function normalizeEvents(timeline: any[] | null | undefined): PublicTrackingEvent[] {
-  const events = (timeline ?? []).map((e: any) => ({
+function rawEvents(timeline: any[] | null | undefined): DisplayEvent[] {
+  return (timeline ?? []).map((e: any) => ({
     at: e?.event_time_utc ? `${String(e.event_time_utc).replace(" ", "T")}Z` : (e?.eventTimeZeroUTC ?? e?.time_utc ?? null),
     description: String(e?.event_detail ?? e?.eventDetail ?? e?.description ?? "").trim(),
     location: (e?.event_location || e?.address || e?.location || null) as string | null,
-  })).filter((e) => e.description);
-  return events.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  }));
+}
+
+const ORDER_COLS = "id,order_number,order_date,delivered_at,delivery_status,tracking_code,created_at:raw->>created_at,city:raw->shipping_address->>city,province:raw->shipping_address->>province_code,country:raw->shipping_address->>country_code";
+
+function destinationOf(o: any): string | null {
+  if (!o || (o.country && o.country !== "US")) return null;
+  return [o.city, o.province].filter(Boolean).join(", ") || null;
 }
 
 export const getPublicTracking = createServerFn({ method: "GET" })
@@ -52,27 +56,57 @@ export const getPublicTracking = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ tracking: PublicTracking | null }> => {
     const code = data.code.toUpperCase();
     const { data: tr } = await supabaseAdmin.from("shop_order_tracking")
-      .select("order_id,shop_id,tracking_number,tracking_status,timeline")
+      .select("order_id,tracking_status,timeline")
       .eq("tracking_number", code).order("updated_at", { ascending: false }).limit(1).maybeSingle();
 
     // Sem linha de rastreio ainda: o código pode já estar no pedido (veio da Shopify).
     const { data: order } = tr
-      ? await supabaseAdmin.from("shop_orders").select("id,shop_id,order_number,delivery_status").eq("id", tr.order_id).maybeSingle()
-      : await supabaseAdmin.from("shop_orders").select("id,shop_id,order_number,delivery_status")
+      ? await supabaseAdmin.from("shop_orders").select(ORDER_COLS).eq("id", tr.order_id).maybeSingle()
+      : await supabaseAdmin.from("shop_orders").select(ORDER_COLS)
           .eq("tracking_code", code).order("order_date", { ascending: false }).limit(1).maybeSingle();
     if (!tr && !order) return { tracking: null };
 
-    const shopId = (tr?.shop_id ?? order?.shop_id)!;
-    const { data: shop } = await supabaseAdmin.from("shops").select("name,logo_url").eq("id", shopId).maybeSingle();
-
+    const o: any = order;
+    const status = normalizeStatus(tr?.tracking_status, o?.delivery_status === "delivered");
+    const all = rawEvents(tr?.timeline as any[]);
+    const { steps, current } = buildSteps({
+      orderedAt: o?.created_at ?? o?.order_date ?? null,
+      deliveredAt: o?.delivered_at ?? null,
+      status,
+      events: all,
+    });
     return {
       tracking: {
-        storeName: publicStoreName(shop?.name),
-        logoUrl: shop?.logo_url ?? null,
-        orderNumber: order?.order_number ?? null,
+        orderNumber: o?.order_number ?? null,
         trackingNumber: code,
-        status: normalizeStatus(tr?.tracking_status, order?.delivery_status === "delivered"),
-        events: normalizeEvents(tr?.timeline as any[]),
+        status,
+        steps,
+        currentStep: current,
+        events: sanitizeEvents(all),
+        destination: destinationOf(o),
       },
     };
+  });
+
+// Busca por número do pedido + e-mail ou telefone (como na página da loja).
+// Só confirma o pedido se o contato bater — e devolve só o código de rastreio.
+export const findPublicOrder = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({
+    orderNumber: z.string().trim().min(2).max(30),
+    contact: z.string().trim().min(3).max(120),
+  }).parse(d))
+  .handler(async ({ data }): Promise<{ found: false } | { found: true; trackingCode: string | null; orderNumber: string }> => {
+    const num = data.orderNumber.replace(/^#/, "").toUpperCase();
+    const { data: rows } = await supabaseAdmin.from("shop_orders")
+      .select("order_number,tracking_code,email:raw->>email,phone:raw->>phone,cemail:raw->customer->>email,sphone:raw->shipping_address->>phone")
+      .in("order_number", [`#${num}`, num]).limit(5);
+    const contact = data.contact.trim().toLowerCase();
+    const digits = contact.replace(/\D/g, "");
+    const match = (rows ?? []).find((r: any) => {
+      if (contact.includes("@")) return [r.email, r.cemail].some((e) => e && String(e).toLowerCase() === contact);
+      if (digits.length < 7) return false;
+      return [r.phone, r.sphone].some((p) => p && String(p).replace(/\D/g, "").slice(-10) === digits.slice(-10));
+    }) as any;
+    if (!match) return { found: false };
+    return { found: true, trackingCode: match.tracking_code ?? null, orderNumber: match.order_number };
   });

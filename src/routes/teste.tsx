@@ -10,7 +10,8 @@ import { formatDateTimeUS } from "@/lib/timezone";
 import { useMyAccess } from "@/hooks/useMyAccess";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { TrackingPageView } from "@/components/tracking/TrackingPageView";
+import { TrackingPageView, TrackingShell } from "@/components/tracking/TrackingPageView";
+import { buildSteps, sanitizeEvents } from "@/lib/tracking-display";
 import {
   query17track, get17trackQuota, getTrack123Rows, listStuckTrackings,
   type Result17, type Track123Row,
@@ -163,27 +164,32 @@ function Teste17track() {
         </div>
       )}
 
-      {previewRow && (
-        <div className="grid lg:grid-cols-[minmax(0,480px)_1fr] gap-5">
-          <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">Prévia da página de rastreio do cliente (dados do 17track)</p>
-            <TrackingPageView
-              storeName={(previewT123?.shopName ?? "Store").replace(/^\s*loja\s*\d+\s*[-–:]\s*/i, "")}
-              orderNumber={previewT123?.orderNumber ?? null}
-              trackingNumber={previewRow.number}
-              status={previewRow.status}
-              events={previewRow.events}
-            />
+      {previewRow && (() => {
+        const { steps, current } = buildSteps({ orderedAt: null, deliveredAt: null, status: previewRow.status, events: previewRow.events });
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Prévia da página do cliente com os dados do 17track</span>
+              <span>Transportadora(s): {previewRow.carrier ?? "—"}</span>
+              <span>Última consulta deles: {when(previewRow.lastSyncAt)}</span>
+              <span>Eventos: 17track {previewRow.events.length} (mostrados {sanitizeEvents(previewRow.events).length}) × Track123 {previewT123?.events.length ?? 0}</span>
+            </div>
+            <div className="rounded-xl border overflow-hidden">
+              <TrackingShell>
+                <TrackingPageView
+                  orderNumber={previewT123?.orderNumber ?? null}
+                  trackingNumber={previewRow.number}
+                  status={previewRow.status}
+                  steps={steps}
+                  currentStep={current}
+                  events={sanitizeEvents(previewRow.events)}
+                  destination={null}
+                />
+              </TrackingShell>
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground space-y-1.5">
-            <p className="font-medium text-foreground">Detalhes do 17track</p>
-            <p>Transportadora(s): {previewRow.carrier ?? "—"}</p>
-            <p>Destino: {previewRow.destination ?? "—"}</p>
-            <p>Última consulta deles na transportadora: {when(previewRow.lastSyncAt)} {previewRow.syncStatus ? `(${previewRow.syncStatus})` : ""}</p>
-            <p>Eventos: 17track {previewRow.events.length} × Track123 {previewT123?.events.length ?? 0}</p>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </PageShell>
   );
 }

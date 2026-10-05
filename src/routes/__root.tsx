@@ -170,7 +170,7 @@ function AuthGate() {
   // Antes caía no redirect pro /login e o convidado nunca via a tela de senha.
   const isInvite = location.pathname.startsWith("/invite/");
   // Página pública de rastreio do cliente — sem login e sem o menu do sistema.
-  if (location.pathname.startsWith("/track/")) return <Outlet />;
+  if (location.pathname === "/track" || location.pathname.startsWith("/track/")) return <Outlet />;
 
   if (loading) {
     return (

@@ -38,6 +38,7 @@ import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-l
 import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
 import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupos";
 import { Route as ShopsProductsRouteImport } from "./routes/shops.products";
+import { Route as TrackIndexRouteImport } from "./routes/track.index";
 import { Route as TrackCodeRouteImport } from "./routes/track.$code";
 import { Route as ApiAtendimentoAttachmentRouteImport } from "./routes/api/atendimento/attachment";
 import { Route as ApiAtendimentoInlineRouteImport } from "./routes/api/atendimento/inline";
@@ -206,6 +207,11 @@ const ShopsProductsRoute = ShopsProductsRouteImport.update({
   path: "/products",
   getParentRoute: () => ShopsRoute,
 } as any);
+const TrackIndexRoute = TrackIndexRouteImport.update({
+  id: "/track/",
+  path: "/track/",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const TrackCodeRoute = TrackCodeRouteImport.update({
   id: "/track/$code",
   path: "/track/$code",
@@ -359,6 +365,7 @@ export interface FileRoutesByFullPath {
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
+  "/track/": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
@@ -405,6 +412,7 @@ export interface FileRoutesByTo {
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/shops": typeof ShopsIndexRoute;
+  "/track": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
@@ -459,6 +467,7 @@ export interface FileRoutesById {
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
+  "/track/": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
@@ -514,6 +523,7 @@ export interface FileRouteTypes {
     | "/projects/"
     | "/settings/"
     | "/shops/"
+    | "/track/"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
     | "/shops/lojas-grupos/$cardId"
@@ -560,6 +570,7 @@ export interface FileRouteTypes {
     | "/projects"
     | "/settings"
     | "/shops"
+    | "/track"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
     | "/shops/lojas-grupos/$cardId"
@@ -613,6 +624,7 @@ export interface FileRouteTypes {
     | "/projects/"
     | "/settings/"
     | "/shops/"
+    | "/track/"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
     | "/shops/lojas-grupos/$cardId"
@@ -652,6 +664,7 @@ export interface RootRouteChildren {
   TesteRoute: typeof TesteRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   TrackCodeRoute: typeof TrackCodeRoute;
+  TrackIndexRoute: typeof TrackIndexRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
@@ -871,6 +884,13 @@ declare module "@tanstack/react-router" {
       fullPath: "/shops/products";
       preLoaderRoute: typeof ShopsProductsRouteImport;
       parentRoute: typeof ShopsRoute;
+    };
+    "/track/": {
+      id: "/track/";
+      path: "/track";
+      fullPath: "/track/";
+      preLoaderRoute: typeof TrackIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
     };
     "/track/$code": {
       id: "/track/$code";
@@ -1157,6 +1177,7 @@ const rootRouteChildren: RootRouteChildren = {
   TesteRoute: TesteRoute,
   InviteTokenRoute: InviteTokenRoute,
   TrackCodeRoute: TrackCodeRoute,
+  TrackIndexRoute: TrackIndexRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
