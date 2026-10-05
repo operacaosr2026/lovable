@@ -182,3 +182,30 @@ export const listStuckTrackings = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return { numbers: (data ?? []).map((r: any) => r.tracking_number as string).filter(Boolean) };
   });
+
+// Teste manual: manda pra Shopify o status atual do 17track desse código
+// (só consulta o 17track — não registra código novo). Só funciona depois de a
+// loja ser reautorizada com write_fulfillments.
+export const pushShopifyStatusTest = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ number: z.string().trim().min(5).max(50) }).parse(d))
+  .handler(async ({ context, data }) => {
+    assertAdmin(context);
+    const { pushFulfillmentStatusToShopify } = await import("@/lib/shopify-fulfillment-status.server");
+    const { officialEdd } = await import("@/lib/tracking-display");
+    const info = await call17("/gettrackinfo", [{ number: data.number }]);
+    const item = (info?.accepted ?? [])[0];
+    if (!item) throw new Error("Código não está no 17track — consulte ele antes na tabela.");
+    const parsed = parseTrackInfo(item);
+    const { data: order } = await context.supabase.from("shop_orders").select("id")
+      .eq("user_id", context.ownerId).eq("tracking_code", data.number).limit(1).maybeSingle();
+    if (!order) throw new Error("Pedido com esse código não encontrado no sistema.");
+    const edd = officialEdd(parsed.edd);
+    return pushFulfillmentStatusToShopify({
+      orderId: order.id,
+      trackingNumber: data.number,
+      status: parsed.status,
+      happenedAt: parsed.events[0]?.at ?? null,
+      estimatedDeliveryAt: edd?.to ?? edd?.from ?? null,
+    });
+  });

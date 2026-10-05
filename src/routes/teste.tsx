@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { FlaskConical, Loader2, Search, ListRestart, Eye } from "lucide-react";
+import { FlaskConical, Loader2, Search, ListRestart, Eye, Send } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -13,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { TrackingPageView, TrackingShell } from "@/components/tracking/TrackingPageView";
 import { buildSteps, sanitizeEvents, officialEdd } from "@/lib/tracking-display";
 import {
-  query17track, get17trackQuota, getTrack123Rows, listStuckTrackings,
+  query17track, get17trackQuota, getTrack123Rows, listStuckTrackings, pushShopifyStatusTest,
   type Result17, type Track123Row,
 } from "@/lib/teste-17track.functions";
 
@@ -39,6 +40,13 @@ function Teste17track() {
   const quotaFn = useServerFn(get17trackQuota);
   const t123Fn = useServerFn(getTrack123Rows);
   const stuckFn = useServerFn(listStuckTrackings);
+  const pushFn = useServerFn(pushShopifyStatusTest);
+  const confirm = useConfirm();
+  const push = useMutation({
+    mutationFn: (number: string) => pushFn({ data: { number } }),
+    onSuccess: (r) => (r.sent ? toast.success(`Shopify atualizada: ${r.status}`) : toast.info(`Não enviado: ${r.reason}`)),
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const [text, setText] = useState("JXCZI0005703743YQ");
   const [results, setResults] = useState<Result17[]>([]);
@@ -157,6 +165,15 @@ function Teste17track() {
                     <td className="px-3 py-2.5 text-right">
                       <Button size="sm" variant="ghost" onClick={() => setPreview(r.number)} disabled={!r.ok}>
                         <Eye className="size-4" /> Prévia
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost" disabled={!r.ok || push.isPending}
+                        title="Manda o status do 17track pro envio do pedido na Shopify (precisa da loja reautorizada)"
+                        onClick={async () => {
+                          if (await confirm({ title: "Enviar status pra Shopify?", description: `O envio do pedido ${a?.orderNumber ?? r.number} na Shopify recebe o status "${r.status}". Pode disparar e-mail da Shopify pro cliente, se estiver ligado nas notificações.`, confirmText: "Enviar" })) push.mutate(r.number);
+                        }}
+                      >
+                        <Send className="size-4" /> Shopify
                       </Button>
                     </td>
                   </tr>

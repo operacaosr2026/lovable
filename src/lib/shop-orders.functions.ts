@@ -580,7 +580,8 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
     // read_all_orders: pedidos com mais de 60 dias (sem ela a Shopify só libera os últimos 60).
     // read_reports: visitas da loja (sessões) pro cálculo de conversão.
     // write_merchant_managed_fulfillment_orders: dar o pedido de cobrança dos Alertas como atendido (sem rastreio).
-    const scopes = "read_orders,read_all_orders,read_products,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders";
+    // write_fulfillments: mandar o status do rastreio (em trânsito, entregue…) pro envio do pedido.
+    const scopes = "read_orders,read_all_orders,read_products,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders,write_fulfillments";
     const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
     const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
       `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +

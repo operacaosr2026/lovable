@@ -38,6 +38,9 @@ async function gql<T = any>(shopId: string, query: string, variables: Record<str
   return body.data as T;
 }
 
+// Também usado pra mandar o status do rastreio pra Shopify (shopify-fulfillment-status.server.ts).
+export { gql as shopifyGql };
+
 const key = (r: AlertRow) => ({ shop_id: r.shopId, order_external_id: r.orderExternalId });
 
 // Link de pagamento do pedido: reaproveita o rascunho já criado ou cria um.
