@@ -7,7 +7,8 @@ import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { fetchWithRetry } from "@/lib/http";
 import { buildTrackingUrl } from "@/lib/tracking-url";
-import { track123StatusByOrderNumber } from "@/lib/track123-mcp-sync.server";
+import { track123StatusByOrderNumber, runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
+import { fetchShopifyDisputes, upsertShopDisputes } from "@/lib/shopify-disputes.server";
 
 // Aba Chargebacks: cada disputa (chargeback/inquiry) da Shopify Payments
 // cruzada com o pedido (produto, data), o rastreio (situação e último evento),
@@ -292,4 +293,72 @@ export const getChargebacks = createServerFn({ method: "GET" })
     });
     const shops = allShops.filter((s) => shopIds.includes(s.id));
     return { rows, shops, riskSummary };
+  });
+
+// Botão "Atualizar" da aba Chargebacks: puxa as disputas da Shopify agora (sem
+// esperar o cron de hora em hora) e reconsulta o rastreio dos pedidos com
+// chargeback em aberto. Devolve o que mudou de status, pra mostrar na tela.
+const OPEN_DISPUTE = ["needs_response", "under_review", "warning_needs_response", "warning_under_review"];
+export const refreshChargebacks = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    if (context.role !== "admin" && !context.permissions.some((p) => p.section === "chargebacks")) {
+      throw new Error("Sem acesso a Chargebacks");
+    }
+    const { ownerId } = context;
+    const { data: before } = await supabaseAdmin.from("shop_order_disputes")
+      .select("shop_id,shopify_dispute_id,status").eq("user_id", ownerId).eq("type", "chargeback");
+    const prev = new Map((before ?? []).map((d) => [`${d.shop_id}:${d.shopify_dispute_id}`, d.status]));
+
+    const { data: settings } = await supabaseAdmin.from("shop_order_settings")
+      .select("shop_id,shopify_store_id").eq("user_id", ownerId).not("shopify_store_id", "is", null);
+    const storeIds = [...new Set((settings ?? []).map((s: any) => s.shopify_store_id))] as string[];
+    const { data: stores } = storeIds.length
+      ? await supabaseAdmin.from("shopify_stores").select("id,shop_domain,access_token").in("id", storeIds)
+      : { data: [] as { id: string; shop_domain: string; access_token: string | null }[] };
+    const storeById = new Map((stores ?? []).map((s) => [s.id, s]));
+
+    const changed: { shopId: string; orderExternalId: string | null; from: string | null; to: string | null }[] = [];
+    const failed: string[] = [];
+    await Promise.all((settings ?? []).map(async (s: any) => {
+      const st = storeById.get(s.shopify_store_id);
+      if (!st?.access_token || !st.shop_domain) return;
+      try {
+        const { disputes } = await fetchShopifyDisputes(st.shop_domain, st.access_token, 3);
+        await upsertShopDisputes(s.shop_id, ownerId, disputes);
+        for (const d of disputes.filter((x: any) => x.type === "chargeback")) {
+          const from = prev.get(`${s.shop_id}:${d.id}`) ?? null;
+          if (from !== d.status) changed.push({ shopId: s.shop_id, orderExternalId: d.order_id != null ? String(d.order_id) : null, from, to: d.status ?? null });
+        }
+      } catch {
+        failed.push(st.shop_domain);
+      }
+    }));
+
+    // Rastreio dos chargebacks em aberto (Track123), só desses pedidos.
+    const { data: open } = await supabaseAdmin.from("shop_order_disputes").select("shop_id,order_external_id")
+      .eq("user_id", ownerId).eq("type", "chargeback").in("status", OPEN_DISPUTE).not("order_external_id", "is", null);
+    const { data: orders } = (open ?? []).length
+      ? await supabaseAdmin.from("shop_orders").select("id,shop_id,external_id").eq("user_id", ownerId)
+          .in("external_id", (open ?? []).map((d) => d.order_external_id!))
+      : { data: [] as { id: string; shop_id: string; external_id: string }[] };
+    const byShop = new Map<string, string[]>();
+    for (const o of orders ?? []) byShop.set(o.shop_id, [...(byShop.get(o.shop_id) ?? []), o.id]);
+    const deadline = Date.now() + 40_000;
+    for (const [shopId, orderIds] of byShop) {
+      const { data: integ } = await supabaseAdmin.from("track123_integrations").select("api_key,mcp_store_uuid").eq("shop_id", shopId).maybeSingle();
+      if (!integ?.api_key || !integ.mcp_store_uuid) continue;
+      await runTrack123McpSync(shopId, integ.api_key, integ.mcp_store_uuid, supabaseAdmin, { deadline, orderIds }).catch(() => null);
+    }
+
+    // Número do pedido pra mensagem.
+    const ext = changed.map((c) => c.orderExternalId).filter(Boolean) as string[];
+    const { data: nums } = ext.length
+      ? await supabaseAdmin.from("shop_orders").select("shop_id,external_id,order_number").eq("user_id", ownerId).in("external_id", ext)
+      : { data: [] as { shop_id: string; external_id: string; order_number: string }[] };
+    const numBy = new Map((nums ?? []).map((n) => [`${n.shop_id}:${n.external_id}`, n.order_number]));
+    return {
+      changed: changed.map((c) => ({ ...c, orderNumber: numBy.get(`${c.shopId}:${c.orderExternalId}`) ?? null })),
+      failed,
+    };
   });

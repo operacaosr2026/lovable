@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshEstornoDisputeCounts } from "@/lib/estorno-daily.server";
 import { tracked } from "@/lib/system-errors.server";
+import { fetchWithRetry } from "@/lib/http";
+import { handleShopifyAccess } from "@/lib/shopify-access.server";
 
 // Grava disputas (chargeback e inquiry) da Shopify Payments em
 // shop_order_disputes — usado pelo sync completo (de hora em hora) e pelo
@@ -27,4 +29,24 @@ export async function upsertShopDisputes(shopId: string, userId: string, dispute
   // Chargeback novo já entra na taxa de estorno (sem esperar a meia-noite).
   await tracked(userId, `estorno_recount:${shopId}`, "Taxa de estorno não recontou o chargeback novo",
     () => refreshEstornoDisputeCounts(userId, shopId));
+}
+
+// Disputas reais (chargeback/inquiry) da Shopify Payments — fonte do relatório
+// "Taxa de estorno" do próprio Shopify. Não confundir com balance transactions:
+// lá o type nunca vem como "dispute". nextUrl sobra quando passou de maxPages.
+export async function fetchShopifyDisputes(domain: string, token: string, maxPages: number) {
+  const disputes: any[] = [];
+  let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250`;
+  for (let i = 0; i < maxPages && url; i++) {
+    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
+    // 403 = app sem o escopo read_shopify_payments_disputes; 404 = sem
+    // Shopify Payments. Avisa no sino (antes era só um console.warn).
+    if (await handleShopifyAccess(res, domain, "disputes")) return { disputes: [], nextUrl: "" };
+    if (!res.ok) throw new Error(`Shopify disputes ${res.status}`);
+    const json: any = await res.json();
+    disputes.push(...(json.disputes ?? []));
+    const link = res.headers.get("link") || res.headers.get("Link") || "";
+    url = link.match(/<([^>]+)>;\s*rel="next"/)?.[1] ?? "";
+  }
+  return { disputes, nextUrl: url };
 }

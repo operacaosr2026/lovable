@@ -7,7 +7,7 @@ import { verifyCronApiKey } from "@/lib/cron-auth";
 import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
 import { reportSystemError, clearSystemError, tracked, shopLabel, reportPaginationCap } from "@/lib/system-errors.server";
-import { upsertShopDisputes } from "@/lib/shopify-disputes.server";
+import { upsertShopDisputes, fetchShopifyDisputes } from "@/lib/shopify-disputes.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
 import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll, selectAllIn } from "@/lib/select-all";
@@ -104,27 +104,10 @@ async function fetchBalanceTransactions(domain: string, token: string, maxPages:
   return out;
 }
 
-// Disputas reais (chargeback/inquiry), fonte usada pelo relatório "Taxa de
-// estorno" do próprio Shopify. Não confundir com balance transactions: lá o
-// type nunca vem como "dispute" nesse endpoint, então filtrar por isso deixa
-// a taxa sempre em 0%.
 async function fetchDisputes(domain: string, token: string, maxPages: number) {
-  const out: any[] = [];
-  let url = `https://${domain}/admin/api/2024-10/shopify_payments/disputes.json?limit=250`;
-  for (let i = 0; i < maxPages && url; i++) {
-    const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
-    // 403 = app sem o escopo read_shopify_payments_disputes; 404 = sem
-    // Shopify Payments. Avisa no sino (antes era só um console.warn).
-    if (await handleShopifyAccess(res, domain, "disputes")) return [];
-    if (!res.ok) throw new Error(`Shopify disputes ${res.status}`);
-    const json: any = await res.json();
-    out.push(...(json.disputes ?? []));
-    const link = res.headers.get("link") || res.headers.get("Link") || "";
-    const m = link.match(/<([^>]+)>;\s*rel="next"/);
-    url = m ? m[1] : "";
-  }
-  warnPaginationCap("fetchDisputes", domain, url);
-  return out;
+  const { disputes, nextUrl } = await fetchShopifyDisputes(domain, token, maxPages);
+  warnPaginationCap("fetchDisputes", domain, nextUrl);
+  return disputes;
 }
 
 // Tempo médio de repasse: para cada venda já incluída em um payout, mede os dias

@@ -1,19 +1,19 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, AreaChart, Area } from "recharts";
 import {
   ShieldAlert, ShieldCheck, Hourglass, CircleX, CircleCheck, Trophy, Scale, ExternalLink, X, Loader2, Truck, Package,
   ChevronDown, ChevronRight, ArrowUp, ArrowDown, CalendarDays, MessagesSquare, Search, SlidersHorizontal, Download,
-  AlertTriangle, Headphones, Copy, CreditCard,
+  AlertTriangle, Headphones, Copy, CreditCard, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { getChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
+import { getChargebacks, refreshChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
 import { getDisputeEvidence, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
 import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
 import { AlertsTab, DunningToggle } from "@/components/chargebacks/AlertsTab";
@@ -166,6 +166,23 @@ function ChargebacksPage() {
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<ChargebackRow | null>(null);
   const q = useQuery({ queryKey: ["chargebacks", scope], queryFn: () => fn({ data: { scope } }) });
+  // Puxa as disputas da Shopify agora (sem esperar o cron) + rastreio dos em aberto.
+  const refreshFn = useServerFn(refreshChargebacks);
+  const refresh = useMutation({
+    mutationFn: () => refreshFn(),
+    onSuccess: async ({ changed, failed }) => {
+      await q.refetch();
+      const label = (st: string | null) => (st && STATUS[st]?.label) || st || "nova";
+      const lines = changed.map((c) => `${c.orderNumber ?? `#${c.orderExternalId}`}: ${c.from ? label(c.from) : "nova"} → ${label(c.to)}`);
+      if (lines.length) {
+        const more = lines.length > 8 ? ` (+${lines.length - 8})` : "";
+        toast.success(`${lines.length} chargeback(s) mudaram`, { description: lines.slice(0, 8).join(" · ") + more, duration: 10_000 });
+      }
+      else toast.success("Chargebacks atualizados — nada mudou desde a última sincronização");
+      if (failed.length) toast.error(`Não deu pra consultar: ${failed.join(", ")}`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   // Tipo + período (cards e gráficos); clique/seleção e busca valem só pra lista.
   const typed = useMemo(() => (q.data?.rows ?? []).filter((r) => type === "todos" || r.type === type), [q.data, type]);
@@ -355,6 +372,10 @@ function ChargebacksPage() {
                     {filter && <button onClick={() => setFilter(null)} className="text-xs text-primary hover:underline">Limpar filtro</button>}
                   </PopoverContent>
                 </Popover>
+                <button onClick={() => refresh.mutate()} disabled={refresh.isPending} title="Busca agora as disputas na Shopify e o rastreio dos chargebacks em aberto"
+                  className="h-10 px-3.5 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none hover:bg-muted disabled:opacity-50">
+                  <RefreshCw className={`size-4 ${refresh.isPending ? "animate-spin" : ""}`} /> {refresh.isPending ? "Atualizando…" : "Atualizar"}
+                </button>
                 <button onClick={exportCsv} disabled={!list.length}
                   className="h-10 px-3.5 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none hover:bg-muted disabled:opacity-50">
                   <Download className="size-4" /> Exportar
