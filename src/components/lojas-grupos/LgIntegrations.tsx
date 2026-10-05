@@ -252,7 +252,7 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
   const chooseProvider = async (provider: "track123" | "17track") => {
     if (provider === (row?.provider ?? "track123")) return;
     const ok = await confirm(provider === "17track"
-      ? { title: `Passar ${shop.name} pro 17track?`, description: "Os pedidos em aberto dos últimos 30 dias são cadastrados no 17track (1 crédito por código, uma vez só) e o Track123 para de atualizar essa loja.", confirmText: "Passar pro 17track" }
+      ? { title: `Passar ${shop.name} pro 17track?`, description: "Os pedidos em aberto dos últimos 60 dias são cadastrados no 17track (1 crédito por código, uma vez só) e o Track123 para de atualizar essa loja.", confirmText: "Passar pro 17track" }
       : { title: `Voltar ${shop.name} pro Track123?`, description: "O 17track para de atualizar essa loja e o Track123 volta a puxar o rastreio.", confirmText: "Voltar" });
     if (ok) setProvider.mutate(provider);
   };

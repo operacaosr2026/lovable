@@ -139,9 +139,10 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!shops.length) return result;
   const integBy = new Map(shops.map((i) => [i.shop_id, i]));
 
-  // Pedidos em aberto (mesmo corte do Track123: últimos 30 dias, sem entregue,
-  // cancelado ou reembolsado).
-  const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  // Pedidos em aberto dos últimos 60 dias (sem entregue, cancelado ou
+  // reembolsado) — 60 e não 30 como no Track123 pra pedido muito atrasado (o que
+  // vira chargeback) continuar sendo acompanhado.
+  const since = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
     .select("id,user_id,shop_id,tracking_code,shipped_at,delivered_at,problem_at")
     .in("shop_id", shops.map((s) => s.shop_id))
