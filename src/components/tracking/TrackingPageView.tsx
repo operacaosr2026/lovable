@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Check, ExternalLink } from "lucide-react";
-import { TRACKING_BRAND, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
+import { TRACKING_BRAND, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
 
 // Página de rastreio do cliente (em inglês — clientes nos EUA), no estilo da
 // página de rastreio da loja Voultie. Usada na rota pública /track e na prévia
@@ -31,6 +31,18 @@ const fmtDateTime = (iso: string | null) => {
   return `${day} ${time}`;
 };
 
+// "2026-10-14" ou "2026-10-14T…" → "Tue, Oct 14" (data do dia, sem mexer no fuso).
+const fmtEddDay = (v: string | null) => {
+  const m = v?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12)).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+};
+function eddText(edd: DisplayEdd) {
+  const a = fmtEddDay(edd.from), b = fmtEddDay(edd.to);
+  if (a && b && a !== b) return `${a} – ${b}`;
+  return a || b;
+}
+
 export function TrackingShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh bg-white text-zinc-900" style={{ fontFamily: "Poppins, ui-sans-serif, system-ui, sans-serif" }}>
@@ -45,10 +57,11 @@ export function TrackingShell({ children }: { children: ReactNode }) {
 }
 
 export function TrackingPageView({
-  orderNumber, trackingNumber, status, steps, currentStep, events, destination,
+  orderNumber, trackingNumber, status, steps, currentStep, events, destination, edd,
 }: {
   orderNumber: string | null; trackingNumber: string; status: string | null;
   steps: DisplayStep[]; currentStep: number; events: DisplayEvent[]; destination: string | null;
+  edd?: DisplayEdd | null;   // previsão oficial da transportadora (some depois de entregue)
 }) {
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? events : events.slice(0, 3);
@@ -59,6 +72,9 @@ export function TrackingPageView({
       <div className="text-center space-y-4">
         <p className="text-lg sm:text-2xl">{orderNumber ? `Order: ${orderNumber}` : `Tracking: ${trackingNumber}`}</p>
         <h1 className="text-3xl sm:text-5xl font-light tracking-tight">{title}</h1>
+        {edd && status !== "Delivered" && eddText(edd) && (
+          <p className="text-base sm:text-xl text-zinc-600">Estimated delivery: <span className="font-medium text-zinc-900">{eddText(edd)}</span></p>
+        )}
       </div>
 
       <div className="flex items-start mx-auto max-w-5xl">

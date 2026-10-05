@@ -82,3 +82,12 @@ export function buildSteps(opts: { orderedAt: string | null; deliveredAt: string
   if (delivered) current = 4;
   return { steps, current };
 }
+
+// Previsão de entrega: só a oficial da transportadora (não a estimada pela IA do
+// 17track nem regra própria). O 17track marca a origem em `source`.
+export type DisplayEdd = { from: string | null; to: string | null };
+export function officialEdd(edd: { source: string | null; from: string | null; to: string | null } | null | undefined): DisplayEdd | null {
+  if (!edd || !(edd.from || edd.to)) return null;
+  if (!/official|carrier/i.test(edd.source ?? "")) return null;
+  return { from: edd.from, to: edd.to };
+}

@@ -11,7 +11,7 @@ import { useMyAccess } from "@/hooks/useMyAccess";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { TrackingPageView, TrackingShell } from "@/components/tracking/TrackingPageView";
-import { buildSteps, sanitizeEvents } from "@/lib/tracking-display";
+import { buildSteps, sanitizeEvents, officialEdd } from "@/lib/tracking-display";
 import {
   query17track, get17trackQuota, getTrack123Rows, listStuckTrackings,
   type Result17, type Track123Row,
@@ -148,6 +148,9 @@ function Teste17track() {
                             {newer && <span className="ml-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-success/10 text-success">mais novo</span>}
                           </div>
                           <div className="text-xs text-muted-foreground truncate" title={r.events[0]?.description ?? ""}>{when(r.events[0]?.at ?? null)} — {r.events[0]?.description ?? "—"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Previsão: {r.edd ? <>{[r.edd.from, r.edd.to].filter(Boolean).map((d) => d!.slice(0, 10)).join(" a ")} <span className="text-[11px]">({r.edd.source ?? "origem ?"}{officialEdd(r.edd) ? " · aparece pro cliente" : " · não é oficial, não aparece"})</span></> : "ainda não informada"}
+                          </div>
                         </>
                       )}
                     </td>
@@ -184,6 +187,7 @@ function Teste17track() {
                   currentStep={current}
                   events={sanitizeEvents(previewRow.events)}
                   destination={null}
+                  edd={officialEdd(previewRow.edd)}
                 />
               </TrackingShell>
             </div>

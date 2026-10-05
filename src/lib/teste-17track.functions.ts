@@ -44,6 +44,9 @@ export type Result17 = {
   lastSyncAt: string | null;
   syncStatus: string | null;
   destination: string | null;
+  // Previsão de entrega do 17track: source diz de onde veio (transportadora,
+  // IA do 17track…); só a da transportadora vai pra página do cliente.
+  edd: { source: string | null; from: string | null; to: string | null } | null;
   events: Event17[];
 };
 export type Track123Row = {
@@ -78,6 +81,9 @@ function parseTrackInfo(item: any): Omit<Result17, "number" | "ok" | "error" | "
     lastSyncAt: providers[0]?.latest_sync_time ?? null,
     syncStatus: providers[0]?.latest_sync_status ?? null,
     destination: placeOf(ti.shipping_info?.recipient_address) ?? null,
+    edd: ti.time_metrics?.estimated_delivery_date?.from || ti.time_metrics?.estimated_delivery_date?.to
+      ? { source: ti.time_metrics.estimated_delivery_date.source ?? null, from: ti.time_metrics.estimated_delivery_date.from ?? null, to: ti.time_metrics.estimated_delivery_date.to ?? null }
+      : null,
     events,
   };
 }
@@ -106,7 +112,7 @@ export const query17track = createServerFn({ method: "POST" })
         return { number, ok: true, error: null, pending: !parsed.events.length && !parsed.status, ...parsed };
       }
       const error = regError.get(number) ?? infoError.get(number) ?? "Sem resposta do 17track";
-      return { number, ok: false, error, pending: !regError.has(number), carrier: null, status: null, subStatus: null, lastSyncAt: null, syncStatus: null, destination: null, events: [] };
+      return { number, ok: false, error, pending: !regError.has(number), carrier: null, status: null, subStatus: null, lastSyncAt: null, syncStatus: null, destination: null, edd: null, events: [] };
     });
     return { results, registeredNow };
   });
