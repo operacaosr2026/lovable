@@ -1,0 +1,188 @@
+<!--
+  Página de rastreio da Voultie (voultiewear.com/pages/track?nums=CÓDIGO).
+  Colar numa seção "Custom Liquid" do template da página de rastreio (tema da loja).
+  Os dados vêm do sistema (SRX) em /api/public/track — já filtrados: nada de
+  China/alfândega e nada pessoal do cliente. Aceita ?nums= (mesmo parâmetro do
+  Track123/17track), ?code= ou ?order=.
+-->
+<div id="vt-track" class="page-width">
+  <h1 class="vt-title">Track Your Order</h1>
+
+  <div class="vt-search" id="vt-search">
+    <form class="vt-col" id="vt-by-order">
+      <label>Order Number<input name="order" autocomplete="off"></label>
+      <label>Email or Phone Number<input name="contact" autocomplete="email"></label>
+      <button type="submit">Track</button>
+    </form>
+    <div class="vt-or"><span></span><em>OR</em><span></span></div>
+    <form class="vt-col" id="vt-by-code">
+      <label>Tracking Number<input name="code" autocomplete="off"></label>
+      <button type="submit">Track</button>
+    </form>
+  </div>
+  <p class="vt-msg" id="vt-msg" hidden></p>
+
+  <div id="vt-result" hidden></div>
+</div>
+
+<style>
+  #vt-track { padding-top: 48px; padding-bottom: 72px; color: inherit; }
+  #vt-track * { box-sizing: border-box; }
+  #vt-track .vt-title { text-align: center; font-weight: 300; margin: 0 0 40px; }
+  #vt-track .vt-search { display: grid; grid-template-columns: 1fr auto 1fr; gap: 48px; max-width: 1000px; margin: 0 auto; border: 1px solid rgba(0,0,0,.15); border-radius: 12px; padding: 48px 64px; }
+  #vt-track .vt-col { display: flex; flex-direction: column; gap: 20px; }
+  #vt-track label { display: flex; flex-direction: column; gap: 8px; font-size: 17px; }
+  #vt-track input { height: 48px; border: 1px solid #111; border-radius: 8px; padding: 0 14px; font: inherit; font-size: 16px; }
+  #vt-track button { align-self: flex-start; height: 48px; padding: 0 44px; border: 0; border-radius: 6px; background: #111; color: #fff; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; }
+  #vt-track button:disabled { opacity: .6; cursor: default; }
+  #vt-track .vt-or { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #bbb; font-size: 14px; }
+  #vt-track .vt-or span { flex: 1; border-left: 1px solid #ddd; }
+  #vt-track .vt-or em { font-style: normal; }
+  #vt-track .vt-msg { text-align: center; margin: 28px auto 0; max-width: 560px; color: #555; }
+
+  #vt-track .vt-head { text-align: center; margin: 56px 0 40px; }
+  #vt-track .vt-order { font-size: 22px; margin: 0 0 12px; }
+  #vt-track .vt-status { font-size: 44px; font-weight: 300; margin: 0; }
+  #vt-track .vt-edd { font-size: 18px; color: #555; margin: 12px 0 0; }
+  #vt-track .vt-edd b { color: #111; font-weight: 500; }
+
+  #vt-track .vt-steps { display: flex; max-width: 1000px; margin: 0 auto 56px; }
+  #vt-track .vt-step { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; text-align: center; }
+  #vt-track .vt-step + .vt-step::before { content: ""; position: absolute; top: 22px; right: calc(50% + 30px); width: calc(100% - 60px); height: 6px; border-radius: 3px; background: #e5e5e5; }
+  #vt-track .vt-step.done + .vt-step.done::before { background: #16a34a; }
+  #vt-track .vt-dot { width: 46px; height: 46px; border-radius: 50%; background: #e5e5e5; display: grid; place-items: center; position: relative; z-index: 1; }
+  #vt-track .vt-step.done .vt-dot { background: #16a34a; }
+  #vt-track .vt-dot svg { width: 20px; height: 20px; stroke: #fff; }
+  #vt-track .vt-step-label { margin-top: 12px; font-size: 17px; }
+  #vt-track .vt-step-date { font-size: 15px; color: #777; min-height: 20px; }
+
+  #vt-track .vt-cols { display: grid; grid-template-columns: 1fr minmax(0, 440px); gap: 48px; }
+  #vt-track h2 { font-weight: 300; font-size: 24px; margin: 0 0 24px; }
+  #vt-track .vt-events { list-style: none; margin: 0; padding: 0; }
+  #vt-track .vt-ev { display: flex; gap: 18px; padding-bottom: 24px; position: relative; }
+  #vt-track .vt-ev:not(:last-child)::after { content: ""; position: absolute; left: 7px; top: 22px; bottom: 2px; border-left: 2px dashed #e5e5e5; }
+  #vt-track .vt-ev-dot { flex: none; width: 16px; display: flex; justify-content: center; padding-top: 6px; }
+  #vt-track .vt-ev-dot i { width: 10px; height: 10px; border-radius: 50%; background: #d4d4d4; }
+  #vt-track .vt-ev:first-child .vt-ev-dot i { width: 16px; height: 16px; background: #16a34a; margin-top: -2px; }
+  #vt-track .vt-ev p { margin: 0; font-size: 17px; line-height: 1.4; }
+  #vt-track .vt-ev small { color: #777; font-size: 15px; }
+  #vt-track .vt-more { background: none; color: inherit; padding: 0; height: auto; font-weight: 400; font-size: 17px; text-decoration: underline; }
+  #vt-track .vt-map { position: relative; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid #e5e5e5; }
+  #vt-track .vt-map iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  #vt-track .vt-muted { color: #777; }
+
+  @media (max-width: 749px) {
+    #vt-track .vt-search { grid-template-columns: 1fr; padding: 28px 20px; gap: 24px; }
+    #vt-track .vt-or { flex-direction: row; } #vt-track .vt-or span { border-left: 0; border-top: 1px solid #ddd; }
+    #vt-track button { align-self: stretch; }
+    #vt-track .vt-status { font-size: 32px; }
+    #vt-track .vt-dot { width: 32px; height: 32px; } #vt-track .vt-dot svg { width: 14px; height: 14px; }
+    #vt-track .vt-step + .vt-step::before { top: 14px; right: calc(50% + 20px); width: calc(100% - 40px); height: 4px; }
+    #vt-track .vt-step-label { font-size: 11px; } #vt-track .vt-step-date { font-size: 10px; }
+    #vt-track .vt-cols { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+(function () {
+  var API = "https://lojas-one.vercel.app/api/public/track";
+  var STATUS = {
+    NotFound: "Order Ready", InfoReceived: "Order Ready", InTransit: "In Transit", Exception: "In Transit", Expired: "In Transit",
+    AvailableForPickup: "Ready for Pickup", OutForDelivery: "Out for Delivery", DeliveryFailure: "Delivery Attempted", Delivered: "Delivered"
+  };
+  var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>';
+  var root = document.getElementById("vt-track");
+  var msg = document.getElementById("vt-msg");
+  var result = document.getElementById("vt-result");
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function day(iso) { var d = iso && new Date(iso); return d && !isNaN(d) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""; }
+  function dateTime(iso) {
+    var d = iso && new Date(iso); if (!d || isNaN(d)) return "";
+    return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" }) + " " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }).toLowerCase();
+  }
+  function eddDay(v) {
+    var m = v && String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return "";
+    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12)).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+  }
+  function say(text) { msg.textContent = text || ""; msg.hidden = !text; }
+
+  function render(t) {
+    var title = STATUS[t.status] || (t.steps[t.currentStep] || {}).label || "Order Ready";
+    var edd = t.edd && t.status !== "Delivered" ? [eddDay(t.edd.from), eddDay(t.edd.to)].filter(Boolean) : [];
+    var eddText = edd.length === 2 && edd[0] !== edd[1] ? edd[0] + " – " + edd[1] : edd[0];
+    var html = '<div class="vt-head"><p class="vt-order">' + esc(t.orderNumber ? "Order: " + t.orderNumber : "Tracking: " + t.trackingNumber) + "</p>" +
+      '<p class="vt-status">' + esc(title) + "</p>" +
+      (eddText ? '<p class="vt-edd">Estimated delivery: <b>' + esc(eddText) + "</b></p>" : "") + "</div>";
+
+    html += '<div class="vt-steps">' + t.steps.map(function (s, i) {
+      var done = i <= t.currentStep;
+      return '<div class="vt-step' + (done ? " done" : "") + '"><div class="vt-dot">' + (done ? CHECK : "") + "</div>" +
+        '<div class="vt-step-label">' + esc(s.label) + '</div><div class="vt-step-date">' + (done ? esc(day(s.at)) : "") + "</div></div>";
+    }).join("") + "</div>";
+
+    var events = t.events || [];
+    html += '<div class="vt-cols"><section><h2>Shipping Details</h2>';
+    if (!events.length) {
+      html += '<p class="vt-muted">Your order is being prepared. Tracking updates will appear here once the carrier scans your package.</p>';
+    } else {
+      html += '<ol class="vt-events">' + events.map(function (e, i) {
+        return '<li class="vt-ev"' + (i >= 3 ? ' data-extra hidden' : "") + '><span class="vt-ev-dot"><i></i></span><div>' +
+          "<p>" + esc((e.location ? e.location + ", " : "") + e.description) + "</p><small>" + esc(dateTime(e.at)) + "</small></div></li>";
+      }).join("") + "</ol>";
+      if (events.length > 3) html += '<button type="button" class="vt-more" data-more>Show History</button>';
+    }
+    html += "</section><section><h2>Package Info</h2><p>Destination</p>";
+    if (t.destination) {
+      var q = encodeURIComponent(t.destination + ", USA");
+      html += '<div class="vt-map"><iframe loading="lazy" title="Destination" src="https://maps.google.com/maps?q=' + q + '&z=11&output=embed"></iframe></div>';
+    } else {
+      html += '<p class="vt-muted">United States</p>';
+    }
+    html += '<p class="vt-muted" style="margin-top:16px;font-size:14px">Tracking number: ' + esc(t.trackingNumber) + "</p></section></div>";
+
+    result.innerHTML = html;
+    result.hidden = false;
+    var more = result.querySelector("[data-more]");
+    if (more) more.addEventListener("click", function () {
+      var open = more.textContent === "Hide History";
+      result.querySelectorAll("[data-extra]").forEach(function (li) { li.hidden = open; });
+      more.textContent = open ? "Show History" : "Hide History";
+    });
+  }
+
+  function busy(form, on) { form.querySelectorAll("button").forEach(function (b) { b.disabled = on; }); }
+
+  function byCode(code, form) {
+    code = String(code || "").replace(/\s+/g, "");
+    if (code.length < 5) return say("Please enter a valid tracking number.");
+    say(""); result.hidden = true; if (form) busy(form, true);
+    fetch(API + "?code=" + encodeURIComponent(code)).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.tracking) { render(d.tracking); history.replaceState(null, "", "?nums=" + encodeURIComponent(code)); }
+      else say("We couldn't find this tracking number. It can take up to 48 hours after your order ships for tracking to become available.");
+    }).catch(function () { say("Something went wrong. Please try again."); })
+      .finally(function () { if (form) busy(form, false); });
+  }
+
+  document.getElementById("vt-by-code").addEventListener("submit", function (e) {
+    e.preventDefault(); byCode(this.code.value, this);
+  });
+  document.getElementById("vt-by-order").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var form = this, order = form.order.value.trim(), contact = form.contact.value.trim();
+    if (!order || !contact) return say("Please enter your order number and email or phone number.");
+    say(""); result.hidden = true; busy(form, true);
+    fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderNumber: order, contact: contact }) })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.found) return say("We couldn't find an order with these details. Please check and try again.");
+        if (!d.tracking) return say("Order " + d.orderNumber + " is being prepared. You'll receive a tracking number by email as soon as it ships.");
+        render(d.tracking);
+      }).catch(function () { say("Something went wrong. Please try again."); })
+      .finally(function () { busy(form, false); });
+  });
+
+  var params = new URLSearchParams(location.search);
+  var initial = params.get("nums") || params.get("code") || params.get("tracking");
+  if (initial) { document.querySelector("#vt-by-code input").value = initial.split(",")[0]; byCode(initial.split(",")[0]); }
+})();
+</script>

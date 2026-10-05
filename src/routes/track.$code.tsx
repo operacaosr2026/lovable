@@ -30,7 +30,7 @@ function TrackPage() {
       ) : t ? (
         <TrackingPageView
           orderNumber={t.orderNumber} trackingNumber={t.trackingNumber} status={t.status}
-          steps={t.steps} currentStep={t.currentStep} events={t.events} destination={t.destination}
+          steps={t.steps} currentStep={t.currentStep} events={t.events} destination={t.destination} edd={t.edd}
         />
       ) : (
         <div className="text-center space-y-4 py-10">
