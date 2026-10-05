@@ -10,7 +10,7 @@ import { formatDateTimeUS } from "@/lib/timezone";
 import { useMyAccess } from "@/hooks/useMyAccess";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { TrackingPagePreview } from "@/components/teste/TrackingPagePreview";
+import { TrackingPageView } from "@/components/tracking/TrackingPageView";
 import {
   query17track, get17trackQuota, getTrack123Rows, listStuckTrackings,
   type Result17, type Track123Row,
@@ -167,8 +167,8 @@ function Teste17track() {
         <div className="grid lg:grid-cols-[minmax(0,480px)_1fr] gap-5">
           <div>
             <p className="text-xs font-medium text-muted-foreground mb-2">Prévia da página de rastreio do cliente (dados do 17track)</p>
-            <TrackingPagePreview
-              storeName={previewT123?.shopName ?? "Store"}
+            <TrackingPageView
+              storeName={(previewT123?.shopName ?? "Store").replace(/^\s*loja\s*\d+\s*[-–:]\s*/i, "")}
               orderNumber={previewT123?.orderNumber ?? null}
               trackingNumber={previewRow.number}
               status={previewRow.status}

@@ -1,7 +1,6 @@
 import { Package, Truck, MapPin, CircleCheck, CircleAlert, Clock } from "lucide-react";
-import type { Event17 } from "@/lib/teste-17track.functions";
-
-// Prévia da página de rastreio do cliente (em inglês — clientes nos EUA).
+// Página de rastreio do cliente (em inglês — clientes nos EUA): usada na rota
+// pública /track/<código> e na prévia da aba Teste.
 // Só dados do rastreio: nada de nome, endereço, e-mail ou valor do pedido.
 const STEPS = [
   { label: "Order shipped", icon: Package },
@@ -39,15 +38,20 @@ const fmt = (iso: string | null) => {
     : iso;
 };
 
-export function TrackingPagePreview({
-  storeName, orderNumber, trackingNumber, status, events,
-}: { storeName: string; orderNumber: string | null; trackingNumber: string; status: string | null; events: Event17[] }) {
+type TrackingEvent = { at: string | null; description: string; location: string | null };
+
+export function TrackingPageView({
+  storeName, logoUrl, orderNumber, trackingNumber, status, events,
+}: { storeName: string; logoUrl?: string | null; orderNumber: string | null; trackingNumber: string; status: string | null; events: TrackingEvent[] }) {
   const step = stepOf(status);
   const problem = status === "Exception" || status === "DeliveryFailure";
   return (
     <div className="rounded-2xl border bg-white text-zinc-900 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b flex items-center justify-between gap-3">
-        <span className="font-semibold tracking-tight">{storeName}</span>
+        <span className="flex items-center gap-2 min-w-0">
+          {logoUrl && <img src={logoUrl} alt="" className="h-7 w-auto max-w-[120px] object-contain" />}
+          <span className="font-semibold tracking-tight truncate">{storeName}</span>
+        </span>
         <span className="text-xs text-zinc-500">Track your order</span>
       </div>
       <div className="px-5 py-6 space-y-6">

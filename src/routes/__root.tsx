@@ -169,6 +169,8 @@ function AuthGate() {
   // Link de convite precisa abrir sem login — é nele que o convidado cria a conta.
   // Antes caía no redirect pro /login e o convidado nunca via a tela de senha.
   const isInvite = location.pathname.startsWith("/invite/");
+  // Página pública de rastreio do cliente — sem login e sem o menu do sistema.
+  if (location.pathname.startsWith("/track/")) return <Outlet />;
 
   if (loading) {
     return (

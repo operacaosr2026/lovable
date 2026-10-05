@@ -38,6 +38,7 @@ import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-l
 import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
 import { Route as ShopsLojasGruposRouteImport } from "./routes/shops.lojas-grupos";
 import { Route as ShopsProductsRouteImport } from "./routes/shops.products";
+import { Route as TrackCodeRouteImport } from "./routes/track.$code";
 import { Route as ApiAtendimentoAttachmentRouteImport } from "./routes/api/atendimento/attachment";
 import { Route as ApiAtendimentoInlineRouteImport } from "./routes/api/atendimento/inline";
 import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
@@ -205,6 +206,11 @@ const ShopsProductsRoute = ShopsProductsRouteImport.update({
   path: "/products",
   getParentRoute: () => ShopsRoute,
 } as any);
+const TrackCodeRoute = TrackCodeRouteImport.update({
+  id: "/track/$code",
+  path: "/track/$code",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ApiAtendimentoAttachmentRoute =
   ApiAtendimentoAttachmentRouteImport.update({
     id: "/api/atendimento/attachment",
@@ -349,6 +355,7 @@ export interface FileRoutesByFullPath {
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
   "/shops/products": typeof ShopsProductsRouteWithChildren;
+  "/track/$code": typeof TrackCodeRoute;
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
@@ -394,6 +401,7 @@ export interface FileRoutesByTo {
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/track/$code": typeof TrackCodeRoute;
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/shops": typeof ShopsIndexRoute;
@@ -447,6 +455,7 @@ export interface FileRoutesById {
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
   "/shops/products": typeof ShopsProductsRouteWithChildren;
+  "/track/$code": typeof TrackCodeRoute;
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
@@ -501,6 +510,7 @@ export interface FileRouteTypes {
     | "/shops/caixa"
     | "/shops/lojas-grupos"
     | "/shops/products"
+    | "/track/$code"
     | "/projects/"
     | "/settings/"
     | "/shops/"
@@ -546,6 +556,7 @@ export interface FileRouteTypes {
     | "/settings/members"
     | "/settings/notificacoes"
     | "/settings/seguranca"
+    | "/track/$code"
     | "/projects"
     | "/settings"
     | "/shops"
@@ -598,6 +609,7 @@ export interface FileRouteTypes {
     | "/shops/caixa"
     | "/shops/lojas-grupos"
     | "/shops/products"
+    | "/track/$code"
     | "/projects/"
     | "/settings/"
     | "/shops/"
@@ -639,6 +651,7 @@ export interface RootRouteChildren {
   TarefasRoute: typeof TarefasRoute;
   TesteRoute: typeof TesteRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
+  TrackCodeRoute: typeof TrackCodeRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
@@ -858,6 +871,13 @@ declare module "@tanstack/react-router" {
       fullPath: "/shops/products";
       preLoaderRoute: typeof ShopsProductsRouteImport;
       parentRoute: typeof ShopsRoute;
+    };
+    "/track/$code": {
+      id: "/track/$code";
+      path: "/track/$code";
+      fullPath: "/track/$code";
+      preLoaderRoute: typeof TrackCodeRouteImport;
+      parentRoute: typeof rootRouteImport;
     };
     "/api/atendimento/attachment": {
       id: "/api/atendimento/attachment";
@@ -1136,6 +1156,7 @@ const rootRouteChildren: RootRouteChildren = {
   TarefasRoute: TarefasRoute,
   TesteRoute: TesteRoute,
   InviteTokenRoute: InviteTokenRoute,
+  TrackCodeRoute: TrackCodeRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
