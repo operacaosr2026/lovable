@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   BellRing, CircleCheck, ArrowUp, ArrowDown, ArrowRight, Database, Pause, Play, Reply, DollarSign, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check,
@@ -413,6 +414,7 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
 
 // Progresso da cobrança automática (Configurações > Sequência de cobrança).
 function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: boolean; total: number }; busy: boolean; onPause: (paused: boolean) => void }) {
+  const router = useRouter();
   const open = r.status === "a_contatar" || r.status === "contatado";
   if (!seq.enabled && !r.dunningStep && !r.recoveryOrderName) return null;
   if (!r.dunningStep && (!open || r.status !== "a_contatar" || r.deliveryStatus !== "delivered")) return null;
@@ -431,9 +433,19 @@ function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: b
     : r.dunningStep ? `E-mail ${r.dunningStep}/${seq.total}${r.dunningLastAt ? ` · ${fmtDate(r.dunningLastAt)}` : ""}`
     : "Cobrança na fila";
   const canToggle = open && r.dunningStopReason !== "respondeu" && r.dunningStopReason !== "fim";
+  // "Cliente respondeu" abre a conversa dele direto no Atendimento.
+  const replyHref = r.dunningStopReason === "respondeu" && r.conversationId ? `/atendimento?c=${r.conversationId}` : null;
   return (
     <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground" title={err ?? undefined}>
-      <span className={err ? "text-destructive" : r.dunningStopReason === "respondeu" ? "text-sky-700 dark:text-sky-400" : ""}>{label}</span>
+      {replyHref ? (
+        <a href={replyHref} title="Abrir a resposta no Atendimento"
+          onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); router.history.push(replyHref); }}
+          className="inline-flex items-center gap-1 text-sky-700 dark:text-sky-400 hover:underline">
+          {label} <Headphones className="size-3" />
+        </a>
+      ) : (
+        <span className={err ? "text-destructive" : r.dunningStopReason === "respondeu" ? "text-sky-700 dark:text-sky-400" : ""}>{label}</span>
+      )}
       {canToggle && (
         <button disabled={busy} onClick={() => onPause(!r.dunningPaused)} title={r.dunningPaused ? "Retomar cobrança automática" : "Pausar cobrança automática"}
           className="size-5 rounded grid place-items-center hover:bg-muted hover:text-foreground disabled:opacity-50">
