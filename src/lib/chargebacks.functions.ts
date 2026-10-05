@@ -9,6 +9,7 @@ import { fetchWithRetry } from "@/lib/http";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { track123StatusByOrderNumber, runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
 import { fetchShopifyDisputes, upsertShopDisputes } from "@/lib/shopify-disputes.server";
+import { runSeventeenTrackSync } from "@/lib/seventeen-track.server";
 
 // Aba Chargebacks: cada disputa (chargeback/inquiry) da Shopify Payments
 // cruzada com o pedido (produto, data), o rastreio (situação e último evento),
@@ -335,7 +336,7 @@ export const refreshChargebacks = createServerFn({ method: "POST" })
       }
     }));
 
-    // Rastreio dos chargebacks em aberto (Track123), só desses pedidos.
+    // Rastreio dos chargebacks em aberto (Track123 ou 17track, conforme a loja).
     const { data: open } = await supabaseAdmin.from("shop_order_disputes").select("shop_id,order_external_id")
       .eq("user_id", ownerId).eq("type", "chargeback").in("status", OPEN_DISPUTE).not("order_external_id", "is", null);
     const { data: orders } = (open ?? []).length
@@ -345,11 +346,15 @@ export const refreshChargebacks = createServerFn({ method: "POST" })
     const byShop = new Map<string, string[]>();
     for (const o of orders ?? []) byShop.set(o.shop_id, [...(byShop.get(o.shop_id) ?? []), o.id]);
     const deadline = Date.now() + 40_000;
+    const seventeen: string[] = [];
     for (const [shopId, orderIds] of byShop) {
-      const { data: integ } = await supabaseAdmin.from("track123_integrations").select("api_key,mcp_store_uuid").eq("shop_id", shopId).maybeSingle();
+      const { data: integ } = await supabaseAdmin.from("track123_integrations").select("api_key,mcp_store_uuid,provider").eq("shop_id", shopId).maybeSingle();
+      if (integ?.provider === "17track") { seventeen.push(shopId); continue; }
       if (!integ?.api_key || !integ.mcp_store_uuid) continue;
       await runTrack123McpSync(shopId, integ.api_key, integ.mcp_store_uuid, supabaseAdmin, { deadline, orderIds }).catch(() => null);
     }
+    // Lojas no 17track: uma rodada só (busca de 40 em 40, não gasta crédito).
+    if (seventeen.length) await runSeventeenTrackSync({ shopIds: seventeen, deadline }).catch(() => null);
 
     // Número do pedido pra mensagem.
     const ext = changed.map((c) => c.orderExternalId).filter(Boolean) as string[];

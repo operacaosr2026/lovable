@@ -14,6 +14,7 @@ import {
   CheckCircle2, AlertCircle, Settings2, Info, ChevronDown, ChevronUp, Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { isoTodayUS } from "@/lib/timezone";
 
@@ -189,6 +190,7 @@ function SyncCutoffSection({ shops }: { shops: ShopStub[] }) {
 type Track123Row = {
   shop_id: string;
   enabled: boolean;
+  provider: "track123" | "17track";
   has_key: boolean;
   mcp_store_uuid: string | null;
   tracking_link_template: string | null;
@@ -210,6 +212,9 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
   const enabled = row?.enabled ?? false;
   const hasKey  = row?.has_key ?? false;
   const isMcp   = Boolean(row?.mcp_store_uuid);
+  // 17track: uma conta só pra todas as lojas (chave na Vercel), sem key por loja.
+  const is17 = row?.provider === "17track";
+  const confirm = useConfirm();
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["track123-integrations"] });
 
@@ -239,6 +244,19 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
     onError: (e: any) => toast.error(e?.message ?? "Erro ao atualizar"),
   });
 
+  const setProvider = useMutation({
+    mutationFn: (provider: "track123" | "17track") => saveFn({ data: { shop_id: shop.id, provider } }),
+    onSuccess: (_r, provider) => { invalidate(); toast.success(provider === "17track" ? "Rastreio dessa loja passa pro 17track na próxima rodada (até 30 min)" : "Rastreio dessa loja voltou pro Track123"); },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao trocar"),
+  });
+  const chooseProvider = async (provider: "track123" | "17track") => {
+    if (provider === (row?.provider ?? "track123")) return;
+    const ok = await confirm(provider === "17track"
+      ? { title: `Passar ${shop.name} pro 17track?`, description: "Os pedidos em aberto dos últimos 30 dias são cadastrados no 17track (1 crédito por código, uma vez só) e o Track123 para de atualizar essa loja.", confirmText: "Passar pro 17track" }
+      : { title: `Voltar ${shop.name} pro Track123?`, description: "O 17track para de atualizar essa loja e o Track123 volta a puxar o rastreio.", confirmText: "Voltar" });
+    if (ok) setProvider.mutate(provider);
+  };
+
   const test = async () => {
     setTesting(true);
     try {
@@ -253,7 +271,11 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
     }
   };
 
-  const statusPill = !hasKey
+  const statusPill = is17
+    ? (row?.last_sync_status === "error"
+      ? { label: "Erro · 17track", cls: "bg-rose-500/10 text-rose-600 border-rose-500/20" }
+      : { label: "Ativo · 17track", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" })
+    : !hasKey
     ? { label: "Sem key", cls: "bg-muted text-muted-foreground border-border" }
     : !enabled
     ? { label: "Pausado", cls: "bg-muted text-muted-foreground border-border" }
@@ -273,12 +295,22 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
         </div>
         <span className="text-sm text-foreground flex-1 min-w-[100px] truncate">{shop.name}</span>
         <span className={cn("text-[11px] px-2 py-0.5 rounded-full border", statusPill.cls)}>{statusPill.label}</span>
-        <Switch
-          checked={enabled}
-          disabled={!hasKey || toggleEnabled.isPending}
-          onCheckedChange={(v) => toggleEnabled.mutate(v)}
-        />
-        <Button size="sm" variant="outline" onClick={test} disabled={!hasKey || testing}>
+        <div className="inline-flex rounded-lg border border-border p-0.5 text-[11px]" title="Qual serviço puxa o rastreio dessa loja">
+          {(["track123", "17track"] as const).map((p) => (
+            <button key={p} disabled={setProvider.isPending} onClick={() => chooseProvider(p)}
+              className={cn("px-2 py-0.5 rounded-md font-medium", (row?.provider ?? "track123") === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+              {p === "track123" ? "Track123" : "17track"}
+            </button>
+          ))}
+        </div>
+        {!is17 && (
+          <Switch
+            checked={enabled}
+            disabled={!hasKey || toggleEnabled.isPending}
+            onCheckedChange={(v) => toggleEnabled.mutate(v)}
+          />
+        )}
+        <Button size="sm" variant="outline" onClick={test} disabled={(!is17 && !hasKey) || testing}>
           <RefreshCw className={cn("size-3.5", testing && "animate-spin")} /> Testar
         </Button>
         <Button size="sm" variant="ghost" onClick={() => (editing ? setEditing(false) : openEdit())}>
@@ -347,8 +379,8 @@ function Track123Section({ shops }: { shops: ShopStub[] }) {
         className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-muted/30 transition-colors"
       >
         <Truck className="size-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-foreground flex-1">Track123 (rastreamento)</span>
-        <span className="text-xs text-muted-foreground mr-2">API key por loja</span>
+        <span className="text-sm font-medium text-foreground flex-1">Rastreamento (Track123 / 17track)</span>
+        <span className="text-xs text-muted-foreground mr-2">serviço e link de rastreio por loja</span>
         {open ? <ChevronUp className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
       </button>
 

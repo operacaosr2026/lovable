@@ -18,6 +18,8 @@ export const Route = createFileRoute("/api/public/hooks/sync-track123")({
           .from("track123_integrations")
           .select("shop_id,user_id,api_key,mcp_store_uuid,last_sync_at")
           .eq("enabled", true)
+          // Loja que já passou pro 17track sai daqui (cron sync-17track).
+          .eq("provider", "track123")
           .or("api_key.not.is.null,mcp_store_uuid.not.is.null");
         if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 

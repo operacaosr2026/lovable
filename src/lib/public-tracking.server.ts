@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sanitizeEvents, buildSteps, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
+import { sanitizeEvents, buildSteps, officialEdd, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
 
 // Rastreio público (página /track do sistema e página de rastreio da loja
 // Voultie via /api/public/track), sem login, uma URL pra todas as lojas e
@@ -14,8 +14,7 @@ export type PublicTracking = {
   currentStep: number;
   events: DisplayEvent[];
   destination: string | null;
-  // Previsão oficial da transportadora — vem do 17track; fica null até o sync
-  // do 17track gravar no banco.
+  // Previsão oficial da transportadora (gravada pelo sync do 17track).
   edd: DisplayEdd | null;
 };
 
@@ -59,7 +58,7 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
   const code = rawCode.trim().toUpperCase();
   if (!TRACKING_CODE_RE.test(code)) return { tracking: null };
   const { data: tr } = await supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_status,timeline")
+    .select("order_id,tracking_status,timeline,edd_from,edd_to,edd_source")
     .eq("tracking_number", code).order("updated_at", { ascending: false }).limit(1).maybeSingle();
 
   // Sem linha de rastreio ainda: o código pode já estar no pedido (veio da Shopify).
@@ -87,7 +86,7 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
       currentStep: current,
       events: sanitizeEvents(all),
       destination: destinationOf(o),
-      edd: null,
+      edd: officialEdd(tr ? { source: tr.edd_source, from: tr.edd_from, to: tr.edd_to } : null),
     },
   };
 }

@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runTrack123Sync } from "@/lib/track123-sync.server";
 import { runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
+import { runSeventeenTrackSync } from "@/lib/seventeen-track.server";
 
 // supabaseAdmin ignora RLS: sem esse filtro, qualquer usuário logado podia ler,
 // sobrescrever (api_key, link de rastreio) ou disparar sync da integração de
@@ -33,13 +34,14 @@ export const getTrack123Integrations = createServerFn({ method: "POST" })
     if (!shopIds.length) return [];
     const { data: rows, error } = await supabaseAdmin
       .from("track123_integrations")
-      .select("shop_id,enabled,api_key,mcp_store_uuid,tracking_link_template,last_sync_at,last_sync_status,last_sync_error")
+      .select("shop_id,enabled,provider,api_key,mcp_store_uuid,tracking_link_template,last_sync_at,last_sync_status,last_sync_error")
       .eq("user_id", context.ownerId)
       .in("shop_id", shopIds);
     if (error) throw new Error(error.message);
     return (rows ?? []).map((r: any) => ({
       shop_id: r.shop_id,
       enabled: r.enabled,
+      provider: r.provider as "track123" | "17track",
       has_key: Boolean(r.api_key),
       mcp_store_uuid: r.mcp_store_uuid,
       tracking_link_template: r.tracking_link_template,
@@ -58,6 +60,8 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
       mcp_store_uuid: z.string().trim().max(64).optional().nullable(),
       tracking_link_template: z.string().trim().max(300).optional().nullable(),
       enabled: z.boolean().optional(),
+      // Qual serviço puxa o rastreio da loja (17track substitui o Track123).
+      provider: z.enum(["track123", "17track"]).optional(),
     }).parse(d)
   )
   .handler(async ({ context, data }: any) => {
@@ -67,6 +71,7 @@ export const upsertTrack123Integration = createServerFn({ method: "POST" })
     if (data.mcp_store_uuid !== undefined) patch.mcp_store_uuid = data.mcp_store_uuid || null;
     if (data.tracking_link_template !== undefined) patch.tracking_link_template = data.tracking_link_template || null;
     if (data.enabled !== undefined) patch.enabled = data.enabled;
+    if (data.provider !== undefined) patch.provider = data.provider;
     const { error } = await supabaseAdmin
       .from("track123_integrations")
       .upsert(patch, { onConflict: "shop_id" });
@@ -84,17 +89,27 @@ export const syncTrack123ForShops = createServerFn({ method: "POST" })
   .handler(async ({ context, data }: any) => {
     const shopIds = await filterOwnedShopIds(context.ownerId, data.shop_ids);
     if (!shopIds.length) return { synced: 0, total: 0, errors: [] as string[] };
+    // Mesmo prazo compartilhado do cron (função com limite de 60s).
+    const deadline = Date.now() + 50_000;
+    // Lojas no 17track: uma rodada só pra todas (cadastra os novos + atualiza).
+    const { data: seventeen } = await supabaseAdmin.from("track123_integrations").select("shop_id")
+      .eq("user_id", context.ownerId).in("shop_id", shopIds).eq("provider", "17track");
+    const seventeenIds = (seventeen ?? []).map((r: any) => r.shop_id as string);
+    let seventeenErrors: string[] = [];
+    if (seventeenIds.length) {
+      const r = await runSeventeenTrackSync({ shopIds: seventeenIds, deadline });
+      seventeenErrors = r.outOfQuota ? ["17track sem crédito", ...r.errors] : r.errors;
+    }
     const { data: integrations, error } = await supabaseAdmin
       .from("track123_integrations")
       .select("shop_id,api_key,mcp_store_uuid,last_sync_at")
       .eq("user_id", context.ownerId)
       .in("shop_id", shopIds)
       .eq("enabled", true)
+      .eq("provider", "track123")
       .not("api_key", "is", null);
     if (error) throw new Error(error.message);
 
-    // Mesmo prazo compartilhado do cron (função com limite de 60s).
-    const deadline = Date.now() + 50_000;
     const queue = [...(integrations ?? [])]
       .sort((a: any, b: any) => (a.last_sync_at ?? "").localeCompare(b.last_sync_at ?? ""));
     let synced = 0;
@@ -112,7 +127,7 @@ export const syncTrack123ForShops = createServerFn({ method: "POST" })
         errors.push(String(e?.message ?? e));
       }
     }));
-    return { synced, total: (integrations ?? []).length, errors };
+    return { synced: synced + seventeenIds.length, total: (integrations ?? []).length + seventeenIds.length, errors: [...seventeenErrors, ...errors] };
   });
 
 // Roda o sync pra uma única loja na hora (ignora o filtro de loja/grupo ativo do
@@ -125,11 +140,19 @@ export const testTrack123Sync = createServerFn({ method: "POST" })
     await assertShopOwnedBy(context.ownerId, data.shop_id);
     const { data: integ, error } = await supabaseAdmin
       .from("track123_integrations")
-      .select("api_key,mcp_store_uuid")
+      .select("api_key,mcp_store_uuid,provider")
       .eq("user_id", context.ownerId)
       .eq("shop_id", data.shop_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
+    if (integ?.provider === "17track") {
+      const r = await runSeventeenTrackSync({ shopIds: [data.shop_id] });
+      if (!r.shops) throw new Error("Loja inativa ou pausada — o 17track só sincroniza lojas ativas.");
+      return {
+        updated: r.updated, total: r.orders, status: r.errors.length && !r.updated ? "error" : "ok",
+        errorMsg: `${r.updated}/${r.orders} atualizados, ${r.registered} cadastrados agora no 17track` + (r.outOfQuota ? " · SEM CRÉDITO" : "") + (r.errors.length ? ` · último erro: ${r.errors[r.errors.length - 1]}` : ""),
+      };
+    }
     if (integ?.mcp_store_uuid) {
       if (!integ.api_key) throw new Error("Falta a API key (X-Api-Key) junto com o Store UUID.");
       return runTrack123McpSync(data.shop_id, integ.api_key, integ.mcp_store_uuid, supabaseAdmin);

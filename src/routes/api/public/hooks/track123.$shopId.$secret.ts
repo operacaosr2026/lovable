@@ -30,13 +30,15 @@ export const Route = createFileRoute("/api/public/hooks/track123/$shopId/$secret
 
         const { data: integ } = await supabaseAdmin
           .from("track123_integrations")
-          .select("user_id,shop_id,webhook_secret")
+          .select("user_id,shop_id,webhook_secret,provider")
           .eq("shop_id", shopId)
           .maybeSingle();
 
         if (!integ || !integ.webhook_secret || !timingSafeEqualString(integ.webhook_secret, secret)) {
           return new Response("Invalid secret", { status: 401 });
         }
+        // Loja que já passou pro 17track: aviso do Track123 é ignorado.
+        if (integ.provider === "17track") return new Response(JSON.stringify({ ignored: "17track" }), { headers: { "Content-Type": "application/json" } });
 
         let payload: any;
         try { payload = await request.json(); }

@@ -2755,11 +2755,16 @@ export type Database = {
           carrier: string | null;
           created_at: string;
           delivered_at: string | null;
+          edd_from: string | null
+          edd_source: string | null
+          edd_to: string | null
           id: string;
           last_event_at: string | null;
           last_event_label: string | null;
           order_id: string;
           problem_at: string | null;
+          provider: string | null
+          registered_17track_at: string | null
           shipped_at: string | null;
           shop_id: string;
           timeline: Json;
@@ -2772,11 +2777,16 @@ export type Database = {
           carrier?: string | null;
           created_at?: string;
           delivered_at?: string | null;
+          edd_from?: string | null
+          edd_source?: string | null
+          edd_to?: string | null
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;
           order_id: string;
           problem_at?: string | null;
+          provider?: string | null
+          registered_17track_at?: string | null
           shipped_at?: string | null;
           shop_id: string;
           timeline?: Json;
@@ -2789,11 +2799,16 @@ export type Database = {
           carrier?: string | null;
           created_at?: string;
           delivered_at?: string | null;
+          edd_from?: string | null
+          edd_source?: string | null
+          edd_to?: string | null
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;
           order_id?: string;
           problem_at?: string | null;
+          provider?: string | null
+          registered_17track_at?: string | null
           shipped_at?: string | null;
           shop_id?: string;
           timeline?: Json;
@@ -4341,6 +4356,7 @@ export type Database = {
           last_sync_error: string | null;
           last_sync_status: string | null;
           mcp_store_uuid: string | null;
+          provider: string
           shop_id: string;
           token: string | null;
           tracking_link_template: string;
@@ -4357,6 +4373,7 @@ export type Database = {
           last_sync_error?: string | null;
           last_sync_status?: string | null;
           mcp_store_uuid?: string | null;
+          provider?: string
           shop_id: string;
           token?: string | null;
           tracking_link_template?: string;
@@ -4373,6 +4390,7 @@ export type Database = {
           last_sync_error?: string | null;
           last_sync_status?: string | null;
           mcp_store_uuid?: string | null;
+          provider?: string
           shop_id?: string;
           token?: string | null;
           tracking_link_template?: string;
