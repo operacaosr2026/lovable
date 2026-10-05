@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  Brain,
+  Brain, FlaskConical,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -48,6 +48,8 @@ function navItemForPath(path: string): NavItem | undefined {
 
 const adminNav: NavItem[] = [
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
+  // Testes de coisas novas antes de mexer no que está em uso.
+  { to: "/teste", label: "Teste", icon: FlaskConical },
 ];
 // Configurações pro membro: cada página liberada em Membros > Permissões
 // (Membros e Auditoria são só do admin).

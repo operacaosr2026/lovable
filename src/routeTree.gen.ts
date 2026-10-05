@@ -21,6 +21,7 @@ import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ShopsRouteImport } from "./routes/shops";
 import { Route as TarefasRouteImport } from "./routes/tarefas";
+import { Route as TesteRouteImport } from "./routes/teste";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
 import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
 import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
@@ -117,6 +118,11 @@ const ShopsRoute = ShopsRouteImport.update({
 const TarefasRoute = TarefasRouteImport.update({
   id: "/tarefas",
   path: "/tarefas",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const TesteRoute = TesteRouteImport.update({
+  id: "/teste",
+  path: "/teste",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -329,6 +335,7 @@ export interface FileRoutesByFullPath {
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
   "/tarefas": typeof TarefasRoute;
+  "/teste": typeof TesteRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -377,6 +384,7 @@ export interface FileRoutesByTo {
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/tarefas": typeof TarefasRoute;
+  "/teste": typeof TesteRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -425,6 +433,7 @@ export interface FileRoutesById {
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
   "/tarefas": typeof TarefasRoute;
+  "/teste": typeof TesteRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -478,6 +487,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/tarefas"
+    | "/teste"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -526,6 +536,7 @@ export interface FileRouteTypes {
     | "/login"
     | "/metas"
     | "/tarefas"
+    | "/teste"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -573,6 +584,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/tarefas"
+    | "/teste"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -625,6 +637,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren;
   ShopsRoute: typeof ShopsRouteWithChildren;
   TarefasRoute: typeof TarefasRoute;
+  TesteRoute: typeof TesteRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
@@ -725,6 +738,13 @@ declare module "@tanstack/react-router" {
       path: "/tarefas";
       fullPath: "/tarefas";
       preLoaderRoute: typeof TarefasRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/teste": {
+      id: "/teste";
+      path: "/teste";
+      fullPath: "/teste";
+      preLoaderRoute: typeof TesteRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/invite/$token": {
@@ -1114,6 +1134,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,
   TarefasRoute: TarefasRoute,
+  TesteRoute: TesteRoute,
   InviteTokenRoute: InviteTokenRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,
