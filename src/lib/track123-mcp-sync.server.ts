@@ -150,7 +150,9 @@ export async function runTrack123McpSync(
   // chamada (cron / botão "Atualizar") — antes cada loja tinha 50s próprios e a
   // função (limite de 60s na Vercel) morria na 2ª loja, deixando as demais sem
   // sync por horas.
-  opts: { deadline?: number } = {},
+  // orderIds: só esses pedidos (ex.: forçar os dos chargebacks em aberto), sem
+  // o corte de 30 dias — o resto do sync segue igual.
+  opts: { deadline?: number; orderIds?: string[] } = {},
 ) {
   const deadline = opts.deadline ?? Date.now() + SYNC_TIME_BUDGET_MS;
   // Só últimos 30 dias — pedido mais antigo que isso não interessa mais pro
@@ -170,7 +172,7 @@ export async function runTrack123McpSync(
 
   // Todos os pedidos em aberto dentro da janela de 30 dias — sem limite de
   // quantidade (só o corte por tempo lá no loop, se a loja tiver muitos).
-  const { data: candidates, error: ordersError } = await selectAll(supabase
+  let candidatesQuery = supabase
     .from("shop_orders")
     .select("id,user_id,order_number,delivery_status,tracking_code,shipped_at,delivered_at,problem_at")
     .eq("shop_id", shopId)
@@ -185,9 +187,9 @@ export async function runTrack123McpSync(
     // Cancelado/reembolsado sai da aba Rastreamento (lg-logistics.functions.ts)
     // — mesmo filtro aqui, pra não gastar consulta (limitada) do Track123 nele.
     .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
-    .filter("raw->>cancelled_at", "is", null)
-    .gte("order_date", since)
-    .order("order_date", { ascending: true }));
+    .filter("raw->>cancelled_at", "is", null);
+  candidatesQuery = opts.orderIds ? candidatesQuery.in("id", opts.orderIds) : candidatesQuery.gte("order_date", since);
+  const { data: candidates, error: ordersError } = await selectAll(candidatesQuery.order("order_date", { ascending: true }));
   if (ordersError) throw new Error(ordersError.message);
 
   // Prioriza quem faz mais tempo que não é reconferido (em vez de sempre os
