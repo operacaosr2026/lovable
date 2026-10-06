@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis, postingCalendar } from "@/lib/logistics-kpis";
 import { listPostingHolidays } from "@/lib/posting-holidays.functions";
-import { isoDateUS, isoTodayUS } from "@/lib/timezone";
+import { isoTodayUS } from "@/lib/timezone";
 import { notifyOrderCustomers, NOTIFY_TEMPLATE } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
@@ -244,22 +244,6 @@ export function LgLogistica({
   const lastSyncAt = (scopedIntegrations as any[]).reduce((max: string | null, i) => (
     i.last_sync_at && (!max || i.last_sync_at > max) ? i.last_sync_at : max
   ), null as string | null);
-
-  // Progresso do rastreio: % dos rastreios em aberto (mesma janela de 60 dias
-  // do sync do 17track) conferidos na última hora, por loja no tooltip.
-  const syncWindowStart = isoDateUS(Date.now() - 60 * 86_400_000);
-  const freshSince = new Date(Date.now() - 60 * 60_000).toISOString();
-  const openTracked = (orders as any[]).filter((o) => (shopFilter === "todas" || o.shop_id === shopFilter)
-    && o.tracking_checked_at && o.order_date >= syncWindowStart
-    && o.delivery_status !== "delivered" && o.delivery_status !== "returned");
-  const isFresh = (o: any) => new Date(o.tracking_checked_at).toISOString() >= freshSince;
-  const freshCount = openTracked.filter(isFresh).length;
-  const syncPct = openTracked.length ? Math.round((freshCount / openTracked.length) * 100) : null;
-  const stalest = openTracked.reduce((min: any, o) => (!min || o.tracking_checked_at < min.tracking_checked_at ? o : min), null);
-  const progressByShop = [...new Set(openTracked.map((o) => o.shop_id as string))].map((id) => {
-    const mine = openTracked.filter((o) => o.shop_id === id);
-    return `${shopNames[id] ?? "Loja"}: ${mine.filter(isFresh).length} de ${mine.length}`;
-  });
 
   const save = useMutation({
     mutationFn: (vars: any) => updateFn({ data: vars }),
@@ -546,31 +530,10 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
         >
           <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
         </Button>
-        <div
-          className="flex items-center gap-2 text-xs text-muted-foreground cursor-default"
-          title={[
-            "Rastreios em aberto conferidos no 17track na última hora:",
-            ...progressByShop,
-            "",
-            lastSyncAt && `Última rodada: ${new Date(lastSyncAt).toLocaleString("pt-BR")}`,
-            stalest && `Há mais tempo sem conferir: ${stalest.order_number} (${timeAgo(stalest.tracking_checked_at)})`,
-            "A cada 30 min o 17track confere todos os pedidos em aberto (últimos 60 dias).",
-          ].filter((l) => l !== null && l !== undefined && l !== false).join("\n")}
-        >
-          {syncPct != null ? (
-            <>
-              <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={cn("h-full rounded-full transition-all", syncPct >= 90 ? "bg-emerald-500" : syncPct >= 50 ? "bg-amber-500" : "bg-rose-500")}
-                  style={{ width: `${syncPct}%` }}
-                />
-              </div>
-              <span className="tabular-nums whitespace-nowrap">{syncPct}% conferidos (1h)</span>
-            </>
-          ) : (
-            <span>Sincronizado {timeAgo(lastSyncAt)}</span>
-          )}
-        </div>
+        {/* O 17track confere todos os pedidos em aberto a cada 30 min — basta saber quando rodou. */}
+        <span className="text-xs text-muted-foreground whitespace-nowrap" title={lastSyncAt ? `Última rodada: ${new Date(lastSyncAt).toLocaleString("pt-BR")}` : undefined}>
+          Atualizado {timeAgo(lastSyncAt)}
+        </span>
         {(statusFilter !== "todos" || shopFilter !== "todas" || search) && (
           <Button size="sm" variant="ghost" onClick={() => { setStatusFilter("todos"); setShopFilter("todas"); setSearch(""); }}>
             Limpar filtro
