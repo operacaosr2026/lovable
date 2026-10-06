@@ -102,6 +102,13 @@ export function computeLogisticsKpis(orders: any[], nowMs: number, cal?: Posting
     .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
     .filter((d) => d >= 0);
 
+  // Tempo que o cliente sente: dias corridos da compra (order_date) até a
+  // entrega (delivered_at) — postagem + transporte juntos.
+  const customerDurations = kpiOrders
+    .filter((o) => o.order_date && o.delivered_at)
+    .map((o) => (Date.parse(String(o.delivered_at).slice(0, 10) + "T12:00:00Z") - Date.parse(String(o.order_date).slice(0, 10) + "T12:00:00Z")) / 86_400_000)
+    .filter((d) => d >= 0);
+
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   return {
     pending:   orders.filter((o) => inBucket(o, "pending")).length,
@@ -112,6 +119,7 @@ export function computeLogisticsKpis(orders: any[], nowMs: number, cal?: Posting
     attention: orders.filter((o) => needsAttention(o, nowMs, cal)).length,
     avgPostingDays: avg(postingDurations),
     avgDeliveryDays: avg(deliveryDurations),
+    avgCustomerDays: avg(customerDurations),
   };
 }
 

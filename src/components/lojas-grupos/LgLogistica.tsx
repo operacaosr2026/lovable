@@ -291,6 +291,7 @@ export function LgLogistica({
 
   const avgPostingDays = shared.avgPostingDays;
   const avgDeliveryDays = shared.avgDeliveryDays;
+  const avgCustomerDays = shared.avgCustomerDays;
 
   // Buscar pedido ignora os filtros de status e loja — é pra achar o pedido
   // onde quer que ele esteja (ex: já entregue, numa loja fora do filtro
@@ -390,7 +391,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3">
         <button
           onClick={() => setStatusFilter(statusFilter === "atencao" ? "todos" : "atencao")}
           className={cn(
@@ -472,7 +473,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           </div>
           <p className="text-xs text-muted-foreground">Total de pedidos</p>
         </div>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+        <div className="rounded-xl border border-border bg-surface p-3 text-left" title="Dias úteis da compra até a postagem (1ª movimentação real da transportadora)">
           <div className="flex items-center gap-2 mb-1">
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-indigo-500/10">
               <Clock className="size-4 text-indigo-600" />
@@ -483,7 +484,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           </div>
           <p className="text-xs text-muted-foreground">TM Postagem</p>
         </div>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left">
+        <div className="rounded-xl border border-border bg-surface p-3 text-left" title="Dias corridos da postagem até a entrega (só o transporte)">
           <div className="flex items-center gap-2 mb-1">
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-violet-500/10">
               <Clock className="size-4 text-violet-600" />
@@ -493,6 +494,17 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             </p>
           </div>
           <p className="text-xs text-muted-foreground">TM Entrega</p>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-3 text-left" title="Tempo que o cliente sente: dias corridos da compra até a entrega (postagem + transporte), dos pedidos já entregues">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-teal-500/10">
+              <Clock className="size-4 text-teal-600" />
+            </div>
+            <p className="text-xl font-bold text-foreground">
+              {avgCustomerDays != null ? `${avgCustomerDays.toFixed(1)}d` : "—"}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">TM Cliente</p>
         </div>
       </div>
 
