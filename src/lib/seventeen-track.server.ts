@@ -3,20 +3,21 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { isoTodayUS } from "@/lib/timezone";
-import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent, labelSaysDelivered } from "@/lib/track123-sync.server";
+import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent, labelSaysDelivered } from "@/lib/tracking-rules.server";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { pushFulfillmentStatusToShopify, updateFulfillmentTrackingUrl } from "@/lib/shopify-fulfillment-status.server";
 import { officialEdd } from "@/lib/tracking-display";
 
-// Rastreio pelo 17track (substitui o Track123, loja por loja — ver
-// track123_integrations.provider). Uma conta só pra todas as lojas
-// (SEVENTEEN_TRACK_API_KEY). Cada rodada:
+// Rastreio pelo 17track (substituiu o Track123 em out/2026). Uma conta só pra
+// todas as lojas (SEVENTEEN_TRACK_API_KEY); a tabela track123_integrations
+// (nome antigo) guarda por loja o modelo do link e o status do último sync.
+// Cada rodada:
 //  1. cadastra no 17track os códigos novos dos pedidos em aberto (1 crédito por
 //     código, uma vez só — já cadastrado não cobra de novo);
 //  2. busca o rastreio de todos os cadastrados, de 40 em 40 (não gasta crédito);
-//  3. grava em shop_order_tracking/shop_orders no MESMO formato do Track123
-//     (timeline com event_time_utc/event_detail/event_location, status tipo
-//     "In transit"), então nenhuma tela precisa mudar;
+//  3. grava em shop_order_tracking/shop_orders (timeline com
+//     event_time_utc/event_detail/event_location, status tipo "In transit" —
+//     o formato que as telas já liam);
 //  4. na Shopify: manda o status pro envio quando ele muda (em trânsito, saiu
 //     pra entrega, entregue…) e troca o link de rastreio do envio pro modelo da
 //     loja — sem avisar o cliente.
@@ -48,8 +49,8 @@ async function call17(path: string, body: unknown): Promise<any> {
   return j.data;
 }
 
-// Status geral do 17track → texto no padrão do Track123 (o resto do sistema lê
-// assim: "Info received" = etiqueta criada, "No record" = código sem registro…).
+// Status geral do 17track → texto que o resto do sistema lê (formato herdado
+// do Track123: "Info received" = etiqueta criada, "No record" = código sem registro…).
 const STATUS_LABEL: Record<string, string> = {
   NotFound: "NO_RECORD",
   InfoReceived: "Info received",
@@ -65,8 +66,7 @@ const STATUS_LABEL: Record<string, string> = {
 const placeOf = (a: any) => [a?.city, a?.state, a?.country].filter(Boolean).join(", ") || "";
 const utcText = (iso: string) => iso.replace("T", " ").replace(/(\.\d+)?Z$/, "").slice(0, 19);
 
-// Eventos de todas as transportadoras (origem + última milha) no formato do
-// Track123 (MCP), mais novo primeiro.
+// Eventos de todas as transportadoras (origem + última milha), mais novo primeiro.
 function toTimeline(item: any) {
   const providers: any[] = item?.track_info?.tracking?.providers ?? [];
   return providers.flatMap((p) => (p.events ?? []).map((e: any) => {
@@ -110,7 +110,7 @@ function inferTarget(status: string | null, lastLabel: string | null): string | 
 }
 
 // Lojas que o cron pode sincronizar: ativas (e com grupo ativo) e sem
-// "Pausar sincronização" no Banco de Lojas — mesma regra do cron do Track123.
+// "Pausar sincronização" no Banco de Lojas.
 async function syncableShopIds(shopIds: string[]) {
   if (!shopIds.length) return new Set<string>();
   const { data: shops } = await supabaseAdmin.from("shops").select("id,status,archived,group_id").in("id", shopIds);
@@ -147,8 +147,8 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   const integBy = new Map(shops.map((i) => [i.shop_id, i]));
 
   // Pedidos em aberto dos últimos 60 dias (sem entregue, cancelado ou
-  // reembolsado) — 60 e não 30 como no Track123 pra pedido muito atrasado (o que
-  // vira chargeback) continuar sendo acompanhado.
+  // reembolsado) — 60 pra pedido muito atrasado (o que vira chargeback)
+  // continuar sendo acompanhado.
   const since = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
     .select("id,user_id,shop_id,tracking_code,shipped_at,delivered_at,problem_at,fulfillments:raw->fulfillments")
@@ -273,7 +273,7 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   const base = { user_id: o.user_id, shop_id: o.shop_id, order_id: o.id, provider: "17track", edd_from: edd.from, edd_to: edd.to, edd_source: edd.source };
 
   // Sem nenhum evento ainda (recém-cadastrado): não apaga o histórico que já
-  // existe (veio do Track123) — só marca a previsão.
+  // existe — só marca a previsão.
   if (!timeline.length) {
     await supabaseAdmin.from("shop_order_tracking").update({ edd_from: edd.from, edd_to: edd.to, edd_source: edd.source }).eq("order_id", o.id);
     return false;
@@ -282,7 +282,7 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   const last = timeline[0];
   const lastAt = last.event_time_utc ? `${last.event_time_utc.replace(" ", "T")}Z` : null;
   const lastLabel = last.event_detail;
-  // Evento mais antigo que o já gravado (ex.: Track123 tinha algo mais novo) não volta o status.
+  // Evento mais antigo que o já gravado não volta o status.
   if (isOlderEvent(lastAt, stored?.last_event_at) && (stored?.timeline?.length ?? 0) > timeline.length) {
     await supabaseAdmin.from("shop_order_tracking").update({ edd_from: edd.from, edd_to: edd.to, edd_source: edd.source }).eq("order_id", o.id);
     return false;
@@ -318,4 +318,22 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
     Object.keys(orderUpdate).length ? supabaseAdmin.from("shop_orders").update(orderUpdate).eq("id", o.id) : Promise.resolve(),
   ]);
   return true;
+}
+
+// Rastreio de UM código fora do banco (aba Chargebacks: pedido antigo que não
+// está em shop_orders). Cadastra se precisar (1 crédito, uma vez só) e não
+// grava nada — quem chama decide onde guardar.
+export async function seventeenTrackStatus(trackingNumber: string): Promise<{ status: string | null; lastLabel: string | null; lastAt: string | null } | null> {
+  const number = trackingNumber.trim().toUpperCase();
+  const reg = await call17("/register", [{ number }]);
+  const rej = (reg?.rejected ?? [])[0];
+  if (rej && rej.error?.code !== ALREADY_REGISTERED) return null;
+  const info = await call17("/gettrackinfo", [{ number }]);
+  const item = (info?.accepted ?? [])[0];
+  const timeline = item ? toTimeline(item) : [];
+  if (!timeline.length) return null;
+  const status: string | null = item?.track_info?.latest_status?.status ?? null;
+  const lastLabel = timeline[0].event_detail;
+  const lastAt = timeline[0].event_time_utc ? `${timeline[0].event_time_utc.replace(" ", "T")}Z` : null;
+  return { status: finalTrackingTarget(inferTarget(status, lastLabel), status ? STATUS_LABEL[status] ?? status : null, lastLabel, true), lastLabel, lastAt };
 }

@@ -12,7 +12,9 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 const SHOPIFY_STALE_HOURS = 13;
 const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors"];
 
-const TRACK123_STALE_HOURS = 4;   // cron roda de hora em hora
+// Rastreio (17track): cron a cada 30 min. A chave "track123:<loja>" do aviso
+// ficou com o nome antigo pra não duplicar avisos já abertos.
+const TRACKING_STALE_HOURS = 4;
 const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
 
 // Motivos de disputa da Shopify Payments em português.
@@ -170,9 +172,9 @@ export async function refreshSystemNotifications(ownerId: string) {
             .eq("user_id", ownerId).in("id", storeIds)
         : Promise.resolve({ data: [] as any[] }),
       supabaseAdmin.from("track123_integrations").select("shop_id,last_sync_at,last_sync_status,last_sync_error")
-        .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("enabled", true),
+        .eq("user_id", ownerId).in("shop_id", activeShopIds).eq("provider", "17track"),
     ]);
-    for (const [res, what] of [[shopsRes, "nomes"], [cardLinksRes, "grupos"], [tokensRes, "tokens Meta"], [accountsRes, "contas Meta"], [storesRes, "lojas Shopify"], [trackRes, "Track123"]] as const) {
+    for (const [res, what] of [[shopsRes, "nomes"], [cardLinksRes, "grupos"], [tokensRes, "tokens Meta"], [accountsRes, "contas Meta"], [storesRes, "lojas Shopify"], [trackRes, "rastreio"]] as const) {
       if ((res as any).error) throw new Error(`refreshSystemNotifications: ${what}: ${(res as any).error.message}`);
     }
 
@@ -305,16 +307,16 @@ export async function refreshSystemNotifications(ownerId: string) {
       if (t.last_sync_status === "error") {
         want.set(`track123:${t.shop_id}`, {
           level: "error",
-          title: `Rastreio (Track123) com erro — ${name(t.shop_id)}`,
+          title: `Rastreio (17track) com erro — ${name(t.shop_id)}`,
           body: String(t.last_sync_error ?? "Falha ao sincronizar rastreios.").slice(0, 240),
           link: linkFor(t.shop_id, "logistica"),
         });
-      } else if (hrs > TRACK123_STALE_HOURS) {
+      } else if (hrs > TRACKING_STALE_HOURS) {
         const h = Number.isFinite(hrs) ? Math.floor(hrs) : null;
         want.set(`track123:${t.shop_id}`, {
           level: "warning",
           title: `Rastreio sem atualizar${h != null ? ` há ${h}h` : ""} — ${name(t.shop_id)}`,
-          body: "O Track123 não sincroniza essa loja há mais tempo que o normal; status de entrega podem estar desatualizados.",
+          body: "O 17track não sincroniza essa loja há mais tempo que o normal; status de entrega podem estar desatualizados.",
           link: linkFor(t.shop_id, "logistica"),
         });
       }

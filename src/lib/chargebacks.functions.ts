@@ -7,9 +7,8 @@ import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { fetchWithRetry } from "@/lib/http";
 import { buildTrackingUrl } from "@/lib/tracking-url";
-import { track123StatusByOrderNumber, runTrack123McpSync } from "@/lib/track123-mcp-sync.server";
 import { fetchShopifyDisputes, upsertShopDisputes } from "@/lib/shopify-disputes.server";
-import { runSeventeenTrackSync } from "@/lib/seventeen-track.server";
+import { runSeventeenTrackSync, seventeenTrackStatus } from "@/lib/seventeen-track.server";
 
 // Aba Chargebacks: cada disputa (chargeback/inquiry) da Shopify Payments
 // cruzada com o pedido (produto, data), o rastreio (situação e último evento),
@@ -51,12 +50,12 @@ type OrderSnapshot =
       unavailable?: false; name: string | null; created_at: string | null; email: string | null;
       first_name: string | null; last_name: string | null; tags: string | null; items: { title: string | null }[];
       tracking_number: string | null; tracking_url: string | null; shipment_status: string | null; fulfilled_at: string | null;
-      // Rastreio real do código (Track123), não o status da Shopify.
+      // Rastreio real do código (17track), não o status da Shopify.
       track?: { status: string | null; lastLabel: string | null; lastAt: string | null; checkedAt: string; notFound?: boolean };
     };
 const SNAPSHOT_RETRY_MS = 86_400_000;   // sem acesso: tenta de novo depois de 1 dia
 const SNAPSHOT_MAX_PER_LOAD = 20;
-const TRACK_REFRESH_MS = 12 * 3_600_000;   // não entregue: consulta o Track123 de novo depois de 12h
+const TRACK_REFRESH_MS = 12 * 3_600_000;   // não entregue: consulta o 17track de novo depois de 12h
 const TRACK_MAX_PER_LOAD = 8;
 
 export async function fetchOrderSnapshot(domain: string, token: string, orderId: string): Promise<OrderSnapshot | null> {
@@ -164,15 +163,15 @@ export const getChargebacks = createServerFn({ method: "GET" })
           .eq("user_id", ownerId).eq("shop_id", d.shop_id).eq("order_external_id", d.order_external_id!);
       }));
     }
-    // Rastreio real (Track123, pelos eventos do código) dos pedidos do snapshot.
+    // Rastreio real (17track, pelo código) dos pedidos do snapshot.
     const needTrack = [...snapByKey.entries()]
-      .filter(([k, s]) => !s.unavailable && !orderBy.has(k) && s.name &&
+      .filter(([k, s]) => !s.unavailable && !orderBy.has(k) && s.tracking_number &&
         (!s.track || (s.track.status !== "delivered" && Date.now() - new Date(s.track.checkedAt).getTime() > TRACK_REFRESH_MS)))
       .slice(0, TRACK_MAX_PER_LOAD);
     for (const [key, s] of needTrack) {
       if (s.unavailable) continue;
       const [shopId, ext] = key.split(":");
-      const t = await track123StatusByOrderNumber(shopId, s.name!, supabaseAdmin).catch(() => null);
+      const t = await seventeenTrackStatus(s.tracking_number!).catch(() => null);
       const next = { ...s, track: { status: t?.status ?? null, lastLabel: t?.lastLabel ?? null, lastAt: t?.lastAt ?? null, checkedAt: new Date().toISOString(), notFound: !t } };
       snapByKey.set(key, next);
       await supabaseAdmin.from("shop_order_disputes").update({ order_snapshot: next as any })
@@ -336,25 +335,15 @@ export const refreshChargebacks = createServerFn({ method: "POST" })
       }
     }));
 
-    // Rastreio dos chargebacks em aberto (Track123 ou 17track, conforme a loja).
+    // Rastreio dos chargebacks em aberto (17track, só as lojas deles).
     const { data: open } = await supabaseAdmin.from("shop_order_disputes").select("shop_id,order_external_id")
       .eq("user_id", ownerId).eq("type", "chargeback").in("status", OPEN_DISPUTE).not("order_external_id", "is", null);
     const { data: orders } = (open ?? []).length
       ? await supabaseAdmin.from("shop_orders").select("id,shop_id,external_id").eq("user_id", ownerId)
           .in("external_id", (open ?? []).map((d) => d.order_external_id!))
       : { data: [] as { id: string; shop_id: string; external_id: string }[] };
-    const byShop = new Map<string, string[]>();
-    for (const o of orders ?? []) byShop.set(o.shop_id, [...(byShop.get(o.shop_id) ?? []), o.id]);
-    const deadline = Date.now() + 40_000;
-    const seventeen: string[] = [];
-    for (const [shopId, orderIds] of byShop) {
-      const { data: integ } = await supabaseAdmin.from("track123_integrations").select("api_key,mcp_store_uuid,provider").eq("shop_id", shopId).maybeSingle();
-      if (integ?.provider === "17track") { seventeen.push(shopId); continue; }
-      if (!integ?.api_key || !integ.mcp_store_uuid) continue;
-      await runTrack123McpSync(shopId, integ.api_key, integ.mcp_store_uuid, supabaseAdmin, { deadline, orderIds }).catch(() => null);
-    }
-    // Lojas no 17track: uma rodada só (busca de 40 em 40, não gasta crédito).
-    if (seventeen.length) await runSeventeenTrackSync({ shopIds: seventeen, deadline }).catch(() => null);
+    const shopsWithOpen = [...new Set((orders ?? []).map((o) => o.shop_id))];
+    if (shopsWithOpen.length) await runSeventeenTrackSync({ shopIds: shopsWithOpen, deadline: Date.now() + 40_000 }).catch(() => null);
 
     // Número do pedido pra mensagem.
     const ext = changed.map((c) => c.orderExternalId).filter(Boolean) as string[];

@@ -8,7 +8,7 @@ export const NOTIFICATION_CATEGORIES = [
   { key: "nt_meta", label: "Meta Facebook", desc: "Falha de pagamento na conta de anúncio, token vencendo e conta com erro", prefixes: ["meta_payment:", "meta_token:", "meta_account:"] },
   { key: "nt_shopify", label: "Shopify", desc: "Sincronização com erro, reembolsos, acesso negado e loja nova configurada diferente da loja base", prefixes: ["shopify_sync:", "shopify_refunds:", "shopify_access:", "shopify_setup:"] },
   { key: "nt_disputas", label: "Disputas", desc: "Chargeback e inquiry aguardando resposta", prefixes: ["dispute:"] },
-  { key: "nt_rastreio", label: "Rastreio", desc: "Track123 com erro ou sem atualizar", prefixes: ["track123:"] },
+  { key: "nt_rastreio", label: "Rastreio", desc: "17track com erro ou sem atualizar", prefixes: ["track123:"] },
   { key: "nt_atendimento", label: "Atendimento", desc: "Zoho Mail com erro ou parado", prefixes: ["zoho_mail:"] },
   { key: "nt_consultor", label: "Inteligência", desc: "Análise semanal da Inteligência com dicas novas", prefixes: ["consultor:"] },
   { key: "nt_sistema", label: "Erros do sistema", desc: "Rotina automática que falhou (sincronização, webhook, job diário, cobrança dos Alertas, IA…)", prefixes: ["system:"] },

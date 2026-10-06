@@ -45,7 +45,7 @@ export function stageOf(detail: string): Stage {
   return "outro";
 }
 
-// Instante UTC do evento do Track123: event_time_utc vem "2026-09-23 03:36:37" (sem fuso).
+// Instante UTC do evento do rastreio: event_time_utc vem "2026-09-23 03:36:37" (sem fuso).
 function eventMs(e: any): number | null {
   const m = String(e?.event_time_utc ?? "").match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
   const ms = m ? Date.parse(`${m[1]}T${m[2]}Z`) : Date.parse(e?.eventTimeZeroUTC ?? e?.date ?? "");
@@ -58,8 +58,8 @@ export type AuditOrderInput = {
   createdAt: string;               // compra (created_at_shopify)
   paidAt: string | null;           // marcado como pago ao fornecedor (data)
   fulfillments: { created_at?: string; tracking_number?: string | null; tracking_numbers?: string[] | null; status?: string }[];
-  trackingStatus: string | null;   // status geral do Track123
-  timeline: any[] | null;          // eventos do Track123
+  trackingStatus: string | null;   // status geral do rastreio (17track)
+  timeline: any[] | null;          // eventos do rastreio (17track)
   deliveredAt: string | null;      // shop_orders.delivered_at (fallback sem timeline)
   financialStatus: string | null;
   chargeback: { reason: string | null; initiatedAt: string } | null;
@@ -234,7 +234,7 @@ export function auditSupplier(orders: AuditOrderInput[], opts: AuditOptions = {}
       `Marcado como entregue sem nenhuma movimentação real registrada`);
     if (b.codes.size > 1) add("codigo_substituido", "atencao", `${b.codes.size} códigos de rastreio diferentes no mesmo pedido`);
     if (o.trackingStatus && /no_?record|expired/i.test(o.trackingStatus) && (now - (b.codeAt ?? b.created)) / DAY > 3) add("codigo_sem_registro", "suspeito",
-      `Track123 não encontra o código (${o.trackingStatus}) — possível código inválido`);
+      `O 17track não encontra o código (${o.trackingStatus}) — possível código inválido`);
     if (b.events.some((e) => e.stage === "problema")) add("evento_problema", "atencao", `Rastreio registrou exceção/problema`);
     if (o.chargeback && b.deliveredMs && /not_received/.test(o.chargeback.reason ?? "")) add("entregue_contestado", "altamente_suspeito",
       `Rastreio diz entregue, mas o cliente abriu chargeback de "não recebido"`);

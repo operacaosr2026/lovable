@@ -88,7 +88,7 @@ function IntegracoesPage() {
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Integrações</h1>
-          <p className="text-sm text-muted-foreground mt-1">Estado das conexões com Shopify, Meta Ads e Track123.</p>
+          <p className="text-sm text-muted-foreground mt-1">Estado das conexões com Shopify, Meta Ads e 17track.</p>
         </div>
         <button onClick={() => q.refetch()} disabled={q.isFetching} title="Atualizar"
           className="size-9 rounded-lg border border-border bg-card grid place-items-center text-muted-foreground hover:text-foreground disabled:opacity-50">
@@ -100,8 +100,8 @@ function IntegracoesPage() {
         desc="Repasses e reembolsos: sync completo 2x por dia (08:00 e 20:00). Pedidos e disputas chegam na hora pelo webhook." />
       <Section icon={Megaphone} title="Meta Ads" loading={q.isLoading} rows={q.data?.meta}
         desc="Gasto de anúncios e cobranças do cartão. Sincroniza de 10 em 10 minutos." />
-      <Section icon={Truck} title="Track123" loading={q.isLoading} rows={q.data?.track123}
-        desc="Rastreio dos pedidos. Sincroniza de hora em hora." />
+      <Section icon={Truck} title="17track" loading={q.isLoading} rows={q.data?.tracking}
+        desc="Rastreio dos pedidos (e status/link do envio na Shopify). Sincroniza a cada 30 minutos." />
     </div>
   );
 }

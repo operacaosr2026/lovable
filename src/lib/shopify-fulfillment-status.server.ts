@@ -77,7 +77,7 @@ export async function pushFulfillmentStatusToShopify(opts: {
   if (!found) return { sent: false, reason: "envio com esse código não está no pedido" };
   const fulfillmentId = found.id;
 
-  // O que a Shopify já tem nesse envio (pode ter vindo de outro app, ex. Track123).
+  // O que a Shopify já tem nesse envio (pode ter vindo de outro app).
   const cur = await shopifyGql((order as any).shop_id, `query FulfillmentEvents($id: ID!) {
     fulfillment(id: $id) { displayStatus events(first: 50) { nodes { status } } }
   }`, { id: fulfillmentId });

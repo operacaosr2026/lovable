@@ -21,7 +21,6 @@ import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ShopsRouteImport } from "./routes/shops";
 import { Route as TarefasRouteImport } from "./routes/tarefas";
-import { Route as TesteRouteImport } from "./routes/teste";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
 import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
 import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
@@ -57,12 +56,10 @@ import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/pub
 import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
 import { Route as ApiPublicHooksSync17trackRouteImport } from "./routes/api/public/hooks/sync-17track";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
-import { Route as ApiPublicHooksSyncTrack123RouteImport } from "./routes/api/public/hooks/sync-track123";
 import { Route as ApiPublicHooksZohoMailSyncRouteImport } from "./routes/api/public/hooks/zoho-mail-sync";
 import { Route as ApiPublicShopifyCallbackRouteImport } from "./routes/api/public/shopify/callback";
 import { Route as ApiPublicZohoCallbackRouteImport } from "./routes/api/public/zoho/callback";
 import { Route as ApiPublicHooksShopifyStoreIdRouteImport } from "./routes/api/public/hooks/shopify.$storeId";
-import { Route as ApiPublicHooksTrack123ShopIdSecretRouteImport } from "./routes/api/public/hooks/track123.$shopId.$secret";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -122,11 +119,6 @@ const ShopsRoute = ShopsRouteImport.update({
 const TarefasRoute = TarefasRouteImport.update({
   id: "/tarefas",
   path: "/tarefas",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const TesteRoute = TesteRouteImport.update({
-  id: "/teste",
-  path: "/teste",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -311,12 +303,6 @@ const ApiPublicHooksSyncShopOrdersRoute =
     path: "/api/public/hooks/sync-shop-orders",
     getParentRoute: () => rootRouteImport,
   } as any);
-const ApiPublicHooksSyncTrack123Route =
-  ApiPublicHooksSyncTrack123RouteImport.update({
-    id: "/api/public/hooks/sync-track123",
-    path: "/api/public/hooks/sync-track123",
-    getParentRoute: () => rootRouteImport,
-  } as any);
 const ApiPublicHooksZohoMailSyncRoute =
   ApiPublicHooksZohoMailSyncRouteImport.update({
     id: "/api/public/hooks/zoho-mail-sync",
@@ -340,12 +326,6 @@ const ApiPublicHooksShopifyStoreIdRoute =
     path: "/api/public/hooks/shopify/$storeId",
     getParentRoute: () => rootRouteImport,
   } as any);
-const ApiPublicHooksTrack123ShopIdSecretRoute =
-  ApiPublicHooksTrack123ShopIdSecretRouteImport.update({
-    id: "/api/public/hooks/track123/$shopId/$secret",
-    path: "/api/public/hooks/track123/$shopId/$secret",
-    getParentRoute: () => rootRouteImport,
-  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
@@ -360,7 +340,6 @@ export interface FileRoutesByFullPath {
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
   "/tarefas": typeof TarefasRoute;
-  "/teste": typeof TesteRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -396,12 +375,10 @@ export interface FileRoutesByFullPath {
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-17track": typeof ApiPublicHooksSync17trackRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
-  "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
   "/api/public/zoho/callback": typeof ApiPublicZohoCallbackRoute;
   "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
-  "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -413,7 +390,6 @@ export interface FileRoutesByTo {
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/tarefas": typeof TarefasRoute;
-  "/teste": typeof TesteRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -445,12 +421,10 @@ export interface FileRoutesByTo {
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-17track": typeof ApiPublicHooksSync17trackRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
-  "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
   "/api/public/zoho/callback": typeof ApiPublicZohoCallbackRoute;
   "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
-  "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -466,7 +440,6 @@ export interface FileRoutesById {
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
   "/tarefas": typeof TarefasRoute;
-  "/teste": typeof TesteRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -502,12 +475,10 @@ export interface FileRoutesById {
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
   "/api/public/hooks/sync-17track": typeof ApiPublicHooksSync17trackRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
-  "/api/public/hooks/sync-track123": typeof ApiPublicHooksSyncTrack123Route;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
   "/api/public/shopify/callback": typeof ApiPublicShopifyCallbackRoute;
   "/api/public/zoho/callback": typeof ApiPublicZohoCallbackRoute;
   "/api/public/hooks/shopify/$storeId": typeof ApiPublicHooksShopifyStoreIdRoute;
-  "/api/public/hooks/track123/$shopId/$secret": typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -524,7 +495,6 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/tarefas"
-    | "/teste"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -560,12 +530,10 @@ export interface FileRouteTypes {
     | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-17track"
     | "/api/public/hooks/sync-shop-orders"
-    | "/api/public/hooks/sync-track123"
     | "/api/public/hooks/zoho-mail-sync"
     | "/api/public/shopify/callback"
     | "/api/public/zoho/callback"
-    | "/api/public/hooks/shopify/$storeId"
-    | "/api/public/hooks/track123/$shopId/$secret";
+    | "/api/public/hooks/shopify/$storeId";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -577,7 +545,6 @@ export interface FileRouteTypes {
     | "/login"
     | "/metas"
     | "/tarefas"
-    | "/teste"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -609,12 +576,10 @@ export interface FileRouteTypes {
     | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-17track"
     | "/api/public/hooks/sync-shop-orders"
-    | "/api/public/hooks/sync-track123"
     | "/api/public/hooks/zoho-mail-sync"
     | "/api/public/shopify/callback"
     | "/api/public/zoho/callback"
-    | "/api/public/hooks/shopify/$storeId"
-    | "/api/public/hooks/track123/$shopId/$secret";
+    | "/api/public/hooks/shopify/$storeId";
   id:
     | "__root__"
     | "/"
@@ -629,7 +594,6 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/tarefas"
-    | "/teste"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -665,12 +629,10 @@ export interface FileRouteTypes {
     | "/api/public/hooks/notifications-refresh"
     | "/api/public/hooks/sync-17track"
     | "/api/public/hooks/sync-shop-orders"
-    | "/api/public/hooks/sync-track123"
     | "/api/public/hooks/zoho-mail-sync"
     | "/api/public/shopify/callback"
     | "/api/public/zoho/callback"
-    | "/api/public/hooks/shopify/$storeId"
-    | "/api/public/hooks/track123/$shopId/$secret";
+    | "/api/public/hooks/shopify/$storeId";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -686,7 +648,6 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren;
   ShopsRoute: typeof ShopsRouteWithChildren;
   TarefasRoute: typeof TarefasRoute;
-  TesteRoute: typeof TesteRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   TrackCodeRoute: typeof TrackCodeRoute;
   TrackIndexRoute: typeof TrackIndexRoute;
@@ -699,12 +660,10 @@ export interface RootRouteChildren {
   ApiPublicHooksNotificationsRefreshRoute: typeof ApiPublicHooksNotificationsRefreshRoute;
   ApiPublicHooksSync17trackRoute: typeof ApiPublicHooksSync17trackRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
-  ApiPublicHooksSyncTrack123Route: typeof ApiPublicHooksSyncTrack123Route;
   ApiPublicHooksZohoMailSyncRoute: typeof ApiPublicHooksZohoMailSyncRoute;
   ApiPublicShopifyCallbackRoute: typeof ApiPublicShopifyCallbackRoute;
   ApiPublicZohoCallbackRoute: typeof ApiPublicZohoCallbackRoute;
   ApiPublicHooksShopifyStoreIdRoute: typeof ApiPublicHooksShopifyStoreIdRoute;
-  ApiPublicHooksTrack123ShopIdSecretRoute: typeof ApiPublicHooksTrack123ShopIdSecretRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -791,13 +750,6 @@ declare module "@tanstack/react-router" {
       path: "/tarefas";
       fullPath: "/tarefas";
       preLoaderRoute: typeof TarefasRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/teste": {
-      id: "/teste";
-      path: "/teste";
-      fullPath: "/teste";
-      preLoaderRoute: typeof TesteRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/invite/$token": {
@@ -1045,13 +997,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksSyncShopOrdersRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/api/public/hooks/sync-track123": {
-      id: "/api/public/hooks/sync-track123";
-      path: "/api/public/hooks/sync-track123";
-      fullPath: "/api/public/hooks/sync-track123";
-      preLoaderRoute: typeof ApiPublicHooksSyncTrack123RouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
     "/api/public/hooks/zoho-mail-sync": {
       id: "/api/public/hooks/zoho-mail-sync";
       path: "/api/public/hooks/zoho-mail-sync";
@@ -1078,13 +1023,6 @@ declare module "@tanstack/react-router" {
       path: "/api/public/hooks/shopify/$storeId";
       fullPath: "/api/public/hooks/shopify/$storeId";
       preLoaderRoute: typeof ApiPublicHooksShopifyStoreIdRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/public/hooks/track123/$shopId/$secret": {
-      id: "/api/public/hooks/track123/$shopId/$secret";
-      path: "/api/public/hooks/track123/$shopId/$secret";
-      fullPath: "/api/public/hooks/track123/$shopId/$secret";
-      preLoaderRoute: typeof ApiPublicHooksTrack123ShopIdSecretRouteImport;
       parentRoute: typeof rootRouteImport;
     };
   }
@@ -1215,7 +1153,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,
   TarefasRoute: TarefasRoute,
-  TesteRoute: TesteRoute,
   InviteTokenRoute: InviteTokenRoute,
   TrackCodeRoute: TrackCodeRoute,
   TrackIndexRoute: TrackIndexRoute,
@@ -1229,13 +1166,10 @@ const rootRouteChildren: RootRouteChildren = {
     ApiPublicHooksNotificationsRefreshRoute,
   ApiPublicHooksSync17trackRoute: ApiPublicHooksSync17trackRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
-  ApiPublicHooksSyncTrack123Route: ApiPublicHooksSyncTrack123Route,
   ApiPublicHooksZohoMailSyncRoute: ApiPublicHooksZohoMailSyncRoute,
   ApiPublicShopifyCallbackRoute: ApiPublicShopifyCallbackRoute,
   ApiPublicZohoCallbackRoute: ApiPublicZohoCallbackRoute,
   ApiPublicHooksShopifyStoreIdRoute: ApiPublicHooksShopifyStoreIdRoute,
-  ApiPublicHooksTrack123ShopIdSecretRoute:
-    ApiPublicHooksTrack123ShopIdSecretRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -27,7 +27,7 @@ const NAV = [
   { to: "/settings/members", label: "Membros", icon: Users, desc: "Convites, permissões e acessos" },
   { to: "/settings/seguranca", label: "Segurança", icon: Shield, desc: "Senha, sessões e autenticação" },
   { to: "/settings/notificacoes", label: "Notificações", icon: Bell, desc: "Sino, celular e o que receber" },
-  { to: "/settings/integracoes", label: "Integrações", icon: Plug, desc: "Shopify, Meta Ads e Track123" },
+  { to: "/settings/integracoes", label: "Integrações", icon: Plug, desc: "Shopify, Meta Ads e 17track" },
   { to: "/settings/feriados", label: "Feriados", icon: CalendarOff, desc: "Dias que não contam no TM Postagem" },
   { to: "/settings/auditoria", label: "Auditoria", icon: ScrollText, desc: "Quem fez o quê no sistema" },
 ];

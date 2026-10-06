@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listLogisticsOrders, updateOrderLogistics } from "@/lib/lg-logistics.functions";
-import { syncTrack123ForShops, getTrack123Integrations } from "@/lib/track123.functions";
+import { syncTrackingForShops, getTrackingIntegrations } from "@/lib/tracking-integrations.functions";
 import { listShopDomains } from "@/lib/shop-orders.functions";
 import { buildTrackingMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
@@ -193,10 +193,10 @@ export function LgLogistica({
 
   const listFn   = useServerFn(listLogisticsOrders);
   const updateFn = useServerFn(updateOrderLogistics);
-  const syncFn   = useServerFn(syncTrack123ForShops);
+  const syncFn   = useServerFn(syncTrackingForShops);
   const listHolidaysFn = useServerFn(listPostingHolidays);
   const { data: holidays } = useQuery({ queryKey: ["posting-holidays"], queryFn: () => listHolidaysFn(), staleTime: 5 * 60_000 });
-  const integrationsFn = useServerFn(getTrack123Integrations);
+  const integrationsFn = useServerFn(getTrackingIntegrations);
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["lg-logistics", cacheKey, from, to],
@@ -206,7 +206,7 @@ export function LgLogistica({
     refetchIntervalInBackground: false,
   });
 
-  // Data/hora do último sync do Track123 (por loja) — mostrado ao lado do
+  // Data/hora do último sync do 17track (por loja) — mostrado ao lado do
   // botão Atualizar pra dar visibilidade de quão "fresco" é o rastreio.
   const { data: integrations = [] } = useQuery({
     queryKey: ["lg-logistics-integrations", cacheKey],
@@ -215,12 +215,12 @@ export function LgLogistica({
     refetchInterval: 60_000,
   });
 
-  // Botão "Atualizar": além de reler o banco, busca rastreio novo no Track123
+  // Botão "Atualizar": além de reler o banco, busca rastreio novo no 17track
   // agora (as lojas sem integração configurada são só ignoradas).
   const sync = useMutation({
     mutationFn: () => syncFn({ data: { shop_ids: shopIds } }),
     onSuccess: (r: any) => {
-      if (r.total === 0) toast.info("Nenhuma loja com integração Track123 ativa");
+      if (r.total === 0) toast.info("Nenhuma loja ativa com rastreio configurado");
       else if (r.errors.length) toast.error(`${r.synced}/${r.total} lojas sincronizadas · ${r.errors[0]}`);
       else toast.success(`${r.synced}/${r.total} loja(s) sincronizada(s)`);
       qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] });
@@ -245,11 +245,9 @@ export function LgLogistica({
     i.last_sync_at && (!max || i.last_sync_at > max) ? i.last_sync_at : max
   ), null as string | null);
 
-  // Progresso do rastreio: "Sincronizado há X" dizia só quando rodou a última
-  // rodada, mas cada rodada confere ~30 pedidos por loja (limite do Track123) —
-  // não garantia que tudo estava em dia. Agora: % dos rastreios em aberto (mesma
-  // janela de 30 dias do sync) conferidos na última hora, por loja no tooltip.
-  const syncWindowStart = isoDateUS(Date.now() - 30 * 86_400_000);
+  // Progresso do rastreio: % dos rastreios em aberto (mesma janela de 60 dias
+  // do sync do 17track) conferidos na última hora, por loja no tooltip.
+  const syncWindowStart = isoDateUS(Date.now() - 60 * 86_400_000);
   const freshSince = new Date(Date.now() - 60 * 60_000).toISOString();
   const openTracked = (orders as any[]).filter((o) => (shopFilter === "todas" || o.shop_id === shopFilter)
     && o.tracking_checked_at && o.order_date >= syncWindowStart
@@ -544,19 +542,19 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           size="sm" variant="outline"
           onClick={() => sync.mutate()}
           disabled={isLoading || sync.isPending}
-          title="Busca rastreio novo no Track123 e recarrega os pedidos"
+          title="Busca rastreio novo no 17track e recarrega os pedidos"
         >
           <RefreshCw className={cn("size-4", (isLoading || sync.isPending) && "animate-spin")} /> Atualizar
         </Button>
         <div
           className="flex items-center gap-2 text-xs text-muted-foreground cursor-default"
           title={[
-            "Rastreios em aberto conferidos no Track123 na última hora:",
+            "Rastreios em aberto conferidos no 17track na última hora:",
             ...progressByShop,
             "",
             lastSyncAt && `Última rodada: ${new Date(lastSyncAt).toLocaleString("pt-BR")}`,
             stalest && `Há mais tempo sem conferir: ${stalest.order_number} (${timeAgo(stalest.tracking_checked_at)})`,
-            "A cada 15 min, cada loja confere ~30 pedidos, começando pelos há mais tempo sem conferir.",
+            "A cada 30 min o 17track confere todos os pedidos em aberto (últimos 60 dias).",
           ].filter((l) => l !== null && l !== undefined && l !== false).join("\n")}
         >
           {syncPct != null ? (

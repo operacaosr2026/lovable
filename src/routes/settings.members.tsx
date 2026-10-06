@@ -89,7 +89,7 @@ const NT_HINTS: Partial<Record<Section, string>> = {
   nt_meta: "Falha de pagamento, token vencendo e conta com erro",
   nt_shopify: "Sincronização, reembolsos e acesso negado",
   nt_disputas: "Chargeback e inquiry aguardando resposta",
-  nt_rastreio: "Track123 com erro ou sem atualizar",
+  nt_rastreio: "17track com erro ou sem atualizar",
   nt_atendimento: "Zoho Mail com erro ou parado",
   nt_sistema: "Rotina automática que falhou (sync, webhook, jobs, cobrança, IA)",
   nt_tarefas: "Tarefa criada para a pessoa (só no celular)",
@@ -398,7 +398,7 @@ function PermissionsForm({
         <PermRow section="cfg_seguranca" checked={has("cfg_seguranca", null)} onChange={() => toggle("cfg_seguranca", null)}
           hint="Trocar a própria senha e encerrar as próprias sessões" />
         <PermRow section="cfg_integracoes" checked={has("cfg_integracoes", null)} onChange={() => toggle("cfg_integracoes", null)}
-          hint="Status da Shopify, Meta e Track123 das lojas" />
+          hint="Status da Shopify, Meta e 17track das lojas" />
         <p className="px-3.5 py-2 text-[11px] text-muted-foreground bg-muted/20">
           A página Notificações aparece para quem tem "Notificações" ligado acima. Membros e Auditoria são só do administrador.
         </p>

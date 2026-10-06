@@ -6,10 +6,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // Leituras, automáticos e ruído — não entram na auditoria.
 const SKIP = new Set([
   "listLogisticsOrders", "listKanbanColumns", "getMetaAdsIntegration", "getMetaAdsMetrics",
-  "getTrack123Integrations", "recordLogin", "recomputeRange", "recomputeDay", "markNotificationsRead",
+  "getTrackingIntegrations", "recordLogin", "recomputeRange", "recomputeDay", "markNotificationsRead",
   "syncShopifyOrders", "syncShopifyPaymentsFees", "syncMetaAdsSpend", "syncMetaAdsActivities",
-  "syncShopifyVisitors", "syncOrderPaymentTasks", "syncShopifyPayouts", "syncTrack123ForShops",
-  "seedKanbanColumns", "testMetaAdsConnection", "testTrack123Sync", "createMetaOAuthUrl",
+  "syncShopifyVisitors", "syncOrderPaymentTasks", "syncShopifyPayouts", "syncTrackingForShops",
+  "seedKanbanColumns", "testMetaAdsConnection", "testTrackingSync", "createMetaOAuthUrl",
   "syncSupportInbox", "markConversationRead", "uploadSupportAttachment", "translateSupportMessage", "translateSupportReply",
 ]);
 
@@ -71,7 +71,7 @@ const LABELS: Record<string, string> = {
   updateSopProcess: "Editou SOP", updateSopStep: "Editou etapa de SOP", updateTask: "Editou tarefa",
   updateUnitCost: "Alterou custo unitário", upsertCompanyGoal: "Definiu meta do mês", upsertGratitude: "Salvou gratidão",
   upsertMetaAdsIntegration: "Alterou integração Meta Ads", upsertOrderSettings: "Alterou configurações de pedidos da loja",
-  upsertPricing: "Alterou precificação", upsertTrack123Integration: "Alterou integração Track123",
+  upsertPricing: "Alterou precificação", upsertTrackingIntegration: "Alterou o link de rastreio",
   startZohoOAuth: "Iniciou conexão com o Zoho Mail", disconnectZoho: "Desconectou o Zoho Mail",
   updateSupportConversations: "Alterou conversa do Atendimento", sendSupportReply: "Respondeu e-mail de cliente",
   sendSupportNewMessage: "Enviou e-mail pelo Atendimento", deleteSupportConversations: "Excluiu conversas do Atendimento", saveSupportSettings: "Alterou configurações do Atendimento", changeSupportTag: "Renomeou/apagou tag do Atendimento",

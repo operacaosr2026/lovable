@@ -33,14 +33,14 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       .order("order_date", { ascending: false }));
     if (error) throw new Error(error.message);
 
-    // Data do último evento real de rastreio (Track123), quando o pedido tem
+    // Data do último evento real de rastreio (17track), quando o pedido tem
     // integração ativa — mais confiável que shipped_at pra saber se o rastreio
     // "parou" de andar, já que shipped_at não muda depois da postagem.
     const orderIds = (rows ?? []).map((o: any) => o.id);
     const lastEventMap = new Map<string, string | null>();
     const lastLabelMap = new Map<string, string | null>();
     // Quando o sync conferiu esse rastreio pela última vez (updated_at é
-    // regravado a cada consulta ao Track123, mesmo sem evento novo).
+    // regravado a cada consulta ao 17track, mesmo sem evento novo).
     const checkedAtMap = new Map<string, string | null>();
     if (orderIds.length) {
       const { data: trackingRows } = await selectAllIn<any>(orderIds, (ids) => supabaseAdmin
@@ -55,20 +55,20 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
     }
     // O Shopify já marca "shipped" assim que a etiqueta é criada (tem código de
     // rastreio), mas isso não significa que a transportadora pegou o pacote —
-    // enquanto o rastreio real (Track123) só mostrar "info recebida", o status
+    // enquanto o rastreio real (17track) só mostrar "info recebida", o status
     // exibido continua "pendente envio". Calculado na leitura (não grava nada)
     // pra não brigar com o sync do Shopify, que roda em outro job.
-    // Mesmo critério do inferStatus (track123-mcp-sync.server.ts): "Pending" e
+    // "Pending" e
     // "InfoReceived" são o mesmo caso (etiqueta criada, transportadora ainda
     // sem nenhum registro real do pacote), só com textos diferentes conforme
-    // a transportadora/Track123 retorna.
+    // a transportadora retorna.
     function isInfoReceivedOnly(label: string | null | undefined): boolean {
       if (!label) return false;
       const t = label.toLowerCase().replace(/\s+/g, "");
       return t.includes("inforeceived") || t.includes("pending");
     }
 
-    // O status pode ter sido atualizado automaticamente (Track123) via shipped_at/
+    // O status pode ter sido atualizado automaticamente (17track) via shipped_at/
     // delivered_at/problem_at sem que a coluna delivery_status tenha sido tocada —
     // aqui reconciliamos as duas fontes pra refletir o que já foi detectado.
     // delivered_at/problem_at são sinais fortes: sempre prevalecem sobre um

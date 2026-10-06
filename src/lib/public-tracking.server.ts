@@ -18,7 +18,7 @@ export type PublicTracking = {
   edd: DisplayEdd | null;
 };
 
-// Status do Track123 ("Info received", "InfoReceived", "In transit"…) → chave única.
+// Status gravado pelo sync ("Info received", "InfoReceived", "In transit"…) → chave única.
 function normalizeStatus(raw: string | null | undefined, delivered: boolean): string | null {
   if (delivered) return "Delivered";
   const s = (raw ?? "").toLowerCase().replace(/[\s_-]+/g, "");
@@ -35,8 +35,8 @@ function normalizeStatus(raw: string | null | undefined, delivered: boolean): st
   return null;
 }
 
-// Timeline gravada nos formatos do MCP (event_time_utc/event_detail) e da Open API
-// do Track123 (eventTimeZeroUTC/eventDetail).
+// Timeline gravada pelo sync (event_time_utc/event_detail) — e o formato antigo
+// do Track123 (eventTimeZeroUTC/eventDetail), que ainda existe em pedidos antigos.
 function rawEvents(timeline: any[] | null | undefined): DisplayEvent[] {
   return (timeline ?? []).map((e: any) => ({
     at: e?.event_time_utc ? `${String(e.event_time_utc).replace(" ", "T")}Z` : (e?.eventTimeZeroUTC ?? e?.time_utc ?? null),

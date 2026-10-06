@@ -5,7 +5,7 @@ import {
   syncShopifyOrders, syncShopifyPayouts, recomputeRange, getOrderSettings, upsertOrderSettings,
 } from "@/lib/shop-orders.functions";
 import { getConnectedMetaAdAccounts, getMetaToken } from "@/lib/meta-ads.functions";
-import { getTrack123Integrations, upsertTrack123Integration, testTrack123Sync } from "@/lib/track123.functions";
+import { getTrackingIntegrations, upsertTrackingIntegration, testTrackingSync } from "@/lib/tracking-integrations.functions";
 import { MetaAdsIntegrationDialog } from "@/components/shops/MetaAdsIntegration";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -14,7 +14,6 @@ import {
   CheckCircle2, AlertCircle, Settings2, Info, ChevronDown, ChevronUp, Check,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { isoTodayUS } from "@/lib/timezone";
 
@@ -185,84 +184,45 @@ function SyncCutoffSection({ shops }: { shops: ShopStub[] }) {
   );
 }
 
-// ─── Track123 tracking integration ────────────────────────────────────────────
+// ─── Rastreio (17track) ───────────────────────────────────────────────────────
 
-type Track123Row = {
+type TrackingRow = {
   shop_id: string;
-  enabled: boolean;
-  provider: "track123" | "17track";
-  has_key: boolean;
-  mcp_store_uuid: string | null;
   tracking_link_template: string | null;
   last_sync_at: string | null;
   last_sync_status: string | null;
   last_sync_error: string | null;
 };
 
-function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | undefined }) {
+// Uma conta do 17track pra todas as lojas (chave na Vercel); por loja só o
+// modelo do link de rastreio que vai pro cliente.
+function TrackingShopRow({ shop, row }: { shop: ShopStub; row: TrackingRow | undefined }) {
   const qc = useQueryClient();
-  const saveFn = useServerFn(upsertTrack123Integration);
-  const testFn = useServerFn(testTrack123Sync);
+  const saveFn = useServerFn(upsertTrackingIntegration);
+  const testFn = useServerFn(testTrackingSync);
   const [editing, setEditing] = useState(false);
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
-  const [storeUuidDraft, setStoreUuidDraft] = useState("");
   const [urlTemplateDraft, setUrlTemplateDraft] = useState("");
   const [testing, setTesting] = useState(false);
 
-  const enabled = row?.enabled ?? false;
-  const hasKey  = row?.has_key ?? false;
-  const isMcp   = Boolean(row?.mcp_store_uuid);
-  // 17track: uma conta só pra todas as lojas (chave na Vercel), sem key por loja.
-  const is17 = row?.provider === "17track";
-  const confirm = useConfirm();
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["track123-integrations"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["tracking-integrations"] });
 
   const openEdit = () => {
-    setApiKeyDraft("");
-    setStoreUuidDraft(row?.mcp_store_uuid ?? "");
     setUrlTemplateDraft(row?.tracking_link_template ?? "");
     setEditing(true);
   };
 
   const save = useMutation({
-    mutationFn: () => saveFn({
-      data: {
-        shop_id: shop.id,
-        ...(apiKeyDraft.trim() ? { api_key: apiKeyDraft.trim() } : {}),
-        mcp_store_uuid: storeUuidDraft.trim() || null,
-        tracking_link_template: urlTemplateDraft.trim() || null,
-      },
-    }),
+    mutationFn: () => saveFn({ data: { shop_id: shop.id, tracking_link_template: urlTemplateDraft.trim() || null } }),
     onSuccess: () => { setEditing(false); invalidate(); toast.success("Salvo"); },
     onError: (e: any) => toast.error(e?.message ?? "Erro ao salvar"),
   });
-
-  const toggleEnabled = useMutation({
-    mutationFn: (next: boolean) => saveFn({ data: { shop_id: shop.id, enabled: next } }),
-    onSuccess: invalidate,
-    onError: (e: any) => toast.error(e?.message ?? "Erro ao atualizar"),
-  });
-
-  const setProvider = useMutation({
-    mutationFn: (provider: "track123" | "17track") => saveFn({ data: { shop_id: shop.id, provider } }),
-    onSuccess: (_r, provider) => { invalidate(); toast.success(provider === "17track" ? "Rastreio dessa loja passa pro 17track na próxima rodada (até 30 min)" : "Rastreio dessa loja voltou pro Track123"); },
-    onError: (e: any) => toast.error(e?.message ?? "Erro ao trocar"),
-  });
-  const chooseProvider = async (provider: "track123" | "17track") => {
-    if (provider === (row?.provider ?? "track123")) return;
-    const ok = await confirm(provider === "17track"
-      ? { title: `Passar ${shop.name} pro 17track?`, description: "Os pedidos em aberto dos últimos 60 dias são cadastrados no 17track (1 crédito por código, uma vez só) e o Track123 para de atualizar essa loja.", confirmText: "Passar pro 17track" }
-      : { title: `Voltar ${shop.name} pro Track123?`, description: "O 17track para de atualizar essa loja e o Track123 volta a puxar o rastreio.", confirmText: "Voltar" });
-    if (ok) setProvider.mutate(provider);
-  };
 
   const test = async () => {
     setTesting(true);
     try {
       const r: any = await testFn({ data: { shop_id: shop.id } });
       if (r.status === "error") toast.error(r.errorMsg ?? "Falha ao sincronizar");
-      else toast.success(`${r.updated}/${r.total} sincronizados${r.errorMsg ? " · " + r.errorMsg : ""}`);
+      else toast.success(r.errorMsg);
       invalidate();
     } catch (e: any) {
       toast.error(e?.message ?? "Erro ao testar");
@@ -271,21 +231,13 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
     }
   };
 
-  const statusPill = is17
-    ? (row?.last_sync_status === "error"
-      ? { label: "Erro · 17track", cls: "bg-rose-500/10 text-rose-600 border-rose-500/20" }
-      : { label: "Ativo · 17track", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" })
-    : !hasKey
-    ? { label: "Sem key", cls: "bg-muted text-muted-foreground border-border" }
-    : !enabled
-    ? { label: "Pausado", cls: "bg-muted text-muted-foreground border-border" }
-    : row?.last_sync_status === "error"
+  const statusPill = !row
+    ? { label: "Não configurado", cls: "bg-muted text-muted-foreground border-border" }
+    : row.last_sync_status === "error"
     ? { label: "Erro", cls: "bg-rose-500/10 text-rose-600 border-rose-500/20" }
-    : { label: isMcp ? "Ativo · MCP" : "Ativo · Open API", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" };
+    : { label: "Ativo · 17track", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" };
 
-  const changed = apiKeyDraft.trim().length > 0
-    || storeUuidDraft.trim() !== (row?.mcp_store_uuid ?? "")
-    || urlTemplateDraft.trim() !== (row?.tracking_link_template ?? "");
+  const changed = urlTemplateDraft.trim() !== (row?.tracking_link_template ?? "");
 
   return (
     <div className="px-5 py-3 space-y-1.5">
@@ -295,22 +247,7 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
         </div>
         <span className="text-sm text-foreground flex-1 min-w-[100px] truncate">{shop.name}</span>
         <span className={cn("text-[11px] px-2 py-0.5 rounded-full border", statusPill.cls)}>{statusPill.label}</span>
-        <div className="inline-flex rounded-lg border border-border p-0.5 text-[11px]" title="Qual serviço puxa o rastreio dessa loja">
-          {(["track123", "17track"] as const).map((p) => (
-            <button key={p} disabled={setProvider.isPending} onClick={() => chooseProvider(p)}
-              className={cn("px-2 py-0.5 rounded-md font-medium", (row?.provider ?? "track123") === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
-              {p === "track123" ? "Track123" : "17track"}
-            </button>
-          ))}
-        </div>
-        {!is17 && (
-          <Switch
-            checked={enabled}
-            disabled={!hasKey || toggleEnabled.isPending}
-            onCheckedChange={(v) => toggleEnabled.mutate(v)}
-          />
-        )}
-        <Button size="sm" variant="outline" onClick={test} disabled={(!is17 && !hasKey) || testing}>
+        <Button size="sm" variant="outline" onClick={test} disabled={!row || testing}>
           <RefreshCw className={cn("size-3.5", testing && "animate-spin")} /> Testar
         </Button>
         <Button size="sm" variant="ghost" onClick={() => (editing ? setEditing(false) : openEdit())}>
@@ -321,24 +258,10 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
       {editing && (
         <div className="pl-10 space-y-2 pt-1">
           <input
-            type="password"
-            value={apiKeyDraft}
-            onChange={(e) => setApiKeyDraft(e.target.value)}
-            placeholder={hasKey ? "Já tem uma key salva — digite pra trocar" : "Cole a API key (X-Api-Key ou Track123-Api-Secret)..."}
-            className="w-full h-8 rounded-lg border border-border bg-card text-foreground text-xs px-2.5 focus:outline-none focus:border-primary"
-          />
-          <input
-            type="text"
-            value={storeUuidDraft}
-            onChange={(e) => setStoreUuidDraft(e.target.value)}
-            placeholder="Store UUID do MCP (deixe em branco pra usar a Open API clássica)"
-            className="w-full h-8 rounded-lg border border-border bg-card text-foreground text-xs px-2.5 focus:outline-none focus:border-primary"
-          />
-          <input
             type="text"
             value={urlTemplateDraft}
             onChange={(e) => setUrlTemplateDraft(e.target.value)}
-            placeholder="URL padrão de rastreio (use [CODE] no lugar do código — ex: https://minhaloja.com/apps/track123?nums=[CODE])"
+            placeholder="Link de rastreio (use [CODE] no lugar do código — ex: https://voultie.com/pages/track-your-order?nums=[CODE])"
             className="w-full h-8 rounded-lg border border-border bg-card text-foreground text-xs px-2.5 focus:outline-none focus:border-primary"
           />
           <div className="flex items-center gap-2">
@@ -354,23 +277,23 @@ function Track123ShopRow({ shop, row }: { shop: ShopStub; row: Track123Row | und
       {row?.last_sync_at && (
         <p className="text-[11px] text-muted-foreground pl-10">
           Última sinc.: {new Date(row.last_sync_at).toLocaleString("pt-BR")}
-          {row.last_sync_error && <span className="text-rose-600"> · {row.last_sync_error}</span>}
+          {row.last_sync_error && <span className={row.last_sync_status === "error" ? "text-rose-600" : ""}> · {row.last_sync_error}</span>}
         </p>
       )}
     </div>
   );
 }
 
-function Track123Section({ shops }: { shops: ShopStub[] }) {
+function TrackingSection({ shops }: { shops: ShopStub[] }) {
   const [open, setOpen] = useState(false);
-  const getFn = useServerFn(getTrack123Integrations);
+  const getFn = useServerFn(getTrackingIntegrations);
   const shopIdsKey = shops.map((s) => s.id).sort().join(",");
   const query = useQuery({
-    queryKey: ["track123-integrations", shopIdsKey],
+    queryKey: ["tracking-integrations", shopIdsKey],
     queryFn: () => getFn({ data: { shop_ids: shops.map((s) => s.id) } }),
     enabled: open && shops.length > 0,
   });
-  const rowsByShop = new Map((query.data ?? []).map((r: any) => [r.shop_id, r as Track123Row]));
+  const rowsByShop = new Map((query.data ?? []).map((r: any) => [r.shop_id, r as TrackingRow]));
 
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -379,8 +302,8 @@ function Track123Section({ shops }: { shops: ShopStub[] }) {
         className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-muted/30 transition-colors"
       >
         <Truck className="size-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-foreground flex-1">Rastreamento (Track123 / 17track)</span>
-        <span className="text-xs text-muted-foreground mr-2">serviço e link de rastreio por loja</span>
+        <span className="text-sm font-medium text-foreground flex-1">Rastreamento (17track)</span>
+        <span className="text-xs text-muted-foreground mr-2">link de rastreio por loja</span>
         {open ? <ChevronUp className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
       </button>
 
@@ -388,7 +311,7 @@ function Track123Section({ shops }: { shops: ShopStub[] }) {
         <div className="border-t border-border divide-y divide-border">
           {query.isLoading && <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>}
           {!query.isLoading && shops.map((shop) => (
-            <Track123ShopRow key={shop.id} shop={shop} row={rowsByShop.get(shop.id)} />
+            <TrackingShopRow key={shop.id} shop={shop} row={rowsByShop.get(shop.id)} />
           ))}
         </div>
       )}
@@ -501,8 +424,8 @@ export function LgIntegrations({
       {/* 1b. Sync cutoff date per shop */}
       {shops.length > 0 && <SyncCutoffSection shops={shops} />}
 
-      {/* 1c. Track123 tracking */}
-      {shops.length > 0 && <Track123Section shops={shops} />}
+      {/* 1c. Rastreio (17track) */}
+      {shops.length > 0 && <TrackingSection shops={shops} />}
 
       {/* 2. Meta Ads (card level) */}
       <div>

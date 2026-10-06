@@ -7,7 +7,7 @@ import { recheckStoreSetups } from "@/lib/store-policies.server";
 
 // Disparado a cada 5 min pelo pg_cron (ver *_push_notifications_cron.sql):
 // recalcula os avisos do sino de cada workspace (token da Meta, sync da
-// Shopify, Track123, disputas, Zoho). Antes isso só rodava quando alguém
+// Shopify, 17track, disputas, Zoho). Antes isso só rodava quando alguém
 // abria o sino — agora o aviso novo nasce sozinho e vira push no celular
 // mesmo com o sistema fechado. Só consultas no banco.
 export const Route = createFileRoute("/api/public/hooks/notifications-refresh")({

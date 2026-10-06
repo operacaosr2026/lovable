@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 
 // Estado das conexões (Configurações > Integrações): Shopify, Meta Ads e
-// Track123 — última sincronização, erro e vencimento do token da Meta. Só
+// rastreio (17track) — última sincronização, erro e vencimento do token da Meta. Só
 // leitura do que os crons já gravam; nenhuma chamada às APIs externas.
 
 export type IntegrationHealth = "ok" | "atencao" | "erro" | "pausada" | "desligada";
@@ -43,8 +43,8 @@ export const getIntegrationsStatus = createServerFn({ method: "GET" })
         .eq("user_id", ownerId),
       supabaseAdmin.from("shop_meta_tokens").select("shop_id,fb_user_name,token_expires_at").eq("user_id", ownerId),
       supabaseAdmin.from("track123_integrations")
-        .select("shop_id,enabled,last_sync_at,last_sync_status,last_sync_error")
-        .eq("user_id", ownerId),
+        .select("shop_id,last_sync_at,last_sync_status,last_sync_error")
+        .eq("user_id", ownerId).eq("provider", "17track"),
       supabaseAdmin.from("shops").select("id,name,shopify_store_id").eq("user_id", ownerId),
       getPausedShopifyStoreIds(ownerId),
     ]);
@@ -92,19 +92,19 @@ export const getIntegrationsStatus = createServerFn({ method: "GET" })
       };
     });
 
-    // Track123: rastreio atualizado de hora em hora.
-    const track123: IntegrationRow[] = ((trackRes.data ?? []) as any[]).map((t) => ({
+    // Rastreio (17track): cron a cada 30 min.
+    const tracking: IntegrationRow[] = ((trackRes.data ?? []) as any[]).map((t) => ({
       id: t.shop_id,
       name: shopName.get(t.shop_id) ?? "Loja",
       detail: null,
       lastSyncAt: t.last_sync_at,
       error: t.last_sync_status === "error" ? t.last_sync_error : null,
-      health: !t.enabled ? "desligada" : isShopPaused(t.shop_id) ? "pausada" : healthFor(t.last_sync_status, t.last_sync_at, 3 * HOUR),
-      note: !t.enabled ? "Integração desligada" : isShopPaused(t.shop_id) ? "Loja pausada no Banco de Lojas" : null,
+      health: isShopPaused(t.shop_id) ? "pausada" : healthFor(t.last_sync_status, t.last_sync_at, 2 * HOUR),
+      note: isShopPaused(t.shop_id) ? "Loja pausada no Banco de Lojas" : null,
     }));
 
     // Ordem alfabética, com números em ordem natural (Loja 1, Loja 2… Loja 10).
     const byName = (a: IntegrationRow, b: IntegrationRow) =>
       a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" });
-    return { shopify: shopify.sort(byName), meta: meta.sort(byName), track123: track123.sort(byName) };
+    return { shopify: shopify.sort(byName), meta: meta.sort(byName), tracking: tracking.sort(byName) };
   });

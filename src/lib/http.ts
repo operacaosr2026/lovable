@@ -1,4 +1,4 @@
-// Chamadas a APIs externas (Shopify, Meta, Track123) com tempo limite e nova
+// Chamadas a APIs externas (Shopify, Meta, 17track) com tempo limite e nova
 // tentativa. Sem isso uma requisição travada consumia sozinha os 60s da função
 // na Vercel (e as lojas seguintes da rodada ficavam sem sync), e um 429 ("muitas
 // requisições") da Shopify virava erro direto em vez de esperar e tentar de novo.

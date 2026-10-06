@@ -2,7 +2,7 @@
 // (LgLogistica) e pelo Dashboard, pra os dois mostrarem sempre os mesmos
 // números a partir dos mesmos pedidos (listLogisticsOrders).
 
-// Agrupa os status brutos do Shopify/Track123 nos 4 buckets exibidos nos cards de KPI.
+// Agrupa os status brutos do Shopify/17track nos 4 buckets exibidos nos cards de KPI.
 export function inBucket(o: any, key: string): boolean {
   const s = o.delivery_status;
   if (key === "pending")   return s === "pending_shipment" || !s;
@@ -56,7 +56,7 @@ export function attentionReason(o: any, nowMs: number): string | null {
   const status = o.delivery_status ?? "pending_shipment";
   if (status === "waiting_customer") return null;
   if (status === "shipped" || status === "in_transit") {
-    // last_event_at (Track123) reflete o último evento real de rastreio; sem
+    // last_event_at (17track) reflete o último evento real de rastreio; sem
     // integração ativa, cai pra shipped_at (data da postagem) como referência.
     const d = daysSince(o.last_event_at ?? o.shipped_at, nowMs);
     if (d != null && d >= 5) return `${Math.floor(d)}d sem atualização`;
