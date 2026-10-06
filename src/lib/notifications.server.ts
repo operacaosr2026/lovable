@@ -3,6 +3,8 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { broadcast } from "@/lib/realtime.server";
 import { notifyPeople } from "@/lib/notify.server";
 import { cronHealthAlerts } from "@/lib/cron-runs.server";
+import { matchLineItemCost } from "@/lib/product-cost-match";
+import { selectAll } from "@/lib/select-all";
 
 export type NotificationLevel = "info" | "warning" | "error";
 type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
@@ -11,12 +13,13 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
 const SHOPIFY_STALE_HOURS = 13;
-const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:"];
+const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:", "product_missing:"];
 
 // Rastreio (17track): cron a cada 30 min. A chave "track123:<loja>" do aviso
 // ficou com o nome antigo pra não duplicar avisos já abertos.
 const TRACKING_STALE_HOURS = 4;
 const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
+const PRODUCT_MISSING_DAYS = 30;  // vendas olhadas pro aviso "Produto sem cadastro"
 
 // Motivos de disputa da Shopify Payments em português.
 const DISPUTE_REASON_PT: Record<string, string> = {
@@ -363,6 +366,43 @@ export async function refreshSystemNotifications(ownerId: string) {
       body: lines.join(" · ").slice(0, 240),
       link: "/chargebacks",
     });
+  }
+
+  // Produto vendido sem cadastro em Produtos (nem pelo nome, nem por palavra-
+  // chave): o custo do pedido cai no custo padrão da loja sem ninguém saber —
+  // lucro e Caixa podem ficar errados. Um aviso por produto; some quando cadastrar.
+  if (activeShopIds.length) {
+    const since = new Date(Date.now() - PRODUCT_MISSING_DAYS * 86_400_000).toISOString().slice(0, 10);
+    const [ordersRes, productsRes, shopsNamesRes] = await Promise.all([
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id,order_date,line_items:raw->line_items")
+        .eq("user_id", ownerId).in("shop_id", activeShopIds).gte("order_date", since)),
+      supabaseAdmin.from("products").select("name,keywords,cost").eq("user_id", ownerId),
+      supabaseAdmin.from("shops").select("id,name").in("id", activeShopIds),
+    ]);
+    const orders = must(ordersRes as any, "pedidos sem produto") as any[];
+    const products = must(productsRes as any, "produtos") as any[];
+    const shopNameOf = new Map(((must(shopsNamesRes as any, "nomes das lojas") ?? []) as any[]).map((r) => [r.id as string, r.name as string]));
+    const missing = new Map<string, { title: string; orders: number; first: string; shops: Set<string> }>();
+    for (const o of orders ?? []) {
+      for (const li of (o.line_items ?? []) as any[]) {
+        const title = String(li.title ?? li.name ?? "").trim();
+        if (!title || matchLineItemCost(title, products) != null) continue;
+        const k = title.toLowerCase();
+        const m = missing.get(k) ?? { title, orders: 0, first: o.order_date, shops: new Set<string>() };
+        m.orders++; m.shops.add(o.shop_id);
+        if (o.order_date < m.first) m.first = o.order_date;
+        missing.set(k, m);
+      }
+    }
+    for (const [k, m] of missing) {
+      const shopNames = [...m.shops].map((id) => shopNameOf.get(id) ?? "Loja").join(", ");
+      want.set(`product_missing:${k.slice(0, 120)}`, {
+        level: "error",
+        title: `Produto sem cadastro: ${m.title}`,
+        body: `${m.orders} venda${m.orders === 1 ? "" : "s"} desde ${fmtDateBR(m.first)} (${shopNames}) usando o custo padrão da loja. Cadastre em Produtos (nome ou palavra-chave) com o custo certo.`.slice(0, 240),
+        link: "/shops/products",
+      });
+    }
   }
 
   // Rotinas automáticas com erro ou paradas (histórico em cron_runs).
