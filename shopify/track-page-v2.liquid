@@ -293,6 +293,7 @@
 #vt-track .vt-recent-list { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 10px; }
 #vt-track .vt-recent-item { min-width: 0; min-height: 68px; padding: 9px 10px 8px; border: 1px solid #ebe9e5; border-radius: 8px; background: #fff; }
 #vt-track .vt-recent-location { display: flex; align-items: center; gap: 7px; min-width: 0; }
+#vt-track .vt-state-flag { display: block; flex: 0 0 24px; width: 24px; height: 16px; object-fit: cover; border: 1px solid #e3e3e1; border-radius: 3px; background: #f5f5f3; }
 #vt-track .vt-state-badge { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 16px; border: 1px solid #dedede; border-radius: 3px; background: #f5f5f3; color: #555; font-size: 7px; font-weight: 700; }
 #vt-track .vt-recent-city { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #505050; font-size: 10px; }
 #vt-track .vt-recent-bottom { margin-top: 7px; padding-left: 31px; }
@@ -634,6 +635,18 @@
   /* ===== RECENT DELIVERIES (só dados reais da API) ===== */
   var recent = [], recentPos = 0, rotateTimer = null;
 
+  // Bandeira do estado (flagcdn.com). Sem bandeira (ex.: DC) ou se a imagem não
+  // carregar, fica o quadradinho com a sigla — nunca imagem quebrada.
+  function stateFlag(region) {
+    var code = String(region || "").trim().toUpperCase();
+    var badge = '<span class="vt-state-badge">' + esc(code || "US") + "</span>";
+    if (!/^[A-Z]{2}$/.test(code) || code === "DC") return badge;
+    var file = code === "PR" ? "pr" : "us-" + code.toLowerCase();
+    return '<img class="vt-state-flag" src="https://flagcdn.com/w40/' + file + '.png" srcset="https://flagcdn.com/w80/' + file + '.png 2x"' +
+      ' width="24" height="16" alt="' + esc(code) + '" loading="lazy"' +
+      " onerror=\"this.outerHTML='<span class=&quot;vt-state-badge&quot;>" + esc(code) + "</span>'\">";
+  }
+
   function renderRecent() {
     var section = $("vt-recent"), list = $("vt-recent-list");
     if (!recent.length) { section.hidden = true; return; }
@@ -644,7 +657,7 @@
       var item = document.createElement("div");
       item.className = "vt-recent-item";
       item.innerHTML =
-        '<div class="vt-recent-location"><span class="vt-state-badge">' + esc(String(d.region || "US").toUpperCase()) + "</span>" +
+        '<div class="vt-recent-location">' + stateFlag(d.region) +
         '<span class="vt-recent-city">' + esc(d.city + (d.region ? ", " + d.region : "")) + "</span></div>" +
         '<div class="vt-recent-bottom"><span class="vt-recent-status">' + esc(d.status) + "</span>" +
         (d.at ? '<span class="vt-recent-time">' + esc(relativeTime(d.at)) + "</span>" : "") + "</div>";
