@@ -169,6 +169,21 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
   const code = (o: any) => String(o.tracking_code).trim().toUpperCase();
 
+  // Pacote descartado e reenviado (envio cancelado ou código trocado na
+  // Shopify): o código do pedido não está mais em nenhum envio ativo — passa
+  // a seguir o envio mais recente da Shopify (caso #WV1373).
+  for (const o of orders) {
+    const active = fulfillmentCodes(o.fulfillments);
+    if (!active.length || active.includes(code(o))) continue;
+    const latest = latestFulfillmentCode(o.fulfillments);
+    if (!latest) continue;
+    const url = buildTrackingUrl(integBy.get(o.shop_id)?.tracking_link_template ?? null, latest);
+    const { error } = await supabaseAdmin.from("shop_orders")
+      .update({ tracking_code: latest, ...(url ? { tracking_url: url } : {}) }).eq("id", o.id);
+    if (error) { result.errors.push(`${code(o)} → ${latest}: ${error.message.slice(0, 120)}`); continue; }
+    o.tracking_code = latest;
+  }
+
   // Pedido com mais de um envio: os outros códigos da Shopify viram "pacotes
   // extras" (o principal continua sendo o tracking_code do pedido).
   const extrasBy = new Map<string, ExtraPackage[]>();
@@ -205,10 +220,17 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
         else result.errors.push(`${r.number}: ${r.error?.message ?? r.error?.code}`);
       }
       const now = new Date().toISOString();
-      const rows = chunk.filter((c) => !c.extra && ok.has(c.number)).map((c) => ({
-        user_id: c.o.user_id, shop_id: c.o.shop_id, order_id: c.o.id, tracking_number: c.number,
-        provider: "17track", registered_17track_at: now,
-      }));
+      const rows = chunk.filter((c) => !c.extra && ok.has(c.number)).map((c) => {
+        const prev = trackBy.get(c.o.id);
+        // Código mudou (pacote reenviado): zera o histórico do pacote antigo.
+        const reset = prev?.tracking_number && String(prev.tracking_number).toUpperCase() !== c.number
+          ? { tracking_status: null, last_event_at: null, last_event_label: null, timeline: [], edd_from: null, edd_to: null, edd_source: null }
+          : {};
+        return {
+          user_id: c.o.user_id, shop_id: c.o.shop_id, order_id: c.o.id, tracking_number: c.number,
+          provider: "17track", registered_17track_at: now, ...reset,
+        };
+      });
       if (rows.length) {
         await supabaseAdmin.from("shop_order_tracking").upsert(rows, { onConflict: "order_id" });
         for (const r of rows) trackBy.set(r.order_id, { ...(trackBy.get(r.order_id) ?? {}), ...r });
@@ -307,6 +329,15 @@ function fulfillmentCodes(fulfillments: any[] | null | undefined): string[] {
     }
   }
   return [...out];
+}
+
+// Código do envio ativo mais recente do pedido na Shopify.
+function latestFulfillmentCode(fulfillments: any[] | null | undefined): string | null {
+  const active = (fulfillments ?? []).filter((f) => String(f?.status ?? "").toLowerCase() !== "cancelled" && (f?.tracking_number || f?.tracking_numbers?.length));
+  active.sort((a, b) => String(b?.created_at ?? "").localeCompare(String(a?.created_at ?? "")));
+  const f = active[0];
+  const n = f?.tracking_number ?? f?.tracking_numbers?.[0];
+  return n ? String(n).trim().toUpperCase() : null;
 }
 
 // Atualiza um pacote extra com o que o 17track trouxe. false = nada mudou.
