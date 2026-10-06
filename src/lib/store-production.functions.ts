@@ -3,10 +3,10 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
-  PRODUCTION_BUCKET, applyTemplateToStore, loadTemplate,
+  PRODUCTION_BUCKET, applyPresetToStore, loadFields, loadPresets,
 } from "@/lib/store-production.server";
 
-export type { ProductionField, ProductionFieldType, ProductionTemplate, TemplateTask } from "@/lib/store-production.server";
+export type { ProductionField, ProductionFieldType, ProductionPreset, TemplateTask } from "@/lib/store-production.server";
 export type ChecklistItem = { id: string; text: string; done: boolean };
 export type ProductionTask = {
   id: string; title: string; description: string | null; assignee_id: string | null;
@@ -30,43 +30,89 @@ async function assertAssignee(ownerId: string, assigneeId: string | null | undef
   if (!data) throw new Error("Responsável não faz parte deste workspace.");
 }
 
-// ── Modelo ──
+// ── Templates ──
 
-const TemplateInput = z.object({
-  fields: z.array(z.object({
-    id: z.string().min(1).max(60),
-    label: z.string().trim().min(1).max(100),
-    type: z.enum(["text", "link", "email"]),
-  })).max(50),
+const FieldsInput = z.array(z.object({
+  id: z.string().min(1).max(60),
+  label: z.string().trim().min(1).max(100),
+  type: z.enum(["text", "link", "email"]),
+})).max(50);
+
+const PresetInput = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1).max(100),
+  is_default: z.boolean(),
+  values: z.record(z.string().min(1).max(60), z.string().max(2000)),
   tasks: z.array(z.object({
     id: z.string().min(1).max(60),
     title: z.string().trim().min(1).max(200),
     description: z.string().max(5000).nullable(),
+    assignee_id: z.string().uuid().nullable(),
     checklist: z.array(z.object({ id: z.string().min(1).max(60), text: z.string().trim().min(1).max(300) })).max(100),
   })).max(50),
   credentials: z.array(z.string().trim().min(1).max(100)).max(30),
 });
 
-export const getProductionTemplate = createServerFn({ method: "GET" })
+export const listProductionTemplates = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .handler(async ({ context }) => loadTemplate(context.ownerId));
+  .handler(async ({ context }) => {
+    const [fields, presets] = await Promise.all([loadFields(context.ownerId), loadPresets(context.ownerId)]);
+    return { fields, presets };
+  });
 
-export const saveProductionTemplate = createServerFn({ method: "POST" })
+export const saveProductionFields = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => TemplateInput.parse(d))
+  .inputValidator((d) => z.object({ fields: FieldsInput }).parse(d))
   .handler(async ({ context, data }) => {
     const { error } = await supabaseAdmin.from("store_production_templates")
-      .upsert({ user_id: context.ownerId, ...data }, { onConflict: "user_id" });
+      .upsert({ user_id: context.ownerId, fields: data.fields }, { onConflict: "user_id" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const saveProductionPreset = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => PresetInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const ownerId = context.ownerId;
+    for (const a of new Set(data.tasks.map((t) => t.assignee_id))) await assertAssignee(ownerId, a);
+    const { id, ...row } = data;
+    if (row.is_default) {
+      let q = supabaseAdmin.from("store_production_presets").update({ is_default: false })
+        .eq("user_id", ownerId).eq("is_default", true);
+      if (id) q = q.neq("id", id);
+      const { error } = await q;
+      if (error) throw new Error(error.message);
+    }
+    if (id) {
+      const { error } = await supabaseAdmin.from("store_production_presets").update(row).eq("id", id).eq("user_id", ownerId);
+      if (error) throw new Error(error.message);
+      return { id };
+    }
+    const { count } = await supabaseAdmin.from("store_production_presets").select("id", { count: "exact", head: true })
+      .eq("user_id", ownerId);
+    const { data: created, error } = await supabaseAdmin.from("store_production_presets")
+      .insert({ ...row, user_id: ownerId, position: count ?? 0 }).select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: created.id as string };
+  });
+
+export const deleteProductionPreset = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await supabaseAdmin.from("store_production_presets")
+      .delete().eq("id", data.id).eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const applyProductionTemplate = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => StoreIdInput.parse(d))
+  .inputValidator((d) => z.object({ shopify_store_id: z.string().uuid(), preset_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     await assertStore(context.ownerId, data.shopify_store_id);
-    await applyTemplateToStore(context.ownerId, data.shopify_store_id);
+    await applyPresetToStore(context.ownerId, data.shopify_store_id, data.preset_id);
     return { ok: true };
   });
 
@@ -77,8 +123,9 @@ export const getStoreProduction = createServerFn({ method: "GET" })
   .inputValidator((d) => StoreIdInput.parse(d))
   .handler(async ({ context, data }) => {
     const ownerId = context.ownerId;
-    const [template, prod, tasks, files, policies] = await Promise.all([
-      loadTemplate(ownerId),
+    const [fields, presets, prod, tasks, files, policies] = await Promise.all([
+      loadFields(ownerId),
+      loadPresets(ownerId),
       supabaseAdmin.from("store_production").select("values")
         .eq("user_id", ownerId).eq("shopify_store_id", data.shopify_store_id).maybeSingle(),
       supabaseAdmin.from("store_production_tasks")
@@ -96,7 +143,8 @@ export const getStoreProduction = createServerFn({ method: "GET" })
     if (files.error) throw new Error(files.error.message);
     if (policies.error) throw new Error(policies.error.message);
     return {
-      fields: template.fields,
+      fields,
+      presets: presets.map((p) => ({ id: p.id, name: p.name, is_default: p.is_default })),
       values: (prod.data?.values ?? {}) as Record<string, string>,
       tasks: (tasks.data ?? []) as unknown as ProductionTask[],
       files: (files.data ?? []) as ProductionFile[],

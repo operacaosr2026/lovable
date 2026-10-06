@@ -9,7 +9,7 @@ import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
-import { applyTemplateToStore } from "@/lib/store-production.server";
+import { applyPresetToStore } from "@/lib/store-production.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import { orderDateFor } from "@/lib/order-date";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
@@ -519,9 +519,9 @@ export const createPlaceholderStore = createServerFn({ method: "POST" })
       })
       .select("id,name,shop_domain,board_column_id,board_position,board_note,is_placeholder").single();
     if (error) throw new Error(error.message);
-    // Card novo já nasce com as etapas e acessos do modelo de produção. Falha
+    // Card novo já nasce com o template padrão de produção. Falha
     // aqui não impede a loja de ser criada (dá pra aplicar pela aba Produção).
-    await applyTemplateToStore(context.ownerId, row.id).catch((e) => console.error("[produção] modelo", e));
+    await applyPresetToStore(context.ownerId, row.id).catch((e) => console.error("[produção] modelo", e));
     return row;
   });
 

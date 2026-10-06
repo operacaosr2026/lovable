@@ -4149,25 +4149,58 @@ export type Database = {
           },
         ];
       };
+      store_production_presets: {
+        Row: {
+          created_at: string;
+          credentials: Json;
+          id: string;
+          is_default: boolean;
+          name: string;
+          position: number;
+          tasks: Json;
+          updated_at: string;
+          user_id: string;
+          values: Json;
+        };
+        Insert: {
+          created_at?: string;
+          credentials?: Json;
+          id?: string;
+          is_default?: boolean;
+          name: string;
+          position?: number;
+          tasks?: Json;
+          updated_at?: string;
+          user_id: string;
+          values?: Json;
+        };
+        Update: {
+          created_at?: string;
+          credentials?: Json;
+          id?: string;
+          is_default?: boolean;
+          name?: string;
+          position?: number;
+          tasks?: Json;
+          updated_at?: string;
+          user_id?: string;
+          values?: Json;
+        };
+        Relationships: [];
+      };
       store_production_templates: {
         Row: {
-          credentials: Json;
           fields: Json;
-          tasks: Json;
           updated_at: string;
           user_id: string;
         };
         Insert: {
-          credentials?: Json;
           fields?: Json;
-          tasks?: Json;
           updated_at?: string;
           user_id: string;
         };
         Update: {
-          credentials?: Json;
           fields?: Json;
-          tasks?: Json;
           updated_at?: string;
           user_id?: string;
         };

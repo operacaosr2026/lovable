@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { Link } from "@tanstack/react-router";
 import {
-  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Circle, CheckCircle2, Copy, Download, ExternalLink, FileText,
-  ListChecks, Loader2, Pencil, Plus, ScrollText, Settings2, Trash2, Upload, X,
+  Check, ChevronDown, ChevronRight, Circle, CheckCircle2, Copy, Download, FileText,
+  LayoutTemplate, ListChecks, Loader2, Pencil, Plus, ScrollText, Settings2, Trash2, Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { listTaskAssignees } from "@/lib/tasks.functions";
 import {
   getStoreProduction, setProductionValue, createProductionTask, updateProductionTask, deleteProductionTask,
-  applyProductionTemplate, getProductionTemplate, saveProductionTemplate,
+  applyProductionTemplate,
   createProductionUpload, registerProductionFile, getProductionFileUrl, deleteProductionFile,
   saveProductionPolicy, deleteProductionPolicy,
-  type ChecklistItem, type ProductionField, type ProductionPolicy, type ProductionTask, type ProductionTemplate,
+  type ChecklistItem, type ProductionField, type ProductionPolicy, type ProductionTask,
 } from "@/lib/store-production.functions";
 
 type Assignee = { id: string; name: string; avatar_url: string | null };
@@ -31,7 +34,6 @@ export function ProductionTab({ store }: { store: any }) {
   const queryKey = ["store-production", store.id];
   const getFn = useServerFn(getStoreProduction);
   const assigneesFn = useServerFn(listTaskAssignees);
-  const [editingTemplate, setEditingTemplate] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey,
@@ -64,20 +66,13 @@ export function ProductionTab({ store }: { store: any }) {
             </>
           ) : <p className="text-xs text-muted-foreground">Nenhuma etapa de produção.</p>}
         </div>
-        <button
-          onClick={() => setEditingTemplate(true)}
-          className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted shrink-0"
-        >
-          <Settings2 className="size-3.5" /> Editar modelo
-        </button>
+        <ApplyTemplateMenu storeId={store.id} presets={data.presets} onApplied={refresh} />
       </div>
 
       <InfoSection storeId={store.id} fields={data.fields} values={data.values} onSaved={refresh} />
       <TasksSection storeId={store.id} tasks={data.tasks} assignees={assignees} queryKey={queryKey} onChanged={refresh} />
       <FilesSection storeId={store.id} files={data.files} onChanged={refresh} />
       <PoliciesSection storeId={store.id} policies={data.policies} onChanged={refresh} />
-
-      {editingTemplate && <TemplateEditorDialog onClose={() => setEditingTemplate(false)} onSaved={refresh} />}
     </div>
   );
 }
@@ -91,7 +86,51 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
   );
 }
 
-function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
+// Preenche campos vazios, adiciona etapas e acessos que faltam — nunca apaga.
+function ApplyTemplateMenu({ storeId, presets, onApplied }: {
+  storeId: string; presets: { id: string; name: string; is_default: boolean }[]; onApplied: () => void;
+}) {
+  const qc = useQueryClient();
+  const applyFn = useServerFn(applyProductionTemplate);
+  const apply = useMutation({
+    mutationFn: (preset: { id: string; name: string }) => applyFn({ data: { shopify_store_id: storeId, preset_id: preset.id } }),
+    onSuccess: (_, preset) => {
+      onApplied();
+      qc.invalidateQueries({ queryKey: ["store-credentials", storeId] });
+      toast.success(`Template "${preset.name}" aplicado`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          disabled={apply.isPending}
+          className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted shrink-0 disabled:opacity-50"
+        >
+          {apply.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <LayoutTemplate className="size-3.5" />} Aplicar template
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        {presets.map((p) => (
+          <DropdownMenuItem key={p.id} onSelect={() => apply.mutate(p)}>
+            <span className="flex-1 truncate">{p.name}</span>
+            {p.is_default && <span className="text-[10px] text-muted-foreground">padrão</span>}
+          </DropdownMenuItem>
+        ))}
+        {presets.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum template criado.</p>}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings/templates"><Settings2 className="size-3.5" /> Gerenciar templates</Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-2.5">
       <h3 className="text-sm font-semibold">{children}</h3>
@@ -129,33 +168,34 @@ function FieldInput({ field, value, onSave }: { field: ProductionField; value: s
   const [text, setText] = useState(value);
   useEffect(() => { setText(value); }, [value]);
   const commit = () => { if (text.trim() !== value) onSave(text.trim()); };
-  const href = !value ? null
-    : field.type === "email" ? `mailto:${value}`
-    : field.type === "link" ? (/^https?:\/\//i.test(value) ? value : `https://${value}`)
-    : null;
+  const copy = () => {
+    navigator.clipboard.writeText(text.trim()).then(
+      () => toast.success(`${field.label} copiado`),
+      () => toast.error("Não foi possível copiar"),
+    );
+  };
 
   return (
     <label className="block min-w-0">
       <span className="text-xs text-muted-foreground">{field.label}</span>
-      <div className="relative mt-1">
+      <div className="group relative mt-1">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           type={field.type === "email" ? "email" : "text"}
-          className={`w-full h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50 ${href ? "pr-9" : ""}`}
+          className="w-full h-9 pl-3 pr-9 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50"
         />
-        {href && (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Abrir"
-            className="absolute right-1 top-1/2 -translate-y-1/2 size-7 rounded-md grid place-items-center text-primary hover:bg-primary/10"
+        {text.trim() && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); copy(); }}
+            title="Copiar"
+            className="absolute right-1 top-1/2 -translate-y-1/2 size-7 rounded-md grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
           >
-            <ExternalLink className="size-3.5" />
-          </a>
+            <Copy className="size-3.5" />
+          </button>
         )}
       </div>
     </label>
@@ -172,7 +212,6 @@ function TasksSection({ storeId, tasks, assignees, queryKey, onChanged }: {
   const createFn = useServerFn(createProductionTask);
   const updateFn = useServerFn(updateProductionTask);
   const deleteFn = useServerFn(deleteProductionTask);
-  const applyFn = useServerFn(applyProductionTemplate);
   const [newTitle, setNewTitle] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -197,30 +236,14 @@ function TasksSection({ storeId, tasks, assignees, queryKey, onChanged }: {
     onSuccess: onChanged,
     onError: (e: any) => toast.error(e.message),
   });
-  const apply = useMutation({
-    mutationFn: () => applyFn({ data: { shopify_store_id: storeId } }),
-    onSuccess: () => {
-      onChanged();
-      qc.invalidateQueries({ queryKey: ["store-credentials", storeId] });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
   const assigneeById = new Map(assignees.map((a) => [a.id, a]));
 
   return (
     <section>
       <SectionTitle>Etapas</SectionTitle>
       {tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-4 text-center space-y-2">
-          <p className="text-sm text-muted-foreground">Essa loja ainda não tem etapas de produção.</p>
-          <button
-            onClick={() => apply.mutate()}
-            disabled={apply.isPending}
-            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {apply.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ListChecks className="size-3.5" />} Aplicar modelo
-          </button>
+        <div className="rounded-xl border border-dashed border-border p-4 text-center">
+          <p className="text-sm text-muted-foreground">Essa loja ainda não tem etapas. Use "Aplicar template" ou adicione abaixo.</p>
         </div>
       ) : (
         <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
@@ -594,249 +617,10 @@ function PolicyForm({ initial, saving, onSave, onCancel }: {
   );
 }
 
-// ── Modelo ──
-
-function TemplateEditorDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const qc = useQueryClient();
-  const getFn = useServerFn(getProductionTemplate);
-  const saveFn = useServerFn(saveProductionTemplate);
-  const { data } = useQuery({ queryKey: ["production-template"], queryFn: () => getFn() });
-  const [tpl, setTpl] = useState<ProductionTemplate | null>(null);
-  const [openTask, setOpenTask] = useState<string | null>(null);
-  const [newCred, setNewCred] = useState("");
-  useEffect(() => { if (data && !tpl) setTpl(data); }, [data, tpl]);
-
-  const save = useMutation({
-    mutationFn: (t: ProductionTemplate) => saveFn({ data: t }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["production-template"] });
-      onSaved();
-      toast.success("Modelo salvo");
-      onClose();
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  const move = <T,>(list: T[], i: number, d: -1 | 1) => {
-    const j = i + d;
-    if (j < 0 || j >= list.length) return list;
-    const next = [...list];
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  };
-
-  const submit = () => {
-    if (!tpl) return;
-    // Linhas em branco somem em vez de barrar o salvamento.
-    save.mutate({
-      fields: tpl.fields.filter((f) => f.label.trim()),
-      tasks: tpl.tasks.filter((t) => t.title.trim()).map((t) => ({ ...t, checklist: t.checklist.filter((c) => c.text.trim()) })),
-      credentials: tpl.credentials,
-    });
-  };
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Modelo de produção</DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            Toda loja nova criada no quadro recebe essas etapas e acessos. Os campos de informação valem pra todas as lojas na hora; etapas mudadas aqui não alteram lojas que já estão em produção.
-          </p>
-        </DialogHeader>
-        {!tpl ? (
-          <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
-        ) : (
-          <div className="space-y-6">
-            <section>
-              <SectionTitle
-                action={<AddBtn onClick={() => setTpl({ ...tpl, fields: [...tpl.fields, { id: newId(), label: "", type: "text" }] })}>Campo</AddBtn>}
-              >
-                Campos de informação
-              </SectionTitle>
-              <div className="space-y-1.5">
-                {tpl.fields.map((f, i) => (
-                  <div key={f.id} className="flex items-center gap-1.5">
-                    <input
-                      value={f.label}
-                      autoFocus={!f.label}
-                      onChange={(e) => setTpl({ ...tpl, fields: tpl.fields.map((x) => (x.id === f.id ? { ...x, label: e.target.value } : x)) })}
-                      placeholder="Nome do campo"
-                      className="flex-1 min-w-0 h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50"
-                    />
-                    <select
-                      value={f.type}
-                      onChange={(e) => setTpl({ ...tpl, fields: tpl.fields.map((x) => (x.id === f.id ? { ...x, type: e.target.value as ProductionField["type"] } : x)) })}
-                      className="h-9 px-2 rounded-lg border border-border bg-background text-sm outline-none"
-                    >
-                      <option value="text">Texto</option>
-                      <option value="link">Link</option>
-                      <option value="email">E-mail</option>
-                    </select>
-                    <RowActions
-                      onUp={() => setTpl({ ...tpl, fields: move(tpl.fields, i, -1) })}
-                      onDown={() => setTpl({ ...tpl, fields: move(tpl.fields, i, 1) })}
-                      onRemove={() => setTpl({ ...tpl, fields: tpl.fields.filter((x) => x.id !== f.id) })}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <SectionTitle
-                action={
-                  <AddBtn onClick={() => {
-                    const id = newId();
-                    setTpl({ ...tpl, tasks: [...tpl.tasks, { id, title: "", description: null, checklist: [] }] });
-                    setOpenTask(id);
-                  }}>Etapa</AddBtn>
-                }
-              >
-                Etapas
-              </SectionTitle>
-              <div className="rounded-xl border border-border divide-y divide-border">
-                {tpl.tasks.map((t, i) => {
-                  const setTask = (patch: Partial<typeof t>) => setTpl({ ...tpl, tasks: tpl.tasks.map((x) => (x.id === t.id ? { ...x, ...patch } : x)) });
-                  const isOpen = openTask === t.id;
-                  return (
-                    <div key={t.id} className="p-2">
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => setOpenTask(isOpen ? null : t.id)} className="size-7 grid place-items-center text-muted-foreground shrink-0">
-                          {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                        </button>
-                        <input
-                          value={t.title}
-                          autoFocus={!t.title}
-                          onChange={(e) => setTask({ title: e.target.value })}
-                          placeholder="Nome da etapa"
-                          className="flex-1 min-w-0 h-9 px-2 rounded-lg bg-transparent text-sm font-medium outline-none focus:bg-background focus:border focus:border-primary/50"
-                        />
-                        {t.checklist.length > 0 && (
-                          <span className="text-xs text-muted-foreground inline-flex items-center gap-1 shrink-0"><ListChecks className="size-3.5" />{t.checklist.length}</span>
-                        )}
-                        <RowActions
-                          onUp={() => setTpl({ ...tpl, tasks: move(tpl.tasks, i, -1) })}
-                          onDown={() => setTpl({ ...tpl, tasks: move(tpl.tasks, i, 1) })}
-                          onRemove={() => setTpl({ ...tpl, tasks: tpl.tasks.filter((x) => x.id !== t.id) })}
-                        />
-                      </div>
-                      {isOpen && (
-                        <div className="pl-9 pr-1 pt-2 space-y-2">
-                          <textarea
-                            value={t.description ?? ""}
-                            onChange={(e) => setTask({ description: e.target.value || null })}
-                            placeholder="Descrição, instruções..."
-                            rows={2}
-                            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50 resize-y"
-                          />
-                          {t.checklist.map((c, ci) => (
-                            <div key={c.id} className="flex items-center gap-1.5">
-                              <span className="size-3.5 rounded border border-border shrink-0" />
-                              <input
-                                value={c.text}
-                                autoFocus={!c.text}
-                                onChange={(e) => setTask({ checklist: t.checklist.map((x) => (x.id === c.id ? { ...x, text: e.target.value } : x)) })}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    const next = [...t.checklist];
-                                    next.splice(ci + 1, 0, { id: newId(), text: "" });
-                                    setTask({ checklist: next });
-                                  }
-                                }}
-                                placeholder="Item do checklist"
-                                className="flex-1 min-w-0 h-8 px-2 rounded-md bg-transparent text-sm outline-none focus:bg-background"
-                              />
-                              <button
-                                onClick={() => setTask({ checklist: t.checklist.filter((x) => x.id !== c.id) })}
-                                className="size-7 rounded-md grid place-items-center text-muted-foreground hover:text-destructive"
-                                title="Remover item"
-                              >
-                                <X className="size-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            onClick={() => setTask({ checklist: [...t.checklist, { id: newId(), text: "" }] })}
-                            className="h-7 px-1 text-xs text-muted-foreground hover:text-primary flex items-center gap-1.5"
-                          >
-                            <Plus className="size-3.5" /> Item do checklist
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {tpl.tasks.length === 0 && <p className="p-3 text-sm text-muted-foreground">Nenhuma etapa.</p>}
-              </div>
-            </section>
-
-            <section>
-              <SectionTitle>Acessos</SectionTitle>
-              <p className="text-xs text-muted-foreground mb-2">Criados vazios na aba Acessos da loja nova, pra só preencher login e senha.</p>
-              <div className="flex flex-wrap gap-1.5">
-                {tpl.credentials.map((c) => (
-                  <span key={c} className="h-8 pl-3 pr-1 rounded-lg bg-muted text-sm inline-flex items-center gap-1">
-                    {c}
-                    <button
-                      onClick={() => setTpl({ ...tpl, credentials: tpl.credentials.filter((x) => x !== c) })}
-                      className="size-6 rounded grid place-items-center text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  </span>
-                ))}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const v = newCred.trim();
-                    if (v && !tpl.credentials.includes(v)) setTpl({ ...tpl, credentials: [...tpl.credentials, v] });
-                    setNewCred("");
-                  }}
-                >
-                  <input
-                    value={newCred}
-                    onChange={(e) => setNewCred(e.target.value)}
-                    placeholder="+ Acesso (Enter)"
-                    className="h-8 w-40 px-3 rounded-lg border border-dashed border-border bg-transparent text-sm outline-none focus:border-primary/50"
-                  />
-                </form>
-              </div>
-            </section>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <button onClick={onClose} className="h-9 px-4 rounded-lg text-sm hover:bg-muted">Cancelar</button>
-              <button
-                onClick={submit}
-                disabled={save.isPending}
-                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} Salvar modelo
-              </button>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AddBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+export function AddBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick} className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted">
       <Plus className="size-3.5" /> {children}
     </button>
-  );
-}
-
-function RowActions({ onUp, onDown, onRemove }: { onUp: () => void; onDown: () => void; onRemove: () => void }) {
-  const cls = "size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground shrink-0";
-  return (
-    <>
-      <button onClick={onUp} className={cls} title="Subir"><ArrowUp className="size-3.5" /></button>
-      <button onClick={onDown} className={cls} title="Descer"><ArrowDown className="size-3.5" /></button>
-      <button onClick={onRemove} className={`${cls} hover:!bg-destructive/10 hover:!text-destructive`} title="Remover"><Trash2 className="size-3.5" /></button>
-    </>
   );
 }

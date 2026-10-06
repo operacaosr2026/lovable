@@ -32,6 +32,7 @@ import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integ
 import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
 import { Route as SettingsNotificacoesRouteImport } from "./routes/settings.notificacoes";
 import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
+import { Route as SettingsTemplatesRouteImport } from "./routes/settings.templates";
 import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
 import { Route as ShopsBancoDeLojasRouteImport } from "./routes/shops.banco-de-lojas";
 import { Route as ShopsCaixaRouteImport } from "./routes/shops.caixa";
@@ -175,6 +176,11 @@ const SettingsNotificacoesRoute = SettingsNotificacoesRouteImport.update({
 const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
   id: "/seguranca",
   path: "/seguranca",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsTemplatesRoute = SettingsTemplatesRouteImport.update({
+  id: "/templates",
+  path: "/templates",
   getParentRoute: () => SettingsRoute,
 } as any);
 const ShopsIndexRoute = ShopsIndexRouteImport.update({
@@ -356,6 +362,7 @@ export interface FileRoutesByFullPath {
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/settings/templates": typeof SettingsTemplatesRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
@@ -407,6 +414,7 @@ export interface FileRoutesByTo {
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/settings/templates": typeof SettingsTemplatesRoute;
   "/track/$code": typeof TrackCodeRoute;
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
@@ -458,6 +466,7 @@ export interface FileRoutesById {
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
+  "/settings/templates": typeof SettingsTemplatesRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
   "/shops/caixa": typeof ShopsCaixaRouteWithChildren;
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
@@ -514,6 +523,7 @@ export interface FileRouteTypes {
     | "/settings/members"
     | "/settings/notificacoes"
     | "/settings/seguranca"
+    | "/settings/templates"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
     | "/shops/lojas-grupos"
@@ -565,6 +575,7 @@ export interface FileRouteTypes {
     | "/settings/members"
     | "/settings/notificacoes"
     | "/settings/seguranca"
+    | "/settings/templates"
     | "/track/$code"
     | "/projects"
     | "/settings"
@@ -615,6 +626,7 @@ export interface FileRouteTypes {
     | "/settings/members"
     | "/settings/notificacoes"
     | "/settings/seguranca"
+    | "/settings/templates"
     | "/shops/banco-de-lojas"
     | "/shops/caixa"
     | "/shops/lojas-grupos"
@@ -841,6 +853,13 @@ declare module "@tanstack/react-router" {
       path: "/seguranca";
       fullPath: "/settings/seguranca";
       preLoaderRoute: typeof SettingsSegurancaRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    "/settings/templates": {
+      id: "/settings/templates";
+      path: "/templates";
+      fullPath: "/settings/templates";
+      preLoaderRoute: typeof SettingsTemplatesRouteImport;
       parentRoute: typeof SettingsRoute;
     };
     "/shops/": {
@@ -1071,6 +1090,7 @@ interface SettingsRouteChildren {
   SettingsMembersRoute: typeof SettingsMembersRoute;
   SettingsNotificacoesRoute: typeof SettingsNotificacoesRoute;
   SettingsSegurancaRoute: typeof SettingsSegurancaRoute;
+  SettingsTemplatesRoute: typeof SettingsTemplatesRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
 }
 
@@ -1082,6 +1102,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsMembersRoute: SettingsMembersRoute,
   SettingsNotificacoesRoute: SettingsNotificacoesRoute,
   SettingsSegurancaRoute: SettingsSegurancaRoute,
+  SettingsTemplatesRoute: SettingsTemplatesRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 };
 
