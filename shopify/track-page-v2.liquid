@@ -307,10 +307,11 @@
 /* RESULT HERO */
 #vt-track .vt-result-hero { padding: 0 0 22px; text-align: center; }
 #vt-track .vt-order-reference { min-height: 18px; margin-bottom: 10px; color: #8d9197; font-size: 14px; }
-#vt-track .vt-result-status-row { display: inline-flex; align-items: center; justify-content: center; gap: 22px; text-align: left; }
-#vt-track .vt-result-status-icon { display: grid; place-items: center; width: 76px; height: 76px; flex: 0 0 76px; border-radius: 50%; background: var(--vt-green-soft); color: var(--vt-green); }
+#vt-track .vt-result-status-row { position: relative; display: inline-block; text-align: center; }
+#vt-track .vt-result-status-icon { position: absolute; top: 50%; right: 100%; margin-right: 22px; transform: translateY(-50%); display: grid; place-items: center; width: 76px; height: 76px; flex: 0 0 76px; border-radius: 50%; background: var(--vt-green-soft); color: var(--vt-green); }
 #vt-track .vt-result-status-icon svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #vt-track .vt-result-status-copy h1 { margin: 0; color: #090a0b; font-family: inherit; font-size: clamp(32px, 4.2vw, 48px); font-weight: 800; line-height: 1.05; letter-spacing: -1.6px; text-transform: none; }
+#vt-track .vt-result-status-copy { text-align: center; }
 #vt-track .vt-result-status-copy p { margin: 8px 0 0; color: #8b8f95; font-size: 15px; }
 #vt-track .vt-result-edd { margin-top: 12px; color: #777; font-size: 14px; }
 #vt-track .vt-result-edd b { color: #222; font-weight: 600; }
@@ -407,8 +408,7 @@
   #vt-track .vt-result-screen { padding-top: 0; }
   #vt-track .vt-back { margin-bottom: 12px; }
   #vt-track .vt-result-hero { padding-bottom: 21px; }
-  #vt-track .vt-result-status-row { gap: 12px; }
-  #vt-track .vt-result-status-icon { width: 54px; height: 54px; flex-basis: 54px; }
+  #vt-track .vt-result-status-icon { position: static; transform: none; margin: 0 auto 10px; width: 54px; height: 54px; flex-basis: 54px; }
   #vt-track .vt-result-status-icon svg { width: 26px; height: 26px; }
   #vt-track .vt-result-status-copy h1 { font-size: 29px; letter-spacing: -1px; }
   #vt-track .vt-result-status-copy p { font-size: 13px; }
