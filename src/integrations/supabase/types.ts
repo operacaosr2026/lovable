@@ -413,6 +413,118 @@ export type Database = {
         };
         Relationships: [];
       };
+      training_lessons: {
+        Row: {
+          content: Json;
+          created_at: string;
+          duration_min: number | null;
+          id: string;
+          kind: string;
+          position: number;
+          title: string;
+          track_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          content?: Json;
+          created_at?: string;
+          duration_min?: number | null;
+          id?: string;
+          kind: string;
+          position?: number;
+          title: string;
+          track_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          content?: Json;
+          created_at?: string;
+          duration_min?: number | null;
+          id?: string;
+          kind?: string;
+          position?: number;
+          title?: string;
+          track_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "training_lessons_track_id_fkey";
+            columns: ["track_id"];
+            isOneToOne: false;
+            referencedRelation: "training_tracks";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      training_progress: {
+        Row: {
+          completed_at: string;
+          lesson_id: string;
+          member_id: string;
+          user_id: string;
+        };
+        Insert: {
+          completed_at?: string;
+          lesson_id: string;
+          member_id: string;
+          user_id: string;
+        };
+        Update: {
+          completed_at?: string;
+          lesson_id?: string;
+          member_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "training_progress_lesson_id_fkey";
+            columns: ["lesson_id"];
+            isOneToOne: false;
+            referencedRelation: "training_lessons";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      training_tracks: {
+        Row: {
+          color: string;
+          created_at: string;
+          description: string | null;
+          emoji: string | null;
+          id: string;
+          position: number;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          color?: string;
+          created_at?: string;
+          description?: string | null;
+          emoji?: string | null;
+          id?: string;
+          position?: number;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          color?: string;
+          created_at?: string;
+          description?: string | null;
+          emoji?: string | null;
+          id?: string;
+          position?: number;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       zoho_mail_accounts: {
         Row: {
           owner_id: string;

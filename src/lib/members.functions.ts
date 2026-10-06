@@ -21,6 +21,7 @@ export const SECTIONS = [
   "atendimento",
   "chargebacks",
   "consultor",
+  "academia",
   // Sino de notificações.
   "notificacoes",
   // Subabas de Lojas e Grupos (grupo aberto).
@@ -37,6 +38,8 @@ export const SECTIONS = [
   // Banco de Lojas: badges dos cards (hold, pedidos/dia, payout, nota) e aba
   // Pedidos da janela da loja.
   "bl_indicadores",
+  // Academia: criar e editar trilhas/aulas e ver o progresso da equipe.
+  "ac_editar",
   // Tipos de notificação (sino + push), dentro de "notificacoes" — ver
   // src/lib/notification-categories.ts.
   "nt_meta",

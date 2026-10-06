@@ -21,6 +21,8 @@ import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ShopsRouteImport } from "./routes/shops";
 import { Route as TarefasRouteImport } from "./routes/tarefas";
+import { Route as AcademiaIndexRouteImport } from "./routes/academia.index";
+import { Route as AcademiaTrackIdRouteImport } from "./routes/academia.$trackId";
 import { Route as InviteTokenRouteImport } from "./routes/invite.$token";
 import { Route as ProjectsIndexRouteImport } from "./routes/projects.index";
 import { Route as ProjectsProjectIdRouteImport } from "./routes/projects.$projectId";
@@ -121,6 +123,16 @@ const ShopsRoute = ShopsRouteImport.update({
 const TarefasRoute = TarefasRouteImport.update({
   id: "/tarefas",
   path: "/tarefas",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AcademiaIndexRoute = AcademiaIndexRouteImport.update({
+  id: "/academia/",
+  path: "/academia/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AcademiaTrackIdRoute = AcademiaTrackIdRouteImport.update({
+  id: "/academia/$trackId",
+  path: "/academia/$trackId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -353,6 +365,7 @@ export interface FileRoutesByFullPath {
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
   "/tarefas": typeof TarefasRoute;
+  "/academia/$trackId": typeof AcademiaTrackIdRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -368,6 +381,7 @@ export interface FileRoutesByFullPath {
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
   "/shops/products": typeof ShopsProductsRouteWithChildren;
   "/track/$code": typeof TrackCodeRoute;
+  "/academia/": typeof AcademiaIndexRoute;
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
@@ -405,6 +419,7 @@ export interface FileRoutesByTo {
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/tarefas": typeof TarefasRoute;
+  "/academia/$trackId": typeof AcademiaTrackIdRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -416,6 +431,7 @@ export interface FileRoutesByTo {
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/track/$code": typeof TrackCodeRoute;
+  "/academia": typeof AcademiaIndexRoute;
   "/projects": typeof ProjectsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/shops": typeof ShopsIndexRoute;
@@ -457,6 +473,7 @@ export interface FileRoutesById {
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
   "/tarefas": typeof TarefasRoute;
+  "/academia/$trackId": typeof AcademiaTrackIdRoute;
   "/invite/$token": typeof InviteTokenRoute;
   "/projects/$projectId": typeof ProjectsProjectIdRoute;
   "/settings/auditoria": typeof SettingsAuditoriaRoute;
@@ -472,6 +489,7 @@ export interface FileRoutesById {
   "/shops/lojas-grupos": typeof ShopsLojasGruposRouteWithChildren;
   "/shops/products": typeof ShopsProductsRouteWithChildren;
   "/track/$code": typeof TrackCodeRoute;
+  "/academia/": typeof AcademiaIndexRoute;
   "/projects/": typeof ProjectsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/shops/": typeof ShopsIndexRoute;
@@ -514,6 +532,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/tarefas"
+    | "/academia/$trackId"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -529,6 +548,7 @@ export interface FileRouteTypes {
     | "/shops/lojas-grupos"
     | "/shops/products"
     | "/track/$code"
+    | "/academia/"
     | "/projects/"
     | "/settings/"
     | "/shops/"
@@ -566,6 +586,7 @@ export interface FileRouteTypes {
     | "/login"
     | "/metas"
     | "/tarefas"
+    | "/academia/$trackId"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -577,6 +598,7 @@ export interface FileRouteTypes {
     | "/settings/seguranca"
     | "/settings/templates"
     | "/track/$code"
+    | "/academia"
     | "/projects"
     | "/settings"
     | "/shops"
@@ -617,6 +639,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/shops"
     | "/tarefas"
+    | "/academia/$trackId"
     | "/invite/$token"
     | "/projects/$projectId"
     | "/settings/auditoria"
@@ -632,6 +655,7 @@ export interface FileRouteTypes {
     | "/shops/lojas-grupos"
     | "/shops/products"
     | "/track/$code"
+    | "/academia/"
     | "/projects/"
     | "/settings/"
     | "/shops/"
@@ -673,8 +697,10 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren;
   ShopsRoute: typeof ShopsRouteWithChildren;
   TarefasRoute: typeof TarefasRoute;
+  AcademiaTrackIdRoute: typeof AcademiaTrackIdRoute;
   InviteTokenRoute: typeof InviteTokenRoute;
   TrackCodeRoute: typeof TrackCodeRoute;
+  AcademiaIndexRoute: typeof AcademiaIndexRoute;
   TrackIndexRoute: typeof TrackIndexRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
@@ -776,6 +802,20 @@ declare module "@tanstack/react-router" {
       path: "/tarefas";
       fullPath: "/tarefas";
       preLoaderRoute: typeof TarefasRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/academia/": {
+      id: "/academia/";
+      path: "/academia";
+      fullPath: "/academia/";
+      preLoaderRoute: typeof AcademiaIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/academia/$trackId": {
+      id: "/academia/$trackId";
+      path: "/academia/$trackId";
+      fullPath: "/academia/$trackId";
+      preLoaderRoute: typeof AcademiaTrackIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/invite/$token": {
@@ -1195,8 +1235,10 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,
   TarefasRoute: TarefasRoute,
+  AcademiaTrackIdRoute: AcademiaTrackIdRoute,
   InviteTokenRoute: InviteTokenRoute,
   TrackCodeRoute: TrackCodeRoute,
+  AcademiaIndexRoute: AcademiaIndexRoute,
   TrackIndexRoute: TrackIndexRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,

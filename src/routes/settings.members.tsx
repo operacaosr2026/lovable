@@ -20,7 +20,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
   Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp, AlertTriangle,
-  Lightbulb,
+  Lightbulb, GraduationCap, PenLine,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -52,6 +52,7 @@ const SECTION_LABELS: Record<Section, string> = {
   atendimento: "Atendimento",
   chargebacks: "Chargebacks",
   consultor: "Inteligência",
+  academia: "Academia",
   notificacoes: "Notificações (sino)",
   lg_dashboard: "Dashboard",
   lg_diario: "Diário",
@@ -63,6 +64,7 @@ const SECTION_LABELS: Record<Section, string> = {
   at_kpi: "KPI",
   at_config: "Configurações",
   bl_indicadores: "Indicadores das lojas",
+  ac_editar: "Criar e editar trilhas",
   nt_meta: "Meta Facebook",
   nt_shopify: "Shopify",
   nt_disputas: "Disputas",
@@ -101,13 +103,16 @@ const NT_HINTS: Partial<Record<Section, string>> = {
 };
 // Subpermissões de Banco de Lojas (aparecem quando Banco de Lojas está marcado).
 const BL_SUBTABS: Section[] = ["bl_indicadores"];
+// Subpermissões da Academia (aparecem quando Academia está marcada).
+const AC_SUBTABS: Section[] = ["ac_editar"];
 const SUB_HINTS: Partial<Record<Section, string>> = {
   bl_indicadores: "Hold, pedidos/dia, payout e nota nos cards; aba Pedidos da loja",
+  ac_editar: "Criar trilhas e aulas, editar conteúdo e ver o progresso da equipe",
 };
-const SUBTABS: Partial<Record<Section, Section[]>> = { banco_lojas: BL_SUBTABS, lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
+const SUBTABS: Partial<Record<Section, Section[]>> = { banco_lojas: BL_SUBTABS, academia: AC_SUBTABS, lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "consultor", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "consultor", "academia", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
@@ -283,10 +288,10 @@ function MembersPage() {
 
 const SECTION_ICONS: Partial<Record<Section, any>> = {
   dashboard: LayoutDashboard, metas: Target, tarefas: CheckSquare, produtos: Package, caixa: Wallet,
-  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, consultor: Lightbulb, notificacoes: Bell,
+  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, consultor: Lightbulb, academia: GraduationCap, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
-  at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings, bl_indicadores: BarChart3,
+  at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings, bl_indicadores: BarChart3, ac_editar: PenLine,
   nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_sistema: AlertTriangle, nt_tarefas: CheckSquare,
   nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, nt_consultor: Lightbulb, cfg_seguranca: Shield, cfg_integracoes: Plug,
   shops: Store, projects: FolderKanban, sops: Workflow,
@@ -343,7 +348,7 @@ function PermissionsForm({
   };
 
   const PAGE_TABS = TAB_SECTIONS.filter((t) => t !== "notificacoes");
-  const ALL_TABS = [...TAB_SECTIONS, ...BL_SUBTABS, ...LG_SUBTABS, ...AT_SUBTABS, ...NT_TYPES];
+  const ALL_TABS = [...TAB_SECTIONS, ...BL_SUBTABS, ...AC_SUBTABS, ...LG_SUBTABS, ...AT_SUBTABS, ...NT_TYPES];
   const allTabs = ALL_TABS.every((t) => has(t, null));
   const setAllTabs = (on: boolean) => {
     const rest = value.filter((p) => !ALL_TABS.includes(p.section));
@@ -355,7 +360,9 @@ function PermissionsForm({
     if (!subs) return toggle(t, null);
     const on = !has(t, null);
     const rest = value.filter((p) => p.section !== t && !subs.includes(p.section));
-    onChange(on ? [...rest, { section: t, resource_id: null }, ...subs.map((st) => ({ section: st, resource_id: null }))] : rest);
+    // Academia: ver não libera editar.
+    const autoSubs = t === "academia" ? [] : subs;
+    onChange(on ? [...rest, { section: t, resource_id: null }, ...autoSubs.map((st) => ({ section: st, resource_id: null }))] : rest);
   };
 
   return (
