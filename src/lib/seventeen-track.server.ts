@@ -146,10 +146,11 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!shops.length) return result;
   const integBy = new Map(shops.map((i) => [i.shop_id, i]));
 
-  // Pedidos em aberto dos últimos 60 dias (sem entregue, cancelado ou
-  // reembolsado) — 60 pra pedido muito atrasado (o que vira chargeback)
-  // continuar sendo acompanhado.
-  const since = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
+  // Pedidos em aberto dos últimos 180 dias (sem entregue, cancelado ou
+  // reembolsado) — pedido atrasado (o que vira chargeback) continua sendo
+  // acompanhado enquanto não é entregue; mesma janela da aba Rastreamento.
+  // Não gasta crédito: os antigos já estão cadastrados no 17track.
+  const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
     .select("id,user_id,shop_id,tracking_code,shipped_at,delivered_at,problem_at,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))

@@ -12,6 +12,9 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       shop_ids: z.array(z.string().uuid()),
       from: z.string(),
       to: z.string(),
+      // Aba Rastreamento: pedido não entregue de antes do período continua na
+      // lista (senão some do radar quando passa dos 30 dias). O Dashboard não usa.
+      include_open_before: z.boolean().optional(),
     }).parse(d)
   )
   .handler(async ({ context, data }: any) => {
@@ -32,6 +35,26 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       .filter("raw->>cancelled_at", "is", null)
       .order("order_date", { ascending: false }));
     if (error) throw new Error(error.message);
+
+    if (data.include_open_before) {
+      // Até 180 dias pra trás: pedido em aberto (sem entrega, devolução,
+      // cancelamento ou reembolso) de antes do período escolhido.
+      const floor = new Date(new Date(`${data.from}T00:00:00Z`).getTime() - 180 * 86_400_000).toISOString().slice(0, 10);
+      const { data: older, error: olderErr } = await selectAll(supabaseAdmin
+        .from("shop_orders")
+        .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
+        .eq("user_id", context.ownerId)
+        .in("shop_id", data.shop_ids)
+        .lt("order_date", data.from)
+        .gte("order_date", floor)
+        .is("delivered_at", null)
+        .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
+        .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
+        .filter("raw->>cancelled_at", "is", null)
+        .order("order_date", { ascending: false }));
+      if (olderErr) throw new Error(olderErr.message);
+      rows.push(...(older ?? []).map((o: any) => ({ ...o, before_period: true })));
+    }
 
     // Data do último evento real de rastreio (17track), quando o pedido tem
     // integração ativa — mais confiável que shipped_at pra saber se o rastreio

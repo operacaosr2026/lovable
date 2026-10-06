@@ -200,7 +200,7 @@ export function LgLogistica({
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["lg-logistics", cacheKey, from, to],
-    queryFn: () => listFn({ data: { shop_ids: shopIds, from, to } }),
+    queryFn: () => listFn({ data: { shop_ids: shopIds, from, to, include_open_before: true } }),
     enabled: shopIds.length > 0,
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: false,
@@ -621,6 +621,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 {isConsolidated && <p className="text-[10px] font-medium text-primary truncate">{shopNames[o.shop_id] ?? ""}</p>}
               </div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.order_date)}</div>
+              {o.before_period && <div className="text-[10px] text-amber-600 text-center" title="Pedido de antes do período escolhido — continua aqui porque ainda não foi entregue">antes do período</div>}
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
               <div className="text-xs truncate">
