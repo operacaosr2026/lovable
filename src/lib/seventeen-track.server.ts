@@ -152,7 +152,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   // Não gasta crédito: os antigos já estão cadastrados no 17track.
   const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-    .select("id,user_id,shop_id,tracking_code,shipped_at,delivered_at,problem_at,fulfillments:raw->fulfillments")
+    .select("id,user_id,shop_id,order_date,tracking_code,shipped_at,delivered_at,problem_at,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))
     .not("tracking_code", "is", null)
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
@@ -180,9 +180,14 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   const dirtyExtras = new Set<string>();
 
   // 1. Cadastro dos códigos que ainda não estão no 17track (principal e extras).
+  // Só pedido com até 60 dias gasta crédito: o mais antigo que já está
+  // cadastrado continua sendo atualizado, mas não se cadastra pedido velho
+  // (ex.: loja reativada com centenas de pedidos antigos em aberto).
+  const registerSince = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
   type Reg = { o: any; number: string; extra: boolean };
   const toRegister: Reg[] = [];
   for (const o of orders) {
+    if (String(o.order_date) < registerSince) continue;
     const t = trackBy.get(o.id);
     if (!t?.registered_17track_at || String(t.tracking_number ?? "").toUpperCase() !== code(o)) toRegister.push({ o, number: code(o), extra: false });
     for (const x of extrasBy.get(o.id) ?? []) if (!x.registered_17track_at) toRegister.push({ o, number: x.number, extra: true });
