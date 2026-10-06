@@ -152,7 +152,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   // Não gasta crédito: os antigos já estão cadastrados no 17track.
   const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-    .select("id,user_id,shop_id,order_date,tracking_code,shipped_at,delivered_at,problem_at,fulfillments:raw->fulfillments")
+    .select("id,user_id,shop_id,order_date,tracking_code,shipped_at,delivered_at,problem_at,logistics_note,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))
     .not("tracking_code", "is", null)
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
@@ -386,6 +386,21 @@ async function pushToShopify(o: any, number: string, item: any, previousLabel: s
   }
 }
 
+// Motivo do problema em português, pela última movimentação do rastreio
+// (inclusive os textos em chinês do China Post).
+export function problemNote(lastLabel: string | null | undefined, status: string | null | undefined): string {
+  const t = String(lastLabel ?? "");
+  if (/清关异常|customs.*(exception|abnormal|hold|failed)|clearance.*(exception|failed|abnormal)/i.test(t)) return "Erro no desembaraço aduaneiro";
+  if (/没收|seiz|confiscat|destroy/i.test(t)) return "Apreendido na alfândega";
+  if (/address|地址/i.test(t)) return "Endereço incorreto ou incompleto";
+  if (/拒收|refus/i.test(t)) return "Cliente recusou o pacote";
+  if (/退回|return(ed)? to sender|returning/i.test(t)) return "Devolvido ao remetente";
+  if (/投递失败|未妥投|无法投递|attempt|failed|unable to deliver|undeliver/i.test(t)) return "Tentativa de entrega falhou";
+  if (status === "DeliveryFailure") return "Tentativa de entrega falhou";
+  if (status === "Expired") return "Rastreio sem atualização há muito tempo";
+  return "Problema no rastreio";
+}
+
 // Grava o rastreio de um pedido. Devolve false quando não havia nada novo.
 // holdDelivered: pedido com outro pacote ainda não entregue — mesmo com este
 // entregue, o pedido não vira "entregue" (fica enviado).
@@ -425,7 +440,12 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   if (target === "delivered") {
     orderUpdate.delivered_at = eventDate;
     orderUpdate.delivery_status = "delivered";
-  } else if (target === "problem" && !o.problem_at) orderUpdate.problem_at = eventDate;
+  } else if (target === "problem") {
+    if (!o.problem_at) orderUpdate.problem_at = eventDate;
+    // Motivo na Obs da aba Rastreamento — só se estiver vazia (nunca apaga o
+    // que alguém escreveu à mão).
+    if (!String(o.logistics_note ?? "").trim()) orderUpdate.logistics_note = problemNote(lastLabel, status);
+  }
   const url = buildTrackingUrl(template, String(o.tracking_code));
   if (url) orderUpdate.tracking_url = url;
 
