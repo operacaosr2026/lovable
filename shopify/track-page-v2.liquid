@@ -176,6 +176,7 @@
         <span id="vt-tracking-number"></span>
       </div>
       <div id="vt-timeline" class="vt-timeline"></div>
+      <button id="vt-timeline-more" class="vt-timeline-more" type="button" hidden></button>
     </div>
 
     <div class="vt-support-card">
@@ -207,7 +208,7 @@
 #vt-track {
   --vt-black: #17191c; --vt-text: #1b1d20; --vt-muted: #8d9198; --vt-line: #e7e7e5;
   --vt-soft: #f6f6f4; --vt-green: #20ae4b; --vt-green-soft: #e8f8ec;
-  width: 100%; max-width: 1280px; margin: 0 auto; padding: 12px 24px 40px;
+  width: 100%; max-width: 1280px; margin: 0 auto; padding: 6px 24px 40px;
   color: var(--vt-text); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; letter-spacing: normal;
 }
 #vt-track [hidden] { display: none !important; }
@@ -299,8 +300,8 @@
 #vt-track .vt-recent-time { display: block; margin-top: 5px; color: #999; font-size: 8px; }
 
 /* RESULT PAGE */
-#vt-track .vt-result-screen { width: 100%; max-width: 1040px; margin: 0 auto; padding-top: 6px; }
-#vt-track .vt-back { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 4px 0; border: 0; background: transparent; color: #222; font-size: 14px; font-weight: 500; }
+#vt-track .vt-result-screen { width: 100%; max-width: 1040px; margin: 0 auto; padding-top: 3px; }
+#vt-track .vt-back { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 2px 0; border: 0; background: transparent; color: #222; font-size: 14px; font-weight: 500; }
 #vt-track .vt-back span { font-size: 18px; }
 
 /* RESULT HERO */
@@ -346,7 +347,7 @@
 #vt-track .vt-event-date span { display: block; color: #81858a; }
 #vt-track .vt-event-marker { position: relative; display: flex; justify-content: center; }
 #vt-track .vt-event-marker:after { content: ""; position: absolute; top: 15px; bottom: -32px; left: 50%; width: 1px; transform: translateX(-50%); background: #dedfdf; }
-#vt-track .vt-event:last-child .vt-event-marker:after { display: none; }
+#vt-track .vt-event:last-child .vt-event-marker:after, #vt-track .vt-event.vt-last .vt-event-marker:after { display: none; }
 #vt-track .vt-event-dot { position: relative; z-index: 2; width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: #c6c8ca; box-shadow: 0 0 0 4px #fff; }
 #vt-track .vt-event:first-child .vt-event-dot { background: var(--vt-green); box-shadow: 0 0 0 4px #fff, 0 0 0 7px #e9f8ed; }
 #vt-track .vt-event-content { min-width: 0; padding-left: 6px; }
@@ -355,6 +356,9 @@
 #vt-track .vt-event-location svg { width: 13px; height: 13px; flex: 0 0 13px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 #vt-track .vt-event-description { margin-top: 3px; color: #888d93; font-size: 9px; line-height: 1.4; }
 #vt-track .vt-timeline-empty { padding: 24px 0; color: #888; font-size: 11px; }
+#vt-track .vt-timeline-more { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 4px 0 8px; padding: 12px 0 4px; border: 0; border-top: 1px solid #ededeb; background: transparent; color: #17191c; font-size: 14px; font-weight: 600; }
+#vt-track .vt-timeline-more svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s ease; }
+#vt-track .vt-timeline-more.open svg { transform: rotate(180deg); }
 
 /* SUPPORT */
 #vt-track .vt-support-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 18px; padding: 16px 22px; border: 1px solid #ececeb; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.02); }
@@ -393,7 +397,7 @@
 
 /* MOBILE */
 @media (max-width: 600px) {
-  #vt-track { padding: 14px 14px 32px; }
+  #vt-track { padding: 7px 14px 32px; }
   #vt-track .vt-heading h1 { font-size: 28px; }
   #vt-track .vt-search-card { padding: 18px; }
   #vt-track .vt-visual { min-height: 210px; }
@@ -401,7 +405,7 @@
   #vt-track .vt-floating { top: 1px; right: 0; padding: 7px 9px; }
   #vt-track .vt-recent-list { grid-template-columns: repeat(2,minmax(0,1fr)); }
   #vt-track .vt-result-screen { padding-top: 0; }
-  #vt-track .vt-back { margin-bottom: 22px; }
+  #vt-track .vt-back { margin-bottom: 12px; }
   #vt-track .vt-result-hero { padding-bottom: 21px; }
   #vt-track .vt-result-status-row { gap: 12px; }
   #vt-track .vt-result-status-icon { width: 54px; height: 54px; flex-basis: 54px; }
@@ -589,11 +593,28 @@
     }
   }
 
-  // Eventos da API: { at, description, location } — mais novo primeiro.
+  // Eventos da API: { at, description, location } — mais novo primeiro. Mostra
+  // os 3 mais recentes; o botão abre o resto.
+  var VISIBLE_EVENTS = 3;
+  var CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>';
+  function setExpanded(open) {
+    var items = document.querySelectorAll("#vt-timeline .vt-event");
+    var more = $("vt-timeline-more");
+    for (var i = 0; i < items.length; i++) {
+      items[i].hidden = !open && i >= VISIBLE_EVENTS;
+      items[i].classList.toggle("vt-last", !open && i === VISIBLE_EVENTS - 1);
+    }
+    more.hidden = items.length <= VISIBLE_EVENTS;
+    more.classList.toggle("open", open);
+    more.innerHTML = (open ? "Show less" : "Show all updates (" + items.length + ")") + CHEVRON;
+  }
+  $("vt-timeline-more").addEventListener("click", function () { setExpanded(!this.classList.contains("open")); });
+
   function renderTimeline(events) {
     var box = $("vt-timeline");
     if (!events.length) {
       box.innerHTML = '<div class="vt-timeline-empty">Tracking updates will appear here as your package moves.</div>';
+      $("vt-timeline-more").hidden = true;
       return;
     }
     var pin = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>';
@@ -607,6 +628,7 @@
           (e.location ? '<div class="vt-event-location">' + pin + "<span>" + esc(e.location) + "</span></div>" : "") +
         "</div></div>";
     }).join("");
+    setExpanded(false);
   }
 
   /* ===== RECENT DELIVERIES (só dados reais da API) ===== */
