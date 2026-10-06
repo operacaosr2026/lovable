@@ -94,7 +94,7 @@ export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
       location = usPlace(e.location).display;
       // "Delivered to local carrier" é repasse entre transportadoras, não entrega
       // — pro cliente não achar que já chegou.
-      description = description.replace(/^delivered to\b/i, "Handed over to");
+      if (/^delivered to\b/i.test(description)) description = "Arrived at local delivery facility";
     }
     // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
     const key = `${location}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
@@ -113,7 +113,7 @@ const LOCAL_TRANSIT = "In transit to local facility";
 const INFO_ONLY = /information received|info received|label created|pre-shipment|electronic information|order created|shipment information/i;
 const OUT_FOR_DELIVERY = /out for delivery/i;
 // Entrega ao cliente ("Delivered, Front Door", "Parcel has been delivered") —
-// não "Delivered to local carrier" (repasse; na tela vira "Handed over to…").
+// não "Delivered to local carrier" (repasse; na tela vira "Arrived at local delivery facility").
 const DELIVERED = /^delivered\b(?!\s+to\b)|has been delivered/i;
 
 // Etapas: Ordered · Order Ready · In Transit · Out for Delivery · Delivered,
