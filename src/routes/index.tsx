@@ -7,13 +7,13 @@ import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
   ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
-  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target,
+  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target, ShoppingBag,
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, LabelList,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { getDashboardOverview } from "@/lib/lg-cards.functions";
+import { getDashboardOverview, type DashboardProductRow } from "@/lib/lg-cards.functions";
 import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
@@ -641,6 +641,83 @@ const fmtDays = (d: number | null) => (d == null ? "—" : `${d.toFixed(1)}d`);
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────────
 
+function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; loading: boolean }) {
+  const total = rows.reduce((s, r) => s + r.faturamento, 0);
+  const totalUnidades = rows.reduce((s, r) => s + r.unidades, 0);
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 mt-4 min-w-0 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
+            <ShoppingBag className="size-4.5" />
+          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">Produtos vendidos</p>
+        </div>
+        {!loading && rows.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {rows.length} produto{rows.length === 1 ? "" : "s"} · {totalUnidades.toLocaleString("pt-BR")} unidade{totalUnidades === 1 ? "" : "s"}
+          </p>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="h-[160px] bg-muted animate-pulse rounded-xl" />
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-8 text-center">Nenhum produto vendido no período.</p>
+      ) : (
+        <div className="max-h-[360px] overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-card">
+              <tr className="text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border">
+                <th className="text-left font-semibold py-2 pr-3">Produto</th>
+                <th className="text-right font-semibold py-2 px-3">Pedidos</th>
+                <th className="text-right font-semibold py-2 px-3 hidden sm:table-cell">Unidades</th>
+                <th className="text-right font-semibold py-2 px-3">Faturamento</th>
+                <th className="text-left font-semibold py-2 pl-3 w-[22%] hidden md:table-cell">% do faturamento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const pct = total > 0 ? r.faturamento / total : 0;
+                return (
+                  <tr key={r.key} className="border-b border-border/60 last:border-0">
+                    <td className="py-2 pr-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {r.image_url ? (
+                          <img src={r.image_url} alt="" className="size-8 rounded-lg object-cover shrink-0 bg-muted" />
+                        ) : (
+                          <div className="size-8 rounded-lg bg-muted grid place-items-center shrink-0">
+                            <Package className="size-3.5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-foreground font-medium truncate">{r.name}</p>
+                          {!r.product_id && <p className="text-[10px] text-muted-foreground">Fora do catálogo</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums font-medium">{r.pedidos.toLocaleString("pt-BR")}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{r.unidades.toLocaleString("pt-BR")}</td>
+                    <td className="py-2 px-3 text-right tabular-nums font-semibold">{fmtMoney(r.faturamento)}</td>
+                    <td className="py-2 pl-3 hidden md:table-cell">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${pct * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground tabular-nums w-10 text-right">{(pct * 100).toFixed(1)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard() {
   const { session } = useAuth();
   const getDashboardOverviewFn = useServerFn(getDashboardOverview);
@@ -717,6 +794,7 @@ function Dashboard() {
   };
   const chartData: DailyPoint[] = (data as any)?.chartData ?? [];
   const shopBreakdown: ShopBreakdownRow[] = (data as any)?.shopBreakdown ?? [];
+  const productBreakdown: DashboardProductRow[] = (data as any)?.productBreakdown ?? [];
 
   const slices = useMemo(() => buildShopSlices(shopBreakdown), [shopBreakdown]);
   const donutTotal = slices.reduce((s, x) => s + x.faturamento, 0);
@@ -956,6 +1034,8 @@ function Dashboard() {
             trend={opsTrend.map((p) => ({ label: p.label, value: p.avgDeliveryDays }))} fmt={(v) => `${v.toFixed(1)}d`} />
         </div>
       </div>
+
+      <ProductsSoldCard rows={productBreakdown} loading={isLoading} />
     </PageShell>
   );
 }

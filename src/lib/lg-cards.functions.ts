@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEstornoStats } from "@/lib/estorno-daily.server";
 import { attachLiveShopifyNames, costProductsFor, getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
-import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
+import { matchLineItemProduct, orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
@@ -598,6 +598,11 @@ export const saveLgCurrencyRates = createServerFn({ method: "POST" })
 
 // ─── Overview do Dashboard (home) ──────────────────────────────────────────────
 
+export type DashboardProductRow = {
+  key: string; product_id: string | null; name: string; image_url: string | null;
+  pedidos: number; unidades: number; faturamento: number;
+};
+
 const emptyDashboardOverview = {
   totals: {
     faturamento: 0, faturamentoDelta: 0,
@@ -609,6 +614,7 @@ const emptyDashboardOverview = {
   },
   chartData: [] as { date: string; faturamento: number; anuncios: number; custo: number; lucro: number }[],
   shopBreakdown: [] as { shop_id: string; shop_name: string; faturamento: number; taxaEstorno: number; totalPedidos: number; totalEstornos: number }[],
+  productBreakdown: [] as DashboardProductRow[],
   // Lojas/cards do Dashboard — usados pelos indicadores de logística e tarefas
   // ao lado do gráfico (mesma busca da aba Rastreamento).
   shopIds: [] as string[],
@@ -669,7 +675,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       estornoStats,
       costRes, feesRes, prevFeesRes, adsRes, prevAdsRes,
       refundsAndChargebacks, prevRefundsAndChargebacks,
-      costProducts,
+      costProducts, catalogRes,
     ] = await Promise.all([
       // Nome exibido segue o vínculo ao vivo com a Shopify (shopify_store_id),
       // não o nome interno cadastrado em `shops` — evita mostrar um nome antigo
@@ -695,6 +701,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       getPanelRefundsAndChargebacks(ownerId, shopIds, from, to),
       getPanelRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
       costProductsFor(supabaseAdmin, ownerId),
+      supabaseAdmin.from("products").select("id,name,keywords,main_image_url").eq("user_id", ownerId),
     ]);
 
     const shopNameById = new Map(shopsWithLiveNames.map((s) => [s.id, s.name]));
@@ -725,6 +732,36 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       byDate.set(d, { faturamento: prevDay.faturamento + rev, custo: prevDay.custo + cost });
     }
     const pedidos = (monthOrdersRes.data ?? []).length;
+
+    // Produtos vendidos no período: item classificado pelo catálogo (nome ou
+    // palavra-chave, mesma regra do custo); sem correspondência, agrupa pelo
+    // título do item na Shopify. Faturamento = preço × qtd − descontos do item.
+    const catalog = (catalogRes.data ?? []) as { id: string; name: string; keywords: string[] | null; main_image_url: string | null }[];
+    const productsByKey = new Map<string, DashboardProductRow>();
+    for (const o of (monthOrdersRes.data ?? []) as any[]) {
+      const seen = new Set<string>();
+      for (const li of (o.line_items ?? []) as any[]) {
+        const title = String(li?.title ?? li?.name ?? "").trim() || "Sem nome";
+        const match = matchLineItemProduct(title, catalog);
+        const key = match ? `p:${match.id}` : `t:${title.toLowerCase()}`;
+        const qty = Number(li?.quantity ?? 0);
+        const allocs = Array.isArray(li?.discount_allocations) ? li.discount_allocations : [];
+        const discount = allocs.length
+          ? allocs.reduce((s: number, a: any) => s + Number(a?.amount ?? 0), 0)
+          : Number(li?.total_discount ?? 0);
+        const row = productsByKey.get(key) ?? {
+          key, product_id: match?.id ?? null, name: match?.name ?? title, image_url: match?.main_image_url ?? null,
+          pedidos: 0, unidades: 0, faturamento: 0,
+        };
+        row.unidades += qty;
+        row.faturamento += Number(li?.price ?? 0) * qty - discount;
+        if (!seen.has(key)) { row.pedidos += 1; seen.add(key); }
+        productsByKey.set(key, row);
+      }
+    }
+    const productBreakdown = Array.from(productsByKey.values())
+      .map((r) => ({ ...r, faturamento: Math.round(r.faturamento * 100) / 100 }))
+      .sort((a, b) => b.faturamento - a.faturamento || b.pedidos - a.pedidos);
 
     // Período anterior — só totais por loja, não precisa de série diária
     const prevRevenueByShop = new Map<string, number>();
@@ -844,6 +881,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       },
       chartData,
       shopBreakdown,
+      productBreakdown,
       shopIds,
       cardIds,
     };

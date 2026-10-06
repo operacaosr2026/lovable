@@ -75,3 +75,17 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
 // Opções a partir de uma linha de shop_orders (order_date + tracking_code no select).
 export const costOpts = (o: { order_date?: string | null; tracking_code?: string | null }): OrderCostOpts =>
   ({ date: o.order_date ?? null, hasTracking: !!o.tracking_code });
+
+// Produto do catálogo que casa com o título do item (mesma regra do custo:
+// nome ou palavra-chave contida no título, vence o trecho mais longo).
+export function matchLineItemProduct<P extends { name: string; keywords: string[] | null }>(title: string, products: P[]): P | null {
+  const t = (title || "").toLowerCase();
+  let best: { p: P; len: number } | null = null;
+  for (const p of products) {
+    for (const c of [p.name, ...(p.keywords ?? [])]) {
+      const cLower = c.trim().toLowerCase();
+      if (cLower && t.includes(cLower) && (!best || cLower.length > best.len)) best = { p, len: cLower.length };
+    }
+  }
+  return best ? best.p : null;
+}
