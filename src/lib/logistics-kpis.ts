@@ -49,9 +49,12 @@ export function businessDaysBetween(fromIso: string, toIso: string, cal?: Postin
   return count;
 }
 // Motivo extra (além do que o badge de status já mostra) pra sinalizar um pedido
-// parado: enviado há 5+ dias sem atualização, ou pedido feito há 15+ dias e ainda
+// parado: enviado há 5+ dias sem atualização, ou pedido feito há 20+ dias e ainda
 // sem entrega. Não cobre "pendente de envio"/"problema", que o badge já deixa claro,
 // nem "esperando cliente" — a ação nesse caso já não é da loja.
+// 20 dias: compra→entrega dos pedidos JXC é 15d na mediana, 17d em 80% e 19d em
+// 95% (out/2026) — com 15 a lista enchia de pedido dentro do prazo normal.
+const DELIVERY_ALERT_DAYS = 20;
 export function attentionReason(o: any, nowMs: number): string | null {
   const status = o.delivery_status ?? "pending_shipment";
   if (status === "waiting_customer") return null;
@@ -63,12 +66,12 @@ export function attentionReason(o: any, nowMs: number): string | null {
   }
   if (status !== "delivered" && status !== "returned") {
     const d = daysSince(o.order_date, nowMs);
-    if (d != null && d >= 15) return `${Math.floor(d)}d sem entrega`;
+    if (d != null && d >= DELIVERY_ALERT_DAYS) return `${Math.floor(d)}d sem entrega`;
   }
   return null;
 }
 // Precisa de atenção: pendente de envio há mais de 3 dias úteis, marcado como
-// problema, parado sem atualização de rastreio há 5+ dias, ou feito há 15+
+// problema, parado sem atualização de rastreio há 5+ dias, ou feito há 20+
 // dias e ainda não entregue (antes era 7/25 — a maioria dos chargebacks abre
 // antes de 15 dias da compra, então 25 avisava tarde demais). "Esperando cliente" fica de fora — a bola já não
 // está com a loja. Pendente de envio recente (até 3 dias úteis) é normal, não
