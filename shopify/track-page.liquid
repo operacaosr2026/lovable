@@ -70,6 +70,7 @@
   #vt-track .vt-ev p { margin: 0; font-size: 17px; line-height: 1.4; }
   #vt-track .vt-ev small { color: #777; font-size: 15px; }
   #vt-track .vt-more { background: none; color: inherit; padding: 0; height: auto; font-weight: 400; font-size: 17px; text-decoration: underline; }
+  #vt-track .vt-map-col { padding-top: 56px; }
   #vt-track .vt-map { position: relative; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid #e5e5e5; }
   #vt-track .vt-map iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
   #vt-track .vt-muted { color: #777; }
@@ -83,6 +84,7 @@
     #vt-track .vt-step + .vt-step::before { top: 14px; right: calc(50% + 20px); width: calc(100% - 40px); height: 4px; }
     #vt-track .vt-step-label { font-size: 11px; } #vt-track .vt-step-date { font-size: 10px; }
     #vt-track .vt-cols { grid-template-columns: 1fr; }
+    #vt-track .vt-map-col { padding-top: 0; }
   }
 </style>
 
@@ -138,14 +140,13 @@
       }).join("") + "</ol>";
       if (events.length > 3) html += '<button type="button" class="vt-more" data-more>Show History</button>';
     }
-    html += "</section><section><h2>Package Info</h2><p>Destination</p>";
+    html += "</section><section class=\"vt-map-col\">";
+    // Só o mapa do destino (cidade/estado), sem títulos.
     if (t.destination) {
       var q = encodeURIComponent(t.destination + ", USA");
       html += '<div class="vt-map"><iframe loading="lazy" title="Destination" src="https://maps.google.com/maps?q=' + q + '&z=11&output=embed"></iframe></div>';
-    } else {
-      html += '<p class="vt-muted">United States</p>';
     }
-    html += '<p class="vt-muted" style="margin-top:16px;font-size:14px">Tracking number: ' + esc(t.trackingNumber) + "</p></section></div>";
+    html += "</section></div>";
 
     result.innerHTML = html;
     result.hidden = false;
