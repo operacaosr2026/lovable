@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sanitizeEvents, buildSteps, officialEdd, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
+import { sanitizeEvents, buildSteps, officialEdd, usPlace, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
 
 // Rastreio público (página /track do sistema e página de rastreio da loja
 // Voultie via /api/public/track), sem login, uma URL pra todas as lojas e
@@ -107,4 +107,67 @@ export async function lookupPublicOrder(data: { orderNumber: string; contact: st
   }) as any;
   if (!match) return { found: false };
   return { found: true, trackingCode: match.tracking_code ?? null, orderNumber: match.order_number };
+}
+
+// ─── Recent deliveries (bloco "Recent Deliveries" da página Track Your Order) ───
+// Entregas REAIS recentes, só do que o sync já gravou (nenhuma chamada externa).
+// Público: a resposta é montada aqui campo a campo — cidade/estado de destino,
+// país, status e hora do evento. Nada de nome, endereço, CEP, pedido, código de
+// rastreio ou id (o id do pedido só serve pra não repetir o mesmo envio).
+export type RecentDelivery = { city: string; region: string; country: "US"; status: "Delivered" | "Out for Delivery"; at: string };
+
+const RECENT_WINDOW_DAYS = 14;
+const RECENT_MAX = 20;
+// Cidade como o cliente digitou ("MIAMI", "new york") → "Miami", "New York";
+// mista ("McAllen") fica como veio.
+const titleCase = (c: string) => (c === c.toUpperCase() || c === c.toLowerCase()
+  ? c.toLowerCase().replace(/(^|[\s-])([a-z])/g, (_m, p, l) => p + l.toUpperCase()) : c);
+
+export async function listRecentDeliveries(): Promise<RecentDelivery[]> {
+  const since = new Date(Date.now() - RECENT_WINDOW_DAYS * 86_400_000).toISOString();
+  // Candidatos: status geral do rastreio com "deliver" (Delivered, Out for
+  // delivery…), mais recentes primeiro. Folga acima do limite por causa dos que
+  // caem no filtro (sem cidade segura, "Undelivered"…).
+  const { data: tracks, error } = await supabaseAdmin.from("shop_order_tracking")
+    .select("order_id,tracking_status,last_event_at")
+    .ilike("tracking_status", "%deliver%")
+    .gte("last_event_at", since)
+    .order("last_event_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  if (!tracks?.length) return [];
+
+  // Destino de todos de uma vez (sem N+1): só cidade, estado e país do endereço.
+  const ids = [...new Set(tracks.map((t) => t.order_id))];
+  const { data: orders, error: oErr } = await supabaseAdmin.from("shop_orders")
+    .select("id,delivery_status,city:raw->shipping_address->>city,province:raw->shipping_address->>province_code,country:raw->shipping_address->>country_code")
+    .in("id", ids);
+  if (oErr) throw new Error(oErr.message);
+  const orderBy = new Map((orders ?? []).map((o: any) => [o.id as string, o]));
+
+  const seen = new Set<string>();
+  const out: RecentDelivery[] = [];
+  for (const t of tracks) {
+    if (out.length >= RECENT_MAX) break;
+    if (seen.has(t.order_id) || !t.last_event_at) continue;
+    const o: any = orderBy.get(t.order_id);
+    if (!o || o.country !== "US" || !o.city || !o.province) continue;
+    // Mesma normalização do /api/public/track.
+    const st = normalizeStatus(t.tracking_status, o.delivery_status === "delivered");
+    if (st !== "Delivered" && st !== "OutForDelivery") continue;
+    // Mesma validação de local da página: só EUA, estado válido, sem texto
+    // estranho (não-ASCII, China/alfândega…). Sem cidade segura, fica de fora.
+    const place = usPlace(`${o.city}, ${o.province}`).display;
+    const cut = place ? place.lastIndexOf(", ") : -1;
+    if (!place || cut <= 0) continue;
+    seen.add(t.order_id);
+    out.push({
+      city: titleCase(place.slice(0, cut).trim()),
+      region: place.slice(cut + 2).trim(),
+      country: "US",
+      status: st === "Delivered" ? "Delivered" : "Out for Delivery",
+      at: new Date(t.last_event_at).toISOString(),
+    });
+  }
+  return out;
 }

@@ -25,7 +25,8 @@ const US_STATES = new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA
 
 // Local nos EUA ("Phoenix,AZ", "MA, US", "US, TX 76051"). isUS diz se o lugar é
 // nos EUA mesmo sem estado ("US"); display é o que aparece (sem CEP), só com estado.
-function usPlace(loc: string | null | undefined): { isUS: boolean; display: string | null } {
+// Também usada em "Recent deliveries" (public-tracking.server.ts) pra validar a cidade.
+export function usPlace(loc: string | null | undefined): { isUS: boolean; display: string | null } {
   const s = (loc ?? "").trim();
   if (!s || HIDDEN_EVENT.test(s)) return { isUS: false, display: null };
   const tokens = s.split(/\s*[,，]\s*/).map((t) => t.replace(/\s*\d{5}(-\d{4})?$/, "").trim()).filter(Boolean);

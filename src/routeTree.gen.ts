@@ -41,6 +41,7 @@ import { Route as TrackIndexRouteImport } from "./routes/track.index";
 import { Route as TrackCodeRouteImport } from "./routes/track.$code";
 import { Route as ApiAtendimentoAttachmentRouteImport } from "./routes/api/atendimento/attachment";
 import { Route as ApiAtendimentoInlineRouteImport } from "./routes/api/atendimento/inline";
+import { Route as ApiPublicRecentDeliveriesRouteImport } from "./routes/api/public/recent-deliveries";
 import { Route as ApiPublicTrackRouteImport } from "./routes/api/public/track";
 import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
 import { Route as ShopsCaixaIndexRouteImport } from "./routes/shops.caixa.index";
@@ -222,6 +223,12 @@ const ApiAtendimentoInlineRoute = ApiAtendimentoInlineRouteImport.update({
   path: "/api/atendimento/inline",
   getParentRoute: () => rootRouteImport,
 } as any);
+const ApiPublicRecentDeliveriesRoute =
+  ApiPublicRecentDeliveriesRouteImport.update({
+    id: "/api/public/recent-deliveries",
+    path: "/api/public/recent-deliveries",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicTrackRoute = ApiPublicTrackRouteImport.update({
   id: "/api/public/track",
   path: "/api/public/track",
@@ -360,6 +367,7 @@ export interface FileRoutesByFullPath {
   "/track/": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
+  "/api/public/recent-deliveries": typeof ApiPublicRecentDeliveriesRoute;
   "/api/public/track": typeof ApiPublicTrackRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
@@ -406,6 +414,7 @@ export interface FileRoutesByTo {
   "/track": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
+  "/api/public/recent-deliveries": typeof ApiPublicRecentDeliveriesRoute;
   "/api/public/track": typeof ApiPublicTrackRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
@@ -460,6 +469,7 @@ export interface FileRoutesById {
   "/track/": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
+  "/api/public/recent-deliveries": typeof ApiPublicRecentDeliveriesRoute;
   "/api/public/track": typeof ApiPublicTrackRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
   "/shops/products/$productId": typeof ShopsProductsProductIdRoute;
@@ -515,6 +525,7 @@ export interface FileRouteTypes {
     | "/track/"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
+    | "/api/public/recent-deliveries"
     | "/api/public/track"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
@@ -561,6 +572,7 @@ export interface FileRouteTypes {
     | "/track"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
+    | "/api/public/recent-deliveries"
     | "/api/public/track"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
@@ -614,6 +626,7 @@ export interface FileRouteTypes {
     | "/track/"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
+    | "/api/public/recent-deliveries"
     | "/api/public/track"
     | "/shops/lojas-grupos/$cardId"
     | "/shops/products/$productId"
@@ -653,6 +666,7 @@ export interface RootRouteChildren {
   TrackIndexRoute: typeof TrackIndexRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
+  ApiPublicRecentDeliveriesRoute: typeof ApiPublicRecentDeliveriesRoute;
   ApiPublicTrackRoute: typeof ApiPublicTrackRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
   ApiPublicHooksConsultantWeeklyRoute: typeof ApiPublicHooksConsultantWeeklyRoute;
@@ -890,6 +904,13 @@ declare module "@tanstack/react-router" {
       path: "/api/atendimento/inline";
       fullPath: "/api/atendimento/inline";
       preLoaderRoute: typeof ApiAtendimentoInlineRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/recent-deliveries": {
+      id: "/api/public/recent-deliveries";
+      path: "/api/public/recent-deliveries";
+      fullPath: "/api/public/recent-deliveries";
+      preLoaderRoute: typeof ApiPublicRecentDeliveriesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/public/track": {
@@ -1158,6 +1179,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrackIndexRoute: TrackIndexRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,
+  ApiPublicRecentDeliveriesRoute: ApiPublicRecentDeliveriesRoute,
   ApiPublicTrackRoute: ApiPublicTrackRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
   ApiPublicHooksConsultantWeeklyRoute: ApiPublicHooksConsultantWeeklyRoute,
