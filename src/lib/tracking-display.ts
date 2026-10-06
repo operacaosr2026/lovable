@@ -92,6 +92,9 @@ export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
       continue;
     } else {
       location = usPlace(e.location).display;
+      // "Delivered to local carrier" é repasse entre transportadoras, não entrega
+      // — pro cliente não achar que já chegou.
+      description = description.replace(/^delivered to\b/i, "Handed over to");
     }
     // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
     const key = `${location}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
@@ -109,7 +112,9 @@ const LOCAL_TRANSIT = "In transit to local facility";
 
 const INFO_ONLY = /information received|info received|label created|pre-shipment|electronic information|order created|shipment information/i;
 const OUT_FOR_DELIVERY = /out for delivery/i;
-const DELIVERED = /^delivered\b|has been delivered|\bdelivered,/i;
+// Entrega ao cliente ("Delivered, Front Door", "Parcel has been delivered") —
+// não "Delivered to local carrier" (repasse; na tela vira "Handed over to…").
+const DELIVERED = /^delivered\b(?!\s+to\b)|has been delivered/i;
 
 // Etapas: Ordered · Order Ready · In Transit · Out for Delivery · Delivered,
 // com a data de quando cada uma aconteceu — pelos eventos que o cliente vê.
@@ -119,7 +124,10 @@ export function buildSteps(opts: { orderedAt: string | null; deliveredAt: string
   const ready = first();
   const transit = first(undefined, INFO_ONLY);
   const ofd = first(OUT_FOR_DELIVERY);
-  const delivered = opts.deliveredAt ?? first(DELIVERED);
+  // A etapa "Delivered" só acende com entrega confirmada (status do rastreio ou
+  // data de entrega no pedido) — nunca só porque um texto começa com "Delivered".
+  const isDelivered = !!opts.deliveredAt || opts.status === "Delivered";
+  const delivered = isDelivered ? opts.deliveredAt ?? first(DELIVERED) ?? asc[asc.length - 1]?.at ?? null : null;
   const steps: DisplayStep[] = [
     { label: "Ordered", at: opts.orderedAt },
     { label: "Order Ready", at: ready },
@@ -133,8 +141,8 @@ export function buildSteps(opts: { orderedAt: string | null; deliveredAt: string
   };
   // Etapa atual: a mais adiantada entre o status e as datas que já existem.
   let current = opts.status ? byStatus[opts.status] ?? 0 : 0;
-  steps.forEach((s, i) => { if (s.at && i > current) current = i; });
-  if (delivered) current = 4;
+  steps.forEach((s, i) => { if (s.at && i > current && i < 4) current = i; });
+  if (isDelivered) current = 4;
   return { steps, current };
 }
 
