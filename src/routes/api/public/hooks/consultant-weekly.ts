@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { recordCronRun } from "@/lib/cron-runs.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runConsultantWeekly } from "@/lib/consultant.server";
 import { reportSystemErrorAll, clearSystemErrorAll } from "@/lib/system-errors.server";
@@ -10,7 +11,7 @@ import { nyParts } from "@/lib/timezone";
 export const Route = createFileRoute("/api/public/hooks/consultant-weekly")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }) => recordCronRun("consultant-weekly", async () => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         const ny = nyParts(new Date());
@@ -26,7 +27,7 @@ export const Route = createFileRoute("/api/public/hooks/consultant-weekly")({
           await reportSystemErrorAll("job:consultant_weekly", "Inteligência: análise da semana falhou", e);
           return new Response(JSON.stringify({ error: String(e?.message ?? e) }), { status: 500 });
         }
-      },
+      }),
     },
   },
 });

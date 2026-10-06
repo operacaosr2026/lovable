@@ -3,11 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listOrders, markOrdersPaid, markOrdersShipped, recomputeRange,
-  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains,
+  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
-import { listProducts } from "@/lib/products.functions";
-import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
+import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
@@ -124,12 +123,10 @@ export function LgOrders({
     enabled:  shopIds.length > 0,
   });
 
-  const listProductsFn = useServerFn(listProducts);
-  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProductsFn() });
-  const costProducts = useMemo<CostProduct[]>(
-    () => (productsQuery.data?.products ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost })),
-    [productsQuery.data]
-  );
+  // Com histórico de custo: cada pedido usa o custo do produto na data dele.
+  const listCostProductsFn = useServerFn(listCostProducts);
+  const productsQuery = useQuery({ queryKey: ["cost-products"], queryFn: () => listCostProductsFn() });
+  const costProducts = useMemo<CostProduct[]>(() => productsQuery.data ?? [], [productsQuery.data]);
 
   const listShopDomainsFn = useServerFn(listShopDomains);
   const domainsQuery = useQuery({
@@ -217,7 +214,7 @@ export function LgOrders({
       const d = byDate.get(day)!;
       d.totalOrders++;
       d.totalItems += Number(o.items_count ?? 0);
-      d.totalCost  += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags);
+      d.totalCost  += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags, costOpts(o));
       const st = o.payment_status as string;
       if (st === "paid" || st === "shipped") d.paidCount++;
       else if (st === "pending") d.pendingCount++;
@@ -589,7 +586,7 @@ export function LgOrders({
                       {/* Order rows */}
                       {orders.map((o: any) => {
                         const sel = selected.has(o.id);
-                        const cost = orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags);
+                        const cost = orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags, costOpts(o));
                         return (
                           <div key={o.id} className={cn("grid grid-cols-[32px_1fr_80px_110px_120px_100px] gap-3 px-8 py-2 items-center border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors text-sm", sel && "bg-primary/5")}>
                             <Checkbox

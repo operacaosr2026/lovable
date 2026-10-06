@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
 import { costProductsFor, getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
-import { orderLineItemsCost } from "@/lib/product-cost-match";
+import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ async function computeAccumulatedLucro(
   const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
     // Só os produtos do pedido (raw->line_items), não o pedido inteiro da
     // Shopify (~9 KB cada): 4 MB -> 0,5 MB num mês de 440 pedidos.
-    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,line_items:raw->line_items,tags:raw->>tags")
+    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .gte("order_date", start_date).lte("order_date", end_date)),
     selectAll(supabase.from("shop_cash_entries").select("amount,date")
@@ -57,7 +57,7 @@ async function computeAccumulatedLucro(
   const orderCost = (o: any) => {
     const shopCost = costByShop.get(o.shop_id);
     const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-    return orderLineItemsCost(o.line_items, costProducts, fallback, o.tags);
+    return orderLineItemsCost(o.line_items, costProducts, fallback, o.tags, costOpts(o));
   };
   const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
   const reembolsos = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);

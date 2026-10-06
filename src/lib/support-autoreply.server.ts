@@ -106,8 +106,23 @@ export function replyHtml(corpo: string, orders: { order?: string; tracking_link
 const plainReply = (corpo: string) => corpo.replace(/\{\{TRACK_LINK(?:\s+[#\w-]+)?\}\}/g, LINK_LABEL);
 const fmtUS = (ms: number) => new Date(ms).toLocaleDateString("en-US", { timeZone: US_TIME_ZONE, month: "short", day: "numeric" });
 
-async function mark(id: string, auto_reply: string, text?: string) {
-  await supabaseAdmin.from("support_messages").update({ auto_reply, auto_reply_at: new Date().toISOString(), auto_reply_text: text ?? null }).eq("id", id);
+async function mark(id: string, auto_reply: string | null, text?: string) {
+  const { error } = await supabaseAdmin.from("support_messages")
+    .update({ auto_reply, auto_reply_at: auto_reply ? new Date().toISOString() : null, auto_reply_text: text ?? null }).eq("id", id);
+  if (error) throw new Error(`support_messages ${id}: ${error.message}`);
+}
+
+// Reserva o e-mail antes de chamar a IA/enviar: só uma rodada consegue (update
+// condicionado a auto_reply ainda vazio). Duas rodadas sobrepostas do cron, ou
+// uma marcação que falhasse depois do envio, mandavam a mesma resposta 2x ao
+// cliente. Se o processo morrer no meio, fica "enviando" — nunca reenviado.
+const SENDING = "enviando";
+async function claim(id: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.from("support_messages")
+    .update({ auto_reply: SENDING, auto_reply_at: new Date().toISOString() })
+    .eq("id", id).is("auto_reply", null).select("id");
+  if (error) throw new Error(`support_messages ${id}: ${error.message}`);
+  return (data ?? []).length > 0;
 }
 
 // Pedidos do cliente (pelo e-mail e pelo nº citado) com a situação real do rastreio.
@@ -238,6 +253,8 @@ export async function runSupportAutoReply(acc: ZohoAccount) {
   const client = new Anthropic();
 
   for (const m of (msgs ?? []) as any[]) {
+    if (!(await claim(m.id))) continue;
+    let sentMail = false;
     try {
       const d = await decideAutoReply(acc, m, client);
       if (d.kind !== "responder") { await mark(m.id, `${d.kind}: ${d.motivo}`); if (d.kind === "pulado") skipped++; continue; }
@@ -252,14 +269,17 @@ export async function runSupportAutoReply(acc: ZohoAccount) {
       const who = m.from_name ? `${m.from_name} &lt;${m.from_email}&gt;` : m.from_email;
       body += `<br><div>On ${when}, ${who} wrote:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${d.html ?? ""}</blockquote>`;
       await sendZohoMail(acc, { to: conv!.customer_email, subject, html: body, replyToMessageId: m.message_id });
+      sentMail = true;
       await mark(m.id, "enviado", plainReply(d.corpo));
       await supabaseAdmin.from("support_conversations").update({ status: "em_atendimento", updated_at: new Date().toISOString() }).eq("id", conv!.id);
       sent++;
     } catch (e: any) {
       console.error("support auto reply", m.id, e);
-      // IA sem saldo: não marca — tenta de novo na próxima rodada (dentro da janela).
-      if (isAiCreditError(e) || /sem saldo/i.test(String(e?.message))) throw e;
-      await mark(m.id, `pulado: erro ao responder (${String(e?.message ?? e).slice(0, 120)})`); skipped++;
+      // Já foi pro cliente: só a marcação/status falhou — fica "enviando", nunca reenvia.
+      if (sentMail) continue;
+      // IA sem saldo: devolve o e-mail pra fila — tenta de novo na próxima rodada (dentro da janela).
+      if (isAiCreditError(e) || /sem saldo/i.test(String(e?.message))) { await mark(m.id, null).catch(() => {}); throw e; }
+      await mark(m.id, `pulado: erro ao responder (${String(e?.message ?? e).slice(0, 120)})`).catch(() => {}); skipped++;
     }
   }
   return { sent, skipped };

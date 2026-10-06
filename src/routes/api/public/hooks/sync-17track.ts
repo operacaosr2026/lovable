@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { recordCronRun } from "@/lib/cron-runs.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
@@ -10,7 +11,7 @@ import { runSeventeenTrackSync, seventeenTrackConfigured } from "@/lib/seventeen
 export const Route = createFileRoute("/api/public/hooks/sync-17track")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }) => recordCronRun("sync-17track", async () => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         if (!seventeenTrackConfigured()) return Response.json({ skipped: "sem SEVENTEEN_TRACK_API_KEY" });
@@ -31,7 +32,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-17track")({
           for (const u of ownerIds) await reportSystemError(u, "seventeen_track:run", "Rastreio (17track) não sincronizou", e);
           return Response.json({ error: String((e as Error)?.message ?? e) }, { status: 500 });
         }
-      },
+      }),
     },
   },
 });

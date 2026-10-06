@@ -21,7 +21,10 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
 
 // Pedidos da aba Rastreamento com o status efetivo (mesma regra da tela) —
 // separado do server fn pra poder ser usado fora da tela (ex.: relatórios).
-export async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; from: string; to: string; include_open_before?: boolean }) {
+// Não exportar daqui: este arquivo é importado pelas telas, e uma função comum
+// exportada que usa supabaseAdmin quebra o build (import-protection). Pra usar
+// em outro lugar do servidor, mover pra um lg-logistics.server.ts.
+async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; from: string; to: string; include_open_before?: boolean }) {
   // Pedido reembolsado ou cancelado no Shopify não é mais problema de
   // logística/rastreio — sai da aba inteira (não só dos KPIs, como o "fora
   // do KPI" manual). "voided" cobre cancelamento antes da cobrança.

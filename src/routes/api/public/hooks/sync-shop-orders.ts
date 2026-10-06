@@ -4,12 +4,11 @@ import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag, costProductsFor, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, recomputeOrderCostForecast, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
 import { reportSystemError, clearSystemError, tracked, shopLabel, reportPaginationCap } from "@/lib/system-errors.server";
 import { upsertShopDisputes, fetchShopifyDisputes } from "@/lib/shopify-disputes.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
-import { orderLineItemsCost } from "@/lib/product-cost-match";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -18,6 +17,7 @@ import { ensureShopifyWebhooks } from "@/lib/shopify-webhooks.server";
 import { orderDateFor } from "@/lib/order-date";
 import { broadcast } from "@/lib/realtime.server";
 import { isoTodayUS } from "@/lib/timezone";
+import { recordCronRun } from "@/lib/cron-runs.server";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -48,18 +48,6 @@ async function fetchOrders(domain: string, token: string, sinceISO: string) {
   }
   warnPaginationCap("fetchOrders", domain, url);
   return out;
-}
-
-async function unitCostFor(shopId: string, userId: string, date: string, fallback: number) {
-  const { data } = await supabaseAdmin.from("shop_product_cost_history")
-    .select("unit_cost,valid_from,valid_to")
-    .eq("user_id", userId).eq("shop_id", shopId);
-  for (const r of (data ?? []).sort((a: any, b: any) => (b.valid_from ?? "").localeCompare(a.valid_from ?? ""))) {
-    const okFrom = !r.valid_from || r.valid_from <= date;
-    const okTo = !r.valid_to || r.valid_to >= date;
-    if (okFrom && okTo) return Number(r.unit_cost);
-  }
-  return Number(fallback ?? 0);
 }
 
 const PAYOUT_CATEGORY = "Depósito Shopify";
@@ -461,48 +449,15 @@ async function processShop(s: any, today: string) {
     }
   }
 
-  // recompute today's processing
+  // Previsão do pagamento ao fornecedor do dia (pedidos de hoje − D+N). Mesma
+  // regra do botão/aba Pedidos (recomputeForShop): só pedidos ainda pendentes
+  // (os pagos já saíram via lote), sem reembolsados/chargeback, respeitando
+  // conciliado e data/valor travados, categoria "Fornecedor". Antes o cron tinha
+  // uma cópia própria que somava todos os pedidos do dia — lançava de novo o
+  // custo de pedidos já pagos em lote (fornecedor em dobro no Caixa).
   const paymentDays = await getShopPaymentDays(s.shop_id);
-  const orderDate = addDays(today, -paymentDays);
-  const { data: existing } = await supabaseAdmin.from("shop_cash_entries").select("*")
-    .eq("user_id", s.user_id).eq("shop_id", s.shop_id)
-    .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate).maybeSingle();
-  if (existing && existing.source === "manual_override") return;
-
-  if (cutoff && orderDate < cutoff) {
-    if (existing) await supabaseAdmin.from("shop_cash_entries").delete().eq("id", existing.id);
-    return;
-  }
-
-  const { data: orders } = await supabaseAdmin.from("shop_orders").select("items_count,line_items:raw->line_items,tags:raw->>tags")
-    .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("order_date", orderDate);
-  const items = (orders ?? []).reduce((x: number, o: any) => x + Number(o.items_count ?? 0), 0);
-  const unit = await unitCostFor(s.shop_id, s.user_id, orderDate, s.default_unit_cost);
-  const products = await costProductsFor(supabaseAdmin, s.user_id);
-  const amount = (orders ?? []).reduce((x: number, o: any) => x + orderLineItemsCost(o.line_items, products, unit, o.tags), 0);
-
-  // ensure category
-  const { data: cat } = await supabaseAdmin.from("shop_cash_categories").select("id")
-    .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("kind", "expense").eq("name", "Custo de pedidos").maybeSingle();
-  if (!cat) {
-    await supabaseAdmin.from("shop_cash_categories").insert({
-      user_id: s.user_id, shop_id: s.shop_id, kind: "expense", name: "Custo de pedidos", position: 999,
-    });
-  }
-
-  if (existing) {
-    await supabaseAdmin.from("shop_cash_entries").update({
-      amount, date: today, description: `${items} itens`,
-    }).eq("id", existing.id);
-  } else if (amount > 0) {
-    await supabaseAdmin.from("shop_cash_entries").insert({
-      user_id: s.user_id, shop_id: s.shop_id,
-      kind: "expense", amount, date: today,
-      category: "Custo de pedidos",
-      description: `${items} itens`,
-      source: "auto", auto_kind: "order_cost", auto_ref_date: orderDate,
-    });
-  }
+  await tracked(s.user_id, `cost_forecast:${s.shop_id}`, `Previsão de custo do Caixa não recalculou — ${await shopLabel(s.shop_id)}`,
+    () => recomputeOrderCostForecast(s.user_id, s.shop_id, addDays(today, -paymentDays)));
 }
 
 // api/ssr.js tem maxDuration=300s (vercel.json, Fluid compute). Processar todas as lojas sequencialmente
@@ -723,16 +678,19 @@ export const Route = createFileRoute("/api/public/hooks/sync-shop-orders")({
         // costs_only: "ads" | "fees" | true (os dois).
         if (body?.costs_only) {
           const kind = body.costs_only;
-          return runCostsSync(request, { ads: kind !== "fees", fees: kind !== "ads" });
+          return recordCronRun(kind === "fees" ? "sync:fees" : kind === "ads" ? "sync:ads" : "sync:costs",
+            () => runCostsSync(request, { ads: kind !== "fees", fees: kind !== "ads" }));
         }
-        return runSync(request, { payoutsOnly: Boolean(body?.payouts_only), ordersOnly: Boolean(body?.orders_only) });
+        const payoutsOnly = Boolean(body?.payouts_only), ordersOnly = Boolean(body?.orders_only);
+        return recordCronRun(payoutsOnly ? "sync:payouts" : ordersOnly ? "sync:orders" : "sync:full",
+          () => runSync(request, { payoutsOnly, ordersOnly }));
       },
       // Vercel Cron (ver vercel.json "crons") só sabe chamar via GET, sem
       // corpo — sem esse handler, os 2 agendamentos diários de lá nunca
       // rodavam nada (a rota só aceitava POST). Roda a sincronização
       // completa (sem payouts_only/orders_only) como um resync mais
       // profundo, redundante ao pg_cron mais frequente.
-      GET: async ({ request }) => runSync(request, { payoutsOnly: false, ordersOnly: false }),
+      GET: async ({ request }) => recordCronRun("sync:full", () => runSync(request, { payoutsOnly: false, ordersOnly: false })),
     },
   },
 });

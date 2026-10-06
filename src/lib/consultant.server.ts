@@ -229,6 +229,7 @@ export async function buildConsultantFacts(ownerId: string) {
     const at = inp.attrs;
     const sinceMove = e.firstMoveAt ? age(e.firstMoveAt) : null;
     return {
+      at: e.createdAt,
       features: at ? orderFeatures({ ...at, createdAt: e.createdAt, revenue: e.revenue, trackingCode: e.trackingCode, codeAt: e.codeAt, paidAt: inp.paidAt }) : {},
       outcomes: {
         // Só conta "não teve" quando já deu tempo de ter (senão fica null).
@@ -245,7 +246,10 @@ export async function buildConsultantFacts(ownerId: string) {
   });
   const mined = minePatterns(patternRows);
   const padroes_cruzados = {
-    como_ler: "Cada achado: pedidos com a característica (valor) têm o problema X vezes mais que o resto. forca: forte (p<0,01), moderado (p<0,05), fraco (p<0,1 — pode ser acaso). Só pedidos das lojas ativas, últimos 100 dias.",
+    como_ler: "Cada achado: pedidos com a característica (valor) têm o problema X vezes mais que o resto. "
+      + `Foram ${mined.testes_feitos} comparações; o corte é pelo q-valor (taxa de falsas descobertas, Benjamini-Hochberg): forte (q<0,01), moderado (q<0,05), fraco (q<0,1). `
+      + "estavel=true: o padrão aparece nas duas metades do período (mais antiga e mais recente); false: inverte entre as metades — trate como acaso; null: pouco dado pra conferir. "
+      + "Só pedidos das lojas ativas, últimos 100 dias.",
     problemas: Object.fromEntries(Object.entries(mined.base).map(([k, v]) => [k, { descricao: OUTCOME_LABEL[k] ?? k, ...v }])),
     achados: mined.achados.slice(0, 40),
   };
@@ -279,7 +283,7 @@ export async function buildConsultantFacts(ownerId: string) {
     return e.chargeback || !alertAt ? e : { ...e, chargeback: { reason: "alerta (reembolso automático)", initiatedAt: alertAt } };
   });
   const investigacao = {
-    como_ler: "Tudo calculado pelo sistema, só lojas ativas e pedidos com tempo suficiente (chargeback/reembolso em pedidos de 25+ dias). Atendimento só existe desde 28/09/2026: cruzamento com contato é amostra muito pequena.",
+    como_ler: "Tudo calculado pelo sistema, só lojas ativas e pedidos com tempo suficiente (chargeback/reembolso em pedidos de 25+ dias). Interações cortadas pelo q-valor (Benjamini-Hochberg ≤ 0,1); estavel = aparece nas duas metades do período. Atendimento só existe desde 28/09/2026: cruzamento com contato é amostra muito pequena.",
     nota: "Em casos×controles, precursores, limiares e grupos, 'chargeback' = foi ao banco (chargeback ou reembolso automático por alerta).",
     interacoes: interactions(patternRows, ["foi_ao_banco", "chargeback", "reembolso", "entrega_lenta", "parada_longa", "codigo_sem_pacote"]),
     casos_x_controles_no_dia_da_jornada: caseControlByDay(bankEnvios, now),

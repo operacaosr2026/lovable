@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { recordCronRun } from "@/lib/cron-runs.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runCaixaSnapshots } from "@/lib/caixa-snapshot.server";
 import { reportSystemErrorAll, clearSystemErrorAll } from "@/lib/system-errors.server";
@@ -7,7 +8,7 @@ import { reportSystemErrorAll, clearSystemErrorAll } from "@/lib/system-errors.s
 export const Route = createFileRoute("/api/public/hooks/caixa-snapshot")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }) => recordCronRun("caixa-snapshot", async () => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         try {
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/api/public/hooks/caixa-snapshot")({
           await reportSystemErrorAll("job:caixa_snapshot", "Foto diária do Caixa não foi gravada", e);
           return new Response(JSON.stringify({ error: String(e?.message ?? e) }), { status: 500 });
         }
-      },
+      }),
     },
   },
 });

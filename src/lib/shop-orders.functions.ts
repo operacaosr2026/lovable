@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
-import { orderLineItemsCost, type CostProduct } from "@/lib/product-cost-match";
+import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
 import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
@@ -315,10 +315,30 @@ async function unitCostFor(supabase: any, ownerId: string, shopId: string, date:
   return Number(fallback ?? 0);
 }
 
+// Produtos com o histórico de custo (product_cost_history): o custo de um pedido
+// é o da data do pedido (productCostAt). Sem a tabela/histórico, usa o atual.
 export async function costProductsFor(supabase: any, ownerId: string): Promise<CostProduct[]> {
-  const { data } = await supabase.from("products").select("name,keywords,cost").eq("user_id", ownerId);
-  return (data ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost }));
+  const [{ data }, hist] = await Promise.all([
+    supabase.from("products").select("id,name,keywords,cost").eq("user_id", ownerId),
+    supabase.from("product_cost_history").select("product_id,cost,valid_from").eq("user_id", ownerId)
+      .order("valid_from", { ascending: false }),
+  ]);
+  const byProduct = new Map<string, { from: string; cost: number }[]>();
+  if (!hist.error) {
+    for (const h of (hist.data ?? []) as any[]) {
+      const list = byProduct.get(h.product_id) ?? [];
+      list.push({ from: h.valid_from as string, cost: Number(h.cost ?? 0) });
+      byProduct.set(h.product_id, list);
+    }
+  }
+  return (data ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost, history: byProduct.get(p.id) }));
 }
+
+// Produtos com histórico de custo pra telas que calculam o custo no navegador
+// (aba Pedidos de Lojas e Grupos) — mesmo custo da época que o servidor usa.
+export const listCostProducts = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => costProductsFor(context.supabase, context.ownerId));
 
 // ---------- Settings ----------
 export const getOrderSettings = createServerFn({ method: "GET" })
@@ -696,7 +716,7 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ shop_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: pending, error } = await selectAll(context.supabase.from("shop_orders")
-      .select("order_date,items_count,line_items:raw->line_items,tags:raw->>tags")
+      .select("order_date,items_count,line_items:raw->line_items,tags:raw->>tags,tracking_code")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
@@ -732,7 +752,7 @@ export const syncOrderPaymentTasks = createServerFn({ method: "POST" })
     for (const [date, { items, orders }] of byDate.entries()) {
       if (existingRefs.has(date)) continue;
       const fallback = await unitCostFor(context.supabase, context.ownerId, data.shop_id, date, defaultCost);
-      const total = orders.reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags), 0);
+      const total = orders.reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags, costOpts(o)), 0);
       const dueAt = `${addDays(date, paymentDays)}T12:00:00.000Z`;
       const dateLabel = `${date.slice(8, 10)}/${date.slice(5, 7)}`;
       const { data: top } = await context.supabase.from("shop_tasks").select("position")
@@ -919,14 +939,6 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
     const relevant = payouts.filter((p: any) =>
       p.id != null && !dismissedIds.has(String(p.id)) && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
-
-    // Migração única: remove lançamentos de "Depósito Shopify" feitos manualmente
-    // (importação de planilha) para que a sincronização automática vire a fonte da verdade.
-    await context.supabase.from("shop_cash_entries").delete()
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .eq("category", PAYOUT_CATEGORY).is("shopify_payout_id", null);
-    await context.supabase.from("shop_cash_imports")
-      .delete().eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
 
     if (!relevant.length) return { synced: 0 };
 
@@ -1208,31 +1220,40 @@ export const notifyRefundsFailed = createServerOnlyFn(async (ownerId: string, sh
 
 // Reembolsos e chargebacks do período, por loja — lidos do NOSSO banco, sem
 // chamar a Shopify na abertura das telas (era a parte mais lenta do lucro).
-//  - Reembolsos: pedidos criados no período (horário UTC, igual ao filtro
-//    created_at_min/max que a Shopify usava) com status reembolsado/parcial;
-//    o valor sai dos reembolsos gravados no próprio pedido (raw.refunds, mesma
-//    regra de orderRefundAmountByDate). O webhook orders/updated regrava o
-//    pedido a cada reembolso e o sync de 10 em 10 min regrava os últimos 30 dias.
-//  - Chargebacks: shop_order_disputes (sincronizado pelo cron de 10 em 10 min),
-//    tipo chargeback, aberto dentro do período.
+// Tudo cai no dia em que o dinheiro mexeu, não no dia do pedido:
+//  - Reembolsos: no dia do reembolso (raw.refunds, orderRefundAmountByDate).
+//    Antes contava pela data de criação do pedido — reembolso de um pedido do
+//    mês passado mudava um mês já fechado. Busca pedidos de até
+//    REFUND_LOOKBACK_DAYS antes do período (95% dos reembolsos saem em 22 dias).
+//    O webhook orders/updated regrava o pedido a cada reembolso.
+//  - Chargebacks: shop_order_disputes, tipo chargeback, no dia em que foi aberto
+//    (initiated_at), qualquer que seja o status depois.
+//  - Chargeback ganho: o valor volta no dia em que foi ganho (finalized_on).
 //  - Recuperação dos Alertas: o que o cliente pagou no pedido de cobrança
 //    ("Payment for order #X", fora de shop_orders) abate o reembolso, no dia do
 //    pagamento — o dinheiro voltou, sem custo de produto.
 // Mesmo formato de retorno da versão antiga ao vivo, então o cálculo do lucro
 // não muda.
+const REFUND_LOOKBACK_DAYS = 180;
 export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   ownerId: string, shopIds: string[], fromISO: string, toISO: string,
 ) => {
-  const [refundOrders, disputes, recoveries] = await Promise.all([
+  const lookback = new Date(`${fromISO}T00:00:00Z`);
+  lookback.setUTCDate(lookback.getUTCDate() - REFUND_LOOKBACK_DAYS);
+  const [refundOrders, disputes, wonDisputes, recoveries] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_orders")
       .select("shop_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
       .eq("user_id", ownerId).in("shop_id", shopIds)
-      .gte("created_at_shopify", `${fromISO}T00:00:00Z`).lte("created_at_shopify", `${toISO}T23:59:59Z`)
+      .gte("created_at_shopify", lookback.toISOString()).lte("created_at_shopify", `${toISO}T23:59:59Z`)
       .in("shopify_financial_status", ["refunded", "partially_refunded"])),
     selectAll(supabaseAdmin.from("shop_order_disputes")
       .select("shop_id,amount,initiated_at")
       .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
       .gte("initiated_at", fromISO).lte("initiated_at", toISO)),
+    selectAll(supabaseAdmin.from("shop_order_disputes")
+      .select("shop_id,amount,finalized_on")
+      .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").eq("status", "won")
+      .gte("finalized_on", fromISO).lte("finalized_on", toISO)),
     selectAll(supabaseAdmin.from("chargeback_alert_followups")
       .select("id,shop_id,recovered_amount,recovery_paid_at")
       .eq("user_id", ownerId).in("shop_id", shopIds).not("recovery_order_id", "is", null)
@@ -1240,6 +1261,7 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   ]);
   if (refundOrders.error) throw new Error(refundOrders.error.message);
   if (disputes.error) throw new Error(disputes.error.message);
+  if (wonDisputes.error) throw new Error(wonDisputes.error.message);
 
   const byShop = new Map(shopIds.map((id) => [id, {
     shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number>,
@@ -1247,9 +1269,12 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   for (const o of (refundOrders.data ?? []) as any[]) {
     const row = byShop.get(o.shop_id);
     if (!row) continue;
-    const { total, byDate } = orderRefundAmountByDate(o, toISO);
-    row.refAmt += total;
-    for (const [d, amt] of Object.entries(byDate)) row.refByDate[d] = (row.refByDate[d] ?? 0) + amt;
+    const { byDate } = orderRefundAmountByDate(o, toISO);
+    for (const [d, amt] of Object.entries(byDate)) {
+      if (d < fromISO || d > toISO) continue;
+      row.refAmt += amt;
+      row.refByDate[d] = (row.refByDate[d] ?? 0) + amt;
+    }
   }
   for (const d of (disputes.data ?? []) as any[]) {
     const row = byShop.get(d.shop_id);
@@ -1258,6 +1283,13 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
     row.cbAmt += amt;
     const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
     row.cbByDate[date] = (row.cbByDate[date] ?? 0) + amt;
+  }
+  for (const d of (wonDisputes.data ?? []) as any[]) {
+    const row = byShop.get(d.shop_id);
+    if (!row) continue;
+    const amt = Number(d.amount ?? 0);
+    row.cbAmt -= amt;
+    row.cbByDate[d.finalized_on] = (row.cbByDate[d.finalized_on] ?? 0) - amt;
   }
   for (const r of (recoveries.data ?? []) as any[]) {
     const row = byShop.get(r.shop_id);
@@ -1484,7 +1516,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const { shop_ids, month_start, month_end } = data;
 
     const [ordersRes, settingsRes, adRes, feesRes, costProducts, refundsAndChargebacks] = await Promise.all([
-      selectAll(supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,line_items:raw->line_items,tags:raw->>tags")
+      selectAll(supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,line_items:raw->line_items,tags:raw->>tags,tracking_code")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", month_start).lte("order_date", month_end)),
       supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
@@ -1521,7 +1553,7 @@ export const getMonthlyProfit = createServerFn({ method: "GET" })
     const productCost = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags);
+      return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags, costOpts(o));
     }, 0);
 
     const adSpend = (adRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
@@ -1568,7 +1600,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   // Mesma regra da aba Pedidos: reembolsado ou com chargeback (menos o ganho)
   // sai da lista e não vai ser enviado — não entra no que vai ser pago ao fornecedor.
   const { data: pendingRows } = await context.supabase.from("shop_orders")
-    .select("items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items,tags:raw->>tags")
+    .select("order_date,items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items,tags:raw->>tags,tracking_code")
     .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("order_date", orderDate)
     .eq("payment_status", "pending");
   const pendingExt = ((pendingRows ?? []) as any[]).map((o) => o.external_id).filter(Boolean) as string[];
@@ -1582,7 +1614,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   const items = (orders ?? []).reduce((s: number, o: any) => s + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(context.supabase, context.ownerId, shopId, orderDate, settings.default_unit_cost);
   const products = preloadedProducts ?? await costProductsFor(context.supabase, context.ownerId);
-  const amount = (orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, products, unit, o.tags), 0);
+  const amount = (orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, products, unit, o.tags, costOpts(o)), 0);
 
   await ensureCostCategory(context.supabase, context.ownerId, shopId);
 
@@ -1801,7 +1833,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     // Fetch pending orders only
     const { data: orders, error } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
-      .select("id,order_date,items_count,payment_status,line_items:raw->line_items,tags:raw->>tags")
+      .select("id,order_date,items_count,payment_status,line_items:raw->line_items,tags:raw->>tags,tracking_code")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("id", ids).eq("payment_status", "pending"));
     if (error) throw new Error(error.message);
@@ -1825,7 +1857,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       const items = Number(o.items_count ?? 0);
       totalItems += items;
       const unit = costByDate.get(o.order_date as string) ?? defaultCost;
-      totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags);
+      totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags, costOpts(o as any));
     }
 
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
@@ -2055,7 +2087,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: orders, error: ordersErr } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
-      .select("id,payment_batch_id,order_date,items_count,line_items:raw->line_items,tags:raw->>tags")
+      .select("id,payment_batch_id,order_date,items_count,line_items:raw->line_items,tags:raw->>tags,tracking_code")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .neq("payment_status", "pending")
       .in("id", ids));
@@ -2126,7 +2158,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
         const items = Number(o.items_count ?? 0);
         totalItems += items;
         const unit = costByDate.get(o.order_date as string) ?? defaultCost;
-        totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags);
+        totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags, costOpts(o as any));
       }
 
       const batchNumber = await nextBatchNumber(context, data.shop_id);
@@ -2257,11 +2289,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes, shopifyResults, costProducts] = await Promise.all([
       selectAll(supabase.from("shop_orders").select(withCosts
-          ? "revenue,items_count,order_date,shop_id,line_items:raw->line_items,tags:raw->>tags,created_at_shopify"
+          ? "revenue,items_count,order_date,shop_id,line_items:raw->line_items,tags:raw->>tags,tracking_code,created_at_shopify"
           : "revenue,items_count,order_date,shop_id,created_at_shopify")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", from).lte("order_date", to)),
-      withPrev ? selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,line_items:raw->line_items,tags:raw->>tags")
+      withPrev ? selectAll(supabase.from("shop_orders").select("revenue,items_count,order_date,shop_id,line_items:raw->line_items,tags:raw->>tags,tracking_code")
         .eq("user_id", ownerId).in("shop_id", shop_ids)
         .gte("order_date", prev_from).lte("order_date", prev_to)) : empty,
       settingsPromise,
@@ -2320,7 +2352,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     function orderCost(o: any) {
       const shopCost = costByShop.get((o as any).shop_id);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return orderLineItemsCost((o as any).line_items, costProducts, fallback, (o as any).tags);
+      return orderLineItemsCost((o as any).line_items, costProducts, fallback, (o as any).tags, costOpts(o as any));
     }
 
     // Current period

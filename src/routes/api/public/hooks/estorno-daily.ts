@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { recordCronRun } from "@/lib/cron-runs.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { runEstornoDaily } from "@/lib/estorno-daily.server";
 import { runStoreMetricsDaily } from "@/lib/store-metrics.server";
@@ -13,7 +14,7 @@ import { reportSystemErrorAll, clearSystemErrorAll } from "@/lib/system-errors.s
 export const Route = createFileRoute("/api/public/hooks/estorno-daily")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }) => recordCronRun("estorno-daily", async () => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         try {
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/api/public/hooks/estorno-daily")({
           await reportSystemErrorAll("job:estorno_daily", "Rotina diária (taxa de estorno, Banco de Lojas, Metas) falhou", e);
           return new Response(JSON.stringify({ error: String(e?.message ?? e) }), { status: 500 });
         }
-      },
+      }),
     },
   },
 });

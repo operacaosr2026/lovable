@@ -299,8 +299,8 @@ function Bubble({ m, fg, isLastIn, onUseDraft }: { m: SupportMessage; fg: string
           {fullTime(m.sent_at)}{out ? " · enviado" : ""}
         </p>
         {!out && m.auto_reply && !m.auto_reply.startsWith("fora:") && (
-          m.auto_reply === "enviado" ? (
-            <p className="text-[11px] mt-1 text-success font-medium flex items-center gap-1"><Bot className="size-3.5" /> Respondido automaticamente{m.auto_reply_at ? ` · ${fullTime(m.auto_reply_at)}` : ""}</p>
+          m.auto_reply === "enviado" || m.auto_reply === "enviando" ? (
+            <p className="text-[11px] mt-1 text-success font-medium flex items-center gap-1"><Bot className="size-3.5" /> {m.auto_reply === "enviando" ? "Resposta automática sem confirmação de envio — confira no Zoho" : "Respondido automaticamente"}{m.auto_reply_at ? ` · ${fullTime(m.auto_reply_at)}` : ""}</p>
           ) : (
             <p className="text-[11px] mt-1 text-warning font-medium flex items-center gap-1"><Bot className="size-3.5" /> Ficou pra equipe: {m.auto_reply.replace(/^pulado:\s*/, "")}</p>
           )

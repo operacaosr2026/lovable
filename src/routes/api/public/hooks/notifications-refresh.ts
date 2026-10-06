@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { recordCronRun } from "@/lib/cron-runs.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
@@ -13,7 +14,7 @@ import { recheckStoreSetups } from "@/lib/store-policies.server";
 export const Route = createFileRoute("/api/public/hooks/notifications-refresh")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }) => recordCronRun("notifications-refresh", async () => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         const [{ data: shops }, { data: zoho }] = await Promise.all([
@@ -38,7 +39,7 @@ export const Route = createFileRoute("/api/public/hooks/notifications-refresh")(
           catch (e: any) { console.error("notifications-refresh loja nova", owner, e); out[owner] += ` · loja nova: ${String(e?.message ?? e).slice(0, 120)}`; }
         }
         return Response.json(out);
-      },
+      }),
     },
   },
 });

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { recordCronRun } from "@/lib/cron-runs.server";
 import { verifyCronApiKey } from "@/lib/cron-auth";
 import { syncAllZohoMailboxes } from "@/lib/zoho-mail.server";
 import { runAllChargebackDunning } from "@/lib/chargeback-alerts.server";
@@ -12,7 +13,7 @@ import { collectAiBatches } from "@/lib/ai-batch-collect.server";
 export const Route = createFileRoute("/api/public/hooks/zoho-mail-sync")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }) => recordCronRun("zoho-mail-sync", async () => {
         const unauthorized = verifyCronApiKey(request);
         if (unauthorized) return unauthorized;
         try {
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/api/public/hooks/zoho-mail-sync")({
           for (const a of accs ?? []) await reportSystemError(a.owner_id, "zoho_round", "Sincronização do Zoho Mail falhou", e);
           return new Response(JSON.stringify({ error: String(e?.message ?? e) }), { status: 500 });
         }
-      },
+      }),
     },
   },
 });

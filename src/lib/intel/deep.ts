@@ -9,7 +9,7 @@
 //  - mistura semanal das linhas de transporte (o que mudou e quando).
 
 import type { AuditedOrder } from "@/lib/intel/supplier-audit";
-import type { PatternRow } from "@/lib/intel/patterns";
+import { bhQValues, halvesCheck, type PatternRow } from "@/lib/intel/patterns";
 
 const DAY = 86_400_000;
 const r1 = (x: number) => Math.round(x * 10) / 10;
@@ -28,6 +28,9 @@ export function interactions(rows: PatternRow[], outcomes: string[], opts: { min
   const minGroup = opts.minGroup ?? 15, minEvents = opts.minEvents ?? 3;
   const lf = logFact(rows.length + 2);
   const out: any[] = [];
+  // Milhares de pares por rodada: o corte é no q-valor (Benjamini-Hochberg)
+  // sobre todos os pares com volume, não no p-valor de cada um.
+  let tests = 0;
   for (const o of outcomes) {
     const known = rows.filter((r) => r.outcomes[o] != null);
     const N = known.length, K = known.filter((r) => r.outcomes[o]).length;
@@ -46,17 +49,26 @@ export function interactions(rows: PatternRow[], outcomes: string[], opts: { min
       if (both.length < minGroup) continue;
       const ev = both.filter((i) => known[i].outcomes[o]).length;
       if (ev < minEvents) continue;
+      tests++;
       const rc = ev / both.length, ra = rateOf(ia), rb = rateOf(ib);
       if (rc < Math.max(ra, rb) * 1.5 || rc < baseRate * 2) continue;
       const p = fisherGreater(ev, both.length, K, N, lf);
       if (p > 0.05) continue;
+      const [fa, va] = [ka.slice(0, ka.indexOf("=")), ka.slice(ka.indexOf("=") + 1)];
+      const [fb, vb] = [kb.slice(0, kb.indexOf("=")), kb.slice(kb.indexOf("=") + 1)];
+      const check = halvesCheck(known, (r) => r.features[fa] === va && r.features[fb] === vb, o, true);
       out.push({
         problema: o, combinacao: `${ka} + ${kb}`, pedidos: both.length, com_problema: ev, taxa_pct: r1(rc * 100),
         taxa_so_a: r1(ra * 100), taxa_so_b: r1(rb * 100), taxa_geral_pct: r1(baseRate * 100), p_valor: Math.round(p * 10000) / 10000,
+        _p: p, estavel: check.estavel,
       });
     }
   }
-  return out.sort((x, y) => x.p_valor - y.p_valor).slice(0, 15);
+  const qs = bhQValues(out.map((x) => x._p), Math.max(tests, out.length));
+  return out
+    .map((x, i) => { const { _p, ...rest } = x; return { ...rest, q_valor: Math.round(qs[i] * 10000) / 10000 }; })
+    .filter((x) => x.q_valor <= 0.1)
+    .sort((x, y) => x.q_valor - y.q_valor).slice(0, 15);
 }
 
 // ─── Estado do pedido em um momento da jornada ───────────────────────────────

@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { broadcast } from "@/lib/realtime.server";
 import { notifyPeople } from "@/lib/notify.server";
+import { cronHealthAlerts } from "@/lib/cron-runs.server";
 
 export type NotificationLevel = "info" | "warning" | "error";
 type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
@@ -10,7 +11,7 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
 const SHOPIFY_STALE_HOURS = 13;
-const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors"];
+const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:"];
 
 // Rastreio (17track): cron a cada 30 min. A chave "track123:<loja>" do aviso
 // ficou com o nome antigo pra não duplicar avisos já abertos.
@@ -363,6 +364,9 @@ export async function refreshSystemNotifications(ownerId: string) {
       link: "/chargebacks",
     });
   }
+
+  // Rotinas automáticas com erro ou paradas (histórico em cron_runs).
+  for (const a of await cronHealthAlerts()) want.set(a.key, { level: a.level, title: a.title, body: a.body, link: a.link });
 
   const current = must(await supabaseAdmin.from("app_notifications")
     .select("id,key,level,title,body,link,resolved_at")

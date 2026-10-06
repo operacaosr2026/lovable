@@ -4,11 +4,48 @@
 // de cada problema (chargeback, reembolso, postagem lenta, código sem pacote,
 // parada longa, entrega lenta) com a do resto dos pedidos. Teste exato de Fisher
 // (unilateral) separa padrão de acaso. Só cálculo — sem banco, sem IA.
+//
+// São centenas de comparações por rodada: com corte só no p-valor, dezenas de
+// "achados" seriam acaso. Por isso o corte é no q-valor (Benjamini-Hochberg —
+// taxa de falsas descobertas) e cada achado é conferido nas duas metades do
+// período (mais antiga × mais recente): padrão real aparece nas duas.
 
 export type PatternRow = {
   features: Record<string, string | null>;   // característica → valor (null = sem dado)
   outcomes: Record<string, boolean | null>;  // problema → aconteceu? (null = ainda não dá pra saber)
+  at?: string;                               // data da compra (ISO) — pra conferir nas duas metades do período
 };
+
+// q-valores de Benjamini-Hochberg na mesma ordem de `ps`. `m` = total de testes
+// feitos (os que não entraram em `ps` contam como p = 1).
+export function bhQValues(ps: number[], m = ps.length): number[] {
+  const idx = ps.map((p, i) => [p, i] as const).sort((a, b) => a[0] - b[0]);
+  const q = new Array<number>(ps.length);
+  let min = 1;
+  for (let k = idx.length - 1; k >= 0; k--) {
+    min = Math.min(min, (idx[k][0] * m) / (k + 1));
+    q[idx[k][1]] = Math.min(1, min);
+  }
+  return q;
+}
+
+// Taxa do grupo × resto em cada metade do período (corte na mediana de `at`).
+// estavel: true = mesmo sentido nas duas metades; false = inverte; null = pouco dado.
+export function halvesCheck(rows: PatternRow[], inGroup: (r: PatternRow) => boolean, outcome: string, risk: boolean, minN = 5) {
+  const known = rows.filter((r) => r.outcomes[outcome] != null && r.at);
+  if (known.length < minN * 4) return { estavel: null, metade_antiga: null, metade_recente: null };
+  const sorted = [...known].sort((a, b) => a.at!.localeCompare(b.at!));
+  const mid = sorted[Math.floor(sorted.length / 2)].at!;
+  const half = (rs: PatternRow[]) => {
+    const g = rs.filter(inGroup), rest = rs.filter((r) => !inGroup(r));
+    if (g.length < minN || rest.length < minN) return null;
+    const rate = (xs: PatternRow[]) => Math.round((xs.filter((r) => r.outcomes[outcome]).length / xs.length) * 1000) / 10;
+    return { pedidos: g.length, taxa_pct: rate(g), resto_taxa_pct: rate(rest) };
+  };
+  const a = half(sorted.filter((r) => r.at! < mid)), b = half(sorted.filter((r) => r.at! >= mid));
+  const ok = (h: { taxa_pct: number; resto_taxa_pct: number }) => (risk ? h.taxa_pct > h.resto_taxa_pct : h.taxa_pct < h.resto_taxa_pct);
+  return { estavel: a && b ? ok(a) && ok(b) : null, metade_antiga: a, metade_recente: b };
+}
 
 export const OUTCOME_LABEL: Record<string, string> = {
   chargeback: "chargeback", foi_ao_banco: "foi ao banco (chargeback ou reembolso automático por alerta Ethoca/CDRN/RDR)",
@@ -48,15 +85,19 @@ export type PatternFinding = {
   direcao: "risco" | "protecao";   // protecao = o grupo tem MENOS o problema que o resto
   pedidos: number; com_problema: number; taxa_pct: number;
   resto_pedidos: number; resto_com_problema: number; resto_taxa_pct: number;
-  vezes_mais: number; p_valor: number; forca: "forte" | "moderado" | "fraco";
+  vezes_mais: number; p_valor: number; q_valor: number; forca: "forte" | "moderado" | "fraco";
+  // Conferência nas duas metades do período (ver halvesCheck).
+  estavel: boolean | null;
+  metade_antiga: { pedidos: number; taxa_pct: number; resto_taxa_pct: number } | null;
+  metade_recente: { pedidos: number; taxa_pct: number; resto_taxa_pct: number } | null;
 };
 
-export function minePatterns(rows: PatternRow[], opts: { minGroup?: number; minEvents?: number; maxP?: number } = {}) {
-  const minGroup = opts.minGroup ?? 15, minEvents = opts.minEvents ?? 3, maxP = opts.maxP ?? 0.1;
+export function minePatterns(rows: PatternRow[], opts: { minGroup?: number; minEvents?: number; maxQ?: number } = {}) {
+  const minGroup = opts.minGroup ?? 15, minEvents = opts.minEvents ?? 3, maxQ = opts.maxQ ?? 0.1;
   const outcomes = [...new Set(rows.flatMap((r) => Object.keys(r.outcomes)))];
   const features = [...new Set(rows.flatMap((r) => Object.keys(r.features)))];
   const lf = logFactTable(rows.length + 1);
-  const findings: PatternFinding[] = [];
+  const tested: (Omit<PatternFinding, "q_valor" | "forca" | "estavel" | "metade_antiga" | "metade_recente"> & { p: number })[] = [];
   const base: Record<string, { pedidos: number; com_problema: number; taxa_pct: number }> = {};
 
   for (const out of outcomes) {
@@ -83,20 +124,34 @@ export function minePatterns(rows: PatternRow[], opts: { minGroup?: number; minE
         if (risk ? g.a < minEvents : restA < minEvents || g.n < minGroup * 2) continue;
         if (rate === restRate) continue;
         const p = risk ? fisherGreater(g.a, g.n, withValue.a, withValue.n, lf) : fisherLess(g.a, g.n, withValue.a, withValue.n, lf);
-        if (p > maxP) continue;
-        findings.push({
+        tested.push({
           problema: out, caracteristica: f, valor: v, direcao: risk ? "risco" : "protecao",
           pedidos: g.n, com_problema: g.a, taxa_pct: Math.round(rate * 1000) / 10,
           resto_pedidos: restN, resto_com_problema: restA, resto_taxa_pct: Math.round(restRate * 1000) / 10,
           vezes_mais: restRate > 0 ? Math.round((rate / restRate) * 100) / 100 : 99,
-          p_valor: Math.round(p * 10000) / 10000,
-          forca: p < 0.01 ? "forte" : p < 0.05 ? "moderado" : "fraco",
+          p_valor: Math.round(p * 10000) / 10000, p,
         });
       }
     }
   }
-  findings.sort((a, b) => a.p_valor - b.p_valor || b.vezes_mais - a.vezes_mais);
-  return { base, achados: findings };
+  // Corte pela taxa de falsas descobertas sobre TODOS os testes feitos.
+  const qs = bhQValues(tested.map((t) => t.p));
+  const findings: PatternFinding[] = [];
+  tested.forEach((t, i) => {
+    const q = qs[i];
+    if (q > maxQ) return;
+    const { p: _p, ...rest } = t;
+    // "Resto" = pedidos com outro valor da característica (mesma base do teste).
+    const check = halvesCheck(rows.filter((r) => r.features[t.caracteristica] != null),
+      (r) => r.features[t.caracteristica] === t.valor, t.problema, t.direcao === "risco");
+    findings.push({
+      ...rest, q_valor: Math.round(q * 10000) / 10000,
+      forca: q < 0.01 ? "forte" : q < 0.05 ? "moderado" : "fraco",
+      ...check,
+    });
+  });
+  findings.sort((a, b) => a.q_valor - b.q_valor || b.vezes_mais - a.vezes_mais);
+  return { base, achados: findings, testes_feitos: tested.length };
 }
 
 // ─── Características a partir do pedido ──────────────────────────────────────
