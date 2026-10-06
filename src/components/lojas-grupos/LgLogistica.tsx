@@ -620,8 +620,10 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 <p className="font-medium text-foreground truncate">{orderLabel(o)}</p>
                 {isConsolidated && <p className="text-[10px] font-medium text-primary truncate">{shopNames[o.shop_id] ?? ""}</p>}
               </div>
-              <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.order_date)}</div>
-              {o.before_period && <div className="text-[10px] text-amber-600 text-center" title="Pedido de antes do período escolhido — continua aqui porque ainda não foi entregue">antes do período</div>}
+              <div className="text-xs text-muted-foreground text-center">
+                {fmtShortDate(o.order_date)}
+                {o.before_period && <div className="text-[10px] text-amber-600" title="Pedido de antes do período escolhido — continua aqui porque ainda não foi entregue">antes do período</div>}
+              </div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
               <div className="text-xs truncate">
