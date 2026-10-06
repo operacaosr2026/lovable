@@ -176,6 +176,21 @@ export function parseAddresses(raw: string | null | undefined): { email: string;
   return out;
 }
 
+// Formulário de contato da loja: o e-mail chega do mailer@shopify.com, mas o
+// cliente de verdade vem no corpo ("Name: Todd …  Email: todd@x.com").
+// Devolve esse cliente, pra cada formulário cair na conversa do próprio
+// cliente (e a resposta ir pra ele) em vez de todos juntos no mailer.
+// Aviso da Shopify sem "Email:" (ex.: "Verifique seu endereço") → null.
+export function shopifyContactFormCustomer(fromEmail: string, summary: string | null | undefined): { email: string; name: string | null } | null {
+  if (!/@shopify\.com$/i.test(fromEmail) || !summary) return null;
+  const s = unescapeHtml(summary);
+  if (!/contact form/i.test(s)) return null;
+  const email = s.match(/Email:\s*([A-Z0-9._%+'-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1]?.toLowerCase();
+  if (!email) return null;
+  const name = s.match(/Name:\s*(.+?)\s{2,}/)?.[1]?.trim() || null;
+  return { email, name: name && !name.includes("@") ? name : null };
+}
+
 // ─── Sincronização ────────────────────────────────────────────────────────────
 
 type ZohoListItem = {
@@ -234,6 +249,11 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
     for (const item of inbox) {
       const from = parseAddresses(item.fromAddress)[0];
       if (!from || ownSet.has(from.email)) continue;
+      const formCustomer = shopifyContactFormCustomer(from.email, item.summary);
+      if (formCustomer) {
+        parsed.push({ customer: formCustomer.email, customerName: formCustomer.name, direction: "in", item });
+        continue;
+      }
       parsed.push({ customer: from.email, customerName: item.sender && !item.sender.includes("@") ? unescapeHtml(item.sender) : from.name, direction: "in", item });
     }
     for (const item of sent) {
@@ -330,7 +350,9 @@ async function upsertMessages(
       folder_id: String(item.folderId),
       thread_id: item.threadId ? String(item.threadId) : null,
       direction,
-      from_email: from?.email ?? (direction === "out" ? own : null),
+      // Recebido: o cliente (no formulário de contato da loja é o e-mail do
+      // corpo, não o mailer@shopify.com).
+      from_email: direction === "in" ? customer : (from?.email ?? own),
       from_name: direction === "in" ? customerName : null,
       to_emails: item.toAddress ? unescapeHtml(item.toAddress).slice(0, 1000) : null,
       subject: item.subject ? unescapeHtml(item.subject).slice(0, 500) : null,
