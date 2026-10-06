@@ -5,6 +5,8 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent, labelSaysDelivered } from "@/lib/track123-sync.server";
 import type { TablesUpdate } from "@/integrations/supabase/types";
+import { pushFulfillmentStatusToShopify, updateFulfillmentTrackingUrl } from "@/lib/shopify-fulfillment-status.server";
+import { officialEdd } from "@/lib/tracking-display";
 
 // Rastreio pelo 17track (substitui o Track123, loja por loja — ver
 // track123_integrations.provider). Uma conta só pra todas as lojas
@@ -14,7 +16,10 @@ import type { TablesUpdate } from "@/integrations/supabase/types";
 //  2. busca o rastreio de todos os cadastrados, de 40 em 40 (não gasta crédito);
 //  3. grava em shop_order_tracking/shop_orders no MESMO formato do Track123
 //     (timeline com event_time_utc/event_detail/event_location, status tipo
-//     "In transit"), então nenhuma tela precisa mudar.
+//     "In transit"), então nenhuma tela precisa mudar;
+//  4. na Shopify: manda o status pro envio quando ele muda (em trânsito, saiu
+//     pra entrega, entregue…) e troca o link de rastreio do envio pro modelo da
+//     loja — sem avisar o cliente.
 const API_BASE = "https://api.17track.net/track/v2.4";
 const BATCH = 40;                 // máximo por chamada no 17track
 const MIN_INTERVAL_MS = 400;      // limite deles: 3 chamadas/s
@@ -122,11 +127,13 @@ async function syncableShopIds(shopIds: string[]) {
     .map((s: any) => s.id as string));
 }
 
-export type SeventeenSyncResult = { shops: number; orders: number; registered: number; updated: number; errors: string[]; outOfQuota: boolean };
+export type SeventeenSyncResult = { shops: number; orders: number; registered: number; updated: number; shopifyStatus: number; shopifyLinks: number; errors: string[]; outOfQuota: boolean };
 
-export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?: string[] } = {}): Promise<SeventeenSyncResult> {
+// pushAll: manda o status pra Shopify de todos (não só dos que mudaram) — usado
+// uma vez ao ligar o envio pra Shopify; a Shopify não repete status que já tem.
+export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?: string[]; pushAll?: boolean } = {}): Promise<SeventeenSyncResult> {
   const deadline = opts.deadline ?? Date.now() + 240_000;
-  const result: SeventeenSyncResult = { shops: 0, orders: 0, registered: 0, updated: 0, errors: [], outOfQuota: false };
+  const result: SeventeenSyncResult = { shops: 0, orders: 0, registered: 0, updated: 0, shopifyStatus: 0, shopifyLinks: 0, errors: [], outOfQuota: false };
 
   let integQuery = supabaseAdmin.from("track123_integrations")
     .select("shop_id,user_id,tracking_link_template").eq("provider", "17track");
@@ -144,7 +151,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   // vira chargeback) continuar sendo acompanhado.
   const since = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-    .select("id,user_id,shop_id,tracking_code,shipped_at,delivered_at,problem_at")
+    .select("id,user_id,shop_id,tracking_code,shipped_at,delivered_at,problem_at,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))
     .not("tracking_code", "is", null)
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
@@ -157,7 +164,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!orders.length) return result;
 
   const { data: tracks } = await selectAllIn<any>(orders.map((o: any) => o.id), (ids) => supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_number,last_event_at,registered_17track_at,timeline").in("order_id", ids));
+    .select("order_id,tracking_number,tracking_status,last_event_at,registered_17track_at,timeline").in("order_id", ids));
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
   const code = (o: any) => String(o.tracking_code).trim().toUpperCase();
 
@@ -214,10 +221,33 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     }
     for (const item of data?.accepted ?? []) {
       for (const o of byCode.get(String(item.number).toUpperCase()) ?? []) {
+        const stored = trackBy.get(o.id);
+        const template = integBy.get(o.shop_id)?.tracking_link_template ?? null;
         try {
-          if (await applyItem(o, item, trackBy.get(o.id), integBy.get(o.shop_id)?.tracking_link_template ?? null, matcherBy.get(o.shop_id)!)) result.updated++;
+          if (await applyItem(o, item, stored, template, matcherBy.get(o.shop_id)!)) result.updated++;
         } catch (e: any) {
           result.errors.push(`${code(o)}: ${String(e?.message ?? e).slice(0, 150)}`);
+          continue;
+        }
+        if (Date.now() > deadline) continue;
+        // Shopify: link do envio e status (erro aqui não para o sync).
+        try {
+          const url = buildTrackingUrl(template, code(o));
+          if (url && (await updateFulfillmentTrackingUrl({ shopId: o.shop_id, fulfillments: o.fulfillments, trackingNumber: code(o), url })).sent) result.shopifyLinks++;
+          const status: string | null = item?.track_info?.latest_status?.status ?? null;
+          const label = status ? STATUS_LABEL[status] ?? status : null;
+          if (status && (opts.pushAll || label !== stored?.tracking_status)) {
+            const edd = officialEdd(eddOf(item));
+            const lastUtc = toTimeline(item)[0]?.event_time_utc;
+            const r = await pushFulfillmentStatusToShopify({
+              orderId: o.id, trackingNumber: code(o), status,
+              happenedAt: lastUtc ? `${lastUtc.replace(" ", "T")}Z` : null,
+              estimatedDeliveryAt: edd?.to ?? edd?.from ?? null,
+            });
+            if (r.sent) result.shopifyStatus++;
+          }
+        } catch (e: any) {
+          result.errors.push(`Shopify ${code(o)}: ${String(e?.message ?? e).slice(0, 150)}`);
         }
       }
     }
@@ -226,6 +256,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   // Status por loja (o sino avisa quando para de sincronizar).
   const status = result.errors.length && !result.updated ? "error" : "ok";
   const msg = `17track: ${result.updated} atualizados, ${result.registered} cadastrados agora` +
+    (result.shopifyStatus || result.shopifyLinks ? ` · Shopify: ${result.shopifyStatus} status, ${result.shopifyLinks} links` : "") +
     (result.outOfQuota ? " · SEM CRÉDITO no 17track — códigos novos não foram cadastrados" : "") +
     (result.errors.length ? ` · último erro: ${result.errors[result.errors.length - 1]}` : "");
   await supabaseAdmin.from("track123_integrations")

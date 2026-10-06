@@ -9,8 +9,7 @@ import { shopifyGql } from "@/lib/chargeback-recovery.server";
 // então nada de alfândega/China chega à Shopify por aqui.
 // Precisa do escopo write_fulfillments (loja reautorizada); sem ele a Shopify
 // recusa e o erro volta como "reautorize a loja".
-//
-// AINDA NÃO É CHAMADO AUTOMATICAMENTE — vai ser ligado junto com o sync do 17track.
+// Chamado pelo sync do 17track (seventeen-track.server.ts) quando o status muda.
 
 // Status do 17track → status de evento da Shopify. InfoReceived/NotFound/Expired
 // não viram evento; Exception também não (costuma ser passageiro, e "FAILURE"
@@ -32,6 +31,35 @@ export type PushResult =
   | { sent: true; status: string }
   | { sent: false; reason: string };
 
+// Envio do pedido com esse código (o raw do pedido traz os fulfillments da Shopify).
+function findFulfillment(fulfillments: any[] | null | undefined, trackingNumber: string) {
+  const code = trackingNumber.toUpperCase();
+  const f = (fulfillments ?? []).find((x) =>
+    String(x?.tracking_number ?? "").toUpperCase() === code || (x?.tracking_numbers ?? []).some((n: string) => String(n).toUpperCase() === code));
+  const id: string | undefined = f?.admin_graphql_api_id ?? (f?.id ? `gid://shopify/Fulfillment/${f.id}` : undefined);
+  return f && id ? { f, id } : null;
+}
+
+// Troca o link de rastreio do envio na Shopify (o que aparece nos e-mails de
+// envio e na página do pedido da loja) pro link do sistema — sem avisar o
+// cliente. Não faz nada se o link já é esse.
+export async function updateFulfillmentTrackingUrl(opts: {
+  shopId: string; fulfillments: any[] | null | undefined; trackingNumber: string; url: string;
+}): Promise<PushResult> {
+  const found = findFulfillment(opts.fulfillments, opts.trackingNumber);
+  if (!found) return { sent: false, reason: "envio com esse código não está no pedido" };
+  if (found.f.tracking_url === opts.url || (found.f.tracking_urls ?? []).includes(opts.url)) return { sent: false, reason: "link já é esse" };
+  const out = await shopifyGql(opts.shopId, `mutation TrackingUrl($id: ID!, $t: FulfillmentTrackingInput!) {
+    fulfillmentTrackingInfoUpdate(fulfillmentId: $id, trackingInfoInput: $t, notifyCustomer: false) { fulfillment { id } userErrors { field message } }
+  }`, {
+    id: found.id,
+    t: { number: opts.trackingNumber, url: opts.url, ...(found.f.tracking_company ? { company: found.f.tracking_company } : {}) },
+  });
+  const errs = out?.fulfillmentTrackingInfoUpdate?.userErrors ?? [];
+  if (errs.length) return { sent: false, reason: errs.map((e: any) => e.message).join("; ").slice(0, 200) };
+  return { sent: true, status: "TRACKING_URL" };
+}
+
 export async function pushFulfillmentStatusToShopify(opts: {
   orderId: string;                 // shop_orders.id
   trackingNumber: string;
@@ -45,10 +73,9 @@ export async function pushFulfillmentStatusToShopify(opts: {
   const { data: order } = await supabaseAdmin.from("shop_orders")
     .select("shop_id,order_number,fulfillments:raw->fulfillments").eq("id", opts.orderId).maybeSingle();
   if (!order) return { sent: false, reason: "pedido não encontrado" };
-  const f = ((order as any).fulfillments as any[] ?? []).find((x) =>
-    x?.tracking_number === opts.trackingNumber || (x?.tracking_numbers ?? []).includes(opts.trackingNumber));
-  const fulfillmentId: string | undefined = f?.admin_graphql_api_id ?? (f?.id ? `gid://shopify/Fulfillment/${f.id}` : undefined);
-  if (!fulfillmentId) return { sent: false, reason: "envio com esse código não está no pedido" };
+  const found = findFulfillment((order as any).fulfillments, opts.trackingNumber);
+  if (!found) return { sent: false, reason: "envio com esse código não está no pedido" };
+  const fulfillmentId = found.id;
 
   // O que a Shopify já tem nesse envio (pode ter vindo de outro app, ex. Track123).
   const cur = await shopifyGql((order as any).shop_id, `query FulfillmentEvents($id: ID!) {
