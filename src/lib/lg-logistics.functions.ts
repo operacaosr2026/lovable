@@ -17,116 +17,120 @@ export const listLogisticsOrders = createServerFn({ method: "POST" })
       include_open_before: z.boolean().optional(),
     }).parse(d)
   )
-  .handler(async ({ context, data }: any) => {
-    // Pedido reembolsado ou cancelado no Shopify não é mais problema de
-    // logística/rastreio — sai da aba inteira (não só dos KPIs, como o "fora
-    // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
-    const { data: rows, error } = await selectAll(supabaseAdmin
+  .handler(async ({ context, data }: any) => loadLogisticsOrders(context.ownerId, data));
+
+// Pedidos da aba Rastreamento com o status efetivo (mesma regra da tela) —
+// separado do server fn pra poder ser usado fora da tela (ex.: relatórios).
+export async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; from: string; to: string; include_open_before?: boolean }) {
+  // Pedido reembolsado ou cancelado no Shopify não é mais problema de
+  // logística/rastreio — sai da aba inteira (não só dos KPIs, como o "fora
+  // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
+  const { data: rows, error } = await selectAll(supabaseAdmin
+    .from("shop_orders")
+    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
+    .eq("user_id", ownerId)
+    .in("shop_id", data.shop_ids)
+    .gte("order_date", data.from)
+    .lte("order_date", data.to)
+    // NULL NOT IN (...) é NULL em SQL (não TRUE) — usar .not("in") sozinho
+    // descartava silenciosamente todo pedido com shopify_financial_status
+    // nulo (ex: sincronizado pelo botão manual, que não grava essa coluna).
+    .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
+    .filter("raw->>cancelled_at", "is", null)
+    .order("order_date", { ascending: false }));
+  if (error) throw new Error(error.message);
+
+  if (data.include_open_before) {
+    // Até 180 dias pra trás: pedido em aberto (sem entrega, devolução,
+    // cancelamento ou reembolso) de antes do período escolhido.
+    const floor = new Date(new Date(`${data.from}T00:00:00Z`).getTime() - 180 * 86_400_000).toISOString().slice(0, 10);
+    const { data: older, error: olderErr } = await selectAll(supabaseAdmin
       .from("shop_orders")
       .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
-      .eq("user_id", context.ownerId)
+      .eq("user_id", ownerId)
       .in("shop_id", data.shop_ids)
-      .gte("order_date", data.from)
-      .lte("order_date", data.to)
-      // NULL NOT IN (...) é NULL em SQL (não TRUE) — usar .not("in") sozinho
-      // descartava silenciosamente todo pedido com shopify_financial_status
-      // nulo (ex: sincronizado pelo botão manual, que não grava essa coluna).
+      .lt("order_date", data.from)
+      .gte("order_date", floor)
+      .is("delivered_at", null)
+      .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
       .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
       .filter("raw->>cancelled_at", "is", null)
       .order("order_date", { ascending: false }));
-    if (error) throw new Error(error.message);
+    if (olderErr) throw new Error(olderErr.message);
+    rows.push(...(older ?? []).map((o: any) => ({ ...o, before_period: true })));
+  }
 
-    if (data.include_open_before) {
-      // Até 180 dias pra trás: pedido em aberto (sem entrega, devolução,
-      // cancelamento ou reembolso) de antes do período escolhido.
-      const floor = new Date(new Date(`${data.from}T00:00:00Z`).getTime() - 180 * 86_400_000).toISOString().slice(0, 10);
-      const { data: older, error: olderErr } = await selectAll(supabaseAdmin
-        .from("shop_orders")
-        .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
-        .eq("user_id", context.ownerId)
-        .in("shop_id", data.shop_ids)
-        .lt("order_date", data.from)
-        .gte("order_date", floor)
-        .is("delivered_at", null)
-        .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
-        .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
-        .filter("raw->>cancelled_at", "is", null)
-        .order("order_date", { ascending: false }));
-      if (olderErr) throw new Error(olderErr.message);
-      rows.push(...(older ?? []).map((o: any) => ({ ...o, before_period: true })));
+  // Data do último evento real de rastreio (17track), quando o pedido tem
+  // integração ativa — mais confiável que shipped_at pra saber se o rastreio
+  // "parou" de andar, já que shipped_at não muda depois da postagem.
+  const orderIds = (rows ?? []).map((o: any) => o.id);
+  const lastEventMap = new Map<string, string | null>();
+  const lastLabelMap = new Map<string, string | null>();
+  // Quando o sync conferiu esse rastreio pela última vez (updated_at é
+  // regravado a cada consulta ao 17track, mesmo sem evento novo).
+  const checkedAtMap = new Map<string, string | null>();
+  if (orderIds.length) {
+    const { data: trackingRows } = await selectAllIn<any>(orderIds, (ids) => supabaseAdmin
+      .from("shop_order_tracking")
+      .select("order_id,last_event_at,last_event_label,tracking_status,updated_at")
+      .in("order_id", ids));
+    for (const t of trackingRows ?? []) {
+      lastEventMap.set(t.order_id, t.last_event_at);
+      lastLabelMap.set(t.order_id, t.tracking_status ?? t.last_event_label);
+      checkedAtMap.set(t.order_id, t.updated_at);
+    }
+  }
+  // O Shopify já marca "shipped" assim que a etiqueta é criada (tem código de
+  // rastreio), mas isso não significa que a transportadora pegou o pacote —
+  // enquanto o rastreio real (17track) só mostrar "info recebida", o status
+  // exibido continua "pendente envio". Calculado na leitura (não grava nada)
+  // pra não brigar com o sync do Shopify, que roda em outro job.
+  // "Pending" e
+  // "InfoReceived" são o mesmo caso (etiqueta criada, transportadora ainda
+  // sem nenhum registro real do pacote), só com textos diferentes conforme
+  // a transportadora retorna.
+  function isInfoReceivedOnly(label: string | null | undefined): boolean {
+    if (!label) return false;
+    const t = label.toLowerCase().replace(/\s+/g, "");
+    return t.includes("inforeceived") || t.includes("pending");
+  }
+
+  // O status pode ter sido atualizado automaticamente (17track) via shipped_at/
+  // delivered_at/problem_at sem que a coluna delivery_status tenha sido tocada —
+  // aqui reconciliamos as duas fontes pra refletir o que já foi detectado.
+  // delivered_at/problem_at são sinais fortes: sempre prevalecem sobre um
+  // delivery_status desatualizado (ex.: preso em "shipped" desde o envio).
+  // Pedido feito há 25+ dias e ainda não entregue (nem já marcado como problema/
+  // devolvido) é sinal de atraso — sinaliza automaticamente como "problem" e
+  // preenche a obs, sem sobrescrever uma nota que já tenha sido escrita à mão.
+  const nowMs = Date.now();
+  const withEffectiveStatus = (rows ?? []).map((o: any) => {
+    let status = o.delivery_status;
+    if (o.delivered_at) status = "delivered";
+    else if (o.problem_at && status !== "waiting_customer") status = "problem";
+    else if (!status || status === "pending_shipment") status = o.shipped_at ? "shipped" : "pending_shipment";
+    // Rebaixado pra "pendente envio": some a Data Postado junto (senão fica
+    // contraditório mostrar uma data de postagem com status "pendente"), e
+    // não conta mais no tempo médio de postagem lá embaixo.
+    let shippedAt = o.shipped_at;
+    if (status === "shipped" && isInfoReceivedOnly(lastLabelMap.get(o.id))) {
+      status = "pending_shipment";
+      shippedAt = null;
     }
 
-    // Data do último evento real de rastreio (17track), quando o pedido tem
-    // integração ativa — mais confiável que shipped_at pra saber se o rastreio
-    // "parou" de andar, já que shipped_at não muda depois da postagem.
-    const orderIds = (rows ?? []).map((o: any) => o.id);
-    const lastEventMap = new Map<string, string | null>();
-    const lastLabelMap = new Map<string, string | null>();
-    // Quando o sync conferiu esse rastreio pela última vez (updated_at é
-    // regravado a cada consulta ao 17track, mesmo sem evento novo).
-    const checkedAtMap = new Map<string, string | null>();
-    if (orderIds.length) {
-      const { data: trackingRows } = await selectAllIn<any>(orderIds, (ids) => supabaseAdmin
-        .from("shop_order_tracking")
-        .select("order_id,last_event_at,last_event_label,tracking_status,updated_at")
-        .in("order_id", ids));
-      for (const t of trackingRows ?? []) {
-        lastEventMap.set(t.order_id, t.last_event_at);
-        lastLabelMap.set(t.order_id, t.tracking_status ?? t.last_event_label);
-        checkedAtMap.set(t.order_id, t.updated_at);
+    let note = o.logistics_note;
+    if (status !== "delivered" && status !== "problem" && status !== "returned" && status !== "waiting_customer") {
+      const daysSinceOrder = (nowMs - new Date(o.order_date).getTime()) / 86_400_000;
+      if (daysSinceOrder >= 25) {
+        status = "problem";
+        if (!note) note = "tempo de entrega demorado";
       }
     }
-    // O Shopify já marca "shipped" assim que a etiqueta é criada (tem código de
-    // rastreio), mas isso não significa que a transportadora pegou o pacote —
-    // enquanto o rastreio real (17track) só mostrar "info recebida", o status
-    // exibido continua "pendente envio". Calculado na leitura (não grava nada)
-    // pra não brigar com o sync do Shopify, que roda em outro job.
-    // "Pending" e
-    // "InfoReceived" são o mesmo caso (etiqueta criada, transportadora ainda
-    // sem nenhum registro real do pacote), só com textos diferentes conforme
-    // a transportadora retorna.
-    function isInfoReceivedOnly(label: string | null | undefined): boolean {
-      if (!label) return false;
-      const t = label.toLowerCase().replace(/\s+/g, "");
-      return t.includes("inforeceived") || t.includes("pending");
-    }
-
-    // O status pode ter sido atualizado automaticamente (17track) via shipped_at/
-    // delivered_at/problem_at sem que a coluna delivery_status tenha sido tocada —
-    // aqui reconciliamos as duas fontes pra refletir o que já foi detectado.
-    // delivered_at/problem_at são sinais fortes: sempre prevalecem sobre um
-    // delivery_status desatualizado (ex.: preso em "shipped" desde o envio).
-    // Pedido feito há 25+ dias e ainda não entregue (nem já marcado como problema/
-    // devolvido) é sinal de atraso — sinaliza automaticamente como "problem" e
-    // preenche a obs, sem sobrescrever uma nota que já tenha sido escrita à mão.
-    const nowMs = Date.now();
-    const withEffectiveStatus = (rows ?? []).map((o: any) => {
-      let status = o.delivery_status;
-      if (o.delivered_at) status = "delivered";
-      else if (o.problem_at && status !== "waiting_customer") status = "problem";
-      else if (!status || status === "pending_shipment") status = o.shipped_at ? "shipped" : "pending_shipment";
-      // Rebaixado pra "pendente envio": some a Data Postado junto (senão fica
-      // contraditório mostrar uma data de postagem com status "pendente"), e
-      // não conta mais no tempo médio de postagem lá embaixo.
-      let shippedAt = o.shipped_at;
-      if (status === "shipped" && isInfoReceivedOnly(lastLabelMap.get(o.id))) {
-        status = "pending_shipment";
-        shippedAt = null;
-      }
-
-      let note = o.logistics_note;
-      if (status !== "delivered" && status !== "problem" && status !== "returned" && status !== "waiting_customer") {
-        const daysSinceOrder = (nowMs - new Date(o.order_date).getTime()) / 86_400_000;
-        if (daysSinceOrder >= 25) {
-          status = "problem";
-          if (!note) note = "tempo de entrega demorado";
-        }
-      }
-      return { ...o, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
-    });
-
-    return withEffectiveStatus;
+    return { ...o, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
   });
+
+  return withEffectiveStatus;
+}
 
 export const updateOrderLogistics = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])

@@ -17,6 +17,9 @@ export const getNavBadges = createServerFn({ method: "GET" })
       can("tarefas")
         ? supabaseAdmin.from("tasks").select("id", { count: "exact", head: true })
             .eq("user_id", context.ownerId).neq("status", "concluida")
+            // Tarefa criada de um chargeback (source_key "dispute:…") não conta —
+            // o chargeback já tem o próprio número no menu.
+            .or("source_key.is.null,source_key.not.like.dispute:*")
             .then(({ count }) => count ?? 0)
         : null,
       // Não respondido = conversa em aberto cuja última mensagem é do cliente.
