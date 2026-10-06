@@ -2758,6 +2758,7 @@ export type Database = {
           edd_from: string | null
           edd_source: string | null
           edd_to: string | null
+          extra_packages: Json
           id: string;
           last_event_at: string | null;
           last_event_label: string | null;
@@ -2780,6 +2781,7 @@ export type Database = {
           edd_from?: string | null
           edd_source?: string | null
           edd_to?: string | null
+          extra_packages?: Json
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;
@@ -2802,6 +2804,7 @@ export type Database = {
           edd_from?: string | null
           edd_source?: string | null
           edd_to?: string | null
+          extra_packages?: Json
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;

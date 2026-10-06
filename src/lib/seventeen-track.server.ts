@@ -164,35 +164,52 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!orders.length) return result;
 
   const { data: tracks } = await selectAllIn<any>(orders.map((o: any) => o.id), (ids) => supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_number,tracking_status,last_event_at,registered_17track_at,timeline").in("order_id", ids));
+    .select("order_id,tracking_number,tracking_status,last_event_at,registered_17track_at,timeline,extra_packages").in("order_id", ids));
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
   const code = (o: any) => String(o.tracking_code).trim().toUpperCase();
 
-  // 1. Cadastro dos códigos que ainda não estão no 17track.
-  const toRegister = orders.filter((o: any) => {
+  // Pedido com mais de um envio: os outros códigos da Shopify viram "pacotes
+  // extras" (o principal continua sendo o tracking_code do pedido).
+  const extrasBy = new Map<string, ExtraPackage[]>();
+  for (const o of orders) {
+    const stored: ExtraPackage[] = Array.isArray(trackBy.get(o.id)?.extra_packages) ? trackBy.get(o.id).extra_packages : [];
+    const numbers = fulfillmentCodes(o.fulfillments).filter((n) => n !== code(o));
+    if (numbers.length) extrasBy.set(o.id, numbers.map((n) => stored.find((x) => x.number === n) ?? { number: n }));
+  }
+  const dirtyExtras = new Set<string>();
+
+  // 1. Cadastro dos códigos que ainda não estão no 17track (principal e extras).
+  type Reg = { o: any; number: string; extra: boolean };
+  const toRegister: Reg[] = [];
+  for (const o of orders) {
     const t = trackBy.get(o.id);
-    return !t?.registered_17track_at || String(t.tracking_number ?? "").toUpperCase() !== code(o);
-  });
+    if (!t?.registered_17track_at || String(t.tracking_number ?? "").toUpperCase() !== code(o)) toRegister.push({ o, number: code(o), extra: false });
+    for (const x of extrasBy.get(o.id) ?? []) if (!x.registered_17track_at) toRegister.push({ o, number: x.number, extra: true });
+  }
   for (let i = 0; i < toRegister.length && !result.outOfQuota; i += BATCH) {
     if (Date.now() > deadline) break;
     const chunk = toRegister.slice(i, i + BATCH);
     try {
-      const data = await call17("/register", chunk.map((o: any) => ({ number: code(o), tag: o.id })));
-      const ok = new Set<string>((data?.accepted ?? []).map((a: any) => String(a.number)));
+      const data = await call17("/register", chunk.map((c) => ({ number: c.number, tag: c.o.id })));
+      const ok = new Set<string>((data?.accepted ?? []).map((a: any) => String(a.number).toUpperCase()));
       result.registered += ok.size;
       for (const r of data?.rejected ?? []) {
-        if (r.error?.code === ALREADY_REGISTERED) ok.add(String(r.number));
+        if (r.error?.code === ALREADY_REGISTERED) ok.add(String(r.number).toUpperCase());
         else if (OUT_OF_QUOTA.test(String(r.error?.message ?? ""))) result.outOfQuota = true;
         else result.errors.push(`${r.number}: ${r.error?.message ?? r.error?.code}`);
       }
       const now = new Date().toISOString();
-      const rows = chunk.filter((o: any) => ok.has(code(o))).map((o: any) => ({
-        user_id: o.user_id, shop_id: o.shop_id, order_id: o.id, tracking_number: code(o),
+      const rows = chunk.filter((c) => !c.extra && ok.has(c.number)).map((c) => ({
+        user_id: c.o.user_id, shop_id: c.o.shop_id, order_id: c.o.id, tracking_number: c.number,
         provider: "17track", registered_17track_at: now,
       }));
       if (rows.length) {
         await supabaseAdmin.from("shop_order_tracking").upsert(rows, { onConflict: "order_id" });
         for (const r of rows) trackBy.set(r.order_id, { ...(trackBy.get(r.order_id) ?? {}), ...r });
+      }
+      for (const c of chunk.filter((c) => c.extra && ok.has(c.number))) {
+        const x = (extrasBy.get(c.o.id) ?? []).find((p) => p.number === c.number);
+        if (x) { x.registered_17track_at = now; dirtyExtras.add(c.o.id); }
       }
     } catch (e: any) {
       if (OUT_OF_QUOTA.test(String(e?.message))) result.outOfQuota = true;
@@ -200,57 +217,58 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     }
   }
 
-  // 2 e 3. Rastreio dos cadastrados.
+  // 2. Busca o rastreio de todos os códigos cadastrados (de 40 em 40).
   const { data: rules } = await supabaseAdmin.from("track123_event_rules")
     .select("shop_id,event_key,event_label,target_status").in("shop_id", shops.map((s) => s.shop_id)).eq("enabled", true);
   const matcherBy = new Map<string, ReturnType<typeof buildRuleMatcher>>();
   for (const s of shops) matcherBy.set(s.shop_id, buildRuleMatcher((rules ?? []).filter((r: any) => r.shop_id === s.shop_id)));
 
-  const registered = orders.filter((o: any) => trackBy.get(o.id)?.registered_17track_at);
-  const byCode = new Map<string, any[]>();
-  for (const o of registered) byCode.set(code(o), [...(byCode.get(code(o)) ?? []), o]);
-  const codes = [...byCode.keys()];
+  const wanted = new Set<string>();
+  for (const o of orders) {
+    if (trackBy.get(o.id)?.registered_17track_at) wanted.add(code(o));
+    for (const x of extrasBy.get(o.id) ?? []) if (x.registered_17track_at) wanted.add(x.number);
+  }
+  const codes = [...wanted];
+  const itemBy = new Map<string, any>();
   for (let i = 0; i < codes.length; i += BATCH) {
     if (Date.now() > deadline) break;
-    let data: any;
     try {
-      data = await call17("/gettrackinfo", codes.slice(i, i + BATCH).map((number) => ({ number })));
+      const data = await call17("/gettrackinfo", codes.slice(i, i + BATCH).map((number) => ({ number })));
+      for (const item of data?.accepted ?? []) itemBy.set(String(item.number).toUpperCase(), item);
     } catch (e: any) {
       result.errors.push(String(e?.message ?? e).slice(0, 200));
+    }
+  }
+
+  // 3. Grava pedido a pedido: primeiro os pacotes extras, depois o principal —
+  // o pedido só conta como entregue quando TODOS os pacotes foram entregues.
+  for (const o of orders) {
+    const template = integBy.get(o.shop_id)?.tracking_link_template ?? null;
+    const extras = extrasBy.get(o.id) ?? [];
+    for (const x of extras) {
+      const item = itemBy.get(x.number);
+      if (!item) continue;
+      const before = x.tracking_status ?? null;
+      if (applyExtraItem(x, item)) dirtyExtras.add(o.id);
+      if (Date.now() <= deadline) await pushToShopify(o, x.number, item, before, template, opts.pushAll, result);
+    }
+    if (dirtyExtras.has(o.id)) {
+      const { error } = await supabaseAdmin.from("shop_order_tracking").upsert(
+        { user_id: o.user_id, shop_id: o.shop_id, order_id: o.id, extra_packages: extras as any }, { onConflict: "order_id" });
+      if (error) result.errors.push(`${code(o)} (pacotes extras): ${error.message.slice(0, 120)}`);
+    }
+
+    const item = itemBy.get(code(o));
+    if (!item) continue;
+    const stored = trackBy.get(o.id);
+    const holdDelivered = extras.some((x) => x.status_key !== "Delivered");
+    try {
+      if (await applyItem(o, item, stored, template, matcherBy.get(o.shop_id)!, holdDelivered)) result.updated++;
+    } catch (e: any) {
+      result.errors.push(`${code(o)}: ${String(e?.message ?? e).slice(0, 150)}`);
       continue;
     }
-    for (const item of data?.accepted ?? []) {
-      for (const o of byCode.get(String(item.number).toUpperCase()) ?? []) {
-        const stored = trackBy.get(o.id);
-        const template = integBy.get(o.shop_id)?.tracking_link_template ?? null;
-        try {
-          if (await applyItem(o, item, stored, template, matcherBy.get(o.shop_id)!)) result.updated++;
-        } catch (e: any) {
-          result.errors.push(`${code(o)}: ${String(e?.message ?? e).slice(0, 150)}`);
-          continue;
-        }
-        if (Date.now() > deadline) continue;
-        // Shopify: link do envio e status (erro aqui não para o sync).
-        try {
-          const url = buildTrackingUrl(template, code(o));
-          if (url && (await updateFulfillmentTrackingUrl({ shopId: o.shop_id, fulfillments: o.fulfillments, trackingNumber: code(o), url })).sent) result.shopifyLinks++;
-          const status: string | null = item?.track_info?.latest_status?.status ?? null;
-          const label = status ? STATUS_LABEL[status] ?? status : null;
-          if (status && (opts.pushAll || label !== stored?.tracking_status)) {
-            const edd = officialEdd(eddOf(item));
-            const lastUtc = toTimeline(item)[0]?.event_time_utc;
-            const r = await pushFulfillmentStatusToShopify({
-              orderId: o.id, trackingNumber: code(o), status,
-              happenedAt: lastUtc ? `${lastUtc.replace(" ", "T")}Z` : null,
-              estimatedDeliveryAt: edd?.to ?? edd?.from ?? null,
-            });
-            if (r.sent) result.shopifyStatus++;
-          }
-        } catch (e: any) {
-          result.errors.push(`Shopify ${code(o)}: ${String(e?.message ?? e).slice(0, 150)}`);
-        }
-      }
-    }
+    if (Date.now() <= deadline) await pushToShopify(o, code(o), item, stored?.tracking_status ?? null, template, opts.pushAll, result);
   }
 
   // Status por loja (o sino avisa quando para de sincronizar).
@@ -265,8 +283,76 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   return result;
 }
 
+type ExtraPackage = {
+  number: string; registered_17track_at?: string | null; carrier?: string | null;
+  tracking_status?: string | null; status_key?: string | null;
+  last_event_at?: string | null; last_event_label?: string | null; timeline?: any[];
+  edd_from?: string | null; edd_to?: string | null; edd_source?: string | null;
+};
+
+// Códigos de rastreio de todos os envios (não cancelados) do pedido na Shopify.
+function fulfillmentCodes(fulfillments: any[] | null | undefined): string[] {
+  const out = new Set<string>();
+  for (const f of fulfillments ?? []) {
+    if (String(f?.status ?? "").toLowerCase() === "cancelled") continue;
+    for (const n of [f?.tracking_number, ...(f?.tracking_numbers ?? [])]) {
+      const c = String(n ?? "").trim().toUpperCase();
+      if (c) out.add(c);
+    }
+  }
+  return [...out];
+}
+
+// Atualiza um pacote extra com o que o 17track trouxe. false = nada mudou.
+function applyExtraItem(x: ExtraPackage, item: any): boolean {
+  const timeline = toTimeline(item);
+  const edd = eddOf(item);
+  const status: string | null = item?.track_info?.latest_status?.status ?? null;
+  const last = timeline[0];
+  const lastAt = last?.event_time_utc ? `${last.event_time_utc.replace(" ", "T")}Z` : null;
+  if (!timeline.length && x.timeline?.length) return false;
+  const next: ExtraPackage = {
+    ...x,
+    carrier: ((item?.track_info?.tracking?.providers ?? []) as any[]).map((p) => p.provider?.name).filter(Boolean).join(" → ") || x.carrier || null,
+    tracking_status: status ? STATUS_LABEL[status] ?? status : x.tracking_status ?? null,
+    status_key: labelSaysDelivered(last?.event_detail) ? "Delivered" : status ?? x.status_key ?? null,
+    last_event_at: lastAt ?? x.last_event_at ?? null,
+    last_event_label: last?.event_detail ?? x.last_event_label ?? null,
+    timeline: timeline.length ? timeline : x.timeline ?? [],
+    edd_from: edd.from, edd_to: edd.to, edd_source: edd.source,
+  };
+  const changed = JSON.stringify(next) !== JSON.stringify(x);
+  Object.assign(x, next);
+  return changed;
+}
+
+// Shopify: troca o link do envio desse código e manda o status quando muda
+// (erro aqui não para o sync).
+async function pushToShopify(o: any, number: string, item: any, previousLabel: string | null, template: string | null, pushAll: boolean | undefined, result: SeventeenSyncResult) {
+  try {
+    const url = buildTrackingUrl(template, number);
+    if (url && (await updateFulfillmentTrackingUrl({ shopId: o.shop_id, fulfillments: o.fulfillments, trackingNumber: number, url })).sent) result.shopifyLinks++;
+    const status: string | null = item?.track_info?.latest_status?.status ?? null;
+    const label = status ? STATUS_LABEL[status] ?? status : null;
+    if (status && (pushAll || label !== previousLabel)) {
+      const edd = officialEdd(eddOf(item));
+      const lastUtc = toTimeline(item)[0]?.event_time_utc;
+      const r = await pushFulfillmentStatusToShopify({
+        orderId: o.id, trackingNumber: number, status,
+        happenedAt: lastUtc ? `${lastUtc.replace(" ", "T")}Z` : null,
+        estimatedDeliveryAt: edd?.to ?? edd?.from ?? null,
+      });
+      if (r.sent) result.shopifyStatus++;
+    }
+  } catch (e: any) {
+    result.errors.push(`Shopify ${number}: ${String(e?.message ?? e).slice(0, 150)}`);
+  }
+}
+
 // Grava o rastreio de um pedido. Devolve false quando não havia nada novo.
-async function applyItem(o: any, item: any, stored: any, template: string | null, matchRule: ReturnType<typeof buildRuleMatcher>): Promise<boolean> {
+// holdDelivered: pedido com outro pacote ainda não entregue — mesmo com este
+// entregue, o pedido não vira "entregue" (fica enviado).
+async function applyItem(o: any, item: any, stored: any, template: string | null, matchRule: ReturnType<typeof buildRuleMatcher>, holdDelivered = false): Promise<boolean> {
   const status: string | null = item?.track_info?.latest_status?.status ?? null;
   const timeline = toTimeline(item);
   const edd = eddOf(item);
@@ -290,9 +376,10 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
 
   const statusLabel = status ? STATUS_LABEL[status] ?? status : null;
   const carriers = ((item?.track_info?.tracking?.providers ?? []) as any[]).map((p) => p.provider?.name).filter(Boolean);
-  const target = finalTrackingTarget(
+  let target = finalTrackingTarget(
     matchRule(lastLabel) ?? matchRule(statusLabel) ?? inferTarget(status, lastLabel),
     statusLabel, lastLabel, true);
+  if (target === "delivered" && holdDelivered) target = "shipped";
 
   const eventDate = eventDateUS(lastAt) ?? isoTodayUS();
   const postedDate = firstCarrierEventDateUS(timeline);

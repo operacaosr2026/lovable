@@ -57,9 +57,24 @@ export const TRACKING_CODE_RE = /^[A-Za-z0-9-]{5,50}$/;
 export async function lookupPublicTracking(rawCode: string): Promise<{ tracking: PublicTracking | null }> {
   const code = rawCode.trim().toUpperCase();
   if (!TRACKING_CODE_RE.test(code)) return { tracking: null };
-  const { data: tr } = await supabaseAdmin.from("shop_order_tracking")
+  const { data: main } = await supabaseAdmin.from("shop_order_tracking")
     .select("order_id,tracking_status,timeline,edd_from,edd_to,edd_source")
     .eq("tracking_number", code).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  // Não é o código principal: pode ser outro pacote do mesmo pedido (pedido com
+  // mais de um envio) — mostra o rastreio desse pacote.
+  let tr = main;
+  if (!tr) {
+    const { data: row } = await supabaseAdmin.from("shop_order_tracking")
+      .select("order_id,extra_packages")
+      .filter("extra_packages", "cs", JSON.stringify([{ number: code }])).limit(1).maybeSingle();
+    const pkg = ((row?.extra_packages as any[]) ?? []).find((x) => x?.number === code);
+    if (row && pkg) {
+      tr = {
+        order_id: row.order_id, tracking_status: pkg.tracking_status ?? null, timeline: pkg.timeline ?? [],
+        edd_from: pkg.edd_from ?? null, edd_to: pkg.edd_to ?? null, edd_source: pkg.edd_source ?? null,
+      };
+    }
+  }
 
   // Sem linha de rastreio ainda: o código pode já estar no pedido (veio da Shopify).
   const { data: order } = tr
