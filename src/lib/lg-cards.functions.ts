@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEstornoStats } from "@/lib/estorno-daily.server";
 import { attachLiveShopifyNames, costProductsFor, getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { matchLineItemProduct, orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
-import { profit } from "@/lib/finance-rules";
+import { profit, comparisonPeriod } from "@/lib/finance-rules";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
@@ -654,10 +654,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const from = data?.from ?? defaultMonthStart;
     const to = data?.to ?? todayStr;
 
-    // "vs mês anterior": mesma quantidade de dias, imediatamente anterior a `from`.
-    const days = Math.round((new Date(to + "T00:00:00Z").getTime() - new Date(from + "T00:00:00Z").getTime()) / 86_400_000) + 1;
-    const prevTo = addDaysISO(from, -1);
-    const prevFrom = addDaysISO(prevTo, -(days - 1));
+    const { prevFrom, prevTo } = comparisonPeriod(from, to);
 
     // Taxa de estorno é sempre uma janela rolante fixa de 90 dias (contando
     // hoje), independente do seletor de datas: estorno demora a acontecer

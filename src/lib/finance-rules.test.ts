@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateRefundsAndChargebacks, diluteRefundsAndChargebacks, netRevenue, profit,
-  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch,
+  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, comparisonPeriod,
 } from "@/lib/finance-rules";
 import { orderDateFor } from "@/lib/order-date";
 
@@ -78,6 +78,20 @@ describe("reembolso e chargeback", () => {
     const faturamento = netRevenue(1000, 100, 50);
     expect(faturamento).toBe(850);
     expect(profit({ faturamento, custoProduto: 300, taxas: 40, anuncios: 200 })).toBe(310);
+  });
+});
+
+describe("comparação dos cards", () => {
+  it("24. 'Este mês' compara com os mesmos dias do mês anterior", () => {
+    expect(comparisonPeriod("2026-10-01", "2026-10-06")).toMatchObject({ prevFrom: "2026-09-01", prevTo: "2026-09-06", sameDaysPrevMonth: true });
+    // dia 31 num mês de 30: vai até o último dia do mês anterior
+    expect(comparisonPeriod("2026-10-01", "2026-10-31")).toMatchObject({ prevFrom: "2026-09-01", prevTo: "2026-09-30" });
+    // março × fevereiro
+    expect(comparisonPeriod("2026-03-01", "2026-03-30")).toMatchObject({ prevFrom: "2026-02-01", prevTo: "2026-02-28" });
+  });
+  it("25. outros períodos comparam com os mesmos N dias logo antes", () => {
+    expect(comparisonPeriod("2026-10-01", "2026-10-01")).toMatchObject({ prevFrom: "2026-09-01", prevTo: "2026-09-01" });
+    expect(comparisonPeriod("2026-09-30", "2026-10-06")).toMatchObject({ prevFrom: "2026-09-23", prevTo: "2026-09-29", sameDaysPrevMonth: false });
   });
 });
 

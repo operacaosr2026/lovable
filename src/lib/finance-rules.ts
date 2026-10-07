@@ -156,6 +156,25 @@ export function diluteRefundsAndChargebacks(
   return { rows: [...byShop.values()], monthTotals };
 }
 
+// Período de comparação dos cards do Dashboard ("vs. …"):
+//  - período que começa no dia 1º e fica dentro do mês ("Este mês", 1º a N):
+//    os mesmos dias do mês anterior (1º a N; N limitado ao último dia daquele mês);
+//  - qualquer outro: a mesma quantidade de dias logo antes.
+// Antes era sempre o segundo caso — "Este mês" no dia 6 comparava com os 6
+// últimos dias do mês anterior, e o card dizia "vs. mês anterior".
+export function comparisonPeriod(fromISO: string, toISO: string): { prevFrom: string; prevTo: string; sameDaysPrevMonth: boolean } {
+  if (fromISO.endsWith("-01") && fromISO.slice(0, 7) === toISO.slice(0, 7)) {
+    const prevMonthLast = addDayISO(fromISO, -1);
+    const prevFrom = `${prevMonthLast.slice(0, 7)}-01`;
+    const day = toISO.slice(8, 10);
+    const candidate = `${prevMonthLast.slice(0, 7)}-${day}`;
+    return { prevFrom, prevTo: candidate < prevMonthLast ? candidate : prevMonthLast, sameDaysPrevMonth: true };
+  }
+  const days = Math.round((Date.parse(`${toISO}T00:00:00Z`) - Date.parse(`${fromISO}T00:00:00Z`)) / 86_400_000) + 1;
+  const prevTo = addDayISO(fromISO, -1);
+  return { prevFrom: addDayISO(prevTo, -(days - 1)), prevTo, sameDaysPrevMonth: false };
+}
+
 // Lucro = faturamento líquido (vendas − reembolsos − chargebacks) − custo dos
 // produtos − taxas Shopify − anúncios.
 export function netRevenue(vendas: number, reembolsos: number, chargebacks: number) {

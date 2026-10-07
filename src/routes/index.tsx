@@ -14,6 +14,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { getDashboardOverview, type DashboardProductRow } from "@/lib/lg-cards.functions";
+import { comparisonPeriod } from "@/lib/finance-rules";
 import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
@@ -169,7 +170,7 @@ function Sparkline({ data, dataKey, color }: { data: DailyPoint[]; dataKey: keyo
 
 function DashKpiCard({
   icon: Icon, accent, label, value, delta, deltaUnit = "%", invert = false,
-  sparklineKey, chartData, stats, periodNote, shopRows, loading,
+  sparklineKey, chartData, stats, periodNote, shopRows, loading, compareLabel = "vs. período anterior",
 }: {
   icon: any; accent: MetricAccent; label: string; value: string;
   delta: number; deltaUnit?: string; invert?: boolean;
@@ -179,6 +180,7 @@ function DashKpiCard({
   periodNote?: string;
   shopRows?: { shop_id: string; shop_name: string; taxaEstorno: number }[];
   loading?: boolean;
+  compareLabel?: string;
 }) {
   const a = METRIC_ACCENTS[accent];
   return (
@@ -195,7 +197,7 @@ function DashKpiCard({
       }
       <div className="mt-1 flex items-center gap-1.5 flex-wrap">
         <DashDelta value={delta} unit={deltaUnit} invert={invert} />
-        <span className="text-[11px] text-muted-foreground">vs. mês anterior</span>
+        <span className="text-[11px] text-muted-foreground">{compareLabel}</span>
       </div>
 
       {sparklineKey && (
@@ -725,6 +727,8 @@ function Dashboard() {
   const [period, setPeriod] = useState("mes");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const { from, to } = useMemo(() => getPeriodRange(period, customRange), [period, customRange]);
+  // Mesma regra do servidor (comparisonPeriod): começou no dia 1º e ficou no mês = mesmos dias do mês anterior.
+  const compareLabel = comparisonPeriod(from, to).sameDaysPrevMonth ? "vs. mesmos dias do mês anterior" : "vs. período anterior";
   const nDias = useMemo(() => daysBetween(from, to), [from, to]);
 
   // "Metas" vem primeiro e já selecionada.
@@ -850,7 +854,7 @@ function Dashboard() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
-        <DashKpiCard
+        <DashKpiCard compareLabel={compareLabel}
           icon={TrendingUp} accent="primary" loading={isLoading}
           label="Faturamento total" value={fmtMoney(totals.faturamento)}
           delta={totals.faturamentoDelta} sparklineKey="faturamento" chartData={chartData}
@@ -859,7 +863,7 @@ function Dashboard() {
             { label: "Pedidos", value: totals.pedidos.toLocaleString("pt-BR") },
           ]}
         />
-        <DashKpiCard
+        <DashKpiCard compareLabel={compareLabel}
           icon={Megaphone} accent="info" loading={isLoading} invert
           label="Gasto com ads" value={fmtMoney(totals.anuncios)}
           delta={totals.anunciosDelta} sparklineKey="anuncios" chartData={chartData}
@@ -868,7 +872,7 @@ function Dashboard() {
             { label: "Média diária", value: fmtMoney(totals.anuncios / nDias) },
           ]}
         />
-        <DashKpiCard
+        <DashKpiCard compareLabel={compareLabel}
           icon={Package} accent="warning" loading={isLoading} invert
           label="Gasto com pedidos" value={fmtMoney(totals.custoProduto)}
           delta={totals.custoProdutoDelta} sparklineKey="custo" chartData={chartData}
@@ -877,7 +881,7 @@ function Dashboard() {
             { label: "Média por pedido", value: fmtMoney(totals.pedidos > 0 ? totals.custoProduto / totals.pedidos : 0) },
           ]}
         />
-        <DashKpiCard
+        <DashKpiCard compareLabel={compareLabel}
           icon={Wallet} accent="success" loading={isLoading}
           label="Lucro" value={fmtMoney(totals.lucro)}
           delta={totals.lucroDelta} sparklineKey="lucro" chartData={chartData}
@@ -886,7 +890,7 @@ function Dashboard() {
             { label: "Média diária", value: fmtMoney(totals.lucro / nDias) },
           ]}
         />
-        <DashKpiCard
+        <DashKpiCard compareLabel={compareLabel}
           icon={RotateCcw} accent="destructive" loading={isLoading} invert
           label="Taxa de estorno" value={fmtPct(totals.taxaEstorno)}
           delta={totals.taxaEstornoDeltaPP} deltaUnit=" p.p."
@@ -995,7 +999,7 @@ function Dashboard() {
                       {totals.faturamentoDelta >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
                       {totals.faturamentoDelta >= 0 ? "+" : ""}{Number(totals.faturamentoDelta).toFixed(1)}%
                     </span>
-                    <p className="text-[9px] text-muted-foreground mt-0.5">{period === "mes" ? "vs mês anterior" : "vs período anterior"}</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">{compareLabel}</p>
                   </div>
                 </div>
               </div>
