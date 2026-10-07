@@ -37,6 +37,18 @@ const DELIVERY: Record<string, string> = {
   returned: "Devolvido", problem: "Problema", waiting_customer: "Esperando cliente",
 };
 
+// Cor do selo de cada tipo de alerta (lista e legenda), pra bater o olho e saber.
+const NETWORK_CLASSES: Record<string, string> = {
+  CDRN:       "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  Ethoca:     "bg-orange-500/10 text-orange-700 dark:text-orange-400",
+  RDR:        "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+  Chargeback: "bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  Reembolso:  "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+};
+function networkClasses(n: string) {
+  return NETWORK_CLASSES[n] ?? "bg-violet-500/10 text-violet-700 dark:text-violet-400";
+}
+
 export function AlertsTab() {
   const fn = useServerFn(getChargebackAlerts);
   // Recarrega sozinha: a cobrança automática muda status a cada rodada (5 em 5 min).
@@ -139,7 +151,7 @@ export function AlertsTab() {
             ["Chargeback", "Disputa que a loja perdeu, mas o rastreio mostra o pedido entregue: o banco devolveu o dinheiro ao cliente e ele ficou com o produto."],
             ["Reembolso", "Reembolso total de pedido que já tinha sido enviado: o cliente recebeu o dinheiro de volta e o produto. A cobrança só sai depois de entregue."],
           ] as const).map(([k, d]) => (
-            <p key={k}><span className={`inline-flex text-[11px] px-1.5 py-0.5 mr-1.5 rounded-full font-semibold ${k === "Chargeback" ? "bg-rose-500/10 text-rose-700 dark:text-rose-400" : "bg-violet-500/10 text-violet-700 dark:text-violet-400"}`}>{k}</span>{d}</p>
+            <p key={k}><span className={`inline-flex text-[11px] px-1.5 py-0.5 mr-1.5 rounded-full font-semibold ${networkClasses(k)}`}>{k}</span>{d}</p>
           ))}
         </div>
       </div>
@@ -167,7 +179,7 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
     <div className="truncate font-medium" title={r.product ?? undefined}>{r.product ?? "—"}</div>
     <div className="text-xs text-muted-foreground truncate">{r.customerName ?? "—"}</div>
   </>;
-  const network = <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-semibold ${r.network === "Chargeback" ? "bg-rose-500/10 text-rose-700 dark:text-rose-400" : "bg-violet-500/10 text-violet-700 dark:text-violet-400"}`}>{r.network}</span>;
+  const network = <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-semibold ${networkClasses(r.network)}`}>{r.network}</span>;
   const refund = <>
     <div className="font-semibold tabular-nums">{money(r.refundedAmount)}</div>
     <div className="text-xs text-muted-foreground">{fmtDate(r.refundedAt)}</div>
