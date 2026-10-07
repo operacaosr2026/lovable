@@ -14,7 +14,10 @@ import {
 // pré-chargeback (CDRN/Ethoca/RDR). O reembolso evita o chargeback, mas o pedido
 // quase sempre foi entregue — então vale contatar o cliente pra reaver o valor.
 // Também entram os chargebacks PERDIDOS com o pedido entregue (o banco tirou o
-// dinheiro, mas o cliente recebeu): mesma sequência de cobrança, rede "Chargeback".
+// dinheiro, mas o cliente recebeu): mesma sequência de cobrança, rede "Chargeback";
+// e os REEMBOLSOS TOTAIS de pedido já enviado (com código de rastreio): o cliente
+// recebeu o dinheiro de volta e o produto — rede "Reembolso". Parcial fica de fora
+// (costuma ser desconto/frete). A sequência só envia e-mail com o pedido entregue.
 // Identificação (tudo no pedido guardado, raw->refunds): reembolso feito pelo app
 // do Disputifier (transação com source_name do app) ou com a nota do alerta
 // ("Ethoca Alert", "cdrn alerts"…), ou tag CDRN/Ethoca/RDR no pedido.
@@ -33,12 +36,15 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
 
   // Só pedidos com reembolso (o resto do pedido não interessa aqui).
   const { data: orders, error } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-    .select("id,shop_id,external_id,order_number,order_date,delivery_status,delivered_at,tracking_code,tracking_url,tags:raw->>tags,currency:raw->>currency,refunds:raw->refunds,email:raw->>email,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
+    .select("id,shop_id,external_id,order_number,order_date,delivery_status,delivered_at,tracking_code,tracking_url,shopify_financial_status,tags:raw->>tags,currency:raw->>currency,refunds:raw->refunds,email:raw->>email,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
     .eq("user_id", ownerId).in("shop_id", shopIds).not("raw->refunds", "is", null));
   if (error) throw new Error(error.message);
 
   const found: any[] = [];
+  const refundSum = (txs: any[]) => txs.filter((t) => (t.kind ?? "refund") === "refund" && (t.status ?? "success") === "success")
+    .reduce((s, t) => s + Number(t.amount ?? 0), 0);
   for (const o of orders) {
+    const before = found.length;
     const tagNet = String(o.tags ?? "").match(/\b(cdrn|ethoca|rdr)\b/i)?.[1];
     for (const r of (o.refunds ?? []) as any[]) {
       const txs = (r.transactions ?? []) as any[];
@@ -50,6 +56,13 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
         .reduce((s, t) => s + Number(t.amount ?? 0), 0);
       found.push({ o, refund: r, amount, network: (noteNet ?? tagNet ?? "Alerta").toUpperCase().replace("ETHOCA", "Ethoca") });
       break;   // um alerta por pedido
+    }
+    // Reembolso total (não de alerta) de pedido já enviado.
+    if (found.length === before && o.shopify_financial_status === "refunded" && o.tracking_code) {
+      const refunds = (o.refunds ?? []) as any[];
+      const last = [...refunds].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""))).pop();
+      const amount = refunds.reduce((sum, r) => sum + refundSum((r.transactions ?? []) as any[]), 0);
+      if (last && amount > 0) found.push({ o, refund: last, amount, network: "Reembolso" });
     }
   }
   // Chargebacks perdidos com o pedido entregue. O pedido pode estar em

@@ -129,14 +129,15 @@ export function AlertsTab() {
         <p className="text-sm text-muted-foreground">
           Pedidos que o <strong className="text-foreground font-medium">Disputifier reembolsou</strong> por alerta de pré-chargeback (CDRN, Ethoca, RDR).
           O reembolso evita o chargeback, mas o pedido quase sempre foi entregue — dá pra contatar o cliente e tentar reaver o valor.
-          Também entram os <strong className="text-foreground font-medium">chargebacks perdidos com o pedido entregue</strong>, com a mesma sequência de cobrança.
+          Também entram os <strong className="text-foreground font-medium">chargebacks perdidos com o pedido entregue</strong> e os <strong className="text-foreground font-medium">reembolsos totais de pedidos já enviados</strong>, com a mesma sequência de cobrança.
         </p>
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-2 text-xs text-muted-foreground">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-2 text-xs text-muted-foreground">
           {([
             ["CDRN", "Rede da Verifi (Visa). O banco avisa que o cliente vai contestar; reembolsando em até 72h, o chargeback não é aberto."],
             ["Ethoca", "Rede da Mastercard. Mesmo esquema: o banco alerta sobre a reclamação e o reembolso rápido cancela a disputa."],
             ["RDR", "Rapid Dispute Resolution, da Visa. O reembolso sai automático por regra pré-definida, sem a loja decidir caso a caso."],
             ["Chargeback", "Disputa que a loja perdeu, mas o rastreio mostra o pedido entregue: o banco devolveu o dinheiro ao cliente e ele ficou com o produto."],
+            ["Reembolso", "Reembolso total de pedido que já tinha sido enviado: o cliente recebeu o dinheiro de volta e o produto. A cobrança só sai depois de entregue."],
           ] as const).map(([k, d]) => (
             <p key={k}><span className={`inline-flex text-[11px] px-1.5 py-0.5 mr-1.5 rounded-full font-semibold ${k === "Chargeback" ? "bg-rose-500/10 text-rose-700 dark:text-rose-400" : "bg-violet-500/10 text-violet-700 dark:text-violet-400"}`}>{k}</span>{d}</p>
           ))}
