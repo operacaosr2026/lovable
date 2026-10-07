@@ -13,6 +13,8 @@ import {
 // Chargebacks > Alertas: pedidos reembolsados pelo Disputifier por alerta de
 // pré-chargeback (CDRN/Ethoca/RDR). O reembolso evita o chargeback, mas o pedido
 // quase sempre foi entregue — então vale contatar o cliente pra reaver o valor.
+// Também entram os chargebacks PERDIDOS com o pedido entregue (o banco tirou o
+// dinheiro, mas o cliente recebeu): mesma sequência de cobrança, rede "Chargeback".
 // Identificação (tudo no pedido guardado, raw->refunds): reembolso feito pelo app
 // do Disputifier (transação com source_name do app) ou com a nota do alerta
 // ("Ethoca Alert", "cdrn alerts"…), ou tag CDRN/Ethoca/RDR no pedido.
@@ -50,9 +52,43 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       break;   // um alerta por pedido
     }
   }
+  // Chargebacks perdidos com o pedido entregue. O pedido pode estar em
+  // shop_orders (em qualquer loja do dono — loja espelho) ou só na foto guardada
+  // na disputa (pedido antigo, de antes da loja entrar no sistema).
+  const { data: lost, error: lostErr } = await selectAll<any>(supabaseAdmin.from("shop_order_disputes")
+    .select("shop_id,order_external_id,amount,currency,reason,initiated_at,finalized_on,order_snapshot")
+    .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").eq("status", "lost")
+    .not("order_external_id", "is", null));
+  if (lostErr) throw new Error(lostErr.message);
+  const alertKeys = new Set(found.map((f) => `${f.o.shop_id}:${f.o.external_id}`));
+  const lostTodo = (lost ?? []).filter((d: any) => !alertKeys.has(`${d.shop_id}:${d.order_external_id}`));
+  const lostExt = [...new Set(lostTodo.map((d: any) => String(d.order_external_id)))];
+  const { data: lostOrders } = lostExt.length
+    ? await selectAllIn<any>(lostExt, (c) => supabaseAdmin.from("shop_orders")
+        .select("id,shop_id,external_id,order_number,order_date,delivery_status,delivered_at,tracking_code,tracking_url,currency:raw->>currency,email:raw->>email,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
+        .eq("user_id", ownerId).in("external_id", c))
+    : { data: [] as any[] };
+  const lostOrderBy = new Map((lostOrders ?? []).map((o: any) => [String(o.external_id), o]));
+  for (const d of lostTodo) {
+    const db = lostOrderBy.get(String(d.order_external_id));
+    const snap = d.order_snapshot ?? null;
+    const o = db ? { ...db, shop_id: d.shop_id } : snap && !snap.unavailable ? {
+      id: null, shop_id: d.shop_id, external_id: d.order_external_id, order_number: snap.name ?? null,
+      order_date: snap.created_at ? String(snap.created_at).slice(0, 10) : null,
+      delivery_status: snap.track?.status ?? null, delivered_at: snap.track?.status === "delivered" ? snap.track.lastAt ?? null : null,
+      tracking_code: snap.tracking_number ?? null, tracking_url: snap.tracking_url ?? null, currency: d.currency,
+      email: snap.email ?? null, fn: snap.first_name ?? null, ln: snap.last_name ?? null, items: snap.items ?? [],
+      last_event_label: snap.track?.lastLabel ?? null,
+    } : null;
+    if (!o || o.delivery_status !== "delivered") continue;   // só entregue
+    found.push({
+      o, refund: { created_at: d.finalized_on ?? d.initiated_at, note: d.reason ? `Chargeback perdido (${d.reason})` : "Chargeback perdido" },
+      amount: Number(d.amount ?? 0), network: "Chargeback",
+    });
+  }
   if (!found.length) return [];
 
-  const orderIds = found.map((f) => f.o.id as string);
+  const orderIds = found.map((f) => f.o.id as string).filter(Boolean);
   const extIds = found.map((f) => String(f.o.external_id));
   const emails = [...new Set(found.map((f) => String(f.o.email ?? "").toLowerCase()).filter(Boolean))];
   const [{ data: tracking }, { data: followups }, { data: convs }, { data: integs }] = await Promise.all([
@@ -86,7 +122,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       product: ((o.items ?? []) as any[]).map((li) => li?.title).filter(Boolean).join(", ") || null,
       deliveryStatus: o.delivery_status, deliveredAt: o.delivered_at, trackingCode: o.tracking_code,
       trackingUrl: (o.tracking_code ? buildTrackingUrl(templateBy.get(o.shop_id), o.tracking_code) : null) ?? o.tracking_url,
-      lastEvent: trackBy.get(o.id)?.last_event_label ?? null, conversationId: email ? convBy.get(email) ?? null : null,
+      lastEvent: (o.id ? trackBy.get(o.id)?.last_event_label : null) ?? o.last_event_label ?? null, conversationId: email ? convBy.get(email) ?? null : null,
       // Sem acompanhamento salvo: entregue = "a contatar"; não entregue = "não recuperável" (sugestão).
       status: (fu?.status as AlertStatus) ?? (delivered ? "a_contatar" : "nao_recuperavel"),
       recoveredAmount: fu?.recovered_amount != null ? Number(fu.recovered_amount) : null, followupNote: fu?.note ?? null, followupAt: fu?.updated_at ?? null,
