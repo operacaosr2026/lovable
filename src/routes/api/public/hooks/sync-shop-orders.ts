@@ -18,6 +18,7 @@ import { orderDateFor } from "@/lib/order-date";
 import { broadcast } from "@/lib/realtime.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { recordCronRun } from "@/lib/cron-runs.server";
+import { relevantPayouts, payoutPatch } from "@/lib/finance-rules";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -116,8 +117,7 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   const { data: dismissedRows } = await supabaseAdmin.from("shop_cash_dismissed_payouts")
     .select("shopify_payout_id").eq("user_id", userId).eq("shop_id", shopId);
   const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
-  const relevant = payouts.filter((p: any) =>
-    p.id != null && !dismissedIds.has(String(p.id)) && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
+  const relevant = relevantPayouts(payouts, dismissedIds as Set<string>);
   if (!relevant.length) return 0;
 
   const { data: existing } = await selectAll(supabaseAdmin.from("shop_cash_entries")
@@ -146,13 +146,7 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
     // depósito caiu noutro dia, conferido no banco) ficam travados, e depósito
     // conciliado não muda mais. Antes o sync automático ignorava isso e desfazia
     // os ajustes a cada hora (o botão manual já respeitava).
-    const row = existingRow.get(id);
-    const patch: { description: string; shopify_payout_status: string; date?: string; amount?: number } = {
-      description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
-      shopify_payout_status: p.status,
-    };
-    if (!row?.date_locked && !row?.reconciled) patch.date = p.date;
-    if (!row?.amount_locked && !row?.reconciled) patch.amount = Number(p.amount ?? 0);
+    const patch = payoutPatch(existingRow.get(id), p);
     await supabaseAdmin.from("shop_cash_entries").update(patch).eq("id", id);
   }
 

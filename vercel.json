@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run typecheck && npm run test && npm run build",
   "outputDirectory": "dist/client",
   "framework": null,
   "fluid": true,

@@ -9,6 +9,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
     "format": "prettier --write ."
   },
   "dependencies": {
@@ -94,7 +96,8 @@
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^3.2.7"
   },
   "allowScripts": {
     "fsevents@2.3.3": true,

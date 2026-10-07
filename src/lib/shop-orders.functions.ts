@@ -12,6 +12,10 @@ import { fetchWithRetry } from "@/lib/http";
 import { applyPresetToStore } from "@/lib/store-production.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import { orderDateFor } from "@/lib/order-date";
+import {
+  aggregateRefundsAndChargebacks, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
+  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch,
+} from "@/lib/finance-rules";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
 // usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
 // que pode variar dentro do mesmo grupo/card.
@@ -152,31 +156,6 @@ async function fetchShopifyDisputes(domain: string, token: string, sinceISO: str
 // retornado, mesmo no caso raro (pedido "void" sem transação de reembolso
 // associada) em que a diferença de preço vira um resto sem data exata — esse
 // resto cai no dia do último reembolso do pedido, ou no fim do período.
-function orderRefundAmountByDate(o: any, fallbackDate: string): { total: number; byDate: Record<string, number> } {
-  const byDate: Record<string, number> = {};
-  let txSum = 0;
-  for (const r of (o.refunds ?? [])) {
-    for (const t of (r.transactions ?? [])) {
-      if ((t.kind === "refund" || t.kind === "void") && t.status === "success") {
-        const amt = Number(t.amount ?? 0);
-        const date = String(t.processed_at || r.created_at || "").slice(0, 10) || fallbackDate;
-        byDate[date] = (byDate[date] ?? 0) + amt;
-        txSum += amt;
-      }
-    }
-  }
-  const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
-  const extra = priceDiff - txSum;
-  if (extra > 0) {
-    const lastRefundDate = (o.refunds ?? [])
-      .map((r: any) => String(r.created_at ?? "").slice(0, 10))
-      .filter(Boolean).sort().pop();
-    const date = lastRefundDate || fallbackDate;
-    byDate[date] = (byDate[date] ?? 0) + extra;
-  }
-  return { total: Math.max(txSum, priceDiff), byDate };
-}
-
 async function fetchShopifyOrdersCount(domain: string, token: string, sinceISO: string) {
   const url = `https://${domain}/admin/api/2024-10/orders/count.json?financial_status=paid&status=any&created_at_min=${encodeURIComponent(sinceISO)}`;
   const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
@@ -937,8 +916,7 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     const { data: dismissedRows } = await context.supabase.from("shop_cash_dismissed_payouts")
       .select("shopify_payout_id").eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
     const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
-    const relevant = payouts.filter((p: any) =>
-      p.id != null && !dismissedIds.has(String(p.id)) && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
+    const relevant = relevantPayouts(payouts as any[], dismissedIds as Set<string>);
 
     if (!relevant.length) return { synced: 0 };
 
@@ -947,9 +925,7 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
       .in("shopify_payout_id", relevant.map((p: any) => String(p.id))));
     const existingById = new Map((existing ?? []).map((r: any) => [r.shopify_payout_id, r.id]));
-    // Conciliado também não muda (o valor/data já foram conferidos no banco).
-    const dateLockedIds = new Set((existing ?? []).filter((r: any) => r.date_locked || r.reconciled).map((r: any) => r.id));
-    const amountLockedIds = new Set((existing ?? []).filter((r: any) => r.amount_locked || r.reconciled).map((r: any) => r.id));
+    const existingRow = new Map((existing ?? []).map((r: any) => [r.id as string, r]));
 
     const toInsert = relevant.filter((p: any) => !existingById.has(String(p.id))).map((p: any) => ({
       user_id: context.ownerId,
@@ -971,15 +947,8 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     for (const p of relevant) {
       const id = existingById.get(String(p.id));
       if (!id) continue;
-      // Se o usuário travou a data ou o valor manualmente (o depósito caiu num
-      // dia diferente do previsto, ou o valor sincronizado estava errado), a
-      // sincronização não sobrescreve esse campo de novo.
-      const patch: { amount?: number; description: string; date?: string; shopify_payout_status: string } = {
-        description: `Payout Shopify · ${PAYOUT_STATUS_LABEL[p.status] ?? p.status}`,
-        shopify_payout_status: p.status,
-      };
-      if (!dateLockedIds.has(id)) patch.date = p.date;
-      if (!amountLockedIds.has(id)) patch.amount = Number(p.amount ?? 0);
+      // Data/valor travados à mão ou conciliado não são sobrescritos (payoutPatch).
+      const patch = payoutPatch(existingRow.get(id) as any, p);
       await context.supabase.from("shop_cash_entries").update(patch)
         .eq("id", id).eq("user_id", context.ownerId);
     }
@@ -1262,44 +1231,13 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   if (refundOrders.error) throw new Error(refundOrders.error.message);
   if (disputes.error) throw new Error(disputes.error.message);
   if (wonDisputes.error) throw new Error(wonDisputes.error.message);
-
-  const byShop = new Map(shopIds.map((id) => [id, {
-    shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number>,
-  }]));
-  for (const o of (refundOrders.data ?? []) as any[]) {
-    const row = byShop.get(o.shop_id);
-    if (!row) continue;
-    const { byDate } = orderRefundAmountByDate(o, toISO);
-    for (const [d, amt] of Object.entries(byDate)) {
-      if (d < fromISO || d > toISO) continue;
-      row.refAmt += amt;
-      row.refByDate[d] = (row.refByDate[d] ?? 0) + amt;
-    }
-  }
-  for (const d of (disputes.data ?? []) as any[]) {
-    const row = byShop.get(d.shop_id);
-    if (!row) continue;
-    const amt = Number(d.amount ?? 0);
-    row.cbAmt += amt;
-    const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
-    row.cbByDate[date] = (row.cbByDate[date] ?? 0) + amt;
-  }
-  for (const d of (wonDisputes.data ?? []) as any[]) {
-    const row = byShop.get(d.shop_id);
-    if (!row) continue;
-    const amt = Number(d.amount ?? 0);
-    row.cbAmt -= amt;
-    row.cbByDate[d.finalized_on] = (row.cbByDate[d.finalized_on] ?? 0) - amt;
-  }
-  for (const r of (recoveries.data ?? []) as any[]) {
-    const row = byShop.get(r.shop_id);
-    if (!row) continue;
-    const amt = Number(r.recovered_amount ?? 0);
-    const date = orderDateFor(r.recovery_paid_at);
-    row.refAmt -= amt;
-    row.refByDate[date] = (row.refByDate[date] ?? 0) - amt;
-  }
-  return [...byShop.values()];
+  if (recoveries.error) throw new Error(recoveries.error.message);
+  return aggregateRefundsAndChargebacks(shopIds, fromISO, toISO, {
+    refundOrders: (refundOrders.data ?? []) as any[],
+    disputes: (disputes.data ?? []) as any[],
+    wonDisputes: (wonDisputes.data ?? []) as any[],
+    recoveries: (recoveries.data ?? []) as any[],
+  });
 });
 
 // Reembolsos e chargebacks "diluídos": o total de cada mês é dividido igual
@@ -1311,55 +1249,16 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
 // até D-2); no dia 1º e 2 o mês ainda não tem dia pra receber e fica sem
 // desconto até o dia 3. Mês fechado divide pelo mês todo, igual. Mesmo formato de getGroupRefundsAndChargebacks
 // em `rows`; `monthTotals` traz o total real de cada mês ("YYYY-MM").
-function addDayISO(d: string, n: number) {
-  const dt = new Date(`${d}T00:00:00Z`);
-  dt.setUTCDate(dt.getUTCDate() + n);
-  return dt.toISOString().slice(0, 10);
-}
 export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
   ownerId: string, shopIds: string[], fromISO: string, toISO: string,
 ) => {
   const today = isoTodayUS();
   const end = toISO < today ? toISO : today;
-  const lastDiluted = addDayISO(today, -2);
-  const byShop = new Map(shopIds.map((id) => [id, {
-    shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {} as Record<string, number>, cbByDate: {} as Record<string, number>,
-  }]));
-  const monthTotals: Record<string, { reembolsos: number; chargebacks: number }> = {};
-  if (fromISO > end) return { rows: [...byShop.values()], monthTotals };
-
-  const months: string[] = [];
-  for (let m = fromISO.slice(0, 7); m <= end.slice(0, 7); ) {
-    months.push(m);
-    const [y, mo] = m.split("-").map(Number);
-    m = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
-  }
-  const monthly = await Promise.all(months.map(async (m) => {
-    const mStart = `${m}-01`;
-    return { m, mStart, rows: await getGroupRefundsAndChargebacks(ownerId, shopIds, mStart, monthEndCapped(m, today)) };
-  }));
-  for (const { m, mStart, rows } of monthly) {
-    // Mês fechado: divide pelo mês todo. Mês corrente: só até D-2.
-    const mEnd = m < today.slice(0, 7) ? monthEndCapped(m, today) : monthEndCapped(m, lastDiluted);
-    const nDays = Math.round((Date.parse(`${mEnd}T00:00:00Z`) - Date.parse(`${mStart}T00:00:00Z`)) / 86_400_000) + 1;
-    const pStart = fromISO > mStart ? fromISO : mStart;
-    const pEnd = end < mEnd ? end : mEnd;
-    monthTotals[m] = {
-      reembolsos: rows.reduce((t: number, r: any) => t + r.refAmt, 0),
-      chargebacks: rows.reduce((t: number, r: any) => t + r.cbAmt, 0),
-    };
-    if (nDays <= 0) continue;
-    for (const r of rows) {
-      const row = byShop.get(r.shop_id)!;
-      const refDay = r.refAmt / nDays, cbDay = r.cbAmt / nDays;
-      if (!refDay && !cbDay) continue;
-      for (let d = pStart; d <= pEnd; d = addDayISO(d, 1)) {
-        if (refDay) { row.refAmt += refDay; row.refByDate[d] = (row.refByDate[d] ?? 0) + refDay; }
-        if (cbDay) { row.cbAmt += cbDay; row.cbByDate[d] = (row.cbByDate[d] ?? 0) + cbDay; }
-      }
-    }
-  }
-  return { rows: [...byShop.values()], monthTotals };
+  const months = fromISO > end ? [] : monthsBetween(fromISO, end);
+  const monthly = await Promise.all(months.map(async (m) => (
+    { m, rows: await getGroupRefundsAndChargebacks(ownerId, shopIds, `${m}-01`, monthEndCapped(m, today)) }
+  )));
+  return diluteRefundsAndChargebacks(shopIds, fromISO, toISO, today, monthly);
 });
 // Reembolsos/chargebacks pros painéis: visão de um dia (Hoje, Ontem…) usa a
 // diluição acima — o lucro do dia mostra as campanhas; período de vários dias
@@ -1369,12 +1268,6 @@ export const getPanelRefundsAndChargebacks = createServerOnlyFn(async (
 ) => (fromISO === toISO
   ? (await getDilutedRefundsAndChargebacks(ownerId, shopIds, fromISO, toISO)).rows
   : await getGroupRefundsAndChargebacks(ownerId, shopIds, fromISO, toISO)));
-// Último dia do mês "YYYY-MM", sem passar de hoje (mês corrente).
-function monthEndCapped(m: string, today: string) {
-  const [y, mo] = m.split("-").map(Number);
-  const last = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
-  return last < today ? last : today;
-}
 
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
 // e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
@@ -1579,16 +1472,12 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   const { data: existing } = await context.supabase.from("shop_cash_entries").select("*")
     .eq("user_id", context.ownerId).eq("shop_id", shopId)
     .eq("auto_kind", "order_cost").eq("auto_ref_date", orderDate).maybeSingle();
-  if (existing && existing.source === "manual_override") return { kept: true };
-  // Ajuste manual no Caixa é sagrado: conciliado não mexe; data/valor travados
-  // ficam como a pessoa deixou (só o que não está travado é recalculado).
-  if (existing?.reconciled) return { kept: true };
-  const dateLocked = Boolean(existing?.date_locked);
-  const amountLocked = Boolean(existing?.amount_locked);
-
-  // Cashflow cutoff: if order is older than the configured start date, skip and clean any existing auto entry.
+  // Ajuste manual no Caixa é sagrado (manual_override, conciliado); antes do
+  // início do Caixa não lança (regras em finance-rules.ts).
   const cutoff: string | null = settings.cashflow_start_date ?? null;
-  if (cutoff && orderDate < cutoff) {
+  const guard = orderCostGuard(existing, cutoff, orderDate);
+  if (guard === "keep") return { kept: true };
+  if (guard === "cutoff") {
     if (existing) {
       await context.supabase.from("shop_cash_entries").delete()
         .eq("id", existing.id).eq("user_id", context.ownerId);
@@ -1608,9 +1497,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
     ? await supabaseAdmin.from("shop_order_disputes").select("order_external_id,status")
         .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("type", "chargeback").in("order_external_id", pendingExt)
     : { data: [] as { order_external_id: string; status: string }[] };
-  const withChargeback = new Set((cbRows ?? []).filter((d) => d.status !== "won").map((d) => d.order_external_id));
-  const orders = ((pendingRows ?? []) as any[]).filter((o) =>
-    !["refunded", "partially_refunded"].includes(o.shopify_financial_status ?? "") && !withChargeback.has(o.external_id));
+  const orders = supplierForecastOrders((pendingRows ?? []) as any[], (cbRows ?? []) as any[]);
   const items = (orders ?? []).reduce((s: number, o: any) => s + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(context.supabase, context.ownerId, shopId, orderDate, settings.default_unit_cost);
   const products = preloadedProducts ?? await costProductsFor(context.supabase, context.ownerId);
@@ -1618,18 +1505,14 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
 
   await ensureCostCategory(context.supabase, context.ownerId, shopId);
 
-  if (existing) {
-    if (amount <= 0 && !amountLocked && !dateLocked) {
-      await context.supabase.from("shop_cash_entries").delete()
-        .eq("id", existing.id).eq("user_id", context.ownerId);
-    } else {
-      const patch: Record<string, unknown> = { description: `${items} itens` };
-      if (!amountLocked) patch.amount = amount;
-      if (!dateLocked) patch.date = processingDate;
-      await context.supabase.from("shop_cash_entries").update(patch)
-        .eq("id", existing.id).eq("user_id", context.ownerId);
-    }
-  } else if (amount > 0) {
+  const write = orderCostWrite(existing, amount, items, processingDate);
+  if (write.action === "delete") {
+    await context.supabase.from("shop_cash_entries").delete()
+      .eq("id", existing.id).eq("user_id", context.ownerId);
+  } else if (write.action === "update") {
+    await context.supabase.from("shop_cash_entries").update(write.patch)
+      .eq("id", existing.id).eq("user_id", context.ownerId);
+  } else if (write.action === "insert") {
     await context.supabase.from("shop_cash_entries").insert({
       user_id: context.ownerId, shop_id: shopId,
       kind: "expense", amount, date: processingDate,

@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEstornoStats } from "@/lib/estorno-daily.server";
 import { attachLiveShopifyNames, costProductsFor, getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { matchLineItemProduct, orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
+import { profit } from "@/lib/finance-rules";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
@@ -827,8 +828,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       prevTotalPedidosEstorno += prevTotalOrdersByShop.get(id) ?? 0;
       prevTotalEstornosEstorno += prevTotalEstornosByShop.get(id) ?? 0;
     }
-    const lucro = faturamento - custoProduto - taxas - anuncios;
-    const prevLucro = prevFaturamento - prevCustoProduto - prevTaxas - prevAnuncios;
+    const lucro = profit({ faturamento, custoProduto, taxas, anuncios });
+    const prevLucro = profit({ faturamento: prevFaturamento, custoProduto: prevCustoProduto, taxas: prevTaxas, anuncios: prevAnuncios });
     const taxaEstorno = totalPedidosEstorno > 0 ? totalEstornosEstorno / totalPedidosEstorno : 0;
     const prevTaxaEstorno = prevTotalPedidosEstorno > 0 ? prevTotalEstornosEstorno / prevTotalPedidosEstorno : 0;
 
