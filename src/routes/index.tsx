@@ -1000,7 +1000,10 @@ function Dashboard() {
                       {totals.faturamentoDelta >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
                       {totals.faturamentoDelta >= 0 ? "+" : ""}{Number(totals.faturamentoDelta).toFixed(1)}%
                     </span>
-                    <p className="text-[9px] text-muted-foreground mt-0.5">{compareLabel}</p>
+                    {/* Em 2 linhas pra caber dentro do círculo. */}
+                    <p className="text-[8px] leading-tight text-muted-foreground mt-0.5">
+                      {compareLabel === "vs. mesmos dias do mês anterior" ? <>vs. mesmos dias<br />do mês anterior</> : compareLabel}
+                    </p>
                   </div>
                 </div>
               </div>
