@@ -12,6 +12,7 @@ import { fetchWithRetry } from "@/lib/http";
 import { applyPresetToStore } from "@/lib/store-production.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import { orderDateFor } from "@/lib/order-date";
+import { buildTrackingUrl } from "@/lib/tracking-url";
 import {
   aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch,
@@ -1263,7 +1264,7 @@ export const listMonthRefundsChargebacks = createServerFn({ method: "POST" })
     const [{ data: orders }, { data: snaps }, { data: shops }] = await Promise.all([
       ext.length
         ? selectAllIn<any>(ext, (c) => supabaseAdmin.from("shop_orders")
-            .select("external_id,order_number,order_date,tracking_code,delivery_status,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
+            .select("external_id,shop_id,order_number,order_date,tracking_code,tracking_url,delivery_status,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
             .eq("user_id", ownerId).in("external_id", c))
         : Promise.resolve({ data: [] as any[] }),
       ext.length
@@ -1272,6 +1273,9 @@ export const listMonthRefundsChargebacks = createServerFn({ method: "POST" })
         : Promise.resolve({ data: [] as any[] }),
       supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId).in("id", data.shop_ids),
     ]);
+    // Link de rastreio da página da própria loja (Integrações), igual à aba Chargebacks.
+    const { data: integs } = await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", data.shop_ids);
+    const templateBy = new Map(((integs ?? []) as any[]).map((i) => [i.shop_id as string, i.tracking_link_template as string | null]));
     const orderBy = new Map((orders ?? []).map((o: any) => [String(o.external_id), o]));
     const snapBy = new Map((snaps ?? []).map((d: any) => [String(d.order_external_id), d.order_snapshot]));
     const shopName = new Map(((shops ?? []) as any[]).map((sh) => [sh.id as string, sh.name as string]));
@@ -1289,6 +1293,12 @@ export const listMonthRefundsChargebacks = createServerFn({ method: "POST" })
           customer: [o?.fn ?? snap?.first_name, o?.ln ?? snap?.last_name].filter(Boolean).join(" ") || null,
           product: lineItems.map((li) => li?.title).filter(Boolean).join(", ") || null,
           shipped: !!(o?.tracking_code ?? snap?.tracking_number),
+          trackingCode: (o?.tracking_code ?? snap?.tracking_number ?? null) as string | null,
+          trackingUrl: (() => {
+            const code = o?.tracking_code ?? snap?.tracking_number ?? null;
+            if (!code) return null;
+            return buildTrackingUrl(templateBy.get(i.shop_id), code) ?? o?.tracking_url ?? snap?.tracking_url ?? null;
+          })() as string | null,
         };
       }),
     };

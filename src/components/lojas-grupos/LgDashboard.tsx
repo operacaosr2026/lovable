@@ -372,6 +372,14 @@ function RefundsChargebacksDialog({ open, onClose, shopIds, to, fmt }: {
                           {r.kind === "chargeback" && r.status ? ` · ${CB_STATUS_LABEL[r.status] ?? r.status}` : ""}
                           {r.kind === "reembolso" ? (r.shipped ? " · enviado" : " · não enviado") : ""}
                         </p>
+                        {r.trackingCode && (
+                          r.trackingUrl
+                            ? <a href={r.trackingUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-[11px] font-mono text-violet-600 dark:text-violet-400 hover:underline">
+                                {r.trackingCode}<ArrowUpRight className="size-3" />
+                              </a>
+                            : <p className="text-[11px] font-mono text-muted-foreground">{r.trackingCode}</p>
+                        )}
                       </div>
                       <p className={`text-sm font-semibold tabular-nums shrink-0 ${r.amount > 0 ? "text-destructive" : "text-success"}`}>
                         {r.amount < 0 ? "−" : ""}{fmt(Math.abs(r.amount))}
