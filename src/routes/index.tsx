@@ -890,7 +890,8 @@ function Dashboard() {
             { label: "Média diária", value: fmtMoney(totals.lucro / nDias) },
           ]}
         />
-        <DashKpiCard compareLabel={compareLabel}
+        {/* Estorno é sempre janela rolante de 90 dias (lg-cards.functions), comparada com os 90 antes. */}
+        <DashKpiCard compareLabel="vs. 90 dias anteriores"
           icon={RotateCcw} accent="destructive" loading={isLoading} invert
           label="Taxa de estorno" value={fmtPct(totals.taxaEstorno)}
           delta={totals.taxaEstornoDeltaPP} deltaUnit=" p.p."

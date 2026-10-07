@@ -26,6 +26,7 @@ import {
 import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { toast } from "sonner";
 import { isoTodayUS, US_TIME_ZONE, localDateKey } from "@/lib/timezone";
+import { comparisonPeriod } from "@/lib/finance-rules";
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -43,9 +44,8 @@ function getPeriodRange(period: string, custom?: { from: string; to: string }) {
     from = `${today.slice(0, 7)}-01`; to = today;
   }
   if (period === "custom" && custom) { from = custom.from; to = custom.to; }
-  const days = Math.round((new Date(to + "T00:00:00Z").getTime() - new Date(from + "T00:00:00Z").getTime()) / 86400_000) + 1;
-  const prevTo = addDays(from, -1);
-  const prevFrom = addDays(prevTo, -(days - 1));
+  // Mesma regra do Dashboard: "Este mês" compara com os mesmos dias do mês anterior.
+  const { prevFrom, prevTo } = comparisonPeriod(from, to);
   return { from, to, prevFrom, prevTo };
 }
 function fmtDate(iso: string) {
