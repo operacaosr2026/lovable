@@ -58,6 +58,15 @@ export function LgOrders({
 
   // Padrão 5 dias: pagamento ao fornecedor é diário, e 30 dias pesava a abertura da aba.
   const [period, setPeriod]           = useState("5d");
+  // Quais dias mostrar: só os com algo a pagar (padrão), só os já pagos (histórico
+  // pra conferência) ou todos. Lembra a escolha neste navegador.
+  const [payFilter, setPayFilterState] = useState<"a_pagar" | "pagos" | "todos">(() => {
+    try { const v = localStorage.getItem("lg-orders-pay-filter"); return v === "pagos" || v === "todos" ? v : "a_pagar"; } catch { return "a_pagar"; }
+  });
+  const setPayFilter = (v: "a_pagar" | "pagos" | "todos") => {
+    setPayFilterState(v);
+    try { localStorage.setItem("lg-orders-pay-filter", v); } catch { /* sem storage: só nesta sessão */ }
+  };
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const { from, to } = (() => {
     const today = isoTodayUS();
@@ -207,8 +216,11 @@ export function LgOrders({
     const byDate = new Map<string, { totalOrders: number; totalItems: number; totalCost: number; paidCount: number; pendingCount: number; byShop: Map<string, any[]> }>();
     for (const o of allOrders) {
       const rb = shopifyRefundBadge(resolveFinancialStatus(o));
-      if (rb === "reembolso") continue; // pedido reembolsado: retirado da listagem
-      if (o.chargeback_status) continue; // chargeback aberto/perdido: não envia nem paga o fornecedor
+      // Pendente reembolsado ou com chargeback (aberto/perdido) sai da fila: não
+      // envia nem paga o fornecedor. Já pago fica — é histórico do que foi pago.
+      const pending = o.payment_status === "pending";
+      if (pending && rb === "reembolso") continue;
+      if (pending && o.chargeback_status) continue;
       const day = o.order_date as string;
       if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;
@@ -234,9 +246,10 @@ export function LgOrders({
   }, [allOrders, costByShop, costProducts, shops]);
 
   const filteredGroups = useMemo(() =>
-    // Só dias com pedido a pagar: não pagos e parciais (sem filtro na tela).
-    groups.filter(g => g.dayStatus !== "pago"),
-  [groups]);
+    // A pagar: dias não pagos e parciais. Pagos: dias com algo já pago (parcial
+    // aparece nos dois). Todos: tudo.
+    groups.filter((g) => payFilter === "todos" ? true : payFilter === "pagos" ? g.dayStatus !== "pendente" : g.dayStatus !== "pago"),
+  [groups, payFilter]);
 
   const toggleDay = (date: string, checked: boolean) => {
     const group = groups.find((g) => g.date === date);
@@ -440,6 +453,15 @@ export function LgOrders({
           <RefreshCw className={cn("size-4", loading && "animate-spin")} />
           Atualizar
         </Button>
+        <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs">
+          {([["a_pagar", "A pagar"], ["pagos", "Pagos"], ["todos", "Todos"]] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setPayFilter(v)}
+              className={cn("px-2.5 py-1 rounded-md font-medium transition-colors",
+                payFilter === v ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground")}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex-1" />
         <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)}>
           <Settings2 className="size-4" /> Configurações
@@ -486,7 +508,9 @@ export function LgOrders({
 
         {!loading && filteredGroups.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            {groups.length === 0 ? "Nenhum pedido no período selecionado." : "Todos os pedidos do período estão pagos."}
+            {groups.length === 0 ? "Nenhum pedido no período selecionado."
+              : payFilter === "pagos" ? "Nenhum pedido pago no período — aumente o período pra ver o histórico."
+              : "Todos os pedidos do período estão pagos. Veja em \"Pagos\"."}
           </div>
         )}
 
@@ -610,6 +634,12 @@ export function LgOrders({
                               )}>
                                 {o.payment_status === "pending" ? "Pendente" : "Pago"}
                               </span>
+                              {/* Pago ao fornecedor e depois reembolsado/chargeback: fica no histórico, com aviso. */}
+                              {o.payment_status !== "pending" && (shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" || o.chargeback_status) && (
+                                <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-rose-500/10 text-rose-600 border-rose-500/20">
+                                  {o.chargeback_status ? "Chargeback" : "Reembolsado"}
+                                </span>
+                              )}
                             </div>
                             <div className="text-right text-sm font-semibold text-foreground">
                               {cost > 0 ? fmtMoney(cost) : "—"}
