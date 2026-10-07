@@ -53,55 +53,65 @@ export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: 
   return { total: Math.max(txSum, priceDiff), byDate };
 }
 
-// Reembolsos e chargebacks do período [from, to], por loja, no dia em que o
-// dinheiro mexeu:
+// Cada movimento de reembolso/chargeback do período [from, to], no dia em que o
+// dinheiro mexeu (é o que a lista do card "Custos Adicionais" mostra):
 //  - reembolso no dia do reembolso (não no dia do pedido);
 //  - chargeback no dia em que foi aberto, qualquer que seja o status depois;
 //  - chargeback ganho volta (valor negativo) no dia do ganho (finalized_on);
 //  - pagamento da cobrança do alerta abate o reembolso no dia do pagamento.
-export function aggregateRefundsAndChargebacks(
-  shopIds: string[], fromISO: string, toISO: string,
-  src: {
-    refundOrders: any[];                                                     // shop_id, refunds, total_price, current_total_price
-    disputes: { shop_id: string; amount: any; initiated_at: string | null }[]; // chargebacks abertos no período
-    wonDisputes: { shop_id: string; amount: any; finalized_on: string }[];     // chargebacks ganhos no período
-    recoveries: { shop_id: string; recovered_amount: any; recovery_paid_at: string }[];
-  },
-): RefundCbRow[] {
-  const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, { shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {}, cbByDate: {} }]));
+// `amount` já vem com o sinal do efeito no custo (devolução = negativo).
+export type RefundCbItem = {
+  kind: "reembolso" | "chargeback" | "chargeback_ganho" | "recuperado";
+  shop_id: string; order_external_id: string | null; date: string; amount: number;
+  status?: string | null; reason?: string | null;
+};
+export type RefundCbSources = {
+  refundOrders: any[];   // shop_id, external_id, refunds, total_price, current_total_price
+  disputes: { shop_id: string; order_external_id?: string | null; amount: any; initiated_at: string | null; status?: string | null; reason?: string | null }[];
+  wonDisputes: { shop_id: string; order_external_id?: string | null; amount: any; finalized_on: string; reason?: string | null }[];
+  recoveries: { shop_id: string; order_external_id?: string | null; recovered_amount: any; recovery_paid_at: string }[];
+};
+export function refundChargebackItems(shopIds: string[], fromISO: string, toISO: string, src: RefundCbSources): RefundCbItem[] {
+  const shops = new Set(shopIds);
+  const out: RefundCbItem[] = [];
   for (const o of src.refundOrders) {
-    const row = byShop.get(o.shop_id);
-    if (!row) continue;
+    if (!shops.has(o.shop_id)) continue;
     const { byDate } = orderRefundAmountByDate(o, toISO);
     for (const [d, amt] of Object.entries(byDate)) {
       if (d < fromISO || d > toISO) continue;
-      row.refAmt += amt;
-      row.refByDate[d] = (row.refByDate[d] ?? 0) + amt;
+      out.push({ kind: "reembolso", shop_id: o.shop_id, order_external_id: o.external_id != null ? String(o.external_id) : null, date: d, amount: amt });
     }
   }
   for (const d of src.disputes) {
-    const row = byShop.get(d.shop_id);
-    if (!row) continue;
-    const amt = Number(d.amount ?? 0);
+    if (!shops.has(d.shop_id)) continue;
     const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
     if (date < fromISO || date > toISO) continue;
-    row.cbAmt += amt;
-    row.cbByDate[date] = (row.cbByDate[date] ?? 0) + amt;
+    out.push({ kind: "chargeback", shop_id: d.shop_id, order_external_id: d.order_external_id ?? null, date, amount: Number(d.amount ?? 0), status: d.status ?? null, reason: d.reason ?? null });
   }
   for (const d of src.wonDisputes) {
-    const row = byShop.get(d.shop_id);
-    if (!row || d.finalized_on < fromISO || d.finalized_on > toISO) continue;
-    const amt = Number(d.amount ?? 0);
-    row.cbAmt -= amt;
-    row.cbByDate[d.finalized_on] = (row.cbByDate[d.finalized_on] ?? 0) - amt;
+    if (!shops.has(d.shop_id) || d.finalized_on < fromISO || d.finalized_on > toISO) continue;
+    out.push({ kind: "chargeback_ganho", shop_id: d.shop_id, order_external_id: d.order_external_id ?? null, date: d.finalized_on, amount: -Number(d.amount ?? 0), status: "won", reason: d.reason ?? null });
   }
   for (const r of src.recoveries) {
-    const row = byShop.get(r.shop_id);
-    if (!row) continue;
-    const amt = Number(r.recovered_amount ?? 0);
-    const date = orderDateFor(r.recovery_paid_at);
-    row.refAmt -= amt;
-    row.refByDate[date] = (row.refByDate[date] ?? 0) - amt;
+    if (!shops.has(r.shop_id)) continue;
+    out.push({ kind: "recuperado", shop_id: r.shop_id, order_external_id: r.order_external_id ?? null, date: orderDateFor(r.recovery_paid_at), amount: -Number(r.recovered_amount ?? 0) });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Totais por loja e por dia — a soma dos itens acima (reembolso + recuperado
+// em refAmt; chargeback + ganho em cbAmt).
+export function aggregateRefundsAndChargebacks(shopIds: string[], fromISO: string, toISO: string, src: RefundCbSources): RefundCbRow[] {
+  const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, { shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {}, cbByDate: {} }]));
+  for (const it of refundChargebackItems(shopIds, fromISO, toISO, src)) {
+    const row = byShop.get(it.shop_id)!;
+    if (it.kind === "reembolso" || it.kind === "recuperado") {
+      row.refAmt += it.amount;
+      row.refByDate[it.date] = (row.refByDate[it.date] ?? 0) + it.amount;
+    } else {
+      row.cbAmt += it.amount;
+      row.cbByDate[it.date] = (row.cbByDate[it.date] ?? 0) + it.amount;
+    }
   }
   return [...byShop.values()];
 }

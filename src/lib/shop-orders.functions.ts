@@ -13,7 +13,7 @@ import { applyPresetToStore } from "@/lib/store-production.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import { orderDateFor } from "@/lib/order-date";
 import {
-  aggregateRefundsAndChargebacks, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
+  aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch,
 } from "@/lib/finance-rules";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
@@ -1204,27 +1204,27 @@ export const notifyRefundsFailed = createServerOnlyFn(async (ownerId: string, sh
 // Mesmo formato de retorno da versão antiga ao vivo, então o cálculo do lucro
 // não muda.
 const REFUND_LOOKBACK_DAYS = 180;
-export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
-  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
-) => {
+// Dados de reembolso/chargeback do período (do banco), na forma que as regras de
+// finance-rules.ts esperam. Compartilhado pelos totais e pela lista do card.
+async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: string, toISO: string): Promise<RefundCbSources> {
   const lookback = new Date(`${fromISO}T00:00:00Z`);
   lookback.setUTCDate(lookback.getUTCDate() - REFUND_LOOKBACK_DAYS);
   const [refundOrders, disputes, wonDisputes, recoveries] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_orders")
-      .select("shop_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
+      .select("shop_id,external_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
       .eq("user_id", ownerId).in("shop_id", shopIds)
       .gte("created_at_shopify", lookback.toISOString()).lte("created_at_shopify", `${toISO}T23:59:59Z`)
       .in("shopify_financial_status", ["refunded", "partially_refunded"])),
     selectAll(supabaseAdmin.from("shop_order_disputes")
-      .select("shop_id,amount,initiated_at")
+      .select("shop_id,order_external_id,amount,initiated_at,status,reason")
       .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
       .gte("initiated_at", fromISO).lte("initiated_at", toISO)),
     selectAll(supabaseAdmin.from("shop_order_disputes")
-      .select("shop_id,amount,finalized_on")
+      .select("shop_id,order_external_id,amount,finalized_on,reason")
       .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").eq("status", "won")
       .gte("finalized_on", fromISO).lte("finalized_on", toISO)),
     selectAll(supabaseAdmin.from("chargeback_alert_followups")
-      .select("id,shop_id,recovered_amount,recovery_paid_at")
+      .select("id,shop_id,order_external_id,recovered_amount,recovery_paid_at")
       .eq("user_id", ownerId).in("shop_id", shopIds).not("recovery_order_id", "is", null)
       .gte("recovery_paid_at", `${fromISO}T00:00:00Z`).lte("recovery_paid_at", `${toISO}T23:59:59Z`)),
   ]);
@@ -1232,13 +1232,67 @@ export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
   if (disputes.error) throw new Error(disputes.error.message);
   if (wonDisputes.error) throw new Error(wonDisputes.error.message);
   if (recoveries.error) throw new Error(recoveries.error.message);
-  return aggregateRefundsAndChargebacks(shopIds, fromISO, toISO, {
+  return {
     refundOrders: (refundOrders.data ?? []) as any[],
     disputes: (disputes.data ?? []) as any[],
     wonDisputes: (wonDisputes.data ?? []) as any[],
     recoveries: (recoveries.data ?? []) as any[],
+  };
+}
+
+export const getGroupRefundsAndChargebacks = createServerOnlyFn(async (
+  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
+) => aggregateRefundsAndChargebacks(shopIds, fromISO, toISO, await loadRefundCbSources(ownerId, shopIds, fromISO, toISO)));
+
+// Card "Custos Adicionais" (Lojas e Grupos): os pedidos por trás dos totais do
+// mês — mesmo mês e mesma regra do card (refundChargebackItems), então a soma
+// da lista bate com o card.
+export const listMonthRefundsChargebacks = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const ownerId = context.ownerId;
+    const todayUS = isoTodayUS();
+    const mes = (data.to < todayUS ? data.to : todayUS).slice(0, 7);
+    const from = `${mes}-01`, to = monthEndCapped(mes, todayUS);
+    const items = refundChargebackItems(data.shop_ids, from, to, await loadRefundCbSources(ownerId, data.shop_ids, from, to));
+
+    // Dados do pedido: do banco (qualquer loja do dono — loja espelho) ou, pra
+    // pedido antigo de chargeback, da foto guardada na disputa.
+    const ext = [...new Set(items.map((i) => i.order_external_id).filter(Boolean))] as string[];
+    const [{ data: orders }, { data: snaps }, { data: shops }] = await Promise.all([
+      ext.length
+        ? selectAllIn<any>(ext, (c) => supabaseAdmin.from("shop_orders")
+            .select("external_id,order_number,order_date,tracking_code,delivery_status,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
+            .eq("user_id", ownerId).in("external_id", c))
+        : Promise.resolve({ data: [] as any[] }),
+      ext.length
+        ? selectAllIn<any>(ext, (c) => supabaseAdmin.from("shop_order_disputes")
+            .select("order_external_id,order_snapshot").eq("user_id", ownerId).in("order_external_id", c).not("order_snapshot", "is", null))
+        : Promise.resolve({ data: [] as any[] }),
+      supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId).in("id", data.shop_ids),
+    ]);
+    const orderBy = new Map((orders ?? []).map((o: any) => [String(o.external_id), o]));
+    const snapBy = new Map((snaps ?? []).map((d: any) => [String(d.order_external_id), d.order_snapshot]));
+    const shopName = new Map(((shops ?? []) as any[]).map((sh) => [sh.id as string, sh.name as string]));
+    return {
+      month: mes, from, to,
+      items: items.map((i) => {
+        const o: any = i.order_external_id ? orderBy.get(i.order_external_id) : null;
+        const snap: any = !o && i.order_external_id ? snapBy.get(i.order_external_id) : null;
+        const lineItems = (o?.items ?? snap?.items ?? []) as any[];
+        return {
+          ...i, amount: Math.round(i.amount * 100) / 100,
+          shopName: shopName.get(i.shop_id) ?? "—",
+          orderNumber: o?.order_number ?? snap?.name ?? (i.order_external_id ? `#${i.order_external_id}` : null),
+          orderDate: o?.order_date ?? (snap?.created_at ? String(snap.created_at).slice(0, 10) : null),
+          customer: [o?.fn ?? snap?.first_name, o?.ln ?? snap?.last_name].filter(Boolean).join(" ") || null,
+          product: lineItems.map((li) => li?.title).filter(Boolean).join(", ") || null,
+          shipped: !!(o?.tracking_code ?? snap?.tracking_number),
+        };
+      }),
+    };
   });
-});
 
 // Reembolsos e chargebacks "diluídos": o total de cada mês é dividido igual
 // pelos dias do mês (no mês corrente, pelos dias até hoje) e cada dia fica com

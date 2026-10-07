@@ -17,7 +17,7 @@ import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  getShopDashboardMetrics, syncShopifyPaymentsFees, syncShopifyOrders,
+  getShopDashboardMetrics, syncShopifyPaymentsFees, syncShopifyOrders, listMonthRefundsChargebacks,
 } from "@/lib/shop-orders.functions";
 import { syncMetaAdsSpend } from "@/lib/meta-ads.functions";
 import {
@@ -311,6 +311,86 @@ function BreakdownDialog({
   );
 }
 
+// ─── Custos Adicionais: pedidos do mês ───────────────────────────────────────
+// Lista por trás do card (reembolsos e chargebacks do mês, no dia em que o
+// dinheiro mexeu). Mesma regra e mesmo mês do card — a soma bate com ele.
+const RC_KIND_LABEL: Record<string, string> = {
+  reembolso: "Reembolso", recuperado: "Recuperado (cobrança paga)",
+  chargeback: "Chargeback aberto", chargeback_ganho: "Chargeback ganho (volta)",
+};
+const CB_STATUS_LABEL: Record<string, string> = {
+  lost: "perdido", won: "ganho", needs_response: "aguardando resposta", under_review: "em análise",
+  prevented: "evitado", accepted: "aceito", charge_refunded: "reembolsado",
+};
+
+function RefundsChargebacksDialog({ open, onClose, shopIds, to, fmt }: {
+  open: boolean; onClose: () => void; shopIds: string[]; to: string; fmt: (v: number) => string;
+}) {
+  const listFn = useServerFn(listMonthRefundsChargebacks);
+  const q = useQuery({
+    queryKey: ["lg-month-refunds-cbs", shopIds.slice().sort().join(","), to],
+    queryFn: () => listFn({ data: { shop_ids: shopIds, to } }),
+    enabled: open && shopIds.length > 0,
+  });
+  const items = q.data?.items ?? [];
+  const groups = [
+    { title: "Reembolsos", rows: items.filter((i) => i.kind === "reembolso" || i.kind === "recuperado") },
+    { title: "Chargebacks", rows: items.filter((i) => i.kind === "chargeback" || i.kind === "chargeback_ganho") },
+  ];
+  const monthLabel = q.data ? new Date(`${q.data.month}-15T12:00:00Z`).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }) : "";
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Reembolsos e chargebacks{monthLabel ? ` — ${monthLabel}` : ""}</DialogTitle></DialogHeader>
+        {q.isLoading ? (
+          <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-10 bg-muted animate-pulse rounded-lg" />)}</div>
+        ) : q.error ? (
+          <p className="text-sm text-destructive">Não foi possível carregar: {String((q.error as Error).message)}</p>
+        ) : groups.map((g) => {
+          const total = g.rows.reduce((t, r) => t + r.amount, 0);
+          return (
+            <div key={g.title} className="mb-2">
+              <div className="flex items-center justify-between py-2 border-b border-border">
+                <p className="text-sm font-semibold">{g.title} <span className="text-muted-foreground font-normal">· {g.rows.length}</span></p>
+                <p className={`text-sm font-semibold ${total > 0 ? "text-destructive" : "text-foreground"}`}>{fmt(total)}</p>
+              </div>
+              {!g.rows.length ? <p className="text-xs text-muted-foreground py-3">Nenhum no mês.</p> : (
+                <div className="divide-y divide-border/60">
+                  {g.rows.map((r, i) => (
+                    <div key={`${r.kind}:${r.order_external_id}:${r.date}:${i}`} className="flex items-start gap-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">
+                          {r.orderNumber ?? "Sem pedido"}
+                          <span className="text-xs text-muted-foreground font-normal"> · {r.shopName.replace(/^Loja \d+ - /, "")}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {[r.customer, r.product].filter(Boolean).join(" · ") || "—"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {RC_KIND_LABEL[r.kind]} em {fmtDate(r.date)}
+                          {r.orderDate ? ` · compra ${fmtDate(r.orderDate)}` : ""}
+                          {r.kind === "chargeback" && r.status ? ` · ${CB_STATUS_LABEL[r.status] ?? r.status}` : ""}
+                          {r.kind === "reembolso" ? (r.shipped ? " · enviado" : " · não enviado") : ""}
+                        </p>
+                      </div>
+                      <p className={`text-sm font-semibold tabular-nums shrink-0 ${r.amount > 0 ? "text-destructive" : "text-success"}`}>
+                        {r.amount < 0 ? "−" : ""}{fmt(Math.abs(r.amount))}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <p className="text-[11px] text-muted-foreground">
+          Cada valor cai no dia em que o dinheiro mexeu: reembolso no dia do reembolso, chargeback no dia em que foi aberto, chargeback ganho e cobrança paga voltam (em verde).
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function LgDashboard({
@@ -331,6 +411,7 @@ export function LgDashboard({
   const [brlRate, setBrlRate]         = useState(5.0);
   const [eurRate, setEurRate]         = useState(0.92);
   const [rateOpen, setRateOpen]       = useState(false);
+  const [rcOpen, setRcOpen]           = useState(false);
   const rateDebounce                  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeLines, setActiveLines] = useState({ faturamento: true, lucro: true, custo: false, anuncios: false });
   const [breakdown, setBreakdown]     = useState<null | {
@@ -667,8 +748,10 @@ export function LgDashboard({
         </div>
 
         <div className="flex flex-col gap-4 min-w-0">
-        {/* Custos Adicionais */}
-        <div className="bg-card border border-border rounded-2xl p-5">
+        {/* Custos Adicionais — clique abre os pedidos do mês */}
+        <div role="button" tabIndex={0} title="Ver os pedidos"
+          onClick={() => setRcOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setRcOpen(true); }}
+          className="bg-card border border-border rounded-2xl p-5 cursor-pointer transition-colors hover:border-primary/30">
           <div className="flex items-center gap-2 mb-4">
             <MetricIcon color="info"><BarChart3 className="size-4" /></MetricIcon>
             <div>
@@ -700,6 +783,7 @@ export function LgDashboard({
           </div>
         </div>
         <MonthGoalCard cardId={cardId} fmt={fmt} />
+        <RefundsChargebacksDialog open={rcOpen} onClose={() => setRcOpen(false)} shopIds={shopIds} to={to} fmt={fmt} />
         </div>
       </div>
 
