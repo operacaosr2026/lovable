@@ -57,7 +57,7 @@ type Entry = {
   auto_kind?: string | null; auto_ref_date?: string | null; import_id: string | null;
   recurrence?: Recurrence | null; recurrence_until?: string | null;
   skip_weekend_rule?: boolean | null; reconciled?: boolean | null;
-  shop_id?: string;
+  shop_id?: string; created_at?: string | null;
 };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
@@ -192,13 +192,13 @@ function EntryChip({
             />
           )}
           {entry.recurrence && entry.recurrence !== "none" && <Repeat className="size-3 opacity-70 shrink-0" />}
-          <span className="truncate">{entry.category ?? (isIncome ? "Entrada" : "Saída")}</span>
+          <span className="truncate">{entryLabel(entry)}</span>
         </span>
         <span className="font-semibold tabular-nums shrink-0">
           {isIncome ? "+" : "-"}{fmtMoney(Number(entry.amount))}
         </span>
       </div>
-      {entry.description && (
+      {entry.description && entryLabel(entry) !== entry.description.trim() && (
         <div className="truncate text-muted-foreground text-[10px] mt-0.5">{entry.description}</div>
       )}
       {shopName && (
@@ -237,6 +237,18 @@ function EntryChip({
 
 type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[]; pending?: boolean };
 
+// Lançamentos manuais criados com até 1 min de diferença (mesma categoria e
+// descrição, lojas diferentes) = o mesmo lançamento "Todas as lojas".
+const SAME_LAUNCH_MS = 60_000;
+
+// Nome do lançamento no Caixa: a categoria; em "Outros" (genérica), a descrição
+// que a pessoa escreveu, quando houver.
+function entryLabel(e: DayItem) {
+  const cat = e.category ?? (e.kind === "income" ? "Entrada" : "Saída");
+  const desc = (e.description ?? "").trim();
+  return /^outros?\b/i.test(cat) && desc ? desc : cat;
+}
+
 function isPendingItem(e: DayItem) {
   const src = e.source ?? "";
   return src === "shopify_pending" || src === "shopify_pending_sync";
@@ -261,19 +273,44 @@ function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup
         entries: list,
       }];
     }
+    // Saídas automáticas (anúncios, fornecedor, taxas…): somadas por categoria.
+    const auto = list.filter((e) => e.source !== "manual");
     const byCategory = new Map<string, DayItem[]>();
-    for (const e of list) {
+    for (const e of auto) {
       const cat = e.category ?? "Saída";
       if (!byCategory.has(cat)) byCategory.set(cat, []);
       byCategory.get(cat)!.push(e);
     }
-    return Array.from(byCategory.entries()).map(([cat, entries]) => ({
-      key: cat,
-      label: cat,
+    const autoGroups: EntryGroup[] = Array.from(byCategory.entries()).map(([cat, entries]) => ({
+      key: cat, label: cat, kind,
+      total: entries.reduce((s, e) => s + Number(e.amount), 0),
+      entries,
+    }));
+    // Saídas lançadas à mão: um item por lançamento. "Todas as lojas" grava um
+    // lançamento por loja no mesmo instante — esses viram um item só; dois
+    // lançamentos feitos separadamente (800 e depois outro 800) ficam dois.
+    const manual = list.filter((e) => e.source === "manual")
+      .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+    const launches: DayItem[][] = [];
+    for (const e of manual) {
+      const t = e.created_at ? Date.parse(e.created_at) : NaN;
+      const same = launches.find((g) => {
+        const f = g[0];
+        const ft = f.created_at ? Date.parse(f.created_at) : NaN;
+        return Number.isFinite(t) && Number.isFinite(ft) && Math.abs(t - ft) <= SAME_LAUNCH_MS
+          && (f.category ?? "") === (e.category ?? "") && (f.description ?? "") === (e.description ?? "")
+          && !g.some((x) => x.shop_id === e.shop_id);
+      });
+      if (same) same.push(e); else launches.push([e]);
+    }
+    const manualGroups: EntryGroup[] = launches.map((entries) => ({
+      key: entries.map((e) => `${e.id}:${e.date}`).join("|"),
+      label: entryLabel(entries[0]),
       kind,
       total: entries.reduce((s, e) => s + Number(e.amount), 0),
       entries,
     }));
+    return [...autoGroups, ...manualGroups];
   };
 
   const pendingGroup: EntryGroup[] = pending.length > 0 ? [{
@@ -1453,7 +1490,8 @@ export function LgCashflowView({
             style={{
               gridTemplateColumns: dayList.map(d => { const wd=weekdayFromKey(d); return (wd===0||wd===6)?"92px":"minmax(130px,1fr)"; }).join(" "),
               // fill: entradas/saídas dividem a altura que sobrar (cada uma rola por dentro).
-              gridTemplateRows: fill ? "auto minmax(110px,1fr) minmax(110px,1fr) auto" : "auto 170px 170px auto",
+              // Saída costuma ter mais lançamentos que entrada: entradas menores, saídas maiores.
+              gridTemplateRows: fill ? "auto minmax(80px,2fr) minmax(140px,3fr) auto" : "auto 120px 230px auto",
               minWidth: dayList.length * 92,
             }}
           >

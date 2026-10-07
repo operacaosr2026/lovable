@@ -122,6 +122,7 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
         recurrence_until: o.recurrence_until,
         skip_weekend_rule: o.skip_weekend_rule,
         reconciled: o.reconciled,
+        created_at: o.created_at ?? null,
       });
     }
     merged.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
