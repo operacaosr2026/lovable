@@ -418,6 +418,7 @@ function ChargebacksPage() {
                               {risky(r) && <span title={riskTitle(r)}><AlertTriangle className={`size-4 ${r.riskLevel === "HIGH" ? "text-rose-500" : "text-amber-500"}`} /></span>}
                             </div>
                             <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")}{r.type === "inquiry" ? " · inquiry" : ""}</div>
+                            {r.orderDate && <div className="text-xs text-muted-foreground" title="Data da compra">Compra {fmtDate(r.orderDate)}</div>}
                           </td>
                           <td className="py-3 px-2 max-w-[260px]">
                             <div className="flex items-center gap-2.5 min-w-0">
@@ -650,7 +651,7 @@ function MobileItem({ r, onOpen }: { r: ChargebackRow; onOpen: () => void }) {
         <div className="min-w-0">
           <span className="font-semibold">{r.orderNumber ?? `#${r.orderExternalId ?? "—"}`}</span>
           {risky(r) && <AlertTriangle className={`inline size-4 ml-1.5 align-[-3px] ${r.riskLevel === "HIGH" ? "text-rose-500" : "text-amber-500"}`} aria-label={riskTitle(r)} />}
-          <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")} · {fmtDate(r.initiatedAt)}</div>
+          <div className="text-xs text-muted-foreground">{r.shopName.replace(/^Loja \d+ - /, "")}{r.orderDate ? ` · compra ${fmtDate(r.orderDate)}` : ""} · aberto {fmtDate(r.initiatedAt)}</div>
         </div>
         <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>
       </div>
@@ -999,6 +1000,7 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Disputa</p>
                 {line("Motivo", reasonLabel(r.reason))}
+                {line("Compra em", fmtDate(r.orderDate))}
                 {line("Aberta em", `${fmtDate(r.initiatedAt)}${r.daysToDispute != null ? ` (${r.daysToDispute}d após a compra)` : ""}`)}
                 {line("Prazo para responder", left == null ? "—" : <span className={left <= 2 ? "text-rose-600 font-medium" : ""}>{fmtDate(r.evidenceDueBy)} · {left < 0 ? "vencido" : left === 0 ? "hoje" : `${left}d`}</span>)}
                 {line("Finalizada em", fmtDate(r.finalizedOn))}
