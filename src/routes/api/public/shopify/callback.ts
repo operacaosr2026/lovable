@@ -5,7 +5,10 @@ import crypto from "crypto";
 import { startStoreSetupCheck } from "@/lib/store-policies.server";
 import { fetchWithRetry } from "@/lib/http";
 
-function htmlMessage(title: string, message: string, ok: boolean) {
+function htmlMessage(rawTitle: string, rawMessage: string, ok: boolean) {
+  // Texto pode vir da resposta da Shopify (erro do token): escapa antes de pôr no HTML.
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const title = esc(rawTitle), message = esc(rawMessage);
   return new Response(
     `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font-family:system-ui,sans-serif;background:#0b0b0c;color:#fafafa;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}

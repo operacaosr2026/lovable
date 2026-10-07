@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
-import { findPublicOrder } from "@/lib/public-tracking.functions";
+import { findPublicOrder, TOO_MANY_ATTEMPTS } from "@/lib/public-tracking.functions";
 import { TrackingShell } from "@/components/tracking/TrackingPageView";
 
 // Busca pública de rastreio: número do pedido + e-mail/telefone, ou código de
@@ -35,8 +35,8 @@ function TrackSearch() {
       if (!r.found) setMsg("We couldn't find an order with these details. Please check and try again.");
       else if (!r.trackingCode) setMsg(`Order ${r.orderNumber} is being prepared. You'll receive a tracking number by email as soon as it ships.`);
       else navigate({ to: "/track/$code", params: { code: r.trackingCode } });
-    } catch {
-      setMsg("Something went wrong. Please try again.");
+    } catch (err: any) {
+      setMsg(String(err?.message ?? "").includes(TOO_MANY_ATTEMPTS) ? TOO_MANY_ATTEMPTS : "Something went wrong. Please try again.");
     } finally {
       setBusy(false);
     }

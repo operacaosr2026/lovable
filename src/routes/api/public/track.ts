@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { lookupPublicTracking, lookupPublicOrder } from "@/lib/public-tracking.server";
+import { lookupPublicTracking, lookupPublicOrder, allowPublicLookup, clientIp } from "@/lib/public-tracking.server";
 
 // Dados do rastreio pra página de rastreio dentro da loja (voultiewear.com/pages/track,
 // bloco em shopify/track-page.liquid). Público, sem login — devolve só o que a
@@ -34,6 +34,7 @@ export const Route = createFileRoute("/api/public/track")({
       POST: async ({ request }) => {
         const parsed = orderInput.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return json({ found: false }, 400);
+        if (!(await allowPublicLookup(clientIp(request.headers)))) return json({ found: false, error: "too_many_attempts" }, 429, { "Retry-After": "900" });
         const r = await lookupPublicOrder(parsed.data);
         if (!r.found) return json({ found: false });
         const tracking = r.trackingCode ? (await lookupPublicTracking(r.trackingCode)).tracking : null;

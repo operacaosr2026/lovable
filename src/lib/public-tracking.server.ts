@@ -106,6 +106,30 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
   };
 }
 
+// Limite de tentativas da busca por pedido + contato (sem login): sem isso dava
+// pra testar números de pedido e telefones à vontade. Por IP: LOOKUP_MAX por
+// LOOKUP_WINDOW_MIN. Falha no banco (ou tabela public_rate_limits ainda não
+// criada) não bloqueia o cliente de verdade.
+const LOOKUP_MAX = 10;
+const LOOKUP_WINDOW_MIN = 15;
+export function clientIp(headers: Headers): string {
+  return (headers.get("x-forwarded-for")?.split(",")[0] ?? headers.get("x-real-ip") ?? "").trim() || "desconhecido";
+}
+export async function allowPublicLookup(ip: string, bucket = "order_lookup"): Promise<boolean> {
+  try {
+    const since = new Date(Date.now() - LOOKUP_WINDOW_MIN * 60_000).toISOString();
+    const { count, error } = await supabaseAdmin.from("public_rate_limits" as any)
+      .select("id", { count: "exact", head: true }).eq("bucket", bucket).eq("ip", ip).gte("at", since);
+    if (error) return true;
+    if ((count ?? 0) >= LOOKUP_MAX) return false;
+    await supabaseAdmin.from("public_rate_limits" as any).insert({ bucket, ip });
+    await supabaseAdmin.from("public_rate_limits" as any).delete().lt("at", new Date(Date.now() - 86_400_000).toISOString());
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 // Busca por número do pedido + e-mail ou telefone (como na página da loja).
 // Só confirma o pedido se o contato bater — e devolve só o código de rastreio.
 export async function lookupPublicOrder(data: { orderNumber: string; contact: string }): Promise<{ found: false } | { found: true; trackingCode: string | null; orderNumber: string }> {

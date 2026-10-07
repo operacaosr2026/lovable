@@ -38,3 +38,6 @@ dist-ssr
 
 # Supabase CLI local metadata
 supabase/.temp/
+
+# Configurações locais do Claude Code (permissões da máquina)
+.claude/settings.local.json
