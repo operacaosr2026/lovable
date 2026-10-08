@@ -84,25 +84,29 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
           scope: scope ?? null, installed_at: new Date().toISOString(),
           last_sync_status: "ok" as const, last_sync_error: null,
         };
+        const placeholderId = st.replace_placeholder_id as string | null;
+        const { data: placeholder } = placeholderId
+          ? await supabaseAdmin.from("shopify_stores").select("id,board_column_id,board_position,board_note")
+            .eq("id", placeholderId).eq("user_id", st.user_id).eq("is_placeholder", true).maybeSingle()
+          : { data: null };
+
         let storeId = existing?.id as string | undefined;
         if (existing) {
           await supabaseAdmin.from("shopify_stores").update(payload).eq("id", existing.id);
+          // Domínio já conectado: leva Produção, acessos, nota e posição do card
+          // provisório pra loja antes de apagá-lo (o delete apaga em cascata).
+          if (placeholder && placeholder.id !== existing.id) {
+            await movePlaceholderData(st.user_id, placeholder, existing.id);
+            await supabaseAdmin.from("shopify_stores").delete().eq("id", placeholder.id).eq("user_id", st.user_id);
+          }
+        } else if (placeholder) {
+          // O próprio card vira a loja conectada — mantém tudo que já foi preenchido.
+          await supabaseAdmin.from("shopify_stores").update({ ...payload, is_placeholder: false }).eq("id", placeholder.id);
+          storeId = placeholder.id;
         } else {
           const { data: inserted } = await supabaseAdmin.from("shopify_stores")
             .insert({ user_id: st.user_id, ...payload }).select("id").single();
           storeId = inserted?.id;
-        }
-
-        const placeholderId = st.replace_placeholder_id as string | null;
-        if (storeId && placeholderId && placeholderId !== storeId) {
-          const { data: placeholder } = await supabaseAdmin.from("shopify_stores")
-            .select("board_column_id,board_position").eq("id", placeholderId).eq("user_id", st.user_id).maybeSingle();
-          if (placeholder) {
-            await supabaseAdmin.from("shopify_stores")
-              .update({ board_column_id: placeholder.board_column_id, board_position: placeholder.board_position })
-              .eq("id", storeId);
-          }
-          await supabaseAdmin.from("shopify_stores").delete().eq("id", placeholderId).eq("user_id", st.user_id);
         }
 
         if (storeId) {
@@ -117,3 +121,42 @@ export const Route = createFileRoute("/api/public/shopify/callback")({
     },
   },
 });
+
+type Placeholder = { id: string; board_column_id: string | null; board_position: number | null; board_note: string | null };
+
+async function movePlaceholderData(userId: string, from: Placeholder, toId: string) {
+  const { data: target } = await supabaseAdmin.from("shopify_stores").select("board_note").eq("id", toId).maybeSingle();
+  await supabaseAdmin.from("shopify_stores").update({
+    board_column_id: from.board_column_id,
+    board_position: from.board_position ?? undefined,
+    ...(target?.board_note?.trim() ? {} : { board_note: from.board_note }),
+  }).eq("id", toId);
+
+  for (const table of ["store_credentials", "store_production_tasks", "store_production_files", "store_production_policies"] as const) {
+    const { error } = await supabaseAdmin.from(table).update({ shopify_store_id: toId })
+      .eq("shopify_store_id", from.id).eq("user_id", userId);
+    if (error) console.error(`[shopify callback] mover ${table}`, error.message);
+  }
+
+  // Ficha: campo já preenchido na loja de destino vence.
+  const { data: rows } = await supabaseAdmin.from("store_production").select("shopify_store_id,values")
+    .in("shopify_store_id", [from.id, toId]);
+  const src = rows?.find((r) => r.shopify_store_id === from.id);
+  if (src) {
+    const dst = rows?.find((r) => r.shopify_store_id === toId);
+    const dstValues = (dst?.values ?? {}) as Record<string, string>;
+    const values = { ...(src.values as Record<string, string>) };
+    for (const [k, v] of Object.entries(dstValues)) if (v?.trim()) values[k] = v;
+    const { error } = await supabaseAdmin.from("store_production")
+      .upsert({ shopify_store_id: toId, user_id: userId, values }, { onConflict: "shopify_store_id" });
+    if (error) console.error("[shopify callback] mover ficha", error.message);
+  }
+
+  const [{ data: fromGroups }, { data: toGroups }] = await Promise.all([
+    supabaseAdmin.from("shop_group_stores").select("id,group_id").eq("shopify_store_id", from.id),
+    supabaseAdmin.from("shop_group_stores").select("group_id").eq("shopify_store_id", toId),
+  ]);
+  const have = new Set((toGroups ?? []).map((g) => g.group_id));
+  const ids = (fromGroups ?? []).filter((g) => !have.has(g.group_id)).map((g) => g.id);
+  if (ids.length > 0) await supabaseAdmin.from("shop_group_stores").update({ shopify_store_id: toId }).in("id", ids);
+}
