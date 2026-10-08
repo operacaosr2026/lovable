@@ -4261,6 +4261,50 @@ export type Database = {
           },
         ];
       };
+      store_production_preset_files: {
+        Row: {
+          created_at: string;
+          id: string;
+          mime: string | null;
+          name: string;
+          path: string;
+          preset_id: string;
+          size: number;
+          uploaded_by: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          mime?: string | null;
+          name: string;
+          path: string;
+          preset_id: string;
+          size?: number;
+          uploaded_by?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          mime?: string | null;
+          name?: string;
+          path?: string;
+          preset_id?: string;
+          size?: number;
+          uploaded_by?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_production_preset_files_preset_id_fkey";
+            columns: ["preset_id"];
+            isOneToOne: false;
+            referencedRelation: "store_production_presets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       store_production_presets: {
         Row: {
           created_at: string;
@@ -4268,6 +4312,7 @@ export type Database = {
           id: string;
           is_default: boolean;
           name: string;
+          policies: Json;
           position: number;
           tasks: Json;
           updated_at: string;
@@ -4280,6 +4325,7 @@ export type Database = {
           id?: string;
           is_default?: boolean;
           name: string;
+          policies?: Json;
           position?: number;
           tasks?: Json;
           updated_at?: string;
@@ -4292,6 +4338,7 @@ export type Database = {
           id?: string;
           is_default?: boolean;
           name?: string;
+          policies?: Json;
           position?: number;
           tasks?: Json;
           updated_at?: string;

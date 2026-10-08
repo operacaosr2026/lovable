@@ -2,23 +2,25 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, LayoutTemplate, ListChecks, Loader2, Plus, Star, Trash2, X,
+  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, LayoutTemplate, ListChecks, Loader2, Pencil, Plus, ScrollText, Star, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { listTaskAssignees } from "@/lib/tasks.functions";
 import {
   listProductionTemplates, saveProductionFields, saveProductionPreset, deleteProductionPreset,
-  type ProductionField, type ProductionPreset,
+  createPresetUpload, registerPresetFile, getPresetFileUrl, deletePresetFile,
+  type ProductionField, type ProductionFile, type ProductionPreset,
 } from "@/lib/store-production.functions";
-import { AddBtn, SectionTitle } from "@/components/shops/StoreProduction";
+import { AddBtn, FilesManager, PolicyForm, SectionTitle } from "@/components/shops/StoreProduction";
 
 type Draft = Omit<ProductionPreset, "id"> & { id?: string };
 
 const newId = () => crypto.randomUUID();
 const QK = ["production-templates"];
 const inputCls = "h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
-const emptyDraft = (): Draft => ({ name: "", is_default: false, values: {}, tasks: [], credentials: [] });
+const emptyDraft = (): Draft => ({ name: "", is_default: false, values: {}, tasks: [], credentials: [], policies: [] });
 
 const move = <T,>(list: T[], i: number, d: -1 | 1) => {
   const j = i + d;
@@ -46,8 +48,8 @@ export function ProductionTemplates() {
       <section className="premium-card p-6">
         <SectionTitle action={<AddBtn onClick={() => setSelected("new")}>Template</AddBtn>}>Templates de produção</SectionTitle>
         <p className="text-xs text-muted-foreground mb-4">
-          Valores dos campos, etapas com responsável e acessos. No card da loja, "Aplicar template" preenche só os campos vazios e
-          adiciona as etapas e acessos que faltam — nada é apagado. O template padrão entra sozinho em toda loja nova do quadro.
+          Valores dos campos, etapas com responsável, acessos, políticas e arquivos. No card da loja, "Aplicar template" preenche só
+          os campos vazios e adiciona o que falta (pelo nome) — nada é apagado. O template padrão entra sozinho em toda loja nova do quadro.
         </p>
         <div className="flex flex-col md:flex-row gap-4">
           <div className="md:w-52 shrink-0 space-y-1">
@@ -76,6 +78,7 @@ export function ProductionTemplates() {
               <PresetEditor
                 key={activeId}
                 initial={current}
+                files={selected === "new" ? [] : ((current as { files?: ProductionFile[] }).files ?? [])}
                 fields={data.fields}
                 onSaved={(id) => setSelected(id)}
                 onDeleted={() => setSelected(null)}
@@ -153,8 +156,8 @@ function FieldsCard({ fields }: { fields: ProductionField[] }) {
 
 // ── Template ──
 
-function PresetEditor({ initial, fields, onSaved, onDeleted, onCancelNew }: {
-  initial: Draft; fields: ProductionField[]; onSaved: (id: string) => void; onDeleted: () => void; onCancelNew: () => void;
+function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew }: {
+  initial: Draft; files: ProductionFile[]; fields: ProductionField[]; onSaved: (id: string) => void; onDeleted: () => void; onCancelNew: () => void;
 }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -165,6 +168,11 @@ function PresetEditor({ initial, fields, onSaved, onDeleted, onCancelNew }: {
   const [tpl, setTpl] = useState<Draft>(initial);
   const [openTask, setOpenTask] = useState<string | null>(null);
   const [newCred, setNewCred] = useState("");
+  const [editingPolicy, setEditingPolicy] = useState<string | "new" | null>(null);
+  const createUploadFn = useServerFn(createPresetUpload);
+  const registerFileFn = useServerFn(registerPresetFile);
+  const fileUrlFn = useServerFn(getPresetFileUrl);
+  const deleteFileFn = useServerFn(deletePresetFile);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: QK });
@@ -173,7 +181,10 @@ function PresetEditor({ initial, fields, onSaved, onDeleted, onCancelNew }: {
   const save = useMutation({
     mutationFn: () => saveFn({
       data: {
-        ...tpl,
+        id: tpl.id,
+        is_default: tpl.is_default,
+        credentials: tpl.credentials,
+        policies: tpl.policies,
         name: tpl.name.trim(),
         // Linhas em branco somem em vez de barrar o salvamento.
         values: Object.fromEntries(Object.entries(tpl.values).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)),
@@ -355,6 +366,78 @@ function PresetEditor({ initial, fields, onSaved, onDeleted, onCancelNew }: {
           </form>
         </div>
       </section>
+
+      <section>
+        <SectionTitle action={editingPolicy !== "new" && <AddBtn onClick={() => setEditingPolicy("new")}>Política</AddBtn>}>Políticas</SectionTitle>
+        <div className="space-y-1.5">
+          {tpl.policies.map((p) => editingPolicy === p.id ? (
+            <PolicyForm
+              key={p.id}
+              initial={p}
+              saving={false}
+              onCancel={() => setEditingPolicy(null)}
+              onSave={(title, content) => {
+                setTpl({ ...tpl, policies: tpl.policies.map((x) => (x.id === p.id ? { ...x, title, content } : x)) });
+                setEditingPolicy(null);
+              }}
+            />
+          ) : (
+            <div key={p.id} className="rounded-xl border border-border bg-card px-3 py-2 flex items-center gap-3">
+              <ScrollText className="size-4 text-muted-foreground shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{p.title}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{p.content.trim() ? p.content.trim().split("\n")[0] : "Sem texto"}</p>
+              </div>
+              <button onClick={() => setEditingPolicy(p.id)} title="Editar" className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground">
+                <Pencil className="size-3.5" />
+              </button>
+              <button
+                onClick={() => setTpl({ ...tpl, policies: tpl.policies.filter((x) => x.id !== p.id) })}
+                title="Remover"
+                className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          {editingPolicy === "new" && (
+            <PolicyForm
+              saving={false}
+              onCancel={() => setEditingPolicy(null)}
+              onSave={(title, content) => {
+                setTpl({ ...tpl, policies: [...tpl.policies, { id: newId(), title, content }] });
+                setEditingPolicy(null);
+              }}
+            />
+          )}
+          {tpl.policies.length === 0 && editingPolicy !== "new" && (
+            <p className="text-sm text-muted-foreground">Reembolso, privacidade, termos, envio... copiadas pro card ao aplicar.</p>
+          )}
+        </div>
+      </section>
+
+      {tpl.id ? (
+        <FilesManager
+          files={files}
+          emptyText="Tema, logo, imagens... copiados pro card ao aplicar."
+          onChanged={() => qc.invalidateQueries({ queryKey: QK })}
+          upload={async (file) => {
+            const { path, token } = await createUploadFn({ data: { preset_id: tpl.id!, name: file.name } });
+            const { error } = await supabase.storage.from("store-production").uploadToSignedUrl(path, token, file, {
+              contentType: file.type || undefined,
+            });
+            if (error) throw error;
+            await registerFileFn({ data: { preset_id: tpl.id!, path, name: file.name, size: file.size, mime: file.type || null } });
+          }}
+          urlFor={async (id) => (await fileUrlFn({ data: { id } })).url}
+          remove={async (id) => { await deleteFileFn({ data: { id } }); }}
+        />
+      ) : (
+        <section>
+          <SectionTitle>Arquivos</SectionTitle>
+          <p className="text-sm text-muted-foreground">Salve o template pra enviar arquivos.</p>
+        </section>
+      )}
 
       <div className="flex items-center gap-2 pt-3 border-t border-border">
         {tpl.id ? (

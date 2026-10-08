@@ -417,28 +417,48 @@ function ChecklistEditor({ items, onChange }: { items: ChecklistItem[]; onChange
 // ── Arquivos ──
 
 function FilesSection({ storeId, files, onChanged }: {
-  storeId: string; files: { id: string; name: string; size: number; created_at: string }[]; onChanged: () => void;
+  storeId: string; files: FileRow[]; onChanged: () => void;
 }) {
-  const confirm = useConfirm();
   const createUploadFn = useServerFn(createProductionUpload);
   const registerFn = useServerFn(registerProductionFile);
   const urlFn = useServerFn(getProductionFileUrl);
   const deleteFn = useServerFn(deleteProductionFile);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(0);
-
-  const upload = async (list: FileList | null) => {
-    if (!list?.length) return;
-    const all = Array.from(list);
-    setUploading(all.length);
-    for (const file of all) {
-      try {
+  return (
+    <FilesManager
+      files={files}
+      emptyText="Tema, logo, imagens... tudo que a loja precisa fica aqui."
+      onChanged={onChanged}
+      upload={async (file) => {
         const { path, token } = await createUploadFn({ data: { shopify_store_id: storeId, name: file.name } });
         const { error } = await supabase.storage.from("store-production").uploadToSignedUrl(path, token, file, {
           contentType: file.type || undefined,
         });
         if (error) throw error;
         await registerFn({ data: { shopify_store_id: storeId, path, name: file.name, size: file.size, mime: file.type || null } });
+      }}
+      urlFor={async (id) => (await urlFn({ data: { id } })).url}
+      remove={async (id) => { await deleteFn({ data: { id } }); }}
+    />
+  );
+}
+
+type FileRow = { id: string; name: string; size: number; created_at: string };
+
+export function FilesManager({ files, emptyText, onChanged, upload, urlFor, remove }: {
+  files: FileRow[]; emptyText: string; onChanged: () => void;
+  upload: (file: File) => Promise<void>; urlFor: (id: string) => Promise<string>; remove: (id: string) => Promise<void>;
+}) {
+  const confirm = useConfirm();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(0);
+
+  const send = async (list: FileList | null) => {
+    if (!list?.length) return;
+    const all = Array.from(list);
+    setUploading(all.length);
+    for (const file of all) {
+      try {
+        await upload(file);
       } catch (e: any) {
         toast.error(`${file.name}: ${e?.message ?? "erro ao enviar"}`);
       }
@@ -449,17 +469,16 @@ function FilesSection({ storeId, files, onChanged }: {
 
   const download = async (id: string) => {
     try {
-      const { url } = await urlFn({ data: { id } });
-      window.open(url, "_blank");
+      window.open(await urlFor(id), "_blank");
     } catch (e: any) {
       toast.error(e.message);
     }
   };
 
-  const remove = (f: { id: string; name: string }) => {
+  const askRemove = (f: { id: string; name: string }) => {
     confirm(`Excluir o arquivo "${f.name}"?`).then(async (ok) => {
       if (!ok) return;
-      try { await deleteFn({ data: { id: f.id } }); onChanged(); } catch (e: any) { toast.error(e.message); }
+      try { await remove(f.id); onChanged(); } catch (e: any) { toast.error(e.message); }
     });
   };
 
@@ -479,9 +498,9 @@ function FilesSection({ storeId, files, onChanged }: {
       >
         Arquivos
       </SectionTitle>
-      <input ref={inputRef} type="file" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+      <input ref={inputRef} type="file" multiple hidden onChange={(e) => { send(e.target.files); e.target.value = ""; }} />
       {files.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Tema, logo, imagens... tudo que a loja precisa fica aqui.</p>
+        <p className="text-sm text-muted-foreground">{emptyText}</p>
       ) : (
         <div className="space-y-1.5">
           {files.map((f) => (
@@ -494,7 +513,7 @@ function FilesSection({ storeId, files, onChanged }: {
               <button onClick={() => download(f.id)} title="Baixar" className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground">
                 <Download className="size-3.5" />
               </button>
-              <button onClick={() => remove(f)} title="Excluir" className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+              <button onClick={() => askRemove(f)} title="Excluir" className="size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                 <Trash2 className="size-3.5" />
               </button>
             </div>
@@ -580,7 +599,7 @@ function PoliciesSection({ storeId, policies, onChanged }: { storeId: string; po
   );
 }
 
-function PolicyForm({ initial, saving, onSave, onCancel }: {
+export function PolicyForm({ initial, saving, onSave, onCancel }: {
   initial?: ProductionPolicy; saving: boolean; onSave: (title: string, content: string) => void; onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");

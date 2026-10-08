@@ -3,10 +3,12 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
-  PRODUCTION_BUCKET, applyPresetToStore, loadFields, loadPresets,
+  PRODUCTION_BUCKET, applyPresetToStore, loadFields, loadPresets, safeFileName,
 } from "@/lib/store-production.server";
 
-export type { ProductionField, ProductionFieldType, ProductionPreset, TemplateTask } from "@/lib/store-production.server";
+export type {
+  ProductionField, ProductionFieldType, ProductionPreset, TemplatePolicy, TemplateTask,
+} from "@/lib/store-production.server";
 export type ChecklistItem = { id: string; text: string; done: boolean };
 export type ProductionTask = {
   id: string; title: string; description: string | null; assignee_id: string | null;
@@ -51,13 +53,36 @@ const PresetInput = z.object({
     checklist: z.array(z.object({ id: z.string().min(1).max(60), text: z.string().trim().min(1).max(300) })).max(100),
   })).max(50),
   credentials: z.array(z.string().trim().min(1).max(100)).max(30),
+  policies: z.array(z.object({
+    id: z.string().min(1).max(60),
+    title: z.string().trim().min(1).max(100),
+    content: z.string().max(100000),
+  })).max(30),
 });
+
+async function assertPreset(ownerId: string, presetId: string) {
+  const { data } = await supabaseAdmin.from("store_production_presets").select("id")
+    .eq("id", presetId).eq("user_id", ownerId).maybeSingle();
+  if (!data) throw new Error("Template não encontrado");
+}
 
 export const listProductionTemplates = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
-    const [fields, presets] = await Promise.all([loadFields(context.ownerId), loadPresets(context.ownerId)]);
-    return { fields, presets };
+    const [fields, presets, files] = await Promise.all([
+      loadFields(context.ownerId),
+      loadPresets(context.ownerId),
+      supabaseAdmin.from("store_production_preset_files").select("id,preset_id,name,size,mime,created_at")
+        .eq("user_id", context.ownerId).order("created_at", { ascending: false }),
+    ]);
+    if (files.error) throw new Error(files.error.message);
+    return {
+      fields,
+      presets: presets.map((p) => ({
+        ...p,
+        files: (files.data ?? []).filter((f) => f.preset_id === p.id) as ProductionFile[],
+      })),
+    };
   });
 
 export const saveProductionFields = createServerFn({ method: "POST" })
@@ -101,6 +126,9 @@ export const deleteProductionPreset = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
+    const { data: files } = await supabaseAdmin.from("store_production_preset_files").select("path")
+      .eq("user_id", context.ownerId).eq("preset_id", data.id);
+    if (files?.length) await supabaseAdmin.storage.from(PRODUCTION_BUCKET).remove(files.map((f) => f.path));
     const { error } = await supabaseAdmin.from("store_production_presets")
       .delete().eq("id", data.id).eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
@@ -284,8 +312,7 @@ export const createProductionUpload = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ shopify_store_id: z.string().uuid(), name: z.string().min(1).max(255) }).parse(d))
   .handler(async ({ context, data }) => {
     await assertStore(context.ownerId, data.shopify_store_id);
-    const safe = data.name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.-]+/g, "_").slice(-120);
-    const path = `${context.ownerId}/${data.shopify_store_id}/${crypto.randomUUID()}-${safe}`;
+    const path = `${context.ownerId}/${data.shopify_store_id}/${crypto.randomUUID()}-${safeFileName(data.name)}`;
     const { data: signed, error } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).createSignedUploadUrl(path);
     if (error || !signed) throw new Error(error?.message ?? "Não foi possível preparar o envio");
     return { path, token: signed.token };
@@ -331,6 +358,63 @@ export const deleteProductionFile = createServerFn({ method: "POST" })
     if (!file) return { ok: true };
     await supabaseAdmin.storage.from(PRODUCTION_BUCKET).remove([file.path]);
     const { error } = await supabaseAdmin.from("store_production_files").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ── Arquivos do template ──
+
+export const createPresetUpload = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ preset_id: z.string().uuid(), name: z.string().min(1).max(255) }).parse(d))
+  .handler(async ({ context, data }) => {
+    await assertPreset(context.ownerId, data.preset_id);
+    const path = `${context.ownerId}/presets/${data.preset_id}/${crypto.randomUUID()}-${safeFileName(data.name)}`;
+    const { data: signed, error } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).createSignedUploadUrl(path);
+    if (error || !signed) throw new Error(error?.message ?? "Não foi possível preparar o envio");
+    return { path, token: signed.token };
+  });
+
+export const registerPresetFile = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    preset_id: z.string().uuid(),
+    path: z.string().min(1).max(500),
+    name: z.string().min(1).max(255),
+    size: z.number().int().min(0),
+    mime: z.string().max(200).nullable(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    if (!data.path.startsWith(`${context.ownerId}/presets/${data.preset_id}/`)) throw new Error("Caminho inválido");
+    const { error } = await supabaseAdmin.from("store_production_preset_files").insert({
+      ...data, user_id: context.ownerId, uploaded_by: context.userId,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getPresetFileUrl = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: file } = await supabaseAdmin.from("store_production_preset_files").select("path,name")
+      .eq("id", data.id).eq("user_id", context.ownerId).maybeSingle();
+    if (!file) throw new Error("Arquivo não encontrado");
+    const { data: signed, error } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET)
+      .createSignedUrl(file.path, 60, { download: file.name });
+    if (error || !signed) throw new Error(error?.message ?? "Não foi possível gerar o link");
+    return { url: signed.signedUrl };
+  });
+
+export const deletePresetFile = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: file } = await supabaseAdmin.from("store_production_preset_files").select("path")
+      .eq("id", data.id).eq("user_id", context.ownerId).maybeSingle();
+    if (!file) return { ok: true };
+    await supabaseAdmin.storage.from(PRODUCTION_BUCKET).remove([file.path]);
+    const { error } = await supabaseAdmin.from("store_production_preset_files").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

@@ -6,9 +6,10 @@ export type TemplateChecklistItem = { id: string; text: string };
 export type TemplateTask = {
   id: string; title: string; description: string | null; assignee_id: string | null; checklist: TemplateChecklistItem[];
 };
+export type TemplatePolicy = { id: string; title: string; content: string };
 export type ProductionPreset = {
   id: string; name: string; is_default: boolean;
-  values: Record<string, string>; tasks: TemplateTask[]; credentials: string[];
+  values: Record<string, string>; tasks: TemplateTask[]; credentials: string[]; policies: TemplatePolicy[];
 };
 
 export const PRODUCTION_BUCKET = "store-production";
@@ -40,11 +41,15 @@ const toPreset = (r: any): ProductionPreset => ({
   values: (r.values ?? {}) as Record<string, string>,
   tasks: ((r.tasks ?? []) as TemplateTask[]).map((t) => ({ ...t, assignee_id: t.assignee_id ?? null })),
   credentials: (r.credentials ?? []) as string[],
+  policies: (r.policies ?? []) as TemplatePolicy[],
 });
+
+export const safeFileName = (name: string) =>
+  name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "_").slice(-120);
 
 export async function loadPresets(ownerId: string): Promise<ProductionPreset[]> {
   const { data, error } = await supabaseAdmin.from("store_production_presets")
-    .select("id,name,is_default,values,tasks,credentials")
+    .select("id,name,is_default,values,tasks,credentials,policies")
     .eq("user_id", ownerId)
     .order("position", { ascending: true }).order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
@@ -52,11 +57,12 @@ export async function loadPresets(ownerId: string): Promise<ProductionPreset[]> 
 }
 
 // Aplica o template na loja sem apagar nada: preenche só campos vazios,
-// adiciona etapas que a loja ainda não tem (pelo nome) e acessos que faltam.
+// adiciona etapas, acessos, políticas e arquivos que a loja ainda não tem
+// (pelo nome).
 // Sem presetId usa o template padrão (loja nova do quadro).
 export async function applyPresetToStore(ownerId: string, storeId: string, presetId?: string) {
   let q = supabaseAdmin.from("store_production_presets")
-    .select("id,name,is_default,values,tasks,credentials").eq("user_id", ownerId);
+    .select("id,name,is_default,values,tasks,credentials,policies").eq("user_id", ownerId);
   q = presetId ? q.eq("id", presetId) : q.eq("is_default", true);
   const { data: row } = await q.maybeSingle();
   if (!row) {
@@ -111,6 +117,38 @@ export async function applyPresetToStore(ownerId: string, storeId: string, prese
       .map((label, i) => ({ user_id: ownerId, shopify_store_id: storeId, label, value: "", position: start + i }));
     if (rows.length > 0) {
       const { error } = await supabaseAdmin.from("store_credentials").insert(rows);
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  if (tpl.policies.length > 0) {
+    const { data: existing } = await supabaseAdmin.from("store_production_policies").select("title")
+      .eq("user_id", ownerId).eq("shopify_store_id", storeId);
+    const have = new Set((existing ?? []).map((p) => p.title.trim().toLowerCase()));
+    const start = (existing ?? []).length;
+    const rows = tpl.policies.filter((p) => !have.has(p.title.trim().toLowerCase())).map((p, i) => ({
+      user_id: ownerId, shopify_store_id: storeId, title: p.title, content: p.content, position: start + i,
+    }));
+    if (rows.length > 0) {
+      const { error } = await supabaseAdmin.from("store_production_policies").insert(rows);
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  const { data: files } = await supabaseAdmin.from("store_production_preset_files")
+    .select("name,path,size,mime").eq("user_id", ownerId).eq("preset_id", tpl.id);
+  if (files && files.length > 0) {
+    const { data: existing } = await supabaseAdmin.from("store_production_files").select("name")
+      .eq("user_id", ownerId).eq("shopify_store_id", storeId);
+    const have = new Set((existing ?? []).map((f) => f.name.toLowerCase()));
+    const bucket = supabaseAdmin.storage.from(PRODUCTION_BUCKET);
+    for (const f of files.filter((f) => !have.has(f.name.toLowerCase()))) {
+      const path = `${ownerId}/${storeId}/${crypto.randomUUID()}-${safeFileName(f.name)}`;
+      const { error: copyError } = await bucket.copy(f.path, path);
+      if (copyError) throw new Error(`${f.name}: ${copyError.message}`);
+      const { error } = await supabaseAdmin.from("store_production_files").insert({
+        user_id: ownerId, shopify_store_id: storeId, name: f.name, path, size: f.size, mime: f.mime,
+      });
       if (error) throw new Error(error.message);
     }
   }
