@@ -41,7 +41,11 @@ function productSummary(o: any) {
   return unique.length > 1 ? `${unique[0]} +${unique.length - 1}` : unique[0];
 }
 
-type ShopConfig = { id: string; name: string; payment_days: number };
+function orderTags(o: any): string[] {
+  return String(o.raw?.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+}
+
+type ShopConfig ={ id: string; name: string; payment_days: number };
 
 export function LgOrders({
   cardId,
@@ -621,6 +625,15 @@ export function LgOrders({
                               <p className="font-medium text-foreground truncate">
                                 {orderLabel(o)}
                                 {productSummary(o) && <span className="font-normal text-muted-foreground"> - {productSummary(o)}</span>}
+                                {/* Pedido de $0 (reenvio): valor + tags da Shopify pra saber o motivo. */}
+                                {Number(o.revenue) === 0 && (
+                                  <>
+                                    <span className="font-normal text-muted-foreground"> · {fmtMoney(0)}</span>
+                                    {orderTags(o).map((t) => (
+                                      <span key={t} className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-sky-500/10 text-sky-600 border-sky-500/20 align-middle">{t}</span>
+                                    ))}
+                                  </>
+                                )}
                               </p>
                               {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
                             </div>
