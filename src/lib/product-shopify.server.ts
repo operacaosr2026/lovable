@@ -148,6 +148,21 @@ export async function createProductInStore(
   return { productId: String(product.id).split("/").pop()!, handle: product.handle, warnings };
 }
 
+// O produto criado ainda existe na loja? false = apagado na Shopify;
+// null = não deu pra conferir (aí trata como existente, pra nunca duplicar).
+export async function productExistsInStore(
+  store: { shop_domain: string; access_token: string }, shopifyProductId: string,
+): Promise<boolean | null> {
+  try {
+    const data = await gql(store.shop_domain, store.access_token, `query($id: ID!) { product(id: $id) { id } }`, {
+      id: `gid://shopify/Product/${shopifyProductId}`,
+    });
+    return !!data.product;
+  } catch {
+    return null;
+  }
+}
+
 // ── Atualizar produto já criado (só as partes escolhidas) ──
 
 const GET_PRODUCT = `query($id: ID!) {

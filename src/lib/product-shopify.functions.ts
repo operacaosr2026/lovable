@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createProductInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
+import { createProductInStore, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
 import { REQUIRED_SCOPES, UPDATE_PARTS, emptyListing, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
 
@@ -86,14 +86,31 @@ export const getProductShopify = createServerFn({ method: "GET" })
         .select("shopify_store_id,status,shopify_product_id,handle,role,error,warnings,updated_at")
         .eq("user_id", ownerId).eq("product_id", product.id),
     ]);
+    // Produto criado e depois apagado na Shopify volta a poder ser criado.
+    const storeCreds = new Map<string, { shop_domain: string; access_token: string }>();
+    {
+      const okIds = (pubs.data ?? []).filter((p) => p.status === "ok" && p.shopify_product_id).map((p) => p.shopify_store_id);
+      if (okIds.length) {
+        const { data: creds } = await supabaseAdmin.from("shopify_stores").select("id,shop_domain,access_token")
+          .eq("user_id", ownerId).in("id", okIds);
+        for (const c of creds ?? []) if (c.shop_domain && c.access_token) storeCreds.set(c.id, { shop_domain: c.shop_domain, access_token: c.access_token });
+      }
+    }
+    const publications = await Promise.all((pubs.data ?? []).map(async (p) => {
+      const creds = storeCreds.get(p.shopify_store_id);
+      const deleted = p.status === "ok" && p.shopify_product_id && creds
+        ? (await productExistsInStore(creds, p.shopify_product_id)) === false
+        : false;
+      return { ...p, status: (deleted ? "deleted" : p.status) as "ok" | "error" | "deleted" };
+    }));
     const saved = listing.data?.data as Partial<ShopifyListing> | undefined;
     const imgs = (images.data ?? []) as { id: string; file_url: string | null; file_name: string | null }[];
     return {
       listing: saved ? { ...emptyListing(product.name), ...saved } : { ...emptyListing(product.name), image_ids: imgs.map((i) => i.id) },
       images: imgs,
       stores,
-      publications: (pubs.data ?? []) as {
-        shopify_store_id: string; status: "ok" | "error"; shopify_product_id: string | null; handle: string | null;
+      publications: publications as {
+        shopify_store_id: string; status: "ok" | "error" | "deleted"; shopify_product_id: string | null; handle: string | null;
         role: string | null; error: string | null; warnings: string[]; updated_at: string;
       }[],
     };
@@ -126,19 +143,26 @@ export const publishProductShopify = createServerFn({ method: "POST" })
     await supabaseAdmin.from("product_shopify_listings")
       .upsert({ product_id: data.product_id, user_id: ownerId, data: listing }, { onConflict: "product_id" });
 
-    const { data: done } = await supabaseAdmin.from("product_shopify_publications").select("shopify_store_id")
+    const { data: done } = await supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,shopify_product_id")
       .eq("product_id", data.product_id).eq("status", "ok");
-    const already = new Set((done ?? []).map((r) => r.shopify_store_id));
+    const createdIn = new Map((done ?? []).map((r) => [r.shopify_store_id, r.shopify_product_id as string | null]));
     const imageUrls = await signedImageUrls(data.product_id, listing.image_ids);
 
     const results: { shopify_store_id: string; ok: boolean; message: string }[] = [];
     for (const target of data.stores) {
-      if (already.has(target.shopify_store_id)) {
-        results.push({ shopify_store_id: target.shopify_store_id, ok: true, message: "Já criado antes" });
-        continue;
-      }
       const { data: store } = await supabaseAdmin.from("shopify_stores").select("shop_domain,access_token")
         .eq("id", target.shopify_store_id).eq("user_id", ownerId).maybeSingle();
+      // Já criado: só cria de novo se foi apagado na Shopify (na dúvida, não cria).
+      const existingId = createdIn.get(target.shopify_store_id);
+      if (createdIn.has(target.shopify_store_id)) {
+        const exists = existingId && store?.shop_domain && store.access_token
+          ? await productExistsInStore({ shop_domain: store.shop_domain, access_token: store.access_token }, existingId)
+          : true;
+        if (exists !== false) {
+          results.push({ shopify_store_id: target.shopify_store_id, ok: true, message: "Já existe nesta loja" });
+          continue;
+        }
+      }
       const base = { user_id: ownerId, product_id: data.product_id, shopify_store_id: target.shopify_store_id, role: target.role };
       try {
         if (!store?.shop_domain || !store.access_token) throw new Error("Loja sem conexão com a Shopify.");

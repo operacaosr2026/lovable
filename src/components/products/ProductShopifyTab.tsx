@@ -315,6 +315,11 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                     {created && pub.warnings?.length > 0 && (
                       <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1"><AlertTriangle className="size-3.5 shrink-0 mt-px" /> {pub.warnings.join(" ")}</p>
                     )}
+                    {pub?.status === "deleted" && (
+                      <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                        <XCircle className="size-3.5 shrink-0 mt-px" /> Apagado na Shopify — marque pra criar de novo.
+                      </p>
+                    )}
                     {pub?.status === "error" && (
                       <p className="text-xs text-destructive mt-1 flex items-start gap-1"><XCircle className="size-3.5 shrink-0 mt-px" /> {pub.error}</p>
                     )}
