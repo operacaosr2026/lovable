@@ -61,12 +61,13 @@ export function variantSku(baseSku: string, values: string[]): string {
 export type VariantTemplate = { id: string; name: string; options: ShopifyOption[]; is_default: boolean };
 
 // Partes que dá pra reenviar a um produto já criado na loja.
-export const UPDATE_PARTS = ["aprodrop", "nome", "descricao", "preco", "sku", "estoque", "seo"] as const;
+export const UPDATE_PARTS = ["aprodrop", "nome", "descricao", "variantes", "preco", "sku", "estoque", "seo"] as const;
 export type UpdatePart = (typeof UPDATE_PARTS)[number];
 export const UPDATE_PART_LABELS: Record<UpdatePart, string> = {
   aprodrop: "Disponível na Aprodrop",
   nome: "Nome",
   descricao: "Descrição",
+  variantes: "Variantes",
   preco: "Preço",
   sku: "SKU",
   estoque: "Estoque",

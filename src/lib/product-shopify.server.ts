@@ -180,6 +180,99 @@ const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!, $key: Str
 
 const firstError = (errs: { message: string }[] | undefined) => (errs && errs.length > 0 ? errs[0].message : null);
 
+const GET_OPTIONS = `query($id: ID!) {
+  product(id: $id) {
+    options { id name position optionValues { id name hasVariants } }
+    variants(first: 250) { nodes { id selectedOptions { name value } } }
+  }
+}`;
+const OPTION_UPDATE = `mutation($productId: ID!, $option: OptionUpdateInput!, $update: [OptionValueUpdateInput!]) {
+  productOptionUpdate(productId: $productId, option: $option, optionValuesToUpdate: $update, variantStrategy: LEAVE_AS_IS) { userErrors { message } }
+}`;
+const BULK_CREATE = `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkCreate(productId: $productId, variants: $variants) { productVariants { id } userErrors { message } }
+}`;
+const BULK_DELETE = `mutation($productId: ID!, $ids: [ID!]!) {
+  productVariantsBulkDelete(productId: $productId, variantsIds: $ids) { userErrors { message } }
+}`;
+
+// Deixa a grade da Shopify igual à da ficha, sem recriar o que já existe:
+// valor renomeado continua a mesma variante (casa pela posição entre os que
+// mudaram), valor novo vira variante nova, valor que saiu da ficha apaga a
+// variante. Mudar o número de opções (ex.: Size → Size + Cor) não entra.
+// Devolve os ids das variantes criadas (precisam de estoque e Aprodrop).
+async function syncVariants(domain: string, token: string, gid: string, listing: ShopifyListing, warnings: string[]): Promise<string[] | null> {
+  const options = listing.options.filter((o) => o.name.trim() && o.values.length > 0);
+  const data = await gql(domain, token, GET_OPTIONS, { id: gid });
+  const shopOptions = ((data.product?.options ?? []) as { id: string; name: string; position: number; optionValues: { id: string; name: string; hasVariants: boolean }[] }[])
+    .sort((a, b) => a.position - b.position);
+  const isDefault = shopOptions.length === 1 && shopOptions[0].name === "Title";
+  if (options.length === 0 && isDefault) return [];
+  if (options.length !== shopOptions.length || isDefault) {
+    warnings.push(`Variantes: a loja tem ${isDefault ? 0 : shopOptions.length} opção(ões) e a ficha ${options.length} — mudar o número de opções não é atualizado (apague e crie de novo).`);
+    return null;
+  }
+
+  // 1) Renomeia opções e valores.
+  for (let i = 0; i < options.length; i++) {
+    const so = shopOptions[i];
+    const want = options[i].values;
+    const have = so.optionValues.filter((v) => v.hasVariants);
+    const shopOnly = have.filter((v) => !want.includes(v.name));
+    const sheetOnly = want.filter((v) => !have.some((h) => h.name === v));
+    const renames = shopOnly.slice(0, sheetOnly.length).map((v, k) => ({ id: v.id, name: sheetOnly[k] }));
+    const rename = options[i].name.trim() !== so.name;
+    if (renames.length === 0 && !rename) continue;
+    const r = await gql(domain, token, OPTION_UPDATE, {
+      productId: gid,
+      option: { id: so.id, ...(rename ? { name: options[i].name.trim() } : {}) },
+      update: renames.length ? renames : null,
+    });
+    const err = firstError(r.productOptionUpdate?.userErrors);
+    if (err) { warnings.push(`Variantes: ${err}`); return null; }
+  }
+
+  // 2) Cria as combinações que faltam e 3) apaga as que saíram da ficha.
+  const after = await gql(domain, token, GET_OPTIONS, { id: gid });
+  const nodes = (after.product?.variants?.nodes ?? []) as { id: string; selectedOptions: { name: string; value: string }[] }[];
+  const keyOf = (v: (typeof nodes)[number]) => v.selectedOptions.map((o) => o.value).join(" / ");
+  const shopKeys = new Map(nodes.map((v) => [keyOf(v), v.id]));
+  const sheetKeys = new Set(listing.variants.map((v) => v.values.join(" / ")));
+  const basePrice = money(listing.price);
+  const baseCompare = money(listing.compare_at_price);
+
+  const toCreate = listing.variants.filter((v) => !shopKeys.has(v.values.join(" / ")));
+  let created: string[] = [];
+  if (toCreate.length > 0) {
+    if (!basePrice) { warnings.push("Variantes: preço do produto não preenchido — variantes novas não criadas."); return null; }
+    const r = await gql(domain, token, BULK_CREATE, {
+      productId: gid,
+      variants: toCreate.map((v) => {
+        const sku = v.sku.trim() || variantSku(listing.sku, v.values);
+        const compare = money(v.compare_at_price) ?? baseCompare;
+        return {
+          optionValues: v.values.map((name, i) => ({ optionName: options[i].name.trim(), name })),
+          price: money(v.price) ?? basePrice,
+          ...(compare ? { compareAtPrice: compare } : {}),
+          inventoryPolicy: "CONTINUE",
+          inventoryItem: { tracked: true, ...(sku ? { sku } : {}) },
+        };
+      }),
+    });
+    const err = firstError(r.productVariantsBulkCreate?.userErrors);
+    if (err) { warnings.push(`Variantes: ${err}`); return null; }
+    created = ((r.productVariantsBulkCreate?.productVariants ?? []) as { id: string }[]).map((v) => v.id);
+  }
+
+  const toDelete = [...shopKeys.entries()].filter(([k]) => !sheetKeys.has(k)).map(([, id]) => id);
+  if (toDelete.length > 0) {
+    const r = await gql(domain, token, BULK_DELETE, { productId: gid, ids: toDelete });
+    const err = firstError(r.productVariantsBulkDelete?.userErrors);
+    if (err) warnings.push(`Variantes: ${err}`);
+  }
+  return created;
+}
+
 // Atualiza na loja só o que foi pedido. Variante da Shopify casa com a da
 // ficha pelos valores das opções (ex.: "Women / 5"). Cada parte é
 // independente: erro numa vira aviso e as outras seguem.
@@ -195,6 +288,18 @@ export async function updateProductInStore(
   const done: string[] = [];
   const warnings: string[] = [];
   const want = new Set(parts);
+
+  // Variantes primeiro: o resto (preço, SKU, estoque, Aprodrop) já usa a grade nova.
+  let createdVariants: string[] = [];
+  if (want.has("variantes")) {
+    try {
+      const created = await syncVariants(domain, token, gid, listing, warnings);
+      if (created) {
+        createdVariants = created;
+        done.push(UPDATE_PART_LABELS.variantes);
+      }
+    } catch (e: any) { warnings.push(`Variantes: ${e.message}`); }
+  }
 
   const data = await gql(domain, token, GET_PRODUCT, { id: gid });
   if (!data.product) throw new Error("Produto não encontrado na loja (foi apagado na Shopify?).");
@@ -246,6 +351,14 @@ export async function updateProductInStore(
     }
   }
 
+  // Variante criada agora já ganha estoque e Aprodrop, mesmo sem marcar essas
+  // partes — e aí só ela (o estoque das que já existiam não é tocado).
+  const fresh = new Set(createdVariants);
+  const chose = new Set(parts);
+  if (fresh.size > 0) { want.add("estoque"); want.add("aprodrop"); }
+  const stockTargets = chose.has("estoque") ? variants : variants.filter((v) => fresh.has(v.id));
+  const aprodropTargets = chose.has("aprodrop") ? variants : variants.filter((v) => fresh.has(v.id));
+
   if (want.has("estoque") || want.has("aprodrop")) {
     const setup = await gql(domain, token, SETUP);
     const locations = ((setup.locations?.nodes ?? []) as any[]).filter((l) => l.isActive);
@@ -255,14 +368,14 @@ export async function updateProductInStore(
     if (want.has("estoque")) {
       if (!storeLoc) warnings.push("Local do endereço da loja não encontrado — estoque não atualizado.");
       else {
-        const quantities = variants.map((v) => {
+        const quantities = stockTargets.map((v) => {
           const sheet = sheetFor(v);
           return { inventoryItemId: v.inventoryItem.id, locationId: storeLoc.id, quantity: Math.max(0, Math.round((sheet ? sheet.inventory : listing.inventory) || 0)), changeFromQuantity: null };
         });
         try {
           const r = await gql(domain, token, SET_QUANTITIES, { input: { name: "available", reason: "correction", quantities }, key: crypto.randomUUID() });
           const err = firstError(r.inventorySetQuantities?.userErrors);
-          if (err) warnings.push(`Estoque: ${err}`); else done.push(UPDATE_PART_LABELS.estoque);
+          if (err) warnings.push(`Estoque: ${err}`); else if (chose.has("estoque")) done.push(UPDATE_PART_LABELS.estoque);
         } catch (e: any) { warnings.push(`Estoque: ${e.message}`); }
       }
     }
@@ -271,14 +384,14 @@ export async function updateProductInStore(
       if (!aprodropLoc) warnings.push("Local da Aprodrop não encontrado nesta loja.");
       else {
         let failed = false;
-        for (const v of variants) {
+        for (const v of aprodropTargets) {
           try {
             const r = await gql(domain, token, ACTIVATE, { item: v.inventoryItem.id, loc: aprodropLoc.id, key: crypto.randomUUID() });
             const err = firstError(r.inventoryActivate?.userErrors);
             if (err) { warnings.push(`Aprodrop: ${err}`); failed = true; break; }
           } catch (e: any) { warnings.push(`Aprodrop: ${e.message}`); failed = true; break; }
         }
-        if (!failed) done.push(UPDATE_PART_LABELS.aprodrop);
+        if (!failed && chose.has("aprodrop")) done.push(UPDATE_PART_LABELS.aprodrop);
       }
     }
   }

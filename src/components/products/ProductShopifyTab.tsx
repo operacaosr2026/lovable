@@ -89,7 +89,8 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
   const doUpdate = async () => {
     const ok = await confirm({
       title: "Atualizar o produto nas lojas?",
-      description: `Vai atualizar ${parts.map((p) => UPDATE_PART_LABELS[p]).join(", ")} em: ${storeNames(toUpdate)}. O resto do produto fica como está.`,
+      description: `Vai atualizar ${parts.map((p) => UPDATE_PART_LABELS[p]).join(", ")} em: ${storeNames(toUpdate)}. O resto do produto fica como está.` +
+        (parts.includes("variantes") ? " Variantes: valor renomeado continua a mesma variante; valor que não está mais na ficha tem a variante APAGADA na loja." : ""),
       confirmText: "Atualizar",
       variant: "default",
     });
@@ -237,6 +238,12 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
               option={o}
               onChange={(next) => set({ options: listing.options.map((x, i) => (i === oi ? next : x)) })}
               onRemove={() => set({ options: listing.options.filter((_, i) => i !== oi) })}
+              onRename={(from, to) => setListing((l) => ({
+                ...l!,
+                // Renomeia na opção e nas variantes, mantendo preço, SKU e estoque já preenchidos.
+                options: l!.options.map((x, i) => (i === oi ? { ...x, values: x.values.map((v) => (v === from ? to : v)) } : x)),
+                variants: l!.variants.map((vr) => (vr.values[oi] === from ? { ...vr, values: vr.values.map((v, i) => (i === oi ? to : v)) } : vr)),
+              }))}
             />
           ))}
         </div>
@@ -396,7 +403,7 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                 </label>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. Imagens e variantes novas não são atualizadas por aqui.</p>
+            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. Imagens não são atualizadas por aqui. Em Variantes, valor removido da ficha apaga a variante na loja.</p>
           </div>
         )}
         <div className="flex justify-end gap-2 mt-3">
@@ -450,10 +457,24 @@ function ImagePicker({ images, value, onChange }: {
   );
 }
 
-export function OptionRow({ option, onChange, onRemove }: {
+// onRename: valor renomeado (clicar no valor edita) — quem usa pode levar junto
+// o que já foi preenchido na variante.
+export function OptionRow({ option, onChange, onRemove, onRename }: {
   option: { name: string; values: string[] }; onChange: (o: { name: string; values: string[] }) => void; onRemove: () => void;
+  onRename?: (from: string, to: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const commitEdit = () => {
+    const from = editing;
+    setEditing(null);
+    const to = draft.trim();
+    if (!from || !to || to === from) return;
+    if (option.values.includes(to)) { toast.error(`"${to}" já existe nesta opção`); return; }
+    if (onRename) onRename(from, to);
+    else onChange({ ...option, values: option.values.map((v) => (v === from ? to : v)) });
+  };
   const add = () => {
     const vals = text.split(",").map((v) => v.trim()).filter((v) => v && !option.values.includes(v));
     if (vals.length) onChange({ ...option, values: [...option.values, ...vals] });
@@ -468,9 +489,25 @@ export function OptionRow({ option, onChange, onRemove }: {
         className="sm:w-36 h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50"
       />
       <div className="flex-1 flex flex-wrap items-center gap-1.5 min-h-9 px-2 py-1 rounded-lg border border-border bg-background">
-        {option.values.map((v) => (
+        {option.values.map((v) => editing === v ? (
+          <input
+            key={v}
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
+              if (e.key === "Escape") setEditing(null);
+            }}
+            onBlur={commitEdit}
+            style={{ width: `${Math.max(draft.length, 4) + 2}ch` }}
+            className="h-7 px-2 rounded-md border border-primary/50 bg-background text-xs outline-none"
+          />
+        ) : (
           <span key={v} className="h-7 pl-2 pr-1 rounded-md bg-muted text-xs inline-flex items-center gap-1">
-            {v}
+            <button type="button" onClick={() => { setEditing(v); setDraft(v); }} title="Clique pra editar" className="hover:underline">
+              {v}
+            </button>
             <button onClick={() => onChange({ ...option, values: option.values.filter((x) => x !== v) })} className="size-5 grid place-items-center text-muted-foreground hover:text-destructive">
               <X className="size-3" />
             </button>
