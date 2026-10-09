@@ -14,7 +14,8 @@ export type ShopifyListing = {
   title_matriz: string;
   title_subloja: string;     // vazio = usa o da matriz
   description_html: string;
-  image_ids: string[];       // product_images, na ordem
+  image_ids: string[];       // product_images, na ordem (matriz)
+  image_ids_subloja: string[] | null; // null = sublojas usam as da matriz
   price: string;
   compare_at_price: string;
   sku: string;
@@ -30,7 +31,7 @@ export type ShopifyListing = {
 export type StoreRole = "matriz" | "subloja";
 
 export const emptyListing = (name = ""): ShopifyListing => ({
-  title_matriz: name, title_subloja: "", description_html: "", image_ids: [],
+  title_matriz: name, title_subloja: "", description_html: "", image_ids: [], image_ids_subloja: null,
   price: "", compare_at_price: "", sku: "", weight_grams: null, inventory: 0,
   options: [], variants: [], seo_title: "", seo_description: "", handle: "",
 });
@@ -68,5 +69,8 @@ export const UPDATE_PART_LABELS: Record<UpdatePart, string> = {
   estoque: "Estoque",
   seo: "SEO",
 };
+
+export const imagesFor = (listing: ShopifyListing, role: StoreRole) =>
+  role === "subloja" && listing.image_ids_subloja ? listing.image_ids_subloja : listing.image_ids;
 
 export const REQUIRED_SCOPES = ["write_products", "write_inventory", "write_publications", "read_locations"];

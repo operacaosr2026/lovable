@@ -132,26 +132,28 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
         {data.images.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhuma imagem — envie na aba Imagens.</p>
         ) : (
-          <>
-            <p className="text-xs text-muted-foreground mb-2">Clique pra incluir ou tirar. A primeira marcada vira a imagem principal na Shopify.</p>
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-              {data.images.map((img) => {
-                const idx = listing.image_ids.indexOf(img.id);
-                const on = idx !== -1;
-                return (
-                  <button
-                    key={img.id}
-                    type="button"
-                    onClick={() => set({ image_ids: on ? listing.image_ids.filter((x) => x !== img.id) : [...listing.image_ids, img.id] })}
-                    className={`relative aspect-square rounded-lg overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50"}`}
-                  >
-                    {img.file_url ? <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" /> : <ImageOff className="size-5 m-auto text-muted-foreground" />}
-                    {on && <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{idx + 1}</span>}
-                  </button>
-                );
-              })}
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">Clique pra incluir ou tirar. A ordem dos números é a ordem na Shopify; a 1ª vira a imagem principal.</p>
+            <div>
+              <p className="text-xs font-medium mb-1.5">{listing.image_ids_subloja ? "Matriz" : "Matriz e sublojas"}</p>
+              <ImagePicker images={data.images} value={listing.image_ids} onChange={(image_ids) => set({ image_ids })} />
             </div>
-          </>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none w-fit">
+              <input
+                type="checkbox"
+                checked={!listing.image_ids_subloja}
+                onChange={(e) => set({ image_ids_subloja: e.target.checked ? null : [...listing.image_ids] })}
+                className="size-4 accent-primary"
+              />
+              Sublojas usam as mesmas imagens da matriz
+            </label>
+            {listing.image_ids_subloja && (
+              <div>
+                <p className="text-xs font-medium mb-1.5">Sublojas</p>
+                <ImagePicker images={data.images} value={listing.image_ids_subloja} onChange={(image_ids_subloja) => set({ image_ids_subloja })} />
+              </div>
+            )}
+          </div>
         )}
       </section>
 
@@ -386,6 +388,30 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ImagePicker({ images, value, onChange }: {
+  images: { id: string; file_url: string | null; file_name: string | null }[]; value: string[]; onChange: (ids: string[]) => void;
+}) {
+  return (
+    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+      {images.map((img) => {
+        const idx = value.indexOf(img.id);
+        const on = idx !== -1;
+        return (
+          <button
+            key={img.id}
+            type="button"
+            onClick={() => onChange(on ? value.filter((x) => x !== img.id) : [...value, img.id])}
+            className={`relative aspect-square rounded-lg overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50"}`}
+          >
+            {img.file_url ? <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" /> : <ImageOff className="size-5 m-auto text-muted-foreground" />}
+            {on && <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{idx + 1}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

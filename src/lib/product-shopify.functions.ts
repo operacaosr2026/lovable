@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createProductInStore, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
-import { REQUIRED_SCOPES, UPDATE_PARTS, emptyListing, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
+import { REQUIRED_SCOPES, UPDATE_PARTS, emptyListing, imagesFor, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
 
 const ProductIdInput = z.object({ product_id: z.string().uuid() });
 const priceStr = z.string().trim().max(20);
@@ -14,6 +14,7 @@ const ListingInput = z.object({
   title_subloja: z.string().trim().max(255),
   description_html: z.string().max(100_000),
   image_ids: z.array(z.string().uuid()).max(100),
+  image_ids_subloja: z.array(z.string().uuid()).max(100).nullable(),
   price: priceStr,
   compare_at_price: priceStr,
   sku: z.string().trim().max(100),
@@ -146,7 +147,12 @@ export const publishProductShopify = createServerFn({ method: "POST" })
     const { data: done } = await supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,shopify_product_id")
       .eq("product_id", data.product_id).eq("status", "ok");
     const createdIn = new Map((done ?? []).map((r) => [r.shopify_store_id, r.shopify_product_id as string | null]));
-    const imageUrls = await signedImageUrls(data.product_id, listing.image_ids);
+    // Imagens por papel (matriz / subloja), geradas uma vez cada.
+    const urlsByRole = new Map<StoreRole, Promise<string[]>>();
+    const imageUrlsFor = (role: StoreRole) => {
+      if (!urlsByRole.has(role)) urlsByRole.set(role, signedImageUrls(data.product_id, imagesFor(listing, role)));
+      return urlsByRole.get(role)!;
+    };
 
     const results: { shopify_store_id: string; ok: boolean; message: string }[] = [];
     for (const target of data.stores) {
@@ -167,7 +173,7 @@ export const publishProductShopify = createServerFn({ method: "POST" })
       try {
         if (!store?.shop_domain || !store.access_token) throw new Error("Loja sem conexão com a Shopify.");
         const r = await createProductInStore(
-          { shop_domain: store.shop_domain, access_token: store.access_token }, listing, target.role, imageUrls,
+          { shop_domain: store.shop_domain, access_token: store.access_token }, listing, target.role, await imageUrlsFor(target.role),
         );
         await supabaseAdmin.from("product_shopify_publications").upsert({
           ...base, status: "ok", shopify_product_id: r.productId, handle: r.handle, error: null, warnings: r.warnings,
