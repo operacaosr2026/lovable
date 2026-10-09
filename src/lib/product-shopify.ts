@@ -56,4 +56,17 @@ export function variantSku(baseSku: string, values: string[]): string {
   return [base, ...values.map((v) => v.trim().replace(/\s+/g, "-"))].join("-");
 }
 
+// Partes que dá pra reenviar a um produto já criado na loja.
+export const UPDATE_PARTS = ["aprodrop", "nome", "descricao", "preco", "sku", "estoque", "seo"] as const;
+export type UpdatePart = (typeof UPDATE_PARTS)[number];
+export const UPDATE_PART_LABELS: Record<UpdatePart, string> = {
+  aprodrop: "Disponível na Aprodrop",
+  nome: "Nome",
+  descricao: "Descrição",
+  preco: "Preço",
+  sku: "SKU",
+  estoque: "Estoque",
+  seo: "SEO",
+};
+
 export const REQUIRED_SCOPES = ["write_products", "write_inventory", "write_publications", "read_locations"];

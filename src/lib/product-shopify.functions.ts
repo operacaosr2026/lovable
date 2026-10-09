@@ -2,9 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createProductInStore, signedImageUrls } from "@/lib/product-shopify.server";
+import { createProductInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
-import { REQUIRED_SCOPES, emptyListing, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
+import { REQUIRED_SCOPES, UPDATE_PARTS, emptyListing, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
 
 const ProductIdInput = z.object({ product_id: z.string().uuid() });
 const priceStr = z.string().trim().max(20);
@@ -155,6 +155,51 @@ export const publishProductShopify = createServerFn({ method: "POST" })
           ...base, status: "error", error: message, warnings: [],
         }, { onConflict: "product_id,shopify_store_id" });
         results.push({ shopify_store_id: target.shopify_store_id, ok: false, message });
+      }
+    }
+    return { results };
+  });
+
+// Reenvia partes escolhidas (Aprodrop, nome, preço...) às lojas onde o
+// produto já foi criado. Não cria nem apaga nada.
+export const updateProductShopify = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => ProductIdInput.extend({
+    listing: ListingInput,
+    stores: z.array(z.object({ shopify_store_id: z.string().uuid(), role: z.enum(["matriz", "subloja"]) })).min(1).max(50),
+    parts: z.array(z.enum(UPDATE_PARTS)).min(1),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const ownerId = context.ownerId;
+    await loadProduct(ownerId, data.product_id);
+    const listing = data.listing as ShopifyListing;
+    await supabaseAdmin.from("product_shopify_listings")
+      .upsert({ product_id: data.product_id, user_id: ownerId, data: listing }, { onConflict: "product_id" });
+
+    const results: { shopify_store_id: string; ok: boolean; message: string }[] = [];
+    for (const target of data.stores) {
+      const [{ data: pub }, { data: store }] = await Promise.all([
+        supabaseAdmin.from("product_shopify_publications").select("shopify_product_id")
+          .eq("product_id", data.product_id).eq("shopify_store_id", target.shopify_store_id).eq("status", "ok").maybeSingle(),
+        supabaseAdmin.from("shopify_stores").select("shop_domain,access_token")
+          .eq("id", target.shopify_store_id).eq("user_id", ownerId).maybeSingle(),
+      ]);
+      try {
+        if (!pub?.shopify_product_id) throw new Error("Produto ainda não foi criado nesta loja.");
+        if (!store?.shop_domain || !store.access_token) throw new Error("Loja sem conexão com a Shopify.");
+        const r = await updateProductInStore(
+          { shop_domain: store.shop_domain, access_token: store.access_token }, pub.shopify_product_id, listing, target.role, data.parts,
+        );
+        // Avisos da criação dão lugar aos desta atualização.
+        await supabaseAdmin.from("product_shopify_publications").update({ warnings: r.warnings, role: target.role })
+          .eq("product_id", data.product_id).eq("shopify_store_id", target.shopify_store_id);
+        results.push({
+          shopify_store_id: target.shopify_store_id,
+          ok: r.warnings.length === 0,
+          message: [r.done.length ? `Atualizado: ${r.done.join(", ")}.` : "", r.warnings.join(" ")].filter(Boolean).join(" "),
+        });
+      } catch (e: any) {
+        results.push({ shopify_store_id: target.shopify_store_id, ok: false, message: String(e?.message ?? e).slice(0, 500) });
       }
     }
     return { results };

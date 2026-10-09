@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
-import { variantSku, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
+import { UPDATE_PART_LABELS, variantSku, type ShopifyListing, type StoreRole, type UpdatePart } from "@/lib/product-shopify";
 
 const API = "2026-07";
 
@@ -22,8 +22,10 @@ async function gql(domain: string, token: string, query: string, variables: Reco
   return json.data;
 }
 
+// includeLegacy: sem ele a Shopify esconde o local de app de fulfillment
+// antigo (ex.: "Aprodrop Fulfillment").
 const SETUP = `query {
-  locations(first: 50) { nodes { id name isActive fulfillmentService { serviceName handle } } }
+  locations(first: 50, includeLegacy: true) { nodes { id name isActive fulfillmentService { serviceName handle } } }
   publications(first: 25) { nodes { id name } }
 }`;
 
@@ -142,6 +144,129 @@ export async function createProductInStore(
   }
 
   return { productId: String(product.id).split("/").pop()!, handle: product.handle, warnings };
+}
+
+// ── Atualizar produto já criado (só as partes escolhidas) ──
+
+const GET_PRODUCT = `query($id: ID!) {
+  product(id: $id) { id variants(first: 100) { nodes { id selectedOptions { name value } inventoryItem { id } } } }
+}`;
+const PRODUCT_UPDATE = `mutation($product: ProductUpdateInput!) {
+  productUpdate(product: $product) { userErrors { message } }
+}`;
+const VARIANTS_UPDATE = `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) { userErrors { message } }
+}`;
+const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!) {
+  inventorySetQuantities(input: $input) { userErrors { message } }
+}`;
+
+const firstError = (errs: { message: string }[] | undefined) => (errs && errs.length > 0 ? errs[0].message : null);
+
+// Atualiza na loja só o que foi pedido. Variante da Shopify casa com a da
+// ficha pelos valores das opções (ex.: "Women / 5"). Cada parte é
+// independente: erro numa vira aviso e as outras seguem.
+export async function updateProductInStore(
+  store: { shop_domain: string; access_token: string },
+  shopifyProductId: string,
+  listing: ShopifyListing,
+  role: StoreRole,
+  parts: UpdatePart[],
+): Promise<{ done: string[]; warnings: string[] }> {
+  const { shop_domain: domain, access_token: token } = store;
+  const gid = `gid://shopify/Product/${shopifyProductId}`;
+  const done: string[] = [];
+  const warnings: string[] = [];
+  const want = new Set(parts);
+
+  const data = await gql(domain, token, GET_PRODUCT, { id: gid });
+  if (!data.product) throw new Error("Produto não encontrado na loja (foi apagado na Shopify?).");
+  const variants = (data.product.variants?.nodes ?? []) as { id: string; selectedOptions: { name: string; value: string }[]; inventoryItem: { id: string } }[];
+  const options = listing.options.filter((o) => o.name.trim() && o.values.length > 0);
+  const byKey = new Map(listing.variants.map((v) => [v.values.join(" / "), v]));
+  const sheetFor = (v: (typeof variants)[number]) =>
+    options.length === 0 ? null : byKey.get(v.selectedOptions.filter((o) => o.name !== "Title").map((o) => o.value).join(" / ")) ?? null;
+
+  // Nome, descrição e SEO: um productUpdate só.
+  const product: Record<string, unknown> = { id: gid };
+  if (want.has("nome")) product.title = (role === "subloja" && listing.title_subloja.trim()) || listing.title_matriz.trim();
+  if (want.has("descricao")) product.descriptionHtml = listing.description_html;
+  if (want.has("seo")) product.seo = { title: listing.seo_title.trim() || null, description: listing.seo_description.trim() || null };
+  if (Object.keys(product).length > 1) {
+    try {
+      const r = await gql(domain, token, PRODUCT_UPDATE, { product });
+      const err = firstError(r.productUpdate?.userErrors);
+      if (err) warnings.push(err);
+      else done.push(...(["nome", "descricao", "seo"] as const).filter((x) => want.has(x)).map((x) => UPDATE_PART_LABELS[x]));
+    } catch (e: any) { warnings.push(e.message); }
+  }
+
+  // Preço e SKU: productVariantsBulkUpdate.
+  if (want.has("preco") || want.has("sku")) {
+    const basePrice = money(listing.price);
+    const baseCompare = money(listing.compare_at_price);
+    if (want.has("preco") && !basePrice) warnings.push("Preço do produto não preenchido — preço não atualizado.");
+    const rows = variants.map((v) => {
+      const sheet = sheetFor(v);
+      const row: Record<string, unknown> = { id: v.id };
+      if (want.has("preco") && basePrice) {
+        row.price = (sheet && money(sheet.price)) || basePrice;
+        row.compareAtPrice = (sheet && money(sheet.compare_at_price)) || baseCompare;
+      }
+      if (want.has("sku")) {
+        const sku = sheet ? (sheet.sku.trim() || variantSku(listing.sku, sheet.values)) : listing.sku.trim();
+        if (sku) row.inventoryItem = { sku };
+      }
+      return row;
+    }).filter((r) => Object.keys(r).length > 1);
+    if (rows.length > 0) {
+      try {
+        const r = await gql(domain, token, VARIANTS_UPDATE, { productId: gid, variants: rows });
+        const err = firstError(r.productVariantsBulkUpdate?.userErrors);
+        if (err) warnings.push(err);
+        else done.push(...(["preco", "sku"] as const).filter((x) => want.has(x)).map((x) => UPDATE_PART_LABELS[x]));
+      } catch (e: any) { warnings.push(e.message); }
+    }
+  }
+
+  if (want.has("estoque") || want.has("aprodrop")) {
+    const setup = await gql(domain, token, SETUP);
+    const locations = ((setup.locations?.nodes ?? []) as any[]).filter((l) => l.isActive);
+    const storeLoc = locations.find((l) => !l.fulfillmentService);
+    const aprodropLoc = locations.find((l) => /aprodrop/i.test(`${l.name} ${l.fulfillmentService?.serviceName ?? ""} ${l.fulfillmentService?.handle ?? ""}`));
+
+    if (want.has("estoque")) {
+      if (!storeLoc) warnings.push("Local do endereço da loja não encontrado — estoque não atualizado.");
+      else {
+        const quantities = variants.map((v) => {
+          const sheet = sheetFor(v);
+          return { inventoryItemId: v.inventoryItem.id, locationId: storeLoc.id, quantity: Math.max(0, Math.round((sheet ? sheet.inventory : listing.inventory) || 0)), changeFromQuantity: null };
+        });
+        try {
+          const r = await gql(domain, token, SET_QUANTITIES, { input: { name: "available", reason: "correction", quantities } });
+          const err = firstError(r.inventorySetQuantities?.userErrors);
+          if (err) warnings.push(`Estoque: ${err}`); else done.push(UPDATE_PART_LABELS.estoque);
+        } catch (e: any) { warnings.push(`Estoque: ${e.message}`); }
+      }
+    }
+
+    if (want.has("aprodrop")) {
+      if (!aprodropLoc) warnings.push("Local da Aprodrop não encontrado nesta loja.");
+      else {
+        let failed = false;
+        for (const v of variants) {
+          try {
+            const r = await gql(domain, token, ACTIVATE, { item: v.inventoryItem.id, loc: aprodropLoc.id });
+            const err = firstError(r.inventoryActivate?.userErrors);
+            if (err) { warnings.push(`Aprodrop: ${err}`); failed = true; break; }
+          } catch (e: any) { warnings.push(`Aprodrop: ${e.message}`); failed = true; break; }
+        }
+        if (!failed) done.push(UPDATE_PART_LABELS.aprodrop);
+      }
+    }
+  }
+
+  return { done, warnings };
 }
 
 // Links temporários das imagens escolhidas pra Shopify baixar. Quem chama já

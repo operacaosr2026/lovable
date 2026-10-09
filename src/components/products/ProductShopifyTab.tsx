@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle, Check, CheckCircle2, ExternalLink, ImageOff, Loader2, Plus, Send, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ExternalLink, ImageOff, Loader2, Plus, RefreshCw, Send, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { getProductShopify, saveProductShopify, publishProductShopify } from "@/lib/product-shopify.functions";
-import { buildVariants, variantSku, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
+import { getProductShopify, saveProductShopify, publishProductShopify, updateProductShopify } from "@/lib/product-shopify.functions";
+import {
+  UPDATE_PARTS, UPDATE_PART_LABELS, buildVariants, variantSku, type ShopifyListing, type StoreRole, type UpdatePart,
+} from "@/lib/product-shopify";
 import { SectionTitle } from "@/components/shops/StoreProduction";
 
 const inputCls = "w-full h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
@@ -16,11 +18,13 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
   const getFn = useServerFn(getProductShopify);
   const saveFn = useServerFn(saveProductShopify);
   const publishFn = useServerFn(publishProductShopify);
+  const updateFn = useServerFn(updateProductShopify);
   const queryKey = ["product-shopify", productId];
   const { data, isLoading, error } = useQuery({ queryKey, queryFn: () => getFn({ data: { product_id: productId } }) });
 
   const [listing, setListing] = useState<ShopifyListing | null>(null);
   const [selected, setSelected] = useState<Record<string, StoreRole>>({});
+  const [parts, setParts] = useState<UpdatePart[]>([]);
   useEffect(() => { if (data && !listing) setListing(data.listing); }, [data, listing]);
 
   const save = useMutation({
@@ -41,6 +45,20 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const update = useMutation({
+    mutationFn: (stores: { shopify_store_id: string; role: StoreRole }[]) =>
+      updateFn({ data: { product_id: productId, listing: listing!, stores, parts } }),
+    onSuccess: ({ results }) => {
+      qc.invalidateQueries({ queryKey });
+      setSelected({});
+      setParts([]);
+      for (const r of results) {
+        const name = data?.stores.find((s) => s.id === r.shopify_store_id)?.name ?? "Loja";
+        (r.ok ? toast.success : toast.error)(`${name}: ${r.message}`);
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   if (isLoading || !listing) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
   if (error || !data) return <p className="text-sm text-destructive">{(error as any)?.message ?? "Não foi possível carregar."}</p>;
@@ -52,16 +70,31 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
   const hasVariants = listing.variants.length > 0;
   const pubByStore = new Map(data.publications.map((p) => [p.shopify_store_id, p]));
   const chosen = Object.entries(selected).map(([shopify_store_id, role]) => ({ shopify_store_id, role }));
+  // Loja marcada onde o produto já existe = atualizar; onde não existe = criar.
+  const isCreated = (id: string) => pubByStore.get(id)?.status === "ok";
+  const toCreate = chosen.filter((c) => !isCreated(c.shopify_store_id));
+  const toUpdate = chosen.filter((c) => isCreated(c.shopify_store_id));
+  const storeNames = (list: typeof chosen) => list.map((c) => data.stores.find((s) => s.id === c.shopify_store_id)?.name).filter(Boolean).join(", ");
+
+  const doUpdate = async () => {
+    const ok = await confirm({
+      title: "Atualizar o produto nas lojas?",
+      description: `Vai atualizar ${parts.map((p) => UPDATE_PART_LABELS[p]).join(", ")} em: ${storeNames(toUpdate)}. O resto do produto fica como está.`,
+      confirmText: "Atualizar",
+      variant: "default",
+    });
+    if (ok) update.mutate(toUpdate);
+  };
 
   const doPublish = async () => {
-    const names = chosen.map((c) => data.stores.find((s) => s.id === c.shopify_store_id)?.name).filter(Boolean).join(", ");
+    const names = toCreate.map((c) => data.stores.find((s) => s.id === c.shopify_store_id)?.name).filter(Boolean).join(", ");
     const ok = await confirm({
       title: "Criar o produto nas lojas?",
       description: `O produto será criado como Ativo e publicado na loja online em: ${names}.`,
       confirmText: "Criar produto",
       variant: "default",
     });
-    if (ok) publish.mutate(chosen);
+    if (ok) publish.mutate(toCreate);
   };
 
   return (
@@ -239,7 +272,10 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
 
       <section className="pt-4 border-t border-border">
         <SectionTitle>Lojas</SectionTitle>
-        <p className="text-xs text-muted-foreground mb-2">Lojas da coluna Ativas do Banco de Lojas. Matriz ou Subloja define qual nome vai.</p>
+        <p className="text-xs text-muted-foreground mb-2">
+          Lojas da coluna Ativas do Banco de Lojas. Matriz ou Subloja define qual nome vai. Marque loja onde o produto ainda não existe
+          pra criar, ou onde já foi criado pra atualizar partes dele.
+        </p>
         {data.stores.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhuma loja na coluna Ativas do Banco de Lojas.</p>
         ) : (
@@ -253,11 +289,12 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                 <div key={s.id} className="px-3 py-2.5 flex items-start gap-3">
                   <input
                     type="checkbox"
-                    disabled={created || blocked}
+                    disabled={blocked}
                     checked={checked}
                     onChange={(e) => setSelected((prev) => {
                       const next = { ...prev };
-                      if (e.target.checked) next[s.id] = s.role; else delete next[s.id];
+                      if (e.target.checked) next[s.id] = (created && (pub.role === "matriz" || pub.role === "subloja") ? pub.role : s.role) as StoreRole;
+                      else delete next[s.id];
                       return next;
                     })}
                     className="size-4 mt-0.5 accent-primary shrink-0 disabled:opacity-40"
@@ -281,38 +318,67 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                     {pub?.status === "error" && (
                       <p className="text-xs text-destructive mt-1 flex items-start gap-1"><XCircle className="size-3.5 shrink-0 mt-px" /> {pub.error}</p>
                     )}
-                    {blocked && !created && (
+                    {blocked && (
                       <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1">
                         <AlertTriangle className="size-3.5 shrink-0 mt-px" /> Reconecte a loja com as permissões novas ({s.missing_scopes.join(", ")}).
                       </p>
                     )}
                   </div>
-                  {!created && (
-                    <select
-                      value={selected[s.id] ?? s.role}
-                      disabled={!checked}
-                      onChange={(e) => setSelected((prev) => ({ ...prev, [s.id]: e.target.value as StoreRole }))}
-                      className="h-8 px-2 rounded-lg border border-border bg-background text-xs outline-none shrink-0 disabled:opacity-50"
-                      title="Define qual nome usar"
-                    >
-                      <option value="matriz">Matriz</option>
-                      <option value="subloja">Subloja</option>
-                    </select>
-                  )}
+                  <select
+                    value={selected[s.id] ?? ((pub?.role as StoreRole | null) ?? s.role)}
+                    disabled={!checked}
+                    onChange={(e) => setSelected((prev) => ({ ...prev, [s.id]: e.target.value as StoreRole }))}
+                    className="h-8 px-2 rounded-lg border border-border bg-background text-xs outline-none shrink-0 disabled:opacity-50"
+                    title="Define qual nome usar"
+                  >
+                    <option value="matriz">Matriz</option>
+                    <option value="subloja">Subloja</option>
+                  </select>
                 </div>
               );
             })}
           </div>
         )}
-        <div className="flex justify-end mt-3">
-          <button
-            onClick={doPublish}
-            disabled={chosen.length === 0 || publish.isPending}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {publish.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-            {publish.isPending ? "Criando..." : chosen.length > 0 ? `Criar em ${chosen.length} ${chosen.length === 1 ? "loja" : "lojas"}` : "Escolha as lojas"}
-          </button>
+        {toUpdate.length > 0 && (
+          <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+            <p className="text-xs font-medium mb-2">O que atualizar em {toUpdate.length === 1 ? "1 loja onde já foi criado" : `${toUpdate.length} lojas onde já foi criado`}:</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {UPDATE_PARTS.map((p) => (
+                <label key={p} className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={parts.includes(p)}
+                    onChange={(e) => setParts((prev) => (e.target.checked ? [...prev, p] : prev.filter((x) => x !== p)))}
+                    className="size-4 accent-primary"
+                  />
+                  {UPDATE_PART_LABELS[p]}
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. Imagens e variantes novas não são atualizadas por aqui.</p>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 mt-3">
+          {toUpdate.length > 0 && (
+            <button
+              onClick={doUpdate}
+              disabled={parts.length === 0 || update.isPending}
+              className="h-9 px-4 rounded-lg border border-border text-sm font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+            >
+              {update.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {update.isPending ? "Atualizando..." : `Atualizar em ${toUpdate.length} ${toUpdate.length === 1 ? "loja" : "lojas"}`}
+            </button>
+          )}
+          {(toCreate.length > 0 || toUpdate.length === 0) && (
+            <button
+              onClick={doPublish}
+              disabled={toCreate.length === 0 || publish.isPending}
+              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {publish.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              {publish.isPending ? "Criando..." : toCreate.length > 0 ? `Criar em ${toCreate.length} ${toCreate.length === 1 ? "loja" : "lojas"}` : "Escolha as lojas"}
+            </button>
+          )}
         </div>
       </section>
     </div>
