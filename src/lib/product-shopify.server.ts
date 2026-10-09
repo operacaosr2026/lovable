@@ -36,8 +36,10 @@ const PRODUCT_SET = `mutation($input: ProductSetInput!) {
   }
 }`;
 
-const ACTIVATE = `mutation($item: ID!, $loc: ID!) {
-  inventoryActivate(inventoryItemId: $item, locationId: $loc) { userErrors { message } }
+// Mutações de estoque exigem @idempotent (chave única por chamada) desde a
+// API 2026-07.
+const ACTIVATE = `mutation($item: ID!, $loc: ID!, $key: String!) {
+  inventoryActivate(inventoryItemId: $item, locationId: $loc) @idempotent(key: $key) { userErrors { message } }
 }`;
 
 const PUBLISH = `mutation($id: ID!, $pub: ID!) {
@@ -122,7 +124,7 @@ export async function createProductInStore(
   if (aprodropLoc) {
     for (const v of (product.variants?.nodes ?? []) as any[]) {
       try {
-        const r = await gql(domain, token, ACTIVATE, { item: v.inventoryItem.id, loc: aprodropLoc.id });
+        const r = await gql(domain, token, ACTIVATE, { item: v.inventoryItem.id, loc: aprodropLoc.id, key: crypto.randomUUID() });
         const errs = (r.inventoryActivate?.userErrors ?? []) as { message: string }[];
         if (errs.length > 0) { warnings.push(`Aprodrop: ${errs[0].message}`); break; }
       } catch (e: any) {
@@ -157,8 +159,8 @@ const PRODUCT_UPDATE = `mutation($product: ProductUpdateInput!) {
 const VARIANTS_UPDATE = `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
   productVariantsBulkUpdate(productId: $productId, variants: $variants) { userErrors { message } }
 }`;
-const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!) {
-  inventorySetQuantities(input: $input) { userErrors { message } }
+const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!, $key: String!) {
+  inventorySetQuantities(input: $input) @idempotent(key: $key) { userErrors { message } }
 }`;
 
 const firstError = (errs: { message: string }[] | undefined) => (errs && errs.length > 0 ? errs[0].message : null);
@@ -243,7 +245,7 @@ export async function updateProductInStore(
           return { inventoryItemId: v.inventoryItem.id, locationId: storeLoc.id, quantity: Math.max(0, Math.round((sheet ? sheet.inventory : listing.inventory) || 0)), changeFromQuantity: null };
         });
         try {
-          const r = await gql(domain, token, SET_QUANTITIES, { input: { name: "available", reason: "correction", quantities } });
+          const r = await gql(domain, token, SET_QUANTITIES, { input: { name: "available", reason: "correction", quantities }, key: crypto.randomUUID() });
           const err = firstError(r.inventorySetQuantities?.userErrors);
           if (err) warnings.push(`Estoque: ${err}`); else done.push(UPDATE_PART_LABELS.estoque);
         } catch (e: any) { warnings.push(`Estoque: ${e.message}`); }
@@ -256,7 +258,7 @@ export async function updateProductInStore(
         let failed = false;
         for (const v of variants) {
           try {
-            const r = await gql(domain, token, ACTIVATE, { item: v.inventoryItem.id, loc: aprodropLoc.id });
+            const r = await gql(domain, token, ACTIVATE, { item: v.inventoryItem.id, loc: aprodropLoc.id, key: crypto.randomUUID() });
             const err = firstError(r.inventoryActivate?.userErrors);
             if (err) { warnings.push(`Aprodrop: ${err}`); failed = true; break; }
           } catch (e: any) { warnings.push(`Aprodrop: ${e.message}`); failed = true; break; }
