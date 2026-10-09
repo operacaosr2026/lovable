@@ -48,4 +48,12 @@ export function buildVariants(listing: ShopifyListing): ShopifyVariant[] {
   });
 }
 
+// SKU da variante: SKU base + "-" + valores das opções, na ordem
+// (ex.: "size" + ["5W", "Azul"] → "size-5W-Azul"). Espaços viram "-".
+export function variantSku(baseSku: string, values: string[]): string {
+  const base = baseSku.trim();
+  if (!base) return "";
+  return [base, ...values.map((v) => v.trim().replace(/\s+/g, "-"))].join("-");
+}
+
 export const REQUIRED_SCOPES = ["write_products", "write_inventory", "write_publications", "read_locations"];

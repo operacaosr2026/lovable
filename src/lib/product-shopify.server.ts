@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
-import type { ShopifyListing, StoreRole } from "@/lib/product-shopify";
+import { variantSku, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
 
 const API = "2026-07";
 
@@ -73,7 +73,6 @@ export async function createProductInStore(
   const basePrice = money(listing.price);
   if (!basePrice) throw new Error("Preço do produto não preenchido.");
   const baseCompare = money(listing.compare_at_price);
-  const weight = listing.weight_grams && listing.weight_grams > 0 ? { weight: { value: listing.weight_grams, unit: "GRAMS" } } : undefined;
 
   const options = listing.options.filter((o) => o.name.trim() && o.values.length > 0);
   const productOptions = options.length > 0
@@ -84,7 +83,7 @@ export async function createProductInStore(
         optionValues: v.values.map((name, i) => ({ optionName: options[i].name.trim(), name })),
         price: money(v.price) ?? basePrice,
         compareAtPrice: money(v.compare_at_price) ?? baseCompare,
-        sku: v.sku.trim() || null,
+        sku: v.sku.trim() || variantSku(listing.sku, v.values) || null,
         inventory: v.inventory,
       }))
     : [{
@@ -102,7 +101,7 @@ export async function createProductInStore(
       price: r.price,
       ...(r.compareAtPrice ? { compareAtPrice: r.compareAtPrice } : {}),
       inventoryPolicy: "CONTINUE",
-      inventoryItem: { tracked: true, ...(r.sku ? { sku: r.sku } : {}), ...(weight ? { measurement: weight } : {}) },
+      inventoryItem: { tracked: true, ...(r.sku ? { sku: r.sku } : {}) },
       ...(storeLoc ? { inventoryQuantities: [{ locationId: storeLoc.id, name: "available", quantity: Math.max(0, Math.round(r.inventory || 0)) }] } : {}),
     })),
     ...(imageUrls.length > 0 ? { files: imageUrls.map((url) => ({ originalSource: url, contentType: "IMAGE" })) } : {}),

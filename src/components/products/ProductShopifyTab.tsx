@@ -5,7 +5,7 @@ import { AlertTriangle, Check, CheckCircle2, ExternalLink, ImageOff, Loader2, Pl
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { getProductShopify, saveProductShopify, publishProductShopify } from "@/lib/product-shopify.functions";
-import { buildVariants, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
+import { buildVariants, variantSku, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
 import { SectionTitle } from "@/components/shops/StoreProduction";
 
 const inputCls = "w-full h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
@@ -124,25 +124,22 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
 
       <section>
         <SectionTitle>Preço e estoque</SectionTitle>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Field label="Preço (US$)"><input value={listing.price} onChange={(e) => set({ price: e.target.value })} inputMode="decimal" className={inputCls} /></Field>
           <Field label='Preço "de" (US$)'><input value={listing.compare_at_price} onChange={(e) => set({ compare_at_price: e.target.value })} inputMode="decimal" className={inputCls} /></Field>
-          <Field label="Peso (g)">
+          <Field label="SKU"><input value={listing.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="ex.: size" className={inputCls} /></Field>
+          <Field label="Estoque">
             <input
-              value={listing.weight_grams ?? ""}
-              onChange={(e) => set({ weight_grams: e.target.value === "" ? null : Math.max(0, Number(e.target.value) || 0) })}
+              value={listing.inventory}
+              onChange={(e) => {
+                // Com variantes, vale pra todas (dá pra ajustar uma a uma na tabela).
+                const inventory = Math.max(0, Math.round(Number(e.target.value) || 0));
+                set({ inventory, variants: listing.variants.map((v) => ({ ...v, inventory })) });
+              }}
               inputMode="numeric"
               className={inputCls}
             />
           </Field>
-          {!hasVariants && (
-            <>
-              <Field label="SKU"><input value={listing.sku} onChange={(e) => set({ sku: e.target.value })} className={inputCls} /></Field>
-              <Field label="Estoque">
-                <input value={listing.inventory} onChange={(e) => set({ inventory: Math.max(0, Math.round(Number(e.target.value) || 0)) })} inputMode="numeric" className={inputCls} />
-              </Field>
-            </>
-          )}
         </div>
         <p className="text-xs text-muted-foreground mt-2">
           O estoque vai pro local do endereço da loja; no local da Aprodrop o produto fica disponível (o estoque lá é do app). Sempre com
@@ -195,14 +192,16 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                       <td className="px-3 py-1.5 font-medium">{v.values.join(" / ")}</td>
                       <td className="px-2 py-1.5"><input value={v.price} onChange={(e) => setV({ price: e.target.value })} placeholder={listing.price} inputMode="decimal" className={cell} /></td>
                       <td className="px-2 py-1.5"><input value={v.compare_at_price} onChange={(e) => setV({ compare_at_price: e.target.value })} placeholder={listing.compare_at_price} inputMode="decimal" className={cell} /></td>
-                      <td className="px-2 py-1.5"><input value={v.sku} onChange={(e) => setV({ sku: e.target.value })} className={cell} /></td>
+                      <td className="px-2 py-1.5"><input value={v.sku} onChange={(e) => setV({ sku: e.target.value })} placeholder={variantSku(listing.sku, v.values)} className={cell} /></td>
                       <td className="px-2 py-1.5"><input value={v.inventory} onChange={(e) => setV({ inventory: Math.max(0, Math.round(Number(e.target.value) || 0)) })} inputMode="numeric" className={cell} /></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            <p className="text-[11px] text-muted-foreground px-3 py-2 border-t border-border">Preço vazio = usa o preço do produto.</p>
+            <p className="text-[11px] text-muted-foreground px-3 py-2 border-t border-border">
+              Preço vazio = usa o preço do produto. SKU vazio = SKU do produto + "-" + valores da variante (o que aparece em cinza).
+            </p>
           </div>
         )}
       </section>
