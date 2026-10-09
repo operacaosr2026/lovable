@@ -146,9 +146,10 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!shops.length) return result;
   const integBy = new Map(shops.map((i) => [i.shop_id, i]));
 
-  // Pedidos em aberto dos últimos 180 dias (sem entregue, cancelado ou
-  // reembolsado) — pedido atrasado (o que vira chargeback) continua sendo
-  // acompanhado enquanto não é entregue; mesma janela da aba Rastreamento.
+  // Pedidos em aberto dos últimos 180 dias (sem entregue ou cancelado) —
+  // pedido atrasado (o que vira chargeback) continua sendo acompanhado
+  // enquanto não é entregue; mesma janela da aba Rastreamento. Reembolsado
+  // enviado também: a cobrança dos Alertas só sai com o pedido entregue.
   // Não gasta crédito: os antigos já estão cadastrados no 17track.
   const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
@@ -157,7 +158,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     .not("tracking_code", "is", null)
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
     .is("delivered_at", null)
-    .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
+    .or("shopify_financial_status.is.null,shopify_financial_status.neq.voided")
     .filter("raw->>cancelled_at", "is", null)
     .gte("order_date", since));
   if (ordErr) throw new Error(ordErr.message);
