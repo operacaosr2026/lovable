@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle, Check, CheckCircle2, ExternalLink, ImageOff, Loader2, Plus, RefreshCw, Send, X, XCircle } from "lucide-react";
+import {
+  AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, ImageOff, LayoutTemplate, Loader2, Plus, RefreshCw, Send, Settings2, X, XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { getProductShopify, saveProductShopify, publishProductShopify, updateProductShopify } from "@/lib/product-shopify.functions";
+import {
+  getProductShopify, saveProductShopify, publishProductShopify, updateProductShopify, listVariantTemplates,
+} from "@/lib/product-shopify.functions";
+import { Link } from "@tanstack/react-router";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   UPDATE_PARTS, UPDATE_PART_LABELS, buildVariants, variantSku, type ShopifyListing, type StoreRole, type UpdatePart,
 } from "@/lib/product-shopify";
@@ -19,6 +27,8 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
   const saveFn = useServerFn(saveProductShopify);
   const publishFn = useServerFn(publishProductShopify);
   const updateFn = useServerFn(updateProductShopify);
+  const variantTplFn = useServerFn(listVariantTemplates);
+  const { data: variantTemplates = [] } = useQuery({ queryKey: ["variant-templates"], queryFn: () => variantTplFn() });
   const queryKey = ["product-shopify", productId];
   const { data, isLoading, error } = useQuery({ queryKey, queryFn: () => getFn({ data: { product_id: productId } }) });
 
@@ -184,14 +194,38 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
 
       <section>
         <SectionTitle
-          action={listing.options.length < 3 && (
-            <button
-              onClick={() => set({ options: [...listing.options, { name: "", values: [] }] })}
-              className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted"
-            >
-              <Plus className="size-3.5" /> Opção
-            </button>
-          )}
+          action={
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted">
+                    <LayoutTemplate className="size-3.5" /> Aplicar template <ChevronDown className="size-3.5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  {variantTemplates.map((t) => (
+                    <DropdownMenuItem key={t.id} onSelect={() => { set({ options: t.options.map((o) => ({ ...o, values: [...o.values] })) }); toast.success(`Variantes de "${t.name}" aplicadas`); }}>
+                      <span className="flex-1 truncate">{t.name}</span>
+                      {t.is_default && <span className="text-[10px] text-muted-foreground">padrão</span>}
+                    </DropdownMenuItem>
+                  ))}
+                  {variantTemplates.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum template de variantes.</p>}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings/templates" search={{ tipo: "variantes" }}><Settings2 className="size-3.5" /> Gerenciar templates</Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {listing.options.length < 3 && (
+                <button
+                  onClick={() => set({ options: [...listing.options, { name: "", values: [] }] })}
+                  className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted"
+                >
+                  <Plus className="size-3.5" /> Opção
+                </button>
+              )}
+            </div>
+          }
         >
           Variantes
         </SectionTitle>
@@ -416,7 +450,7 @@ function ImagePicker({ images, value, onChange }: {
   );
 }
 
-function OptionRow({ option, onChange, onRemove }: {
+export function OptionRow({ option, onChange, onRemove }: {
   option: { name: string; values: string[] }; onChange: (o: { name: string; values: string[] }) => void; onRemove: () => void;
 }) {
   const [text, setText] = useState("");

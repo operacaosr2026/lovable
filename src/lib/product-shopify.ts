@@ -49,13 +49,16 @@ export function buildVariants(listing: ShopifyListing): ShopifyVariant[] {
   });
 }
 
-// SKU da variante: SKU base + "-" + valores das opções, na ordem
-// (ex.: "size" + ["5W", "Azul"] → "size-5W-Azul"). Espaços viram "-".
+// SKU da variante: SKU base + "-" + valores das opções, na ordem. O "-" só
+// separa as partes; o valor vai como está (ex.: "size" + ["4.5W / 3M", "Azul"]
+// → "size-4.5W / 3M-Azul").
 export function variantSku(baseSku: string, values: string[]): string {
   const base = baseSku.trim();
   if (!base) return "";
-  return [base, ...values.map((v) => v.trim().replace(/\s+/g, "-"))].join("-");
+  return [base, ...values.map((v) => v.trim())].join("-");
 }
+
+export type VariantTemplate = { id: string; name: string; options: ShopifyOption[]; is_default: boolean };
 
 // Partes que dá pra reenviar a um produto já criado na loja.
 export const UPDATE_PARTS = ["aprodrop", "nome", "descricao", "preco", "sku", "estoque", "seo"] as const;

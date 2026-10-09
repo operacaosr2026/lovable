@@ -4,7 +4,10 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createProductInStore, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
-import { REQUIRED_SCOPES, UPDATE_PARTS, emptyListing, imagesFor, type ShopifyListing, type StoreRole } from "@/lib/product-shopify";
+import {
+  REQUIRED_SCOPES, UPDATE_PARTS, buildVariants, emptyListing, imagesFor,
+  type ShopifyListing, type ShopifyOption, type StoreRole, type VariantTemplate,
+} from "@/lib/product-shopify";
 
 const ProductIdInput = z.object({ product_id: z.string().uuid() });
 const priceStr = z.string().trim().max(20);
@@ -106,8 +109,19 @@ export const getProductShopify = createServerFn({ method: "GET" })
     }));
     const saved = listing.data?.data as Partial<ShopifyListing> | undefined;
     const imgs = (images.data ?? []) as { id: string; file_url: string | null; file_name: string | null }[];
+    // Ficha nova já vem com as variantes do template padrão.
+    let fresh: ShopifyListing | null = null;
+    if (!saved) {
+      fresh = { ...emptyListing(product.name), image_ids: imgs.map((i) => i.id) };
+      const { data: def } = await supabaseAdmin.from("product_variant_templates").select("options")
+        .eq("user_id", ownerId).eq("is_default", true).maybeSingle();
+      if (def?.options) {
+        fresh.options = def.options as ShopifyOption[];
+        fresh.variants = buildVariants(fresh);
+      }
+    }
     return {
-      listing: saved ? { ...emptyListing(product.name), ...saved } : { ...emptyListing(product.name), image_ids: imgs.map((i) => i.id) },
+      listing: saved ? { ...emptyListing(product.name), ...saved } : fresh!,
       images: imgs,
       stores,
       publications: publications as {
@@ -233,4 +247,58 @@ export const updateProductShopify = createServerFn({ method: "POST" })
       }
     }
     return { results };
+  });
+
+// ── Templates de variantes ──
+
+const OptionsInput = z.array(z.object({
+  name: z.string().trim().min(1).max(60),
+  values: z.array(z.string().trim().min(1).max(60)).min(1).max(100),
+})).min(1).max(3);
+
+export const listVariantTemplates = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { data, error } = await supabaseAdmin.from("product_variant_templates").select("id,name,options,is_default")
+      .eq("user_id", context.ownerId).order("position", { ascending: true }).order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as VariantTemplate[];
+  });
+
+export const saveVariantTemplate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid().optional(),
+    name: z.string().trim().min(1).max(100),
+    options: OptionsInput,
+    is_default: z.boolean(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const ownerId = context.ownerId;
+    const { id, ...row } = data;
+    if (row.is_default) {
+      let q = supabaseAdmin.from("product_variant_templates").update({ is_default: false }).eq("user_id", ownerId).eq("is_default", true);
+      if (id) q = q.neq("id", id);
+      const { error } = await q;
+      if (error) throw new Error(error.message);
+    }
+    if (id) {
+      const { error } = await supabaseAdmin.from("product_variant_templates").update(row).eq("id", id).eq("user_id", ownerId);
+      if (error) throw new Error(error.message);
+      return { id };
+    }
+    const { count } = await supabaseAdmin.from("product_variant_templates").select("id", { count: "exact", head: true }).eq("user_id", ownerId);
+    const { data: created, error } = await supabaseAdmin.from("product_variant_templates")
+      .insert({ ...row, user_id: ownerId, position: count ?? 0 }).select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: created.id as string };
+  });
+
+export const deleteVariantTemplate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await supabaseAdmin.from("product_variant_templates").delete().eq("id", data.id).eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

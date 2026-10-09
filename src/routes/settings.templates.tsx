@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Package, Store } from "lucide-react";
+import { Layers, Package, Store } from "lucide-react";
 import { ProductionTemplates } from "@/components/shops/ProductionTemplates";
+import { VariantTemplates } from "@/components/products/VariantTemplates";
 
-type Tipo = "lojas" | "produtos";
+type Tipo = "lojas" | "produtos" | "variantes";
 
 export const Route = createFileRoute("/settings/templates")({
   validateSearch: (search: Record<string, unknown>) => ({
-    tipo: (search.tipo === "produtos" ? "produtos" : "lojas") as Tipo,
+    tipo: (search.tipo === "produtos" || search.tipo === "variantes" ? search.tipo : "lojas") as Tipo,
   }),
   component: TemplatesPage,
 });
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/settings/templates")({
 const TABS: { id: Tipo; label: string; icon: typeof Store }[] = [
   { id: "lojas", label: "Lojas", icon: Store },
   { id: "produtos", label: "Produtos", icon: Package },
+  { id: "variantes", label: "Variantes", icon: Layers },
 ];
 
 function TemplatesPage() {
@@ -39,7 +41,9 @@ function TemplatesPage() {
           </button>
         ))}
       </div>
-      <ProductionTemplates key={tipo} kind={tipo === "produtos" ? "product" : "store"} />
+      {tipo === "variantes"
+        ? <VariantTemplates />
+        : <ProductionTemplates key={tipo} kind={tipo === "produtos" ? "product" : "store"} />}
     </div>
   );
 }
