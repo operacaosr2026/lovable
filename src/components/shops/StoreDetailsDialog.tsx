@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, Eye, EyeOff, Hammer, KeyRound, Loader2, Pencil, Plus, Settings, ShoppingCart, Trash2, X, Check } from "lucide-react";
+import { Copy, Eye, EyeOff, Hammer, KeyRound, Loader2, Pencil, Plus, RefreshCw, Settings, ShoppingCart, Trash2, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { renameShopifyStore } from "@/lib/shop-orders.functions";
+import { getStoreMissingScopes, reconnectShopifyStore, renameShopifyStore } from "@/lib/shop-orders.functions";
 import { ProductionTab } from "@/components/shops/StoreProduction";
 import { useMyAccess } from "@/hooks/useMyAccess";
 import {
@@ -35,7 +35,7 @@ export function StoreDetailsDialog({ store, onClose, onConnect }: { store: any; 
             <TabsTrigger value="config" className="gap-1.5"><Settings className="size-3.5" /> Configurações</TabsTrigger>
           </TabsList>
           {showOrders && <TabsContent value="pedidos" className="mt-4"><OrdersSection store={store} /></TabsContent>}
-          <TabsContent value="producao" className="mt-4"><ProductionTab store={store} /></TabsContent>
+          <TabsContent value="producao" className="mt-4"><ProductionTab kind="store" targetId={store.id} /></TabsContent>
           <TabsContent value="acessos" className="mt-4"><CredentialsSection storeId={store.id} /></TabsContent>
           <TabsContent value="config" className="mt-4"><SettingsSection store={store} onConnect={onConnect} /></TabsContent>
         </Tabs>
@@ -160,9 +160,7 @@ function SettingsSection({ store, onConnect }: { store: any; onConnect: () => vo
             </button>
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            Conectada{store.shop_domain ? ` (${store.shop_domain})` : ""}. Domínio e credenciais estão vinculados à autorização Shopify e não podem ser alterados aqui. Para trocá-los, reconecte a loja.
-          </p>
+          <ReconnectBox store={store} />
         )}
       </div>
     </section>
@@ -329,5 +327,50 @@ function IconBtn({ title, onClick, danger, children }: { title: string; onClick:
     >
       {children}
     </button>
+  );
+}
+
+// Reconectar sem excluir: usa o Client ID/Secret já salvos e o mesmo domínio,
+// então só atualiza a autorização e as permissões — Produção, acessos,
+// pedidos e posição no quadro continuam iguais.
+function ReconnectBox({ store }: { store: any }) {
+  const reconnectFn = useServerFn(reconnectShopifyStore);
+  const missingFn = useServerFn(getStoreMissingScopes);
+  const { data, isLoading } = useQuery({
+    queryKey: ["store-missing-scopes", store.id],
+    queryFn: () => missingFn({ data: { shopify_store_id: store.id } }),
+    staleTime: 60_000,
+  });
+  const missing = data?.missing ?? [];
+  const go = useMutation({
+    mutationFn: () => reconnectFn({ data: { shopify_store_id: store.id } }),
+    onSuccess: (r) => { window.location.href = r.url; },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const connected = (
+    <p className="text-xs text-muted-foreground">Conectada{store.shop_domain ? ` (${store.shop_domain})` : ""}.</p>
+  );
+  // Só a loja com permissão faltando mostra o aviso e o botão.
+  if (isLoading || !data?.missing || missing.length === 0) return connected;
+  return (
+    <div className="space-y-2">
+      {connected}
+      <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-2">
+        <p className="text-xs text-foreground">
+          Faltam permissões: <span className="font-mono">{missing.join(", ")}</span>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Marque esses escopos no app da loja na Shopify e depois reconecte. Reconectar não apaga nada: usa o mesmo domínio e as
+          credenciais já salvas, e só atualiza a autorização.
+        </p>
+        <button
+          onClick={() => go.mutate()}
+          disabled={go.isPending}
+          className="h-9 px-3 rounded-lg border border-border bg-background text-sm font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+        >
+          {go.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Reconectar na Shopify
+        </button>
+      </div>
+    </div>
   );
 }

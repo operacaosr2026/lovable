@@ -1,4 +1,5 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
+import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
 import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
@@ -474,7 +475,7 @@ export const listShopifyStores = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase.from("shopify_stores")
-      .select("id,name,shop_domain,board_column_id,board_position,board_note,is_placeholder").eq("user_id", context.ownerId);
+      .select("id,name,shop_domain,board_column_id,board_position,board_note,is_placeholder,scope").eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
     return data ?? [];
   });
@@ -550,6 +551,22 @@ function resolveAppOrigin(): string {
   return process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
 }
 
+// write_draft_orders + write_customers: pedido de troca (rascunho com o mesmo cliente, finalizado como pago).
+// (dispute_evidences não entra: a Shopify só libera pra apps públicos de disputa.)
+// read_all_orders: pedidos com mais de 60 dias (sem ela a Shopify só libera os últimos 60).
+// read_reports: visitas da loja (sessões) pro cálculo de conversão.
+// write_merchant_managed_fulfillment_orders: dar o pedido de cobrança dos Alertas como atendido (sem rastreio).
+// write_fulfillments: mandar o status do rastreio (em trânsito, entregue…) pro envio do pedido.
+// write_products/inventory/publications/files + read_locations: criar produto nas lojas (Produtos > Publicar nas lojas).
+export const SHOPIFY_SCOPES = "read_orders,read_all_orders,write_products,write_inventory,write_publications,write_files,read_locations,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders,write_fulfillments";
+
+function shopifyAuthorizeUrl(domain: string, clientId: string, state: string) {
+  const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
+  return `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(clientId)}` +
+    `&scope=${encodeURIComponent(SHOPIFY_SCOPES)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&state=${encodeURIComponent(state)}`;
+}
+
 export const startShopifyOAuth = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -575,18 +592,50 @@ export const startShopifyOAuth = createServerFn({ method: "POST" })
       replace_placeholder_id: data.replace_placeholder_id ?? null,
     });
     if (error) throw new Error(error.message);
-    // write_draft_orders + write_customers: pedido de troca (rascunho com o mesmo cliente, finalizado como pago).
-    // (dispute_evidences não entra: a Shopify só libera pra apps públicos de disputa.)
-    // read_all_orders: pedidos com mais de 60 dias (sem ela a Shopify só libera os últimos 60).
-    // read_reports: visitas da loja (sessões) pro cálculo de conversão.
-    // write_merchant_managed_fulfillment_orders: dar o pedido de cobrança dos Alertas como atendido (sem rastreio).
-    // write_fulfillments: mandar o status do rastreio (em trânsito, entregue…) pro envio do pedido.
-    const scopes = "read_orders,read_all_orders,write_products,write_inventory,write_publications,write_files,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders,write_fulfillments";
-    const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
-    const url = `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(data.client_id)}` +
-      `&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&state=${encodeURIComponent(state)}`;
-    return { url };
+    return { url: shopifyAuthorizeUrl(domain, data.client_id, state) };
+  });
+
+// Permissões que faltam na loja, perguntando à Shopify (a lista salva na
+// conexão não traz as embutidas em outras).
+export const getStoreMissingScopes = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shopify_store_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: store } = await supabaseAdmin.from("shopify_stores").select("shop_domain,access_token,scope")
+      .eq("id", data.shopify_store_id).eq("user_id", context.ownerId).maybeSingle();
+    if (!store?.shop_domain || !store.access_token) return { missing: null as string[] | null };
+    const live = await liveShopifyScopes(store.shop_domain, store.access_token);
+    const have = new Set(live ?? (store.scope ?? "").split(",").map((s: string) => s.trim()));
+    return { missing: SHOPIFY_SCOPES.split(",").filter((s) => !have.has(s)) };
+  });
+
+// Reconecta uma loja já conectada (ex.: pra aceitar permissões novas) com o
+// Client ID/Secret que já estão salvos. Domínio e nome vêm do banco, então a
+// volta da Shopify sempre cai nesta mesma loja e só atualiza token e
+// permissões — nada é criado nem apagado.
+export const reconnectShopifyStore = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shopify_store_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: store } = await supabaseAdmin.from("shopify_stores")
+      .select("id,name,shop_domain,client_id,client_secret,is_placeholder")
+      .eq("id", data.shopify_store_id).eq("user_id", context.ownerId).maybeSingle();
+    if (!store || store.is_placeholder || !store.shop_domain) throw new Error("Loja não encontrada ou ainda não conectada.");
+    if (!store.client_id || !store.client_secret) {
+      throw new Error("Essa loja não tem Client ID/Secret salvos — use \"Conectar loja\" com o mesmo domínio.");
+    }
+    const state = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, "");
+    const { error } = await supabaseAdmin.from("shopify_oauth_states").insert({
+      user_id: context.ownerId,
+      name: store.name || store.shop_domain,
+      shop_domain: store.shop_domain,
+      state,
+      client_id: store.client_id,
+      client_secret: store.client_secret,
+      replace_placeholder_id: null,
+    });
+    if (error) throw new Error(error.message);
+    return { url: shopifyAuthorizeUrl(store.shop_domain, store.client_id, state) };
   });
 
 

@@ -11,14 +11,19 @@ import { listTaskAssignees } from "@/lib/tasks.functions";
 import {
   listProductionTemplates, saveProductionFields, saveProductionPreset, deleteProductionPreset,
   createPresetUpload, registerPresetFile, getPresetFileUrl, deletePresetFile,
-  type ProductionField, type ProductionFile, type ProductionPreset,
+  type ProductionField, type ProductionFile, type ProductionKind, type ProductionPreset,
 } from "@/lib/store-production.functions";
-import { AddBtn, FilesManager, PolicyForm, SectionTitle } from "@/components/shops/StoreProduction";
+import { AddBtn, AutoTextarea, FilesManager, PolicyForm, SectionTitle, normalizeUsd } from "@/components/shops/StoreProduction";
 
 type Draft = Omit<ProductionPreset, "id"> & { id?: string };
 
+// Textos que mudam entre template de loja e de produto.
+const COPY: Record<ProductionKind, { one: string; many: string; where: string; newOne: string }> = {
+  store: { one: "loja", many: "lojas", where: "No card da loja", newOne: "toda loja nova do quadro" },
+  product: { one: "produto", many: "produtos", where: "No produto", newOne: "todo produto novo" },
+};
+
 const newId = () => crypto.randomUUID();
-const QK = ["production-templates"];
 const inputCls = "h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
 const emptyDraft = (): Draft => ({ name: "", is_default: false, values: {}, tasks: [], credentials: [], policies: [] });
 
@@ -30,9 +35,10 @@ const move = <T,>(list: T[], i: number, d: -1 | 1) => {
   return next;
 };
 
-export function ProductionTemplates() {
+export function ProductionTemplates({ kind }: { kind: ProductionKind }) {
   const listFn = useServerFn(listProductionTemplates);
-  const { data, isLoading, error } = useQuery({ queryKey: QK, queryFn: () => listFn() });
+  const QK = ["production-templates", kind];
+  const { data, isLoading, error } = useQuery({ queryKey: QK, queryFn: () => listFn({ data: { kind } }) });
   const [selected, setSelected] = useState<string | "new" | null>(null);
 
   if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
@@ -43,13 +49,13 @@ export function ProductionTemplates() {
 
   return (
     <div className="space-y-6">
-      <FieldsCard fields={data.fields} />
+      <FieldsCard kind={kind} fields={data.fields} />
 
       <section className="premium-card p-6">
         <SectionTitle action={<AddBtn onClick={() => setSelected("new")}>Template</AddBtn>}>Templates de produção</SectionTitle>
         <p className="text-xs text-muted-foreground mb-4">
-          Valores dos campos, etapas com responsável, acessos, políticas e arquivos. No card da loja, "Aplicar template" preenche só
-          os campos vazios e adiciona o que falta (pelo nome) — nada é apagado. O template padrão entra sozinho em toda loja nova do quadro.
+          Valores dos campos, etapas com responsável{kind === "store" ? ", acessos, políticas" : ""} e arquivos. {COPY[kind].where}, "Aplicar template"
+          preenche só os campos vazios e adiciona o que falta (pelo nome) — nada é apagado. O template padrão entra sozinho em {COPY[kind].newOne}.
         </p>
         <div className="flex flex-col md:flex-row gap-4">
           <div className="md:w-52 shrink-0 space-y-1">
@@ -77,6 +83,7 @@ export function ProductionTemplates() {
             {current && (
               <PresetEditor
                 key={activeId}
+                kind={kind}
                 initial={current}
                 files={selected === "new" ? [] : ((current as { files?: ProductionFile[] }).files ?? [])}
                 fields={data.fields}
@@ -92,9 +99,9 @@ export function ProductionTemplates() {
   );
 }
 
-// ── Campos da ficha (iguais pra todas as lojas) ──
+// ── Campos da ficha (iguais pra todas as lojas / todos os produtos) ──
 
-function FieldsCard({ fields }: { fields: ProductionField[] }) {
+function FieldsCard({ kind, fields }: { kind: ProductionKind; fields: ProductionField[] }) {
   const qc = useQueryClient();
   const saveFn = useServerFn(saveProductionFields);
   const [list, setList] = useState(fields);
@@ -102,10 +109,10 @@ function FieldsCard({ fields }: { fields: ProductionField[] }) {
   const dirty = JSON.stringify(list) !== JSON.stringify(fields);
 
   const save = useMutation({
-    mutationFn: () => saveFn({ data: { fields: list.filter((f) => f.label.trim()) } }),
+    mutationFn: () => saveFn({ data: { kind, fields: list.filter((f) => f.label.trim()) } }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK });
-      qc.invalidateQueries({ queryKey: ["store-production"] });
+      qc.invalidateQueries({ queryKey: ["production-templates", kind] });
+      qc.invalidateQueries({ queryKey: ["production", kind] });
       toast.success("Campos salvos");
     },
     onError: (e: any) => toast.error(e.message),
@@ -116,7 +123,7 @@ function FieldsCard({ fields }: { fields: ProductionField[] }) {
       <SectionTitle action={<AddBtn onClick={() => setList([...list, { id: newId(), label: "", type: "text" }])}>Campo</AddBtn>}>
         Campos de informação
       </SectionTitle>
-      <p className="text-xs text-muted-foreground mb-3">Aparecem em Informações na aba Produção de todas as lojas.</p>
+      <p className="text-xs text-muted-foreground mb-3">Aparecem em Informações na aba Produção de {kind === "store" ? "todas as lojas" : "todos os produtos"}.</p>
       <div className="space-y-1.5">
         {list.map((f, i) => (
           <div key={f.id} className="flex items-center gap-1.5">
@@ -135,6 +142,7 @@ function FieldsCard({ fields }: { fields: ProductionField[] }) {
               <option value="text">Texto</option>
               <option value="link">Link</option>
               <option value="email">E-mail</option>
+              <option value="currency">Moeda (US$)</option>
             </select>
             <RowActions
               onUp={() => setList(move(list, i, -1))}
@@ -156,7 +164,8 @@ function FieldsCard({ fields }: { fields: ProductionField[] }) {
 
 // ── Template ──
 
-function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew }: {
+function PresetEditor({ kind, initial, files, fields, onSaved, onDeleted, onCancelNew }: {
+  kind: ProductionKind;
   initial: Draft; files: ProductionFile[]; fields: ProductionField[]; onSaved: (id: string) => void; onDeleted: () => void; onCancelNew: () => void;
 }) {
   const qc = useQueryClient();
@@ -175,13 +184,14 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
   const deleteFileFn = useServerFn(deletePresetFile);
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: QK });
-    qc.invalidateQueries({ queryKey: ["store-production"] });
+    qc.invalidateQueries({ queryKey: ["production-templates", kind] });
+    qc.invalidateQueries({ queryKey: ["production", kind] });
   };
   const save = useMutation({
     mutationFn: () => saveFn({
       data: {
         id: tpl.id,
+        scope: kind,
         is_default: tpl.is_default,
         credentials: tpl.credentials,
         policies: tpl.policies,
@@ -215,7 +225,7 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
         />
         <label className="h-9 px-3 rounded-lg border border-border text-sm flex items-center gap-2 cursor-pointer select-none">
           <input type="checkbox" checked={tpl.is_default} onChange={(e) => setTpl({ ...tpl, is_default: e.target.checked })} className="accent-primary" />
-          Padrão para lojas novas
+          Padrão para {kind === "store" ? "lojas novas" : "produtos novos"}
         </label>
       </div>
 
@@ -226,12 +236,17 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
             {fields.map((f) => (
               <label key={f.id} className="block min-w-0">
                 <span className="text-xs text-muted-foreground">{f.label}</span>
-                <input
-                  value={tpl.values[f.id] ?? ""}
-                  onChange={(e) => setTpl({ ...tpl, values: { ...tpl.values, [f.id]: e.target.value } })}
-                  placeholder="Deixe vazio se muda por loja"
-                  className={`mt-1 w-full ${inputCls}`}
-                />
+                <div className="relative mt-1">
+                  {f.type === "currency" && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">$</span>}
+                  <input
+                    value={tpl.values[f.id] ?? ""}
+                    onChange={(e) => setTpl({ ...tpl, values: { ...tpl.values, [f.id]: e.target.value } })}
+                    onBlur={f.type === "currency" ? (e) => setTpl({ ...tpl, values: { ...tpl.values, [f.id]: normalizeUsd(e.target.value) } }) : undefined}
+                    inputMode={f.type === "currency" ? "decimal" : undefined}
+                    placeholder={`Deixe vazio se muda por ${COPY[kind].one}`}
+                    className={`w-full ${inputCls} ${f.type === "currency" ? "pl-7 tabular-nums" : ""}`}
+                  />
+                </div>
               </label>
             ))}
           </div>
@@ -293,9 +308,9 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
                       className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50 resize-y"
                     />
                     {t.checklist.map((c, ci) => (
-                      <div key={c.id} className="flex items-center gap-1.5">
-                        <span className="size-3.5 rounded border border-border shrink-0" />
-                        <input
+                      <div key={c.id} className="flex items-start gap-1.5">
+                        <span className="size-3.5 mt-2 rounded border border-border shrink-0" />
+                        <AutoTextarea
                           value={c.text}
                           autoFocus={!c.text}
                           onChange={(e) => setTask(t.id, { checklist: t.checklist.map((x) => (x.id === c.id ? { ...x, text: e.target.value } : x)) })}
@@ -308,7 +323,7 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
                             }
                           }}
                           placeholder="Item do checklist"
-                          className="flex-1 min-w-0 h-8 px-2 rounded-md bg-transparent text-sm outline-none focus:bg-background"
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded-md bg-transparent text-sm outline-none focus:bg-background"
                         />
                         <button
                           onClick={() => setTask(t.id, { checklist: t.checklist.filter((x) => x.id !== c.id) })}
@@ -334,7 +349,7 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
         </div>
       </section>
 
-      <section>
+      {kind === "store" && <section>
         <SectionTitle>Acessos</SectionTitle>
         <p className="text-xs text-muted-foreground mb-2">Criados vazios na aba Acessos da loja, pra só preencher login e senha.</p>
         <div className="flex flex-wrap gap-1.5">
@@ -365,9 +380,9 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
             />
           </form>
         </div>
-      </section>
+      </section>}
 
-      <section>
+      {kind === "store" && <section>
         <SectionTitle action={editingPolicy !== "new" && <AddBtn onClick={() => setEditingPolicy("new")}>Política</AddBtn>}>Políticas</SectionTitle>
         <div className="space-y-1.5">
           {tpl.policies.map((p) => editingPolicy === p.id ? (
@@ -414,13 +429,13 @@ function PresetEditor({ initial, files, fields, onSaved, onDeleted, onCancelNew 
             <p className="text-sm text-muted-foreground">Reembolso, privacidade, termos, envio... copiadas pro card ao aplicar.</p>
           )}
         </div>
-      </section>
+      </section>}
 
       {tpl.id ? (
         <FilesManager
           files={files}
           emptyText="Tema, logo, imagens... copiados pro card ao aplicar."
-          onChanged={() => qc.invalidateQueries({ queryKey: QK })}
+          onChanged={() => qc.invalidateQueries({ queryKey: ["production-templates", kind] })}
           upload={async (file) => {
             const { path, token } = await createUploadFn({ data: { preset_id: tpl.id!, name: file.name } });
             const { error } = await supabase.storage.from("store-production").uploadToSignedUrl(path, token, file, {

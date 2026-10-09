@@ -14,11 +14,11 @@ import {
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { listTaskAssignees } from "@/lib/tasks.functions";
 import {
-  getStoreProduction, setProductionValue, createProductionTask, updateProductionTask, deleteProductionTask,
+  getProduction, setProductionValue, createProductionTask, updateProductionTask, deleteProductionTask,
   applyProductionTemplate,
   createProductionUpload, registerProductionFile, getProductionFileUrl, deleteProductionFile,
   saveProductionPolicy, deleteProductionPolicy,
-  type ChecklistItem, type ProductionField, type ProductionPolicy, type ProductionTask,
+  type ChecklistItem, type ProductionKind, type ProductionField, type ProductionPolicy, type ProductionTask,
 } from "@/lib/store-production.functions";
 
 type Assignee = { id: string; name: string; avatar_url: string | null };
@@ -29,15 +29,18 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
 const fmtSize = (n: number) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
 const fmtDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export function ProductionTab({ store }: { store: any }) {
+type Target = { kind: ProductionKind; id: string };
+
+export function ProductionTab({ kind, targetId }: { kind: ProductionKind; targetId: string }) {
+  const target: Target = { kind, id: targetId };
   const qc = useQueryClient();
-  const queryKey = ["store-production", store.id];
-  const getFn = useServerFn(getStoreProduction);
+  const queryKey = ["production", kind, targetId];
+  const getFn = useServerFn(getProduction);
   const assigneesFn = useServerFn(listTaskAssignees);
 
   const { data, isLoading, error } = useQuery({
     queryKey,
-    queryFn: () => getFn({ data: { shopify_store_id: store.id } }),
+    queryFn: () => getFn({ data: { kind, target_id: targetId } }),
   });
   const { data: assignees = [] } = useQuery({ queryKey: ["task-assignees"], queryFn: () => assigneesFn(), staleTime: 5 * 60_000 });
 
@@ -66,13 +69,13 @@ export function ProductionTab({ store }: { store: any }) {
             </>
           ) : <p className="text-xs text-muted-foreground">Nenhuma etapa de produção.</p>}
         </div>
-        <ApplyTemplateMenu storeId={store.id} presets={data.presets} onApplied={refresh} />
+        <ApplyTemplateMenu target={target} presets={data.presets} onApplied={refresh} />
       </div>
 
-      <InfoSection storeId={store.id} fields={data.fields} values={data.values} onSaved={refresh} />
-      <TasksSection storeId={store.id} tasks={data.tasks} assignees={assignees} queryKey={queryKey} onChanged={refresh} />
-      <FilesSection storeId={store.id} files={data.files} onChanged={refresh} />
-      <PoliciesSection storeId={store.id} policies={data.policies} onChanged={refresh} />
+      <InfoSection target={target} fields={data.fields} values={data.values} onSaved={refresh} />
+      <TasksSection target={target} tasks={data.tasks} assignees={assignees} queryKey={queryKey} onChanged={refresh} />
+      <FilesSection target={target} files={data.files} onChanged={refresh} />
+      <PoliciesSection target={target} policies={data.policies} onChanged={refresh} />
     </div>
   );
 }
@@ -87,16 +90,16 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
 }
 
 // Preenche campos vazios, adiciona etapas e acessos que faltam — nunca apaga.
-function ApplyTemplateMenu({ storeId, presets, onApplied }: {
-  storeId: string; presets: { id: string; name: string; is_default: boolean }[]; onApplied: () => void;
+function ApplyTemplateMenu({ target, presets, onApplied }: {
+  target: Target; presets: { id: string; name: string; is_default: boolean }[]; onApplied: () => void;
 }) {
   const qc = useQueryClient();
   const applyFn = useServerFn(applyProductionTemplate);
   const apply = useMutation({
-    mutationFn: (preset: { id: string; name: string }) => applyFn({ data: { shopify_store_id: storeId, preset_id: preset.id } }),
+    mutationFn: (preset: { id: string; name: string }) => applyFn({ data: { kind: target.kind, target_id: target.id, preset_id: preset.id } }),
     onSuccess: (_, preset) => {
       onApplied();
-      qc.invalidateQueries({ queryKey: ["store-credentials", storeId] });
+      if (target.kind === "store") qc.invalidateQueries({ queryKey: ["store-credentials", target.id] });
       toast.success(`Template "${preset.name}" aplicado`);
     },
     onError: (e: any) => toast.error(e.message),
@@ -123,7 +126,7 @@ function ApplyTemplateMenu({ storeId, presets, onApplied }: {
         {presets.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum template criado.</p>}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to="/settings/templates"><Settings2 className="size-3.5" /> Gerenciar templates</Link>
+          <Link to="/settings/templates" search={{ tipo: target.kind === "product" ? "produtos" : "lojas" }}><Settings2 className="size-3.5" /> Gerenciar templates</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -141,12 +144,12 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
 
 // ── Informações ──
 
-function InfoSection({ storeId, fields, values, onSaved }: {
-  storeId: string; fields: ProductionField[]; values: Record<string, string>; onSaved: () => void;
+function InfoSection({ target, fields, values, onSaved }: {
+  target: Target; fields: ProductionField[]; values: Record<string, string>; onSaved: () => void;
 }) {
   const setFn = useServerFn(setProductionValue);
   const save = useMutation({
-    mutationFn: (input: { field_id: string; value: string }) => setFn({ data: { ...input, shopify_store_id: storeId } }),
+    mutationFn: (input: { field_id: string; value: string }) => setFn({ data: { ...input, kind: target.kind, target_id: target.id } }),
     onSuccess: onSaved,
     onError: (e: any) => toast.error(e.message),
   });
@@ -164,10 +167,32 @@ function InfoSection({ storeId, fields, values, onSaved }: {
   );
 }
 
+// Campo Moeda: grava em dólar com 2 casas ("1234.50"). Aceita "12,50",
+// "1,234.50", "1.234,50", "$ 99"... — o último separador é o decimal.
+// Texto que não é número fica como foi digitado.
+export function normalizeUsd(raw: string): string {
+  const t = raw.replace(/[$\s]|US/gi, "");
+  if (!t) return "";
+  const decimalComma = t.lastIndexOf(",") > t.lastIndexOf(".");
+  const n = Number(decimalComma ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, ""));
+  return Number.isFinite(n) ? n.toFixed(2) : raw.trim();
+}
+const fmtUsdField = (v: string) => {
+  const n = Number(v);
+  return v && Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v;
+};
+
 function FieldInput({ field, value, onSave }: { field: ProductionField; value: string; onSave: (v: string) => void }) {
+  const currency = field.type === "currency";
   const [text, setText] = useState(value);
+  const [focused, setFocused] = useState(false);
   useEffect(() => { setText(value); }, [value]);
-  const commit = () => { if (text.trim() !== value) onSave(text.trim()); };
+  const commit = () => {
+    setFocused(false);
+    const next = currency ? normalizeUsd(text) : text.trim();
+    setText(next);
+    if (next !== value) onSave(next);
+  };
   const copy = () => {
     navigator.clipboard.writeText(text.trim()).then(
       () => toast.success(`${field.label} copiado`),
@@ -179,13 +204,16 @@ function FieldInput({ field, value, onSave }: { field: ProductionField; value: s
     <label className="block min-w-0">
       <span className="text-xs text-muted-foreground">{field.label}</span>
       <div className="group relative mt-1">
+        {currency && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">$</span>}
         <input
-          value={text}
+          value={currency && !focused ? fmtUsdField(text) : text}
           onChange={(e) => setText(e.target.value)}
+          onFocus={() => setFocused(true)}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           type={field.type === "email" ? "email" : "text"}
-          className="w-full h-9 pl-3 pr-9 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50"
+          inputMode={currency ? "decimal" : undefined}
+          className={`w-full h-9 pr-9 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50 ${currency ? "pl-7 tabular-nums" : "pl-3"}`}
         />
         {text.trim() && (
           <button
@@ -204,8 +232,8 @@ function FieldInput({ field, value, onSave }: { field: ProductionField; value: s
 
 // ── Etapas ──
 
-function TasksSection({ storeId, tasks, assignees, queryKey, onChanged }: {
-  storeId: string; tasks: ProductionTask[]; assignees: Assignee[]; queryKey: unknown[]; onChanged: () => void;
+function TasksSection({ target, tasks, assignees, queryKey, onChanged }: {
+  target: Target; tasks: ProductionTask[]; assignees: Assignee[]; queryKey: unknown[]; onChanged: () => void;
 }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -216,13 +244,13 @@ function TasksSection({ storeId, tasks, assignees, queryKey, onChanged }: {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const create = useMutation({
-    mutationFn: (title: string) => createFn({ data: { shopify_store_id: storeId, title } }),
+    mutationFn: (title: string) => createFn({ data: { kind: target.kind, target_id: target.id, title } }),
     onSuccess: () => { setNewTitle(""); onChanged(); },
     onError: (e: any) => toast.error(e.message),
   });
   // Otimista: marcar etapa/checklist responde na hora.
   const update = useMutation({
-    mutationFn: (input: { id: string; patch: TaskPatch }) => updateFn({ data: input }),
+    mutationFn: (input: { id: string; patch: TaskPatch }) => updateFn({ data: { ...input, kind: target.kind } }),
     onMutate: ({ id, patch }) => {
       qc.setQueryData(queryKey, (old: any) => old && {
         ...old, tasks: old.tasks.map((t: ProductionTask) => (t.id === id ? { ...t, ...patch } : t)),
@@ -232,7 +260,7 @@ function TasksSection({ storeId, tasks, assignees, queryKey, onChanged }: {
     onError: (e: any) => toast.error(e.message),
   });
   const remove = useMutation({
-    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    mutationFn: (id: string) => deleteFn({ data: { kind: target.kind, id } }),
     onSuccess: onChanged,
     onError: (e: any) => toast.error(e.message),
   });
@@ -382,14 +410,14 @@ function ChecklistEditor({ items, onChange }: { items: ChecklistItem[]; onChange
   return (
     <div className="space-y-1">
       {items.map((c) => (
-        <div key={c.id} className="group flex items-center gap-2 py-0.5">
+        <div key={c.id} className="group flex items-start gap-2 py-0.5">
           <input
             type="checkbox"
             checked={c.done}
             onChange={() => onChange(items.map((x) => (x.id === c.id ? { ...x, done: !x.done } : x)))}
-            className="size-4 accent-primary shrink-0"
+            className="size-4 mt-0.5 accent-primary shrink-0"
           />
-          <span className={`flex-1 text-sm ${c.done ? "line-through text-muted-foreground" : ""}`}>{c.text}</span>
+          <span className={`flex-1 min-w-0 break-words text-sm ${c.done ? "line-through text-muted-foreground" : ""}`}>{c.text}</span>
           <button
             onClick={() => onChange(items.filter((x) => x.id !== c.id))}
             className="size-6 rounded grid place-items-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
@@ -399,15 +427,15 @@ function ChecklistEditor({ items, onChange }: { items: ChecklistItem[]; onChange
           </button>
         </div>
       ))}
-      <div className="flex items-center gap-2">
-        <Plus className="size-4 text-muted-foreground shrink-0" />
-        <input
+      <div className="flex items-start gap-2">
+        <Plus className="size-4 mt-1.5 text-muted-foreground shrink-0" />
+        <AutoTextarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
           onBlur={add}
           placeholder="Adicionar item do checklist"
-          className="flex-1 h-8 bg-transparent text-sm outline-none"
+          className="flex-1 min-w-0 py-1 bg-transparent text-sm outline-none"
         />
       </div>
     </div>
@@ -416,8 +444,8 @@ function ChecklistEditor({ items, onChange }: { items: ChecklistItem[]; onChange
 
 // ── Arquivos ──
 
-function FilesSection({ storeId, files, onChanged }: {
-  storeId: string; files: FileRow[]; onChanged: () => void;
+function FilesSection({ target, files, onChanged }: {
+  target: Target; files: FileRow[]; onChanged: () => void;
 }) {
   const createUploadFn = useServerFn(createProductionUpload);
   const registerFn = useServerFn(registerProductionFile);
@@ -429,15 +457,15 @@ function FilesSection({ storeId, files, onChanged }: {
       emptyText="Tema, logo, imagens... tudo que a loja precisa fica aqui."
       onChanged={onChanged}
       upload={async (file) => {
-        const { path, token } = await createUploadFn({ data: { shopify_store_id: storeId, name: file.name } });
+        const { path, token } = await createUploadFn({ data: { kind: target.kind, target_id: target.id, name: file.name } });
         const { error } = await supabase.storage.from("store-production").uploadToSignedUrl(path, token, file, {
           contentType: file.type || undefined,
         });
         if (error) throw error;
-        await registerFn({ data: { shopify_store_id: storeId, path, name: file.name, size: file.size, mime: file.type || null } });
+        await registerFn({ data: { kind: target.kind, target_id: target.id, path, name: file.name, size: file.size, mime: file.type || null } });
       }}
-      urlFor={async (id) => (await urlFn({ data: { id } })).url}
-      remove={async (id) => { await deleteFn({ data: { id } }); }}
+      urlFor={async (id) => (await urlFn({ data: { kind: target.kind, id } })).url}
+      remove={async (id) => { await deleteFn({ data: { kind: target.kind, id } }); }}
     />
   );
 }
@@ -526,19 +554,19 @@ export function FilesManager({ files, emptyText, onChanged, upload, urlFor, remo
 
 // ── Políticas ──
 
-function PoliciesSection({ storeId, policies, onChanged }: { storeId: string; policies: ProductionPolicy[]; onChanged: () => void }) {
+function PoliciesSection({ target, policies, onChanged }: { target: Target; policies: ProductionPolicy[]; onChanged: () => void }) {
   const confirm = useConfirm();
   const saveFn = useServerFn(saveProductionPolicy);
   const deleteFn = useServerFn(deleteProductionPolicy);
   const [editing, setEditing] = useState<string | "new" | null>(null);
 
   const save = useMutation({
-    mutationFn: (input: { id?: string; title: string; content: string }) => saveFn({ data: { ...input, shopify_store_id: storeId } }),
+    mutationFn: (input: { id?: string; title: string; content: string }) => saveFn({ data: { ...input, kind: target.kind, target_id: target.id } }),
     onSuccess: () => { setEditing(null); onChanged(); },
     onError: (e: any) => toast.error(e.message),
   });
   const remove = useMutation({
-    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    mutationFn: (id: string) => deleteFn({ data: { kind: target.kind, id } }),
     onSuccess: onChanged,
     onError: (e: any) => toast.error(e.message),
   });
@@ -634,6 +662,19 @@ export function PolicyForm({ initial, saving, onSave, onCancel }: {
       </div>
     </div>
   );
+}
+
+// Campo de uma linha que quebra o texto e cresce em vez de esconder o fim
+// (itens de checklist). Enter continua com quem usa (onKeyDown).
+export function AutoTextarea({ className = "", ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [props.value]);
+  return <textarea ref={ref} rows={1} {...props} className={`resize-none overflow-hidden ${className}`} />;
 }
 
 export function AddBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {

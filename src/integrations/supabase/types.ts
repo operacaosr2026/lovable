@@ -1949,8 +1949,106 @@ export type Database = {
           },
         ];
       };
+      product_shopify_listings: {
+        Row: {
+          data: Json;
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          data?: Json;
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          data?: Json;
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      product_shopify_publications: {
+        Row: {
+          created_at: string;
+          error: string | null;
+          handle: string | null;
+          id: string;
+          product_id: string;
+          role: string | null;
+          shopify_product_id: string | null;
+          shopify_store_id: string;
+          status: string;
+          updated_at: string;
+          user_id: string;
+          warnings: Json;
+        };
+        Insert: {
+          created_at?: string;
+          error?: string | null;
+          handle?: string | null;
+          id?: string;
+          product_id: string;
+          role?: string | null;
+          shopify_product_id?: string | null;
+          shopify_store_id: string;
+          status: string;
+          updated_at?: string;
+          user_id: string;
+          warnings?: Json;
+        };
+        Update: {
+          created_at?: string;
+          error?: string | null;
+          handle?: string | null;
+          id?: string;
+          product_id?: string;
+          role?: string | null;
+          shopify_product_id?: string | null;
+          shopify_store_id?: string;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+          warnings?: Json;
+        };
+        Relationships: [];
+      };
+      product_board_columns: {
+        Row: {
+          color: string | null;
+          created_at: string;
+          id: string;
+          name: string;
+          position: number;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          color?: string | null;
+          created_at?: string;
+          id?: string;
+          name: string;
+          position?: number;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          color?: string | null;
+          created_at?: string;
+          id?: string;
+          name?: string;
+          position?: number;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       products: {
         Row: {
+          board_column_id: string | null;
+          board_position: number;
           archived: boolean;
           cost: number;
           created_at: string;
@@ -1968,6 +2066,8 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          board_column_id?: string | null;
+          board_position?: number;
           archived?: boolean;
           cost?: number;
           created_at?: string;
@@ -1985,6 +2085,8 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          board_column_id?: string | null;
+          board_position?: number;
           archived?: boolean;
           cost?: number;
           created_at?: string;
@@ -4314,6 +4416,7 @@ export type Database = {
           name: string;
           policies: Json;
           position: number;
+          scope: string;
           tasks: Json;
           updated_at: string;
           user_id: string;
@@ -4327,6 +4430,7 @@ export type Database = {
           name: string;
           policies?: Json;
           position?: number;
+          scope?: string;
           tasks?: Json;
           updated_at?: string;
           user_id: string;
@@ -4340,6 +4444,7 @@ export type Database = {
           name?: string;
           policies?: Json;
           position?: number;
+          scope?: string;
           tasks?: Json;
           updated_at?: string;
           user_id?: string;

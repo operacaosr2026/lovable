@@ -8,6 +8,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderDateFor } from "@/lib/order-date";
+import { firstProductColumnId } from "@/lib/product-board.server";
+import { applyPreset } from "@/lib/store-production.server";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -22,6 +24,7 @@ const ProductInput = z.object({
   status: z.enum(PRODUCT_STATUSES).default("ativo"),
   main_image_url: z.string().max(2_000_000).nullable().optional(),
   keywords: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
+  board_column_id: z.string().uuid().nullable().optional(),
 });
 
 // ---------- products ----------
@@ -82,10 +85,15 @@ export const createProduct = createServerFn({ method: "POST" })
       status: data.status,
       main_image_url: data.main_image_url ?? null,
       keywords: data.keywords,
+      // Sem status escolhido entra no primeiro da esteira.
+      board_column_id: data.board_column_id ?? await firstProductColumnId(context.ownerId),
     }).select().single();
     if (error) throw new Error(error.message);
     // create empty pricing row
     await context.supabase.from("product_pricing").insert({ product_id: row.id, user_id: context.ownerId });
+    // Produto novo já nasce com o template padrão de produção. Falha aqui não
+    // impede o cadastro (dá pra aplicar pela aba Produção).
+    await applyPreset("product", context.ownerId, row.id).catch((e) => console.error("[produção] template produto", e));
     return { product: row };
   });
 

@@ -404,7 +404,7 @@ const DEFAULT_TONE: ColumnTone = { icon: Layers, dot: "bg-primary", iconText: "t
 type ColorClasses = Pick<ColumnTone, "dot" | "iconText" | "chip" | "head" | "body" | "stripe">;
 
 // Classes literais (o Tailwind só gera o que aparece escrito no código).
-const COLOR_TONES: Record<ColumnColor, ColorClasses> = {
+export const COLOR_TONES: Record<ColumnColor, ColorClasses> = {
   rose: { dot: "bg-rose-500", iconText: "text-rose-500", chip: "bg-rose-500/10", head: "bg-rose-500/[0.07]", body: "bg-rose-500/[0.02]", stripe: "border-l-rose-400" },
   orange: { dot: "bg-orange-500", iconText: "text-orange-500", chip: "bg-orange-500/10", head: "bg-orange-500/[0.08]", body: "bg-orange-500/[0.02]", stripe: "border-l-orange-400" },
   amber: { dot: "bg-amber-500", iconText: "text-amber-500", chip: "bg-amber-500/10", head: "bg-amber-500/[0.08]", body: "bg-amber-500/[0.02]", stripe: "border-l-amber-400" },
@@ -416,7 +416,7 @@ const COLOR_TONES: Record<ColumnColor, ColorClasses> = {
   pink: { dot: "bg-pink-500", iconText: "text-pink-500", chip: "bg-pink-500/10", head: "bg-pink-500/[0.07]", body: "bg-pink-500/[0.02]", stripe: "border-l-pink-400" },
   slate: { dot: "bg-slate-500", iconText: "text-slate-500", chip: "bg-slate-500/10", head: "bg-slate-500/[0.08]", body: "bg-slate-500/[0.02]", stripe: "border-l-slate-400" },
 };
-const COLOR_LABELS: Record<ColumnColor, string> = {
+export const COLOR_LABELS: Record<ColumnColor, string> = {
   rose: "Vermelho", orange: "Laranja", amber: "Amarelo", emerald: "Verde", teal: "Verde-água",
   sky: "Azul-claro", blue: "Azul", violet: "Roxo", pink: "Rosa", slate: "Cinza",
 };
@@ -779,7 +779,7 @@ function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
 // Só aparece enquanto a loja tem etapa de produção aberta.
 function ProductionProgress({ storeId }: { storeId: string }) {
   const fn = useServerFn(listProductionProgress);
-  const { data } = useQuery({ queryKey: ["production-progress"], queryFn: () => fn(), staleTime: 60_000 });
+  const { data } = useQuery({ queryKey: ["production-progress", "store"], queryFn: () => fn({ data: { kind: "store" } }), staleTime: 60_000 });
   const p = data?.[storeId];
   if (!p) return null;
   const pct = Math.round((p.done / p.total) * 100);
@@ -796,7 +796,7 @@ function ProductionProgress({ storeId }: { storeId: string }) {
   );
 }
 
-function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
+export function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
   const [adding, setAdding] = useState(false);
   const [val, setVal] = useState("");
 
