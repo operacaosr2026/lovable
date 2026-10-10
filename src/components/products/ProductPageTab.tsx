@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, ArrowRight, Check, Download, Loader2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Download, FileUp, Loader2, RotateCcw, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { getProductPage, saveProductPage, createTestimonialUpload, generatePagefly } from "@/lib/product-page.functions";
+import {
+  getProductPage, saveProductPage, createTestimonialUpload, generatePagefly, createTemplateUpload, activateTemplate, resetTemplate,
+} from "@/lib/product-page.functions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { ProductPageData } from "@/lib/product-page";
 import { AutoTextarea, SectionTitle } from "@/components/shops/StoreProduction";
 import { ImagePicker } from "@/components/products/ProductShopifyTab";
@@ -91,6 +94,8 @@ export function ProductPageTab({ productId }: { productId: string }) {
 
   return (
     <div className="space-y-6">
+      <TemplateBox template={data.template} onChanged={() => qc.invalidateQueries({ queryKey: ["product-page"] })} />
+
       <section>
         <SectionTitle>Arquivo</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -218,6 +223,80 @@ export function ProductPageTab({ productId }: { productId: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+type TemplateInfo = {
+  custom: boolean; name: string; title: string | null; carousel: number; testimonials: number; finals: number;
+  buttonLink: string | null; missing: string[];
+};
+
+// Modelo .pagefly usado pra gerar (vale pra todos os produtos): o original ou
+// o que o dono subiu (ex.: depois de mudar a página no PageFly).
+function TemplateBox({ template, onChanged }: { template: TemplateInfo; onChanged: () => void }) {
+  const confirm = useConfirm();
+  const uploadFn = useServerFn(createTemplateUpload);
+  const activateFn = useServerFn(activateTemplate);
+  const resetFn = useServerFn(resetTemplate);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const send = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pagefly")) { toast.error("Escolha um arquivo .pagefly exportado do PageFly"); return; }
+    setBusy(true);
+    try {
+      const { path, token } = await uploadFn();
+      const { error } = await supabase.storage.from("store-production").uploadToSignedUrl(path, token, file, { contentType: "application/zip" });
+      if (error) throw error;
+      const r = await activateFn({ data: { path } });
+      toast.success(r.missing.length ? "Modelo trocado — confira o que não foi encontrado" : "Modelo trocado");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Não foi possível trocar o modelo");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const reset = async () => {
+    if (!(await confirm({ title: "Voltar ao modelo original?", description: "O modelo que você subiu é descartado e a geração volta a usar o PG de Vendas 2 original.", confirmText: "Voltar", variant: "default" }))) return;
+    setBusy(true);
+    try { await resetFn(); toast.success("Modelo original restaurado"); onChanged(); }
+    catch (e: any) { toast.error(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-muted/20 p-3">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">
+            Modelo: {template.name} <span className="text-xs font-normal text-muted-foreground">({template.custom ? "enviado por você" : "original"})</span>
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Carrossel com {template.carousel} imagens · {template.testimonials} depoimentos · {template.finals} imagens finais
+            {template.title ? ` · título "${template.title.slice(0, 50)}"` : ""}
+          </p>
+          {template.missing.length > 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1">
+              <AlertTriangle className="size-3.5 shrink-0 mt-px" /> Não achei no modelo (fica como está no arquivo): {template.missing.join(", ")}.
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground mt-1">Vale pra todos os produtos. Mudou a página no PageFly? Exporte de novo e troque aqui.</p>
+        </div>
+        <input ref={fileRef} type="file" accept=".pagefly" hidden onChange={(e) => { send(e.target.files?.[0]); e.target.value = ""; }} />
+        <div className="flex gap-2 shrink-0">
+          {template.custom && (
+            <button onClick={reset} disabled={busy} className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50">
+              <RotateCcw className="size-3.5" /> Original
+            </button>
+          )}
+          <button onClick={() => fileRef.current?.click()} disabled={busy} className="h-8 px-3 rounded-lg border border-border bg-background text-xs font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50">
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <FileUp className="size-3.5" />} Trocar modelo
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
