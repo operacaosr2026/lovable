@@ -73,15 +73,14 @@ type Doc = { items: Item[]; styles: Style[]; [k: string]: unknown };
 export type TemplateTargets = {
   title: string | null; text1: string | null; text2: string | null; details: string | null;
   button: string | null; mainImage: string | null; gallerySlideshow: string | null;
+  // Galeria em código (bloco HTML com a lista de links em .srx-gallery-data):
+  // quando existe, o carrossel é ela, não o Slideshow do PageFly.
+  galleryHtml: string | null;
   testimonialsSlideshow: string | null; finalImages: string[];
 };
 export type PageTemplate = { doc: Doc; jsonName: string; targets: TemplateTargets };
 
-export const TARGET_LABELS: Record<keyof TemplateTargets, string> = {
-  title: "Título (penúltima seção)", text1: "Texto 1 (penúltima seção)", text2: "Texto 2 (penúltima seção)",
-  details: 'Acordeão "Product Details"', button: "Botão com handle=", mainImage: "Imagem principal",
-  gallerySlideshow: "Carrossel do produto", testimonialsSlideshow: "Carrossel de depoimentos", finalImages: "3 imagens finais",
-};
+const GALLERY_DATA_RE = /(<script[^>]*class=["'][^"']*srx-gallery-data[^"']*["'][^>]*>)([\s\S]*?)(<\/script>)/i;
 
 export function findTargets(doc: Doc): TemplateTargets {
   const byId = new Map(doc.items.map((i) => [i.id, i]));
@@ -100,8 +99,11 @@ export function findTargets(doc: Doc): TemplateTargets {
   const slideshows = all.filter((i) => i.type === "Slideshow");
   const inSlides = new Set(slideshows.flatMap((s) => subtree(s.id).map((i) => i.id)));
 
-  const gallery = slideshows.find((s) => inBox.has(s.id)) ?? null;
-  const main = box ? subtree(box.id).find((i) => isImage(i) && !inSlides.has(i.id)) ?? null : null;
+  const galleryHtml = all.find((i) => i.type === "Custom.HTML" && GALLERY_DATA_RE.test(String(i.data?.code ?? ""))) ?? null;
+  const gallery = galleryHtml ? null : slideshows.find((s) => inBox.has(s.id)) ?? null;
+  // Imagem principal do carrossel antigo: só existe junto com ele (senão
+  // pegaria outra imagem do bloco, ex.: a do "As seen on...").
+  const main = gallery && box ? subtree(box.id).find((i) => isImage(i) && !inSlides.has(i.id)) ?? null : null;
   const testimonials = slideshows.find((s) => !inBox.has(s.id)) ?? null;
 
   const button = all.find((i) => /^ProductATC/.test(i.type) && /handle=/.test(String(i.data?.link ?? "")))
@@ -131,15 +133,29 @@ export function findTargets(doc: Doc): TemplateTargets {
     button: button?.id ?? null,
     mainImage: main?.id ?? null,
     gallerySlideshow: gallery?.id ?? null,
+    galleryHtml: galleryHtml?.id ?? null,
     testimonialsSlideshow: testimonials?.id ?? null,
     finalImages: penult.filter((i) => isImage(i) && !inSlides.has(i.id)).slice(0, 3).map((i) => i.id),
   };
 }
 
-export const missingTargets = (t: TemplateTargets) =>
-  (Object.keys(TARGET_LABELS) as (keyof TemplateTargets)[])
-    .filter((k) => (k === "finalImages" ? t.finalImages.length < 3 : !t[k]))
-    .map((k) => TARGET_LABELS[k]);
+export function missingTargets(t: TemplateTargets): string[] {
+  const out: string[] = [];
+  if (!t.galleryHtml && !(t.mainImage && t.gallerySlideshow)) out.push("Carrossel do produto");
+  if (!t.details) out.push('Acordeão "Product Details"');
+  if (!t.title) out.push("Título (penúltima seção)");
+  if (!t.text1) out.push("Texto 1 (penúltima seção)");
+  if (!t.text2) out.push("Texto 2 (penúltima seção)");
+  if (!t.testimonialsSlideshow) out.push("Carrossel de depoimentos");
+  if (t.finalImages.length < 3) out.push("3 imagens finais");
+  if (!t.button) out.push("Botão com handle=");
+  return out;
+}
+
+function galleryUrls(code: string): string[] {
+  const m = code.match(GALLERY_DATA_RE);
+  try { return m ? (JSON.parse(m[2]) as unknown[]).filter((u): u is string => typeof u === "string") : []; } catch { return []; }
+}
 
 // Lê um .pagefly (ZIP com um JSON). Erro se não for o formato esperado.
 export function parsePageflyZip(bytes: Uint8Array): PageTemplate {
@@ -174,7 +190,8 @@ export function templatePreview(tpl: PageTemplate) {
   return {
     name: tpl.jsonName.replace(/\.json$/i, ""),
     title: t.title ? htmlToText(String(byId.get(t.title)?.data?.value ?? "")) : null,
-    carousel: (t.mainImage ? 1 : 0) + slides(t.gallerySlideshow),
+    carousel: t.galleryHtml ? galleryUrls(String(byId.get(t.galleryHtml)?.data?.code ?? "")).length : (t.mainImage ? 1 : 0) + slides(t.gallerySlideshow),
+    carouselKind: t.galleryHtml ? "galeria em código" : "carrossel do PageFly",
     testimonials: slides(t.testimonialsSlideshow),
     finals: t.finalImages.length,
     buttonLink: t.button ? String(byId.get(t.button)?.data?.link ?? "") : null,
@@ -247,8 +264,14 @@ export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
     button.data.link = url.toString();
   }
 
-  // Carrossel: 1ª = imagem principal; as outras = slides.
-  if (images.carousel.length > 0 && t.mainImage) {
+  // Carrossel. Galeria em código: troca a lista de links (qualquer quantidade;
+  // a 1ª é a imagem grande). Carrossel do PageFly: 1ª = imagem principal, as
+  // outras = slides.
+  const galleryItem = t.galleryHtml ? map.get(t.galleryHtml) : undefined;
+  if (images.carousel.length > 0 && galleryItem?.data) {
+    const urls = JSON.stringify(images.carousel.map((i) => i.url), null, 4);
+    galleryItem.data.code = String(galleryItem.data.code).replace(GALLERY_DATA_RE, (_m, open, _list, close) => `${open}\n  ${urls}\n  ${close}`);
+  } else if (images.carousel.length > 0 && t.mainImage) {
     setImage(map.get(t.mainImage), images.carousel[0]);
     if (t.gallerySlideshow) {
       const rest = images.carousel.slice(1);

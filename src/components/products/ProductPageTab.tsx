@@ -227,7 +227,7 @@ export function ProductPageTab({ productId }: { productId: string }) {
 }
 
 type TemplateInfo = {
-  custom: boolean; name: string; title: string | null; carousel: number; testimonials: number; finals: number;
+  custom: boolean; name: string; title: string | null; carousel: number; carouselKind: string; testimonials: number; finals: number;
   buttonLink: string | null; missing: string[];
 };
 
@@ -274,7 +274,7 @@ function TemplateBox({ template, onChanged }: { template: TemplateInfo; onChange
             Modelo: {template.name} <span className="text-xs font-normal text-muted-foreground">({template.custom ? "enviado por você" : "original"})</span>
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Carrossel com {template.carousel} imagens · {template.testimonials} depoimentos · {template.finals} imagens finais
+            Carrossel ({template.carouselKind}) com {template.carousel} imagens · {template.testimonials} depoimentos · {template.finals} imagens finais
             {template.title ? ` · título "${template.title.slice(0, 50)}"` : ""}
           </p>
           {template.missing.length > 0 && (
