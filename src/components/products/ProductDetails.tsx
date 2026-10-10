@@ -11,6 +11,7 @@ import { ProductCreatives } from "@/components/products/ProductCreatives";
 import { ProductSales } from "@/components/products/ProductSales";
 import { ProductionTab } from "@/components/shops/StoreProduction";
 import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
+import { ProductPageTab } from "@/components/products/ProductPageTab";
 
 const TABS = [
   { id: "cadastro", label: "Cadastro" },
@@ -19,6 +20,7 @@ const TABS = [
   { id: "template", label: "Template da Página" },
   { id: "criativos", label: "Criativos" },
   { id: "vendas", label: "Vendas" },
+  { id: "pagina", label: "Página" },
   { id: "shopify", label: "Publicar nas lojas" },
 ] as const;
 
@@ -72,6 +74,7 @@ export function ProductDetails({ productId }: { productId: string }) {
       {tab === "template" && <ProductTemplates productId={productId} />}
       {tab === "criativos" && <ProductCreatives productId={productId} />}
       {tab === "vendas" && <ProductSales productId={productId} />}
+      {tab === "pagina" && <ProductPageTab productId={productId} />}
       {tab === "shopify" && <ProductShopifyTab productId={productId} />}
     </div>
   );

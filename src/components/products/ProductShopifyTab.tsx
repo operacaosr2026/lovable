@@ -433,7 +433,7 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
   );
 }
 
-function ImagePicker({ images, value, onChange }: {
+export function ImagePicker({ images, value, onChange }: {
   images: { id: string; file_url: string | null; file_name: string | null }[]; value: string[]; onChange: (ids: string[]) => void;
 }) {
   return (

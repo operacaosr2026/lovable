@@ -1982,6 +1982,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      product_pages: {
+        Row: {
+          data: Json;
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          data?: Json;
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          data?: Json;
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       product_shopify_listings: {
         Row: {
           data: Json;
