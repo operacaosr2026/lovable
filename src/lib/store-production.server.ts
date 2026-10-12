@@ -50,7 +50,6 @@ export async function assertTarget(kind: ProductionKind, ownerId: string, target
 const DEFAULT_PRODUCT_FIELDS: ProductionField[] = [
   { id: "nicho", label: "Nicho", type: "text" },
   { id: "fornecedor", label: "Fornecedor", type: "text" },
-  { id: "preco_venda", label: "Preço de venda", type: "currency" },
   { id: "link_fornecedor", label: "Link do fornecedor", type: "link" },
   { id: "link_pagina", label: "Link da página do produto", type: "link" },
   { id: "pasta_criativos", label: "Pasta de criativos", type: "link" },

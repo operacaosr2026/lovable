@@ -74,8 +74,10 @@ export const getProduct = createServerFn({ method: "GET" })
       .from("products").select("*").eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!product) throw new Error("Produto não encontrado");
-    const { data: pricing } = await context.supabase
-      .from("product_pricing").select("*").eq("product_id", data.id).maybeSingle();
+    // Pelo servidor: a policy de product_pricing só libera o dono, e membros
+    // do workspace também abrem o produto.
+    const { data: pricing } = await supabaseAdmin
+      .from("product_pricing").select("*").eq("product_id", data.id).eq("user_id", product.user_id).maybeSingle();
     const niches = await productNiches(product.user_id, [product.id]);
     return { product: { ...product, niche: niches.get(product.id) ?? null }, pricing: pricing ?? null };
   });
@@ -154,6 +156,38 @@ export const upsertPricing = createServerFn({ method: "POST" })
       marketing_pct: data.marketing_pct,
     }, { onConflict: "product_id" });
     if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// Quadro Precificação da aba Informações: preço de venda (products.sale_price),
+// taxa da Shopify (payments_pct) e CPA estimado (marketing_pct), ambos em % do
+// preço — as mesmas colunas do lucro estimado da lista (listProducts).
+export const saveProductPricing = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    product_id: z.string().uuid(),
+    sale_price: z.number().min(0).max(1_000_000).optional(),
+    shopify_fee_pct: z.number().min(0).max(100).optional(),
+    cpa_pct: z.number().min(0).max(1000).optional(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { ownerId } = context;
+    const { data: product } = await supabaseAdmin.from("products").select("id")
+      .eq("id", data.product_id).eq("user_id", ownerId).maybeSingle();
+    if (!product) throw new Error("Produto não encontrado");
+    if (data.sale_price !== undefined) {
+      const { error } = await supabaseAdmin.from("products").update({ sale_price: data.sale_price }).eq("id", data.product_id);
+      if (error) throw new Error(error.message);
+    }
+    if (data.shopify_fee_pct !== undefined || data.cpa_pct !== undefined) {
+      const { error } = await supabaseAdmin.from("product_pricing").upsert({
+        product_id: data.product_id,
+        user_id: ownerId,
+        ...(data.shopify_fee_pct !== undefined ? { payments_pct: data.shopify_fee_pct } : {}),
+        ...(data.cpa_pct !== undefined ? { marketing_pct: data.cpa_pct } : {}),
+      }, { onConflict: "product_id" });
+      if (error) throw new Error(error.message);
+    }
     return { ok: true };
   });
 

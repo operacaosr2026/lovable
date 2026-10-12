@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, Package, Tag as TagIcon, X } from "lucide-react";
+import { DollarSign, Loader2, Megaphone, Package, Tag as TagIcon, Target, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { getProduct, updateProduct } from "@/lib/products.functions";
+import { getProduct, updateProduct, saveProductPricing } from "@/lib/products.functions";
 import { useProductStatuses } from "@/components/products/product-status";
 import { ProductImages } from "@/components/products/ProductImages";
 import { ProductTemplates } from "@/components/products/ProductTemplates";
@@ -73,9 +73,14 @@ export function ProductDetails({ productId }: { productId: string }) {
       </div>
 
       {tab === "informacoes" && (
-        <div className="space-y-6">
-          <FixedFields product={product} onSave={(patch) => update.mutate(patch)} />
-          <ProductionTab kind="product" targetId={productId} section="info" />
+        <div className="space-y-4">
+          <Card icon={Package} accent="primary" title="Cadastro" subtitle="Nome, custo e palavras-chave identificam o produto nos pedidos">
+            <FixedFields product={product} onSave={(patch) => update.mutate(patch)} />
+          </Card>
+          <Card icon={DollarSign} accent="success" title="Precificação" subtitle="Margem por unidade com o CPA que você estima">
+            <Pricing product={product} pricing={data.pricing} />
+          </Card>
+          <Card><ProductionTab kind="product" targetId={productId} section="info" /></Card>
         </div>
       )}
       {tab === "producao" && <ProductionTab kind="product" targetId={productId} section="tasks" />}
@@ -98,6 +103,167 @@ export function ProductDetailsDialog({ productId, onClose }: { productId: string
         <ProductDetails productId={productId} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+type Accent = "primary" | "info" | "warning" | "success" | "destructive";
+const ACCENT: Record<Accent, string> = {
+  primary: "bg-primary/10 text-primary",
+  info: "bg-info/10 text-info",
+  warning: "bg-warning/15 text-warning",
+  success: "bg-success/15 text-success",
+  destructive: "bg-destructive/10 text-destructive",
+};
+
+// Mesmo visual dos cartões do Dashboard (borda, sombra leve, ícone em chip colorido).
+function InfoCardHeader({ icon: Icon, accent, title, subtitle, action }: {
+  icon: typeof Package; accent: Accent; title: string; subtitle?: string; action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 mb-4">
+      <div className={`size-9 rounded-xl grid place-items-center shrink-0 ${ACCENT[accent]}`}><Icon className="size-4.5" /></div>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-semibold leading-tight">{title}</h3>
+        {subtitle && <p className="text-[11px] text-muted-foreground truncate">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function Card({ icon, accent, title, subtitle, children }: {
+  icon?: typeof Package; accent?: Accent; title?: string; subtitle?: string; children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4 sm:p-5 soft-shadow-sm">
+      {icon && title && <InfoCardHeader icon={icon} accent={accent ?? "primary"} title={title} subtitle={subtitle} />}
+      {children}
+    </section>
+  );
+}
+
+const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number.isFinite(n) ? n : 0);
+const pct = (n: number) => `${(Number.isFinite(n) ? n : 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+const num = (v: string) => { const n = Number(v.replace(",", ".")); return Number.isFinite(n) && n >= 0 ? n : null; };
+
+// Máximo CPA = preço − custo no fornecedor − taxa Shopify (% do preço).
+// CPA estimado = % do preço; lucro = máximo CPA − CPA. Custo no fornecedor é o
+// Custo (USD) do Cadastro.
+function Pricing({ product, pricing }: { product: any; pricing: any | null }) {
+  const qc = useQueryClient();
+  const saveFn = useServerFn(saveProductPricing);
+  const savedPrice = Number(product.sale_price ?? 0);
+  const savedFee = Number(pricing?.payments_pct ?? 0);
+  const savedCpa = Number(pricing?.marketing_pct ?? 0);
+  const [price, setPrice] = useState(String(savedPrice));
+  const [fee, setFee] = useState(String(savedFee));
+  const [cpaPct, setCpaPct] = useState(String(savedCpa));
+  useEffect(() => { setPrice(String(savedPrice)); }, [savedPrice]);
+  useEffect(() => { setFee(String(savedFee)); }, [savedFee]);
+  useEffect(() => { setCpaPct(String(savedCpa)); }, [savedCpa]);
+
+  const save = useMutation({
+    mutationFn: (patch: { sale_price?: number; shopify_fee_pct?: number; cpa_pct?: number }) => saveFn({ data: { product_id: product.id, ...patch } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["product", product.id] }); qc.invalidateQueries({ queryKey: ["products"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const commit = (raw: string, saved: number, reset: (v: string) => void, key: "sale_price" | "shopify_fee_pct" | "cpa_pct", max: number) => {
+    const n = num(raw);
+    if (n == null || n > max) { reset(String(saved)); return; }
+    if (n !== saved) save.mutate({ [key]: n });
+  };
+
+  const p = num(price) ?? 0;
+  const cost = Number(product.cost ?? 0);
+  const feeAmt = p * ((num(fee) ?? 0) / 100);
+  const maxCpa = p - cost - feeAmt;
+  const cpa = p * ((num(cpaPct) ?? 0) / 100);
+  const lucro = maxCpa - cpa;
+  const share = (v: number) => (p > 0 ? (v / p) * 100 : 0);
+  const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") e.currentTarget.blur(); };
+  const inputCls = "w-full h-10 rounded-xl bg-background border border-border text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 tabular-nums transition-colors";
+
+  // Composição do preço (barra empilhada): custo, taxa, CPA e lucro.
+  const parts = [
+    { label: "Custo", value: cost, color: "var(--color-warning)" },
+    { label: "Taxa Shopify", value: feeAmt, color: "var(--color-info)" },
+    { label: "CPA", value: cpa, color: "var(--color-destructive)" },
+    { label: "Lucro", value: Math.max(0, lucro), color: "var(--color-success)" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Field label="Preço de venda">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">$</span>
+            <input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={blurOnEnter}
+              onBlur={() => commit(price, savedPrice, setPrice, "sale_price", 1_000_000)} className={`${inputCls} pl-7 pr-3 font-semibold`} />
+          </div>
+        </Field>
+        <Field label="Custo no fornecedor">
+          <div className={`${inputCls} px-3 flex items-center justify-between bg-muted/40 text-muted-foreground`} title="Vem do Custo (USD) do Cadastro">
+            <span>{usd(cost)}</span><span className="text-[10px] uppercase tracking-wide">Cadastro</span>
+          </div>
+        </Field>
+        <Field label="Taxa Shopify">
+          <div className="relative">
+            <input inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} onKeyDown={blurOnEnter}
+              onBlur={() => commit(fee, savedFee, setFee, "shopify_fee_pct", 100)} className={`${inputCls} pl-3 pr-16`} />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none tabular-nums">% · {usd(feeAmt)}</span>
+          </div>
+        </Field>
+        <Field label="CPA estimado">
+          <div className="relative">
+            <input inputMode="decimal" value={cpaPct} onChange={(e) => setCpaPct(e.target.value)} onKeyDown={blurOnEnter}
+              onBlur={() => commit(cpaPct, savedCpa, setCpaPct, "cpa_pct", 1000)} className={`${inputCls} pl-3 pr-16`} />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none tabular-nums">% · {usd(cpa)}</span>
+          </div>
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Metric icon={Target} accent="info" label="Máximo CPA" value={usd(maxCpa)} negative={maxCpa < 0}
+          hint={p > 0 ? `${pct(share(maxCpa))} do preço · preço − custo − taxa` : "Preço − custo − taxa"} />
+        <Metric icon={Megaphone} accent="destructive" label="CPA" value={usd(cpa)}
+          hint={p > 0 ? `${pct(share(cpa))} do preço` : "% do preço de venda"} />
+        <Metric icon={TrendingUp} accent={lucro < 0 ? "destructive" : "success"} label="Lucro" value={usd(lucro)} negative={lucro < 0}
+          hint={p > 0 ? `${pct(share(lucro))} de lucro · máximo CPA − CPA` : "Máximo CPA − CPA"} highlight />
+      </div>
+
+      {p > 0 && (
+        <div>
+          <div className="h-2.5 rounded-full bg-muted overflow-hidden flex">
+            {parts.map((x) => share(x.value) > 0 && (
+              <div key={x.label} style={{ width: `${Math.min(100, share(x.value))}%`, background: x.color }} title={`${x.label}: ${usd(x.value)}`} />
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+            {parts.map((x) => (
+              <span key={x.label} className="inline-flex items-center gap-1.5">
+                <span className="size-2 rounded-full" style={{ background: x.color }} />
+                {x.label} <span className="font-medium text-foreground tabular-nums">{pct(share(x.value))}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ icon: Icon, accent, label, value, hint, negative, highlight }: {
+  icon: typeof Package; accent: Accent; label: string; value: string; hint: string; negative?: boolean; highlight?: boolean;
+}) {
+  return (
+    <div className={`rounded-xl border p-3.5 min-w-0 ${highlight ? (negative ? "border-destructive/30 bg-destructive/5" : "border-success/30 bg-success/5") : "border-border bg-background"}`}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className={`size-7 rounded-lg grid place-items-center shrink-0 ${ACCENT[accent]}`}><Icon className="size-3.5" /></div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{label}</p>
+      </div>
+      <p className={`text-xl font-bold tracking-tight tabular-nums truncate ${negative ? "text-destructive" : highlight ? "text-success" : "text-foreground"}`}>{value}</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{hint}</p>
+    </div>
   );
 }
 
@@ -130,7 +296,7 @@ function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) =
   const inputCls = "w-full px-3 h-9 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50";
 
   return (
-    <section className="space-y-2.5">
+    <div className="space-y-2.5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2.5">
         <Field label="Nome do produto">
           <input value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className={inputCls} />
@@ -165,7 +331,7 @@ function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) =
           />
         </div>
       </Field>
-    </section>
+    </div>
   );
 }
 

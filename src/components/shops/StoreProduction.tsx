@@ -60,9 +60,14 @@ export function ProductionTab({ kind, targetId, section }: { kind: ProductionKin
   const showTasks = section !== "info";
 
   return (
-    <div className="space-y-6">
+    <div className={section === "info" ? "space-y-3" : "space-y-6"}>
       {section === "info" ? (
-        <div className="flex justify-end">
+        <div className="flex items-center gap-2.5">
+          <div className="size-9 rounded-xl grid place-items-center shrink-0 bg-info/10 text-info"><FileText className="size-4.5" /></div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold leading-tight">Informações</h3>
+            <p className="text-[11px] text-muted-foreground truncate">Campos do template — edite em Configurações › Templates</p>
+          </div>
           <ApplyTemplateMenu target={target} presets={data.presets} onApplied={refresh} />
         </div>
       ) : <div className="flex items-center gap-3">
@@ -80,7 +85,7 @@ export function ProductionTab({ kind, targetId, section }: { kind: ProductionKin
         <ApplyTemplateMenu target={target} presets={data.presets} onApplied={refresh} />
       </div>}
 
-      {showInfo && <InfoSection target={target} fields={data.fields} values={data.values} onSaved={refresh} />}
+      {showInfo && <InfoSection target={target} fields={data.fields} values={data.values} onSaved={refresh} hideTitle={section === "info"} />}
       {section === "info" && data.fields.length === 0 && (
         <p className="text-sm text-muted-foreground">
           Nenhum campo de informação. Crie em{" "}
@@ -158,8 +163,8 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
 
 // ── Informações ──
 
-function InfoSection({ target, fields, values, onSaved }: {
-  target: Target; fields: ProductionField[]; values: Record<string, string>; onSaved: () => void;
+function InfoSection({ target, fields, values, onSaved, hideTitle }: {
+  target: Target; fields: ProductionField[]; values: Record<string, string>; onSaved: () => void; hideTitle?: boolean;
 }) {
   const qc = useQueryClient();
   const setFn = useServerFn(setProductionValue);
@@ -179,7 +184,7 @@ function InfoSection({ target, fields, values, onSaved }: {
   if (fields.length === 0) return null;
   return (
     <section>
-      <SectionTitle>Informações</SectionTitle>
+      {!hideTitle && <SectionTitle>Informações</SectionTitle>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2.5">
         {fields.map((f) => (
           <FieldInput key={f.id} field={f} value={values[f.id] ?? ""} onSave={(value) => save.mutate({ field_id: f.id, value })} />
