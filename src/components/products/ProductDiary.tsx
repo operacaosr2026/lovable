@@ -7,7 +7,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { AutoTextarea } from "@/components/shops/StoreProduction";
-import { listTaskAssignees } from "@/lib/tasks.functions";
 import {
   getProductDiary, saveProductDiaryFocus, addProductDiaryEntry, updateProductDiaryEntry, deleteProductDiaryEntry,
   createDiaryNoteType, updateDiaryNoteType, deleteDiaryNoteType,
@@ -59,12 +58,10 @@ export function ProductDiary({ productId }: { productId: string }) {
   const addFn = useServerFn(addProductDiaryEntry);
   const updateFn = useServerFn(updateProductDiaryEntry);
   const deleteFn = useServerFn(deleteProductDiaryEntry);
-  const assigneesFn = useServerFn(listTaskAssignees);
   const [filters, setFilters] = useState<string[]>([]);
   const [managing, setManaging] = useState(false);
 
   const { data, isLoading, error } = useQuery({ queryKey: QK, queryFn: () => getFn({ data: { product_id: productId } }) });
-  const { data: people = [] } = useQuery({ queryKey: ["task-assignees"], queryFn: () => assigneesFn(), staleTime: 5 * 60_000 });
   const refresh = () => qc.invalidateQueries({ queryKey: QK });
   const onError = (e: any) => toast.error(e.message);
 
@@ -88,7 +85,6 @@ export function ProductDiary({ productId }: { productId: string }) {
     [entries, filters],
   );
   const toggle = (id: string) => setFilters((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
-  const authorName = (id: string | null) => people.find((p) => p.id === id)?.name;
 
   if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
   if (error || !data) return <p className="text-sm text-destructive">{(error as Error)?.message ?? "Não foi possível carregar o diário."}</p>;
@@ -143,7 +139,6 @@ export function ProductDiary({ productId }: { productId: string }) {
               entry={e}
               productId={productId}
               noteTypes={noteTypes}
-              author={authorName(e.author_id)}
               onUpdate={(patch) => update.mutate({ id: e.id, ...patch })}
               onDelete={() => remove.mutate(e.id)}
             />
@@ -343,8 +338,8 @@ function EntryForm({ productId, noteTypes, pending, onSubmit }: {
 
 // ── Registro ──
 
-function EntryItem({ entry, productId, noteTypes, author, onUpdate, onDelete }: {
-  entry: DiaryEntry; productId: string; noteTypes: DiaryNoteType[]; author?: string;
+function EntryItem({ entry, productId, noteTypes, onUpdate, onDelete }: {
+  entry: DiaryEntry; productId: string; noteTypes: DiaryNoteType[];
   onUpdate: (patch: { content?: string; note_type_id?: string | null; image_urls?: string[]; created_at?: string }) => void;
   onDelete: () => void;
 }) {
@@ -377,7 +372,6 @@ function EntryItem({ entry, productId, noteTypes, author, onUpdate, onDelete }: 
       <div className="flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-1.5 text-[11.5px] text-muted-foreground min-w-0">
           <span>{fmtWhen(entry.created_at)}</span>
-          {author && <span className="truncate">· {author}</span>}
           {entry.edited_at && <span className="text-[10.5px] italic">editado</span>}
         </div>
         {!editing && (
