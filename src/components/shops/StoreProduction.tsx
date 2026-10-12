@@ -31,7 +31,9 @@ const fmtDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 type Target = { kind: ProductionKind; id: string };
 
-export function ProductionTab({ kind, targetId }: { kind: ProductionKind; targetId: string }) {
+// section: "info" mostra só os campos; "tasks" só as etapas; sem section
+// (loja), tudo junto com arquivos e políticas.
+export function ProductionTab({ kind, targetId, section }: { kind: ProductionKind; targetId: string; section?: "info" | "tasks" }) {
   const target: Target = { kind, id: targetId };
   const qc = useQueryClient();
   const queryKey = ["production", kind, targetId];
@@ -54,10 +56,16 @@ export function ProductionTab({ kind, targetId }: { kind: ProductionKind; target
 
   const done = data.tasks.filter((t) => t.done).length;
   const total = data.tasks.length;
+  const showInfo = section !== "tasks";
+  const showTasks = section !== "info";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      {section === "info" ? (
+        <div className="flex justify-end">
+          <ApplyTemplateMenu target={target} presets={data.presets} onApplied={refresh} />
+        </div>
+      ) : <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
           {total > 0 ? (
             <>
@@ -70,12 +78,18 @@ export function ProductionTab({ kind, targetId }: { kind: ProductionKind; target
           ) : <p className="text-xs text-muted-foreground">Nenhuma etapa de produção.</p>}
         </div>
         <ApplyTemplateMenu target={target} presets={data.presets} onApplied={refresh} />
-      </div>
+      </div>}
 
-      <InfoSection target={target} fields={data.fields} values={data.values} onSaved={refresh} />
-      <TasksSection target={target} tasks={data.tasks} assignees={assignees} queryKey={queryKey} onChanged={refresh} />
-      <FilesSection target={target} files={data.files} onChanged={refresh} />
-      <PoliciesSection target={target} policies={data.policies} onChanged={refresh} />
+      {showInfo && <InfoSection target={target} fields={data.fields} values={data.values} onSaved={refresh} />}
+      {section === "info" && data.fields.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Nenhum campo de informação. Crie em{" "}
+          <Link to="/settings/templates" search={{ tipo: "produtos" }} className="text-primary hover:underline">Configurações › Templates</Link>.
+        </p>
+      )}
+      {showTasks && <TasksSection target={target} tasks={data.tasks} assignees={assignees} queryKey={queryKey} onChanged={refresh} />}
+      {!section && <FilesSection target={target} files={data.files} onChanged={refresh} />}
+      {!section && <PoliciesSection target={target} policies={data.policies} onChanged={refresh} />}
     </div>
   );
 }
@@ -147,10 +161,18 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
 function InfoSection({ target, fields, values, onSaved }: {
   target: Target; fields: ProductionField[]; values: Record<string, string>; onSaved: () => void;
 }) {
+  const qc = useQueryClient();
   const setFn = useServerFn(setProductionValue);
   const save = useMutation({
     mutationFn: (input: { field_id: string; value: string }) => setFn({ data: { ...input, kind: target.kind, target_id: target.id } }),
-    onSuccess: onSaved,
+    onSuccess: (_, input) => {
+      onSaved();
+      // Nicho aparece embaixo do nome do produto (cabeçalho e quadro).
+      if (target.kind === "product" && input.field_id === "nicho") {
+        qc.invalidateQueries({ queryKey: ["product", target.id] });
+        qc.invalidateQueries({ queryKey: ["products"] });
+      }
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -184,6 +206,7 @@ const fmtUsdField = (v: string) => {
 
 function FieldInput({ field, value, onSave }: { field: ProductionField; value: string; onSave: (v: string) => void }) {
   const currency = field.type === "currency";
+  const long = field.type === "longtext";
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
   useEffect(() => { setText(value); }, [value]);
@@ -201,11 +224,19 @@ function FieldInput({ field, value, onSave }: { field: ProductionField; value: s
   };
 
   return (
-    <label className="block min-w-0">
+    <label className={`block min-w-0 ${long ? "sm:col-span-2" : ""}`}>
       <span className="text-xs text-muted-foreground">{field.label}</span>
       <div className="group relative mt-1">
         {currency && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">$</span>}
-        <input
+        {long ? (
+          <AutoTextarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={commit}
+            className="w-full min-h-20 py-2 pl-3 pr-9 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50"
+          />
+        ) : <input
           value={currency && !focused ? fmtUsdField(text) : text}
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setFocused(true)}
@@ -214,13 +245,13 @@ function FieldInput({ field, value, onSave }: { field: ProductionField; value: s
           type={field.type === "email" ? "email" : "text"}
           inputMode={currency ? "decimal" : undefined}
           className={`w-full h-9 pr-9 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50 ${currency ? "pl-7 tabular-nums" : "pl-3"}`}
-        />
+        />}
         {text.trim() && (
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); copy(); }}
             title="Copiar"
-            className="absolute right-1 top-1/2 -translate-y-1/2 size-7 rounded-md grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            className={`absolute right-1 ${long ? "top-1" : "top-1/2 -translate-y-1/2"} size-7 rounded-md grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
           >
             <Copy className="size-3.5" />
           </button>

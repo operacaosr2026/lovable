@@ -28,6 +28,14 @@ const ProductInput = z.object({
 });
 
 // ---------- products ----------
+// Nicho saiu do cadastro e virou campo da aba Informações (id "nicho").
+async function productNiches(ownerId: string, ids: string[]): Promise<Map<string, string | null>> {
+  if (!ids.length) return new Map();
+  const { data } = await supabaseAdmin.from("product_production" as any).select("product_id,values")
+    .eq("user_id", ownerId).in("product_id", ids);
+  return new Map(((data ?? []) as any[]).map((r) => [r.product_id as string, ((r.values ?? {}).nicho as string) || null]));
+}
+
 export const listProducts = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
@@ -42,6 +50,7 @@ export const listProducts = createServerFn({ method: "GET" })
       const { data: pr } = await context.supabase.from("product_pricing").select("*").in("product_id", ids);
       pricingMap = Object.fromEntries((pr ?? []).map((p: any) => [p.product_id, p]));
     }
+    const niches = await productNiches(context.ownerId, ids);
     return {
       products: (rows ?? []).map((r: any) => {
         const p = pricingMap[r.id];
@@ -52,7 +61,7 @@ export const listProducts = createServerFn({ method: "GET" })
         const fixed = sale * (fixedPct / 100);
         const cpa = sale * (mktPct / 100);
         const profit = sale - cost - fixed - cpa;
-        return { ...r, est_profit: profit };
+        return { ...r, niche: niches.get(r.id) ?? null, est_profit: profit };
       }),
     };
   });
@@ -67,7 +76,8 @@ export const getProduct = createServerFn({ method: "GET" })
     if (!product) throw new Error("Produto não encontrado");
     const { data: pricing } = await context.supabase
       .from("product_pricing").select("*").eq("product_id", data.id).maybeSingle();
-    return { product, pricing: pricing ?? null };
+    const niches = await productNiches(product.user_id, [product.id]);
+    return { product: { ...product, niche: niches.get(product.id) ?? null }, pricing: pricing ?? null };
   });
 
 export const createProduct = createServerFn({ method: "POST" })

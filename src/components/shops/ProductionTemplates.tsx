@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, LayoutTemplate, ListChecks, Loader2, Pencil, Plus, ScrollText, Star, Trash2, X,
+  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, LayoutTemplate, ListChecks, Loader2, Lock, Pencil, Plus, ScrollText, Star, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,12 +16,19 @@ import {
 import { AddBtn, AutoTextarea, FilesManager, PolicyForm, SectionTitle, normalizeUsd } from "@/components/shops/StoreProduction";
 
 type Draft = Omit<ProductionPreset, "id"> & { id?: string };
+// Produto separa o template em Informações (campos e valores) e
+// Produção (etapas), como as abas do card; loja mostra tudo junto.
+type Section = "info" | "tasks";
 
 // Textos que mudam entre template de loja e de produto.
 const COPY: Record<ProductionKind, { one: string; many: string; where: string; newOne: string }> = {
   store: { one: "loja", many: "lojas", where: "No card da loja", newOne: "toda loja nova do quadro" },
   product: { one: "produto", many: "produtos", where: "No produto", newOne: "todo produto novo" },
 };
+
+// Ficam no topo da aba Informações de todo produto e não saem pelo template:
+// o custo e as palavras-chave alimentam o custo dos pedidos no dashboard.
+const FIXED_PRODUCT_FIELDS = ["Nome do produto", "Custo (USD)", "Status", "Palavras-chave"];
 
 const newId = () => crypto.randomUUID();
 const inputCls = "h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
@@ -40,6 +47,9 @@ export function ProductionTemplates({ kind }: { kind: ProductionKind }) {
   const QK = ["production-templates", kind];
   const { data, isLoading, error } = useQuery({ queryKey: QK, queryFn: () => listFn({ data: { kind } }) });
   const [selected, setSelected] = useState<string | "new" | null>(null);
+  const [section, setSection] = useState<Section>("info");
+  const showInfo = kind === "store" || section === "info";
+  const showTasks = kind === "store" || section === "tasks";
 
   if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
   if (error || !data) return <p className="text-sm text-destructive">{(error as any)?.message ?? "Não foi possível carregar os templates."}</p>;
@@ -49,13 +59,32 @@ export function ProductionTemplates({ kind }: { kind: ProductionKind }) {
 
   return (
     <div className="space-y-6">
-      <FieldsCard kind={kind} fields={data.fields} />
+      {kind === "product" && (
+        <div className="border-b border-border flex gap-1">
+          {([["info", "Informações"], ["tasks", "Produção"]] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setSection(id)}
+              className={`px-3 h-9 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${section === id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showInfo && <FieldsCard kind={kind} fields={data.fields} />}
 
       <section className="premium-card p-6">
-        <SectionTitle action={<AddBtn onClick={() => setSelected("new")}>Template</AddBtn>}>Templates de produção</SectionTitle>
+        <SectionTitle action={<AddBtn onClick={() => setSelected("new")}>Template</AddBtn>}>
+          {kind === "store" ? "Templates de produção" : section === "info" ? "Templates — informações" : "Templates — etapas"}
+        </SectionTitle>
         <p className="text-xs text-muted-foreground mb-4">
-          Valores dos campos, etapas com responsável{kind === "store" ? ", acessos, políticas" : ""} e arquivos. {COPY[kind].where}, "Aplicar template"
-          preenche só os campos vazios e adiciona o que falta (pelo nome) — nada é apagado. O template padrão entra sozinho em {COPY[kind].newOne}.
+          {kind === "store"
+            ? "Valores dos campos, etapas com responsável, acessos, políticas e arquivos."
+            : section === "info" ? "Valores dos campos de cada template." : "Etapas com responsável e checklist de cada template."}{" "}
+          {COPY[kind].where}, "Aplicar template" preenche só os campos vazios e adiciona o que falta (pelo nome) — nada é apagado.
+          O template padrão entra sozinho em {COPY[kind].newOne}.
         </p>
         <div className="flex flex-col md:flex-row gap-4">
           <div className="md:w-52 shrink-0 space-y-1">
@@ -84,6 +113,8 @@ export function ProductionTemplates({ kind }: { kind: ProductionKind }) {
               <PresetEditor
                 key={activeId}
                 kind={kind}
+                showInfo={showInfo}
+                showTasks={showTasks}
                 initial={current}
                 files={selected === "new" ? [] : ((current as { files?: ProductionFile[] }).files ?? [])}
                 fields={data.fields}
@@ -123,8 +154,18 @@ function FieldsCard({ kind, fields }: { kind: ProductionKind; fields: Production
       <SectionTitle action={<AddBtn onClick={() => setList([...list, { id: newId(), label: "", type: "text" }])}>Campo</AddBtn>}>
         Campos de informação
       </SectionTitle>
-      <p className="text-xs text-muted-foreground mb-3">Aparecem em Informações na aba Produção de {kind === "store" ? "todas as lojas" : "todos os produtos"}.</p>
+      <p className="text-xs text-muted-foreground mb-3">
+        {kind === "store" ? "Aparecem em Informações na aba Produção de todas as lojas." : "Aparecem na aba Informações de todos os produtos."}
+      </p>
       <div className="space-y-1.5">
+        {kind === "product" && FIXED_PRODUCT_FIELDS.map((label) => (
+          <div key={label} className="flex items-center gap-1.5" title="Campo fixo — não pode ser alterado nem removido">
+            <div className={`flex-1 min-w-0 flex items-center gap-2 text-muted-foreground bg-muted/40 ${inputCls}`}>
+              <Lock className="size-3.5 shrink-0" /> <span className="truncate">{label}</span>
+            </div>
+            <span className="h-9 px-2 text-xs text-muted-foreground flex items-center">Fixo</span>
+          </div>
+        ))}
         {list.map((f, i) => (
           <div key={f.id} className="flex items-center gap-1.5">
             <input
@@ -140,6 +181,7 @@ function FieldsCard({ kind, fields }: { kind: ProductionKind; fields: Production
               className="h-9 px-2 rounded-lg border border-border bg-background text-sm outline-none"
             >
               <option value="text">Texto</option>
+              <option value="longtext">Texto longo</option>
               <option value="link">Link</option>
               <option value="email">E-mail</option>
               <option value="currency">Moeda (US$)</option>
@@ -164,8 +206,8 @@ function FieldsCard({ kind, fields }: { kind: ProductionKind; fields: Production
 
 // ── Template ──
 
-function PresetEditor({ kind, initial, files, fields, onSaved, onDeleted, onCancelNew }: {
-  kind: ProductionKind;
+function PresetEditor({ kind, showInfo, showTasks, initial, files, fields, onSaved, onDeleted, onCancelNew }: {
+  kind: ProductionKind; showInfo: boolean; showTasks: boolean;
   initial: Draft; files: ProductionFile[]; fields: ProductionField[]; onSaved: (id: string) => void; onDeleted: () => void; onCancelNew: () => void;
 }) {
   const qc = useQueryClient();
@@ -229,23 +271,30 @@ function PresetEditor({ kind, initial, files, fields, onSaved, onDeleted, onCanc
         </label>
       </div>
 
-      {fields.length > 0 && (
+      {showInfo && fields.length > 0 && (
         <section>
           <SectionTitle>Informações</SectionTitle>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2.5">
             {fields.map((f) => (
-              <label key={f.id} className="block min-w-0">
+              <label key={f.id} className={`block min-w-0 ${f.type === "longtext" ? "sm:col-span-2" : ""}`}>
                 <span className="text-xs text-muted-foreground">{f.label}</span>
                 <div className="relative mt-1">
                   {f.type === "currency" && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">$</span>}
-                  <input
+                  {f.type === "longtext" ? (
+                    <AutoTextarea
+                      value={tpl.values[f.id] ?? ""}
+                      onChange={(e) => setTpl({ ...tpl, values: { ...tpl.values, [f.id]: e.target.value } })}
+                      placeholder={`Deixe vazio se muda por ${COPY[kind].one}`}
+                      className="w-full min-h-20 px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50"
+                    />
+                  ) : <input
                     value={tpl.values[f.id] ?? ""}
                     onChange={(e) => setTpl({ ...tpl, values: { ...tpl.values, [f.id]: e.target.value } })}
                     onBlur={f.type === "currency" ? (e) => setTpl({ ...tpl, values: { ...tpl.values, [f.id]: normalizeUsd(e.target.value) } }) : undefined}
                     inputMode={f.type === "currency" ? "decimal" : undefined}
                     placeholder={`Deixe vazio se muda por ${COPY[kind].one}`}
                     className={`w-full ${inputCls} ${f.type === "currency" ? "pl-7 tabular-nums" : ""}`}
-                  />
+                  />}
                 </div>
               </label>
             ))}
@@ -253,7 +302,7 @@ function PresetEditor({ kind, initial, files, fields, onSaved, onDeleted, onCanc
         </section>
       )}
 
-      <section>
+      {showTasks && <section>
         <SectionTitle
           action={
             <AddBtn onClick={() => {
@@ -347,7 +396,7 @@ function PresetEditor({ kind, initial, files, fields, onSaved, onDeleted, onCanc
           })}
           {tpl.tasks.length === 0 && <p className="p-3 text-sm text-muted-foreground">Nenhuma etapa.</p>}
         </div>
-      </section>
+      </section>}
 
       {kind === "store" && <section>
         <SectionTitle>Acessos</SectionTitle>
@@ -431,7 +480,7 @@ function PresetEditor({ kind, initial, files, fields, onSaved, onDeleted, onCanc
         </div>
       </section>}
 
-      {tpl.id ? (
+      {kind === "product" ? null : tpl.id ? (
         <FilesManager
           files={files}
           emptyText="Tema, logo, imagens... copiados pro card ao aplicar."

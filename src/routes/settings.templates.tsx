@@ -27,7 +27,7 @@ function TemplatesPage() {
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Templates</h1>
         <p className="text-sm text-muted-foreground mt-1">
           O que se repete na produção: informações, etapas com responsáveis, políticas e arquivos. Lojas e produtos têm templates
-          separados — aplique pela aba Produção do card da loja (Banco de Lojas) ou do produto (Produtos).
+          separados — aplique pela aba Produção do card da loja (Banco de Lojas) ou pelas abas Informações e Produção do produto (Produtos).
         </p>
       </header>
       <div className="flex items-center rounded-lg border border-border bg-surface p-0.5 w-fit">

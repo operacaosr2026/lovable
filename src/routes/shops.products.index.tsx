@@ -257,7 +257,6 @@ function ProductEditor({ product, statuses, onClose, onSave, onDelete }: {
   onDelete?: () => void | Promise<void>;
 }) {
   const [name, setName] = useState(product?.name ?? "");
-  const [niche, setNiche] = useState(product?.niche ?? "");
   const [statusId, setStatusId] = useState<string>(product?.board_column_id ?? statuses[0]?.id ?? "");
   const [imageUrl, setImageUrl] = useState<string>(product?.main_image_url ?? "");
   const [uploading, setUploading] = useState(false);
@@ -291,7 +290,6 @@ function ProductEditor({ product, statuses, onClose, onSave, onDelete }: {
     if (!name.trim() && !product) return;
     onSave({
       name: name.trim() || (product?.name ?? "Novo produto"),
-      niche: niche.trim() || null,
       ...(statusId && statusId !== product?.board_column_id ? { board_column_id: statusId } : {}),
       main_image_url: imageUrl || null,
     });
@@ -333,21 +331,13 @@ function ProductEditor({ product, statuses, onClose, onSave, onDelete }: {
             placeholder="Nome do produto"
             className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={niche}
-              onChange={(e) => setNiche(e.target.value)}
-              placeholder="Nicho"
-              className="px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none"
-            />
-            <select
-              value={statusId}
-              onChange={(e) => setStatusId(e.target.value)}
-              className="px-2 h-10 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
-            >
-              {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
+          <select
+            value={statusId}
+            onChange={(e) => setStatusId(e.target.value)}
+            className="w-full px-2 h-10 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
+          >
+            {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
         </div>
 
         <div className="flex justify-between items-center px-5 py-3 border-t border-border">

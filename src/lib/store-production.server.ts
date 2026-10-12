@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-export type ProductionFieldType = "text" | "link" | "email" | "currency";
+export type ProductionFieldType = "text" | "longtext" | "link" | "email" | "currency";
 export type ProductionField = { id: string; label: string; type: ProductionFieldType };
 export type TemplateChecklistItem = { id: string; text: string };
 export type TemplateTask = {
@@ -44,12 +44,17 @@ export async function assertTarget(kind: ProductionKind, ownerId: string, target
   if (!data) throw new Error(KINDS[kind].notFound);
 }
 
-// Ficha inicial (campos que já eram usados no ClickUp) — vale até o dono
-// salvar a própria.
+// Ficha inicial (campos que já eram usados no ClickUp + os que saíram do
+// antigo Cadastro) — vale até o dono salvar a própria. "nicho" aparece embaixo
+// do nome do produto (productNiches em products.functions.ts).
 const DEFAULT_PRODUCT_FIELDS: ProductionField[] = [
+  { id: "nicho", label: "Nicho", type: "text" },
+  { id: "fornecedor", label: "Fornecedor", type: "text" },
+  { id: "preco_venda", label: "Preço de venda", type: "currency" },
   { id: "link_fornecedor", label: "Link do fornecedor", type: "link" },
   { id: "link_pagina", label: "Link da página do produto", type: "link" },
   { id: "pasta_criativos", label: "Pasta de criativos", type: "link" },
+  { id: "descricao", label: "Descrição", type: "longtext" },
 ];
 export const DEFAULT_FIELDS: ProductionField[] = [
   { id: "email_contato", label: "E-mail de contato", type: "email" },

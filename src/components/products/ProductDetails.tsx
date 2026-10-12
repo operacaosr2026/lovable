@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, Package, Tag as TagIcon, X } from "lucide-react";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getProduct, updateProduct } from "@/lib/products.functions";
 import { useProductStatuses } from "@/components/products/product-status";
@@ -9,17 +10,19 @@ import { ProductImages } from "@/components/products/ProductImages";
 import { ProductTemplates } from "@/components/products/ProductTemplates";
 import { ProductCreatives } from "@/components/products/ProductCreatives";
 import { ProductSales } from "@/components/products/ProductSales";
+import { ProductDiary } from "@/components/products/ProductDiary";
 import { ProductionTab } from "@/components/shops/StoreProduction";
 import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
 import { ProductPageTab } from "@/components/products/ProductPageTab";
 
 const TABS = [
-  { id: "cadastro", label: "Cadastro" },
+  { id: "vendas", label: "Vendas" },
+  { id: "diario", label: "Diário" },
+  { id: "informacoes", label: "Informações" },
   { id: "producao", label: "Produção" },
   { id: "imagens", label: "Imagens" },
   { id: "template", label: "Template da Página" },
   { id: "criativos", label: "Criativos" },
-  { id: "vendas", label: "Vendas" },
   { id: "pagina", label: "Página" },
   { id: "shopify", label: "Publicar nas lojas" },
 ] as const;
@@ -31,12 +34,13 @@ export function ProductDetails({ productId }: { productId: string }) {
   const get = useServerFn(getProduct);
   const updateFn = useServerFn(updateProduct);
 
-  const [tab, setTab] = useState<typeof TABS[number]["id"]>("cadastro");
+  const [tab, setTab] = useState<typeof TABS[number]["id"]>("vendas");
 
   const { data, isLoading } = useQuery({ queryKey: ["product", productId], queryFn: () => get({ data: { id: productId } }) });
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id: productId, patch } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["product", productId] }); qc.invalidateQueries({ queryKey: ["products"] }); },
+    onError: (e: any) => toast.error(e.message),
   });
 
   if (isLoading || !data) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
@@ -68,12 +72,18 @@ export function ProductDetails({ productId }: { productId: string }) {
         ))}
       </div>
 
-      {tab === "cadastro" && <CadastroTab product={product} onSave={(patch) => update.mutate(patch)} />}
-      {tab === "producao" && <ProductionTab kind="product" targetId={productId} />}
+      {tab === "informacoes" && (
+        <div className="space-y-6">
+          <FixedFields product={product} onSave={(patch) => update.mutate(patch)} />
+          <ProductionTab kind="product" targetId={productId} section="info" />
+        </div>
+      )}
+      {tab === "producao" && <ProductionTab kind="product" targetId={productId} section="tasks" />}
       {tab === "imagens" && <ProductImages productId={productId} />}
       {tab === "template" && <ProductTemplates productId={productId} />}
       {tab === "criativos" && <ProductCreatives productId={productId} />}
       {tab === "vendas" && <ProductSales productId={productId} />}
+      {tab === "diario" && <ProductDiary productId={productId} />}
       {tab === "pagina" && <ProductPageTab productId={productId} />}
       {tab === "shopify" && <ProductShopifyTab productId={productId} />}
     </div>
@@ -91,58 +101,58 @@ export function ProductDetailsDialog({ productId, onClose }: { productId: string
   );
 }
 
-function CadastroTab({ product, onSave }: { product: any; onSave: (patch: any) => void }) {
+// Campos fixos (não vêm do template): custo e palavras-chave alimentam o custo
+// dos pedidos no dashboard. Salvam ao sair do campo.
+function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) => void }) {
   const [name, setName] = useState(product.name);
-  const [niche, setNiche] = useState(product.niche ?? "");
-  const [supplier, setSupplier] = useState(product.supplier ?? "");
   const [cost, setCost] = useState(String(product.cost ?? 0));
-  const [salePrice, setSalePrice] = useState(String(product.sale_price ?? 0));
-  const [description, setDescription] = useState(product.description ?? "");
   const { statuses } = useProductStatuses();
-  const [statusId, setStatusId] = useState<string>(product.board_column_id ?? "");
-  const [keywords, setKeywords] = useState<string[]>(product.keywords ?? []);
   const [keywordInput, setKeywordInput] = useState("");
+  const keywords: string[] = product.keywords ?? [];
+  useEffect(() => { setName(product.name); }, [product.name]);
+  useEffect(() => { setCost(String(product.cost ?? 0)); }, [product.cost]);
 
+  const saveName = () => {
+    const v = name.trim();
+    if (!v) setName(product.name);
+    else if (v !== product.name) onSave({ name: v });
+  };
+  const saveCost = () => {
+    const v = Number(cost.replace(",", "."));
+    if (!Number.isFinite(v) || v < 0) setCost(String(product.cost ?? 0));
+    else if (v !== Number(product.cost ?? 0)) onSave({ cost: v });
+  };
   const addKeyword = () => {
     const v = keywordInput.trim();
-    if (v && !keywords.some((k) => k.toLowerCase() === v.toLowerCase())) setKeywords([...keywords, v]);
     setKeywordInput("");
+    if (v && !keywords.some((k) => k.toLowerCase() === v.toLowerCase())) onSave({ keywords: [...keywords, v] });
   };
-
-  const save = () => onSave({
-    name: name.trim() || product.name,
-    niche: niche.trim() || null,
-    supplier: supplier.trim() || null,
-    cost: Number(cost) || 0,
-    sale_price: Number(salePrice) || 0,
-    description: description.trim() || null,
-    ...(statusId && statusId !== product.board_column_id ? { board_column_id: statusId } : {}),
-    keywords,
-  });
+  const inputCls = "w-full px-3 h-9 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50";
 
   return (
-    <div className="max-w-2xl space-y-4">
-      <Field label="Nome do produto"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50" /></Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Nicho"><input value={niche} onChange={(e) => setNiche(e.target.value)} className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none" /></Field>
-        <Field label="Fornecedor"><input value={supplier} onChange={(e) => setSupplier(e.target.value)} className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none" /></Field>
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Custo (USD)"><input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none tabular-nums" /></Field>
-        <Field label="Preço de venda (USD)"><input type="number" step="0.01" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none tabular-nums" /></Field>
-        <Field label="Status">
-          <select value={statusId} onChange={(e) => setStatusId(e.target.value)} className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer">
-            {!statusId && <option value="">—</option>}
-            {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+    <section className="space-y-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2.5">
+        <Field label="Nome do produto">
+          <input value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className={inputCls} />
         </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Custo (USD)">
+            <input type="number" step="0.01" min="0" value={cost} onChange={(e) => setCost(e.target.value)} onBlur={saveCost} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className={`${inputCls} tabular-nums`} />
+          </Field>
+          <Field label="Status">
+            <select value={product.board_column_id ?? ""} onChange={(e) => e.target.value && onSave({ board_column_id: e.target.value })} className={`${inputCls} cursor-pointer`}>
+              {!product.board_column_id && <option value="">—</option>}
+              {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+        </div>
       </div>
       <Field label="Palavras-chave (para identificar este produto nos pedidos)">
-        <div className="flex flex-wrap gap-1.5 items-center px-3 py-2 rounded-lg bg-surface border border-border">
+        <div className="flex flex-wrap gap-1.5 items-center px-3 py-1.5 rounded-lg bg-background border border-border">
           {keywords.map((k) => (
             <span key={k} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted">
               <TagIcon className="size-3" /> {k}
-              <button type="button" onClick={() => setKeywords(keywords.filter((x) => x !== k))}><X className="size-3" /></button>
+              <button type="button" onClick={() => onSave({ keywords: keywords.filter((x) => x !== k) })}><X className="size-3" /></button>
             </span>
           ))}
           <input
@@ -155,18 +165,14 @@ function CadastroTab({ product, onSave }: { product: any; onSave: (patch: any) =
           />
         </div>
       </Field>
-      <Field label="Descrição"><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm outline-none resize-none" /></Field>
-      <div className="flex justify-end">
-        <button onClick={save} className="h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium">Salvar</button>
-      </div>
-    </div>
+    </section>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">{label}</div>
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
       {children}
     </label>
   );

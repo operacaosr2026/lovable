@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { RefreshCw, ShoppingBag } from "lucide-react";
 import { getProductMonthlySales } from "@/lib/products.functions";
+import { ProductDashboard } from "@/components/products/ProductDashboard";
 
 const PERIODS = [
   { months: 6, label: "6 meses" },
@@ -33,7 +34,10 @@ export function ProductSales({ productId }: { productId: string }) {
   const totals = data?.totals ?? { units: 0, revenue: 0, pedidos: 0 };
 
   return (
+    <div className="space-y-8">
+    <ProductDashboard productId={productId} />
     <div className="max-w-3xl space-y-4">
+      <h3 className="text-sm font-semibold">Vendas por mês</h3>
       {/* Vendas são contadas casando o título dos itens do pedido com o nome/
           palavras-chave do produto (aba Cadastro) — mesmo mecanismo que já
           identifica o custo do produto no Caixa e em Pedidos. Não existe uma
@@ -76,7 +80,7 @@ export function ProductSales({ productId }: { productId: string }) {
           <div className="p-8 text-center text-sm text-muted-foreground flex flex-col items-center gap-2">
             <ShoppingBag className="size-6 text-muted-foreground/50" />
             Nenhuma venda encontrada no período. Confira se o nome/palavras-chave
-            do produto (aba Cadastro) batem com o título nos pedidos.
+            do produto (aba Informações) batem com o título nos pedidos.
           </div>
         )}
 
@@ -107,6 +111,7 @@ export function ProductSales({ productId }: { productId: string }) {
       {isFetching && !isLoading && (
         <div className="text-xs text-muted-foreground">Atualizando...</div>
       )}
+    </div>
     </div>
   );
 }

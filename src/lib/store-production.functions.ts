@@ -35,7 +35,7 @@ async function assertAssignee(ownerId: string, assigneeId: string | null | undef
 const FieldsInput = z.array(z.object({
   id: z.string().min(1).max(60),
   label: z.string().trim().min(1).max(100),
-  type: z.enum(["text", "link", "email", "currency"]),
+  type: z.enum(["text", "longtext", "link", "email", "currency"]),
 })).max(50);
 
 const PresetInput = z.object({
@@ -43,7 +43,7 @@ const PresetInput = z.object({
   scope: Kind,
   name: z.string().trim().min(1).max(100),
   is_default: z.boolean(),
-  values: z.record(z.string().min(1).max(60), z.string().max(2000)),
+  values: z.record(z.string().min(1).max(60), z.string().max(5000)),
   tasks: z.array(z.object({
     id: z.string().min(1).max(60),
     title: z.string().trim().min(1).max(200),
@@ -186,7 +186,7 @@ export const setProductionValue = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => TargetInput.extend({
     field_id: z.string().min(1).max(60),
-    value: z.string().max(2000),
+    value: z.string().max(5000),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const K = KINDS[data.kind];
