@@ -66,8 +66,19 @@ function translateUsEvent(description: string, location: string | null): { descr
   return hit ? { description: hit[1], place } : null;
 }
 
-// "MA, US, Parcel has been delivered." → tira o prefixo de local do texto.
-const stripLocationPrefix = (d: string) => d.replace(/^([A-Za-z .]+,\s*)?(US|USA)\s*,\s*/i, "").trim();
+// Timeline gravada pelo sync (event_time_utc/event_detail) — e o formato antigo
+// do Track123 (eventTimeZeroUTC/eventDetail), que ainda existe em pedidos antigos.
+export function rawEvents(timeline: any[] | null | undefined): DisplayEvent[] {
+  return (timeline ?? []).map((e: any) => ({
+    at: e?.event_time_utc ? `${String(e.event_time_utc).replace(" ", "T")}Z` : (e?.eventTimeZeroUTC ?? e?.time_utc ?? null),
+    description: String(e?.event_detail ?? e?.eventDetail ?? e?.description ?? "").trim(),
+    location: (e?.event_location || e?.address || e?.location || null) as string | null,
+  }));
+}
+
+// "MA, US, Parcel has been delivered." → tira o prefixo de local do texto; e a
+// cópia "(中文:…)" que a transportadora repete no fim ("Delivered. Position: Front door(中文:…)").
+const stripLocationPrefix = (d: string) => d.replace(/\s*[(（]中文[:：][^)）]*[)）]?\s*$/, "").replace(/^([A-Za-z .]+,\s*)?(US|USA)\s*,\s*/i, "").trim();
 
 export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
   const seen = new Set<string>();

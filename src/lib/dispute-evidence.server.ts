@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
 import { emailText } from "@/lib/support-ai.server";
+import { rawEvents, sanitizeEvents } from "@/lib/tracking-display";
 import type { DisputeEvidence } from "@/lib/dispute-evidence.functions";
 
 // Lógica das provas de chargeback (só servidor): junta os dados pros PDFs.
@@ -89,12 +90,12 @@ export async function collectEvidence(ownerId: string, disputeId: string): Promi
     ? await supabaseAdmin.from("shop_order_tracking").select("carrier,tracking_number,tracking_status,last_event_label,last_event_at,timeline").eq("order_id", order.id).maybeSingle()
     : { data: null };
   const fulfillment = ((raw?.fulfillments ?? []) as any[]).filter((f) => f.status !== "cancelled").at(-1);
-  const events = ((tracking?.timeline ?? []) as any[]).map((e) => ({
-    time: e.event_time_utc ? `${e.event_time_utc} UTC` : e.event_time ?? null,
-    description: String(e.event_detail ?? e.description ?? "").trim(), location: e.event_location || null,
-  })).filter((e) => e.description);
+  // Mesma limpeza da página de rastreio da loja (sem chinês, alfândega, aeroporto, local fora dos EUA).
+  const events = sanitizeEvents(rawEvents(tracking?.timeline as any[]))
+    .map((e) => ({ time: e.at, description: e.description, location: e.location }));
   if (!events.length && (tracking?.last_event_label || snap?.track?.lastLabel)) {
-    events.push({ time: tracking?.last_event_at ?? snap?.track?.lastAt ?? null, description: tracking?.last_event_label ?? snap?.track?.lastLabel, location: null });
+    const last = sanitizeEvents([{ at: tracking?.last_event_at ?? snap?.track?.lastAt ?? null, description: tracking?.last_event_label ?? snap?.track?.lastLabel, location: null }]);
+    events.push(...last.map((e) => ({ time: e.at, description: e.description, location: e.location })));
   }
   const delivered = order?.delivery_status === "delivered" || snap?.track?.status === "delivered";
 

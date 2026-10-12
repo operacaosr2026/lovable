@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sanitizeEvents, buildSteps, officialEdd, usPlace, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
+import { rawEvents, sanitizeEvents, buildSteps, officialEdd, usPlace, type DisplayEdd, type DisplayEvent, type DisplayStep } from "@/lib/tracking-display";
 
 // Rastreio público (página /track do sistema e página de rastreio da loja
 // Voultie via /api/public/track), sem login, uma URL pra todas as lojas e
@@ -33,16 +33,6 @@ function normalizeStatus(raw: string | null | undefined, delivered: boolean): st
   if (s.includes("inforeceived") || s.includes("pending")) return "InfoReceived";
   if (s.includes("notfound")) return "NotFound";
   return null;
-}
-
-// Timeline gravada pelo sync (event_time_utc/event_detail) — e o formato antigo
-// do Track123 (eventTimeZeroUTC/eventDetail), que ainda existe em pedidos antigos.
-function rawEvents(timeline: any[] | null | undefined): DisplayEvent[] {
-  return (timeline ?? []).map((e: any) => ({
-    at: e?.event_time_utc ? `${String(e.event_time_utc).replace(" ", "T")}Z` : (e?.eventTimeZeroUTC ?? e?.time_utc ?? null),
-    description: String(e?.event_detail ?? e?.eventDetail ?? e?.description ?? "").trim(),
-    location: (e?.event_location || e?.address || e?.location || null) as string | null,
-  }));
 }
 
 const ORDER_COLS = "id,order_number,order_date,delivered_at,delivery_status,tracking_code,created_at:raw->>created_at,city:raw->shipping_address->>city,province:raw->shipping_address->>province_code,country:raw->shipping_address->>country_code";
