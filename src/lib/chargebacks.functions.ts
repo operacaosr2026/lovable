@@ -7,6 +7,7 @@ import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { fetchWithRetry } from "@/lib/http";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { sanitizeEvents } from "@/lib/tracking-display";
 import { fetchShopifyDisputes, upsertShopDisputes } from "@/lib/shopify-disputes.server";
 import { runSeventeenTrackSync, seventeenTrackStatus } from "@/lib/seventeen-track.server";
 
@@ -14,6 +15,10 @@ import { runSeventeenTrackSync, seventeenTrackStatus } from "@/lib/seventeen-tra
 // cruzada com o pedido (produto, data), o rastreio (situação e último evento),
 // os alertas (tags Ethoca/CDRN/RDR) e o Atendimento (cliente falou com a gente?).
 // Acesso: admin, ou membro com a permissão "chargebacks".
+
+// Último evento com a mesma limpeza da página de rastreio (sem chinês, "(中文:…)", alfândega…).
+const cleanLabel = (label: string | null | undefined) =>
+  label ? sanitizeEvents([{ at: null, description: label, location: null }])[0]?.description ?? null : null;
 
 export type ChargebackRow = {
   id: string; shopId: string; shopName: string; type: string; status: string | null; reason: string | null;
@@ -280,7 +285,7 @@ export const getChargebacks = createServerFn({ method: "GET" })
         productImage: o ? matchProduct(((o.items ?? []) as any[])[0]?.title)?.url ?? null : null,
         productGroup: o ? matchProduct(((o.items ?? []) as any[])[0]?.title)?.name ?? (((o.items ?? []) as any[])[0]?.title ?? null) : null,
         deliveryStatus: o?.delivery_status ?? null, shippedAt: o?.shipped_at ?? null, deliveredAt: o?.delivered_at ?? null,
-        lastEvent: t?.last_event_label ?? o?.last_event_label ?? null, lastEventAt: t?.last_event_at ?? o?.last_event_at ?? null,
+        lastEvent: cleanLabel(t?.last_event_label ?? o?.last_event_label), lastEventAt: t?.last_event_at ?? o?.last_event_at ?? null,
         trackingCode: o?.tracking_code ?? null,
         trackingUrl: (o?.tracking_code ? buildTrackingUrl(templateByShop.get(d.shop_id), o.tracking_code) : null) ?? o?.tracking_url ?? null,
         alerts: [...new Set(String(o?.tags ?? "").split(",").map((x) => x.trim()).filter((x) => /^(ethoca|cdrn|rdr)$/i.test(x)))],
