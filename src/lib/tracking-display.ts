@@ -107,6 +107,8 @@ export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
       // "Delivered to local carrier" é repasse entre transportadoras, não entrega
       // — pro cliente não achar que já chegou.
       if (/^delivered to\b/i.test(description)) description = "Arrived at local delivery facility";
+      // "Acceptance" = postagem (o correio recebeu o pacote).
+      else if (/^acceptance\.?$/i.test(description)) description = "Package received by carrier";
     }
     // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
     const key = `${location}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
