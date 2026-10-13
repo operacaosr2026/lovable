@@ -4,6 +4,7 @@ import { fetchWithRetry } from "@/lib/http";
 import type { Database } from "@/integrations/supabase/types";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
+import { loadNoticeMatcher, openNoticeConversationIds } from "@/lib/support-notices.server";
 
 // Atendimento: conversa com a API do Zoho Mail (OAuth, listar, ler, responder)
 // e espelha os cabeçalhos dos e-mails em support_messages / support_conversations.
@@ -266,7 +267,13 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
     await recomputeConversations(ownerId, touched, { firstSync });
     try { await assignConversationShops(ownerId, touched); await clearSystemError(ownerId, "support_assign_shops"); }
     catch (e) { console.error("assign shops", e); await reportSystemError(ownerId, "support_assign_shops", "Atendimento: loja das conversas não foi identificada", e, "/atendimento"); }
-    try { await autoResolveStale(ownerId); await clearSystemError(ownerId, "support_auto_resolve"); }
+    try {
+      await autoResolveStale(ownerId);
+      // Conversas abertas só por aviso da aba Notificações (inclusive as de antes desta regra).
+      const noticeIds = (await openNoticeConversationIds(ownerId)).filter((id) => !touched.includes(id));
+      if (noticeIds.length) await recomputeConversations(ownerId, noticeIds);
+      await clearSystemError(ownerId, "support_auto_resolve");
+    }
     catch (e) { console.error("auto resolve", e); await reportSystemError(ownerId, "support_auto_resolve", "Atendimento: conversas paradas não foram resolvidas automaticamente", e, "/atendimento"); }
 
     // IA nos e-mails novos: tags automáticas + tradução pro português (falha aqui não derruba a sincronização).
@@ -416,6 +423,7 @@ export async function recomputeConversations(ownerId: string, ids: string[], opt
     if (error) throw new Error(error.message);
     const byConv = new Map<string, any[]>();
     for (const m of msgs) (byConv.get(m.conversation_id) ?? byConv.set(m.conversation_id, []).get(m.conversation_id)!).push(m);
+    const isNotice = await loadNoticeMatcher(ownerId, (convs ?? []).map((c) => c.customer_email));
 
     await Promise.all((convs ?? []).map(async (c) => {
       const list = byConv.get(c.id) ?? [];
@@ -436,6 +444,13 @@ export async function recomputeConversations(ownerId: string, ids: string[], opt
         status = newOut ? "em_atendimento" : "novo"; resolvedAt = null;
       }
       if (status === "novo" && newOut) status = "em_atendimento";
+      // Aviso da aba Notificações por último: não é atendimento, vai direto pra
+      // resolvido — a não ser que o cliente esteja esperando resposta de antes.
+      // Se ele responder o aviso, a regra acima volta a conversa pra caixa.
+      if (status !== "resolvido" && isNotice(c.customer_email, last.direction, last.subject)) {
+        const lastReal = [...list].reverse().find((m) => !isNotice(c.customer_email, m.direction, m.subject));
+        if (!lastReal || lastReal.direction === "out") { status = "resolvido"; resolvedAt = last.sent_at; }
+      }
       // 1ª sincronização: o que está parado há mais de 7 dias entra como resolvido.
       if (opts.firstSync && t(last.sent_at) < Date.now() - 7 * 86_400_000) {
         status = "resolvido"; resolvedAt = last.sent_at;

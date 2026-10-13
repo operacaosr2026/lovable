@@ -16,6 +16,7 @@ import { supportAiAvailable, translateEmailHtml, translateReplyToEnglish, transl
 import { AUTO_REPLY_SCRIPT } from "@/lib/support-autoreply.server";
 import { buildBody, senderName } from "@/lib/support-body.server";
 import { supportExtraKpis } from "@/lib/support-kpis-extra.server";
+import { loadNoticeMatcher, withoutNotices } from "@/lib/support-notices.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
   ZOHO_SCOPES, getZohoAccount, resolveAppOrigin, syncZohoMailbox, recomputeConversations,
@@ -149,6 +150,8 @@ export type SupportConversation = {
   note: string | null; resolved_at: string | null; ai_tags: string[]; shop_id: string | null;
   // Resposta automática do último e-mail do cliente (support-autoreply.server.ts).
   auto_reply?: "enviado" | "equipe" | null;
+  // No período só teve aviso da aba Notificações: fica fora dos indicadores.
+  notice_only?: boolean;
 };
 
 // Horário comercial salvo (Configurações > Metas); sem linha, o padrão.
@@ -176,8 +179,8 @@ export const listSupportConversations = createServerFn({ method: "GET" })
       // Status atuais (independem do período): em aberto, aguardando, não lidos.
       selectAll<{ status: string; unread_count: number }>(supabaseAdmin.from("support_conversations")
         .select("status,unread_count").eq("owner_id", ownerId).or("status.neq.resolvido,unread_count.gt.0")),
-      selectAll<{ conversation_id: string; direction: string; sent_at: string }>(supabaseAdmin.from("support_messages")
-        .select("conversation_id,direction,sent_at").eq("owner_id", ownerId)
+      selectAll<{ conversation_id: string; direction: string; sent_at: string; subject: string | null }>(supabaseAdmin.from("support_messages")
+        .select("conversation_id,direction,sent_at,subject").eq("owner_id", ownerId)
         .gte("sent_at", data.from).lte("sent_at", new Date(new Date(data.to).getTime() + 7 * 86_400_000).toISOString())),
       supabaseAdmin.from("support_settings").select(BH_COLS).eq("owner_id", ownerId).maybeSingle(),
     ]);
@@ -186,12 +189,16 @@ export const listSupportConversations = createServerFn({ method: "GET" })
 
     const open = openRes.data;
     const to = new Date(data.to).getTime();
-    const received = msgRes.data.filter((m) => m.direction === "in" && new Date(m.sent_at).getTime() <= to);
+    // Avisos da aba Notificações não contam como resposta nem como conversa.
+    const isNotice = await loadNoticeMatcher(ownerId, convRes.data.map((c) => c.customer_email));
+    const { messages: msgs, noticeOnly } = withoutNotices(msgRes.data, convRes.data, isNotice);
+    for (const c of convRes.data) if (noticeOnly.has(c.id)) c.notice_only = true;
+    const received = msgs.filter((m) => m.direction === "in" && new Date(m.sent_at).getTime() <= to);
 
     // Tempo de resposta: da 1ª mensagem do cliente sem resposta até a nossa
     // resposta, contando só o horário comercial.
     const byConv = new Map<string, { direction: string; t: number }[]>();
-    for (const m of msgRes.data) {
+    for (const m of msgs) {
       (byConv.get(m.conversation_id) ?? byConv.set(m.conversation_id, []).get(m.conversation_id)!)
         .push({ direction: m.direction, t: new Date(m.sent_at).getTime() });
     }
@@ -223,7 +230,7 @@ export const listSupportConversations = createServerFn({ method: "GET" })
         received: received.length,
         unread: open.filter((c) => c.unread_count > 0).length,
         inProgress: open.filter((c) => c.status === "em_atendimento").length,
-        resolved: conversations.filter((c) => c.status === "resolvido" && c.resolved_at && c.resolved_at >= data.from && c.resolved_at <= data.to).length,
+        resolved: conversations.filter((c) => !c.notice_only && c.status === "resolvido" && c.resolved_at && c.resolved_at >= data.from && c.resolved_at <= data.to).length,
         avgResponseMs: waits.length ? Math.round(waits.reduce((s, x) => s + x, 0) / waits.length) : null,
         responses: waits.length,
         hours,
@@ -243,24 +250,26 @@ export const getSupportKpis = createServerFn({ method: "GET" })
     try { await assignConversationShops(ownerId); } catch (e) { console.error("assign shops", e); }
     // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
     const until = new Date(new Date(range.to).getTime() + 7 * 86_400_000).toISOString();
-    const [msgs, convs, shops, settings, activeShops] = await Promise.all([
-      selectAll<KpiMessage>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at")
+    const [msgs, convs, shops, settings, activeShops, isNotice] = await Promise.all([
+      selectAll<KpiMessage & { subject: string | null }>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at,subject")
         .eq("owner_id", ownerId).gte("sent_at", range.prevFrom).lte("sent_at", until)),
-      selectAll<KpiConversation>(supabaseAdmin.from("support_conversations")
-        .select("id,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
+      selectAll<KpiConversation & { customer_email: string }>(supabaseAdmin.from("support_conversations")
+        .select("id,customer_email,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
         .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
       supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
       supabaseAdmin.from("support_settings").select(`tags,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", ownerId).maybeSingle(),
       // Lojas dos grupos ativos: aparecem na tabela por loja mesmo zeradas.
       companyShopIdsForMonth(ownerId, `${data.month}-01`).catch(() => [] as string[]),
+      loadNoticeMatcher(ownerId),
     ]);
     if (msgs.error) throw new Error(msgs.error.message);
     if (convs.error) throw new Error(convs.error.message);
+    const { messages: kpiMsgs, conversations: kpiConvs } = withoutNotices(msgs.data, convs.data, isNotice);
     // Efeito no dinheiro (contato → banco, contatos por 100 pedidos, recontato); não derruba a tela se falhar.
     const extra = await supportExtraKpis(ownerId, range, activeShops).catch((e) => { console.error("support extra kpis", e); return null; });
     return {
       extra,
-      ...computeSupportKpis(msgs.data, convs.data, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data), activeShops),
+      ...computeSupportKpis(kpiMsgs, kpiConvs, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data), activeShops),
       partial: range.partial,
       goals: {
         firstResponseMin: settings.data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,

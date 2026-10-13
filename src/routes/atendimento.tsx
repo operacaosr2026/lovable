@@ -255,10 +255,12 @@ function Inboxes({ status }: { status: ZohoStatus }) {
 
   const k = list.data?.kpis;
   // Cards clicáveis: contam as conversas do período (as mesmas da lista).
+  // Conversa só com aviso da aba Notificações não entra nos indicadores.
+  const counted = conversations.filter((c) => !c.notice_only);
   const periodCounts = {
-    unanswered: conversations.filter(isUnanswered).length,
-    em_atendimento: conversations.filter((c) => c.status === "em_atendimento").length,
-    resolvido: conversations.filter((c) => c.status === "resolvido").length,
+    unanswered: counted.filter(isUnanswered).length,
+    em_atendimento: counted.filter((c) => c.status === "em_atendimento").length,
+    resolvido: counted.filter((c) => c.status === "resolvido").length,
   };
   const onlyStatus = (st: SupportStatus) => statusFilter.length === 1 && statusFilter[0] === st;
   const toggleStatusCard = (st: SupportStatus) => {
@@ -416,7 +418,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         <Kpi icon={Percent} cls="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" label="Taxa de resolução"
           hint="Conversas do período já resolvidas ÷ total de conversas do período"
           value={list.data
-            ? (conversations.length ? `${(Math.round((periodCounts.resolvido / conversations.length) * 1000) / 10).toLocaleString("pt-BR")}%` : "—")
+            ? (counted.length ? `${(Math.round((periodCounts.resolvido / counted.length) * 1000) / 10).toLocaleString("pt-BR")}%` : "—")
             : kv(undefined)} />
       </div>
 
