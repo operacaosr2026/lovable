@@ -45,6 +45,7 @@ import { Route as TrackIndexRouteImport } from "./routes/track.index";
 import { Route as TrackCodeRouteImport } from "./routes/track.$code";
 import { Route as ApiAtendimentoAttachmentRouteImport } from "./routes/api/atendimento/attachment";
 import { Route as ApiAtendimentoInlineRouteImport } from "./routes/api/atendimento/inline";
+import { Route as ApiPublicPixelRouteImport } from "./routes/api/public/pixel";
 import { Route as ApiPublicRecentDeliveriesRouteImport } from "./routes/api/public/recent-deliveries";
 import { Route as ApiPublicTrackRouteImport } from "./routes/api/public/track";
 import { Route as ShopsBancoDeLojasIndexRouteImport } from "./routes/shops.banco-de-lojas.index";
@@ -248,6 +249,11 @@ const ApiAtendimentoInlineRoute = ApiAtendimentoInlineRouteImport.update({
   path: "/api/atendimento/inline",
   getParentRoute: () => rootRouteImport,
 } as any);
+const ApiPublicPixelRoute = ApiPublicPixelRouteImport.update({
+  id: "/api/public/pixel",
+  path: "/api/public/pixel",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ApiPublicRecentDeliveriesRoute =
   ApiPublicRecentDeliveriesRouteImport.update({
     id: "/api/public/recent-deliveries",
@@ -402,6 +408,7 @@ export interface FileRoutesByFullPath {
   "/track/": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
+  "/api/public/pixel": typeof ApiPublicPixelRoute;
   "/api/public/recent-deliveries": typeof ApiPublicRecentDeliveriesRoute;
   "/api/public/track": typeof ApiPublicTrackRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
@@ -454,6 +461,7 @@ export interface FileRoutesByTo {
   "/track": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
+  "/api/public/pixel": typeof ApiPublicPixelRoute;
   "/api/public/recent-deliveries": typeof ApiPublicRecentDeliveriesRoute;
   "/api/public/track": typeof ApiPublicTrackRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
@@ -514,6 +522,7 @@ export interface FileRoutesById {
   "/track/": typeof TrackIndexRoute;
   "/api/atendimento/attachment": typeof ApiAtendimentoAttachmentRoute;
   "/api/atendimento/inline": typeof ApiAtendimentoInlineRoute;
+  "/api/public/pixel": typeof ApiPublicPixelRoute;
   "/api/public/recent-deliveries": typeof ApiPublicRecentDeliveriesRoute;
   "/api/public/track": typeof ApiPublicTrackRoute;
   "/shops/lojas-grupos/$cardId": typeof ShopsLojasGruposCardIdRoute;
@@ -575,6 +584,7 @@ export interface FileRouteTypes {
     | "/track/"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
+    | "/api/public/pixel"
     | "/api/public/recent-deliveries"
     | "/api/public/track"
     | "/shops/lojas-grupos/$cardId"
@@ -627,6 +637,7 @@ export interface FileRouteTypes {
     | "/track"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
+    | "/api/public/pixel"
     | "/api/public/recent-deliveries"
     | "/api/public/track"
     | "/shops/lojas-grupos/$cardId"
@@ -686,6 +697,7 @@ export interface FileRouteTypes {
     | "/track/"
     | "/api/atendimento/attachment"
     | "/api/atendimento/inline"
+    | "/api/public/pixel"
     | "/api/public/recent-deliveries"
     | "/api/public/track"
     | "/shops/lojas-grupos/$cardId"
@@ -730,6 +742,7 @@ export interface RootRouteChildren {
   TrackIndexRoute: typeof TrackIndexRoute;
   ApiAtendimentoAttachmentRoute: typeof ApiAtendimentoAttachmentRoute;
   ApiAtendimentoInlineRoute: typeof ApiAtendimentoInlineRoute;
+  ApiPublicPixelRoute: typeof ApiPublicPixelRoute;
   ApiPublicRecentDeliveriesRoute: typeof ApiPublicRecentDeliveriesRoute;
   ApiPublicTrackRoute: typeof ApiPublicTrackRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
@@ -997,6 +1010,13 @@ declare module "@tanstack/react-router" {
       path: "/api/atendimento/inline";
       fullPath: "/api/atendimento/inline";
       preLoaderRoute: typeof ApiAtendimentoInlineRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/public/pixel": {
+      id: "/api/public/pixel";
+      path: "/api/public/pixel";
+      fullPath: "/api/public/pixel";
+      preLoaderRoute: typeof ApiPublicPixelRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/public/recent-deliveries": {
@@ -1284,6 +1304,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrackIndexRoute: TrackIndexRoute,
   ApiAtendimentoAttachmentRoute: ApiAtendimentoAttachmentRoute,
   ApiAtendimentoInlineRoute: ApiAtendimentoInlineRoute,
+  ApiPublicPixelRoute: ApiPublicPixelRoute,
   ApiPublicRecentDeliveriesRoute: ApiPublicRecentDeliveriesRoute,
   ApiPublicTrackRoute: ApiPublicTrackRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,

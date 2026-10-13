@@ -5,7 +5,7 @@ import {
   Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  AlertTriangle, ArrowDownRight, ArrowUpRight, Check, DollarSign, Loader2, Megaphone, Package, Search,
+  AlertTriangle, ArrowDownRight, ArrowUpRight, Check, Copy, DollarSign, Loader2, Megaphone, Package, Search,
   Settings2, ShoppingCart, Target, TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,8 +13,9 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { isoTodayUS } from "@/lib/timezone";
 import {
-  getProductDashboard, listProductAdCampaignOptions, saveProductAdCampaigns,
+  getProductCreatives, getProductDashboard, getProductFunnel, listProductAdCampaignOptions, saveProductAdCampaigns,
 } from "@/lib/product-dashboard.functions";
+import { funnelPixelCode, type FunnelPixelRole } from "@/lib/product-funnel-pixel";
 
 const addDays = (iso: string, n: number) => {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
@@ -156,8 +157,218 @@ export function ProductDashboard({ productId }: { productId: string }) {
         </div>
       </section>
 
+      <FunnelCard productId={productId} range={range} />
+
+      <CreativesTable productId={productId} range={range} />
+
       {configOpen && <CampaignsDialog productId={productId} onClose={() => setConfigOpen(false)} />}
     </div>
+  );
+}
+
+function CreativesTable({ productId, range }: { productId: string; range: { from: string; to: string } }) {
+  const fn = useServerFn(getProductCreatives);
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ["product-dashboard", productId, "creatives", range.from, range.to],
+    queryFn: () => fn({ data: { product_id: productId, ...range } }),
+    staleTime: 5 * 60_000,
+  });
+  const configured = !!data?.configured;
+  const rows = data?.rows ?? [];
+  const th = "px-3 py-2 text-right font-medium";
+  const td = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="font-semibold text-sm">Por criativo</span>
+        {isFetching && !isLoading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        Pela UTM do pedido (utm_content = ID do anúncio). Nome e gasto vêm da Meta{configured ? "" : " — configure as campanhas pra ver gasto, ROAS e lucro"}.
+      </p>
+      {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+      {data && data.errors.length > 0 && (
+        <div className="mb-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs flex items-start gap-2">
+          <AlertTriangle className="size-3.5 text-warning shrink-0 mt-0.5" />
+          <span>Dados incompletos — {data.errors.join("; ")}</span>
+        </div>
+      )}
+      {isLoading ? (
+        <div className="py-8 flex justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : rows.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">Nenhuma venda no período.</p>
+      ) : (
+        <div className="overflow-x-auto -mx-4 px-4">
+          <table className="w-full text-xs">
+            <thead className="text-muted-foreground border-b border-border">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Criativo</th>
+                <th className={th}>Pedidos</th>
+                <th className={th}>Faturamento</th>
+                {configured && <th className={th}>Gasto</th>}
+                {configured && <th className={th}>ROAS</th>}
+                {configured && <th className={th}>CPA</th>}
+                {configured && <th className={th}>Lucro</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => {
+                const lucro = r.faturamento - r.custo - r.gasto;
+                return (
+                  <tr key={r.key} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 max-w-[280px]">
+                      <p className={`truncate font-medium ${r.key === "none" ? "text-muted-foreground" : ""}`} title={r.nome}>{r.nome}</p>
+                      {r.ad_id && <p className="text-[10px] text-muted-foreground truncate">{r.utm_medium && r.utm_medium !== r.nome ? `${r.utm_medium} · ` : ""}{r.ad_id}</p>}
+                    </td>
+                    <td className={td}>{fmtInt(r.pedidos)}</td>
+                    <td className={td}>{fmtMoney(r.faturamento)}</td>
+                    {configured && <td className={td}>{r.key === "none" || !r.ad_id ? "—" : fmtMoney(r.gasto)}</td>}
+                    {configured && <td className={td}>{r.gasto > 0 ? `${(r.faturamento / r.gasto).toFixed(2)}x` : "—"}</td>}
+                    {configured && <td className={td}>{r.gasto > 0 && r.pedidos > 0 ? fmtMoney(r.gasto / r.pedidos) : "—"}</td>}
+                    {configured && <td className={`${td} font-semibold ${lucro >= 0 ? "text-success" : "text-destructive"}`}>{fmtMoney(lucro)}</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const fmtPct = (n: number) => `${(n * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+
+function FunnelCard({ productId, range }: { productId: string; range: { from: string; to: string } }) {
+  const fn = useServerFn(getProductFunnel);
+  const [pixelOpen, setPixelOpen] = useState(false);
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ["product-dashboard", productId, "funnel", range.from, range.to],
+    queryFn: () => fn({ data: { product_id: productId, ...range } }),
+    staleTime: 5 * 60_000,
+  });
+  const cur = data?.installed ? data.cur : null;
+  const prev = data?.installed ? data.prev : null;
+  const steps = cur ? [
+    { label: "Sessões", value: cur.sessions, prev: prev?.sessions },
+    { label: "Chegou ao checkout", value: cur.checkouts, prev: prev?.checkouts },
+    { label: "Checkout concluído", value: cur.orders, prev: prev?.orders },
+  ] : [];
+  const base = cur?.sessions ?? 0;
+  const share = (v: number) => (base > 0 ? Math.min(v / base, 1) : 0);
+  const rate = cur && base > 0 ? cur.orders / base : null;
+  const prevRate = prev && prev.sessions > 0 ? prev.orders / prev.sessions : null;
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="font-semibold text-sm">Funil de conversão</span>
+        {isFetching && !isLoading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+        <button onClick={() => setPixelOpen(true)} className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
+          <Settings2 className="size-3.5" /> Pixels
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        Sessões: visitantes da página do produto na matriz (1 por dia). Checkout: checkouts iniciados nas sublojas com o produto. Concluído: pedidos do produto.
+        {data?.installed && ` Contando desde ${data.since.slice(8, 10)}/${data.since.slice(5, 7)}.`}
+      </p>
+      {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+      {isLoading ? (
+        <div className="py-8 flex justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : data && !data.installed ? (
+        <div className="py-6 text-center text-xs text-muted-foreground space-y-2">
+          <p>Nenhum evento recebido ainda. Instale o pixel na matriz e nas sublojas pra começar a contar.</p>
+          <button onClick={() => setPixelOpen(true)} className="text-primary font-medium hover:underline">Ver código dos pixels</button>
+        </div>
+      ) : cur && (
+        <>
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className="text-2xl font-semibold tabular-nums">{rate === null ? "—" : fmtPct(rate)}</span>
+            {rate !== null && prevRate !== null && prevRate > 0 && <FunnelDelta curr={rate} prev={prevRate} />}
+          </div>
+          <div className="grid grid-cols-3 border-t border-border">
+            {steps.map((s, i) => {
+              const h = share(s.value) * 100;
+              const next = steps[i + 1];
+              return (
+                <div key={s.label} className={`min-w-0 pt-3 ${i > 0 ? "border-l border-border" : ""}`}>
+                  <div className={`min-h-[3.25rem] ${i > 0 ? "pl-3" : ""}`}>
+                    <p className="text-xs text-muted-foreground truncate">{s.label}</p>
+                    <p className="text-sm tabular-nums flex items-center gap-2 flex-wrap">
+                      <span>{base > 0 ? fmtPct(share(s.value)) : "—"} <span className="font-semibold">{fmtInt(s.value)}</span></span>
+                      {s.prev !== undefined && s.prev > 0 && <FunnelDelta curr={s.value} prev={s.prev} />}
+                    </p>
+                  </div>
+                  <div className="h-40 flex items-end mt-2">
+                    <div className="h-full flex-[3] flex items-end">
+                      <div className="w-full rounded-t-sm bg-primary" style={{ height: `${h}%` }} />
+                    </div>
+                    <div className="h-full flex-1">
+                      {next && (
+                        <div className="h-full bg-primary/35"
+                          style={{ clipPath: `polygon(0 ${100 - h}%, 100% ${100 - share(next.value) * 100}%, 100% 100%, 0 100%)` }} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {pixelOpen && <PixelDialog onClose={() => setPixelOpen(false)} />}
+    </section>
+  );
+}
+
+function FunnelDelta({ curr, prev }: { curr: number; prev: number }) {
+  const pct = Math.round(((curr - prev) / prev) * 100);
+  const up = pct >= 0;
+  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${up ? "text-success" : "text-muted-foreground"}`}>
+      <Icon className="size-3" />{Math.abs(pct)}%
+    </span>
+  );
+}
+
+function PixelDialog({ onClose }: { onClose: () => void }) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const blocks: { role: FunnelPixelRole; title: string; hint: string }[] = [
+    { role: "matriz", title: "Matriz", hint: "Conta as sessões (visualização da página do produto)." },
+    { role: "subloja", title: "Sublojas", hint: "O mesmo código em todas as sublojas. Conta o checkout iniciado." },
+  ];
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogTitle>Pixels do funil</DialogTitle>
+        <p className="text-xs text-muted-foreground">
+          Em cada loja: Shopify → Configurações → Eventos de clientes → Adicionar pixel personalizado. Cole o código, salve e clique em Conectar.
+          Vale pra todos os produtos.
+        </p>
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+          {blocks.map((b) => {
+            const code = funnelPixelCode(origin, b.role);
+            return (
+              <div key={b.role} className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">{b.title}</span>
+                  <span className="text-[11px] text-muted-foreground">{b.hint}</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(code).then(() => toast.success("Código copiado"))}
+                    className="ml-auto text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Copy className="size-3.5" /> Copiar
+                  </button>
+                </div>
+                <pre className="rounded-xl border border-border bg-muted/40 p-3 text-[11px] leading-relaxed overflow-x-auto">{code}</pre>
+              </div>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
