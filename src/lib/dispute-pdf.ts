@@ -361,8 +361,13 @@ function rebuttal(ev: DisputeEvidence): string {
   const delivered = ev.shipping.deliveredAt;
   const support = ev.store.supportEmail ?? "our support team";
   const contacted = ev.communications.some((m) => m.direction === "in");
-  const replied = ev.communications.some((m) => m.direction === "out");
+  const replied = ev.communications.some((m) => m.direction === "out" && !m.notice);
   const emails = ev.notifications.length > 0;
+  // Avisos de atraso (aba Notificações) mandados antes da disputa: a loja avisou o cliente por conta própria.
+  const updates = ev.communications.filter((m) => m.notice && m.sentAt.slice(0, 10) <= day(ev.dispute.initiatedAt));
+  const updatesLine = updates.length
+    ? `Before the dispute was filed, we proactively emailed the customer with a shipping update and the tracking link${updates.length > 1 ? ` ${updates.length} times` : ""} (${updates.map((m) => dateEn(m.sentAt)).join("; ")}), as shown in Customer Communication.`
+    : "";
   const address = ev.order.shippingAddress.filter(Boolean).join(", ");
   const deliveredLine = delivered
     ? `delivered on ${dateEn(delivered)}${tracking ? ` (tracking ${tracking})` : ""}`
@@ -378,6 +383,7 @@ function rebuttal(ev: DisputeEvidence): string {
         `Order ${order} was placed${placed} and shipped to the exact address provided at checkout${address ? ` (${address})` : ""}.`,
         `${tracking ? `Tracking number ${tracking} confirms` : "Carrier tracking confirms"} the package was delivered on ${dateEn(delivered)}, before the dispute was filed.`,
         emails && "The customer received our order confirmation and shipping confirmation emails, including the tracking link.",
+        updatesLine,
         !contacted && `At no point did the customer contact our support team (${support}) to report a missing package, which would have allowed us to investigate with the carrier.`,
         "The goods were delivered as agreed, so this charge is valid.", close,
       );
@@ -386,6 +392,7 @@ function rebuttal(ev: DisputeEvidence): string {
         `Order ${order} was placed${placed} and shipped promptly${tracking ? ` with tracking number ${tracking}` : ""}.`,
         `The dispute was filed on ${dateEn(ev.dispute.initiatedAt)}, while the package was still within the delivery window stated in our Shipping Policy, which the customer accepted at checkout.`,
         delivered ? `Tracking confirms the package was delivered on ${dateEn(delivered)}.` : "The latest tracking update shows the package moving normally through the carrier network.",
+        updatesLine,
         !contacted && `The customer did not contact our support team (${support}) before filing, which would have allowed us to help.`,
         "We fulfilled the order as agreed.", close,
       );

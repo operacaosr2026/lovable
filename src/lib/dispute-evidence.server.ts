@@ -123,6 +123,22 @@ export async function collectEvidence(ownerId: string, disputeId: string): Promi
     ? await supabaseAdmin.from("support_messages").select("direction,from_email,from_name,to_emails,subject,sent_at,content_html,summary")
         .eq("owner_id", ownerId).in("conversation_id", [...convIds]).order("sent_at").limit(40)
     : { data: [] as any[] };
+  // Avisos da aba Notificações: o histórico do Zoho só guarda o começo do texto
+  // desses e-mails (sem content_html), então o texto completo vem de order_notices.
+  const [{ data: notices }, { data: zoho }] = order?.id
+    ? await Promise.all([
+        supabaseAdmin.from("order_notices").select("to_email,subject,body,sent_at")
+          .eq("owner_id", ownerId).eq("order_id", order.id).eq("status", "enviado").not("sent_at", "is", null),
+        supabaseAdmin.from("zoho_mail_accounts").select("email,send_as,display_name").eq("owner_id", ownerId).maybeSingle(),
+      ])
+    : [{ data: [] as any[] }, { data: null }];
+  const noticeFrom = zoho ? (zoho.display_name ? `${zoho.display_name} <${zoho.send_as || zoho.email}>` : zoho.send_as || zoho.email) : null;
+  const noticeMsgs = ((notices ?? []) as any[]).map((n) => ({
+    sentAt: String(n.sent_at), direction: "out" as const, from: noticeFrom, to: n.to_email, subject: n.subject, body: String(n.body ?? ""), notice: true,
+  }));
+  // Mesmo e-mail que veio pelo Zoho (mesmo assunto, até 10 min de diferença): fica só a versão completa.
+  const isNotice = (m: any) => m.direction === "out" && noticeMsgs.some((n) =>
+    n.subject === m.subject && Math.abs(Date.parse(n.sentAt) - Date.parse(m.sent_at)) < 10 * 60_000);
 
   // Todas as políticas publicadas: a de frete vai na Documentação de frete; as
   // demais (reembolso, privacidade, termos, contato, aviso legal) em Outras provas.
@@ -170,11 +186,14 @@ export async function collectEvidence(ownerId: string, disputeId: string): Promi
       riskLevel: risk?.risk_level ?? null, riskFacts: Array.isArray(risk?.facts) ? (risk!.facts as any[]) : [],
     },
     products,
-    communications: ((msgs ?? []) as any[]).map((m) => ({
-      sentAt: m.sent_at, direction: m.direction === "out" ? "out" as const : "in" as const,
-      from: m.from_name ? `${m.from_name} <${m.from_email ?? ""}>` : m.from_email, to: m.to_emails, subject: m.subject,
-      body: htmlText(m.content_html, 8000) || m.summary || "",
-    })).filter((m) => m.body),
+    communications: [
+      ...((msgs ?? []) as any[]).filter((m) => !isNotice(m)).map((m) => ({
+        sentAt: m.sent_at, direction: m.direction === "out" ? "out" as const : "in" as const,
+        from: m.from_name ? `${m.from_name} <${m.from_email ?? ""}>` : m.from_email, to: m.to_emails, subject: m.subject,
+        body: htmlText(m.content_html, 8000) || m.summary || "",
+      })),
+      ...noticeMsgs,
+    ].filter((m) => m.body).sort((x, y) => x.sentAt.localeCompare(y.sentAt)),
     // E-mails automáticos da Shopify ao cliente (confirmação do pedido, confirmação
     // de envio…): também são contato com o cliente. Vêm dos eventos do pedido.
     notifications: ((gql?.order?.events?.nodes ?? []) as any[])

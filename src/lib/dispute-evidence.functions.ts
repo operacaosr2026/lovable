@@ -24,7 +24,8 @@ export type DisputeEvidence = {
   };
   payment: { method: string | null; last4: string | null; avs: string | null; cvv: string | null; riskLevel: string | null; riskFacts: { description: string; sentiment: string }[] };
   products: { title: string; description: string | null; imageUrl: string | null; productType: string | null }[];
-  communications: { sentAt: string; direction: "in" | "out"; from: string | null; to: string | null; subject: string | null; body: string }[];
+  // notice: aviso de atraso mandado pela aba Notificações (contato ativo da loja, não resposta).
+  communications: { sentAt: string; direction: "in" | "out"; from: string | null; to: string | null; subject: string | null; body: string; notice?: boolean }[];
   notifications: { sentAt: string; message: string }[];   // e-mails automáticos da Shopify ao cliente
   policies: { title: string; body: string; kind: "shipping" | "other" }[];
   limited: boolean;   // pedido antigo (fora do sistema): menos dados disponíveis
