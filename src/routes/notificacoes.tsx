@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
-  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Check,
+  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Check, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -192,7 +192,7 @@ function NotificacoesPage() {
             Nenhum pedido atrasado com esses filtros.
           </div>
         ) : (
-          <table className="w-full text-sm min-w-[1000px]">
+          <table className="w-full text-sm min-w-[1150px]">
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border text-left">
                 <th className="py-2.5 pl-4 pr-2 w-8">
@@ -203,6 +203,7 @@ function NotificacoesPage() {
                 <th className="font-medium py-2.5 px-2">Cliente</th>
                 <th className="font-medium py-2.5 px-2 text-center">Compra</th>
                 <th className="font-medium py-2.5 px-2">Rastreio</th>
+                <th className="font-medium py-2.5 px-2">Código de rastreio</th>
                 <th className="font-medium py-2.5 px-2">Último aviso</th>
               </tr>
             </thead>
@@ -239,12 +240,25 @@ function NotificacoesPage() {
                           {o.lastEventAt && <span className="text-foreground/80">{fmtDate(o.lastEventAt)} · </span>}{o.lastEvent}
                         </div>
                       )}
-                      {o.trackingUrl && (
-                        <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1">
-                          {o.trackingCode} <ExternalLink className="size-3" />
-                        </a>
-                      )}
+                    </td>
+                    <td className="py-3 px-2 whitespace-nowrap">
+                      {o.trackingCode ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {o.trackingUrl ? (
+                            <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline" title="Abrir a página de rastreio">
+                              {o.trackingCode} <ExternalLink className="size-3" />
+                            </a>
+                          ) : <span className="font-mono text-xs">{o.trackingCode}</span>}
+                          <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted" title="Copiar código" aria-label="Copiar código"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(o.trackingCode!).then(() => toast.success("Código copiado"), () => toast.error("Não foi possível copiar"));
+                            }}>
+                            <Copy className="size-3.5" />
+                          </button>
+                        </span>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
                     </td>
                     <td className="py-3 px-2">
                       {o.notices[0] ? (
