@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
-  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Check, Copy,
+  Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -253,21 +253,12 @@ function NotificacoesPage() {
                     </td>
                     <td className="py-3 px-2 whitespace-nowrap">
                       {o.trackingCode ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          {o.trackingUrl ? (
-                            <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                              className="group inline-flex items-center gap-1 text-[13px] tabular-nums tracking-wide hover:text-primary" title="Abrir a página de rastreio">
-                              <span className="group-hover:underline">{o.trackingCode}</span> <ExternalLink className="size-3 text-muted-foreground group-hover:text-primary" />
-                            </a>
-                          ) : <span className="text-[13px] tabular-nums tracking-wide">{o.trackingCode}</span>}
-                          <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted" title="Copiar código" aria-label="Copiar código"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigator.clipboard.writeText(o.trackingCode!).then(() => toast.success("Código copiado"), () => toast.error("Não foi possível copiar"));
-                            }}>
-                            <Copy className="size-3.5" />
-                          </button>
-                        </span>
+                        o.trackingUrl ? (
+                          <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                            className="text-[13px] tabular-nums tracking-wide text-primary hover:underline" title="Abrir a página de rastreio">
+                            {o.trackingCode}
+                          </a>
+                        ) : <span className="text-[13px] tabular-nums tracking-wide">{o.trackingCode}</span>
                       ) : <span className="text-xs text-muted-foreground">—</span>}
                     </td>
                     <td className="py-3 px-2">
