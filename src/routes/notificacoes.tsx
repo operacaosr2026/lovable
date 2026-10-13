@@ -192,7 +192,17 @@ function NotificacoesPage() {
             Nenhum pedido atrasado com esses filtros.
           </div>
         ) : (
-          <table className="w-full text-sm min-w-[1150px]">
+          <table className="w-full text-sm min-w-[1100px] table-fixed">
+            {/* Larguras fixas: sem isso a coluna Rastreio esticava e sobrava um vão. */}
+            <colgroup>
+              <col className="w-12" />
+              <col className="w-[150px]" />
+              <col className="w-[22%]" />
+              <col className="w-[96px]" />
+              <col />
+              <col className="w-[200px]" />
+              <col className="w-[200px]" />
+            </colgroup>
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border text-left">
                 <th className="py-2.5 pl-4 pr-2 w-8">
@@ -225,7 +235,7 @@ function NotificacoesPage() {
                         </Pill>
                       )}
                     </td>
-                    <td className="py-3 px-2 max-w-[240px]">
+                    <td className="py-3 px-2">
                       <div className="truncate">{o.customerName}</div>
                       <div className={`text-xs truncate ${o.email ? "text-muted-foreground" : "text-rose-600"}`}>{o.email ?? "sem e-mail"}</div>
                     </td>
@@ -233,7 +243,7 @@ function NotificacoesPage() {
                       <div className={`font-semibold ${o.days >= 21 ? "text-rose-600" : o.days >= 14 ? "text-amber-600" : ""}`}>{o.days} dias</div>
                       <div className="text-xs text-muted-foreground">{fmtDate(o.orderDate)}</div>
                     </td>
-                    <td className="py-3 px-2 max-w-[340px]">
+                    <td className="py-3 px-2">
                       <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>
                       {o.lastEvent && (
                         <div className="text-xs text-muted-foreground mt-1 line-clamp-2" title={o.lastEvent}>
@@ -246,10 +256,10 @@ function NotificacoesPage() {
                         <span className="inline-flex items-center gap-1.5">
                           {o.trackingUrl ? (
                             <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline" title="Abrir a página de rastreio">
-                              {o.trackingCode} <ExternalLink className="size-3" />
+                              className="group inline-flex items-center gap-1 text-[13px] tabular-nums tracking-wide hover:text-primary" title="Abrir a página de rastreio">
+                              <span className="group-hover:underline">{o.trackingCode}</span> <ExternalLink className="size-3 text-muted-foreground group-hover:text-primary" />
                             </a>
-                          ) : <span className="font-mono text-xs">{o.trackingCode}</span>}
+                          ) : <span className="text-[13px] tabular-nums tracking-wide">{o.trackingCode}</span>}
                           <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted" title="Copiar código" aria-label="Copiar código"
                             onClick={(e) => {
                               e.stopPropagation();
