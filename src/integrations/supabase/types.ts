@@ -131,6 +131,18 @@ export type Database = {
         Update: { id?: string; owner_id?: string; title?: string; body?: string; created_at?: string; updated_at?: string };
         Relationships: [];
       };
+      order_notice_templates: {
+        Row: { id: string; owner_id: string; title: string; subject: string; body: string; position: number; created_at: string; updated_at: string };
+        Insert: { id?: string; owner_id: string; title: string; subject: string; body: string; position?: number; created_at?: string; updated_at?: string };
+        Update: { id?: string; owner_id?: string; title?: string; subject?: string; body?: string; position?: number; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
+      order_notices: {
+        Row: { id: string; owner_id: string; order_id: string; shop_id: string; template_id: string | null; template_title: string; to_email: string; subject: string; sent_by: string | null; sent_at: string };
+        Insert: { id?: string; owner_id: string; order_id: string; shop_id: string; template_id?: string | null; template_title: string; to_email: string; subject: string; sent_by?: string | null; sent_at?: string };
+        Update: { id?: string; owner_id?: string; order_id?: string; shop_id?: string; template_id?: string | null; template_title?: string; to_email?: string; subject?: string; sent_by?: string | null; sent_at?: string };
+        Relationships: [];
+      };
       push_subscriptions: {
         Row: {
           id: string;

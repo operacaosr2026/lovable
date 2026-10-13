@@ -1,0 +1,29 @@
+// Aba Notificações — regras usadas pela tela e pelo servidor.
+
+// Pedido entra na lista a partir de 7 dias da compra e sai depois de 180.
+export const NOTICE_MIN_DAYS = 7;
+export const NOTICE_MAX_DAYS = 180;
+
+// Etapas por dias desde a compra. Chargeback de "produto não recebido" abre,
+// na mediana, 20 dias depois da compra (metade entre 14 e 29 — out/2026).
+export const NOTICE_STAGES = [
+  { key: "7", label: "7 a 13 dias", hint: "Antes do pico de chargebacks", from: 7, to: 13 },
+  { key: "14", label: "14 a 20 dias", hint: "Começam os chargebacks", from: 14, to: 20 },
+  { key: "21", label: "21 a 29 dias", hint: "Pico de chargebacks", from: 21, to: 29 },
+  { key: "30", label: "30 dias ou mais", hint: "Muito atrasado", from: 30, to: Infinity },
+] as const;
+export type NoticeStageKey = (typeof NOTICE_STAGES)[number]["key"];
+export const stageOf = (days: number): NoticeStageKey | null =>
+  NOTICE_STAGES.find((s) => days >= s.from && days <= s.to)?.key ?? null;
+
+// Número do pedido como o cliente vê (#1234).
+export const customerOrderNumber = (n: string) => (n.startsWith("#") ? n : `#${n}`);
+
+// {nome} = primeiro nome, {pedido} = nº do pedido, {rastreio} = link de rastreio.
+export function renderNotice(text: string, vars: { nome: string; pedido: string; rastreio: string }) {
+  return text
+    .replace(/\{nome\}/gi, vars.nome)
+    .replace(/\{pedido\}/gi, customerOrderNumber(vars.pedido))
+    .replace(/\{rastreio\}/gi, vars.rastreio)
+    .replace(/^(Hi|Hello|Dear) ,/m, "$1,");
+}

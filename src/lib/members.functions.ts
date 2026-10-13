@@ -20,6 +20,8 @@ export const SECTIONS = [
   "lojas_grupos",
   "atendimento",
   "chargebacks",
+  // Notificações: e-mail manual pro cliente de pedido atrasado.
+  "avisos_clientes",
   "consultor",
   "academia",
   // Sino de notificações.

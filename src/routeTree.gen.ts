@@ -17,6 +17,7 @@ import { Route as GratitudeRouteImport } from "./routes/gratitude";
 import { Route as InteligenciaRouteImport } from "./routes/inteligencia";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as MetasRouteImport } from "./routes/metas";
+import { Route as NotificacoesRouteImport } from "./routes/notificacoes";
 import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ShopsRouteImport } from "./routes/shops";
@@ -103,6 +104,11 @@ const LoginRoute = LoginRouteImport.update({
 const MetasRoute = MetasRouteImport.update({
   id: "/metas",
   path: "/metas",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const NotificacoesRoute = NotificacoesRouteImport.update({
+  id: "/notificacoes",
+  path: "/notificacoes",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -361,6 +367,7 @@ export interface FileRoutesByFullPath {
   "/inteligencia": typeof InteligenciaRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
+  "/notificacoes": typeof NotificacoesRoute;
   "/projects": typeof ProjectsRouteWithChildren;
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   "/inteligencia": typeof InteligenciaRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
+  "/notificacoes": typeof NotificacoesRoute;
   "/tarefas": typeof TarefasRoute;
   "/academia/$trackId": typeof AcademiaTrackIdRoute;
   "/invite/$token": typeof InviteTokenRoute;
@@ -469,6 +477,7 @@ export interface FileRoutesById {
   "/inteligencia": typeof InteligenciaRoute;
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
+  "/notificacoes": typeof NotificacoesRoute;
   "/projects": typeof ProjectsRouteWithChildren;
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
@@ -528,6 +537,7 @@ export interface FileRouteTypes {
     | "/inteligencia"
     | "/login"
     | "/metas"
+    | "/notificacoes"
     | "/projects"
     | "/settings"
     | "/shops"
@@ -585,6 +595,7 @@ export interface FileRouteTypes {
     | "/inteligencia"
     | "/login"
     | "/metas"
+    | "/notificacoes"
     | "/tarefas"
     | "/academia/$trackId"
     | "/invite/$token"
@@ -635,6 +646,7 @@ export interface FileRouteTypes {
     | "/inteligencia"
     | "/login"
     | "/metas"
+    | "/notificacoes"
     | "/projects"
     | "/settings"
     | "/shops"
@@ -693,6 +705,7 @@ export interface RootRouteChildren {
   InteligenciaRoute: typeof InteligenciaRoute;
   LoginRoute: typeof LoginRoute;
   MetasRoute: typeof MetasRoute;
+  NotificacoesRoute: typeof NotificacoesRoute;
   ProjectsRoute: typeof ProjectsRouteWithChildren;
   SettingsRoute: typeof SettingsRouteWithChildren;
   ShopsRoute: typeof ShopsRouteWithChildren;
@@ -774,6 +787,13 @@ declare module "@tanstack/react-router" {
       path: "/metas";
       fullPath: "/metas";
       preLoaderRoute: typeof MetasRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/notificacoes": {
+      id: "/notificacoes";
+      path: "/notificacoes";
+      fullPath: "/notificacoes";
+      preLoaderRoute: typeof NotificacoesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/projects": {
@@ -1231,6 +1251,7 @@ const rootRouteChildren: RootRouteChildren = {
   InteligenciaRoute: InteligenciaRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
+  NotificacoesRoute: NotificacoesRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,

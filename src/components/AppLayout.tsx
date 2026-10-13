@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  Brain, GraduationCap,
+  Brain, GraduationCap, Send,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -38,6 +38,7 @@ export const navItems: NavItem[] = [
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
   { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks" },
+  { to: "/notificacoes", label: "Notificações", icon: Send, section: "avisos_clientes" },
   { to: "/inteligencia", label: "Inteligência", icon: Brain, section: "consultor" },
   { to: "/academia", label: "Academia", icon: GraduationCap, section: "academia" },
 ];
@@ -70,6 +71,7 @@ const ALL_PAGES = [
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/atendimento", label: "Atendimento", icon: Headphones },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert },
+  { to: "/notificacoes", label: "Notificações", icon: Send },
   { to: "/inteligencia", label: "Inteligência", icon: Brain },
   { to: "/academia", label: "Academia", icon: GraduationCap },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
