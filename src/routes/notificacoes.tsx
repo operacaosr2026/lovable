@@ -70,6 +70,8 @@ function NotificacoesPage() {
   const [status, setStatus] = useState<"todos" | NoticeOrder["status"]>("todos");
   const [hideRecent, setHideRecent] = useState(true);
   const [hideDispute, setHideDispute] = useState(true);
+  // "Esperando cliente": a bola está com o cliente (Rastreamento), não é atraso da loja.
+  const [hideWaiting, setHideWaiting] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sendOpen, setSendOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -85,10 +87,11 @@ function NotificacoesPage() {
       if (status !== "todos" && o.status !== status) return false;
       if (hideRecent && recentlyNotified(o)) return false;
       if (hideDispute && o.dispute) return false;
+      if (hideWaiting && o.status === "esperando_cliente") return false;
       if (term && !`${o.orderNumber} ${o.customerName} ${o.email ?? ""} ${o.trackingCode ?? ""}`.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [orders, search, shop, status, hideRecent, hideDispute]);
+  }, [orders, search, shop, status, hideRecent, hideDispute, hideWaiting]);
   const rows = useMemo(() => (stage === "todos" ? base : base.filter((o) => stageOf(o.days) === stage)), [base, stage]);
 
   // Seleção só do que está na tela (mudou o filtro, o que sumiu sai da seleção).
@@ -152,6 +155,10 @@ function NotificacoesPage() {
         <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none px-1">
           <Checkbox checked={hideDispute} onCheckedChange={(v) => setHideDispute(!!v)} />
           Esconder com chargeback aberto
+        </label>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none px-1">
+          <Checkbox checked={hideWaiting} onCheckedChange={(v) => setHideWaiting(!!v)} />
+          Esconder esperando cliente
         </label>
       </div>
 
