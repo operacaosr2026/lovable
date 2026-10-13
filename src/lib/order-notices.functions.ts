@@ -5,13 +5,14 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { sanitizeEvents } from "@/lib/tracking-display";
-import { getZohoAccount, sendZohoMail, syncZohoMailbox } from "@/lib/zoho-mail.server";
-import { buildBody } from "@/lib/support-body.server";
+import { getZohoAccount } from "@/lib/zoho-mail.server";
 import { renderNotice, NOTICE_MIN_DAYS, NOTICE_MAX_DAYS } from "@/lib/order-notices";
+import type { Database } from "@/integrations/supabase/types";
 
 // Aba Notificações: e-mail manual pro cliente de pedido atrasado, antes que ele
 // abra chargeback de "produto não recebido" (mediana: 20 dias depois da
-// compra, out/2026). Manda pelo Zoho do Atendimento, com a assinatura.
+// compra, out/2026). Manda pelo Zoho do Atendimento, com a assinatura, numa
+// fila de 1 e-mail por minuto (order-notices.server.ts).
 // Acesso: admin, ou membro com a permissão "avisos_clientes".
 
 type Ctx = { role: "admin" | "member"; ownerId: string; userId: string; permissions: { section: string }[] };
@@ -125,7 +126,8 @@ export type NoticeOrder = {
   lastEventAt: string | null;
   dispute: { status: string | null; reason: string | null; type: string } | null;
   supportAt: string | null;   // última vez que o cliente escreveu pro suporte
-  notices: { at: string; title: string }[];  // mais recente primeiro
+  notices: { at: string; title: string }[];  // enviados, mais recente primeiro
+  queued: boolean;            // tem e-mail esperando na fila
 };
 
 const cleanLabel = (label: string | null | undefined) =>
@@ -174,7 +176,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
       selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking")
         .select("order_id,tracking_status,last_event_label,last_event_at,delivered_at").in("order_id", c)),
       selectAllIn<any>(ids, (c) => supabaseAdmin.from("order_notices")
-        .select("order_id,template_title,sent_at").eq("owner_id", ownerId).in("order_id", c)),
+        .select("order_id,template_title,sent_at,status").eq("owner_id", ownerId).in("status", ["enviado", "na_fila", "enviando"]).in("order_id", c)),
       selectAllIn<any>(externalIds, (c) => supabaseAdmin.from("shop_order_disputes")
         .select("shop_id,order_external_id,status,reason,type,initiated_at").eq("user_id", ownerId).in("order_external_id", c)),
       selectAllIn<any>(emails, (c) => supabaseAdmin.from("support_conversations")
@@ -183,7 +185,9 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
     ]);
     const trackBy = new Map(tracking.data.map((t) => [t.order_id, t]));
     const noticesBy = new Map<string, { at: string; title: string }[]>();
+    const queued = new Set<string>();
     for (const n of notices.data) {
+      if (n.status !== "enviado") { queued.add(n.order_id); continue; }
       const list = noticesBy.get(n.order_id) ?? [];
       list.push({ at: n.sent_at, title: n.template_title });
       noticesBy.set(n.order_id, list);
@@ -233,18 +237,21 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
         dispute: d ? { status: d.status, reason: d.reason, type: d.type } : null,
         supportAt: email ? supportBy.get(email) ?? null : null,
         notices: noticesBy.get(o.id) ?? [],
+        queued: queued.has(o.id),
       });
     }
     return out.sort((a, b) => b.days - a.days);
   });
 
-// ─── Envio ────────────────────────────────────────────────────────────────────
+// ─── Envio (fila) ─────────────────────────────────────────────────────────────
 
-export const sendOrderNotices = createServerFn({ method: "POST" })
+// Põe os e-mails na fila; o cron manda 1 por minuto (order-notices.server.ts).
+// O texto vai pronto: editar a mensagem depois não muda o que já está na fila.
+export const queueOrderNotices = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     templateId: z.string().uuid(),
-    orderIds: z.array(z.string().uuid()).min(1).max(100),
+    orderIds: z.array(z.string().uuid()).min(1).max(500),
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
@@ -254,41 +261,92 @@ export const sendOrderNotices = createServerFn({ method: "POST" })
     const { data: tpl } = await supabaseAdmin.from("order_notice_templates").select("id,title,subject,body")
       .eq("id", data.templateId).eq("owner_id", ownerId).maybeSingle();
     if (!tpl) throw new Error("Mensagem não encontrada");
-    const { data: orders, error } = await supabaseAdmin.from("shop_orders")
-      .select("id,shop_id,order_number,tracking_code,tracking_url,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,ship_first:raw->shipping_address->>first_name,cancelled_at:raw->>cancelled_at")
-      .eq("user_id", ownerId).in("id", data.orderIds);
+    const [{ data: orders, error }, inQueue] = await Promise.all([
+      selectAllIn<any>(data.orderIds, (c) => supabaseAdmin.from("shop_orders")
+        .select("id,shop_id,order_number,tracking_code,tracking_url,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,ship_first:raw->shipping_address->>first_name,cancelled_at:raw->>cancelled_at")
+        .eq("user_id", ownerId).in("id", c)),
+      selectAllIn<any>(data.orderIds, (c) => supabaseAdmin.from("order_notices").select("order_id")
+        .eq("owner_id", ownerId).in("status", ["na_fila", "enviando"]).in("order_id", c)),
+    ]);
     if (error) throw new Error(error.message);
-    const shopIds = [...new Set((orders ?? []).map((o: any) => o.shop_id))];
+    const queuedAlready = new Set(inQueue.data.map((n) => n.order_id));
+    const shopIds = [...new Set(orders.map((o) => o.shop_id))];
     const { data: integs } = await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds);
     const linkTemplate = new Map((integs ?? []).map((i) => [i.shop_id, i.tracking_link_template]));
     const needsLink = /\{rastreio\}/i.test(tpl.body) || /\{rastreio\}/i.test(tpl.subject);
 
-    const sent: string[] = [];
+    // Na ordem em que foram marcados.
+    const byId = new Map(orders.map((o) => [o.id, o]));
+    const rows: Database["public"]["Tables"]["order_notices"]["Insert"][] = [];
     const skipped: { order: string; motivo: string }[] = [];
-    for (const o of (orders ?? []) as any[]) {
+    const base = Date.now();
+    for (const id of data.orderIds) {
+      const o = byId.get(id);
+      if (!o) continue;
       const order = String(o.order_number ?? o.id.slice(0, 8));
       const to = String(o.email ?? o.cust ?? "").trim().toLowerCase();
       const link = buildTrackingUrl(linkTemplate.get(o.shop_id), o.tracking_code) ?? o.tracking_url ?? null;
+      if (queuedAlready.has(o.id)) { skipped.push({ order, motivo: "já está na fila" }); continue; }
       if (o.cancelled_at) { skipped.push({ order, motivo: "pedido cancelado" }); continue; }
       if (!z.string().email().safeParse(to).success) { skipped.push({ order, motivo: "sem e-mail do cliente" }); continue; }
       if (needsLink && !link) { skipped.push({ order, motivo: "sem link de rastreio" }); continue; }
       const vars = { nome: String(o.first_name || o.ship_first || "").trim().split(/\s+/)[0] ?? "", pedido: order, rastreio: link ?? "" };
-      const subject = renderNotice(tpl.subject, vars);
-      try {
-        const html = await buildBody(ownerId, context.userId, renderNotice(tpl.body, vars), true);
-        await sendZohoMail(acc, { to, subject, html });
-        sent.push(order);
-        const at = new Date().toISOString();
-        await supabaseAdmin.from("order_notices").insert({
-          owner_id: ownerId, order_id: o.id, shop_id: o.shop_id, template_id: tpl.id, template_title: tpl.title,
-          to_email: to, subject, sent_by: context.userId, sent_at: at,
-        });
-        // Rastreamento (Lojas e Grupos) mostra "Avisado em …".
-        await supabaseAdmin.from("shop_orders").update({ customer_notified_at: at }).eq("id", o.id);
-      } catch (e: any) {
-        skipped.push({ order, motivo: String(e?.message ?? e).slice(0, 120) });
-      }
+      rows.push({
+        owner_id: ownerId, order_id: o.id, shop_id: o.shop_id, template_id: tpl.id, template_title: tpl.title,
+        to_email: to, subject: renderNotice(tpl.subject, vars), body: renderNotice(tpl.body, vars),
+        sent_by: context.userId, status: "na_fila", sent_at: null,
+        // 1 ms a mais por item: a fila sai na ordem marcada.
+        queued_at: new Date(base + rows.length).toISOString(),
+      });
     }
-    if (sent.length) { try { await syncZohoMailbox(ownerId, { quick: true }); } catch { /* próxima sincronização */ } }
-    return { sent, skipped };
+    if (rows.length) {
+      const { error: insErr } = await supabaseAdmin.from("order_notices").insert(rows);
+      if (insErr) throw new Error(insErr.message);
+    }
+    return { queued: rows.length, skipped };
+  });
+
+export type NoticeQueue = {
+  pending: { id: string; orderNumber: string; email: string; title: string; status: string }[];
+  lastSentAt: string | null;
+  failed: { id: string; orderNumber: string; email: string; error: string | null; at: string }[];
+};
+
+export const getNoticeQueue = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }): Promise<NoticeQueue> => {
+    assertAccess(context);
+    const ownerId = context.ownerId;
+    const since = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const [pending, last, failed] = await Promise.all([
+      selectAll<any>(supabaseAdmin.from("order_notices").select("id,to_email,template_title,status,queued_at,shop_orders(order_number)")
+        .eq("owner_id", ownerId).in("status", ["na_fila", "enviando"]).order("queued_at")),
+      supabaseAdmin.from("order_notices").select("sent_at").eq("owner_id", ownerId).eq("status", "enviado")
+        .not("sent_at", "is", null).order("sent_at", { ascending: false }).limit(1).maybeSingle(),
+      supabaseAdmin.from("order_notices").select("id,to_email,error,queued_at,shop_orders(order_number)")
+        .eq("owner_id", ownerId).eq("status", "erro").gte("queued_at", since).order("queued_at", { ascending: false }).limit(50),
+    ]);
+    if (pending.error) throw new Error(pending.error.message);
+    // selectAll desempata por id: reordena pela fila, com o que está saindo primeiro.
+    const list = pending.data.sort((a, b) =>
+      (a.status === "enviando" ? 0 : 1) - (b.status === "enviando" ? 0 : 1) || String(a.queued_at).localeCompare(String(b.queued_at)));
+    return {
+      pending: list.map((n) => ({ id: n.id, orderNumber: String(n.shop_orders?.order_number ?? ""), email: n.to_email, title: n.template_title, status: n.status })),
+      lastSentAt: last.data?.sent_at ?? null,
+      failed: (failed.data ?? []).map((n: any) => ({ id: n.id, orderNumber: String(n.shop_orders?.order_number ?? ""), email: n.to_email, error: n.error, at: n.queued_at })),
+    };
+  });
+
+// Tira da fila (todos, ou só os escolhidos). O que já está saindo não para.
+export const cancelNoticeQueue = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ ids: z.array(z.string().uuid()).max(500).optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    let q = supabaseAdmin.from("order_notices").update({ status: "cancelado", error: "cancelado na tela" })
+      .eq("owner_id", context.ownerId).eq("status", "na_fila");
+    if (data.ids) q = q.in("id", data.ids);
+    const { data: rows, error } = await q.select("id");
+    if (error) throw new Error(error.message);
+    return { cancelled: rows?.length ?? 0 };
   });

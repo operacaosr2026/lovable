@@ -138,10 +138,12 @@ export type Database = {
         Relationships: [];
       };
       order_notices: {
-        Row: { id: string; owner_id: string; order_id: string; shop_id: string; template_id: string | null; template_title: string; to_email: string; subject: string; sent_by: string | null; sent_at: string };
-        Insert: { id?: string; owner_id: string; order_id: string; shop_id: string; template_id?: string | null; template_title: string; to_email: string; subject: string; sent_by?: string | null; sent_at?: string };
-        Update: { id?: string; owner_id?: string; order_id?: string; shop_id?: string; template_id?: string | null; template_title?: string; to_email?: string; subject?: string; sent_by?: string | null; sent_at?: string };
-        Relationships: [];
+        Row: { id: string; owner_id: string; order_id: string; shop_id: string; template_id: string | null; template_title: string; to_email: string; subject: string; body: string | null; status: string; error: string | null; sent_by: string | null; queued_at: string; sent_at: string | null };
+        Insert: { id?: string; owner_id: string; order_id: string; shop_id: string; template_id?: string | null; template_title: string; to_email: string; subject: string; body?: string | null; status?: string; error?: string | null; sent_by?: string | null; queued_at?: string; sent_at?: string | null };
+        Update: { id?: string; owner_id?: string; order_id?: string; shop_id?: string; template_id?: string | null; template_title?: string; to_email?: string; subject?: string; body?: string | null; status?: string; error?: string | null; sent_by?: string | null; queued_at?: string; sent_at?: string | null };
+        Relationships: [
+          { foreignKeyName: "order_notices_order_id_fkey"; columns: ["order_id"]; isOneToOne: false; referencedRelation: "shop_orders"; referencedColumns: ["id"] },
+        ];
       };
       push_subscriptions: {
         Row: {

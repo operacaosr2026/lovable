@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
-  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2,
+  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -16,8 +16,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, sendOrderNotices,
-  type NoticeOrder, type NoticeTemplate,
+  listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue,
+  type NoticeOrder, type NoticeTemplate, type NoticeQueue,
 } from "@/lib/order-notices.functions";
 import { NOTICE_STAGES, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
 import { US_TIME_ZONE } from "@/lib/timezone";
@@ -39,8 +39,6 @@ const STATUS: Record<NoticeOrder["status"], { label: string; cls: string; icon: 
 
 // Avisado há menos que isso: some da lista com o filtro padrão.
 const RECENT_DAYS = 5;
-// Pedidos por chamada ao servidor (cada e-mail leva ~1 s no Zoho).
-const SEND_CHUNK = 15;
 
 const fmtDate = (iso: string) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -55,7 +53,14 @@ const recentlyNotified = (o: NoticeOrder) => !!o.notices[0] && daysAgo(o.notices
 function NotificacoesPage() {
   const listFn = useServerFn(listNoticeOrders);
   const tplFn = useServerFn(listNoticeTemplates);
-  const q = useQuery({ queryKey: ["notice-orders"], queryFn: () => listFn() });
+  const queueFn = useServerFn(getNoticeQueue);
+  const queue = useQuery({
+    queryKey: ["notice-queue"], queryFn: () => queueFn(),
+    // Com fila andando, atualiza a cada 20 s.
+    refetchInterval: (query) => (query.state.data?.pending.length ? 20_000 : false),
+  });
+  const pendingCount = queue.data?.pending.length ?? 0;
+  const q = useQuery({ queryKey: ["notice-orders"], queryFn: () => listFn(), refetchInterval: pendingCount ? 60_000 : false });
   const templates = useQuery({ queryKey: ["notice-templates"], queryFn: () => tplFn() });
 
   const [stage, setStage] = useState<NoticeStageKey | "todos">("todos");
@@ -149,6 +154,8 @@ function NotificacoesPage() {
         </label>
       </div>
 
+      {queue.data && (queue.data.pending.length > 0 || queue.data.failed.length > 0) && <QueuePanel queue={queue.data} />}
+
       {/* Ação */}
       <div className={`${CARD} sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 mb-3`}>
         <span className="text-sm text-muted-foreground">
@@ -238,7 +245,8 @@ function NotificacoesPage() {
                             {o.notices[0].title}{o.notices.length > 1 && ` · ${o.notices.length} avisos`}
                           </div>
                         </>
-                      ) : <span className="text-xs text-muted-foreground">Nunca avisado</span>}
+                      ) : !o.queued && <span className="text-xs text-muted-foreground">Nunca avisado</span>}
+                      {o.queued && <Pill cls="bg-violet-500/10 text-violet-700 dark:text-violet-400 mt-1" icon={Clock}>Na fila</Pill>}
                       {o.supportAt && (
                         <div className="flex items-center gap-1 text-xs text-sky-700 dark:text-sky-400 mt-1" title="Última vez que o cliente mandou e-mail pro suporte">
                           <Headphones className="size-3" /> Escreveu pro suporte {fmtDate(o.supportAt)}
@@ -253,7 +261,7 @@ function NotificacoesPage() {
         )}
       </div>
 
-      <SendDialog open={sendOpen} onOpenChange={setSendOpen} orders={selectedOrders} templates={templates.data ?? []}
+      <SendDialog open={sendOpen} onOpenChange={setSendOpen} orders={selectedOrders} templates={templates.data ?? []} queueSize={pendingCount}
         onEditTemplates={() => { setSendOpen(false); setTemplatesOpen(true); }}
         onDone={() => setSelected(new Set())} />
       <TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} templates={templates.data ?? []} />
@@ -263,20 +271,18 @@ function NotificacoesPage() {
 
 // ─── Envio ────────────────────────────────────────────────────────────────────
 
-function SendDialog({ open, onOpenChange, orders, templates, onEditTemplates, onDone }: {
-  open: boolean; onOpenChange: (v: boolean) => void; orders: NoticeOrder[]; templates: NoticeTemplate[];
+function SendDialog({ open, onOpenChange, orders, templates, queueSize, onEditTemplates, onDone }: {
+  open: boolean; onOpenChange: (v: boolean) => void; orders: NoticeOrder[]; templates: NoticeTemplate[]; queueSize: number;
   onEditTemplates: () => void; onDone: () => void;
 }) {
   const qc = useQueryClient();
-  const sendFn = useServerFn(sendOrderNotices);
+  const queueFn = useServerFn(queueOrderNotices);
   const [templateId, setTemplateId] = useState("");
   const [previewIdx, setPreviewIdx] = useState(0);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setPreviewIdx(0);
-    setProgress(null);
     // Sugestão: "Ainda não foi enviado" quando todos estão sem envio; senão a 1ª.
     const allUnsent = orders.length > 0 && orders.every((o) => o.status === "sem_envio");
     const pick = (allUnsent && templates.find((t) => !/\{rastreio\}/i.test(t.body))) || templates[0];
@@ -289,38 +295,27 @@ function SendDialog({ open, onOpenChange, orders, templates, onEditTemplates, on
   const noLink = needsLink ? orders.filter((o) => o.email && !o.trackingUrl) : [];
   const recent = orders.filter(recentlyNotified);
   const withDispute = orders.filter((o) => o.dispute);
-  const sendable = orders.filter((o) => o.email && (!needsLink || o.trackingUrl));
+  const inQueue = orders.filter((o) => o.queued);
+  const sendable = orders.filter((o) => !o.queued && o.email && (!needsLink || o.trackingUrl));
   const preview = orders[Math.min(previewIdx, orders.length - 1)];
   const vars = preview ? { nome: preview.firstName, pedido: preview.orderNumber, rastreio: preview.trackingUrl ?? "[sem link de rastreio]" } : null;
+  // 1 por minuto, depois do que já está na fila.
+  const finishAt = new Date(Date.now() + (queueSize + sendable.length) * 60_000);
 
   const send = useMutation({
     mutationFn: async () => {
       if (!tpl) throw new Error("Escolha a mensagem");
-      const ids = sendable.map((o) => o.id);
-      const sent: string[] = [];
-      const skipped: { order: string; motivo: string }[] = [];
-      setProgress({ done: 0, total: ids.length });
-      for (let i = 0; i < ids.length; i += SEND_CHUNK) {
-        const r = await sendFn({ data: { templateId: tpl.id, orderIds: ids.slice(i, i + SEND_CHUNK) } });
-        sent.push(...r.sent);
-        skipped.push(...r.skipped);
-        setProgress({ done: Math.min(i + SEND_CHUNK, ids.length), total: ids.length });
-      }
-      return { sent, skipped };
+      return queueFn({ data: { templateId: tpl.id, orderIds: sendable.map((o) => o.id) } });
     },
     onSuccess: (r) => {
-      if (r.sent.length) toast.success(r.sent.length === 1 ? `E-mail enviado pro cliente do pedido ${customerOrderNumber(r.sent[0])}` : `${r.sent.length} e-mails enviados`);
-      if (r.skipped.length) toast.warning(`Não enviado: ${r.skipped.map((x) => `${customerOrderNumber(x.order)} (${x.motivo})`).join(", ")}`, { duration: 12_000 });
+      if (r.queued) toast.success(r.queued === 1 ? "1 e-mail na fila" : `${r.queued} e-mails na fila — sai 1 por minuto`);
+      if (r.skipped.length) toast.warning(`Fora da fila: ${r.skipped.map((x) => `${customerOrderNumber(x.order)} (${x.motivo})`).join(", ")}`, { duration: 12_000 });
       qc.invalidateQueries({ queryKey: ["notice-orders"] });
-      qc.invalidateQueries({ queryKey: ["lg-logistics"] });
+      qc.invalidateQueries({ queryKey: ["notice-queue"] });
       onDone();
       onOpenChange(false);
     },
-    onError: (e: any) => {
-      toast.error(e?.message ?? "Falha ao enviar");
-      qc.invalidateQueries({ queryKey: ["notice-orders"] });
-    },
-    onSettled: () => setProgress(null),
+    onError: (e: any) => toast.error(e?.message ?? "Falha ao colocar na fila"),
   });
 
   return (
@@ -328,7 +323,9 @@ function SendDialog({ open, onOpenChange, orders, templates, onEditTemplates, on
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Enviar e-mail {orders.length === 1 ? "pro cliente" : `pra ${orders.length} clientes`}</DialogTitle>
-          <DialogDescription>Cada cliente recebe a mensagem com o nome, o número do pedido e o link de rastreio dele.</DialogDescription>
+          <DialogDescription>
+            Cada cliente recebe um e-mail só dele, com o nome, o número do pedido e o link de rastreio. Sai 1 por minuto, pelo servidor — pode fechar a tela.
+          </DialogDescription>
         </DialogHeader>
 
         {!templates.length ? (
@@ -365,7 +362,14 @@ function SendDialog({ open, onOpenChange, orders, templates, onEditTemplates, on
               {noLink.length > 0 && <Warn>{noLink.length} sem link de rastreio — fica de fora, porque a mensagem usa {"{rastreio}"} ({noLink.map((o) => customerOrderNumber(o.orderNumber)).join(", ")}).</Warn>}
               {recent.length > 0 && <Warn>{recent.length} já {recent.length === 1 ? "foi avisado" : "foram avisados"} nos últimos {RECENT_DAYS} dias ({recent.map((o) => `${customerOrderNumber(o.orderNumber)} em ${fmtDateTime(o.notices[0].at)}`).join(", ")}).</Warn>}
               {withDispute.length > 0 && <Warn>{withDispute.length} com chargeback/inquiry aberto ({withDispute.map((o) => customerOrderNumber(o.orderNumber)).join(", ")}).</Warn>}
+              {inQueue.length > 0 && <Warn>{inQueue.length} já {inQueue.length === 1 ? "está" : "estão"} na fila — fica de fora ({inQueue.map((o) => customerOrderNumber(o.orderNumber)).join(", ")}).</Warn>}
             </div>
+            {sendable.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {queueSize > 0 && `Já tem ${queueSize} na fila antes. `}
+                Termina por volta de <b className="text-foreground">{fmtDateTime(finishAt.toISOString())}</b> (horário de NY).
+              </p>
+            )}
           </div>
         )}
 
@@ -373,11 +377,90 @@ function SendDialog({ open, onOpenChange, orders, templates, onEditTemplates, on
           <Button variant="ghost" disabled={send.isPending} onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button disabled={!tpl || !sendable.length || send.isPending} onClick={() => send.mutate()}>
             {send.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            {progress ? `Enviando ${progress.done}/${progress.total}…` : sendable.length === 1 ? "Enviar 1 e-mail" : `Enviar ${sendable.length} e-mails`}
+            {sendable.length === 1 ? "Enviar 1 e-mail" : `Enviar ${sendable.length} e-mails`}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Fila ─────────────────────────────────────────────────────────────────────
+
+function QueuePanel({ queue }: { queue: NoticeQueue }) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const cancelFn = useServerFn(cancelNoticeQueue);
+  const [open, setOpen] = useState(false);
+  const n = queue.pending.length;
+  // Próximo sai 1 min depois do último envio; os outros, 1 por minuto.
+  const nextAt = Math.max(Date.now(), (queue.lastSentAt ? Date.parse(queue.lastSentAt) : 0) + 60_000);
+  const finishAt = new Date(nextAt + Math.max(0, n - 1) * 60_000).toISOString();
+  const cancel = useMutation({
+    mutationFn: (ids?: string[]) => cancelFn({ data: { ids } }),
+    onSuccess: (r) => {
+      toast.success(r.cancelled === 1 ? "1 e-mail tirado da fila" : `${r.cancelled} e-mails tirados da fila`);
+      qc.invalidateQueries({ queryKey: ["notice-queue"] });
+      qc.invalidateQueries({ queryKey: ["notice-orders"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Falha ao cancelar"),
+  });
+
+  return (
+    <div className={`${CARD} px-4 py-3 mb-3`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm min-w-0">
+          {n > 0 ? (
+            <>
+              <Loader2 className="size-4 animate-spin text-violet-600 shrink-0" />
+              <span>
+                <b>{n}</b> {n === 1 ? "e-mail na fila" : "e-mails na fila"} — 1 por minuto, termina por volta de <b>{fmtDateTime(finishAt)}</b>
+              </span>
+            </>
+          ) : (
+            <span className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Fila vazia</span>
+          )}
+          {queue.failed.length > 0 && (
+            <span className="text-rose-600 whitespace-nowrap">· {queue.failed.length} com erro (2 dias)</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(!open)}>{open ? "Esconder" : "Ver fila"}</Button>
+          {n > 0 && (
+            <Button variant="outline" size="sm" disabled={cancel.isPending}
+              onClick={async () => {
+                if (await confirm({ title: "Cancelar a fila?", description: `Os ${n} e-mails que ainda não saíram não serão enviados.`, confirmText: "Cancelar fila" })) cancel.mutate(undefined);
+              }}>
+              Cancelar fila
+            </Button>
+          )}
+        </div>
+      </div>
+      {open && (
+        <div className="mt-3 max-h-72 overflow-y-auto divide-y divide-border/60 text-sm">
+          {queue.pending.map((p, i) => (
+            <div key={p.id} className="flex items-center gap-3 py-1.5">
+              <span className="w-12 text-xs text-muted-foreground tabular-nums">{p.status === "enviando" ? "agora" : `${i + 1}º`}</span>
+              <span className="w-20 font-medium">{customerOrderNumber(p.orderNumber)}</span>
+              <span className="flex-1 truncate text-muted-foreground">{p.email} · {p.title}</span>
+              {p.status === "na_fila" && (
+                <button className="p-1 rounded hover:bg-muted text-muted-foreground" title="Tirar da fila" aria-label="Tirar da fila"
+                  disabled={cancel.isPending} onClick={() => cancel.mutate([p.id])}>
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
+          ))}
+          {queue.failed.map((f) => (
+            <div key={f.id} className="flex items-center gap-3 py-1.5 text-rose-700 dark:text-rose-400">
+              <span className="w-12 text-xs">erro</span>
+              <span className="w-20 font-medium">{customerOrderNumber(f.orderNumber)}</span>
+              <span className="flex-1 truncate" title={f.error ?? ""}>{f.email} · {f.error}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -59,6 +59,7 @@ import { Route as ApiPublicHooksCaixaSnapshotRouteImport } from "./routes/api/pu
 import { Route as ApiPublicHooksConsultantWeeklyRouteImport } from "./routes/api/public/hooks/consultant-weekly";
 import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
 import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
+import { Route as ApiPublicHooksOrderNoticesSendRouteImport } from "./routes/api/public/hooks/order-notices-send";
 import { Route as ApiPublicHooksSync17trackRouteImport } from "./routes/api/public/hooks/sync-17track";
 import { Route as ApiPublicHooksSyncShopOrdersRouteImport } from "./routes/api/public/hooks/sync-shop-orders";
 import { Route as ApiPublicHooksZohoMailSyncRouteImport } from "./routes/api/public/hooks/zoho-mail-sync";
@@ -322,6 +323,12 @@ const ApiPublicHooksNotificationsRefreshRoute =
     path: "/api/public/hooks/notifications-refresh",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksOrderNoticesSendRoute =
+  ApiPublicHooksOrderNoticesSendRouteImport.update({
+    id: "/api/public/hooks/order-notices-send",
+    path: "/api/public/hooks/order-notices-send",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicHooksSync17trackRoute =
   ApiPublicHooksSync17trackRouteImport.update({
     id: "/api/public/hooks/sync-17track",
@@ -409,6 +416,7 @@ export interface FileRoutesByFullPath {
   "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
+  "/api/public/hooks/order-notices-send": typeof ApiPublicHooksOrderNoticesSendRoute;
   "/api/public/hooks/sync-17track": typeof ApiPublicHooksSync17trackRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
@@ -460,6 +468,7 @@ export interface FileRoutesByTo {
   "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
+  "/api/public/hooks/order-notices-send": typeof ApiPublicHooksOrderNoticesSendRoute;
   "/api/public/hooks/sync-17track": typeof ApiPublicHooksSync17trackRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
@@ -519,6 +528,7 @@ export interface FileRoutesById {
   "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
+  "/api/public/hooks/order-notices-send": typeof ApiPublicHooksOrderNoticesSendRoute;
   "/api/public/hooks/sync-17track": typeof ApiPublicHooksSync17trackRoute;
   "/api/public/hooks/sync-shop-orders": typeof ApiPublicHooksSyncShopOrdersRoute;
   "/api/public/hooks/zoho-mail-sync": typeof ApiPublicHooksZohoMailSyncRoute;
@@ -579,6 +589,7 @@ export interface FileRouteTypes {
     | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
+    | "/api/public/hooks/order-notices-send"
     | "/api/public/hooks/sync-17track"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/zoho-mail-sync"
@@ -630,6 +641,7 @@ export interface FileRouteTypes {
     | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
+    | "/api/public/hooks/order-notices-send"
     | "/api/public/hooks/sync-17track"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/zoho-mail-sync"
@@ -688,6 +700,7 @@ export interface FileRouteTypes {
     | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
+    | "/api/public/hooks/order-notices-send"
     | "/api/public/hooks/sync-17track"
     | "/api/public/hooks/sync-shop-orders"
     | "/api/public/hooks/zoho-mail-sync"
@@ -723,6 +736,7 @@ export interface RootRouteChildren {
   ApiPublicHooksConsultantWeeklyRoute: typeof ApiPublicHooksConsultantWeeklyRoute;
   ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
   ApiPublicHooksNotificationsRefreshRoute: typeof ApiPublicHooksNotificationsRefreshRoute;
+  ApiPublicHooksOrderNoticesSendRoute: typeof ApiPublicHooksOrderNoticesSendRoute;
   ApiPublicHooksSync17trackRoute: typeof ApiPublicHooksSync17trackRoute;
   ApiPublicHooksSyncShopOrdersRoute: typeof ApiPublicHooksSyncShopOrdersRoute;
   ApiPublicHooksZohoMailSyncRoute: typeof ApiPublicHooksZohoMailSyncRoute;
@@ -1083,6 +1097,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksNotificationsRefreshRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/api/public/hooks/order-notices-send": {
+      id: "/api/public/hooks/order-notices-send";
+      path: "/api/public/hooks/order-notices-send";
+      fullPath: "/api/public/hooks/order-notices-send";
+      preLoaderRoute: typeof ApiPublicHooksOrderNoticesSendRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/hooks/sync-17track": {
       id: "/api/public/hooks/sync-17track";
       path: "/api/public/hooks/sync-17track";
@@ -1270,6 +1291,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,
   ApiPublicHooksNotificationsRefreshRoute:
     ApiPublicHooksNotificationsRefreshRoute,
+  ApiPublicHooksOrderNoticesSendRoute: ApiPublicHooksOrderNoticesSendRoute,
   ApiPublicHooksSync17trackRoute: ApiPublicHooksSync17trackRoute,
   ApiPublicHooksSyncShopOrdersRoute: ApiPublicHooksSyncShopOrdersRoute,
   ApiPublicHooksZohoMailSyncRoute: ApiPublicHooksZohoMailSyncRoute,
