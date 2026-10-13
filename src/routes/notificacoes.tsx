@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
-  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X,
+  ExternalLink, Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -140,26 +140,27 @@ function NotificacoesPage() {
 
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full sm:w-64">
           <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pedido, cliente, e-mail ou rastreio" className="pl-9 h-10 rounded-xl" />
         </div>
-        <Select value={shop} onChange={setShop} className="w-44"
+        <Select value={shop} onChange={setShop} className="w-40"
           options={[["todas", "Todas as lojas"], ...shops.map(([id, name]) => [id, name] as const)]} />
-        <Select value={status} onChange={(v) => setStatus(v as any)} className="w-48"
+        <Select value={status} onChange={(v) => setStatus(v as any)} className="w-44"
           options={[["todos", "Todos os status"], ...Object.entries(STATUS).map(([k, v]) => [k, v.label] as const)]} />
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none px-1">
-          <Checkbox checked={hideRecent} onCheckedChange={(v) => setHideRecent(!!v)} />
-          Esconder avisados há menos de {RECENT_DAYS} dias
-        </label>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none px-1">
-          <Checkbox checked={hideDispute} onCheckedChange={(v) => setHideDispute(!!v)} />
-          Esconder com chargeback aberto
-        </label>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none px-1">
-          <Checkbox checked={hideWaiting} onCheckedChange={(v) => setHideWaiting(!!v)} />
-          Esconder esperando cliente
-        </label>
+        {/* Esconder: grupo único (quebra de linha junto, não um por um). */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground mr-0.5">Esconder</span>
+          <HideChip on={hideRecent} onToggle={() => setHideRecent(!hideRecent)} title={`Cliente que recebeu e-mail há menos de ${RECENT_DAYS} dias`}>
+            Avisados há {"<"} {RECENT_DAYS} dias
+          </HideChip>
+          <HideChip on={hideDispute} onToggle={() => setHideDispute(!hideDispute)} title="Pedido com chargeback ou inquiry aberto">
+            Com chargeback
+          </HideChip>
+          <HideChip on={hideWaiting} onToggle={() => setHideWaiting(!hideWaiting)} title='Status "Esperando cliente" no Rastreamento'>
+            Esperando cliente
+          </HideChip>
+        </div>
       </div>
 
       {queue.data && (queue.data.pending.length > 0 || queue.data.failed.length > 0) && <QueuePanel queue={queue.data} />}
@@ -584,6 +585,18 @@ function StageCard({ active, onClick, label, hint, count, notNotified }: {
       <div className="text-xs text-muted-foreground mt-0.5">
         {notNotified > 0 ? <span className="text-amber-700 dark:text-amber-400">{notNotified} nunca avisado{notNotified === 1 ? "" : "s"}</span> : hint}
       </div>
+    </button>
+  );
+}
+
+// Filtro liga/desliga em forma de pílula (ligado = escondido).
+function HideChip({ on, onToggle, title, children }: { on: boolean; onToggle: () => void; title: string; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onToggle} title={title} aria-pressed={on}
+      className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-colors whitespace-nowrap ${
+        on ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}>
+      {on ? <Check className="size-3.5" /> : <span className="size-3.5" />}
+      {children}
     </button>
   );
 }
