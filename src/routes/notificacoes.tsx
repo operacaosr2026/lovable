@@ -255,10 +255,10 @@ function NotificacoesPage() {
                       {o.trackingCode ? (
                         o.trackingUrl ? (
                           <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                            className="text-[13px] tabular-nums tracking-wide text-primary hover:underline" title="Abrir a página de rastreio">
+                            className="text-xs tabular-nums text-primary hover:underline" title="Abrir a página de rastreio">
                             {o.trackingCode}
                           </a>
-                        ) : <span className="text-[13px] tabular-nums tracking-wide">{o.trackingCode}</span>
+                        ) : <span className="text-xs tabular-nums">{o.trackingCode}</span>
                       ) : <span className="text-xs text-muted-foreground">—</span>}
                     </td>
                     <td className="py-3 px-2">
