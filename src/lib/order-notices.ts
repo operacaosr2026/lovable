@@ -1,5 +1,9 @@
 // Aba Notificações — regras usadas pela tela e pelo servidor.
 
+// Fila de envio: 1 e-mail a cada 3 minutos por workspace (20/hora — o Zoho
+// limita 50–500 e-mails externos por hora, contando os do Atendimento).
+export const NOTICE_INTERVAL_MIN = 3;
+
 // Pedido entra na lista a partir de 7 dias da compra e sai depois de 180.
 export const NOTICE_MIN_DAYS = 7;
 export const NOTICE_MAX_DAYS = 180;

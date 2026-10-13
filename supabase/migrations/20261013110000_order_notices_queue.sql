@@ -1,4 +1,4 @@
--- Notificações: envio em fila, 1 e-mail por minuto por workspace (o Zoho
+-- Notificações: envio em fila, 1 e-mail a cada 3 minutos por workspace (o Zoho
 -- limita 50–500 e-mails externos por hora e não aceita envio em rajada).
 -- O texto já vai pronto pra fila (mudar a mensagem depois não muda o que
 -- está esperando).
@@ -12,7 +12,7 @@ ALTER TABLE public.order_notices ALTER COLUMN sent_at DROP NOT NULL;
 ALTER TABLE public.order_notices ALTER COLUMN sent_at DROP DEFAULT;
 CREATE INDEX IF NOT EXISTS order_notices_queue_idx ON public.order_notices (owner_id, queued_at) WHERE status = 'na_fila';
 
--- Roda a fila a cada minuto.
+-- Roda a fila a cada minuto (o intervalo de 3 min entre e-mails é contado no servidor).
 SELECT cron.schedule(
   'order-notices-send',
   '* * * * *',

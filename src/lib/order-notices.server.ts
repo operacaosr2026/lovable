@@ -1,11 +1,12 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getZohoAccount, sendZohoMail, syncZohoMailbox } from "@/lib/zoho-mail.server";
 import { buildBody } from "@/lib/support-body.server";
+import { NOTICE_INTERVAL_MIN } from "@/lib/order-notices";
 
-// Fila da aba Notificações: o cron (a cada minuto) manda 1 e-mail por
-// workspace por rodada — o Zoho limita 50–500 e-mails externos por hora e não
-// aceita envio em rajada.
-export const NOTICE_INTERVAL_MS = 60_000;
+// Fila da aba Notificações: o cron roda a cada minuto e manda 1 e-mail por
+// workspace quando já passou o intervalo (NOTICE_INTERVAL_MIN) desde o último —
+// o Zoho limita 50–500 e-mails externos por hora e não aceita envio em rajada.
+const NOTICE_INTERVAL_MS = NOTICE_INTERVAL_MIN * 60_000;
 
 export async function hasQueuedNotices() {
   const { count } = await supabaseAdmin.from("order_notices").select("id", { count: "exact", head: true }).eq("status", "na_fila");

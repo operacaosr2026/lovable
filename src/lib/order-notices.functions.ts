@@ -12,7 +12,7 @@ import type { Database } from "@/integrations/supabase/types";
 // Aba Notificações: e-mail manual pro cliente de pedido atrasado, antes que ele
 // abra chargeback de "produto não recebido" (mediana: 20 dias depois da
 // compra, out/2026). Manda pelo Zoho do Atendimento, com a assinatura, numa
-// fila de 1 e-mail por minuto (order-notices.server.ts).
+// fila de 1 e-mail a cada 3 minutos (order-notices.server.ts).
 // Acesso: admin, ou membro com a permissão "avisos_clientes".
 
 type Ctx = { role: "admin" | "member"; ownerId: string; userId: string; permissions: { section: string }[] };
@@ -245,7 +245,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
 
 // ─── Envio (fila) ─────────────────────────────────────────────────────────────
 
-// Põe os e-mails na fila; o cron manda 1 por minuto (order-notices.server.ts).
+// Põe os e-mails na fila; o cron manda 1 a cada 3 minutos (order-notices.server.ts).
 // O texto vai pronto: editar a mensagem depois não muda o que já está na fila.
 export const queueOrderNotices = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])

@@ -19,7 +19,7 @@ import {
   listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue,
   type NoticeOrder, type NoticeTemplate, type NoticeQueue,
 } from "@/lib/order-notices.functions";
-import { NOTICE_STAGES, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
+import { NOTICE_STAGES, NOTICE_INTERVAL_MIN, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
 import { US_TIME_ZONE } from "@/lib/timezone";
 
 export const Route = createFileRoute("/notificacoes")({
@@ -39,6 +39,7 @@ const STATUS: Record<NoticeOrder["status"], { label: string; cls: string; icon: 
 
 // Avisado há menos que isso: some da lista com o filtro padrão.
 const RECENT_DAYS = 5;
+const INTERVAL_MS = NOTICE_INTERVAL_MIN * 60_000;
 
 const fmtDate = (iso: string) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -299,8 +300,8 @@ function SendDialog({ open, onOpenChange, orders, templates, queueSize, onEditTe
   const sendable = orders.filter((o) => !o.queued && o.email && (!needsLink || o.trackingUrl));
   const preview = orders[Math.min(previewIdx, orders.length - 1)];
   const vars = preview ? { nome: preview.firstName, pedido: preview.orderNumber, rastreio: preview.trackingUrl ?? "[sem link de rastreio]" } : null;
-  // 1 por minuto, depois do que já está na fila.
-  const finishAt = new Date(Date.now() + (queueSize + sendable.length) * 60_000);
+  // 1 a cada NOTICE_INTERVAL_MIN, depois do que já está na fila.
+  const finishAt = new Date(Date.now() + (queueSize + sendable.length) * INTERVAL_MS);
 
   const send = useMutation({
     mutationFn: async () => {
@@ -308,7 +309,7 @@ function SendDialog({ open, onOpenChange, orders, templates, queueSize, onEditTe
       return queueFn({ data: { templateId: tpl.id, orderIds: sendable.map((o) => o.id) } });
     },
     onSuccess: (r) => {
-      if (r.queued) toast.success(r.queued === 1 ? "1 e-mail na fila" : `${r.queued} e-mails na fila — sai 1 por minuto`);
+      if (r.queued) toast.success(r.queued === 1 ? "1 e-mail na fila" : `${r.queued} e-mails na fila — sai 1 a cada ${NOTICE_INTERVAL_MIN} minutos`);
       if (r.skipped.length) toast.warning(`Fora da fila: ${r.skipped.map((x) => `${customerOrderNumber(x.order)} (${x.motivo})`).join(", ")}`, { duration: 12_000 });
       qc.invalidateQueries({ queryKey: ["notice-orders"] });
       qc.invalidateQueries({ queryKey: ["notice-queue"] });
@@ -324,7 +325,7 @@ function SendDialog({ open, onOpenChange, orders, templates, queueSize, onEditTe
         <DialogHeader>
           <DialogTitle>Enviar e-mail {orders.length === 1 ? "pro cliente" : `pra ${orders.length} clientes`}</DialogTitle>
           <DialogDescription>
-            Cada cliente recebe um e-mail só dele, com o nome, o número do pedido e o link de rastreio. Sai 1 por minuto, pelo servidor — pode fechar a tela.
+            Cada cliente recebe um e-mail só dele, com o nome, o número do pedido e o link de rastreio. Sai 1 a cada {NOTICE_INTERVAL_MIN} minutos, pelo servidor — pode fechar a tela.
           </DialogDescription>
         </DialogHeader>
 
@@ -393,9 +394,9 @@ function QueuePanel({ queue }: { queue: NoticeQueue }) {
   const cancelFn = useServerFn(cancelNoticeQueue);
   const [open, setOpen] = useState(false);
   const n = queue.pending.length;
-  // Próximo sai 1 min depois do último envio; os outros, 1 por minuto.
-  const nextAt = Math.max(Date.now(), (queue.lastSentAt ? Date.parse(queue.lastSentAt) : 0) + 60_000);
-  const finishAt = new Date(nextAt + Math.max(0, n - 1) * 60_000).toISOString();
+  // Próximo sai um intervalo depois do último envio; os outros, 1 por intervalo.
+  const nextAt = Math.max(Date.now(), (queue.lastSentAt ? Date.parse(queue.lastSentAt) : 0) + INTERVAL_MS);
+  const finishAt = new Date(nextAt + Math.max(0, n - 1) * INTERVAL_MS).toISOString();
   const cancel = useMutation({
     mutationFn: (ids?: string[]) => cancelFn({ data: { ids } }),
     onSuccess: (r) => {
@@ -414,7 +415,7 @@ function QueuePanel({ queue }: { queue: NoticeQueue }) {
             <>
               <Loader2 className="size-4 animate-spin text-violet-600 shrink-0" />
               <span>
-                <b>{n}</b> {n === 1 ? "e-mail na fila" : "e-mails na fila"} — 1 por minuto, termina por volta de <b>{fmtDateTime(finishAt)}</b>
+                <b>{n}</b> {n === 1 ? "e-mail na fila" : "e-mails na fila"} — 1 a cada {NOTICE_INTERVAL_MIN} minutos, termina por volta de <b>{fmtDateTime(finishAt)}</b>
               </span>
             </>
           ) : (
