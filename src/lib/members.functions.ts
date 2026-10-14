@@ -15,6 +15,7 @@ export const SECTIONS = [
   "metas",
   "tarefas",
   "produtos",
+  "concorrentes",
   "caixa",
   "banco_lojas",
   "lojas_grupos",

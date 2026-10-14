@@ -209,7 +209,7 @@ const fmtUsdField = (v: string) => {
   return v && Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v;
 };
 
-function FieldInput({ field, value, onSave }: { field: ProductionField; value: string; onSave: (v: string) => void }) {
+export function FieldInput({ field, value, onSave }: { field: ProductionField; value: string; onSave: (v: string) => void }) {
   const currency = field.type === "currency";
   const long = field.type === "longtext";
   const [text, setText] = useState(value);

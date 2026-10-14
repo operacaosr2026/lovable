@@ -20,7 +20,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
   Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp, AlertTriangle,
-  Lightbulb, GraduationCap, PenLine,
+  Lightbulb, GraduationCap, PenLine, Swords,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -46,6 +46,7 @@ const SECTION_LABELS: Record<Section, string> = {
   metas: "Metas",
   tarefas: "Tarefas",
   produtos: "Produtos",
+  concorrentes: "Concorrentes",
   caixa: "Caixa Geral",
   banco_lojas: "Banco de Lojas",
   lojas_grupos: "Lojas e Grupos",
@@ -113,7 +114,7 @@ const SUB_HINTS: Partial<Record<Section, string>> = {
 const SUBTABS: Partial<Record<Section, Section[]>> = { banco_lojas: BL_SUBTABS, academia: AC_SUBTABS, lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "avisos_clientes", "consultor", "academia", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "caixa", "metas", "banco_lojas", "produtos", "concorrentes", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "avisos_clientes", "consultor", "academia", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
@@ -288,7 +289,7 @@ function MembersPage() {
 }
 
 const SECTION_ICONS: Partial<Record<Section, any>> = {
-  dashboard: LayoutDashboard, metas: Target, tarefas: CheckSquare, produtos: Package, caixa: Wallet,
+  dashboard: LayoutDashboard, metas: Target, tarefas: CheckSquare, produtos: Package, concorrentes: Swords, caixa: Wallet,
   banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, avisos_clientes: Mail, consultor: Lightbulb, academia: GraduationCap, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,

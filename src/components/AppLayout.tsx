@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, FolderKanban, Target,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  Brain, GraduationCap, Send,
+  Brain, GraduationCap, Send, Swords,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -34,6 +34,7 @@ export const navItems: NavItem[] = [
   { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
   { to: "/shops/products", label: "Produtos", icon: Package, section: "produtos" },
+  { to: "/concorrentes", label: "Concorrentes", icon: Swords, section: "concorrentes" },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
   { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
@@ -67,6 +68,7 @@ const ALL_PAGES = [
   { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/products", label: "Produtos", icon: Package },
+  { to: "/concorrentes", label: "Concorrentes", icon: Swords },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
   { to: "/atendimento", label: "Atendimento", icon: Headphones },

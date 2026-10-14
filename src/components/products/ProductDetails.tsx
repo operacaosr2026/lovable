@@ -1,31 +1,44 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { DollarSign, Loader2, Megaphone, Package, Tag as TagIcon, Target, TrendingUp, X } from "lucide-react";
+import { Brain, DollarSign, Hammer, ListChecks, Loader2, Megaphone, Package, Tag as TagIcon, Target, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getProduct, updateProduct, saveProductPricing } from "@/lib/products.functions";
 import { useProductStatuses } from "@/components/products/product-status";
 import { ProductImages } from "@/components/products/ProductImages";
-import { ProductTemplates } from "@/components/products/ProductTemplates";
 import { ProductCreatives } from "@/components/products/ProductCreatives";
 import { ProductSales } from "@/components/products/ProductSales";
 import { ProductDiary } from "@/components/products/ProductDiary";
 import { ProductionTab } from "@/components/shops/StoreProduction";
 import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
 import { ProductPageTab } from "@/components/products/ProductPageTab";
+import { ProductCompetitors } from "@/components/products/ProductCompetitors";
 
-const TABS = [
-  { id: "vendas", label: "Vendas" },
-  { id: "diario", label: "Diário" },
-  { id: "informacoes", label: "Informações" },
-  { id: "producao", label: "Produção" },
-  { id: "imagens", label: "Imagens" },
-  { id: "template", label: "Template da Página" },
-  { id: "criativos", label: "Criativos" },
-  { id: "pagina", label: "Página" },
-  { id: "shopify", label: "Publicar nas lojas" },
+const GROUPS = [
+  {
+    id: "inteligencia", label: "Inteligência", icon: Brain,
+    tabs: [
+      { id: "vendas", label: "Vendas" },
+      { id: "diario", label: "Diário" },
+      { id: "informacoes", label: "Informações" },
+      { id: "concorrentes", label: "Concorrentes" },
+    ],
+  },
+  {
+    id: "producao", label: "Produção", icon: Hammer,
+    tabs: [
+      { id: "imagens", label: "Imagens" },
+      { id: "criativos", label: "Criativos" },
+      { id: "pagina", label: "Página" },
+      { id: "shopify", label: "Publicar nas lojas" },
+    ],
+  },
+  { id: "tarefas", label: "Tarefas", icon: ListChecks, tabs: [{ id: "tarefas", label: "Tarefas" }] },
+  { id: "anuncios", label: "Anúncios", icon: Megaphone, tabs: [{ id: "anuncios", label: "Anúncios" }] },
 ] as const;
+
+type TabId = typeof GROUPS[number]["tabs"][number]["id"];
 
 // Conteúdo do produto (cabeçalho + abas) — usado no popup da página Produtos
 // e na página /shops/products/$productId (link direto).
@@ -34,7 +47,7 @@ export function ProductDetails({ productId }: { productId: string }) {
   const get = useServerFn(getProduct);
   const updateFn = useServerFn(updateProduct);
 
-  const [tab, setTab] = useState<typeof TABS[number]["id"]>("vendas");
+  const [tab, setTab] = useState<TabId>("vendas");
 
   const { data, isLoading } = useQuery({ queryKey: ["product", productId], queryFn: () => get({ data: { id: productId } }) });
   const update = useMutation({
@@ -45,6 +58,7 @@ export function ProductDetails({ productId }: { productId: string }) {
 
   if (isLoading || !data) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
   const product = data.product;
+  const group = GROUPS.find((g) => g.tabs.some((t) => t.id === tab))!;
 
   return (
     <div className="min-w-0">
@@ -60,17 +74,32 @@ export function ProductDetails({ productId }: { productId: string }) {
         </div>
       </div>
 
-      <div className="border-b border-border mb-6 flex gap-1 overflow-x-auto">
-        {TABS.map((t) => (
+      <div className="border-b border-border mb-4 flex gap-1 overflow-x-auto">
+        {GROUPS.map((g) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-3 h-9 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${tab === t.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            key={g.id}
+            onClick={() => setTab(g.tabs[0].id)}
+            className={`flex items-center gap-1.5 px-3 h-10 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${g.id === group.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >
-            {t.label}
+            <g.icon className="size-4" />
+            {g.label}
           </button>
         ))}
       </div>
+
+      {group.tabs.length > 1 && (
+        <div className="mb-6 flex gap-1 overflow-x-auto">
+          {group.tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 h-8 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${tab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === "informacoes" && (
         <div className="space-y-4">
@@ -83,14 +112,24 @@ export function ProductDetails({ productId }: { productId: string }) {
           <Card><ProductionTab kind="product" targetId={productId} section="info" /></Card>
         </div>
       )}
-      {tab === "producao" && <ProductionTab kind="product" targetId={productId} section="tasks" />}
+      {tab === "tarefas" && <ProductionTab kind="product" targetId={productId} section="tasks" />}
       {tab === "imagens" && <ProductImages productId={productId} />}
-      {tab === "template" && <ProductTemplates productId={productId} />}
       {tab === "criativos" && <ProductCreatives productId={productId} />}
       {tab === "vendas" && <ProductSales productId={productId} />}
       {tab === "diario" && <ProductDiary productId={productId} />}
       {tab === "pagina" && <ProductPageTab productId={productId} />}
       {tab === "shopify" && <ProductShopifyTab productId={productId} />}
+      {tab === "concorrentes" && <ProductCompetitors productId={productId} />}
+      {tab === "anuncios" && <ComingSoon title="Anúncios" description="Em breve: publique as campanhas deste produto nas contas de anúncio." />}
+    </div>
+  );
+}
+
+function ComingSoon({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border py-16 text-center">
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="text-xs text-muted-foreground mt-1">{description}</div>
     </div>
   );
 }
@@ -98,7 +137,7 @@ export function ProductDetails({ productId }: { productId: string }) {
 export function ProductDetailsDialog({ productId, onClose }: { productId: string; onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full max-w-5xl h-[90vh] overflow-y-auto [scrollbar-gutter:stable]">
         <DialogTitle className="sr-only">Produto</DialogTitle>
         <ProductDetails productId={productId} />
       </DialogContent>

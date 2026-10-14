@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as AtendimentoRouteImport } from "./routes/atendimento";
 import { Route as ChargebacksRouteImport } from "./routes/chargebacks";
+import { Route as ConcorrentesRouteImport } from "./routes/concorrentes";
 import { Route as ConsultorRouteImport } from "./routes/consultor";
 import { Route as GratitudeRouteImport } from "./routes/gratitude";
 import { Route as InteligenciaRouteImport } from "./routes/inteligencia";
@@ -81,6 +82,11 @@ const AtendimentoRoute = AtendimentoRouteImport.update({
 const ChargebacksRoute = ChargebacksRouteImport.update({
   id: "/chargebacks",
   path: "/chargebacks",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ConcorrentesRoute = ConcorrentesRouteImport.update({
+  id: "/concorrentes",
+  path: "/concorrentes",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ConsultorRoute = ConsultorRouteImport.update({
@@ -375,6 +381,7 @@ export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
   "/chargebacks": typeof ChargebacksRoute;
+  "/concorrentes": typeof ConcorrentesRoute;
   "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
   "/inteligencia": typeof InteligenciaRoute;
@@ -435,6 +442,7 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
   "/chargebacks": typeof ChargebacksRoute;
+  "/concorrentes": typeof ConcorrentesRoute;
   "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
   "/inteligencia": typeof InteligenciaRoute;
@@ -489,6 +497,7 @@ export interface FileRoutesById {
   "/": typeof IndexRoute;
   "/atendimento": typeof AtendimentoRoute;
   "/chargebacks": typeof ChargebacksRoute;
+  "/concorrentes": typeof ConcorrentesRoute;
   "/consultor": typeof ConsultorRoute;
   "/gratitude": typeof GratitudeRoute;
   "/inteligencia": typeof InteligenciaRoute;
@@ -551,6 +560,7 @@ export interface FileRouteTypes {
     | "/"
     | "/atendimento"
     | "/chargebacks"
+    | "/concorrentes"
     | "/consultor"
     | "/gratitude"
     | "/inteligencia"
@@ -611,6 +621,7 @@ export interface FileRouteTypes {
     | "/"
     | "/atendimento"
     | "/chargebacks"
+    | "/concorrentes"
     | "/consultor"
     | "/gratitude"
     | "/inteligencia"
@@ -664,6 +675,7 @@ export interface FileRouteTypes {
     | "/"
     | "/atendimento"
     | "/chargebacks"
+    | "/concorrentes"
     | "/consultor"
     | "/gratitude"
     | "/inteligencia"
@@ -725,6 +737,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AtendimentoRoute: typeof AtendimentoRoute;
   ChargebacksRoute: typeof ChargebacksRoute;
+  ConcorrentesRoute: typeof ConcorrentesRoute;
   ConsultorRoute: typeof ConsultorRoute;
   GratitudeRoute: typeof GratitudeRoute;
   InteligenciaRoute: typeof InteligenciaRoute;
@@ -779,6 +792,13 @@ declare module "@tanstack/react-router" {
       path: "/chargebacks";
       fullPath: "/chargebacks";
       preLoaderRoute: typeof ChargebacksRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/concorrentes": {
+      id: "/concorrentes";
+      path: "/concorrentes";
+      fullPath: "/concorrentes";
+      preLoaderRoute: typeof ConcorrentesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/consultor": {
@@ -1287,6 +1307,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AtendimentoRoute: AtendimentoRoute,
   ChargebacksRoute: ChargebacksRoute,
+  ConcorrentesRoute: ConcorrentesRoute,
   ConsultorRoute: ConsultorRoute,
   GratitudeRoute: GratitudeRoute,
   InteligenciaRoute: InteligenciaRoute,
