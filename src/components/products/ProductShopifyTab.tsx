@@ -141,7 +141,7 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
       <section>
         <SectionTitle>Imagens</SectionTitle>
         {data.images.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma imagem — envie na aba Imagens.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma imagem — envie no Carrossel da aba Página.</p>
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">Clique pra incluir ou tirar. A ordem dos números é a ordem na Shopify; a 1ª vira a imagem principal.</p>

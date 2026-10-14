@@ -2,7 +2,7 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { fetchWithRetry } from "@/lib/http";
 import { TEMPLATE_FILE_NAME, TEMPLATE_JSON } from "@/lib/pagefly/pgvendas2.template";
 import { GALLERY_VIDEO_MARKER, SRX_GALLERY_CODE } from "@/lib/pagefly/srx-gallery";
-import { htmlToText, textToHtml, type CdnImage, type ProductPageData } from "@/lib/product-page";
+import { htmlToText, textToHtml, type CdnImage, type PageReview, type ProductPageData } from "@/lib/product-page";
 
 const API = "2026-07";
 
@@ -71,12 +71,13 @@ const STAGED_UPLOADS = `mutation($input: [StagedUploadInput!]!) {
   }
 }`;
 const VIDEO_STATUS = `query($ids: [ID!]!) {
-  nodes(ids: $ids) { ... on Video { id fileStatus sources { url mimeType height width } } }
+  nodes(ids: $ids) { ... on Video { id fileStatus originalSource { url width height } sources { url mimeType height width } } }
 }`;
 
 // Vídeo não pode vir de link externo: sobe pro armazenamento temporário da
-// Shopify (staged upload), cria o arquivo e espera ela processar pra ter o
-// .mp4 do CDN (a maior versão até 1080p).
+// Shopify (staged upload) e cria o arquivo. Usa o .mp4 processado (maior
+// versão até 1080p) se já estiver pronto; senão o arquivo original, que fica
+// no CDN segundos após o envio — sem esperar o processamento.
 export async function uploadVideosToShopifyFiles(
   store: { shop_domain: string; access_token: string },
   sources: { key: string; blob: Blob; name: string; mime: string }[],
@@ -109,12 +110,16 @@ export async function uploadVideosToShopifyFiles(
   const keyById = new Map(files.map((f, i) => [f.id, sources[i].key]));
 
   let pending = files.map((f) => f.id);
-  for (let attempt = 0; attempt < 60 && pending.length > 0; attempt++) {
-    await new Promise((r) => setTimeout(r, 3000));
+  // Para assim que cada vídeo tiver um link: o processado, se já estiver
+  // pronto, ou o original (sai em segundos). Limite de 1 min.
+  const original = new Map<string, CdnImage>();
+  for (let attempt = 0; attempt < 30 && pending.some((id) => !original.has(id)); attempt++) {
+    await new Promise((r) => setTimeout(r, 2000));
     const st = await gql(domain, token, VIDEO_STATUS, { ids: pending });
     for (const n of (st.nodes ?? []) as any[]) {
       if (!n?.id) continue;
       if (n.fileStatus === "FAILED") throw new Error("A Shopify não conseguiu processar um dos vídeos.");
+      if (n.originalSource?.url) original.set(n.id, { url: n.originalSource.url, width: n.originalSource.width ?? null, height: n.originalSource.height ?? null });
       const mp4s = ((n.sources ?? []) as { url: string; mimeType: string; height: number | null; width: number | null }[])
         .filter((v) => v.mimeType === "video/mp4" && v.url)
         .sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
@@ -125,7 +130,11 @@ export async function uploadVideosToShopifyFiles(
       }
     }
   }
-  if (pending.length > 0) throw new Error("A Shopify demorou pra processar os vídeos — tente gerar de novo.");
+  for (const id of pending) {
+    const src = original.get(id);
+    if (!src) throw new Error("A Shopify ainda não liberou um dos vídeos — tente gerar de novo daqui a pouco.");
+    out[keyById.get(id)!] = src;
+  }
   return out;
 }
 
@@ -143,6 +152,8 @@ export type TemplateTargets = {
   // quando existe, o carrossel é ela, não o Slideshow do PageFly.
   galleryHtml: string | null;
   testimonialsSlideshow: string | null; finalImages: string[];
+  // Blocos em código: depoimentos em texto (#srx-reviews) e produtos recomendados (#srx-recommendations).
+  reviewsHtml: string | null; recsHtml: string | null;
 };
 export type PageTemplate = { doc: Doc; jsonName: string; targets: TemplateTargets };
 
@@ -185,10 +196,13 @@ export function findTargets(doc: Doc): TemplateTargets {
     break;
   }
 
-  // Penúltima seção da página.
+  // Última seção com conteúdo do PageFly (título/texto/imagem) — as seções
+  // só com bloco em código (depoimentos, recomendados...) no fim não contam.
   const layout = all.find((i) => i.type === "Layout");
   const sections = (layout?.children ?? []).map((id) => byId.get(id)!).filter((i) => i?.type === "Section");
-  const penult = sections.length >= 2 ? subtree(sections[sections.length - 2].id) : [];
+  const withContent = sections.filter((s) => subtree(s.id).some((i) => isHeading(i) || isParagraph(i) || isImage(i)));
+  const penult = withContent.length >= 2 ? subtree(withContent[withContent.length - 1].id) : [];
+  const htmlWith = (re: RegExp) => all.find((i) => i.type === "Custom.HTML" && re.test(String(i.data?.code ?? ""))) ?? null;
   const paragraphs = penult.filter(isParagraph);
 
   return {
@@ -202,6 +216,8 @@ export function findTargets(doc: Doc): TemplateTargets {
     galleryHtml: galleryHtml?.id ?? null,
     testimonialsSlideshow: testimonials?.id ?? null,
     finalImages: penult.filter((i) => isImage(i) && !inSlides.has(i.id)).slice(0, 3).map((i) => i.id),
+    reviewsHtml: htmlWith(/id=["']srx-reviews["']/)?.id ?? null,
+    recsHtml: htmlWith(/id=["']srx-recommendations["']/)?.id ?? null,
   };
 }
 
@@ -250,6 +266,121 @@ export function templateTexts(tpl: PageTemplate) {
   return { title: val(t.title), text1: val(t.text1), text2: val(t.text2), details: val(t.details) };
 }
 
+// ── Depoimentos em texto (#srx-reviews) ──
+
+const REVIEW_CARD_RE = /<div class=["']srx-card["'][^>]*data-rating=["']([\d.]+)["'][^>]*>[\s\S]*?<h3>([\s\S]*?)<\/h3>\s*<p>([\s\S]*?)<\/p>[\s\S]*?<span class=["']srx-author["']>([\s\S]*?)<\/span>/gi;
+const REVIEWS_CAROUSEL_RE = /(<div class=["']srx-carousel["'][^>]*>)[\s\S]*?(<\/div>\s*<button[^>]*class=["'][^"']*srx-next)/i;
+const REVIEWS_HEADING_RE = /(<div class=["']srx-reviews-header["'][^>]*>\s*<h2[^>]*>)([\s\S]*?)(<\/h2>)/i;
+const REVIEWS_RATING_RE = /(<div class=["']srx-rating["'][^>]*>[\s\S]*?<strong>)([^<]*)(<\/strong>)/i;
+const REVIEWS_COUNT_RE = /(<p class=["']srx-review-count["'][^>]*>[\s\S]*?<u>)([^<]*)(<\/u>)/i;
+const REVIEWS_MAIN_STARS_RE = /(createStars\(\s*mainStars\s*,\s*)[\d.]+(\s*\))/;
+
+const decode = (s: string) => s
+  .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
+  .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+const oneLine = (html: string) => decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function codeOf(tpl: PageTemplate, id: string | null) {
+  return id ? String(tpl.doc.items.find((i) => i.id === id)?.data?.code ?? "") : "";
+}
+
+// Depoimentos e título dos recomendados como estão no modelo (o formulário abre com eles).
+export function templateBlocks(tpl: PageTemplate) {
+  const rev = codeOf(tpl, tpl.targets.reviewsHtml);
+  const recs = codeOf(tpl, tpl.targets.recsHtml);
+  const reviews: PageReview[] = [...rev.matchAll(REVIEW_CARD_RE)].map((m) => ({
+    id: crypto.randomUUID(), rating: Number(m[1]) || 5, title: oneLine(m[2]), text: oneLine(m[3]), author: oneLine(m[4]),
+  }));
+  return {
+    reviews_heading: oneLine(rev.match(REVIEWS_HEADING_RE)?.[2] ?? ""),
+    reviews_rating: oneLine(rev.match(REVIEWS_RATING_RE)?.[2] ?? ""),
+    reviews_count: oneLine(rev.match(REVIEWS_COUNT_RE)?.[2] ?? ""),
+    reviews,
+    recs_title: oneLine(recs.match(/<h2 class=["']srx-rec-title["'][^>]*>([\s\S]*?)<\/h2>/i)?.[1] ?? ""),
+  };
+}
+
+function buildReviewsCode(code: string, page: ProductPageData): string {
+  let out = code;
+  if (page.reviews.length > 0) {
+    const cards = page.reviews.map((r, i) => `
+      <!-- REVIEW ${i + 1} -->
+      <div class="srx-card" data-rating="${Math.min(5, Math.max(0, r.rating || 5))}">
+        <div>
+          <div class="srx-stars"></div>
+          <h3>${esc(r.title)}</h3>
+          <p>${esc(r.text).replace(/\r?\n/g, "<br>")}</p>
+        </div>
+        <span class="srx-author">${esc(r.author)}</span>
+      </div>
+`).join("");
+    out = out.replace(REVIEWS_CAROUSEL_RE, (_m, open, close) => `${open}\n${cards}\n    ${close}`);
+  }
+  if (page.reviews_heading.trim()) out = out.replace(REVIEWS_HEADING_RE, (_m, a, _v, b) => `${a}${esc(page.reviews_heading.trim())}${b}`);
+  const rating = Number(page.reviews_rating.replace(",", "."));
+  if (rating > 0 && rating <= 5) {
+    out = out.replace(REVIEWS_RATING_RE, (_m, a, _v, b) => `${a}${rating}${b}`);
+    out = out.replace(REVIEWS_MAIN_STARS_RE, (_m, a, b) => `${a}${rating}${b}`);
+  }
+  if (page.reviews_count.trim()) out = out.replace(REVIEWS_COUNT_RE, (_m, a, _v, b) => `${a}${esc(page.reviews_count.trim())}${b}`);
+  return out;
+}
+
+// ── Produtos recomendados (#srx-recommendations) ──
+
+export type RecCard = { link: string; name: string; image: string | null; price: number | null; compare: number | null };
+
+const RECS_TRACK_RE = /(<div class=["']srx-rec-track["'][^>]*>)[\s\S]*?(<\/div>\s*<\/div>\s*(?:<!--[\s\S]*?-->\s*)?<div class=["']srx-rec-navigation)/i;
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+function buildRecsCode(code: string, page: ProductPageData, cards: RecCard[]): string {
+  let out = code;
+  if (page.recs_title.trim()) out = out.replace(/(<h2 class=["']srx-rec-title["'][^>]*>)([\s\S]*?)(<\/h2>)/i, (_m, a, _v, b) => `${a}${esc(page.recs_title.trim())}${b}`);
+  if (cards.length === 0) return out;
+  const html = cards.map((c, i) => {
+    const off = c.price && c.compare && c.compare > c.price ? Math.round((1 - c.price / c.compare) * 100) : 0;
+    return `
+      <!-- PRODUTO ${i + 1} -->
+      <a href="${esc(c.link || "#")}" class="srx-product-card">
+        <div class="srx-product-image">
+          ${c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy">` : ""}
+          ${off > 0 ? `<span class="srx-discount">◆ Save ${off}%</span>` : ""}
+        </div>
+        <div class="srx-product-info">
+          <h3>${esc(c.name)}</h3>
+          <div class="srx-prices">
+            ${c.price ? `<strong>${money(c.price)}</strong>` : ""}
+            ${off > 0 ? `<del>${money(c.compare!)}</del>` : ""}
+          </div>
+        </div>
+      </a>
+`;
+  }).join("");
+  out = out.replace(RECS_TRACK_RE, (_m, open, close) => `${open}\n${html}\n    ${close}`);
+  return out.replace(/(<span id=["']srxTotal["']>)\d*(<\/span>)/, (_m, a, b) => `${a}${cards.length}${b}`);
+}
+
+// Ordem das partes editáveis como aparecem na página (o formulário segue).
+export type PageSectionKey = "carousel" | "details" | "testimonials" | "reviews" | "final" | "recs";
+function sectionOrder(tpl: PageTemplate): PageSectionKey[] {
+  const t = tpl.targets;
+  const byId = new Map(tpl.doc.items.map((i) => [i.id, i]));
+  const body = tpl.doc.items.find((i) => i.type === "Body");
+  const pos = new Map<string, number>();
+  const walk = (id: string) => { pos.set(id, pos.size); for (const c of byId.get(id)?.children ?? []) walk(c); };
+  if (body) walk(body.id);
+  const anchors: [PageSectionKey, string | null | undefined][] = [
+    ["carousel", t.galleryHtml ?? t.mainImage], ["details", t.details], ["testimonials", t.testimonialsSlideshow],
+    ["reviews", t.reviewsHtml], ["final", t.title ?? t.text1 ?? t.finalImages[0]], ["recs", t.recsHtml],
+  ];
+  const at = (id: string | null | undefined) => (id && pos.has(id) ? pos.get(id)! : Number.MAX_SAFE_INTEGER);
+  return anchors.filter(([k, id]) => id || (k !== "reviews" && k !== "recs"))
+    .map(([k, id], i) => ({ k, p: at(id), i }))
+    .sort((a, b) => a.p - b.p || a.i - b.i)
+    .map((x) => x.k);
+}
+
 // Resumo pra tela: o que foi achado no modelo.
 export function templatePreview(tpl: PageTemplate) {
   const byId = new Map(tpl.doc.items.map((i) => [i.id, i]));
@@ -262,6 +393,9 @@ export function templatePreview(tpl: PageTemplate) {
     carouselKind: t.galleryHtml ? "galeria em código" : "carrossel do PageFly",
     testimonials: slides(t.testimonialsSlideshow),
     finals: t.finalImages.length,
+    reviews: t.reviewsHtml ? [...codeOf(tpl, t.reviewsHtml).matchAll(REVIEW_CARD_RE)].length : null,
+    recs: !!t.recsHtml,
+    order: sectionOrder(tpl),
     buttonLink: t.button ? String(byId.get(t.button)?.data?.link ?? "") : null,
     missing: missingTargets(t),
   };
@@ -309,7 +443,7 @@ function resizeSlideshow(items: Item[], styles: Style[], slideshowId: string, co
 }
 
 export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
-  carousel: CdnImage[]; testimonials: CdnImage[]; finals: CdnImage[];
+  carousel: CdnImage[]; testimonials: CdnImage[]; finals: CdnImage[]; recs?: RecCard[];
 }): { bytes: Uint8Array; fileName: string; warnings: string[] } {
   const doc = structuredClone(tpl.doc);
   const t = tpl.targets;
@@ -367,6 +501,11 @@ export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
   if (images.finals.length > 0 && images.finals.length < t.finalImages.length) {
     warnings.push(`Imagens finais: ${images.finals.length} de ${t.finalImages.length} — as outras ficaram as do modelo.`);
   }
+  const reviewsItem = t.reviewsHtml ? map.get(t.reviewsHtml) : undefined;
+  if (reviewsItem?.data) reviewsItem.data.code = buildReviewsCode(String(reviewsItem.data.code), page);
+  const recsItem = t.recsHtml ? map.get(t.recsHtml) : undefined;
+  if (recsItem?.data) recsItem.data.code = buildRecsCode(String(recsItem.data.code), page, images.recs ?? []);
+
   const missing = missingTargets(t);
   if (missing.length) warnings.push(`Não achei no modelo (ficou como está): ${missing.join(", ")}.`);
 

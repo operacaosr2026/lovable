@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getProduct, updateProduct, saveProductPricing } from "@/lib/products.functions";
 import { useProductStatuses } from "@/components/products/product-status";
-import { ProductImages } from "@/components/products/ProductImages";
 import { ProductCreatives } from "@/components/products/ProductCreatives";
 import { ProductSales } from "@/components/products/ProductSales";
 import { ProductDiary } from "@/components/products/ProductDiary";
@@ -29,7 +28,6 @@ const GROUPS = [
     id: "producao", label: "Produção", icon: Hammer,
     tabs: [
       { id: "tarefas", label: "Tarefas" },
-      { id: "imagens", label: "Imagens" },
       { id: "criativos", label: "Criativos" },
       { id: "pagina", label: "Página" },
       { id: "shopify", label: "Publicar nas lojas" },
@@ -113,7 +111,6 @@ export function ProductDetails({ productId }: { productId: string }) {
         </div>
       )}
       {tab === "tarefas" && <ProductionTab kind="product" targetId={productId} section="tasks" />}
-      {tab === "imagens" && <ProductImages productId={productId} />}
       {tab === "criativos" && <ProductCreatives productId={productId} />}
       {tab === "vendas" && <ProductSales productId={productId} />}
       {tab === "diario" && <ProductDiary productId={productId} />}
