@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Brain, DollarSign, Hammer, ListChecks, Loader2, Megaphone, Package, Tag as TagIcon, Target, TrendingUp, X } from "lucide-react";
+import { Brain, DollarSign, Hammer, Loader2, Megaphone, Package, Tag as TagIcon, Target, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getProduct, updateProduct, saveProductPricing } from "@/lib/products.functions";
@@ -28,13 +28,13 @@ const GROUPS = [
   {
     id: "producao", label: "Produção", icon: Hammer,
     tabs: [
+      { id: "tarefas", label: "Tarefas" },
       { id: "imagens", label: "Imagens" },
       { id: "criativos", label: "Criativos" },
       { id: "pagina", label: "Página" },
       { id: "shopify", label: "Publicar nas lojas" },
     ],
   },
-  { id: "tarefas", label: "Tarefas", icon: ListChecks, tabs: [{ id: "tarefas", label: "Tarefas" }] },
   { id: "anuncios", label: "Anúncios", icon: Megaphone, tabs: [{ id: "anuncios", label: "Anúncios" }] },
 ] as const;
 
