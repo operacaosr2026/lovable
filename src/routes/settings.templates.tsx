@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Layers, Package, Store, Swords } from "lucide-react";
+import { Layers, Package, ShoppingBag, Store, Swords } from "lucide-react";
 import { ProductionTemplates } from "@/components/shops/ProductionTemplates";
 import { VariantTemplates } from "@/components/products/VariantTemplates";
 import { CompetitorTemplates } from "@/components/products/ProductCompetitors";
+import { RecsTemplate } from "@/components/products/RecsTemplate";
 
-type Tipo = "lojas" | "produtos" | "variantes" | "concorrentes";
-const TIPOS: Tipo[] = ["lojas", "produtos", "variantes", "concorrentes"];
+type Tipo = "lojas" | "produtos" | "variantes" | "concorrentes" | "recomendados";
+const TIPOS: Tipo[] = ["lojas", "produtos", "variantes", "concorrentes", "recomendados"];
 
 export const Route = createFileRoute("/settings/templates")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -19,6 +20,7 @@ const TABS: { id: Tipo; label: string; icon: typeof Store }[] = [
   { id: "produtos", label: "Produtos", icon: Package },
   { id: "variantes", label: "Variantes", icon: Layers },
   { id: "concorrentes", label: "Concorrentes", icon: Swords },
+  { id: "recomendados", label: "Recomendados", icon: ShoppingBag },
 ];
 
 function TemplatesPage() {
@@ -46,6 +48,7 @@ function TemplatesPage() {
       </div>
       {tipo === "variantes" ? <VariantTemplates />
         : tipo === "concorrentes" ? <CompetitorTemplates />
+        : tipo === "recomendados" ? <RecsTemplate />
         : <ProductionTemplates key={tipo} kind={tipo === "produtos" ? "product" : "store"} />}
     </div>
   );

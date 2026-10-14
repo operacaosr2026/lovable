@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, AlignLeft, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, Check, ChevronDown, Download, FileText, FileUp, Film, ImageOff, Images,
-  LayoutPanelTop, Loader2, MessageSquareQuote, Plus, RotateCcw, ShoppingBag, Upload, X, type LucideIcon,
+  AlertTriangle, AlignLeft, ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Download, FileText, FileUp, Film, ImageOff, Images,
+  LayoutPanelTop, Loader2, MessageSquareQuote, RotateCcw, ShoppingBag, Upload, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,11 +14,10 @@ import { addProductImage, deleteProductImage } from "@/lib/products.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { isVideoMime, type PageTestimonial, type ProductPageData } from "@/lib/product-page";
 import { AutoTextarea } from "@/components/shops/StoreProduction";
+import { Field, RecsEditor, ReviewsEditor, areaCls, inputCls, move } from "@/components/products/page-fields";
 
 type Page = Omit<ProductPageData, "cdn">;
 type SectionKey = "carousel" | "details" | "testimonials" | "reviews" | "final" | "recs";
-const inputCls = "w-full h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
-const areaCls = "w-full min-h-20 px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
 const uploadBtn = "h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50";
 
 // Aba "Página": preenche o modelo do PageFly e gera o .pagefly. As seções do
@@ -207,7 +206,7 @@ export function ProductPageTab({ productId }: { productId: string }) {
       title: "Depoimentos (texto)", icon: MessageSquareQuote,
       done: reviewsDone,
       hint: page.reviews.length ? `${page.reviews.length} depoimentos` : "vazio = ficam os do modelo",
-      body: <ReviewsEditor page={page} set={set} />,
+      body: <ReviewsEditor value={page} onChange={set} productName={page.file_name} />,
     },
     final: {
       title: "Seção final (título, textos e imagens)", icon: LayoutPanelTop,
@@ -242,7 +241,27 @@ export function ProductPageTab({ productId }: { productId: string }) {
       title: "Produtos recomendados", icon: ShoppingBag,
       done: page.recs.length > 0 && page.recs.every((r) => r.link.trim()),
       hint: page.recs.length ? `${page.recs.length} produtos` : "vazio = ficam os do modelo",
-      body: <RecsEditor page={page} set={set} products={data.products} />,
+      body: (
+        <RecsEditor
+          title={page.recs_title} recs={page.recs} products={data.products} onChange={set}
+          emptyText="Nenhum produto — sem produtos aqui, ficam os do modelo (com links de exemplo)."
+          toolbar={
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-primary/5 px-3.5 py-2.5">
+              <span className="text-xs text-muted-foreground">
+                Páginas novas já vêm com o template de <a href="/settings/templates?tipo=recomendados" target="_blank" rel="noreferrer" className="font-semibold text-primary hover:underline">Configurações › Templates</a>.
+              </span>
+              <button
+                type="button"
+                disabled={data.recsTemplate.recs.length === 0}
+                onClick={() => set({ recs: data.recsTemplate.recs, recs_title: data.recsTemplate.recs_title || page.recs_title })}
+                className="h-8 px-3 rounded-lg border border-border bg-background text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+              >
+                <RotateCcw className="size-3.5" /> Usar template ({data.recsTemplate.recs.length})
+              </button>
+            </div>
+          }
+        />
+      ),
     },
   };
   const order = (data.template.order as SectionKey[]).filter((k) => sections[k]);
@@ -314,8 +333,8 @@ function Drawer({ icon: Icon, title, done, hint, open, onToggle, children }: {
   icon: LucideIcon; title: string; done: boolean; hint?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className={`rounded-xl border bg-surface ${open ? "border-primary/40" : "border-border"}`}>
-      <button type="button" onClick={onToggle} className="w-full flex items-center gap-3 px-3.5 py-3 text-left">
+    <div className={`rounded-2xl border bg-surface transition-shadow ${open ? "border-primary/30 shadow-md" : "border-border shadow-xs hover:shadow-sm"}`}>
+      <button type="button" onClick={onToggle} className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left">
         <span className={`size-9 rounded-xl grid place-items-center shrink-0 ${done ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
           <Icon className="size-4.5" />
         </span>
@@ -328,7 +347,7 @@ function Drawer({ icon: Icon, title, done, hint, open, onToggle, children }: {
         </span>
         <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && <div className="px-3.5 pb-4 pt-1 border-t border-border/60">{children}</div>}
+      {open && <div className="px-4 pb-5 pt-4 border-t border-border/60">{children}</div>}
     </div>
   );
 }
@@ -399,133 +418,6 @@ type TemplateInfo = {
   reviews: number | null; recs: boolean; order: SectionKey[]; buttonLink: string | null; missing: string[];
 };
 
-const move = <T,>(list: T[], i: number, d: -1 | 1) => {
-  const j = i + d;
-  if (j < 0 || j >= list.length) return list;
-  const next = [...list];
-  [next[i], next[j]] = [next[j], next[i]];
-  return next;
-};
-const iconBtn = "size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30";
-
-// Bloco "srx-reviews" do modelo: cabeçalho (título, nota, nº de avaliações) e
-// os cards de depoimento. Lista vazia = ficam os do modelo.
-function ReviewsEditor({ page, set }: { page: Page; set: (p: Partial<Page>) => void }) {
-  const update = (id: string, patch: Partial<Page["reviews"][number]>) =>
-    set({ reviews: page.reviews.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-  return (
-    <div>
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px_160px] gap-3 mb-3">
-        <Field label="Título da seção">
-          <input value={page.reviews_heading} onChange={(e) => set({ reviews_heading: e.target.value })} className={inputCls} />
-        </Field>
-        <Field label="Nota geral">
-          <input value={page.reviews_rating} onChange={(e) => set({ reviews_rating: e.target.value })} placeholder="4.6" className={inputCls} />
-        </Field>
-        <Field label="Nº de avaliações">
-          <input value={page.reviews_count} onChange={(e) => set({ reviews_count: e.target.value })} placeholder="1,467" className={inputCls} />
-        </Field>
-      </div>
-      {page.reviews.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum depoimento — sem depoimentos aqui, ficam os do modelo.</p>
-      ) : (
-        <div className="space-y-2">
-          {page.reviews.map((r, i) => (
-            <div key={r.id} className="rounded-xl border border-border p-3 flex gap-3">
-              <span className="size-5 mt-1.5 shrink-0 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{i + 1}</span>
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px_90px] gap-2">
-                  <input value={r.title} onChange={(e) => update(r.id, { title: e.target.value })} placeholder="Título do depoimento" className={inputCls} />
-                  <input value={r.author} onChange={(e) => update(r.id, { author: e.target.value })} placeholder="Autor" className={inputCls} />
-                  <select value={r.rating} onChange={(e) => update(r.id, { rating: Number(e.target.value) })} className={inputCls}>
-                    {[5, 4.5, 4, 3.5, 3].map((n) => <option key={n} value={n}>{n} ★</option>)}
-                  </select>
-                </div>
-                <AutoTextarea value={r.text} onChange={(e) => update(r.id, { text: e.target.value })} placeholder="Texto do depoimento" className={areaCls} />
-              </div>
-              <div className="flex flex-col gap-1 shrink-0">
-                <button onClick={() => set({ reviews: move(page.reviews, i, -1) })} disabled={i === 0} title="Subir" className={iconBtn}><ArrowUp className="size-3.5" /></button>
-                <button onClick={() => set({ reviews: move(page.reviews, i, 1) })} disabled={i === page.reviews.length - 1} title="Descer" className={iconBtn}><ArrowDown className="size-3.5" /></button>
-                <button onClick={() => set({ reviews: page.reviews.filter((x) => x.id !== r.id) })} title="Remover" className={`${iconBtn} hover:text-destructive`}><X className="size-3.5" /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <button
-        onClick={() => set({ reviews: [...page.reviews, { id: crypto.randomUUID(), title: "", text: "", author: "", rating: 5 }] })}
-        className="mt-2 w-full h-9 rounded-lg border border-dashed border-border text-xs font-medium text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5"
-      >
-        <Plus className="size-3.5" /> Depoimento
-      </button>
-    </div>
-  );
-}
-
-// Bloco "srx-recommendations": produtos do sistema, na ordem. Nome, foto
-// principal e preço (ficha da Shopify) entram na hora de gerar; o link vem do
-// card do produto (Informações › Link da página) e pode ser trocado aqui.
-function RecsEditor({ page, set, products }: {
-  page: Page; set: (p: Partial<Page>) => void; products: { id: string; name: string; image: string | null; link: string }[];
-}) {
-  const byId = new Map(products.map((p) => [p.id, p]));
-  const available = products.filter((p) => !page.recs.some((r) => r.product_id === p.id));
-  return (
-    <div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-        <Field label="Título da seção">
-          <input value={page.recs_title} onChange={(e) => set({ recs_title: e.target.value })} className={inputCls} />
-        </Field>
-        <Field label="Adicionar produto">
-          <select
-            value=""
-            onChange={(e) => {
-              const p = byId.get(e.target.value);
-              if (p) set({ recs: [...page.recs, { product_id: p.id, link: p.link }] });
-            }}
-            className={inputCls}
-          >
-            <option value="">Escolha um produto…</option>
-            {available.map((p) => <option key={p.id} value={p.id}>{p.name}{p.link ? "" : " (sem link)"}</option>)}
-          </select>
-        </Field>
-      </div>
-      {page.recs.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum produto — sem produtos aqui, ficam os do modelo.</p>
-      ) : (
-        <div className="rounded-xl border border-border divide-y divide-border">
-          {page.recs.map((r, i) => {
-            const p = byId.get(r.product_id);
-            return (
-              <div key={r.product_id} className="px-3 py-2 flex items-center gap-3">
-                <span className="size-5 shrink-0 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{i + 1}</span>
-                <div className="size-10 shrink-0 rounded-md overflow-hidden border border-border bg-muted/40 grid place-items-center">
-                  {p?.image ? <img src={p.image} alt="" className="w-full h-full object-cover" /> : <ImageOff className="size-4 text-muted-foreground" />}
-                </div>
-                <div className="flex-1 min-w-0 space-y-1">
-                  <p className="text-sm font-medium truncate">{p?.name ?? "Produto removido"}</p>
-                  <input
-                    value={r.link}
-                    onChange={(e) => set({ recs: page.recs.map((x) => (x.product_id === r.product_id ? { ...x, link: e.target.value } : x)) })}
-                    placeholder="https://sualoja.com/products/..."
-                    className={`${inputCls} h-8 text-xs ${r.link.trim() ? "" : "border-amber-500/60"}`}
-                  />
-                </div>
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button onClick={() => set({ recs: move(page.recs, i, -1) })} disabled={i === 0} title="Subir" className={iconBtn}><ArrowUp className="size-3.5" /></button>
-                  <button onClick={() => set({ recs: move(page.recs, i, 1) })} disabled={i === page.recs.length - 1} title="Descer" className={iconBtn}><ArrowDown className="size-3.5" /></button>
-                  <button onClick={() => set({ recs: page.recs.filter((x) => x.product_id !== r.product_id) })} title="Remover" className={`${iconBtn} hover:text-destructive`}><X className="size-3.5" /></button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <p className="text-[11px] text-muted-foreground mt-2">Nome, foto principal e preço (com o riscado e o % de desconto) saem da ficha de cada produto na hora de gerar.</p>
-    </div>
-  );
-}
-
 // Modelo .pagefly usado pra gerar (vale pra todos os produtos): o original ou
 // o que o dono subiu (ex.: depois de mudar a página no PageFly).
 function TemplateBox({ template, onChanged }: { template: TemplateInfo; onChanged: () => void }) {
@@ -595,11 +487,3 @@ function TemplateBox({ template, onChanged }: { template: TemplateInfo; onChange
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block min-w-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <div className="mt-1">{children}</div>
-    </label>
-  );
-}

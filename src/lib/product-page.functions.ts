@@ -63,6 +63,59 @@ const pagesPrefix = (ownerId: string, productId: string) => `${ownerId}/product-
 // original (PG de Vendas 2) que vem no código.
 const templatePath = (ownerId: string) => `${ownerId}/pagefly/template.pagefly`;
 
+// Template de produtos recomendados (Configurações › Templates): toda página
+// nova (ou sem recomendados ainda) começa com ele. Link vazio = o do card do produto.
+const recsTemplatePath = (ownerId: string) => `${ownerId}/pagefly/recs-template.json`;
+type RecsTemplate = { recs_title: string; recs: { product_id: string; link: string }[] };
+
+async function loadRecsTemplate(ownerId: string): Promise<RecsTemplate> {
+  const { data: file } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).download(recsTemplatePath(ownerId));
+  if (!file) return { recs_title: "", recs: [] };
+  try {
+    const t = JSON.parse(await file.text()) as Partial<RecsTemplate>;
+    return { recs_title: String(t.recs_title ?? ""), recs: Array.isArray(t.recs) ? t.recs : [] };
+  } catch { return { recs_title: "", recs: [] }; }
+}
+
+// Lista de produtos pra escolher (com o link salvo no card).
+async function productOptions(ownerId: string) {
+  const [all, links] = await Promise.all([
+    supabaseAdmin.from("products").select("id,name,main_image_url").eq("user_id", ownerId).eq("archived", false).order("name"),
+    productLinks(ownerId),
+  ]);
+  return (all.data ?? []).map((p) => ({ id: p.id, name: p.name, image: p.main_image_url, link: links.get(p.id) ?? "" }));
+}
+
+// Template aplicado a um produto: tira ele mesmo e completa os links vazios com os dos cards.
+function applyRecsTemplate(tpl: RecsTemplate, productId: string, options: { id: string; link: string }[]) {
+  const linkOf = new Map(options.map((o) => [o.id, o.link]));
+  return {
+    recs_title: tpl.recs_title,
+    recs: tpl.recs.filter((r) => r.product_id !== productId && linkOf.has(r.product_id))
+      .map((r) => ({ product_id: r.product_id, link: r.link.trim() || linkOf.get(r.product_id) || "" })),
+  };
+}
+
+export const getRecsTemplate = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const [template, products] = await Promise.all([loadRecsTemplate(context.ownerId), productOptions(context.ownerId)]);
+    return { template, products };
+  });
+
+export const saveRecsTemplate = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    recs_title: z.string().max(300),
+    recs: z.array(z.object({ product_id: z.string().uuid(), link: z.string().trim().max(2000) })).max(30),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const body = new Blob([JSON.stringify(data)], { type: "application/json" });
+    const { error } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).upload(recsTemplatePath(context.ownerId), body, { upsert: true, contentType: "application/json" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 async function loadTemplate(ownerId: string): Promise<{ tpl: PageTemplate; custom: boolean }> {
   const { data: file } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).download(templatePath(ownerId));
   if (file) {
@@ -85,10 +138,8 @@ export const getProductPage = createServerFn({ method: "GET" })
       supabaseAdmin.from("shop_group_stores").select("shopify_store_id,role"),
       supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,handle").eq("product_id", product.id).eq("status", "ok"),
     ]);
-    const [allProducts, links] = await Promise.all([
-      supabaseAdmin.from("products").select("id,name,main_image_url").eq("user_id", ownerId).eq("archived", false).order("name"),
-      productLinks(ownerId),
-    ]);
+    const [options, recsTpl] = await Promise.all([productOptions(ownerId), loadRecsTemplate(ownerId)]);
+    const fromTemplate = applyRecsTemplate(recsTpl, product.id, options);
     // Lojas da coluna Ativas (a página vai pra matriz).
     const activeIds = (columns.data ?? []).filter((c) => /^ativ/i.test(c.name.trim())).map((c) => c.id);
     const { data: stores } = activeIds.length
@@ -116,6 +167,10 @@ export const getProductPage = createServerFn({ method: "GET" })
     else if (page.reviews.length === 0 && !page.reviews_heading && !page.recs_title) {
       page = { ...page, ...templateBlocks(tpl) };
     }
+    // Sem recomendados ainda: começa com o template.
+    if (page.recs.length === 0 && fromTemplate.recs.length > 0) {
+      page = { ...page, recs: fromTemplate.recs, recs_title: fromTemplate.recs_title || page.recs_title };
+    }
     // Carrossel = todas as imagens do produto: as já ordenadas primeiro, as que faltam no fim.
     const imageIds = (images.data ?? []).map((i) => i.id);
     const kept = page.carousel_ids.filter((id) => imageIds.includes(id));
@@ -129,8 +184,8 @@ export const getProductPage = createServerFn({ method: "GET" })
     const { cdn: _cdn, ...pageNoCdn } = page;
     return {
       page: pageNoCdn, images: images.data ?? [], stores: storeList, handleByStore, thumbs,
-      products: (allProducts.data ?? []).filter((p) => p.id !== product.id)
-        .map((p) => ({ id: p.id, name: p.name, image: p.main_image_url, link: links.get(p.id) ?? "" })),
+      products: options.filter((p) => p.id !== product.id),
+      recsTemplate: fromTemplate,
       template: { custom, ...templatePreview(tpl) },
     };
   });
