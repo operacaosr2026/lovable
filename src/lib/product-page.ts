@@ -3,6 +3,10 @@
 export type PageTestimonial = { id: string; path: string; name: string };
 export type CdnImage = { url: string; width: number | null; height: number | null };
 
+// A aba Imagens também aceita vídeos: entram no carrossel (galeria em código),
+// mas nunca como imagem principal, imagem final ou foto do produto na Shopify.
+export const isVideoMime = (mime: string | null | undefined) => !!mime && mime.startsWith("video/");
+
 export type ProductPageData = {
   store_id: string | null;       // loja onde as imagens sobem (matriz)
   handle: string;                // handle do produto no link do botão

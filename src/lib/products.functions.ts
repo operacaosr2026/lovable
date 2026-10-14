@@ -10,6 +10,7 @@ import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderDateFor } from "@/lib/order-date";
 import { firstProductColumnId } from "@/lib/product-board.server";
 import { applyPreset } from "@/lib/store-production.server";
+import { isVideoMime } from "@/lib/product-page";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -337,10 +338,12 @@ export const addProductImage = createServerFn({ method: "POST" })
       .from("product_images").select("position").eq("product_id", data.product_id)
       .order("position", { ascending: false }).limit(1).maybeSingle();
     const position = (top?.position ?? 0) + 1;
+    // Vídeo nunca vira principal; a 1ª imagem (não vídeo) vira.
+    const isVideo = isVideoMime(data.mime_type);
     const { data: existing } = await context.supabase
-      .from("product_images").select("id").eq("product_id", data.product_id).limit(1).maybeSingle();
-    const isFirst = !existing;
-    const setMain = data.set_main || isFirst;
+      .from("product_images").select("id").eq("product_id", data.product_id)
+      .or("mime_type.is.null,mime_type.not.like.video/*").limit(1).maybeSingle();
+    const setMain = !isVideo && (data.set_main || !existing);
     if (setMain) {
       await context.supabase.from("product_images").update({ is_main: false }).eq("product_id", data.product_id);
     }
@@ -368,6 +371,7 @@ export const setMainImage = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { data: img } = await context.supabase.from("product_images").select("*").eq("id", data.id).maybeSingle();
     if (!img) throw new Error("Imagem não encontrada");
+    if (isVideoMime(img.mime_type)) throw new Error("Vídeo não pode ser a imagem principal");
     await context.supabase.from("product_images").update({ is_main: false }).eq("product_id", img.product_id);
     await context.supabase.from("product_images").update({ is_main: true }).eq("id", data.id);
     if (img.file_url) {
@@ -386,7 +390,7 @@ export const deleteProductImage = createServerFn({ method: "POST" })
     await context.supabase.from("product_images").delete().eq("id", data.id);
     if (img.is_main) {
       const { data: next } = await context.supabase.from("product_images").select("*")
-        .eq("product_id", img.product_id).order("position", { ascending: true }).limit(1).maybeSingle();
+        .eq("product_id", img.product_id).or("mime_type.is.null,mime_type.not.like.video/*").order("position", { ascending: true }).limit(1).maybeSingle();
       if (next) {
         await context.supabase.from("product_images").update({ is_main: true }).eq("id", next.id);
         await context.supabase.from("products").update({ main_image_url: next.file_url ?? null }).eq("id", img.product_id);

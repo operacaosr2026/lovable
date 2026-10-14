@@ -1,6 +1,7 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { fetchWithRetry } from "@/lib/http";
 import { TEMPLATE_FILE_NAME, TEMPLATE_JSON } from "@/lib/pagefly/pgvendas2.template";
+import { GALLERY_VIDEO_MARKER, SRX_GALLERY_CODE } from "@/lib/pagefly/srx-gallery";
 import { htmlToText, textToHtml, type CdnImage, type ProductPageData } from "@/lib/product-page";
 
 const API = "2026-07";
@@ -60,6 +61,71 @@ export async function uploadToShopifyFiles(
     }
   }
   if (pending.length > 0) throw new Error("A Shopify demorou pra processar as imagens — tente gerar de novo.");
+  return out;
+}
+
+const STAGED_UPLOADS = `mutation($input: [StagedUploadInput!]!) {
+  stagedUploadsCreate(input: $input) {
+    stagedTargets { url resourceUrl parameters { name value } }
+    userErrors { message }
+  }
+}`;
+const VIDEO_STATUS = `query($ids: [ID!]!) {
+  nodes(ids: $ids) { ... on Video { id fileStatus sources { url mimeType height width } } }
+}`;
+
+// Vídeo não pode vir de link externo: sobe pro armazenamento temporário da
+// Shopify (staged upload), cria o arquivo e espera ela processar pra ter o
+// .mp4 do CDN (a maior versão até 1080p).
+export async function uploadVideosToShopifyFiles(
+  store: { shop_domain: string; access_token: string },
+  sources: { key: string; blob: Blob; name: string; mime: string }[],
+): Promise<Record<string, CdnImage>> {
+  const out: Record<string, CdnImage> = {};
+  if (sources.length === 0) return out;
+  const { shop_domain: domain, access_token: token } = store;
+
+  const staged = await gql(domain, token, STAGED_UPLOADS, {
+    input: sources.map((s) => ({ resource: "VIDEO", filename: s.name, mimeType: s.mime, fileSize: String(s.blob.size), httpMethod: "POST" })),
+  });
+  const stErrs = (staged.stagedUploadsCreate?.userErrors ?? []) as { message: string }[];
+  if (stErrs.length > 0) throw new Error(`Arquivos da Shopify: ${stErrs[0].message}`);
+  const targets = (staged.stagedUploadsCreate?.stagedTargets ?? []) as { url: string; resourceUrl: string; parameters: { name: string; value: string }[] }[];
+
+  for (const [i, target] of targets.entries()) {
+    const form = new FormData();
+    for (const p of target.parameters) form.append(p.name, p.value);
+    form.append("file", sources[i].blob, sources[i].name);
+    const res = await fetch(target.url, { method: "POST", body: form, signal: AbortSignal.timeout(180_000) });
+    if (!res.ok) throw new Error(`Falha ao enviar o vídeo "${sources[i].name}" pra Shopify (${res.status})`);
+  }
+
+  const created = await gql(domain, token, FILE_CREATE, {
+    files: targets.map((t, i) => ({ originalSource: t.resourceUrl, contentType: "VIDEO", alt: sources[i].name })),
+  });
+  const errs = (created.fileCreate?.userErrors ?? []) as { message: string }[];
+  if (errs.length > 0) throw new Error(`Arquivos da Shopify: ${errs[0].message}`);
+  const files = (created.fileCreate?.files ?? []) as { id: string }[];
+  const keyById = new Map(files.map((f, i) => [f.id, sources[i].key]));
+
+  let pending = files.map((f) => f.id);
+  for (let attempt = 0; attempt < 60 && pending.length > 0; attempt++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const st = await gql(domain, token, VIDEO_STATUS, { ids: pending });
+    for (const n of (st.nodes ?? []) as any[]) {
+      if (!n?.id) continue;
+      if (n.fileStatus === "FAILED") throw new Error("A Shopify não conseguiu processar um dos vídeos.");
+      const mp4s = ((n.sources ?? []) as { url: string; mimeType: string; height: number | null; width: number | null }[])
+        .filter((v) => v.mimeType === "video/mp4" && v.url)
+        .sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
+      const best = mp4s.find((v) => (v.height ?? 0) <= 1080) ?? mp4s[mp4s.length - 1];
+      if (n.fileStatus === "READY" && best) {
+        out[keyById.get(n.id)!] = { url: best.url, width: best.width ?? null, height: best.height ?? null };
+        pending = pending.filter((id) => id !== n.id);
+      }
+    }
+  }
+  if (pending.length > 0) throw new Error("A Shopify demorou pra processar os vídeos — tente gerar de novo.");
   return out;
 }
 
@@ -151,6 +217,8 @@ export function missingTargets(t: TemplateTargets): string[] {
   if (!t.button) out.push("Botão com handle=");
   return out;
 }
+
+const isVideoUrl = (url: string) => /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url) || /cdn\.shopify\.com\/videos\//i.test(url);
 
 function galleryUrls(code: string): string[] {
   const m = code.match(GALLERY_DATA_RE);
@@ -267,14 +335,22 @@ export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
   // Carrossel. Galeria em código: troca a lista de links (qualquer quantidade;
   // a 1ª é a imagem grande). Carrossel do PageFly: 1ª = imagem principal, as
   // outras = slides.
+  // Vídeo só na galeria em código; no carrossel do PageFly fica de fora.
   const galleryItem = t.galleryHtml ? map.get(t.galleryHtml) : undefined;
+  const hasVideo = images.carousel.some((i) => isVideoUrl(i.url));
   if (images.carousel.length > 0 && galleryItem?.data) {
+    if (hasVideo && !String(galleryItem.data.code).includes(GALLERY_VIDEO_MARKER)) {
+      galleryItem.data.code = SRX_GALLERY_CODE;
+      warnings.push("O código da galeria foi trocado pela versão que toca vídeo (mesmo visual do PGdeVendas3).");
+    }
     const urls = JSON.stringify(images.carousel.map((i) => i.url), null, 4);
     galleryItem.data.code = String(galleryItem.data.code).replace(GALLERY_DATA_RE, (_m, open, _list, close) => `${open}\n  ${urls}\n  ${close}`);
   } else if (images.carousel.length > 0 && t.mainImage) {
-    setImage(map.get(t.mainImage), images.carousel[0]);
-    if (t.gallerySlideshow) {
-      const rest = images.carousel.slice(1);
+    const onlyImages = images.carousel.filter((i) => !isVideoUrl(i.url));
+    if (hasVideo) warnings.push("Este modelo usa o carrossel do PageFly, que não aceita vídeo — os vídeos ficaram de fora.");
+    if (onlyImages[0]) setImage(map.get(t.mainImage), onlyImages[0]);
+    if (t.gallerySlideshow && onlyImages.length > 0) {
+      const rest = onlyImages.slice(1);
       const slideImages = resizeSlideshow(doc.items, doc.styles, t.gallerySlideshow, rest.length);
       rest.forEach((img, i) => setImage(slideImages[i], img));
       map = byId();

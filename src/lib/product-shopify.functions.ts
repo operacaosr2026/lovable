@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createProductInStore, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
+import { isVideoMime } from "@/lib/product-page";
 import {
   REQUIRED_SCOPES, UPDATE_PARTS, buildVariants, emptyListing, imagesFor,
   type ShopifyListing, type ShopifyOption, type StoreRole, type VariantTemplate,
@@ -83,7 +84,7 @@ export const getProductShopify = createServerFn({ method: "GET" })
     const product = await loadProduct(ownerId, data.product_id);
     const [listing, images, stores, pubs] = await Promise.all([
       supabaseAdmin.from("product_shopify_listings").select("data").eq("product_id", product.id).maybeSingle(),
-      supabaseAdmin.from("product_images").select("id,file_url,file_name,position").eq("product_id", product.id)
+      supabaseAdmin.from("product_images").select("id,file_url,file_name,mime_type,position").eq("product_id", product.id)
         .order("position", { ascending: true }),
       loadStores(ownerId),
       supabaseAdmin.from("product_shopify_publications")
@@ -108,7 +109,8 @@ export const getProductShopify = createServerFn({ method: "GET" })
       return { ...p, status: (deleted ? "deleted" : p.status) as "ok" | "error" | "deleted" };
     }));
     const saved = listing.data?.data as Partial<ShopifyListing> | undefined;
-    const imgs = (images.data ?? []) as { id: string; file_url: string | null; file_name: string | null }[];
+    const imgs = ((images.data ?? []) as { id: string; file_url: string | null; file_name: string | null; mime_type: string | null }[])
+      .filter((i) => !isVideoMime(i.mime_type));
     // Ficha nova já vem com as variantes do template padrão.
     let fresh: ShopifyListing | null = null;
     if (!saved) {

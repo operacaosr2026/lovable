@@ -3,10 +3,10 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
-  buildPagefly, builtInTemplate, parsePageflyZip, templatePreview, templateTexts, uploadToShopifyFiles, type PageTemplate,
+  buildPagefly, builtInTemplate, parsePageflyZip, templatePreview, templateTexts, uploadToShopifyFiles, uploadVideosToShopifyFiles, type PageTemplate,
 } from "@/lib/product-page.server";
 import { PRODUCTION_BUCKET, safeFileName } from "@/lib/store-production.server";
-import { emptyPage, type CdnImage, type ProductPageData } from "@/lib/product-page";
+import { emptyPage, isVideoMime, type CdnImage, type ProductPageData } from "@/lib/product-page";
 
 const ProductIdInput = z.object({ product_id: z.string().uuid() });
 
@@ -57,7 +57,7 @@ export const getProductPage = createServerFn({ method: "GET" })
     const { tpl, custom } = await loadTemplate(ownerId);
     const [saved, images, columns, roles, pubs] = await Promise.all([
       loadPage(product.id),
-      supabaseAdmin.from("product_images").select("id,file_url,file_name,position").eq("product_id", product.id).order("position", { ascending: true }),
+      supabaseAdmin.from("product_images").select("id,file_url,file_name,mime_type,position").eq("product_id", product.id).order("position", { ascending: true }),
       supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId),
       supabaseAdmin.from("shop_group_stores").select("shopify_store_id,role"),
       supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,handle").eq("product_id", product.id).eq("status", "ok"),
@@ -156,12 +156,18 @@ export const generatePagefly = createServerFn({ method: "POST" })
 
     // O que precisa estar no CDN: imagens do produto (carrossel/finais) e depoimentos.
     const imgIds = [...new Set([...page.carousel_ids, ...page.final_ids])];
-    const { data: imgs } = await supabaseAdmin.from("product_images").select("id,file_path,file_name")
+    const { data: imgs } = await supabaseAdmin.from("product_images").select("id,file_path,file_name,mime_type")
       .eq("product_id", data.product_id).in("id", imgIds.length ? imgIds : ["00000000-0000-0000-0000-000000000000"]);
     const sources: { key: string; url: string; name: string }[] = [];
+    const videos: { key: string; blob: Blob; name: string; mime: string }[] = [];
     for (const img of imgs ?? []) {
       const key = `img:${img.id}`;
       if (done[key]) continue;
+      if (isVideoMime(img.mime_type)) {
+        const { data: blob } = await supabaseAdmin.storage.from("project-attachments").download(img.file_path);
+        if (blob) videos.push({ key, blob, name: img.file_name ?? "video.mp4", mime: img.mime_type! });
+        continue;
+      }
       const { data: s } = await supabaseAdmin.storage.from("project-attachments").createSignedUrl(img.file_path, 60 * 60);
       if (s?.signedUrl) sources.push({ key, url: s.signedUrl, name: img.file_name ?? "imagem" });
     }
@@ -171,7 +177,9 @@ export const generatePagefly = createServerFn({ method: "POST" })
       const { data: s } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).createSignedUrl(t.path, 60 * 60);
       if (s?.signedUrl) sources.push({ key, url: s.signedUrl, name: t.name });
     }
-    Object.assign(done, await uploadToShopifyFiles({ shop_domain: store.shop_domain, access_token: store.access_token }, sources));
+    const shop = { shop_domain: store.shop_domain, access_token: store.access_token };
+    Object.assign(done, await uploadToShopifyFiles(shop, sources));
+    Object.assign(done, await uploadVideosToShopifyFiles(shop, videos));
     cdn[page.store_id] = done;
     await savePage(ownerId, data.product_id, page, cdn);
 
@@ -182,7 +190,7 @@ export const generatePagefly = createServerFn({ method: "POST" })
       testimonials: pick(page.testimonials.map((t) => `t:${t.id}`)),
       finals: pick(page.final_ids.map((id) => `img:${id}`)),
     });
-    return { fileName: built.fileName, base64: Buffer.from(built.bytes).toString("base64"), warnings: built.warnings, uploaded: sources.length };
+    return { fileName: built.fileName, base64: Buffer.from(built.bytes).toString("base64"), warnings: built.warnings, uploaded: sources.length + videos.length };
   });
 
 // ── Modelo .pagefly ──

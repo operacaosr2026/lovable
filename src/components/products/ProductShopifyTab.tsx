@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, ImageOff, LayoutTemplate, Loader2, Plus, RefreshCw, Send, Settings2, X, XCircle,
+  AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, Film, ImageOff, LayoutTemplate, Loader2, Plus, RefreshCw, Send, Settings2, X, XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -434,7 +434,7 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
 }
 
 export function ImagePicker({ images, value, onChange }: {
-  images: { id: string; file_url: string | null; file_name: string | null }[]; value: string[]; onChange: (ids: string[]) => void;
+  images: { id: string; file_url: string | null; file_name: string | null; mime_type?: string | null }[]; value: string[]; onChange: (ids: string[]) => void;
 }) {
   return (
     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
@@ -448,7 +448,10 @@ export function ImagePicker({ images, value, onChange }: {
             onClick={() => onChange(on ? value.filter((x) => x !== img.id) : [...value, img.id])}
             className={`relative aspect-square rounded-lg overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50"}`}
           >
-            {img.file_url ? <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" /> : <ImageOff className="size-5 m-auto text-muted-foreground" />}
+            {!img.file_url ? <ImageOff className="size-5 m-auto text-muted-foreground" />
+              : img.mime_type?.startsWith("video/") ? <video src={`${img.file_url}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover bg-black" />
+              : <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" />}
+            {img.mime_type?.startsWith("video/") && <Film className="absolute bottom-1 right-1 size-3.5 text-white drop-shadow" />}
             {on && <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{idx + 1}</span>}
           </button>
         );

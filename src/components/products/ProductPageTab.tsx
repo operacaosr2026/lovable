@@ -8,7 +8,7 @@ import {
   getProductPage, saveProductPage, createTestimonialUpload, generatePagefly, createTemplateUpload, activateTemplate, resetTemplate,
 } from "@/lib/product-page.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import type { ProductPageData } from "@/lib/product-page";
+import { isVideoMime, type ProductPageData } from "@/lib/product-page";
 import { AutoTextarea, SectionTitle } from "@/components/shops/StoreProduction";
 import { ImagePicker } from "@/components/products/ProductShopifyTab";
 
@@ -128,7 +128,7 @@ export function ProductPageTab({ productId }: { productId: string }) {
         ) : (
           <>
             <p className="text-xs text-muted-foreground mb-2">
-              Da aba Imagens, na ordem dos números: a 1ª é a imagem principal; as outras viram os slides (recomendado 5 ou mais no total).
+              Da aba Imagens, na ordem dos números: a 1ª é a imagem principal; as outras viram os slides (recomendado 5 ou mais no total). Vídeos tocam sozinhos, sem som e em loop (só na galeria em código).
             </p>
             <ImagePicker images={data.images} value={page.carousel_ids} onChange={(carousel_ids) => set({ carousel_ids })} />
           </>
@@ -197,7 +197,7 @@ export function ProductPageTab({ productId }: { productId: string }) {
           <>
             <p className="text-xs text-muted-foreground mb-2">As 3 imagens ao lado da lista ✔, na ordem dos números. Faltando alguma, fica a do modelo.</p>
             <ImagePicker
-              images={data.images}
+              images={data.images.filter((i) => !isVideoMime(i.mime_type))}
               value={page.final_ids}
               onChange={(ids) => { if (ids.length > 3) { toast.error("No máximo 3 imagens"); return; } set({ final_ids: ids }); }}
             />
