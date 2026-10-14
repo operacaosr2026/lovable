@@ -431,10 +431,20 @@ export const getProductFunnel = createServerFn({ method: "GET" })
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
 
-    const { data: first } = await db("product_funnel_events").select("day")
-      .eq("user_id", ownerId).order("day", { ascending: true }).limit(1).maybeSingle();
-    if (!first) return { installed: false as const };
-    const since = String(first.day);
+    const pagesRes = await db("product_funnel_pages").select("pagefly_page_id,product_id").eq("user_id", ownerId);
+    const pageProduct = new Map<string, string>(((pagesRes.data ?? []) as any[]).map((p) => [`pf:${p.pagefly_page_id}`, p.product_id]));
+    const pages = ((pagesRes.data ?? []) as any[]).filter((p) => p.product_id === data.product_id).map((p) => p.pagefly_page_id as string);
+
+    // Começa no 1º dia com sessão (pixel da matriz funcionando); sem sessão
+    // ainda, no 1º evento qualquer.
+    const firstDay = async (step?: string) => {
+      let q = db("product_funnel_events").select("day").eq("user_id", ownerId);
+      if (step) q = q.eq("step", step);
+      const { data: row } = await q.order("day", { ascending: true }).limit(1).maybeSingle();
+      return row ? String(row.day) : null;
+    };
+    const since = (await firstDay("session")) ?? (await firstDay());
+    if (!since) return { installed: false as const, pages };
     const { prevFrom, prevTo } = comparisonPeriod(data.from, data.to);
 
     const [eventsRes, catalogRes, pubsRes, ordersRes] = await Promise.all([
@@ -442,14 +452,19 @@ export const getProductFunnel = createServerFn({ method: "GET" })
         .select("id,shopify_store_id,step,day,client_id,shopify_product_id,title")
         .eq("user_id", ownerId).gte("day", prevFrom).lte("day", data.to)),
       supabaseAdmin.from("products").select("id,name,keywords").eq("user_id", ownerId),
-      db("product_shopify_publications").select("product_id,shopify_store_id,shopify_product_id")
+      db("product_shopify_publications").select("product_id,shopify_store_id,shopify_product_id,handle")
         .eq("user_id", ownerId).eq("status", "ok").not("shopify_product_id", "is", null),
       selectAll(supabaseAdmin.from("shop_orders")
         .select("id,order_date,line_items:raw->line_items")
         .eq("user_id", ownerId).gte("order_date", prevFrom > since ? prevFrom : since).lte("order_date", data.to)),
     ]);
     const catalog = (catalogRes.data ?? []) as { id: string; name: string; keywords: string[] | null }[];
-    const published = new Map(((pubsRes.data ?? []) as any[]).map((p) => [`${p.shopify_store_id}|${p.shopify_product_id}`, p.product_id as string]));
+    // Pixel da matriz manda "pf:<página do PageFly>", o ID do produto ou "h:<handle>" (pela URL).
+    const published = new Map<string, string>();
+    for (const p of (pubsRes.data ?? []) as any[]) {
+      published.set(`${p.shopify_store_id}|${p.shopify_product_id}`, p.product_id);
+      if (p.handle) published.set(`${p.shopify_store_id}|h:${String(p.handle).toLowerCase()}`, p.product_id);
+    }
 
     type Counts = { sessions: number; checkouts: number; orders: number };
     const empty = (): Counts => ({ sessions: 0, checkouts: 0, orders: 0 });
@@ -459,7 +474,9 @@ export const getProductFunnel = createServerFn({ method: "GET" })
 
     const seen = new Set<string>();
     for (const e of (eventsRes.data ?? []) as any[]) {
-      const productId = published.get(`${e.shopify_store_id}|${e.shopify_product_id}`) ?? matchLineItemProduct(e.title, catalog)?.id;
+      const productId = pageProduct.get(e.shopify_product_id)
+        ?? published.get(`${e.shopify_store_id}|${e.shopify_product_id}`)
+        ?? matchLineItemProduct(e.title, catalog)?.id;
       if (productId !== data.product_id) continue;
       const key = `${e.step}|${e.shopify_store_id}|${e.day}|${e.client_id}`;
       if (seen.has(key)) continue;
@@ -473,5 +490,44 @@ export const getProductFunnel = createServerFn({ method: "GET" })
       if (((o.line_items ?? []) as any[]).some((li) => matchLineItemProduct(String(li?.title ?? li?.name ?? ""), catalog)?.id === data.product_id)) b.orders += 1;
     }
 
-    return { installed: true as const, since, cur, prev: prevTo >= since ? prev : null };
+    return { installed: true as const, pages, since, cur, prev: prevTo >= since ? prev : null };
+  });
+
+// Id da página no link do PageFly (…/apps/pagefly?id=<id>) ou o próprio id colado.
+function pageflyPageId(input: string) {
+  const s = input.trim();
+  let id = s;
+  try { id = new URL(s).searchParams.get("id") ?? ""; } catch { /* não é URL: é o id */ }
+  id = id.trim().toLowerCase();
+  if (!/^[a-z0-9-]{8,64}$/.test(id)) throw new Error("Link inválido — cole o link da página do PageFly (…/apps/pagefly?id=…).");
+  return id;
+}
+
+export const addProductFunnelPage = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ product_id: z.string().uuid(), url: z.string().trim().min(1).max(2000) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { ownerId } = context;
+    await assertProduct(ownerId, data.product_id);
+    const id = pageflyPageId(data.url);
+    const { data: existing } = await db("product_funnel_pages").select("product_id")
+      .eq("user_id", ownerId).eq("pagefly_page_id", id).maybeSingle();
+    if (existing && existing.product_id !== data.product_id) {
+      const { data: other } = await supabaseAdmin.from("products").select("name").eq("id", existing.product_id).maybeSingle();
+      throw new Error(`Essa página já está ligada ao produto ${other?.name ?? "outro"}.`);
+    }
+    const { error } = await db("product_funnel_pages")
+      .upsert({ user_id: ownerId, pagefly_page_id: id, product_id: data.product_id }, { onConflict: "user_id,pagefly_page_id" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const removeProductFunnelPage = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ product_id: z.string().uuid(), pagefly_page_id: z.string().min(1).max(64) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await db("product_funnel_pages").delete()
+      .eq("user_id", context.ownerId).eq("product_id", data.product_id).eq("pagefly_page_id", data.pagefly_page_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

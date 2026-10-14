@@ -6,14 +6,15 @@ import {
 } from "recharts";
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, Check, Copy, DollarSign, Loader2, Megaphone, Package, Search,
-  Settings2, ShoppingCart, Target, TrendingUp,
+  Plus, Settings2, ShoppingCart, Target, TrendingUp, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { isoTodayUS } from "@/lib/timezone";
 import {
-  getProductCreatives, getProductDashboard, getProductFunnel, listProductAdCampaignOptions, saveProductAdCampaigns,
+  addProductFunnelPage, getProductCreatives, getProductDashboard, getProductFunnel, listProductAdCampaignOptions,
+  removeProductFunnelPage, saveProductAdCampaigns,
 } from "@/lib/product-dashboard.functions";
 import { funnelPixelCode, type FunnelPixelRole } from "@/lib/product-funnel-pixel";
 
@@ -257,6 +258,9 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
   ] : [];
   const base = cur?.sessions ?? 0;
   const share = (v: number) => (base > 0 ? Math.min(v / base, 1) : 0);
+  // Barras na escala da maior etapa: sem sessões (pixel da matriz ainda sem dado) continuam visíveis.
+  const top = Math.max(0, ...steps.map((s) => s.value));
+  const height = (v: number) => (top > 0 ? (v / top) * 100 : 0);
   const rate = cur && base > 0 ? cur.orders / base : null;
   const prevRate = prev && prev.sessions > 0 ? prev.orders / prev.sessions : null;
 
@@ -273,6 +277,7 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
         Sessões: visitantes da página do produto na matriz (1 por dia). Checkout: checkouts iniciados nas sublojas com o produto. Concluído: pedidos do produto.
         {data?.installed && ` Contando desde ${data.since.slice(8, 10)}/${data.since.slice(5, 7)}.`}
       </p>
+      {data && <FunnelPages productId={productId} pages={data.pages} />}
       {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
       {isLoading ? (
         <div className="py-8 flex justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -289,14 +294,14 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
           </div>
           <div className="grid grid-cols-3 border-t border-border">
             {steps.map((s, i) => {
-              const h = share(s.value) * 100;
+              const h = height(s.value);
               const next = steps[i + 1];
               return (
                 <div key={s.label} className={`min-w-0 pt-3 ${i > 0 ? "border-l border-border" : ""}`}>
                   <div className={`min-h-[3.25rem] ${i > 0 ? "pl-3" : ""}`}>
                     <p className="text-xs text-muted-foreground truncate">{s.label}</p>
                     <p className="text-sm tabular-nums flex items-center gap-2 flex-wrap">
-                      <span>{base > 0 ? fmtPct(share(s.value)) : "—"} <span className="font-semibold">{fmtInt(s.value)}</span></span>
+                      <span>{base > 0 && `${fmtPct(share(s.value))} `}<span className="font-semibold">{fmtInt(s.value)}</span></span>
                       {s.prev !== undefined && s.prev > 0 && <FunnelDelta curr={s.value} prev={s.prev} />}
                     </p>
                   </div>
@@ -307,7 +312,7 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
                     <div className="h-full flex-1">
                       {next && (
                         <div className="h-full bg-primary/35"
-                          style={{ clipPath: `polygon(0 ${100 - h}%, 100% ${100 - share(next.value) * 100}%, 100% 100%, 0 100%)` }} />
+                          style={{ clipPath: `polygon(0 ${100 - h}%, 100% ${100 - height(next.value)}%, 100% 100%, 0 100%)` }} />
                       )}
                     </div>
                   </div>
@@ -319,6 +324,57 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
       )}
       {pixelOpen && <PixelDialog onClose={() => setPixelOpen(false)} />}
     </section>
+  );
+}
+
+// Links das páginas do PageFly da matriz (rascunho, /apps/pagefly?id=…) deste
+// produto — é por eles que a sessão da matriz é ligada ao produto.
+function FunnelPages({ productId, pages }: { productId: string; pages: string[] }) {
+  const qc = useQueryClient();
+  const addFn = useServerFn(addProductFunnelPage);
+  const removeFn = useServerFn(removeProductFunnelPage);
+  const [url, setUrl] = useState("");
+  const refresh = () => qc.invalidateQueries({ queryKey: ["product-dashboard", productId, "funnel"] });
+  const add = useMutation({
+    mutationFn: () => addFn({ data: { product_id: productId, url } }),
+    onSuccess: () => { setUrl(""); refresh(); toast.success("Página ligada ao produto"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => removeFn({ data: { product_id: productId, pagefly_page_id: id } }),
+    onSuccess: refresh,
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <div className="mb-3 rounded-xl border border-border bg-muted/30 px-3 py-2 space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        Páginas da matriz (link do PageFly que vai no anúncio). Sem página ligada, as sessões são achadas pelo título da página.
+      </p>
+      {pages.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {pages.map((id) => (
+            <span key={id} className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-mono">
+              {id}
+              <button onClick={() => remove.mutate(id)} disabled={remove.isPending} className="text-muted-foreground hover:text-destructive" aria-label="Remover">
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (url.trim()) add.mutate(); }}>
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://loja.com/apps/pagefly?id=…"
+          className="flex-1 min-w-0 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+        />
+        <button type="submit" disabled={add.isPending || !url.trim()} className="rounded-lg bg-primary text-primary-foreground px-3 text-xs font-medium disabled:opacity-50 flex items-center gap-1">
+          {add.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} Ligar
+        </button>
+      </form>
+    </div>
   );
 }
 

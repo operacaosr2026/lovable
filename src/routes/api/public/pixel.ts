@@ -46,7 +46,7 @@ export const Route = createFileRoute("/api/public/pixel")({
         const day = isoDateUS(new Date());
         const seen = new Map<string, string>();
         for (const p of products) {
-          const id = p.id.replace(/^gid:\/\/shopify\/Product\//, "");
+          const id = p.id.replace(/^gid:\/\/shopify\/Product\//, "").toLowerCase();
           if (id && !seen.has(id)) seen.set(id, p.title);
         }
         const rows = stores.flatMap((s) => [...seen].map(([id, title]) => ({
