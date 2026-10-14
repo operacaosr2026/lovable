@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createProductInStore, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
+import { createProductInStore, findExistingProduct, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
 import { isVideoMime } from "@/lib/product-page";
 import {
@@ -204,6 +204,32 @@ export const publishProductShopify = createServerFn({ method: "POST" })
       }
     }
     return { results };
+  });
+
+// Liga o produto do sistema a um produto já criado à mão na loja. Daí em
+// diante ele conta como "Criado" e pode ser atualizado por partes.
+export const linkExistingShopifyProduct = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => ProductIdInput.extend({
+    shopify_store_id: z.string().uuid(),
+    role: z.enum(["matriz", "subloja"]),
+    ref: z.string().trim().min(1).max(500),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const ownerId = context.ownerId;
+    await loadProduct(ownerId, data.product_id);
+    const { data: store } = await supabaseAdmin.from("shopify_stores").select("shop_domain,access_token")
+      .eq("id", data.shopify_store_id).eq("user_id", ownerId).maybeSingle();
+    if (!store?.shop_domain || !store.access_token) throw new Error("Loja sem conexão com a Shopify.");
+    const found = await findExistingProduct({ shop_domain: store.shop_domain, access_token: store.access_token }, data.ref);
+    if (!found) throw new Error("Não achei esse produto na loja — confira o link ou o handle.");
+    const { error } = await supabaseAdmin.from("product_shopify_publications").upsert({
+      user_id: ownerId, product_id: data.product_id, shopify_store_id: data.shopify_store_id, role: data.role,
+      status: "ok", shopify_product_id: found.productId, handle: found.handle, error: null,
+      warnings: ["Vinculado a um produto criado à mão — use Atualizar pra mandar as partes da ficha."],
+    }, { onConflict: "product_id,shopify_store_id" });
+    if (error) throw new Error(error.message);
+    return { title: found.title, handle: found.handle };
   });
 
 // Reenvia partes escolhidas (Aprodrop, nome, preço...) às lojas onde o

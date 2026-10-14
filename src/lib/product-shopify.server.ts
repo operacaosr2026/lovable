@@ -180,97 +180,75 @@ const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!, $key: Str
 
 const firstError = (errs: { message: string }[] | undefined) => (errs && errs.length > 0 ? errs[0].message : null);
 
-const GET_OPTIONS = `query($id: ID!) {
-  product(id: $id) {
-    options { id name position optionValues { id name hasVariants } }
-    variants(first: 250) { nodes { id selectedOptions { name value } } }
+const GET_VARIANTS = `query($id: ID!) {
+  product(id: $id) { variants(first: 250) { nodes { id selectedOptions { name value } } } }
+}`;
+const VARIANTS_SET = `mutation($input: ProductSetInput!) {
+  productSet(input: $input, synchronous: true) {
+    product { variants(first: 250) { nodes { id } } }
+    userErrors { field message }
   }
 }`;
-const OPTION_UPDATE = `mutation($productId: ID!, $option: OptionUpdateInput!, $update: [OptionValueUpdateInput!]) {
-  productOptionUpdate(productId: $productId, option: $option, optionValuesToUpdate: $update, variantStrategy: LEAVE_AS_IS) { userErrors { message } }
-}`;
-const BULK_CREATE = `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-  productVariantsBulkCreate(productId: $productId, variants: $variants) { productVariants { id } userErrors { message } }
-}`;
-const BULK_DELETE = `mutation($productId: ID!, $ids: [ID!]!) {
-  productVariantsBulkDelete(productId: $productId, variantsIds: $ids) { userErrors { message } }
-}`;
 
-// Deixa a grade da Shopify igual à da ficha, sem recriar o que já existe:
-// valor renomeado continua a mesma variante (casa pela posição entre os que
-// mudaram), valor novo vira variante nova, valor que saiu da ficha apaga a
-// variante. Mudar o número de opções (ex.: Size → Size + Cor) não entra.
-// Devolve os ids das variantes criadas (precisam de estoque e Aprodrop).
-async function syncVariants(domain: string, token: string, gid: string, listing: ShopifyListing, warnings: string[]): Promise<string[] | null> {
+// Troca a grade inteira da loja pela da ficha (productSet): opções e variantes
+// ficam exatamente como na ficha — muda o número de opções, troca valores,
+// apaga o que sobrou. Variante que já existia com os mesmos valores mantém o
+// id (histórico de vendas). Devolve os ids das variantes novas (precisam de
+// estoque e Aprodrop) ou null se não deu.
+async function replaceVariants(domain: string, token: string, gid: string, listing: ShopifyListing, warnings: string[]): Promise<string[] | null> {
   const options = listing.options.filter((o) => o.name.trim() && o.values.length > 0);
-  const data = await gql(domain, token, GET_OPTIONS, { id: gid });
-  const shopOptions = ((data.product?.options ?? []) as { id: string; name: string; position: number; optionValues: { id: string; name: string; hasVariants: boolean }[] }[])
-    .sort((a, b) => a.position - b.position);
-  const isDefault = shopOptions.length === 1 && shopOptions[0].name === "Title";
-  if (options.length === 0 && isDefault) return [];
-  if (options.length !== shopOptions.length || isDefault) {
-    warnings.push(`Variantes: a loja tem ${isDefault ? 0 : shopOptions.length} opção(ões) e a ficha ${options.length} — mudar o número de opções não é atualizado (apague e crie de novo).`);
-    return null;
-  }
-
-  // 1) Renomeia opções e valores.
-  for (let i = 0; i < options.length; i++) {
-    const so = shopOptions[i];
-    const want = options[i].values;
-    const have = so.optionValues.filter((v) => v.hasVariants);
-    const shopOnly = have.filter((v) => !want.includes(v.name));
-    const sheetOnly = want.filter((v) => !have.some((h) => h.name === v));
-    const renames = shopOnly.slice(0, sheetOnly.length).map((v, k) => ({ id: v.id, name: sheetOnly[k] }));
-    const rename = options[i].name.trim() !== so.name;
-    if (renames.length === 0 && !rename) continue;
-    const r = await gql(domain, token, OPTION_UPDATE, {
-      productId: gid,
-      option: { id: so.id, ...(rename ? { name: options[i].name.trim() } : {}) },
-      update: renames.length ? renames : null,
-    });
-    const err = firstError(r.productOptionUpdate?.userErrors);
-    if (err) { warnings.push(`Variantes: ${err}`); return null; }
-  }
-
-  // 2) Cria as combinações que faltam e 3) apaga as que saíram da ficha.
-  const after = await gql(domain, token, GET_OPTIONS, { id: gid });
-  const nodes = (after.product?.variants?.nodes ?? []) as { id: string; selectedOptions: { name: string; value: string }[] }[];
-  const keyOf = (v: (typeof nodes)[number]) => v.selectedOptions.map((o) => o.value).join(" / ");
-  const shopKeys = new Map(nodes.map((v) => [keyOf(v), v.id]));
-  const sheetKeys = new Set(listing.variants.map((v) => v.values.join(" / ")));
   const basePrice = money(listing.price);
   const baseCompare = money(listing.compare_at_price);
+  if (!basePrice) { warnings.push("Variantes: preço do produto não preenchido — variantes não atualizadas."); return null; }
 
-  const toCreate = listing.variants.filter((v) => !shopKeys.has(v.values.join(" / ")));
-  let created: string[] = [];
-  if (toCreate.length > 0) {
-    if (!basePrice) { warnings.push("Variantes: preço do produto não preenchido — variantes novas não criadas."); return null; }
-    const r = await gql(domain, token, BULK_CREATE, {
-      productId: gid,
-      variants: toCreate.map((v) => {
-        const sku = v.sku.trim() || variantSku(listing.sku, v.values);
-        const compare = money(v.compare_at_price) ?? baseCompare;
-        return {
-          optionValues: v.values.map((name, i) => ({ optionName: options[i].name.trim(), name })),
-          price: money(v.price) ?? basePrice,
-          ...(compare ? { compareAtPrice: compare } : {}),
-          inventoryPolicy: "CONTINUE",
-          inventoryItem: { tracked: true, ...(sku ? { sku } : {}) },
-        };
-      }),
-    });
-    const err = firstError(r.productVariantsBulkCreate?.userErrors);
-    if (err) { warnings.push(`Variantes: ${err}`); return null; }
-    created = ((r.productVariantsBulkCreate?.productVariants ?? []) as { id: string }[]).map((v) => v.id);
-  }
+  const before = await gql(domain, token, GET_VARIANTS, { id: gid });
+  const existing = (before.product?.variants?.nodes ?? []) as { id: string; selectedOptions: { name: string; value: string }[] }[];
+  const keyOf = (values: string[]) => values.join(" / ");
+  const idByKey = new Map(existing.map((v) => [keyOf(v.selectedOptions.filter((o) => o.name !== "Title").map((o) => o.value)), v.id]));
 
-  const toDelete = [...shopKeys.entries()].filter(([k]) => !sheetKeys.has(k)).map(([, id]) => id);
-  if (toDelete.length > 0) {
-    const r = await gql(domain, token, BULK_DELETE, { productId: gid, ids: toDelete });
-    const err = firstError(r.productVariantsBulkDelete?.userErrors);
-    if (err) warnings.push(`Variantes: ${err}`);
-  }
-  return created;
+  // Sem opções na ficha = produto de variante única.
+  const productOptions = options.length
+    ? options.map((o, i) => ({ name: o.name.trim(), position: i + 1, values: o.values.map((name) => ({ name })) }))
+    : [{ name: "Title", position: 1, values: [{ name: "Default Title" }] }];
+  const rows = options.length
+    ? listing.variants.map((v) => ({ values: v.values, price: money(v.price) ?? basePrice, compare: money(v.compare_at_price) ?? baseCompare, sku: v.sku.trim() || variantSku(listing.sku, v.values) }))
+    : [{ values: [] as string[], price: basePrice, compare: baseCompare, sku: listing.sku.trim() }];
+
+  const variants = rows.map((r) => {
+    const id = idByKey.get(keyOf(r.values));
+    return {
+      ...(id ? { id } : {}),
+      optionValues: options.length
+        ? r.values.map((name, i) => ({ optionName: options[i].name.trim(), name }))
+        : [{ optionName: "Title", name: "Default Title" }],
+      price: r.price,
+      compareAtPrice: r.compare ?? null,
+      inventoryPolicy: "CONTINUE",
+      inventoryItem: { tracked: true, ...(r.sku ? { sku: r.sku } : {}) },
+    };
+  });
+
+  const res = await gql(domain, token, VARIANTS_SET, { input: { id: gid, productOptions, variants } });
+  const err = firstError(res.productSet?.userErrors);
+  if (err) { warnings.push(`Variantes: ${err}`); return null; }
+  const kept = new Set(existing.map((v) => v.id));
+  return ((res.productSet?.product?.variants?.nodes ?? []) as { id: string }[]).map((v) => v.id).filter((id) => !kept.has(id));
+}
+
+// Acha um produto que já existe na loja (criado à mão) pelo que o usuário
+// colar: link do admin (/admin/products/123), link da loja (/products/handle),
+// id numérico ou o handle.
+export async function findExistingProduct(
+  store: { shop_domain: string; access_token: string }, ref: string,
+): Promise<{ productId: string; handle: string; title: string } | null> {
+  const raw = ref.trim();
+  const idMatch = raw.match(/\/products\/(\d+)(?:[/?#]|$)/) ?? raw.match(/^(\d+)$/);
+  const handle = idMatch ? null : (raw.match(/\/products\/([^/?#]+)/)?.[1] ?? raw).trim().toLowerCase();
+  const data = idMatch
+    ? await gql(store.shop_domain, store.access_token, `query($id: ID!) { product(id: $id) { id handle title } }`, { id: `gid://shopify/Product/${idMatch[1]}` })
+    : await gql(store.shop_domain, store.access_token, `query($h: String!) { productByIdentifier(identifier: { handle: $h }) { id handle title } }`, { h: decodeURIComponent(handle!) });
+  const p = idMatch ? data.product : data.productByIdentifier;
+  return p ? { productId: String(p.id).split("/").pop()!, handle: p.handle, title: p.title } : null;
 }
 
 // Atualiza na loja só o que foi pedido. Variante da Shopify casa com a da
@@ -293,7 +271,7 @@ export async function updateProductInStore(
   let createdVariants: string[] = [];
   if (want.has("variantes")) {
     try {
-      const created = await syncVariants(domain, token, gid, listing, warnings);
+      const created = await replaceVariants(domain, token, gid, listing, warnings);
       if (created) {
         createdVariants = created;
         done.push(UPDATE_PART_LABELS.variantes);

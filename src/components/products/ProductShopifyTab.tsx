@@ -7,7 +7,7 @@ import {
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  getProductShopify, saveProductShopify, publishProductShopify, updateProductShopify, listVariantTemplates,
+  getProductShopify, saveProductShopify, publishProductShopify, updateProductShopify, listVariantTemplates, linkExistingShopifyProduct,
 } from "@/lib/product-shopify.functions";
 import { Link } from "@tanstack/react-router";
 import {
@@ -371,6 +371,12 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                         <AlertTriangle className="size-3.5 shrink-0 mt-px" /> Reconecte a loja com as permissões novas ({s.missing_scopes.join(", ")}).
                       </p>
                     )}
+                    {!created && !blocked && (
+                      <LinkExisting
+                        productId={productId} storeId={s.id} role={(selected[s.id] ?? s.role) as StoreRole}
+                        onLinked={() => qc.invalidateQueries({ queryKey })}
+                      />
+                    )}
                   </div>
                   <select
                     value={selected[s.id] ?? ((pub?.role as StoreRole | null) ?? s.role)}
@@ -403,7 +409,14 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                 </label>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. Imagens não são atualizadas por aqui. Em Variantes, valor removido da ficha apaga a variante na loja.</p>
+            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. Imagens não são atualizadas por aqui.</p>
+            {parts.includes("variantes") && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-start gap-1">
+                <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                Variantes: a grade da loja fica igual à da ficha — opções e valores são trocados e o que não está na ficha é apagado.
+                As que já existiam com os mesmos valores continuam (com o histórico); as novas já ganham estoque e Aprodrop.
+              </p>
+            )}
           </div>
         )}
         <div className="flex justify-end gap-2 mt-3">
@@ -429,6 +442,44 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+// Produto criado à mão na Shopify: cola o link (ou handle) e o sistema passa
+// a tratá-lo como criado — daí dá pra atualizar as partes, inclusive trocar
+// todas as variantes pelas da ficha.
+function LinkExisting({ productId, storeId, role, onLinked }: { productId: string; storeId: string; role: StoreRole; onLinked: () => void }) {
+  const linkFn = useServerFn(linkExistingShopifyProduct);
+  const [open, setOpen] = useState(false);
+  const [ref, setRef] = useState("");
+  const link = useMutation({
+    mutationFn: () => linkFn({ data: { product_id: productId, shopify_store_id: storeId, role, ref } }),
+    onSuccess: (r) => { toast.success(`Vinculado a "${r.title}"`); setOpen(false); setRef(""); onLinked(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-primary hover:underline mt-1">
+        Já existe nesta loja? Vincular
+      </button>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex gap-1.5">
+      <input
+        autoFocus value={ref} onChange={(e) => setRef(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && ref.trim()) link.mutate(); if (e.key === "Escape") setOpen(false); }}
+        placeholder="Link do produto (loja ou admin) ou handle"
+        className="flex-1 min-w-0 h-8 px-2.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary/50"
+      />
+      <button
+        type="button" onClick={() => link.mutate()} disabled={!ref.trim() || link.isPending}
+        className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 disabled:opacity-50"
+      >
+        {link.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} Vincular
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="h-8 px-2 rounded-lg text-xs text-muted-foreground hover:bg-muted">Cancelar</button>
     </div>
   );
 }
