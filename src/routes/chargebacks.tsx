@@ -200,7 +200,9 @@ function ChargebacksPage() {
   }, [typed, period]);
   const list = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return base.filter((r) => (!filter || DIM_OF[filter.dim](r) === filter.value) &&
+    // Status "Todos" = só os em andamento: ganho/perdido aparecem escolhendo o status (ou clicando no card).
+    const decided = (r: ChargebackRow) => r.status === "won" || r.status === "lost" || r.status === "accepted";
+    return base.filter((r) => (filter?.dim === "status" || !decided(r)) && (!filter || DIM_OF[filter.dim](r) === filter.value) &&
       (!s || [r.orderNumber, r.orderExternalId, r.customerName, r.customerEmail, r.product, r.trackingCode].some((v) => v?.toLowerCase().includes(s))));
   }, [base, filter, search]);
 
