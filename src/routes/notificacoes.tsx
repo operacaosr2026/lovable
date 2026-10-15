@@ -72,6 +72,8 @@ function NotificacoesPage() {
   const [hideDispute, setHideDispute] = useState(true);
   // "Esperando cliente": a bola está com o cliente (Rastreamento), não é atraso da loja.
   const [hideWaiting, setHideWaiting] = useState(true);
+  // Cliente que já escreveu pro suporte: a conversa segue pelo Atendimento.
+  const [hideSupport, setHideSupport] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sendOpen, setSendOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -88,10 +90,11 @@ function NotificacoesPage() {
       if (hideRecent && recentlyNotified(o)) return false;
       if (hideDispute && o.dispute) return false;
       if (hideWaiting && o.status === "esperando_cliente") return false;
+      if (hideSupport && o.supportAt) return false;
       if (term && !`${o.orderNumber} ${o.customerName} ${o.email ?? ""} ${o.trackingCode ?? ""}`.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [orders, search, shop, status, hideRecent, hideDispute, hideWaiting]);
+  }, [orders, search, shop, status, hideRecent, hideDispute, hideWaiting, hideSupport]);
   const rows = useMemo(() => (stage === "todos" ? base : base.filter((o) => stageOf(o.days) === stage)), [base, stage]);
 
   // Seleção só do que está na tela (mudou o filtro, o que sumiu sai da seleção).
@@ -159,6 +162,9 @@ function NotificacoesPage() {
           </HideChip>
           <HideChip on={hideWaiting} onToggle={() => setHideWaiting(!hideWaiting)} title='Status "Esperando cliente" no Rastreamento'>
             Esperando cliente
+          </HideChip>
+          <HideChip on={hideSupport} onToggle={() => setHideSupport(!hideSupport)} title="Cliente que já escreveu pro suporte (conversa no Atendimento)">
+            Escreveu pro suporte
           </HideChip>
         </div>
       </div>
