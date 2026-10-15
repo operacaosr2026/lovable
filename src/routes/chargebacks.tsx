@@ -165,13 +165,13 @@ function ChargebacksPage() {
   const fn = useServerFn(getChargebacks);
   const [tab, setTab] = useState<ChargebacksTab>(Route.useSearch().tab ?? "chargebacks");
   const [alertsPeriod, setAlertsPeriod] = useState<AlertsPeriod>("90");
-  const [scope, setScope] = useState<"ativas" | "todas">("ativas");
   const [type, setType] = useState<(typeof TYPES)[number][0]>("chargeback");
   const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("tudo");
   const [filter, setFilter] = useState<{ dim: Dim; value: string } | null>(null);
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<ChargebackRow | null>(null);
-  const q = useQuery({ queryKey: ["chargebacks", scope], queryFn: () => fn({ data: { scope } }) });
+  // Só lojas ativas (as inativas não interessam aqui).
+  const q = useQuery({ queryKey: ["chargebacks", "ativas"], queryFn: () => fn({ data: { scope: "ativas" } }) });
   // Puxa as disputas da Shopify agora (sem esperar o cron) + rastreio dos em aberto.
   const refreshFn = useServerFn(refreshChargebacks);
   const refresh = useMutation({
@@ -247,7 +247,6 @@ function ChargebacksPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {tab === "chargebacks" && <>
-            <Seg value={scope} options={[["ativas", "Lojas ativas"], ["todas", "Todas as lojas"]] as const} onChange={(v) => { setScope(v); setFilter(null); }} />
             <Seg value={type} options={TYPES} onChange={(v) => { setType(v); setFilter(null); }} />
             <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44" />
           </>}
