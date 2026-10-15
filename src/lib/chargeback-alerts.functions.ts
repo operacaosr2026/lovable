@@ -59,6 +59,45 @@ export const saveAlertFollowup = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Excluir à mão (com motivo) / restaurar. A marca fica no acompanhamento do
+// pedido, então ele não volta quando a lista é recalculada.
+const AlertKey = z.object({ shopId: z.string().uuid(), orderExternalId: z.string().min(1).max(40) });
+
+async function assertShop(ownerId: string, shopId: string) {
+  const { data: shop } = await supabaseAdmin.from("shops").select("id").eq("id", shopId).eq("user_id", ownerId).maybeSingle();
+  if (!shop) throw new Error("Loja não encontrada");
+}
+
+export const excludeAlert = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => AlertKey.extend({ status: z.enum(ALERT_STATUSES), reason: z.string().trim().min(1, "Escreva o motivo").max(1000) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    await assertShop(context.ownerId, data.shopId);
+    const key = { shop_id: data.shopId, order_external_id: data.orderExternalId };
+    // Pedido sem acompanhamento ainda: cria com o status que a tela mostra.
+    await supabaseAdmin.from("chargeback_alert_followups")
+      .upsert({ ...key, user_id: context.ownerId, status: data.status }, { onConflict: "shop_id,order_external_id", ignoreDuplicates: true });
+    const { error } = await supabaseAdmin.from("chargeback_alert_followups")
+      .update({ excluded_at: new Date().toISOString(), excluded_reason: data.reason, excluded_by: context.userId })
+      .match(key).eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const restoreAlert = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => AlertKey.parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    await assertShop(context.ownerId, data.shopId);
+    const { error } = await supabaseAdmin.from("chargeback_alert_followups")
+      .update({ excluded_at: null, excluded_reason: null, excluded_by: null })
+      .match({ shop_id: data.shopId, order_external_id: data.orderExternalId }).eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 // ─── Configurações ────────────────────────────────────────────────────────────
 
 const Step = z.object({ subject: z.string().max(300), body: z.string().max(20_000), days: z.number().min(0).max(90) });

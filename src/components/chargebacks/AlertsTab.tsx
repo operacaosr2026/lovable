@@ -4,10 +4,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
-  BellRing, CircleCheck, ArrowUp, ArrowDown, ArrowRight, Database, Pause, Play, Reply, DollarSign, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check,
+  BellRing, CircleCheck, ArrowUp, ArrowDown, ArrowRight, Database, Pause, Play, Reply, DollarSign, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check, Trash2, RotateCcw, Archive,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings, saveChargebackSettings, createRecoveryPaymentLink } from "@/lib/chargeback-alerts.functions";
+import { getChargebackAlerts, saveAlertFollowup, getChargebackSettings, saveChargebackSettings, createRecoveryPaymentLink, excludeAlert, restoreAlert } from "@/lib/chargeback-alerts.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ALERT_STATUSES, type AlertRow, type AlertStatus, type ChargebackSettings } from "@/lib/chargeback-alerts.shared";
 import { US_TIME_ZONE } from "@/lib/timezone";
@@ -56,15 +59,19 @@ export function AlertsTab() {
   const settingsFn = useServerFn(getChargebackSettings);
   const settings = useQuery({ queryKey: ["chargeback-settings"], queryFn: () => settingsFn() });
   const seq = { enabled: !!settings.data?.dunningEnabled, total: settings.data?.dunningSteps.filter((st) => st.subject && st.body).length ?? 0 };
-  const [statusFilter, setStatusFilter] = useState<AlertStatus | "todos">("todos");
+  const [statusFilter, setStatusFilter] = useState<AlertStatus | "todos" | "excluidos">("todos");
   const [search, setSearch] = useState("");
 
-  const rows = q.data?.rows ?? [];
+  // Excluídos à mão ficam fora de tudo (números, abas de status, cobrança) — só no filtro "Excluídos".
+  const all = q.data?.rows;
+  const rows = useMemo(() => (all ?? []).filter((r) => !r.excludedAt), [all]);
+  const excluded = useMemo(() => (all ?? []).filter((r) => r.excludedAt).sort((a, b) => b.excludedAt!.localeCompare(a.excludedAt!)), [all]);
   const list = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return rows.filter((r) => (statusFilter === "todos" || r.status === statusFilter) &&
-      (!s || [r.orderNumber, r.customerName, r.customerEmail, r.product, r.trackingCode].some((v) => v?.toLowerCase().includes(s))));
-  }, [rows, statusFilter, search]);
+    const source = statusFilter === "excluidos" ? excluded : rows;
+    return source.filter((r) => (statusFilter === "todos" || statusFilter === "excluidos" || r.status === statusFilter) &&
+      (!s || [r.orderNumber, r.customerName, r.customerEmail, r.product, r.trackingCode, r.excludedReason].some((v) => v?.toLowerCase().includes(s))));
+  }, [rows, excluded, statusFilter, search]);
 
   const sum = (xs: AlertRow[], f: (r: AlertRow) => number) => xs.reduce((t, r) => t + f(r), 0);
   const delivered = rows.filter((r) => r.deliveryStatus === "delivered");
@@ -101,6 +108,11 @@ export function AlertsTab() {
                 {s === "todos" ? `Todos (${rows.length})` : `${STATUS[s].label} (${rows.filter((r) => r.status === s).length})`}
               </button>
             ))}
+            <span className="w-px h-5 bg-border mx-1" />
+            <button onClick={() => setStatusFilter(statusFilter === "excluidos" ? "todos" : "excluidos")}
+              className={`h-8 px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors ${statusFilter === "excluidos" ? "bg-foreground text-background" : "bg-muted/60 text-muted-foreground hover:text-foreground"}`}>
+              <Archive className="size-3.5" /> Excluídos ({excluded.length})
+            </button>
           </div>
           <div className="relative w-full lg:w-72">
             <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -109,12 +121,12 @@ export function AlertsTab() {
           </div>
         </div>
 
-        {!list.length ? <p className="text-sm text-muted-foreground text-center py-10">Nenhum alerta nesse filtro</p> : (<>
+        {!list.length ? <p className="text-sm text-muted-foreground text-center py-10">{statusFilter === "excluidos" ? "Nenhum pedido excluído" : "Nenhum alerta nesse filtro"}</p> : (<>
           <table className="hidden xl:table w-full table-fixed text-sm">
             <colgroup>
               {/* Espaço dividido entre as colunas (não sobra tudo pro produto); etiquetas encolhem até caber. */}
-              <col className="w-[12%]" /><col className="w-[20%]" /><col className="w-[9%]" /><col className="w-[11%]" />
-              <col className="w-[17%]" /><col className="w-[15%]" /><col className="w-[16%]" />
+              <col className="w-[12%]" /><col className="w-[18%]" /><col className="w-[9%]" /><col className="w-[11%]" />
+              <col className="w-[17%]" /><col className="w-[15%]" /><col className="w-[14%]" /><col className="w-[4%]" />
             </colgroup>
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border">
@@ -125,6 +137,7 @@ export function AlertsTab() {
                 <th className="font-medium py-2.5 px-2 text-center">Entrega</th>
                 <th className="font-medium py-2.5 px-2 text-center">Cobrança</th>
                 <th className="font-medium py-2.5 px-2 text-center">Pagamento</th>
+                <th className="py-2.5 px-1"><span className="sr-only">Excluir</span></th>
               </tr>
             </thead>
             <tbody>
@@ -168,6 +181,13 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
     onSuccess: () => qc.invalidateQueries({ queryKey: ["chargeback-alerts"] }),
     onError: (e: any) => toast.error(e?.message ?? "Erro ao salvar"),
   });
+  const [excludeOpen, setExcludeOpen] = useState(false);
+  const restoreFn = useServerFn(restoreAlert);
+  const restore = useMutation({
+    mutationFn: () => restoreFn({ data: { shopId: r.shopId, orderExternalId: r.orderExternalId } }),
+    onSuccess: () => { toast.success(`${r.orderNumber ?? "Pedido"} voltou pra lista`); qc.invalidateQueries({ queryKey: ["chargeback-alerts"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao restaurar"),
+  });
   const delivered = r.deliveryStatus === "delivered";
   const dl = r.orderNumber ? (r.deliveryStatus ? DELIVERY[r.deliveryStatus] ?? r.deliveryStatus : "Sem rastreio") : "—";
 
@@ -210,6 +230,27 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
     <DunningInfo r={r} seq={seq} busy={save.isPending} onPause={(p) => save.mutate({ status: r.status, dunningPaused: p })} />
   </>;
   const payment = <PaymentLink r={r} />;
+  // Excluído: no lugar da cobrança, quando e por quê.
+  const excludedInfo = r.excludedAt && (
+    <div className="text-left">
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-muted text-muted-foreground">
+        <Archive className="size-3" /> Excluído · {fmtDate(r.excludedAt)}
+      </span>
+      <div className="text-xs text-foreground/80 mt-1 line-clamp-2 break-words" title={r.excludedReason ?? undefined}>{r.excludedReason}</div>
+    </div>
+  );
+  const action = r.excludedAt ? (
+    <button type="button" onClick={() => restore.mutate()} disabled={restore.isPending} title="Restaurar (volta pra lista)" aria-label="Restaurar"
+      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50">
+      {restore.isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+    </button>
+  ) : (
+    <button type="button" onClick={() => setExcludeOpen(true)} title="Excluir da lista" aria-label="Excluir da lista"
+      className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10">
+      <Trash2 className="size-4" />
+    </button>
+  );
+  const dialog = <ExcludeDialog r={r} open={excludeOpen} onOpenChange={setExcludeOpen} />;
 
   if (mobile) return (
     <div className="py-3.5 space-y-2.5">
@@ -219,8 +260,9 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       </div>
       <div className="flex items-center gap-2 min-w-0"><div className="min-w-0 flex-1">{product}</div>{network}</div>
       <div>{delivery}</div>
-      <div>{status}</div>
-      <div>{payment}</div>
+      <div>{excludedInfo || status}</div>
+      <div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1">{payment}</div>{action}</div>
+      {dialog}
     </div>
   );
 
@@ -231,9 +273,50 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       <td className="py-3 px-2 text-center">{network}</td>
       <td className="py-3 px-2 text-center">{refund}</td>
       <td className="py-3 px-2 text-center">{delivery}</td>
-      <td className="py-3 px-2 text-center">{status}</td>
+      <td className="py-3 px-2 text-center">{excludedInfo || status}</td>
       <td className="py-3 px-2 text-center">{payment}</td>
+      <td className="py-3 px-1 text-center">{action}{dialog}</td>
     </tr>
+  );
+}
+
+// Caixa de exclusão: motivo obrigatório (fica guardado e aparece no filtro "Excluídos").
+function ExcludeDialog({ r, open, onOpenChange }: { r: AlertRow; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const qc = useQueryClient();
+  const excludeFn = useServerFn(excludeAlert);
+  const [reason, setReason] = useState("");
+  const exclude = useMutation({
+    mutationFn: () => excludeFn({ data: { shopId: r.shopId, orderExternalId: r.orderExternalId, status: r.status, reason } }),
+    onSuccess: () => {
+      toast.success(`${r.orderNumber ?? "Pedido"} excluído — fica no filtro Excluídos`);
+      qc.invalidateQueries({ queryKey: ["chargeback-alerts"] });
+      onOpenChange(false);
+      setReason("");
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao excluir"),
+  });
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!exclude.isPending) onOpenChange(v); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Excluir {r.orderNumber ?? `#${r.orderExternalId}`}?</DialogTitle>
+          <DialogDescription>
+            Sai da lista e da cobrança automática e não volta mais. Fica guardado no filtro "Excluídos", de onde dá pra restaurar.
+          </DialogDescription>
+        </DialogHeader>
+        <label className="block">
+          <span className="text-xs font-medium text-muted-foreground block mb-1">Motivo</span>
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} autoFocus maxLength={1000}
+            placeholder="Ex.: cliente já pagou por fora, pedido duplicado" />
+        </label>
+        <DialogFooter>
+          <Button variant="ghost" disabled={exclude.isPending} onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button variant="destructive" disabled={!reason.trim() || exclude.isPending} onClick={() => exclude.mutate()}>
+            {exclude.isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />} Excluir
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -255,7 +338,7 @@ export function DunningToggle() {
   const onToggle = async () => {
     if (!settings) return;
     if (!enabled) {
-      const n = rows.filter((r) => r.status === "a_contatar" && r.deliveryStatus === "delivered" && r.customerEmail && !r.dunningPaused && !r.dunningStep).length;
+      const n = rows.filter((r) => !r.excludedAt && r.status === "a_contatar" && r.deliveryStatus === "delivered" && r.customerEmail && !r.dunningPaused && !r.dunningStep).length;
       const ok = await confirm({
         title: "Ativar cobrança automática?",
         description: n

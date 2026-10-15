@@ -108,7 +108,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
     selectAllIn<{ order_id: string; last_event_label: string | null }>(orderIds, (c) =>
       supabaseAdmin.from("shop_order_tracking").select("order_id,last_event_label").in("order_id", c)),
     selectAllIn<any>(extIds, (c) => supabaseAdmin.from("chargeback_alert_followups")
-      .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason,dunning_started_at,dunning_replied_at,dunning_replied_step,recovered_at,recovered_step,recovery_draft_id,recovery_invoice_url,recovery_order_id,recovery_order_name,recovery_fulfilled,recovery_error")
+      .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason,dunning_started_at,dunning_replied_at,dunning_replied_step,recovered_at,recovered_step,recovery_draft_id,recovery_invoice_url,recovery_order_id,recovery_order_name,recovery_fulfilled,recovery_error,excluded_at,excluded_reason")
       .eq("user_id", ownerId).in("order_external_id", c)),
     emails.length
       ? selectAllIn<{ id: string; customer_email: string; last_message_at: string | null }>(emails, (c) =>
@@ -145,6 +145,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       recoveryDraftId: fu?.recovery_draft_id ?? null, recoveryInvoiceUrl: fu?.recovery_invoice_url ?? null,
       recoveryOrderId: fu?.recovery_order_id ?? null, recoveryOrderName: fu?.recovery_order_name ?? null,
       recoveryFulfilled: fu?.recovery_fulfilled ?? false, recoveryError: fu?.recovery_error ?? null,
+      excludedAt: fu?.excluded_at ?? null, excludedReason: fu?.excluded_reason ?? null,
     };
   }).sort((a, b) => (b.refundedAt ?? "").localeCompare(a.refundedAt ?? ""));
 }
@@ -207,7 +208,7 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
   if (!cfg.dunningEnabled || !steps.length) return { skipped: "desligada" };
 
   const rows = (all ?? await loadAlerts(ownerId, await alertShopIds(ownerId)))
-    .filter((r) => r.deliveryStatus === "delivered" && r.customerEmail && !r.dunningPaused
+    .filter((r) => !r.excludedAt && r.deliveryStatus === "delivered" && r.customerEmail && !r.dunningPaused
       && (r.dunningStep === 0 ? r.status === "a_contatar" : r.status === "a_contatar" || r.status === "contatado")
       && !(r.dunningStopReason === "respondeu" || r.dunningStopReason === "fim"));
   if (!rows.length) return { sent: 0 };
@@ -268,7 +269,8 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
         dunning_step: r.dunningStep + 1, dunning_last_at: nowIso, status: "contatado", dunning_stop_reason: null, updated_at: nowIso,
         ...(r.dunningStep === 0 ? { dunning_started_at: nowIso } : {}),
       })
-      .match(key).eq("dunning_step", r.dunningStep).eq("dunning_paused", false).in("status", ["a_contatar", "contatado"]).select("id");
+      .match(key).eq("dunning_step", r.dunningStep).eq("dunning_paused", false).in("status", ["a_contatar", "contatado"])
+      .is("excluded_at", null).select("id");
     if (!claimed?.length) continue;
     try {
       // E-mail com {link_pagamento}: cria (ou reaproveita) o pedido de cobrança na Shopify antes.
@@ -326,11 +328,13 @@ export async function runAllChargebackDunning() {
   const out: Record<string, unknown> = {};
   for (const a of data ?? []) {
     try {
+      // Excluído à mão não ganha tag nem e-mail; o pagamento ainda é conferido.
       const rows = await loadAlerts(a.owner_id, await alertShopIds(a.owner_id));
-      const tagged = await tagAlertConversations(a.owner_id, rows);
+      const active = rows.filter((r) => !r.excludedAt);
+      const tagged = await tagAlertConversations(a.owner_id, active);
       // Pagamentos antes da sequência: quem pagou vira Recuperado e não recebe mais e-mail.
       const paid = await checkRecoveryPayments(a.owner_id, rows);
-      out[a.owner_id] = { tagged, paid, ...(await runChargebackDunning(a.owner_id, rows)) };
+      out[a.owner_id] = { tagged, paid, ...(await runChargebackDunning(a.owner_id, active)) };
     } catch (e: any) { out[a.owner_id] = { error: String(e?.message ?? e) }; }
   }
   return out;

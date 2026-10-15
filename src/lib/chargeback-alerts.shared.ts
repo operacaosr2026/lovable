@@ -15,6 +15,8 @@ export type AlertRow = {
   // Pedido de cobrança na Shopify (link de pagamento) — chargeback-recovery.server.ts.
   recoveryDraftId: string | null; recoveryInvoiceUrl: string | null; recoveryOrderId: string | null; recoveryOrderName: string | null;
   recoveryFulfilled: boolean; recoveryError: string | null;
+  // Excluído à mão da lista (com motivo): some dos números e da cobrança, fica no filtro "Excluídos".
+  excludedAt: string | null; excludedReason: string | null;
 };
 
 // Sequência de cobrança: days do 1º = dias depois da entrega; dos demais = dias depois do anterior.
