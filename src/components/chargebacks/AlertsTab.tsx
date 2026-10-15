@@ -69,7 +69,8 @@ export function AlertsTab() {
   const list = useMemo(() => {
     const s = search.trim().toLowerCase();
     const source = statusFilter === "excluidos" ? excluded : rows;
-    return source.filter((r) => (statusFilter === "todos" || statusFilter === "excluidos" || r.status === statusFilter) &&
+    // "Todos" = o que ainda está em andamento: Recuperado fica só na aba dele.
+    return source.filter((r) => (statusFilter === "todos" ? r.status !== "recuperado" : statusFilter === "excluidos" || r.status === statusFilter) &&
       (!s || [r.orderNumber, r.customerName, r.customerEmail, r.product, r.trackingCode, r.excludedReason].some((v) => v?.toLowerCase().includes(s))));
   }, [rows, excluded, statusFilter, search]);
 
@@ -105,7 +106,7 @@ export function AlertsTab() {
             {(["todos", ...ALERT_STATUSES] as const).map((s) => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`h-8 px-3 rounded-lg text-xs font-medium transition-colors ${statusFilter === s ? "bg-primary text-primary-foreground" : "bg-muted/60 text-muted-foreground hover:text-foreground"}`}>
-                {s === "todos" ? `Todos (${rows.length})` : `${STATUS[s].label} (${rows.filter((r) => r.status === s).length})`}
+                {s === "todos" ? `Todos (${rows.filter((r) => r.status !== "recuperado").length})` : `${STATUS[s].label} (${rows.filter((r) => r.status === s).length})`}
               </button>
             ))}
             <span className="w-px h-5 bg-border mx-1" />
