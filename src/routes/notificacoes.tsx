@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
-  Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Check,
+  Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Store, Tag, ListFilter, ArrowRight,
+  Copy, MoreVertical, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -14,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue,
@@ -37,6 +40,21 @@ const STATUS: Record<NoticeOrder["status"], { label: string; cls: string; icon: 
   esperando_cliente: { label: "Esperando cliente", cls: "bg-muted text-muted-foreground",                     icon: Hourglass },
 };
 
+// Cor de cada etapa (cards e o "X dias" da tabela): quanto mais velho, mais vermelho.
+const TONE = {
+  violet: { badge: "bg-violet-500/10 text-violet-600 dark:text-violet-400", active: "border-violet-400/60 bg-violet-500/[0.06]", num: "text-violet-700 dark:text-violet-300", pill: "bg-violet-500/10 text-violet-700 dark:text-violet-300" },
+  amber:  { badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",   active: "border-amber-400/60 bg-amber-500/[0.06]",   num: "text-amber-700 dark:text-amber-300",   pill: "bg-amber-500/10 text-amber-700 dark:text-amber-300" },
+  orange: { badge: "bg-orange-500/10 text-orange-600 dark:text-orange-400", active: "border-orange-400/60 bg-orange-500/[0.06]", num: "text-orange-700 dark:text-orange-300", pill: "bg-orange-500/10 text-orange-700 dark:text-orange-300" },
+  rose:   { badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400",       active: "border-rose-400/60 bg-rose-500/[0.06]",       num: "text-rose-700 dark:text-rose-300",       pill: "bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+} as const;
+type Tone = (typeof TONE)[keyof typeof TONE];
+const STAGE_LOOK: Record<NoticeStageKey, { tone: Tone; icon: typeof Truck }> = {
+  "7":  { tone: TONE.amber,  icon: Clock },
+  "14": { tone: TONE.orange, icon: Clock },
+  "21": { tone: TONE.rose,   icon: Clock },
+  "30": { tone: TONE.rose,   icon: AlertTriangle },
+};
+
 // Avisado há menos que isso: some da lista com o filtro padrão.
 const RECENT_DAYS = 5;
 const INTERVAL_MS = NOTICE_INTERVAL_MIN * 60_000;
@@ -48,6 +66,8 @@ const fmtDate = (iso: string) => {
 };
 const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE }).replace(",", "");
+const copy = (text: string, msg: string) =>
+  navigator.clipboard.writeText(text).then(() => toast.success(msg), () => toast.error("Não deu pra copiar"));
 const daysAgo = (iso: string) => (Date.now() - new Date(iso).getTime()) / 86_400_000;
 const recentlyNotified = (o: NoticeOrder) => !!o.notices[0] && daysAgo(o.notices[0].at) < RECENT_DAYS;
 
@@ -108,6 +128,8 @@ function NotificacoesPage() {
 
   const selectedOrders = rows.filter((o) => selected.has(o.id));
   const allChecked = rows.length > 0 && selectedOrders.length === rows.length;
+  const hideCount = [hideRecent, hideDispute, hideWaiting, hideSupport].filter(Boolean).length;
+  const showQueue = !!queue.data && (queue.data.pending.length > 0 || queue.data.failed.length > 0);
   const toggle = (id: string) => setSelected((cur) => {
     const next = new Set(cur);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -124,167 +146,218 @@ function NotificacoesPage() {
       </div>
 
       {/* Etapas */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-        <StageCard active={stage === "todos"} onClick={() => setStage("todos")} label="Todos os atrasados" hint="7 dias ou mais desde a compra"
+      <div className={`${CARD} grid grid-cols-2 lg:grid-cols-5 gap-1 p-2 mb-4`}>
+        <StageCard active={stage === "todos"} onClick={() => setStage("todos")} tone={TONE.violet} icon={Mail}
+          label="Todos os atrasados" hint="7 dias ou mais desde a compra"
           count={base.length} notNotified={base.filter((o) => !o.notices.length).length} />
         {NOTICE_STAGES.map((s) => {
           const list = base.filter((o) => stageOf(o.days) === s.key);
           return (
             <StageCard key={s.key} active={stage === s.key} onClick={() => setStage(stage === s.key ? "todos" : s.key)}
+              tone={STAGE_LOOK[s.key].tone} icon={STAGE_LOOK[s.key].icon}
               label={s.label} hint={s.hint} count={list.length} notNotified={list.filter((o) => !o.notices.length).length} />
           );
         })}
       </div>
 
-      {/* Filtros */}
-      {/* Tela larga: tudo numa linha só (a busca encolhe); menor que isso, quebra. */}
-      <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 mb-3">
-        <div className="relative w-full sm:w-64 xl:w-auto xl:flex-1 xl:min-w-40">
-          <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pedido, cliente, e-mail ou rastreio" className="pl-9 h-10 rounded-xl" />
+      {/* Filtros + fila */}
+      <div className="flex flex-col xl:flex-row gap-3 mb-4">
+        <div className={`${CARD} flex-1 min-w-0 flex flex-wrap items-center gap-2 p-3`}>
+          <div className="relative flex-1 min-w-48">
+            <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pedido, cliente, e-mail ou rastreio" className="pl-9 h-10 rounded-xl" />
+          </div>
+          <Select value={shop} onChange={setShop} icon={Store} className="w-48 shrink-0"
+            options={[["todas", "Todas as lojas"], ...shops.map(([id, name]) => [id, name] as const)]} />
+          <Select value={status} onChange={(v) => setStatus(v as any)} icon={Tag} className="w-48 shrink-0"
+            options={[["todos", "Todos os status"], ...Object.entries(STATUS).map(([k, v]) => [k, v.label] as const)]} />
+          <Popover>
+            <PopoverTrigger asChild>
+              <button type="button"
+                className={`h-10 px-3 rounded-xl border text-sm font-medium inline-flex items-center gap-2 shrink-0 transition-colors ${
+                  hideCount ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-card hover:bg-muted/40"}`}>
+                <ListFilter className="size-4" /> Exclusões{hideCount > 0 && ` (${hideCount})`}
+                <ChevronDown className="size-4 opacity-70" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 p-2">
+              <div className="px-2 pt-1 pb-2 text-xs font-medium text-muted-foreground">Esconder da lista</div>
+              <ExclusionItem checked={hideRecent} onChange={setHideRecent} label={`Avisados há menos de ${RECENT_DAYS} dias`}
+                hint="Cliente que já recebeu e-mail recentemente" />
+              <ExclusionItem checked={hideDispute} onChange={setHideDispute} label="Com chargeback"
+                hint="Pedido com chargeback ou inquiry aberto" />
+              <ExclusionItem checked={hideWaiting} onChange={setHideWaiting} label="Esperando cliente"
+                hint='Status "Esperando cliente" no Rastreamento' />
+              <ExclusionItem checked={hideSupport} onChange={setHideSupport} label="Escreveu pro suporte"
+                hint="A conversa já está no Atendimento" />
+            </PopoverContent>
+          </Popover>
         </div>
-        <Select value={shop} onChange={setShop} className="w-40 shrink-0"
-          options={[["todas", "Todas as lojas"], ...shops.map(([id, name]) => [id, name] as const)]} />
-        <Select value={status} onChange={(v) => setStatus(v as any)} className="w-44 shrink-0"
-          options={[["todos", "Todos os status"], ...Object.entries(STATUS).map(([k, v]) => [k, v.label] as const)]} />
-        {/* Esconder: grupo único (quebra de linha junto, não um por um). */}
-        <div className="flex flex-wrap xl:flex-nowrap xl:shrink-0 items-center gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground mr-0.5">Esconder</span>
-          <HideChip on={hideRecent} onToggle={() => setHideRecent(!hideRecent)} title={`Cliente que recebeu e-mail há menos de ${RECENT_DAYS} dias`}>
-            Avisados há {"<"} {RECENT_DAYS} dias
-          </HideChip>
-          <HideChip on={hideDispute} onToggle={() => setHideDispute(!hideDispute)} title="Pedido com chargeback ou inquiry aberto">
-            Com chargeback
-          </HideChip>
-          <HideChip on={hideWaiting} onToggle={() => setHideWaiting(!hideWaiting)} title='Status "Esperando cliente" no Rastreamento'>
-            Esperando cliente
-          </HideChip>
-          <HideChip on={hideSupport} onToggle={() => setHideSupport(!hideSupport)} title="Cliente que já escreveu pro suporte (conversa no Atendimento)">
-            Escreveu pro suporte
-          </HideChip>
-        </div>
+        {showQueue && <QueuePanel queue={queue.data!} />}
       </div>
 
-      {queue.data && (queue.data.pending.length > 0 || queue.data.failed.length > 0) && <QueuePanel queue={queue.data} />}
-
-      {/* Ação */}
-      <div className={`${CARD} sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 mb-3`}>
-        <span className="text-sm text-muted-foreground">
-          {selectedOrders.length
-            ? <><b className="text-foreground">{selectedOrders.length}</b> {selectedOrders.length === 1 ? "pedido selecionado" : "pedidos selecionados"}</>
-            : `${rows.length} ${rows.length === 1 ? "pedido" : "pedidos"} na lista — marque quem vai receber o e-mail`}
-        </span>
-        <div className="flex items-center gap-2">
-          {selectedOrders.length > 0 && <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Limpar</Button>}
+      {/* Lista */}
+      <div className={CARD}>
+        <div className="sticky top-2 z-10 bg-card rounded-t-2xl border-b border-border/70 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 min-w-0">
+            {selectedOrders.length ? (
+              <>
+                <span className="text-base font-semibold">
+                  {selectedOrders.length} {selectedOrders.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
+                </span>
+                <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setSelected(new Set())}>Limpar seleção</button>
+              </>
+            ) : (
+              <>
+                <span className="text-base font-semibold">{rows.length} {rows.length === 1 ? "pedido na lista" : "pedidos na lista"}</span>
+                <span className="text-xs text-muted-foreground">Marque quem vai receber o e-mail</span>
+              </>
+            )}
+          </div>
           <Button disabled={!selectedOrders.length} onClick={() => setSendOpen(true)}>
             <Send className="size-4" /> Enviar e-mail
           </Button>
         </div>
-      </div>
 
-      {/* Lista */}
-      <div className={`${CARD} overflow-x-auto`}>
-        {q.isLoading ? (
-          <div className="py-24 grid place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
-        ) : q.error ? (
-          <div className="py-16 text-center text-sm text-destructive">{(q.error as Error).message}</div>
-        ) : !rows.length ? (
-          <div className="py-16 text-center text-sm text-muted-foreground">
-            <CheckCircle2 className="size-6 mx-auto mb-2 text-emerald-500" />
-            Nenhum pedido atrasado com esses filtros.
-          </div>
-        ) : (
-          <table className="w-full text-sm min-w-[1100px] table-fixed">
-            {/* Larguras fixas: sem isso a coluna Rastreio esticava e sobrava um vão. */}
-            <colgroup>
-              <col className="w-12" />
-              <col className="w-[150px]" />
-              <col className="w-[22%]" />
-              <col className="w-[96px]" />
-              <col />
-              <col className="w-[200px]" />
-              <col className="w-[200px]" />
-            </colgroup>
-            <thead>
-              <tr className="text-xs text-muted-foreground border-b border-border text-left">
-                <th className="py-2.5 pl-4 pr-2 w-8">
-                  <Checkbox checked={allChecked ? true : selectedOrders.length ? "indeterminate" : false}
-                    onCheckedChange={() => setSelected(allChecked ? new Set() : new Set(rows.map((o) => o.id)))} aria-label="Marcar todos" />
-                </th>
-                <th className="font-medium py-2.5 px-2">Pedido</th>
-                <th className="font-medium py-2.5 px-2">Cliente</th>
-                <th className="font-medium py-2.5 px-2 text-center">Compra</th>
-                <th className="font-medium py-2.5 px-2">Rastreio</th>
-                <th className="font-medium py-2.5 px-2">Código de rastreio</th>
-                <th className="font-medium py-2.5 px-2">Último aviso</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((o) => {
-                const st = STATUS[o.status];
-                return (
-                  <tr key={o.id} onClick={() => toggle(o.id)}
-                    className={`border-b border-border/60 last:border-0 cursor-pointer align-top ${selected.has(o.id) ? "bg-primary/5" : "hover:bg-muted/30"}`}>
-                    <td className="py-3 pl-4 pr-2" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggle(o.id)} aria-label={`Marcar ${o.orderNumber}`} />
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-medium">{customerOrderNumber(o.orderNumber)}</div>
-                      <div className="text-xs text-muted-foreground">{o.shopName}</div>
-                      {o.dispute && (
-                        <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400 mt-1" icon={ShieldAlert}>
-                          {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"}
-                        </Pill>
-                      )}
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="truncate">{o.customerName}</div>
-                      <div className={`text-xs truncate ${o.email ? "text-muted-foreground" : "text-rose-600"}`}>{o.email ?? "sem e-mail"}</div>
-                    </td>
-                    <td className="py-3 px-2 text-center whitespace-nowrap">
-                      <div className={`font-semibold ${o.days >= 21 ? "text-rose-600" : o.days >= 14 ? "text-amber-600" : ""}`}>{o.days} dias</div>
-                      <div className="text-xs text-muted-foreground">{fmtDate(o.orderDate)}</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>
-                      {o.lastEvent && (
-                        <div className="text-xs text-muted-foreground mt-1 line-clamp-2" title={o.lastEvent}>
-                          {o.lastEventAt && <span className="text-foreground/80">{fmtDate(o.lastEventAt)} · </span>}{o.lastEvent}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3 px-2 whitespace-nowrap">
-                      {o.trackingCode ? (
-                        o.trackingUrl ? (
-                          <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                            className="text-xs tabular-nums text-primary hover:underline" title="Abrir a página de rastreio">
-                            {o.trackingCode}
-                          </a>
-                        ) : <span className="text-xs tabular-nums">{o.trackingCode}</span>
-                      ) : <span className="text-xs text-muted-foreground">—</span>}
-                    </td>
-                    <td className="py-3 px-2">
-                      {o.notices[0] ? (
-                        <>
-                          <div className="flex items-center gap-1.5 whitespace-nowrap"><Mail className="size-3.5 text-emerald-600" />{fmtDateTime(o.notices[0].at)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {o.notices[0].title}{o.notices.length > 1 && ` · ${o.notices.length} avisos`}
+        <div className="overflow-x-auto">
+          {q.isLoading ? (
+            <div className="py-24 grid place-items-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
+          ) : q.error ? (
+            <div className="py-16 text-center text-sm text-destructive">{(q.error as Error).message}</div>
+          ) : !rows.length ? (
+            <div className="py-16 text-center text-sm text-muted-foreground">
+              <CheckCircle2 className="size-6 mx-auto mb-2 text-emerald-500" />
+              Nenhum pedido atrasado com esses filtros.
+            </div>
+          ) : (
+            <table className="w-full text-sm min-w-[1100px] table-fixed">
+              {/* Larguras fixas: sem isso a coluna Rastreio esticava e sobrava um vão. */}
+              <colgroup>
+                <col className="w-12" />
+                <col className="w-[150px]" />
+                <col className="w-[22%]" />
+                <col className="w-[96px]" />
+                <col />
+                <col className="w-[210px]" />
+                <col className="w-[200px]" />
+                <col className="w-14" />
+              </colgroup>
+              <thead>
+                <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
+                  <th className="py-2.5 pl-4 pr-2 w-8">
+                    <Checkbox checked={allChecked ? true : selectedOrders.length ? "indeterminate" : false}
+                      onCheckedChange={() => setSelected(allChecked ? new Set() : new Set(rows.map((o) => o.id)))} aria-label="Marcar todos" />
+                  </th>
+                  <th className="font-medium py-2.5 px-2">Pedido</th>
+                  <th className="font-medium py-2.5 px-2">Cliente</th>
+                  <th className="font-medium py-2.5 px-2 text-center">Compra</th>
+                  <th className="font-medium py-2.5 px-2">Rastreio</th>
+                  <th className="font-medium py-2.5 px-2">Código de rastreio</th>
+                  <th className="font-medium py-2.5 px-2">Último aviso</th>
+                  <th className="font-medium py-2.5 pr-4 pl-2 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((o) => {
+                  const st = STATUS[o.status];
+                  const stg = stageOf(o.days);
+                  return (
+                    <tr key={o.id} onClick={() => toggle(o.id)}
+                      className={`border-b border-border/60 last:border-0 cursor-pointer align-top ${selected.has(o.id) ? "bg-primary/5" : "hover:bg-muted/30"}`}>
+                      <td className="py-3 pl-4 pr-2" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggle(o.id)} aria-label={`Marcar ${o.orderNumber}`} />
+                      </td>
+                      <td className="py-3 px-2">
+                        <div className="font-semibold">{customerOrderNumber(o.orderNumber)}</div>
+                        <div className="text-xs text-muted-foreground">{o.shopName}</div>
+                        {o.dispute && (
+                          <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400 mt-1" icon={ShieldAlert}>
+                            {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"}
+                          </Pill>
+                        )}
+                      </td>
+                      <td className="py-3 px-2">
+                        <div className="truncate font-medium">{o.customerName}</div>
+                        <div className={`text-xs truncate ${o.email ? "text-muted-foreground" : "text-rose-600"}`}>{o.email ?? "sem e-mail"}</div>
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${stg ? STAGE_LOOK[stg].tone.pill : "bg-muted"}`}>
+                          {o.days} dias
+                        </span>
+                        <div className="text-xs text-muted-foreground mt-1">{fmtDate(o.orderDate)}</div>
+                      </td>
+                      <td className="py-3 px-2">
+                        <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>
+                        {o.lastEvent && (
+                          <div className="text-xs text-muted-foreground mt-1 line-clamp-2" title={o.lastEvent}>
+                            {o.lastEventAt && <span className="text-foreground/80">{fmtDate(o.lastEventAt)} · </span>}{o.lastEvent}
                           </div>
-                        </>
-                      ) : !o.queued && <span className="text-xs text-muted-foreground">Nunca avisado</span>}
-                      {o.queued && <Pill cls="bg-violet-500/10 text-violet-700 dark:text-violet-400 mt-1" icon={Clock}>Na fila</Pill>}
-                      {o.supportAt && (
-                        <div className="flex items-center gap-1 text-xs text-sky-700 dark:text-sky-400 mt-1" title="Última vez que o cliente mandou e-mail pro suporte">
-                          <Headphones className="size-3" /> Escreveu pro suporte {fmtDate(o.supportAt)}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+                        )}
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {o.trackingCode ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            {o.trackingUrl ? (
+                              <a href={o.trackingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                                className="text-xs tabular-nums text-primary hover:underline" title="Abrir a página de rastreio">
+                                {o.trackingCode}
+                              </a>
+                            ) : <span className="text-xs tabular-nums">{o.trackingCode}</span>}
+                            <button type="button" className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                              title="Copiar código" aria-label="Copiar código"
+                              onClick={(e) => { e.stopPropagation(); copy(o.trackingCode!, "Código copiado"); }}>
+                              <Copy className="size-3.5" />
+                            </button>
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-3 px-2">
+                        {o.notices[0] ? (
+                          <>
+                            <div className="flex items-center gap-1.5 whitespace-nowrap"><Mail className="size-3.5 text-emerald-600" />{fmtDateTime(o.notices[0].at)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {o.notices[0].title}{o.notices.length > 1 && ` · ${o.notices.length} avisos`}
+                            </div>
+                          </>
+                        ) : !o.queued && <span className="text-xs text-muted-foreground">Nunca avisado</span>}
+                        {o.queued && <Pill cls="bg-violet-500/10 text-violet-700 dark:text-violet-400 mt-1" icon={Clock}>Na fila</Pill>}
+                        {o.supportAt && (
+                          <div className="flex items-center gap-1 text-xs text-sky-700 dark:text-sky-400 mt-1" title="Última vez que o cliente mandou e-mail pro suporte">
+                            <Headphones className="size-3" /> Escreveu pro suporte {fmtDate(o.supportAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-3 pl-2 text-right" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button type="button" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Ações">
+                              <MoreVertical className="size-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem disabled={!o.email || o.queued} onSelect={() => { setSelected(new Set([o.id])); setSendOpen(true); }}>
+                              <Send className="size-4" /> Enviar e-mail só pra este
+                            </DropdownMenuItem>
+                            {o.trackingUrl && (
+                              <DropdownMenuItem onSelect={() => window.open(o.trackingUrl!, "_blank", "noopener")}>
+                                <ExternalLink className="size-4" /> Abrir rastreio
+                              </DropdownMenuItem>
+                            )}
+                            {o.email && (
+                              <DropdownMenuItem onSelect={() => copy(o.email!, "E-mail copiado")}>
+                                <Copy className="size-4" /> Copiar e-mail
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
       <SendDialog open={sendOpen} onOpenChange={setSendOpen} orders={selectedOrders} templates={templates.data ?? []} queueSize={pendingCount}
@@ -433,59 +506,73 @@ function QueuePanel({ queue }: { queue: NoticeQueue }) {
   });
 
   return (
-    <div className={`${CARD} px-4 py-3 mb-3`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm min-w-0">
-          {n > 0 ? (
-            <>
-              <Loader2 className="size-4 animate-spin text-violet-600 shrink-0" />
-              <span>
-                <b>{n}</b> {n === 1 ? "e-mail na fila" : "e-mails na fila"} — 1 a cada {NOTICE_INTERVAL_MIN} minutos, termina por volta de <b>{fmtDateTime(finishAt)}</b>
-              </span>
-            </>
-          ) : (
-            <span className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Fila vazia</span>
-          )}
-          {queue.failed.length > 0 && (
-            <span className="text-rose-600 whitespace-nowrap">· {queue.failed.length} com erro (2 dias)</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setOpen(!open)}>{open ? "Esconder" : "Ver fila"}</Button>
-          {n > 0 && (
-            <Button variant="outline" size="sm" disabled={cancel.isPending}
-              onClick={async () => {
-                if (await confirm({ title: "Cancelar a fila?", description: `Os ${n} e-mails que ainda não saíram não serão enviados.`, confirmText: "Cancelar fila" })) cancel.mutate(undefined);
-              }}>
-              Cancelar fila
-            </Button>
-          )}
-        </div>
-      </div>
-      {open && (
-        <div className="mt-3 max-h-72 overflow-y-auto divide-y divide-border/60 text-sm">
-          {queue.pending.map((p, i) => (
-            <div key={p.id} className="flex items-center gap-3 py-1.5">
-              <span className="w-12 text-xs text-muted-foreground tabular-nums">{p.status === "enviando" ? "agora" : `${i + 1}º`}</span>
-              <span className="w-20 font-medium">{customerOrderNumber(p.orderNumber)}</span>
-              <span className="flex-1 truncate text-muted-foreground">{p.email} · {p.title}</span>
-              {p.status === "na_fila" && (
-                <button className="p-1 rounded hover:bg-muted text-muted-foreground" title="Tirar da fila" aria-label="Tirar da fila"
-                  disabled={cancel.isPending} onClick={() => cancel.mutate([p.id])}>
-                  <X className="size-4" />
-                </button>
-              )}
-            </div>
-          ))}
-          {queue.failed.map((f) => (
-            <div key={f.id} className="flex items-center gap-3 py-1.5 text-rose-700 dark:text-rose-400">
-              <span className="w-12 text-xs">erro</span>
-              <span className="w-20 font-medium">{customerOrderNumber(f.orderNumber)}</span>
-              <span className="flex-1 truncate" title={f.error ?? ""}>{f.email} · {f.error}</span>
-            </div>
-          ))}
-        </div>
+    <div className={`${CARD} xl:w-[360px] shrink-0 flex items-center gap-3 px-4 py-3`}>
+      {n > 0 ? (
+        <svg viewBox="0 0 44 44" className="size-11 shrink-0 animate-spin [animation-duration:2.5s]" aria-hidden>
+          <circle cx="22" cy="22" r="18" fill="none" strokeWidth="5" className="stroke-violet-500/15" />
+          <circle cx="22" cy="22" r="18" fill="none" strokeWidth="5" strokeLinecap="round" strokeDasharray="70 200" className="stroke-violet-500" />
+        </svg>
+      ) : (
+        <span className="size-11 rounded-full grid place-items-center shrink-0 bg-rose-500/10 text-rose-600"><AlertTriangle className="size-5" /></span>
       )}
+      <div className="min-w-0 flex-1">
+        {n > 0 ? (
+          <>
+            <div className="text-sm font-semibold">{n} {n === 1 ? "e-mail na fila" : "e-mails na fila"}</div>
+            <div className="text-xs text-muted-foreground">1 a cada {NOTICE_INTERVAL_MIN} minutos</div>
+            <div className="text-xs text-muted-foreground">Termina por volta de {fmtDateTime(finishAt)}</div>
+          </>
+        ) : <div className="text-sm font-semibold">Fila vazia</div>}
+        {queue.failed.length > 0 && <div className="text-xs text-rose-600">{queue.failed.length} com erro (2 dias)</div>}
+      </div>
+      <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
+        Ver fila <ArrowRight className="size-4" />
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Fila de e-mails</DialogTitle>
+            <DialogDescription>
+              {n > 0
+                ? `${n} ${n === 1 ? "e-mail" : "e-mails"} pra sair, 1 a cada ${NOTICE_INTERVAL_MIN} minutos — termina por volta de ${fmtDateTime(finishAt)} (horário de NY).`
+                : "Nenhum e-mail esperando pra sair."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto divide-y divide-border/60 text-sm">
+            {queue.pending.map((p, i) => (
+              <div key={p.id} className="flex items-center gap-3 py-1.5">
+                <span className="w-12 text-xs text-muted-foreground tabular-nums">{p.status === "enviando" ? "agora" : `${i + 1}º`}</span>
+                <span className="w-20 font-medium">{customerOrderNumber(p.orderNumber)}</span>
+                <span className="flex-1 truncate text-muted-foreground">{p.email} · {p.title}</span>
+                {p.status === "na_fila" && (
+                  <button className="p-1 rounded hover:bg-muted text-muted-foreground" title="Tirar da fila" aria-label="Tirar da fila"
+                    disabled={cancel.isPending} onClick={() => cancel.mutate([p.id])}>
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {queue.failed.map((f) => (
+              <div key={f.id} className="flex items-center gap-3 py-1.5 text-rose-700 dark:text-rose-400">
+                <span className="w-12 text-xs">erro</span>
+                <span className="w-20 font-medium">{customerOrderNumber(f.orderNumber)}</span>
+                <span className="flex-1 truncate" title={f.error ?? ""}>{f.email} · {f.error}</span>
+              </div>
+            ))}
+          </div>
+          {n > 0 && (
+            <DialogFooter>
+              <Button variant="outline" disabled={cancel.isPending}
+                onClick={async () => {
+                  if (await confirm({ title: "Cancelar a fila?", description: `Os ${n} e-mails que ainda não saíram não serão enviados.`, confirmText: "Cancelar fila" })) cancel.mutate(undefined);
+                }}>
+                Cancelar fila
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -591,30 +678,36 @@ function TemplatesDialog({ open, onOpenChange, templates }: { open: boolean; onO
 
 // ─── Peças ────────────────────────────────────────────────────────────────────
 
-function StageCard({ active, onClick, label, hint, count, notNotified }: {
-  active: boolean; onClick: () => void; label: string; hint: string; count: number; notNotified: number;
+function StageCard({ active, onClick, tone, icon: Icon, label, hint, count, notNotified }: {
+  active: boolean; onClick: () => void; tone: Tone; icon: typeof Truck; label: string; hint: string; count: number; notNotified: number;
 }) {
   return (
     <button onClick={onClick}
-      className={`rounded-xl border p-3 text-left transition-all ${active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted/30"}`}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="text-2xl font-bold tabular-nums mt-0.5">{count}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">
-        {notNotified > 0 ? <span className="text-amber-700 dark:text-amber-400">{notNotified} nunca avisado{notNotified === 1 ? "" : "s"}</span> : hint}
-      </div>
+      className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors min-w-0 ${active ? tone.active : "border-transparent hover:bg-muted/40"}`}>
+      <span className={`size-10 rounded-full grid place-items-center shrink-0 ${tone.badge}`}><Icon className="size-5" /></span>
+      <span className="min-w-0">
+        <span className={`block text-2xl font-bold tabular-nums leading-tight ${active ? tone.num : ""}`}>{count}</span>
+        <span className="block text-xs text-muted-foreground truncate">{label}</span>
+        <span className="block text-xs truncate">
+          {notNotified > 0
+            ? <span className="text-amber-700 dark:text-amber-400">{notNotified} nunca avisado{notNotified === 1 ? "" : "s"}</span>
+            : <span className="text-muted-foreground">{hint}</span>}
+        </span>
+      </span>
     </button>
   );
 }
 
-// Filtro liga/desliga em forma de pílula (ligado = escondido).
-function HideChip({ on, onToggle, title, children }: { on: boolean; onToggle: () => void; title: string; children: ReactNode }) {
+// Uma linha do menu "Exclusões" (marcado = some da lista).
+function ExclusionItem({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string }) {
   return (
-    <button type="button" onClick={onToggle} title={title} aria-pressed={on}
-      className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium transition-colors whitespace-nowrap ${
-        on ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}>
-      {on ? <Check className="size-3.5" /> : <span className="size-3.5" />}
-      {children}
-    </button>
+    <label className="flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-muted/50 cursor-pointer">
+      <Checkbox checked={checked} onCheckedChange={(v) => onChange(v === true)} className="mt-0.5" />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </label>
   );
 }
 
@@ -643,11 +736,14 @@ function Pill({ cls, icon: Icon, children }: { cls: string; icon?: typeof Truck;
   );
 }
 
-function Select({ value, onChange, options, className = "" }: { value: string; onChange: (v: string) => void; options: readonly (readonly [string, string])[]; className?: string }) {
+function Select({ value, onChange, options, icon: Icon, className = "" }: {
+  value: string; onChange: (v: string) => void; options: readonly (readonly [string, string])[]; icon?: typeof Truck; className?: string;
+}) {
   return (
     <div className={`relative ${className}`}>
+      {Icon && <Icon className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />}
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full h-10 pl-3 pr-8 rounded-xl border border-border bg-card text-sm outline-none focus:border-primary appearance-none cursor-pointer truncate">
+        className={`w-full h-10 ${Icon ? "pl-9" : "pl-3"} pr-8 rounded-xl border border-border bg-card text-sm outline-none focus:border-primary appearance-none cursor-pointer truncate`}>
         {options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
       </select>
       <ChevronDown className="size-4 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
