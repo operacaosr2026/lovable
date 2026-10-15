@@ -386,26 +386,32 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
       const filtering = campaignIds.length > 0
         ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }]))}`
         : "";
-      const url = `${META_GRAPH_API_BASE}/${account.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&access_token=${encodeURIComponent(accessToken)}`;
+      // Insights pagina em 25 linhas (= 25 dias com time_increment=1): sem seguir
+      // paging.next, períodos maiores ficavam com os últimos dias desatualizados.
+      let url: string | null = `${META_GRAPH_API_BASE}/${account.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&limit=500&access_token=${encodeURIComponent(accessToken)}`;
 
       try {
-        const r = await fetchWithRetry(url);
-        const json: any = await r.json();
-        if (!r.ok || json.error) {
-          const msg = json?.error?.message || `Falha (${r.status})`;
-          errors.push(`${account.ad_account_id}: ${msg}`);
+        const accountSpend = new Map<string, number>();
+        let failMsg: string | null = null;
+        while (url) {
+          const r = await fetchWithRetry(url);
+          const json: any = await r.json();
+          if (!r.ok || json.error) { failMsg = json?.error?.message || `Falha (${r.status})`; break; }
+          for (const d of (json.data ?? []) as any[]) {
+            const date = d.date_start as string;
+            if (!date) continue;
+            accountSpend.set(date, (accountSpend.get(date) ?? 0) + Number(d.spend ?? 0));
+          }
+          url = json.paging?.next ?? null;
+        }
+        if (failMsg) {
+          errors.push(`${account.ad_account_id}: ${failMsg}`);
           await supabaseAdmin.from("shop_meta_ad_accounts")
-            .update({ last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: String(msg).slice(0, 500) })
+            .update({ last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: String(failMsg).slice(0, 500) })
             .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("ad_account_id", account.ad_account_id);
           continue;
         }
-
-        for (const d of (json.data ?? []) as any[]) {
-          const date = d.date_start as string;
-          const spend = Number(d.spend ?? 0);
-          if (!date) continue;
-          spendByDate.set(date, (spendByDate.get(date) ?? 0) + spend);
-        }
+        for (const [date, spend] of accountSpend) spendByDate.set(date, (spendByDate.get(date) ?? 0) + spend);
 
         // Status da conta (3 = pagamento pendente, 9 = em carência): o sino
         // (refreshSystemNotifications) avisa "Falha de pagamento na Meta".
@@ -453,18 +459,23 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
       throw new Error(`Gasto de Ads não atualizado (mantido o último valor completo) — ${errors.join("; ")}`);
     }
 
-    // Only delete dates the API actually returned — preserves existing entries for dates
-    // not in the response (e.g. today's data not yet available in Meta's pipeline).
-    const rowDates = [...spendByDate.keys()];
-    if (rowDates.length > 0) {
-      await supabaseAdmin.from("shop_cash_entries")
+    // A Meta omite dias sem gasto: dia do período que não voltou passou a ser 0
+    // (campanha pausada/desmarcada) e o valor antigo sai. Só o último dia é
+    // preservado se não voltou — os dados dele podem ainda não estar prontos.
+    const staleDates: string[] = [];
+    for (let d = since; d < today; d = addDays(d, 1)) if (!spendByDate.has(d)) staleDates.push(d);
+    const deleteDates = [...spendByDate.keys(), ...staleDates];
+    if (deleteDates.length > 0) {
+      const { error: delError } = await supabaseAdmin.from("shop_cash_entries")
         .delete()
         .eq("user_id", ownerId)
         .eq("shop_id", data.shop_id)
         .eq("category", SPEND_CATEGORY)
         .eq("source", "auto")
-        .in("date", rowDates);
-
+        .in("date", deleteDates);
+      if (delError) throw new Error(delError.message);
+    }
+    if (rows.length > 0) {
       const { error } = await supabaseAdmin.from("shop_cash_entries").insert(rows);
       if (error) throw new Error(error.message);
     }
