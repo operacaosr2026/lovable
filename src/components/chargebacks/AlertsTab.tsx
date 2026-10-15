@@ -524,7 +524,7 @@ function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: b
       </div>
     );
   }
-  const label = r.dunningStopReason === "respondeu" ? `Cliente respondeu${r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ""}`
+  const label = r.dunningStopReason === "respondeu" ? r.repliedAt ? `Respondeu · ${fmtDate(r.repliedAt)}` : "Cliente respondeu"
     : r.dunningStopReason === "fim" ? `Sequência concluída (${r.dunningStep})`
     : r.dunningPaused ? `Cobrança pausada${r.dunningStep ? ` · ${r.dunningStep}/${seq.total}` : ""}`
     : err ? "Erro no envio"
@@ -538,7 +538,7 @@ function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: b
       {replyHref ? (
         <a href={replyHref} title="Abrir a resposta no Atendimento"
           onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); router.history.push(replyHref); }}
-          className="inline-flex items-center gap-1 text-sky-700 dark:text-sky-400 hover:underline">
+          className="inline-flex items-center gap-1 whitespace-nowrap text-sky-700 dark:text-sky-400 hover:underline">
           {label} <Headphones className="size-3" />
         </a>
       ) : (
