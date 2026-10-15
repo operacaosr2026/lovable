@@ -116,13 +116,8 @@ function NotificacoesPage() {
 
   return (
     <PageShell wide>
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 mb-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notificações</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            E-mail pros clientes de pedidos atrasados, antes que abram chargeback. Sai pelo e-mail do Atendimento, com a assinatura.
-          </p>
-        </div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-5">
+        <h1 className="text-2xl font-bold tracking-tight">Notificações</h1>
         <Button variant="outline" onClick={() => setTemplatesOpen(true)}>
           <FileText className="size-4" /> Mensagens
         </Button>
