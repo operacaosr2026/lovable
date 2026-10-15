@@ -237,19 +237,6 @@ function ChargebacksPage() {
   const toggle = (dim: Dim, value: string) => setFilter(filter?.dim === dim && filter.value === value ? null : { dim, value });
   const setDim = (dim: Dim, value: string) => setFilter(value ? { dim, value } : null);
 
-  const exportCsv = () => {
-    const head = ["Pedido", "Loja", "Cliente", "E-mail", "Produto", "Motivo", "Valor", "Status", "Aberto em", "Prazo", "Entrega", "Rastreio", "Falou com o suporte"];
-    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = list.map((r) => [r.orderNumber ?? r.orderExternalId, r.shopName, r.customerName, r.customerEmail, r.product, reasonLabel(r.reason),
-      r.amount.toFixed(2).replace(".", ","), statusMeta(r.status).label, fmtDate(r.initiatedAt), fmtDate(r.evidenceDueBy), deliveryLabel(r), r.trackingCode, supportLabel(r)].map(esc).join(";"));
-    const blob = new Blob(["﻿" + [head.map(esc).join(";"), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `chargebacks-${isoTodayUS()}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
   return (
     <PageShell wide>
       {/* ── Cabeçalho ── */}
@@ -351,7 +338,6 @@ function ChargebacksPage() {
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
               <div className="flex items-baseline gap-2.5 flex-wrap">
                 <h2 className="text-lg font-semibold">Lista de chargebacks</h2>
-                <span className="text-xs text-muted-foreground">{list.length} encontrado{list.length === 1 ? "" : "s"} · {money(sum(list))}</span>
                 {filter && (
                   <button onClick={() => setFilter(null)} className="h-6 pl-2 pr-1 rounded-md bg-primary/10 text-primary text-[11px] font-medium flex items-center gap-1">
                     {DIM_NAME[filter.dim]}: {filter.value} <X className="size-3" />
@@ -384,10 +370,6 @@ function ChargebacksPage() {
                 <button onClick={() => refresh.mutate()} disabled={refresh.isPending} title="Busca agora as disputas na Shopify e o rastreio dos chargebacks em aberto"
                   className="h-10 px-3.5 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none hover:bg-muted disabled:opacity-50">
                   <RefreshCw className={`size-4 ${refresh.isPending ? "animate-spin" : ""}`} /> {refresh.isPending ? "Atualizando…" : "Atualizar"}
-                </button>
-                <button onClick={exportCsv} disabled={!list.length}
-                  className="h-10 px-3.5 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none hover:bg-muted disabled:opacity-50">
-                  <Download className="size-4" /> Exportar
                 </button>
               </div>
             </div>
