@@ -178,7 +178,7 @@ function DashKpiCard({
   chartData: DailyPoint[];
   stats?: [{ label: string; value: string }, { label: string; value: string }];
   periodNote?: string;
-  shopRows?: { shop_id: string; shop_name: string; taxaEstorno: number }[];
+  shopRows?: { shop_id: string; shop_name: string; taxaEstorno: number; totalPedidos: number }[];
   loading?: boolean;
   compareLabel?: string;
 }) {
@@ -224,7 +224,10 @@ function DashKpiCard({
           {shopRows.map((r) => (
             <div key={r.shop_id} className="flex items-center justify-between gap-2 text-[11px]">
               <span className="text-muted-foreground truncate">{r.shop_name}</span>
-              <span className="font-medium text-foreground tabular-nums shrink-0">{fmtPct(r.taxaEstorno)}</span>
+              <span className={`font-medium tabular-nums shrink-0 ${r.totalPedidos > 0 ? "text-foreground" : "text-muted-foreground"}`}
+                title={r.totalPedidos > 0 ? undefined : "Sem pedidos pagos nos últimos 90 dias"}>
+                {r.totalPedidos > 0 ? fmtPct(r.taxaEstorno) : "—"}
+              </span>
             </div>
           ))}
         </div>
@@ -803,7 +806,8 @@ function Dashboard() {
   const slices = useMemo(() => buildShopSlices(shopBreakdown), [shopBreakdown]);
   const donutTotal = slices.reduce((s, x) => s + x.faturamento, 0);
   const estornoByShop = useMemo(
-    () => [...shopBreakdown].filter((s) => s.totalPedidos > 0).sort(byShopName),
+    // Todas as lojas do Dashboard — loja nova, ainda sem pedido, aparece com "—".
+    () => [...shopBreakdown].sort(byShopName),
     [shopBreakdown],
   );
 
