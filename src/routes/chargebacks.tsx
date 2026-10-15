@@ -16,7 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { getChargebacks, refreshChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
 import { getDisputeEvidence, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
 import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/dispute-pdf";
-import { AlertsTab, DunningToggle } from "@/components/chargebacks/AlertsTab";
+import { AlertsTab, DunningToggle, PeriodSelect, type AlertsPeriod } from "@/components/chargebacks/AlertsTab";
 import { SettingsTab } from "@/components/chargebacks/SettingsTab";
 import { US_TIME_ZONE, isoTodayUS, nyStartOfDay } from "@/lib/timezone";
 
@@ -164,6 +164,7 @@ const CARD = "rounded-2xl border border-border/70 bg-card shadow-[0_1px_3px_rgba
 function ChargebacksPage() {
   const fn = useServerFn(getChargebacks);
   const [tab, setTab] = useState<ChargebacksTab>(Route.useSearch().tab ?? "chargebacks");
+  const [alertsPeriod, setAlertsPeriod] = useState<AlertsPeriod>("90");
   const [scope, setScope] = useState<"ativas" | "todas">("ativas");
   const [type, setType] = useState<(typeof TYPES)[number][0]>("chargeback");
   const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("tudo");
@@ -263,12 +264,15 @@ function ChargebacksPage() {
             <Seg value={type} options={TYPES} onChange={(v) => { setType(v); setFilter(null); }} />
             <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44" />
           </>}
-          {tab === "alertas" && <DunningToggle />}
+          {tab === "alertas" && <>
+            <PeriodSelect value={alertsPeriod} onChange={setAlertsPeriod} />
+            <DunningToggle />
+          </>}
         </div>
       </div>
 
       {tab === "alertas" ? (
-        <AlertsTab />
+        <AlertsTab period={alertsPeriod} />
       ) : tab === "config" ? (
         <SettingsTab />
       ) : q.isLoading ? (
