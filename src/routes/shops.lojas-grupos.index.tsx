@@ -170,6 +170,10 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
     enabled:  shops.length > 0,
     staleTime: 5 * 60 * 1000,
   });
+  // Com a tabela de Estorno/Repasse (que já lista as lojas), a caixa "Lojas"
+  // some pra não repetir os nomes; enquanto carrega fica o esqueleto.
+  const showTable = !!metrics && (metrics.totalPedidos > 0 || metrics.payoutLag.some((p: any) => p.days != null));
+  const showShopList = shops.length > 0 && !loadingMetrics && !showTable;
 
   return (
     <div className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
@@ -222,7 +226,7 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
           <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
             Nenhuma loja conectada
           </div>
-        ) : (
+        ) : showShopList && (
           <div className="rounded-lg bg-muted/40 border border-border px-3 py-2">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
               {shops.length === 1 ? "Loja" : `Lojas (${shops.length})`}
@@ -245,7 +249,7 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
 
         {/* Metrics */}
         {shops.length > 0 && (
-          <div className="border-t border-border mt-3 pt-3 space-y-1.5">
+          <div className={`${showShopList ? "border-t border-border mt-3 pt-3" : ""} space-y-1.5`}>
             {loadingMetrics ? (
               <div className="space-y-1.5">
                 <div className="h-3.5 w-28 rounded bg-muted animate-pulse" />
@@ -255,9 +259,11 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
             ) : metrics ? (
               <>
                 {/* Estornos + Repasse por loja, nome uma vez só */}
-                {(metrics.totalPedidos > 0 || metrics.payoutLag.some((p: any) => p.days != null)) && (
+                {showTable && (
                   <div className="grid grid-cols-[1fr_auto_auto] gap-x-2 gap-y-1 items-center pt-0.5">
-                    <span />
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">
+                      {shops.length === 1 ? "Loja" : `Lojas (${shops.length})`}
+                    </span>
                     <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium text-right">Estorno</span>
                     <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium text-right">Repasse</span>
                     {[...metrics.payoutLag]
