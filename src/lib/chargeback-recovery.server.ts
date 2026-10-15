@@ -2,6 +2,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
 import { RECOVERY_ORDER_TAG } from "@/lib/recovery-order";
 import type { AlertRow } from "@/lib/chargeback-alerts.shared";
+import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
+import { US_TIME_ZONE } from "@/lib/timezone";
 
 // Recuperação dos Alertas pela Shopify, sem nada por fora:
 //  1. No 1º e-mail que usa {link_pagamento}, cria um pedido rascunho na loja do
@@ -85,6 +87,27 @@ async function fulfillRecoveryOrder(shopId: string, orderId: string) {
   if (errs.length) throw new Error(errs.map((e: any) => e.message).join("; ").slice(0, 200));
 }
 
+// Link de pagamento gerado há mais que isso e ainda não pago → aviso no sino.
+const UNPAID_NOTICE_HOURS = 24;
+const unpaidKey = (r: AlertRow) => `recovery_unpaid:${r.shopId}:${r.orderExternalId}`;
+
+// Abre o aviso quando o link passou de 24h sem pagamento; fecha quando o pedido
+// sai da cobrança (pago, excluído, ou marcado Sem retorno / Não recuperável).
+// Dispensado no sino não volta (raiseNotification só atualiza o texto).
+async function syncUnpaidNotice(ownerId: string, r: AlertRow, createdAt: string | null) {
+  const inCollection = !r.excludedAt && (r.status === "a_contatar" || r.status === "contatado");
+  if (!inCollection) return resolveNotification(ownerId, unpaidKey(r));
+  if (!createdAt || Date.now() - Date.parse(createdAt) < UNPAID_NOTICE_HOURS * 3_600_000) return;
+  const order = r.orderNumber ?? `#${r.orderExternalId}`;
+  const when = new Date(createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE }).replace(",", "");
+  await raiseNotification(ownerId, unpaidKey(r), {
+    level: "warning",
+    title: `Link de pagamento não pago — ${order}`,
+    body: `${r.customerName ?? r.customerEmail ?? "Cliente"} recebeu o link de $${r.refundedAmount.toFixed(2)} em ${when} (NY) e ainda não pagou. Vale cobrar de novo.`,
+    link: "/chargebacks?tab=alertas",
+  });
+}
+
 // Confere os rascunhos em aberto: pagou → Recuperado + atendido na Shopify.
 // Também tenta de novo o "atendido" que falhou antes (ex.: loja sem a permissão).
 export async function checkRecoveryPayments(ownerId: string, rows: AlertRow[]) {
@@ -94,10 +117,13 @@ export async function checkRecoveryPayments(ownerId: string, rows: AlertRow[]) {
     try {
       if (!r.recoveryOrderId) {
         const data = await gql(r.shopId, `query RecoveryDraftStatus($id: ID!) {
-          draftOrder(id: $id) { status invoiceUrl order { id name createdAt displayFinancialStatus totalPriceSet { shopMoney { amount } } } }
+          draftOrder(id: $id) { status invoiceUrl createdAt order { id name createdAt displayFinancialStatus totalPriceSet { shopMoney { amount } } } }
         }`, { id: r.recoveryDraftId });
         const o = data?.draftOrder?.order;
-        if (!o || o.displayFinancialStatus !== "PAID") continue;
+        if (!o || o.displayFinancialStatus !== "PAID") {
+          await syncUnpaidNotice(ownerId, r, data?.draftOrder?.createdAt ?? null);
+          continue;
+        }
         const amount = Number(o.totalPriceSet?.shopMoney?.amount ?? r.refundedAmount);
         await supabaseAdmin.from("chargeback_alert_followups").update({
           status: "recuperado", recovered_amount: amount, recovered_at: o.createdAt, recovered_step: r.dunningStep,
@@ -105,6 +131,7 @@ export async function checkRecoveryPayments(ownerId: string, rows: AlertRow[]) {
           dunning_stop_reason: "pago", recovery_error: null, updated_at: new Date().toISOString(),
         }).match(key(r));
         Object.assign(r, { status: "recuperado", recoveredAmount: amount, recoveryOrderId: o.id, recoveryOrderName: o.name, dunningStopReason: "pago" });
+        await resolveNotification(ownerId, unpaidKey(r));
         paid++;
       }
       if (r.recoveryOrderId && !r.recoveryFulfilled) {

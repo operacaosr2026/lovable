@@ -20,8 +20,13 @@ import { AlertsTab, DunningToggle } from "@/components/chargebacks/AlertsTab";
 import { SettingsTab } from "@/components/chargebacks/SettingsTab";
 import { US_TIME_ZONE, isoTodayUS, nyStartOfDay } from "@/lib/timezone";
 
+type ChargebacksTab = "chargebacks" | "alertas" | "config";
+
 export const Route = createFileRoute("/chargebacks")({
   beforeLoad: requireAuth,
+  // ?tab=alertas abre direto numa aba (ex.: aviso de link de pagamento não pago).
+  validateSearch: (s: Record<string, unknown>): { tab?: ChargebacksTab } =>
+    s.tab === "alertas" || s.tab === "config" ? { tab: s.tab } : {},
   head: () => ({ meta: [{ title: "Chargebacks — SRX Growth" }] }),
   component: ChargebacksPage,
 });
@@ -158,7 +163,7 @@ const CARD = "rounded-2xl border border-border/70 bg-card shadow-[0_1px_3px_rgba
 
 function ChargebacksPage() {
   const fn = useServerFn(getChargebacks);
-  const [tab, setTab] = useState<"chargebacks" | "alertas" | "config">("chargebacks");
+  const [tab, setTab] = useState<ChargebacksTab>(Route.useSearch().tab ?? "chargebacks");
   const [scope, setScope] = useState<"ativas" | "todas">("ativas");
   const [type, setType] = useState<(typeof TYPES)[number][0]>("chargeback");
   const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("tudo");
