@@ -396,7 +396,8 @@ function LgCardEditor({
           country:        country || null,
           tag:            tag.trim() || null,
           logo_url:       logoUrl || null,
-          matriz_shop_id: (selectedIds.length > 1 && matrizShopId) ? matrizShopId : (selectedIds[0] ?? null),
+          // "— Selecionar" = sem matriz (antes caía na 1ª loja e não dava pra tirar).
+          matriz_shop_id: selectedIds.length > 1 ? (matrizShopId || null) : (selectedIds[0] ?? null),
         },
         shops: Object.values(selectedShops),
       });

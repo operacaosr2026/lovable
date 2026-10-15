@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   getShopDashboardMetrics, syncShopifyPaymentsFees, syncShopifyOrders, listMonthRefundsChargebacks,
 } from "@/lib/shop-orders.functions";
-import { syncMetaAdsSpend } from "@/lib/meta-ads.functions";
+import { syncCardMetaSpend } from "@/lib/lg-card-meta.functions";
 import {
   getLgCurrencyRates, saveLgCurrencyRates, getLgCardQuickMetrics,
 } from "@/lib/lg-cards.functions";
@@ -437,7 +437,7 @@ export function LgDashboard({
   const getMetrics   = useServerFn(getShopDashboardMetrics);
   const syncOrdersFn = useServerFn(syncShopifyOrders);
   const syncFeesFn   = useServerFn(syncShopifyPaymentsFees);
-  const syncAdsFn    = useServerFn(syncMetaAdsSpend);
+  const syncAdsFn    = useServerFn(syncCardMetaSpend);
   const qc           = useQueryClient();
 
   // Cotações salvas do card (lg_card_currency_rates). Raramente mudam: busca uma
@@ -532,13 +532,17 @@ export function LgDashboard({
     setSyncing(true);
     try {
       const sinceDays = Math.max(1, Math.ceil((Date.now() - new Date(from + "T00:00:00").getTime()) / 86_400_000) + 2);
-      const results   = await Promise.all(
-        shopIds.map((shopId) => Promise.all([
+      // Gasto de anúncios é do card (uma vez só), não de cada loja.
+      const results   = await Promise.all([
+        ...shopIds.map((shopId) => Promise.all([
           syncOrdersFn({ data: { shop_id: shopId, since_days: sinceDays } }).catch(() => null),
           syncFeesFn({ data: { shop_id: shopId } }).catch(() => null),
-          syncAdsFn({ data: { shop_id: shopId, from_date: from, to_date: to } }).catch(() => null),
-        ]))
-      );
+        ])),
+        syncAdsFn({ data: { card_id: cardId, from_date: from, to_date: to } }).then((r) => [r]).catch((e: any) => {
+          if (!silent) toast.error(e?.message ?? "Gasto de Ads não sincronizou");
+          return [null];
+        }),
+      ]);
       qc.invalidateQueries({ queryKey: ["lg-dashboard", cacheKey] });
       qc.invalidateQueries({ queryKey: ["lg-note-metrics"] });
       // "Lucro mês" do card na listagem de Lojas e Grupos lê as mesmas tabelas;

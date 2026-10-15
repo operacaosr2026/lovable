@@ -14,6 +14,7 @@ import { applyPresetToStore } from "@/lib/store-production.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import { orderDateFor } from "@/lib/order-date";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import {
   aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch,
@@ -2302,15 +2303,9 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       withPrev ? selectAll(supabase.from("shop_cash_entries").select("amount")
         .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
         .gte("date", prev_from).lte("date", prev_to)) : empty,
-      // Gastos de anúncios Meta Ads — apenas entradas auto-sincronizadas (não mistura com caixa manual)
-      withCosts ? selectAll(supabase.from("shop_cash_entries").select("amount,date")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
-        .eq("auto_kind", "meta_ads_spend")
-        .gte("date", from).lte("date", to)) : empty,
-      withPrev ? selectAll(supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Facebook Ads")
-        .eq("auto_kind", "meta_ads_spend")
-        .gte("date", prev_from).lte("date", prev_to)) : empty,
+      // Gasto de anúncios é do card que contém as lojas (lg_card_ad_spend).
+      withCosts ? adSpendForShops(ownerId, shop_ids, from, to).then((data) => ({ data })) : empty,
+      withPrev ? adSpendForShops(ownerId, shop_ids, prev_from, prev_to).then((data) => ({ data })) : empty,
       shopifyPromise,
       withCosts ? costProductsFor(supabase, ownerId) : Promise.resolve([] as CostProduct[]),
     ]);

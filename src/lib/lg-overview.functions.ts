@@ -2,6 +2,7 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
+import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import { costProductsFor, getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
@@ -27,10 +28,8 @@ async function computeAccumulatedLucro(
     selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .gte("order_date", start_date).lte("order_date", end_date)),
-    selectAll(supabase.from("shop_cash_entries").select("amount,date")
-      .eq("user_id", ownerId).in("shop_id", shop_ids)
-      .eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend")
-      .gte("date", start_date).lte("date", end_date)),
+    // Gasto de anúncios é do card que contém as lojas (lg_card_ad_spend).
+    adSpendForShops(ownerId, shop_ids, start_date, end_date).then((data) => ({ data })),
     selectAll(supabase.from("shop_cash_entries").select("amount,date")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .eq("category", "Taxas Shopify")

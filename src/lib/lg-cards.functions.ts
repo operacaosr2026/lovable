@@ -8,6 +8,7 @@ import { matchLineItemProduct, orderLineItemsCost, costOpts } from "@/lib/produc
 import { profit, comparisonPeriod } from "@/lib/finance-rules";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
+import { adSpendForCards } from "@/lib/lg-card-ad-spend.server";
 
 // supabaseAdmin ignora RLS, então o dono de cada shop_id vindo do cliente
 // precisa ser checado à mão antes de vinculá-lo a um card — senão um usuário
@@ -690,8 +691,9 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
       selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to)),
       selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", prevFrom).lte("date", prevTo)),
-      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", from).lte("date", to)),
-      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Facebook Ads").eq("auto_kind", "meta_ads_spend").gte("date", prevFrom).lte("date", prevTo)),
+      // Gasto de anúncios é do card (lg_card_ad_spend), não das lojas.
+      adSpendForCards(ownerId, cardIds, from, to),
+      adSpendForCards(ownerId, cardIds, prevFrom, prevTo),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
@@ -780,14 +782,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const prevFeesByShop = new Map<string, number>();
     for (const r of (prevFeesRes.data ?? []) as any[]) prevFeesByShop.set(r.shop_id, (prevFeesByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
 
-    const adsByShop = new Map<string, number>();
     const adsByDate = new Map<string, number>();
-    for (const r of (adsRes.data ?? []) as any[]) {
-      adsByShop.set(r.shop_id, (adsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
-      adsByDate.set(r.date, (adsByDate.get(r.date) ?? 0) + Number(r.amount ?? 0));
-    }
-    const prevAdsByShop = new Map<string, number>();
-    for (const r of (prevAdsRes.data ?? []) as any[]) prevAdsByShop.set(r.shop_id, (prevAdsByShop.get(r.shop_id) ?? 0) + Number(r.amount ?? 0));
+    for (const r of adsRes) adsByDate.set(r.date, (adsByDate.get(r.date) ?? 0) + r.amount);
 
     const reembolsosByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
     const chargebacksByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
@@ -807,19 +803,19 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const prevTotalEstornosByShop = new Map([...estornoStats].map(([id, st]) => [id, st.prevEstornos]));
 
     // ── Totais globais (soma de todas as lojas dos grupos ativos) + delta ──
-    let faturamento = 0, custoProduto = 0, anuncios = 0, taxas = 0;
-    let prevFaturamento = 0, prevCustoProduto = 0, prevAnuncios = 0, prevTaxas = 0;
+    let faturamento = 0, custoProduto = 0, taxas = 0;
+    let prevFaturamento = 0, prevCustoProduto = 0, prevTaxas = 0;
+    const anuncios = adsRes.reduce((s, r) => s + r.amount, 0);
+    const prevAnuncios = prevAdsRes.reduce((s, r) => s + r.amount, 0);
     let totalPedidosEstorno = 0, totalEstornosEstorno = 0;
     let prevTotalPedidosEstorno = 0, prevTotalEstornosEstorno = 0;
     for (const id of shopIds) {
       faturamento += (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
       custoProduto += custoByShop.get(id) ?? 0;
       taxas += feesByShop.get(id) ?? 0;
-      anuncios += adsByShop.get(id) ?? 0;
       prevFaturamento += (prevRevenueByShop.get(id) ?? 0) - (prevReembolsosByShop.get(id) ?? 0) - (prevChargebacksByShop.get(id) ?? 0);
       prevCustoProduto += prevCustoByShop.get(id) ?? 0;
       prevTaxas += prevFeesByShop.get(id) ?? 0;
-      prevAnuncios += prevAdsByShop.get(id) ?? 0;
       totalPedidosEstorno += totalOrdersByShop.get(id) ?? 0;
       totalEstornosEstorno += totalEstornosByShop.get(id) ?? 0;
       prevTotalPedidosEstorno += prevTotalOrdersByShop.get(id) ?? 0;
@@ -939,15 +935,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
         .eq("category", "Taxas Shopify")
         .gte("date", from)
         .lte("date", to)),
-      selectAll(supabaseAdmin
-        .from("shop_cash_entries")
-        .select("amount")
-        .eq("user_id", ownerId)
-        .in("shop_id", shopIds)
-        .eq("category", "Facebook Ads")
-        .eq("auto_kind", "meta_ads_spend")
-        .gte("date", from)
-        .lte("date", to)),
+      adSpendForCards(ownerId, [data.card_id], from, to),
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pra "lucro" bater entre as duas telas.
       getGroupRefundsAndChargebacks(ownerId, shopIds, from, to),
@@ -959,7 +947,6 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const orders             = ordersRes.data ?? [];
     const settings           = settingsRes.data ?? [];
     const fees        = feesRes.data ?? [];
-    const ads         = adsRes.data ?? [];
 
     // Settings by shop
     const costByShop = new Map(settings.map((s: any) => [s.shop_id as string, Number(s.default_unit_cost ?? 0)]));
@@ -980,7 +967,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
       return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags, costOpts(o));
     }, 0);
     const taxas    = sumAmt(fees);
-    const anuncios = sumAmt(ads);
+    const anuncios = adsRes.reduce((s, r) => s + r.amount, 0);
     const lucro    = faturamento - custoProduto - taxas - anuncios;
 
     // Taxa de estorno (90 dias) por loja: calculada 1x por dia à meia-noite

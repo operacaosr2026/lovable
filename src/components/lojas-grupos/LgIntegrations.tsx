@@ -4,14 +4,15 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   syncShopifyOrders, syncShopifyPayouts, recomputeRange, getOrderSettings, upsertOrderSettings,
 } from "@/lib/shop-orders.functions";
-import { getConnectedMetaAdAccounts, getMetaToken } from "@/lib/meta-ads.functions";
+import { getCardMetaSetup } from "@/lib/lg-card-meta.functions";
 import { getTrackingIntegrations, upsertTrackingIntegration, testTrackingSync } from "@/lib/tracking-integrations.functions";
 import { MetaAdsIntegrationDialog } from "@/components/shops/MetaAdsIntegration";
+import { CardMetaAdsDialog, cardMetaSetupKey } from "@/components/lojas-grupos/CardMetaAdsDialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
   RefreshCw, Sparkles, Megaphone, CalendarClock, Truck,
-  CheckCircle2, AlertCircle, Settings2, Info, ChevronDown, ChevronUp, Check,
+  CheckCircle2, AlertCircle, Settings2, ChevronDown, ChevronUp, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -319,34 +320,21 @@ function TrackingSection({ shops }: { shops: ShopStub[] }) {
   );
 }
 
-// ─── Meta Ads (card level — uses matriz_shop_id automatically) ────────────────
+// ─── Meta Ads (do card: contas e campanhas próprias, gasto contado 1 vez) ─────
 
-function MetaAdsSection({
-  cardId, card, shops,
-}: { cardId: string; card: any; shops: ShopStub[] }) {
-  const getAccountsFn  = useServerFn(getConnectedMetaAdAccounts);
-  const getMetaTokenFn = useServerFn(getMetaToken);
+function MetaAdsSection({ cardId, shops }: { cardId: string; shops: ShopStub[] }) {
+  const getSetupFn = useServerFn(getCardMetaSetup);
   const [openDialog, setOpenDialog] = useState(false);
+  const [connectShopId, setConnectShopId] = useState<string | null>(null);
 
-  const matrizShopId = card?.matriz_shop_id as string | null;
-  const matrizShop   = shops.find((s) => s.id === matrizShopId);
-
-  const accountsQuery = useQuery({
-    queryKey: ["meta-ad-accounts", matrizShopId],
-    queryFn:  () => getAccountsFn({ data: { shop_id: matrizShopId! } }),
-    enabled:  Boolean(matrizShopId),
-  });
-  const metaToken = useQuery({
-    queryKey: ["meta-token", matrizShopId],
-    queryFn:  () => getMetaTokenFn({ data: { shop_id: matrizShopId! } }),
-    enabled:  Boolean(matrizShopId),
-  });
-
-  const accounts    = accountsQuery.data?.accounts ?? [];
-  const connected   = Boolean(metaToken.data?.connected) && accounts.length > 0;
-  const statusLabel = connected
-    ? (accounts.length === 1 ? (accounts[0].account_name ?? "Conectado") : `${accounts.length} contas conectadas`)
-    : "Não conectado";
+  const setup = useQuery({ queryKey: cardMetaSetupKey(cardId), queryFn: () => getSetupFn({ data: { card_id: cardId } }) });
+  const accounts  = setup.data?.accounts ?? [];
+  const connected = accounts.length > 0;
+  const hasError  = accounts.some((a) => a.last_sync_status === "error");
+  const campaignCount = accounts.reduce((s, a) => s + (a.selected_campaign_ids?.length ?? 0), 0);
+  const statusLabel = !connected
+    ? "Não conectado"
+    : accounts.length === 1 ? (accounts[0].account_name ?? "Conectado") : `${accounts.length} contas`;
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-5 space-y-3">
@@ -357,48 +345,42 @@ function MetaAdsSection({
         <div className="flex-1 min-w-[200px]">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">Meta Ads</span>
-            {matrizShopId ? (
-              <span className={cn(
-                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
-                connected
+            <span className={cn(
+              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+              hasError
+                ? "bg-destructive/10 text-destructive border-destructive/30"
+                : connected
                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/30"
                   : "bg-muted text-muted-foreground border-border"
-              )}>
-                {connected ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
-                {statusLabel}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border bg-amber-500/10 text-amber-600 border-amber-500/30">
-                <AlertCircle className="size-3" /> Sem loja matriz
-              </span>
-            )}
+            )}>
+              {connected && !hasError ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
+              {hasError ? "Erro no sync" : statusLabel}
+            </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">card</span>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Gasto de campanhas sincronizado automaticamente.
-            {matrizShop && <span className="text-primary"> Via: {matrizShop.name}</span>}
+            {connected
+              ? `Gasto do card = ${campaignCount > 0 ? `${campaignCount} campanhas marcadas` : "conta inteira"}, contado uma vez.`
+              : "Escolha a conta e as campanhas que são deste card."}
           </p>
         </div>
-        {matrizShopId && (
+        {setup.data?.hasMetaConnection ? (
           <Button size="sm" variant="outline" onClick={() => setOpenDialog(true)}>
             <Settings2 className="size-4" /> {connected ? "Configurar" : "Conectar"}
+          </Button>
+        ) : setup.data && shops[0] && (
+          <Button size="sm" variant="outline" onClick={() => setConnectShopId(shops[0].id)}>
+            <Settings2 className="size-4" /> Conectar Facebook
           </Button>
         )}
       </div>
 
-      {!matrizShopId && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
-          <Info className="size-4 shrink-0 mt-0.5" />
-          Configure a <strong>Loja Matriz</strong> no editor do card para conectar o Meta Ads.
-          A loja matriz é a que gerencia os anúncios e recebe o tráfego.
-        </div>
-      )}
-
-      {openDialog && matrizShopId && (
+      {openDialog && <CardMetaAdsDialog cardId={cardId} open={openDialog} onClose={() => setOpenDialog(false)} />}
+      {connectShopId && (
         <MetaAdsIntegrationDialog
-          shopId={matrizShopId}
-          open={openDialog}
-          onClose={() => setOpenDialog(false)}
+          shopId={connectShopId}
+          open
+          onClose={() => { setConnectShopId(null); setup.refetch(); }}
         />
       )}
     </div>
@@ -430,7 +412,7 @@ export function LgIntegrations({
       {/* 2. Meta Ads (card level) */}
       <div>
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Anúncios</p>
-        <MetaAdsSection cardId={cardId} card={card} shops={shops} />
+        <MetaAdsSection cardId={cardId} shops={shops} />
       </div>
 
     </div>

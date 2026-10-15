@@ -9,6 +9,7 @@ import { resolveNotification } from "@/lib/notifications.server";
 import { reportSystemError, clearSystemError, tracked, shopLabel, reportPaginationCap } from "@/lib/system-errors.server";
 import { upsertShopDisputes, fetchShopifyDisputes } from "@/lib/shopify-disputes.server";
 import { syncMetaAdsSpendForShop, syncMetaBillingCharges } from "@/lib/meta-ads.functions";
+import { syncCardAdSpend } from "@/lib/lg-card-ad-spend.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -551,6 +552,25 @@ async function runCostsSync(request: Request, only: { ads: boolean; fees: boolea
     const results = await Promise.all(batch.map((s) => syncCostsForShop(s.ownerId, s.shopId, s.hasShopify, s.hasMeta, s.storeId)));
     batch.forEach((s, j) => { if (results[j]) changedOwners.add(s.ownerId); });
     processed += batch.length;
+  }
+  // Gasto de anúncios dos cards (lg_card_ad_spend): hoje + 2 dias pra trás,
+  // a Meta ainda ajusta o gasto de ontem.
+  if (only.ads && Date.now() - start < TIME_BUDGET_MS) {
+    const { data: cardAccounts } = await (supabaseAdmin as any).from("lg_card_meta_accounts")
+      .select("user_id,card_id,lg_cards!inner(name,status)").eq("enabled", true).neq("lg_cards.status", "arquivado");
+    const cards = new Map<string, { ownerId: string; name: string }>();
+    for (const a of (cardAccounts ?? []) as any[]) cards.set(a.card_id, { ownerId: a.user_id, name: a.lg_cards?.name ?? "card" });
+    for (const [cardId, c] of cards) {
+      if (Date.now() - start > TIME_BUDGET_MS) break;
+      try {
+        const r = await syncCardAdSpend(c.ownerId, cardId, { since_days: 2 });
+        if (r.synced > 0) changedOwners.add(c.ownerId);
+        await clearSystemError(c.ownerId, `card_meta_spend:${cardId}`);
+      } catch (e) {
+        console.error("costs: card meta fail", cardId, e);
+        await reportSystemError(c.ownerId, `card_meta_spend:${cardId}`, `Gasto da Meta não sincronizou — card ${c.name}`, e);
+      }
+    }
   }
   // Cobranças do cartão da Meta viram saída no Caixa (por conta de anúncio,
   // não por loja — ver syncMetaBillingCharges).
