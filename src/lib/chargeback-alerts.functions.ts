@@ -22,11 +22,16 @@ export const getChargebackAlerts = createServerFn({ method: "GET" })
     const [rows, { data: sends }] = await Promise.all([
       loadAlerts(context.ownerId, shopIds) as Promise<AlertRow[]>,
       shopIds.length
-        ? supabaseAdmin.from("chargeback_dunning_sends").select("step,sent_at").eq("user_id", context.ownerId).in("shop_id", shopIds)
-        : Promise.resolve({ data: [] as { step: number; sent_at: string }[] }),
+        ? supabaseAdmin.from("chargeback_dunning_sends").select("shop_id,order_external_id,step,sent_at").eq("user_id", context.ownerId).in("shop_id", shopIds)
+        : Promise.resolve({ data: [] as { shop_id: string; order_external_id: string; step: number; sent_at: string }[] }),
     ]);
     // Métrica: cada e-mail que saiu da sequência (etapa + data, pro filtro de período).
-    return { rows, sends: (sends ?? []).map((x) => ({ step: x.step, sentAt: x.sent_at })) };
+    // Pedido excluído à mão sai dos números, inclusive dos e-mails que ele já recebeu.
+    const excluded = new Set(rows.filter((r) => r.excludedAt).map((r) => `${r.shopId}:${r.orderExternalId}`));
+    return {
+      rows,
+      sends: (sends ?? []).filter((x) => !excluded.has(`${x.shop_id}:${x.order_external_id}`)).map((x) => ({ step: x.step, sentAt: x.sent_at })),
+    };
   });
 
 export const saveAlertFollowup = createServerFn({ method: "POST" })

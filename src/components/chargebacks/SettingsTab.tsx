@@ -239,7 +239,7 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
 function PreviewDialog({ step, index, onClose }: { step: DunningStep | null; index: number; onClose: () => void }) {
   const fn = useServerFn(getChargebackAlerts);
   const q = useQuery({ queryKey: ["chargeback-alerts"], queryFn: () => fn(), enabled: !!step });
-  const rows = q.data?.rows ?? [];
+  const rows = (q.data?.rows ?? []).filter((r) => !r.excludedAt);
   const [pick, setPick] = useState<string | null>(null);
   const sample = rows.find((r) => `${r.shopId}:${r.orderExternalId}` === pick) ?? rows.find((r) => r.deliveryStatus === "delivered") ?? rows[0];
   const vars = sample ? dunningVars(sample, { preview: true }) : {};
