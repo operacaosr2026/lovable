@@ -133,7 +133,6 @@ const DIM_NAME: Record<Dim, string> = {
 };
 
 const PERIODS = [["tudo", "Tudo"], ["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["ano", "Este ano"]] as const;
-const TYPES = [["chargeback", "Chargebacks"], ["inquiry", "Inquiries"], ["todos", "Todos"]] as const;
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const AXIS = { fill: "var(--color-muted-foreground)", fontSize: 11 };
 
@@ -165,7 +164,6 @@ function ChargebacksPage() {
   const fn = useServerFn(getChargebacks);
   const [tab, setTab] = useState<ChargebacksTab>(Route.useSearch().tab ?? "chargebacks");
   const [alertsPeriod, setAlertsPeriod] = useState<AlertsPeriod>("90");
-  const [type, setType] = useState<(typeof TYPES)[number][0]>("chargeback");
   const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("tudo");
   const [filter, setFilter] = useState<{ dim: Dim; value: string } | null>(null);
   const [search, setSearch] = useState("");
@@ -192,7 +190,8 @@ function ChargebacksPage() {
 
   // Tipo + período (cards e gráficos); clique/seleção e busca valem só pra lista.
   // Evitado (prevented) não é disputa a responder: aparece só em Alertas, pra cobrança.
-  const typed = useMemo(() => (q.data?.rows ?? []).filter((r) => r.status !== "prevented" && (type === "todos" || r.type === type)), [q.data, type]);
+  // Sem filtro de tipo: as lojas só recebem chargeback (inquiry, se vier, aparece junto).
+  const typed = useMemo(() => (q.data?.rows ?? []).filter((r) => r.status !== "prevented"), [q.data]);
   const base = useMemo(() => {
     const now = new Date();
     const from = period === "30" ? new Date(now.getTime() - 30 * 86_400_000)
@@ -247,7 +246,6 @@ function ChargebacksPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {tab === "chargebacks" && <>
-            <Seg value={type} options={TYPES} onChange={(v) => { setType(v); setFilter(null); }} />
             <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44" />
           </>}
           {tab === "alertas" && <>
@@ -270,7 +268,7 @@ function ChargebacksPage() {
           {/* ── Cards ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <Stat icon={ShieldAlert} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400"
-              label={type === "inquiry" ? "Inquiries" : type === "todos" ? "Disputas" : "Chargebacks"}
+              label="Chargebacks"
               value={String(base.length)} sub={money(sum(base))} delta={mom(() => true)} badIfUp
               spark={seriesOf(() => true)} sparkKind="bars" />
             <Stat icon={Hourglass} tone="bg-amber-500/10 text-amber-600 dark:text-amber-400" label="Aguardando resposta"
