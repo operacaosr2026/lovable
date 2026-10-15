@@ -5,13 +5,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, AreaChart, Area } from "recharts";
 import {
   ShieldAlert, ShieldCheck, Hourglass, CircleX, CircleCheck, Trophy, Scale, ExternalLink, X, Loader2, Truck, Package,
-  ChevronDown, ChevronRight, ArrowUp, ArrowDown, CalendarDays, MessagesSquare, Search, SlidersHorizontal, Download,
+  ChevronDown, ChevronRight, ArrowUp, ArrowDown, CalendarDays, MessagesSquare, Search, Download,
   AlertTriangle, Headphones, Copy, CreditCard, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { getChargebacks, refreshChargebacks, type ChargebackRow, type RiskSummary } from "@/lib/chargebacks.functions";
 import { getDisputeEvidence, type DisputeEvidence } from "@/lib/dispute-evidence.functions";
@@ -343,23 +342,9 @@ function ChargebacksPage() {
                   <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar pedido, cliente ou produto…"
                     className="w-full h-10 pl-9 pr-3 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary" />
                 </div>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className={`h-10 px-3.5 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none ${filter ? "border-primary/50 text-primary" : "border-border hover:bg-muted"}`}>
-                      <SlidersHorizontal className="size-4" /> Filtros
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 space-y-2.5">
-                    {(["status"] as Dim[]).map((dim) => (
-                      <div key={dim}>
-                        <p className="text-[11px] font-semibold text-muted-foreground mb-1">{DIM_NAME[dim]}</p>
-                        <Select value={filter?.dim === dim ? filter.value : ""} onChange={(v) => setDim(dim, v)}
-                          options={[["", "Todos"] as const, ...uniq(base.map(DIM_OF[dim])).map((x) => [x, x] as const)]} className="w-full" />
-                      </div>
-                    ))}
-                    {filter && <button onClick={() => setFilter(null)} className="text-xs text-primary hover:underline">Limpar filtro</button>}
-                  </PopoverContent>
-                </Popover>
+                {/* Status direto na barra (era o único filtro do menu). Clique nos gráficos continua filtrando por outras coisas. */}
+                <Select value={filter?.dim === "status" ? filter.value : ""} onChange={(v) => setDim("status", v)} className="w-48 flex-1 sm:flex-none"
+                  options={[["", "Todos os status"] as const, ...uniq(base.map(DIM_OF.status)).map((x) => [x, x] as const)]} />
                 <button onClick={() => refresh.mutate()} disabled={refresh.isPending} title="Busca agora as disputas na Shopify e o rastreio dos chargebacks em aberto"
                   className="h-10 px-3.5 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none hover:bg-muted disabled:opacity-50">
                   <RefreshCw className={`size-4 ${refresh.isPending ? "animate-spin" : ""}`} /> {refresh.isPending ? "Atualizando…" : "Atualizar"}
