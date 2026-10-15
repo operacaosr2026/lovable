@@ -164,7 +164,8 @@ function ChargebacksPage() {
   const [tab, setTab] = useState<ChargebacksTab>(Route.useSearch().tab ?? "chargebacks");
   const [alertsPeriod, setAlertsPeriod] = useState<AlertsPeriod>("90");
   const [period, setPeriod] = useState<(typeof PERIODS)[number][0]>("tudo");
-  const [filter, setFilter] = useState<{ dim: Dim; value: string } | null>(null);
+  // Abre em "Aguardando resposta" (o que tem prazo correndo); dá pra trocar no seletor de status.
+  const [filter, setFilter] = useState<{ dim: Dim; value: string } | null>({ dim: "status", value: STATUS.needs_response.label });
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<ChargebackRow | null>(null);
   // Só lojas ativas (as inativas não interessam aqui).
@@ -346,7 +347,7 @@ function ChargebacksPage() {
                 </div>
                 {/* Status direto na barra (era o único filtro do menu). Clique nos gráficos continua filtrando por outras coisas. */}
                 <Select value={filter?.dim === "status" ? filter.value : ""} onChange={(v) => setDim("status", v)} className="w-48 flex-1 sm:flex-none"
-                  options={[["", "Todos os status"] as const, ...uniq(base.map(DIM_OF.status)).map((x) => [x, x] as const)]} />
+                  options={[["", "Todos os status"] as const, ...uniq([...base.map(DIM_OF.status), ...(filter?.dim === "status" ? [filter.value] : [])]).map((x) => [x, x] as const)]} />
                 <button onClick={() => refresh.mutate()} disabled={refresh.isPending} title="Busca agora as disputas na Shopify e o rastreio dos chargebacks em aberto"
                   className="h-10 px-3.5 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 flex-1 sm:flex-none hover:bg-muted disabled:opacity-50">
                   <RefreshCw className={`size-4 ${refresh.isPending ? "animate-spin" : ""}`} /> {refresh.isPending ? "Atualizando…" : "Atualizar"}
