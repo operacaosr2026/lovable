@@ -193,6 +193,9 @@ function Inboxes({ status }: { status: ZohoStatus }) {
     const q = search.trim().toLowerCase();
     const byOrder = new Set(orderEmails.data ?? []);
     return conversations.filter((c) =>
+      // Só o aviso da aba Notificações (cliente não respondeu): fora da caixa —
+      // aparece só buscando. Se o cliente responder, deixa de ser notice_only e volta.
+      (!c.notice_only || !!q) &&
       (!q || byOrder.has(c.customer_email) ||
         [c.customer_email, c.customer_name, c.subject, c.summary].some((v) => v?.toLowerCase().includes(q))) &&
       (!statusFilter.length || statusFilter.includes(c.status)) &&
