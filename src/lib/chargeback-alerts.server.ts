@@ -15,6 +15,8 @@ import {
 // quase sempre foi entregue — então vale contatar o cliente pra reaver o valor.
 // Também entram os chargebacks PERDIDOS com o pedido entregue (o banco tirou o
 // dinheiro, mas o cliente recebeu): mesma sequência de cobrança, rede "Chargeback";
+// e os EVITADOS (prevented — o valor voltou pro cliente antes de virar disputa,
+// mas o produto foi entregue), rede "Evitado";
 // e os REEMBOLSOS TOTAIS de pedido já enviado (com código de rastreio): o cliente
 // recebeu o dinheiro de volta e o produto — rede "Reembolso". Parcial fica de fora
 // (costuma ser desconto/frete). A sequência só envia e-mail com o pedido entregue.
@@ -65,12 +67,12 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       if (last && amount > 0) found.push({ o, refund: last, amount, network: "Reembolso" });
     }
   }
-  // Chargebacks perdidos com o pedido entregue. O pedido pode estar em
+  // Chargebacks perdidos ou evitados com o pedido entregue. O pedido pode estar em
   // shop_orders (em qualquer loja do dono — loja espelho) ou só na foto guardada
   // na disputa (pedido antigo, de antes da loja entrar no sistema).
   const { data: lost, error: lostErr } = await selectAll<any>(supabaseAdmin.from("shop_order_disputes")
-    .select("shop_id,order_external_id,amount,currency,reason,initiated_at,finalized_on,order_snapshot")
-    .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").eq("status", "lost")
+    .select("shop_id,order_external_id,amount,currency,reason,status,initiated_at,finalized_on,order_snapshot")
+    .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").in("status", ["lost", "prevented"])
     .not("order_external_id", "is", null));
   if (lostErr) throw new Error(lostErr.message);
   const alertKeys = new Set(found.map((f) => `${f.o.shop_id}:${f.o.external_id}`));
@@ -83,6 +85,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
     : { data: [] as any[] };
   const lostOrderBy = new Map((lostOrders ?? []).map((o: any) => [String(o.external_id), o]));
   for (const d of lostTodo) {
+    if (alertKeys.has(`${d.shop_id}:${d.order_external_id}`)) continue;
     const db = lostOrderBy.get(String(d.order_external_id));
     const snap = d.order_snapshot ?? null;
     const o = db ? { ...db, shop_id: d.shop_id } : snap && !snap.unavailable ? {
@@ -94,9 +97,12 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       last_event_label: snap.track?.lastLabel ?? null,
     } : null;
     if (!o || o.delivery_status !== "delivered") continue;   // só entregue
+    const prevented = d.status === "prevented";
+    const what = prevented ? "Chargeback evitado" : "Chargeback perdido";
+    alertKeys.add(`${d.shop_id}:${d.order_external_id}`);   // perdido + evitado no mesmo pedido: um alerta só
     found.push({
-      o, refund: { created_at: d.finalized_on ?? d.initiated_at, note: d.reason ? `Chargeback perdido (${d.reason})` : "Chargeback perdido" },
-      amount: Number(d.amount ?? 0), network: "Chargeback",
+      o, refund: { created_at: d.finalized_on ?? d.initiated_at, note: d.reason ? `${what} (${d.reason})` : what },
+      amount: Number(d.amount ?? 0), network: prevented ? "Evitado" : "Chargeback",
     });
   }
   if (!found.length) return [];

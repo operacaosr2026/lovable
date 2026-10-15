@@ -46,6 +46,7 @@ const NETWORK_CLASSES: Record<string, string> = {
   Ethoca:     "bg-orange-500/10 text-orange-700 dark:text-orange-400",
   RDR:        "bg-teal-500/10 text-teal-700 dark:text-teal-400",
   Chargeback: "bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  Evitado:    "bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400",
   Reembolso:  "bg-amber-500/15 text-amber-700 dark:text-amber-400",
 };
 function networkClasses(n: string) {
