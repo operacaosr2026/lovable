@@ -142,17 +142,18 @@ function NotificacoesPage() {
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <div className="relative w-full sm:w-64">
+      {/* Tela larga: tudo numa linha só (a busca encolhe); menor que isso, quebra. */}
+      <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 mb-3">
+        <div className="relative w-full sm:w-64 xl:w-auto xl:flex-1 xl:min-w-40">
           <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pedido, cliente, e-mail ou rastreio" className="pl-9 h-10 rounded-xl" />
         </div>
-        <Select value={shop} onChange={setShop} className="w-40"
+        <Select value={shop} onChange={setShop} className="w-40 shrink-0"
           options={[["todas", "Todas as lojas"], ...shops.map(([id, name]) => [id, name] as const)]} />
-        <Select value={status} onChange={(v) => setStatus(v as any)} className="w-44"
+        <Select value={status} onChange={(v) => setStatus(v as any)} className="w-44 shrink-0"
           options={[["todos", "Todos os status"], ...Object.entries(STATUS).map(([k, v]) => [k, v.label] as const)]} />
         {/* Esconder: grupo único (quebra de linha junto, não um por um). */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap xl:flex-nowrap xl:shrink-0 items-center gap-1.5">
           <span className="text-xs font-medium text-muted-foreground mr-0.5">Esconder</span>
           <HideChip on={hideRecent} onToggle={() => setHideRecent(!hideRecent)} title={`Cliente que recebeu e-mail há menos de ${RECENT_DAYS} dias`}>
             Avisados há {"<"} {RECENT_DAYS} dias
