@@ -111,16 +111,19 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       .select("shop_id,order_external_id,status,recovered_amount,note,updated_at,dunning_step,dunning_last_at,dunning_paused,dunning_stop_reason,dunning_started_at,dunning_replied_at,dunning_replied_step,recovered_at,recovered_step,recovery_draft_id,recovery_invoice_url,recovery_order_id,recovery_order_name,recovery_fulfilled,recovery_error,excluded_at,excluded_reason")
       .eq("user_id", ownerId).in("order_external_id", c)),
     emails.length
-      ? selectAllIn<{ id: string; customer_email: string; last_message_at: string | null }>(emails, (c) =>
-          supabaseAdmin.from("support_conversations").select("id,customer_email,last_message_at").eq("owner_id", ownerId).in("customer_email", c))
-      : Promise.resolve({ data: [] as { id: string; customer_email: string; last_message_at: string | null }[] }),
+      ? selectAllIn<{ id: string; customer_email: string; last_message_at: string | null; note: string | null }>(emails, (c) =>
+          supabaseAdmin.from("support_conversations").select("id,customer_email,last_message_at,note").eq("owner_id", ownerId).in("customer_email", c))
+      : Promise.resolve({ data: [] as { id: string; customer_email: string; last_message_at: string | null; note: string | null }[] }),
     supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds),
   ]);
   const trackBy = new Map((tracking ?? []).map((t) => [t.order_id, t]));
   const fuBy = new Map((followups ?? []).map((f: any) => [`${f.shop_id}:${f.order_external_id}`, f]));
   const convBy = new Map<string, string>();
+  const noteBy = new Map<string, string>();
   for (const c of [...(convs ?? [])].sort((a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""))) {
-    if (!convBy.has(c.customer_email.toLowerCase())) convBy.set(c.customer_email.toLowerCase(), c.id);
+    const em = c.customer_email.toLowerCase();
+    if (!convBy.has(em)) convBy.set(em, c.id);
+    if (!noteBy.has(em) && c.note?.trim()) noteBy.set(em, c.note.trim());
   }
   const templateBy = new Map(((integs ?? []) as any[]).map((i) => [i.shop_id as string, i.tracking_link_template as string | null]));
 
@@ -146,6 +149,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       recoveryOrderId: fu?.recovery_order_id ?? null, recoveryOrderName: fu?.recovery_order_name ?? null,
       recoveryFulfilled: fu?.recovery_fulfilled ?? false, recoveryError: fu?.recovery_error ?? null,
       excludedAt: fu?.excluded_at ?? null, excludedReason: fu?.excluded_reason ?? null,
+      supportNote: email ? noteBy.get(email) ?? null : null,
     };
   }).sort((a, b) => (b.refundedAt ?? "").localeCompare(a.refundedAt ?? ""));
 }

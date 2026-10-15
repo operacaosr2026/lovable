@@ -17,6 +17,8 @@ export type AlertRow = {
   recoveryFulfilled: boolean; recoveryError: string | null;
   // Excluído à mão da lista (com motivo): some dos números e da cobrança, fica no filtro "Excluídos".
   excludedAt: string | null; excludedReason: string | null;
+  // Nota interna da conversa do cliente no Atendimento (a mais recente com nota) — sugestão de motivo ao excluir.
+  supportNote: string | null;
 };
 
 // Sequência de cobrança: days do 1º = dias depois da entrega; dos demais = dias depois do anterior.

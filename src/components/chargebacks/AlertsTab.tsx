@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRouter } from "@tanstack/react-router";
@@ -286,6 +286,8 @@ function ExcludeDialog({ r, open, onOpenChange }: { r: AlertRow; open: boolean; 
   const qc = useQueryClient();
   const excludeFn = useServerFn(excludeAlert);
   const [reason, setReason] = useState("");
+  // Abriu a caixa: já vem com a nota interna do Atendimento (se tiver), dá pra editar.
+  useEffect(() => { if (open) setReason(r.supportNote ?? ""); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const exclude = useMutation({
     mutationFn: () => excludeFn({ data: { shopId: r.shopId, orderExternalId: r.orderExternalId, status: r.status, reason } }),
     onSuccess: () => {
@@ -306,8 +308,10 @@ function ExcludeDialog({ r, open, onOpenChange }: { r: AlertRow; open: boolean; 
           </DialogDescription>
         </DialogHeader>
         <label className="block">
-          <span className="text-xs font-medium text-muted-foreground block mb-1">Motivo</span>
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} autoFocus maxLength={1000}
+          <span className="text-xs font-medium text-muted-foreground block mb-1">
+            Motivo{r.supportNote && <span className="font-normal"> — veio da nota do Atendimento, pode editar</span>}
+          </span>
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={4} autoFocus maxLength={5000}
             placeholder="Ex.: cliente já pagou por fora, pedido duplicado" />
         </label>
         <DialogFooter>

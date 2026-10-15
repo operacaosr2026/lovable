@@ -75,7 +75,7 @@ async function assertShop(ownerId: string, shopId: string) {
 
 export const excludeAlert = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => AlertKey.extend({ status: z.enum(ALERT_STATUSES), reason: z.string().trim().min(1, "Escreva o motivo").max(1000) }).parse(d))
+  .inputValidator((d) => AlertKey.extend({ status: z.enum(ALERT_STATUSES), reason: z.string().trim().min(1, "Escreva o motivo").max(5000) }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
     await assertShop(context.ownerId, data.shopId);
