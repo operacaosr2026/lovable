@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
-import { selectAll } from "@/lib/select-all";
 import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 
 // Gasto de anúncios é do card (lg_card_ad_spend), com as campanhas escolhidas
@@ -88,10 +87,17 @@ export async function syncCardAdSpend(
 
 export async function adSpendForCards(ownerId: string, cardIds: string[], from: string, to: string) {
   if (!cardIds.length) return [] as { card_id: string; date: string; amount: number }[];
-  const res = await selectAll(db("lg_card_ad_spend").select("card_id, date, amount")
-    .eq("user_id", ownerId).in("card_id", cardIds).gte("date", from).lte("date", to));
-  if (res.error) throw new Error(res.error.message);
-  return ((res.data ?? []) as any[]).map((r) => ({ card_id: r.card_id as string, date: r.date as string, amount: Number(r.amount ?? 0) }));
+  // Sem coluna id (chave é card_id+date), então não dá pra usar selectAll —
+  // pagina ordenando pela chave.
+  const out: { card_id: string; date: string; amount: number }[] = [];
+  for (let start = 0; ; start += 1000) {
+    const { data, error } = await db("lg_card_ad_spend").select("card_id, date, amount")
+      .eq("user_id", ownerId).in("card_id", cardIds).gte("date", from).lte("date", to)
+      .order("card_id").order("date").range(start, start + 999);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as any[]) out.push({ card_id: r.card_id, date: r.date, amount: Number(r.amount ?? 0) });
+    if ((data ?? []).length < 1000) return out;
+  }
 }
 
 // Telas que recebem uma lista de lojas (Dashboard do card, Metas, consultor):
