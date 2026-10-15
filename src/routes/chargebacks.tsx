@@ -350,7 +350,7 @@ function ChargebacksPage() {
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-72 space-y-2.5">
-                    {(["status", "reason", "shop", "delivery", "support"] as Dim[]).map((dim) => (
+                    {(["status"] as Dim[]).map((dim) => (
                       <div key={dim}>
                         <p className="text-[11px] font-semibold text-muted-foreground mb-1">{DIM_NAME[dim]}</p>
                         <Select value={filter?.dim === dim ? filter.value : ""} onChange={(v) => setDim(dim, v)}
