@@ -524,7 +524,7 @@ function DunningInfo({ r, seq, busy, onPause }: { r: AlertRow; seq: { enabled: b
       </div>
     );
   }
-  const label = r.dunningStopReason === "respondeu" ? "Cliente respondeu"
+  const label = r.dunningStopReason === "respondeu" ? `Cliente respondeu${r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ""}`
     : r.dunningStopReason === "fim" ? `Sequência concluída (${r.dunningStep})`
     : r.dunningPaused ? `Cobrança pausada${r.dunningStep ? ` · ${r.dunningStep}/${seq.total}` : ""}`
     : err ? "Erro no envio"
