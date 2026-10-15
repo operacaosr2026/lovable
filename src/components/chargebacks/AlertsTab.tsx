@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
-  BellRing, CircleCheck, ArrowUp, ArrowDown, ArrowRight, Database, Pause, Play, Reply, DollarSign, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check, Trash2, RotateCcw, Archive,
+  BellRing, CircleCheck, ArrowUp, ArrowDown, ArrowRight, Database, Pause, Play, Reply, CalendarDays, ChevronDown, Truck, Mail, HandCoins, ExternalLink, Loader2, Search, Package, Headphones, Link2, Copy, Check, Trash2, RotateCcw, Archive,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -426,8 +426,9 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
   const tiles: { icon: typeof Mail; tone: string; label: string; value: string; sub: string }[] = [
     { icon: Mail, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400", label: "Cobrados", value: String(inSeq.length), sub: `${money(charged)} em cobrança` },
     { icon: Reply, tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400", label: "Responderam", value: String(replied.length), sub: `${pct(replied.length, inSeq.length)} dos cobrados${avgLabel}` },
-    { icon: CircleCheck, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", label: "Recuperados", value: String(recovered.length), sub: `${pct(recovered.length, inSeq.length)} dos cobrados` },
-    { icon: DollarSign, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400", label: "Valor recuperado", value: money(got), sub: `${pct(got, charged)} do valor cobrado` },
+    // O valor recuperado já está no card Recuperado lá em cima — aqui só a taxa.
+    { icon: CircleCheck, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", label: "Taxa de recuperação", value: pct(recovered.length, inSeq.length),
+      sub: `${recovered.length} de ${inSeq.length} cobrados · ${pct(got, charged)} do valor` },
   ];
   return (
     <>
@@ -439,7 +440,7 @@ function DunningMetrics({ rows, sends, settings }: { rows: AlertRow[]; sends: { 
           </div>
           <PeriodSelect value={period} onChange={setPeriod} />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {tiles.map(({ icon: Icon, tone, label, value, sub }) => (
             <div key={label} className="rounded-2xl border border-border/70 bg-muted/20 p-4 flex items-center gap-3.5 min-w-0">
               <div className={`size-12 rounded-full grid place-items-center shrink-0 ${tone}`}><Icon className="size-5" /></div>
