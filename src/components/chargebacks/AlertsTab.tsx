@@ -226,7 +226,8 @@ function AlertLine({ r, seq, mobile }: { r: AlertRow; seq: { enabled: boolean; t
       style={{ backgroundImage: "none" }}>
       {ALERT_STATUSES.map((st) => <option key={st} value={st}>{STATUS[st].label}</option>)}
     </select>
-    {r.status === "recuperado" && r.recoveredAmount != null && <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">{money(r.recoveredAmount)}</div>}
+    {/* Pago pelo link: a linha "Pago no pedido" já basta, o valor fica de fora. */}
+    {r.status === "recuperado" && r.recoveredAmount != null && !r.recoveryOrderId && <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">{money(r.recoveredAmount)}</div>}
     <DunningInfo r={r} seq={seq} busy={save.isPending} onPause={(p) => save.mutate({ status: r.status, dunningPaused: p })} />
   </>;
   const payment = <PaymentLink r={r} />;
