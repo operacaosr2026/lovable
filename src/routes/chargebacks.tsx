@@ -191,7 +191,8 @@ function ChargebacksPage() {
   });
 
   // Tipo + período (cards e gráficos); clique/seleção e busca valem só pra lista.
-  const typed = useMemo(() => (q.data?.rows ?? []).filter((r) => type === "todos" || r.type === type), [q.data, type]);
+  // Evitado (prevented) não é disputa a responder: aparece só em Alertas, pra cobrança.
+  const typed = useMemo(() => (q.data?.rows ?? []).filter((r) => r.status !== "prevented" && (type === "todos" || r.type === type)), [q.data, type]);
   const base = useMemo(() => {
     const now = new Date();
     const from = period === "30" ? new Date(now.getTime() - 30 * 86_400_000)
@@ -210,7 +211,6 @@ function ChargebacksPage() {
   const waiting = base.filter((r) => r.status === "needs_response");
   const lost = base.filter(isLost);
   const won = base.filter((r) => r.status === "won");
-  const prevented = base.filter((r) => r.status === "prevented");
   const nextDue = waiting.map((r) => r.evidenceDueBy).filter(Boolean).sort()[0] ?? null;
   const winRate = won.length + lost.length ? Math.round((won.length / (won.length + lost.length)) * 100) : null;
 
@@ -268,7 +268,7 @@ function ChargebacksPage() {
       ) : (
         <div className="space-y-4">
           {/* ── Cards ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <Stat icon={ShieldAlert} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400"
               label={type === "inquiry" ? "Inquiries" : type === "todos" ? "Disputas" : "Chargebacks"}
               value={String(base.length)} sub={money(sum(base))} delta={mom(() => true)} badIfUp
@@ -285,10 +285,6 @@ function ChargebacksPage() {
               value={winRate == null ? "—" : `${winRate}%`} sub={`${won.length} ganhos de ${won.length + lost.length} decididos`}
               spark={seriesOf((r) => r.status === "won")} sparkColor="#10b981"
               onClick={() => toggle("status", STATUS.won.label)} active={filter?.dim === "status" && filter.value === STATUS.won.label} />
-            <Stat icon={ShieldCheck} tone="bg-slate-500/10 text-slate-600 dark:text-slate-300" label="Evitados"
-              value={String(prevented.length)} sub={money(sum(prevented))}
-              spark={seriesOf((r) => r.status === "prevented")} sparkColor="#94a3b8"
-              onClick={() => toggle("status", STATUS.prevented.label)} active={filter?.dim === "status" && filter.value === STATUS.prevented.label} />
           </div>
 
           {/* ── Evolução | Motivos | Lojas ── */}
