@@ -993,9 +993,10 @@ function Dashboard() {
                     <Tooltip content={<DonutTooltip total={donutTotal} />} wrapperStyle={{ zIndex: 10 }} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="absolute inset-0 grid place-items-center pointer-events-none px-6">
-                  <div className="text-center min-w-0">
-                    <p className="text-lg font-bold text-foreground truncate tabular-nums">{fmtMoney(donutTotal)}</p>
+                {/* Texto do centro acompanha o tamanho do furo do donut (cqmin = menor lado), pra não encostar no anel */}
+                <div className="absolute inset-0 grid place-items-center pointer-events-none" style={{ containerType: "size" }}>
+                  <div className="text-center min-w-0 max-w-[56cqmin]">
+                    <p className="font-bold text-foreground truncate tabular-nums leading-tight" style={{ fontSize: "clamp(0.75rem, 8cqmin, 1.125rem)" }}>{fmtMoney(donutTotal)}</p>
                     <p className="text-[10px] text-muted-foreground">Total</p>
                     {/* Comparativo com o período anterior de mesmo tamanho ("Este mês" → mês anterior) */}
                     <span className={`inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${
