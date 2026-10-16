@@ -210,6 +210,7 @@ function ChargebacksPage() {
   const sum = (rows: ChargebackRow[]) => rows.reduce((t, r) => t + r.amount, 0);
   const isLost = (r: ChargebackRow) => r.status === "lost" || r.status === "accepted";
   const waiting = base.filter((r) => r.status === "needs_response");
+  const reviewing = base.filter((r) => r.status === "under_review");
   const lost = base.filter(isLost);
   const won = base.filter((r) => r.status === "won");
   const nextDue = waiting.map((r) => r.evidenceDueBy).filter(Boolean).sort()[0] ?? null;
@@ -268,7 +269,7 @@ function ChargebacksPage() {
       ) : (
         <div className="space-y-4">
           {/* ── Cards ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <Stat icon={ShieldAlert} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400"
               label="Chargebacks"
               value={String(base.length)} sub={money(sum(base))} delta={mom(() => true)} badIfUp
@@ -277,6 +278,11 @@ function ChargebacksPage() {
               value={String(waiting.length)} sub={nextDue ? `Próximo prazo: ${fmtDate(nextDue)}` : "Nenhum prazo correndo"}
               spark={seriesOf((r) => r.status === "needs_response")} sparkColor="#f59e0b"
               onClick={() => toggle("status", STATUS.needs_response.label)} active={filter?.dim === "status" && filter.value === STATUS.needs_response.label} />
+            {/* Já respondidos, esperando a decisão do banco. */}
+            <Stat icon={Scale} tone="bg-sky-500/10 text-sky-600 dark:text-sky-400" label="Em disputa"
+              value={String(reviewing.length)} sub={money(sum(reviewing))}
+              spark={seriesOf((r) => r.status === "under_review")} sparkColor="#0ea5e9"
+              onClick={() => toggle("status", STATUS.under_review.label)} active={filter?.dim === "status" && filter.value === STATUS.under_review.label} />
             <Stat icon={CircleX} tone="bg-rose-500/10 text-rose-600 dark:text-rose-400" label="Perdidos"
               value={String(lost.length)} sub={money(sum(lost))} delta={mom(isLost)} badIfUp
               spark={seriesOf(isLost)} sparkColor="#f43f5e"
