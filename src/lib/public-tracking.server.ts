@@ -35,11 +35,21 @@ function normalizeStatus(raw: string | null | undefined, delivered: boolean): st
   return null;
 }
 
-const ORDER_COLS = "id,order_number,order_date,delivered_at,delivery_status,tracking_code,created_at:raw->>created_at,city:raw->shipping_address->>city,province:raw->shipping_address->>province_code,country:raw->shipping_address->>country_code";
+const ORDER_COLS = "id,user_id,order_number,order_date,delivered_at,delivery_status,tracking_code,created_at:raw->>created_at,city:raw->shipping_address->>city,province:raw->shipping_address->>province_code,country:raw->shipping_address->>country_code";
 
 function destinationOf(o: any): string | null {
   if (!o || (o.country && o.country !== "US")) return null;
   return [o.city, o.province].filter(Boolean).join(", ") || null;
+}
+
+// Textos trocados na mão (Configurações › Rastreamento › Textos) do dono do
+// pedido: chave (eventTextKey) → texto. Tabela ainda não criada = sem trocas.
+async function loadTrackingTextOverrides(userId: string | null | undefined): Promise<Map<string, string>> {
+  if (!userId) return new Map();
+  const { data, error } = await supabaseAdmin.from("tracking_text_overrides")
+    .select("text_key,display_text").eq("user_id", userId);
+  if (error) return new Map();
+  return new Map((data ?? []).map((r: any) => [r.text_key as string, r.display_text as string]));
 }
 
 export const TRACKING_CODE_RE = /^[A-Za-z0-9-]{5,50}$/;
@@ -89,7 +99,7 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
       status,
       steps,
       currentStep: current,
-      events: sanitizeEvents(all),
+      events: sanitizeEvents(all, await loadTrackingTextOverrides(o?.user_id)),
       destination: destinationOf(o),
       edd: officialEdd(tr ? { source: tr.edd_source, from: tr.edd_from, to: tr.edd_to } : null),
     },

@@ -4768,6 +4768,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      tracking_text_overrides: {
+        Row: {
+          display_text: string;
+          example_text: string;
+          id: string;
+          text_key: string;
+          updated_at: string | null;
+          user_id: string;
+        };
+        Insert: {
+          display_text: string;
+          example_text?: string;
+          id?: string;
+          text_key: string;
+          updated_at?: string | null;
+          user_id: string;
+        };
+        Update: {
+          display_text?: string;
+          example_text?: string;
+          id?: string;
+          text_key?: string;
+          updated_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       user_roles: {
         Row: {
           created_at: string;

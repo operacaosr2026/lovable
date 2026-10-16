@@ -30,7 +30,12 @@ const US_STATES = new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA
 // nos EUA mesmo sem estado ("US"); display é o que aparece (sem CEP), só com estado.
 // Também usada em "Recent deliveries" (public-tracking.server.ts) pra validar a cidade.
 export function usPlace(loc: string | null | undefined): { isUS: boolean; display: string | null } {
-  const s = (loc ?? "").trim();
+  // Centro da USPS ("ANAHEIM CA DISTRIBUTION CENTER", "BATON ROUGE LA PROCESSING
+  // CENTER") e "Chicago IL" sem vírgula → "ANAHEIM, CA"; "US ALMO,KY" → "ALMO, KY".
+  const s = (loc ?? "").trim()
+    .replace(/\s+(network\s+)?(distribution|processing|sort(ing)?)\s+(center|facility)$/i, "")
+    .replace(/^US\s+(?=[^,，]+[,，])/i, "")
+    .replace(/^([^,，]+?)\s+([A-Za-z]{2})$/, (m, city, st) => (US_STATES.has(st.toUpperCase()) ? `${city}, ${st}` : m));
   if (!s || HIDDEN_EVENT.test(s)) return { isUS: false, display: null };
   const tokens = s.split(/\s*[,，]\s*/).map((t) => t.replace(/\s*\d{5}(-\d{4})?$/, "").trim()).filter(Boolean);
   if (tokens.some((t) => NON_ASCII.test(t))) return { isUS: false, display: null };
@@ -52,7 +57,7 @@ export const CN_HIDDEN = /海关|清关|机场|航班|启运|出口|进口|中�
 export const CN_US_PHRASES: [RegExp, string][] = [
   [/投递失败|未妥投|无法投递|投递不成功/, "Delivery attempted"],
   [/妥投|已签收|签收/, "Delivered"],
-  [/(派送|投递)中|正在(派送|投递)|安排投递|开始投递/, "Out for delivery"],
+  [/(派送|投递)中|正在(派送|投递)|安排投递|开始投递|出门投递/, "Out for delivery"],
   [/离开处理中心|离开.*中心/, "Departed sorting facility"],
   [/到达处理中心|到达.*中心/, "Arrived at sorting facility"],
 ];
@@ -83,16 +88,41 @@ export function rawEvents(timeline: any[] | null | undefined): DisplayEvent[] {
 // cópia "(中文:…)" que a transportadora repete no fim ("Delivered. Position: Front door(中文:…)").
 const stripLocationPrefix = (d: string) => d.replace(/\s*[(（]中文[:：][^)）]*[)）]?\s*$/, "").replace(/^([A-Za-z .]+,\s*)?(US|USA)\s*,\s*/i, "").trim();
 
-export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
+// Limpeza do texto antes das regras:
+//  - texto colado duas vezes ("Shipment information received.Shipment information received.");
+//  - frase longa da USPS depois de " -> " ("On the Way, Departed USPS Facility -> Your item
+//    departed our USPS facility in … origin facility…") — o "origin" dela escondia o evento;
+//  - contato da transportadora ("…For Delivery Issues & Tracking Support, Contact GOFO at +1 949…").
+export function cleanEventText(d: string): string {
+  let t = stripLocationPrefix(d).split(/\s+->\s+/)[0].replace(/[.,]?\s*for delivery issues\b.*$/i, "").trim();
+  const half = t.length / 2;
+  if (t.length >= 10 && Number.isInteger(half) && t.slice(0, half) === t.slice(half)) t = t.slice(0, half).trim();
+  return t;
+}
+
+// Chave do texto pros textos trocados na mão (Configurações › Rastreamento ›
+// Textos): sem maiúscula/minúscula, ponto final e números (datas, horários) —
+// "Flight delayed. Estimated departure: Oct.11" e "…Oct.13" são o mesmo texto.
+export function eventTextKey(d: string): string {
+  return cleanEventText(d).toLowerCase().replace(/\d+/g, "#").replace(/\s+/g, " ").replace(/[.\s]+$/, "").trim();
+}
+
+// overrides: textos trocados na mão (chave = eventTextKey) — valem antes de
+// qualquer outra regra; o local continua o que vem (só nos EUA).
+export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, string>): DisplayEvent[] {
   const seen = new Set<string>();
   const out: DisplayEvent[] = [];
   // Mais novo primeiro: nos repetidos (e no "em trânsito" do dia) fica o mais recente.
   const ordered = [...events].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
   for (const e of ordered) {
-    let description = stripLocationPrefix(String(e.description ?? "").trim());
+    let description = cleanEventText(String(e.description ?? "").trim());
     let location: string | null;
-    const cn = NON_ASCII.test(description) ? translateUsEvent(description, e.location) : null;
-    if (cn) {
+    const manual = description && overrides?.size ? overrides.get(eventTextKey(description)) : undefined;
+    const cn = !manual && NON_ASCII.test(description) ? translateUsEvent(description, e.location) : null;
+    if (manual) {
+      description = manual;
+      location = usPlace(e.location).display;
+    } else if (cn) {
       description = cn.description;
       location = cn.place.display;
     } else if (!description) {
