@@ -21,8 +21,12 @@ import { batchJson, batchParams, pendingBatches, submitBatch, type BatchItemResu
 // Placar por tag em Configurações → Resposta automática.
 // Rascunho às cegas: o exemplo e o histórico usados são só de antes do e-mail.
 
-// Roda em todo e-mail novo: Sonnet (metade do preço do Opus).
+// Rascunho e manual: Sonnet (metade do preço do Opus). Comparação é mais simples
+// e roda muito (toda resposta da equipe): Haiku, ~20x mais barato.
 const MODEL = "claude-sonnet-5-5";
+const EVAL_MODEL = "claude-haiku-5-5";
+const LESSON_DAYS = 30;          // manual: só as lições recentes (as antigas já estão nele)
+const EVAL_TRIES = 3;            // comparação que falha 3x sai da fila
 const DAY = 86_400_000;
 const WINDOW_DAYS = 30;          // e-mails sem rascunho dos últimos 30 dias (os novos primeiro)
 const PER_RUN = 4;
@@ -98,10 +102,12 @@ async function loadPlaybook(ownerId: string): Promise<{ rules: Playbook | null; 
   return { rules: r?.gerais ? r : null, updated_at: data?.updated_at ?? null, based_on: data?.based_on ?? 0 };
 }
 
-async function ai<T>(client: Anthropic, system: string, content: string, schema: object, opts: { effort?: string; max?: number } = {}): Promise<T> {
+async function ai<T>(client: Anthropic, system: string, content: string, schema: object, opts: { effort?: string; max?: number; model?: string } = {}): Promise<T> {
+  const model = opts.model ?? MODEL;
   const res = await withAiCredit(() => client.beta.messages.stream({
-    model: MODEL, max_tokens: opts.max ?? 3000,
-    betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
+    model, max_tokens: opts.max ?? 3000,
+    // Fallback no servidor só existe pro Sonnet/Opus.
+    ...(model.includes("haiku") ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }),
     output_config: { effort: opts.effort ?? "medium", format: { type: "json_schema", schema } },
     system, messages: [{ role: "user", content }],
   } as any).finalMessage()) as Anthropic.Beta.BetaMessage;
@@ -233,12 +239,13 @@ const evalFields = (r: EvalResult) => ({ semelhanca: r.semelhanca, o_que_mudou: 
 async function evalFor(acc: ZohoAccount, client: Anthropic, box: Mailbox, m: Msg, write = true): Promise<boolean | DraftEval> {
   const p = await evalPrep(acc, box, m, write);
   if (!p) return false;
-  const r = await ai<EvalResult>(client, EVAL_SYSTEM, p.content, EVAL_SCHEMA, { effort: "low", max: 1500 });
+  const r = await ai<EvalResult>(client, EVAL_SYSTEM, p.content, EVAL_SCHEMA, { effort: "low", max: 3000, model: EVAL_MODEL });
   const e = await saveEval(m.id, m.ai_draft_eval, { ...evalFields(r), reply_id: p.reply.id, tags: p.tags }, write);
   return write ? true : (e as DraftEval);
 }
 
-// Lote pronto: grava cada comparação; a que falhou volta pra fila (sai a marca do lote).
+// Lote pronto: grava cada comparação; a que falhou volta pra fila (sai a marca do
+// lote) — até EVAL_TRIES vezes; depois sai da fila (fica sem nota).
 export async function applySupportEvalBatch(row: BatchRow, results: Map<string, BatchItemResult>) {
   const ids = Object.keys(row.items);
   const { data } = await supabaseAdmin.from("support_messages").select("id,ai_draft_eval").in("id", ids);
@@ -248,7 +255,12 @@ export async function applySupportEvalBatch(row: BatchRow, results: Map<string, 
     const r = results.get(msg.id);
     const it = row.items[msg.id];
     if (r?.ok) await saveEval(msg.id, prev, { ...evalFields(batchJson<EvalResult>(r.message)), reply_id: it.reply_id, tags: it.tags });
-    else { const { batch: _b, ...rest } = prev; await supabaseAdmin.from("support_messages").update({ ai_draft_eval: rest }).eq("id", msg.id); }
+    else {
+      const { batch: _b, ...rest } = prev;
+      const tentativas = (rest.tentativas ?? 0) + 1;
+      const next = tentativas >= EVAL_TRIES ? { ...rest, tentativas, pendente: false, erro: r?.ok === false ? r.error : "sem resultado" } : { ...rest, tentativas };
+      await supabaseAdmin.from("support_messages").update({ ai_draft_eval: next }).eq("id", msg.id);
+    }
   }
 }
 
@@ -279,8 +291,9 @@ function playbookContent(box: Mailbox, pairs: ReturnType<typeof teamPairs>) {
     perTag.set(t, n + 1);
     return n < 12;
   });
+  const lessonSince = new Date(Date.now() - LESSON_DAYS * DAY).toISOString();
   const lessons = box.msgs
-    .filter((m) => (m.ai_draft_eval as any)?.licoes?.length)
+    .filter((m) => (m.ai_draft_eval as any)?.licoes?.length && String((m.ai_draft_eval as any).at) >= lessonSince)
     .sort((a, b) => String((a.ai_draft_eval as any).at).localeCompare(String((b.ai_draft_eval as any).at)))
     .map((m) => `(${String((m.ai_draft_eval as any).at).slice(0, 10)} · ${((m.ai_draft_eval as any).tags ?? []).join(", ") || "-"}) ${(m.ai_draft_eval as any).licoes.join(" | ")}`);
   return `<respostas_da_equipe>\n${chosen.map((p) => `tags: ${p.tags.join(", ") || "-"}\nCLIENTE: ${txt(p.inMsg, 600)}\nEQUIPE: ${txt(p.outMsg, 800)}`).join("\n\n")}\n</respostas_da_equipe>\n<licoes>\n${lessons.join("\n") || "(nenhuma ainda)"}\n</licoes>`;
@@ -288,7 +301,7 @@ function playbookContent(box: Mailbox, pairs: ReturnType<typeof teamPairs>) {
 
 // Na hora (só o teste em Configurações, que não grava).
 async function rebuildPlaybook(client: Anthropic, ownerId: string, box: Mailbox, pairs: ReturnType<typeof teamPairs>, write = true) {
-  const r = await ai<Playbook>(client, PLAYBOOK_SYSTEM, playbookContent(box, pairs), PLAYBOOK_SCHEMA, { effort: "high", max: 8000 });
+  const r = await ai<Playbook>(client, PLAYBOOK_SYSTEM, playbookContent(box, pairs), PLAYBOOK_SCHEMA, { effort: "high", max: 16000 });
   if (write) await supabaseAdmin.from("support_playbook").upsert({ owner_id: ownerId, rules: r as any, based_on: pairs.length, updated_at: new Date().toISOString() });
   return r;
 }
@@ -317,7 +330,7 @@ export async function runSupportLearning(acc: ZohoAccount, opts: { budgetMs?: nu
   if (pairs.length >= 3 && (!pb.rules || (Date.now() - Date.parse(pb.updated_at!) > 20 * 3_600_000 && lastEvalAt > pb.updated_at!))
     && !(await pendingBatches("support_playbook", acc.owner_id)).length) {
     await submitBatch(acc.owner_id, "support_playbook", [{ custom_id: "playbook",
-      params: batchParams({ model: MODEL, max_tokens: 8000, system: PLAYBOOK_SYSTEM, content: playbookContent(box, pairs), effort: "high", schema: PLAYBOOK_SCHEMA }) }],
+      params: batchParams({ model: MODEL, max_tokens: 16000, system: PLAYBOOK_SYSTEM, content: playbookContent(box, pairs), effort: "high", schema: PLAYBOOK_SCHEMA }) }],
       { based_on: pairs.length });
     playbook = true;
   }
@@ -331,7 +344,7 @@ export async function runSupportLearning(acc: ZohoAccount, opts: { budgetMs?: nu
     if (Date.now() > deadline) break;
     const p = await evalPrep(acc, box, m);
     if (p) reqs.push({ m, custom_id: m.id, item: { reply_id: p.reply.id, tags: p.tags },
-      params: batchParams({ model: MODEL, max_tokens: 1500, system: EVAL_SYSTEM, content: p.content, effort: "low", schema: EVAL_SCHEMA }) });
+      params: batchParams({ model: EVAL_MODEL, max_tokens: 3000, system: EVAL_SYSTEM, content: p.content, effort: "low", schema: EVAL_SCHEMA }) });
   }
   const batchId = await submitBatch(acc.owner_id, "support_eval", reqs.map(({ custom_id, params }) => ({ custom_id, params })),
     Object.fromEntries(reqs.map((r) => [r.custom_id, r.item])));

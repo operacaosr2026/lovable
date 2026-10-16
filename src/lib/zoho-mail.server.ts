@@ -300,7 +300,9 @@ export async function syncZohoMailbox(ownerId: string, opts: { quick?: boolean; 
         await reportSystemError(ownerId, "support_auto_reply", "Atendimento: resposta automática de rastreio falhou", e, "/atendimento");
       }
       // Treino da IA: rascunho em todo e-mail + comparação com a resposta da equipe + manual diário (nada é enviado).
-      try {
+      // Só na sincronização completa (cron / botão): a rápida, depois de cada envio,
+      // rodava junto com o cron e pagava rascunho/manual em dobro.
+      if (!opts.quick) try {
         const { runSupportLearning } = await import("@/lib/support-learning.server");
         await runSupportLearning(acc, { budgetMs: 100_000 });
         await clearSystemError(ownerId, "support_learning");
