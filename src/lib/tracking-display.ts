@@ -13,13 +13,16 @@ export type DisplayStep = { label: string; at: string | null };
 
 // Qualquer caractere fora do ASCII (chinês, ou texto corrompido como "预报订�…").
 const NON_ASCII = /[^\x20-\x7E]/;
-const HIDDEN_EVENT = new RegExp([
+// Palavras que escondem o evento (viram "em trânsito"). Exportadas pra aba
+// Configurações › Rastreamento mostrar as regras.
+export const HIDDEN_WORDS = [
   "custom", "clearance", "import", "export", "duty", "tax",
   "china", "chinese", "\\bcn\\b", "shenzhen", "shanghai", "guangzhou", "dongguan", "yiwu", "hangzhou", "hong ?kong", "beijing", "ningbo", "xiamen",
   "origin country", "country of origin", "\\borigin\\b", "starting port", "departure port", "port of departure",
   "airline", "airport", "flight", "air ?way ?bill", "\\bawb\\b", "\\bmawb\\b",
   "international", "abroad", "overseas",
-].join("|"), "i");
+];
+const HIDDEN_EVENT = new RegExp(HIDDEN_WORDS.join("|"), "i");
 
 const US_STATES = new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC PR".split(" "));
 
@@ -45,8 +48,8 @@ export function usPlace(loc: string | null | undefined): { isUS: boolean; displa
 // acontece nos EUA ("邮件到达处理中心【US Texas US， TX 76051】"). Só as frases
 // de movimentação dentro dos EUA são traduzidas; o resto (alfândega, aeroporto,
 // partida, qualquer coisa na China) continua escondido.
-const CN_HIDDEN = /海关|清关|机场|航班|启运|出口|进口|中国|国际|抵达|离开.*国|直封|交航|运抵/;
-const CN_US_PHRASES: [RegExp, string][] = [
+export const CN_HIDDEN = /海关|清关|机场|航班|启运|出口|进口|中国|国际|抵达|离开.*国|直封|交航|运抵/;
+export const CN_US_PHRASES: [RegExp, string][] = [
   [/投递失败|未妥投|无法投递|投递不成功/, "Delivery attempted"],
   [/妥投|已签收|签收/, "Delivered"],
   [/(派送|投递)中|正在(派送|投递)|安排投递|开始投递/, "Out for delivery"],
@@ -94,6 +97,11 @@ export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
       location = cn.place.display;
     } else if (!description) {
       continue;
+    } else if (!NON_ASCII.test(description) && EVENT_REWRITES.some((r) => r.match.test(description))) {
+      // Etapa real com nome neutro (voo, alfândega, repasse…): aparece no lugar
+      // do "em trânsito" repetido, com o local só se for nos EUA.
+      description = EVENT_REWRITES.find((r) => r.match.test(description))!.to;
+      location = usPlace(e.location).display;
     } else if (NON_ASCII.test(description) || HIDDEN_EVENT.test(description)) {
       // Não some (o cliente vê que o pacote está andando): vira "em trânsito",
       // sem local — um por dia, pra não encher o histórico de linhas iguais.
@@ -104,11 +112,6 @@ export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
       continue;
     } else {
       location = usPlace(e.location).display;
-      // "Delivered to local carrier" é repasse entre transportadoras, não entrega
-      // — pro cliente não achar que já chegou.
-      if (/^delivered to\b/i.test(description)) description = "Arrived at local delivery facility";
-      // "Acceptance" = postagem (o correio recebeu o pacote).
-      else if (/^acceptance\.?$/i.test(description)) description = "Package received by carrier";
     }
     // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
     const key = `${location}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
@@ -122,12 +125,35 @@ export function sanitizeEvents(events: DisplayEvent[]): DisplayEvent[] {
   const labelAt = out.filter((e) => !e.generic && e.at && INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
   return labelAt ? out.filter((e) => !(e.generic && e.at && e.at < labelAt)) : out;
 }
-const LOCAL_TRANSIT = "In transit to local facility";
+export const LOCAL_TRANSIT = "In transit to local facility";
+// Textos em inglês trocados antes de aparecer pro cliente (o 1º que casar).
+// Etapas reais com nome neutro — continua verdade e não fala de voo/alfândega —
+// pra o cliente não ver o mesmo "em trânsito" dias seguidos e achar que parou.
+// Saída da origem fica separada da liberação no destino: "Export…"/"at origin"
+// não é "released for delivery". `from` = exemplos reais (mostrados na aba
+// Configurações › Rastreamento).
+//  - "Delivered to local carrier" é repasse entre transportadoras, não entrega
+//    — pro cliente não achar que já chegou;
+//  - "Acceptance" = postagem (o correio recebeu o pacote).
+export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
+  { match: /^departed from (the )?(airport of origin|origin country)|departure from the starting port|^in transit - departure\.?$/i,
+    from: ["Departed from airport of Origin", "Departed from Origin Country", "Departure from the starting port"], to: "Shipment departed sorting hub" },
+  { match: /arrived at destination airport|shipment arrived at airport/i,
+    from: ["Arrived at destination airport", "Shipment arrived at airport"], to: "Arrived at regional hub" },
+  { match: /^(customs clearance in progress|under clearance|started the customs clearance process at destination|inbound into customs)/i,
+    from: ["Customs clearance in progress", "Under Clearance", "Started the customs clearance process at destination", "Inbound Into Customs"], to: "Shipment being processed – no action needed" },
+  { match: /^(customs clearance to release|clearance processing completed at destination|import released)/i,
+    from: ["Customs clearance to release", "Clearance processing completed at destination", "Import Released"], to: "Processing complete – released for delivery" },
+  { match: /^delivered to\b/i, from: ["Delivered to local carrier"], to: "Handed over to local carrier" },
+  { match: /^parcel received by in [a-z]{3}\d*\.?$/i, from: ["Parcel received by in JFK01."], to: "Received at distribution center" },
+  { match: /^parcel departed from facility\.?$/i, from: ["Parcel departed from Facility."], to: "Departed facility" },
+  { match: /^acceptance\.?$/i, from: ["Acceptance"], to: "Package received by carrier" },
+];
 
 const INFO_ONLY = /information received|info received|label created|pre-shipment|electronic information|order created|shipment information/i;
 const OUT_FOR_DELIVERY = /out for delivery/i;
 // Entrega ao cliente ("Delivered, Front Door", "Parcel has been delivered") —
-// não "Delivered to local carrier" (repasse; na tela vira "Arrived at local delivery facility").
+// não "Delivered to local carrier" (repasse; na tela vira "Handed over to local carrier").
 const DELIVERED = /^delivered\b(?!\s+to\b)|has been delivered/i;
 
 // Etapas: Ordered · Order Ready · In Transit · Out for Delivery · Delivered,
