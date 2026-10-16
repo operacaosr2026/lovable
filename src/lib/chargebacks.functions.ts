@@ -315,8 +315,13 @@ export const refreshChargebacks = createServerFn({ method: "POST" })
       .select("shop_id,shopify_dispute_id,status").eq("user_id", ownerId).eq("type", "chargeback");
     const prev = new Map((before ?? []).map((d) => [`${d.shop_id}:${d.shopify_dispute_id}`, d.status]));
 
-    const { data: settings } = await supabaseAdmin.from("shop_order_settings")
-      .select("shop_id,shopify_store_id").eq("user_id", ownerId).not("shopify_store_id", "is", null);
+    // Só lojas ativas (as mesmas que a tela mostra): inativa costuma estar com o
+    // acesso da Shopify cortado e só dava "Não deu pra consultar".
+    const activeIds = await companyShopIdsForMonth(ownerId, `${isoTodayUS().slice(0, 7)}-01`).catch(() => [] as string[]);
+    const { data: settings } = activeIds.length
+      ? await supabaseAdmin.from("shop_order_settings")
+        .select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", activeIds).not("shopify_store_id", "is", null)
+      : { data: [] as { shop_id: string; shopify_store_id: string }[] };
     const storeIds = [...new Set((settings ?? []).map((s: any) => s.shopify_store_id))] as string[];
     const { data: stores } = storeIds.length
       ? await supabaseAdmin.from("shopify_stores").select("id,shop_domain,access_token").in("id", storeIds)
