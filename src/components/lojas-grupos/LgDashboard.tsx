@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -89,7 +90,7 @@ function KpiCard({
 }: {
   icon: React.ReactNode; iconColor?: IconColor; label: string; value: string;
   delta: number; highlighted?: boolean; highlightedVariant?: "success" | "destructive";
-  tooltip?: string; badge?: React.ReactNode; loading?: boolean; onClick?: () => void;
+  tooltip?: React.ReactNode; badge?: React.ReactNode; loading?: boolean; onClick?: () => void;
 }) {
   const hlClass = highlightedVariant === "destructive"
     ? "bg-destructive text-destructive-foreground border-destructive/30 shadow-md shadow-destructive/20"
@@ -107,9 +108,16 @@ function KpiCard({
           : <MetricIcon color={iconColor}>{icon}</MetricIcon>
         }
         {tooltip && (
-          <button className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-            <Info className={`size-3.5 ${highlighted ? "text-white/60" : "text-muted-foreground/50"}`} />
-          </button>
+          <TooltipProvider delayDuration={100}>
+            <UiTooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={(e) => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
+                  <Info className={`size-3.5 ${highlighted ? "text-white/60" : "text-muted-foreground/50"}`} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" className="max-w-xs">{tooltip}</TooltipContent>
+            </UiTooltip>
+          </TooltipProvider>
         )}
         {badge && <div className={tooltip ? "" : "ml-auto"}>{badge}</div>}
       </div>
@@ -664,7 +672,16 @@ export function LgDashboard({
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="info"
           label="Custo Total" value={fmt(m?.custoTotal ?? 0)} delta={m?.custoTotalDelta ?? 0}
-          tooltip="Anúncios + Taxas + Custo de Produto"
+          tooltip={
+            <div className="space-y-1 min-w-[180px] tabular-nums">
+              {([["Anúncios", m?.anuncios ?? 0], ["Taxas", m?.taxas ?? 0], ["Custo de Produto", m?.custoProduto ?? 0]] as const).map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-4"><span>{k}</span><span>{fmt(v)}</span></div>
+              ))}
+              <div className="flex justify-between gap-4 border-t border-current/20 pt-1 font-semibold">
+                <span>Total</span><span>{fmt(m?.custoTotal ?? 0)}</span>
+              </div>
+            </div>
+          }
         />
         <div className="hidden sm:block">
           <KpiCard loading={isLoading}
