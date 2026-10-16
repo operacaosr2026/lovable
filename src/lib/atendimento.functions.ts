@@ -488,13 +488,15 @@ export const updateSupportConversations = createServerFn({ method: "POST" })
   });
 
 // Tradução pro português (botão 🌐). Com id: e-mail salvo (tradução guardada
-// no banco). Com text: texto solto (modo de exemplo).
+// no banco). Com text: texto solto (modo de exemplo). Com draft: a sugestão da
+// IA desse e-mail (ai_draft → ai_draft_pt, traduzida só quando é aberta).
 const TRANSLATE_LIMIT = 20_000;
 export const translateSupportMessage = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     id: z.string().uuid().optional(),
     text: z.string().max(TRANSLATE_LIMIT).optional(),
+    draft: z.boolean().optional(),
   }).refine((v) => v.id || v.text, "Informe o e-mail").parse(d))
   .handler(async ({ data, context }) => {
     assertSub(context, "at_caixa");
@@ -502,6 +504,15 @@ export const translateSupportMessage = createServerFn({ method: "POST" })
     if (!data.id) return { text: await translateToPortuguese(data.text!) };
 
     const { ownerId } = context;
+    if (data.draft) {
+      const { data: d } = await supabaseAdmin.from("support_messages")
+        .select("id,ai_draft,ai_draft_pt").eq("id", data.id).eq("owner_id", ownerId).maybeSingle();
+      if (!d?.ai_draft) throw new Error("Sugestão não encontrada");
+      if (d.ai_draft_pt) return { text: d.ai_draft_pt };
+      const text = await translateToPortuguese(d.ai_draft.slice(0, TRANSLATE_LIMIT));
+      await supabaseAdmin.from("support_messages").update({ ai_draft_pt: text }).eq("id", d.id);
+      return { text };
+    }
     const { data: m } = await supabaseAdmin.from("support_messages")
       .select("id,message_id,folder_id,content_html,content_pt").eq("id", data.id).eq("owner_id", ownerId).maybeSingle();
     if (!m) throw new Error("E-mail não encontrado");

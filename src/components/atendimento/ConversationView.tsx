@@ -363,9 +363,23 @@ function LinkedText({ text }: { text: string }) {
 function DraftCard({ m, defaultOpen, onUse }: { m: SupportMessage; defaultOpen: boolean; onUse?: (text: string) => void }) {
   const [open, setOpen] = useState(defaultOpen);
   const [lang, setLang] = useState<"pt" | "en">("pt");
+  // Português traduzido só quando a sugestão é aberta (e guardado no banco).
+  const translateFn = useSupportFn(translateSupportMessage, "translateSupportMessage");
+  const [pt, setPt] = useState<string | null>(m.ai_draft_pt ?? null);
+  const [translating, setTranslating] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!open || lang !== "pt" || pt != null || translating || failed) return;
+    setTranslating(true);
+    translateFn({ data: { id: m.id, draft: true } })
+      .then((r: { text: string }) => setPt(r.text))
+      .catch(() => { setFailed(true); setLang("en"); })
+      .finally(() => setTranslating(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lang, m.id]);
   const e = m.ai_draft_eval ?? {};
   const done = e.semelhanca ? EVAL_META[e.semelhanca] : null;
-  const text = lang === "pt" && m.ai_draft_pt ? m.ai_draft_pt : m.ai_draft!;
+  const text = lang === "pt" && pt ? pt : m.ai_draft!;
   return (
     <div className="mt-2 rounded-xl border border-primary/25 bg-background/70">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium text-left">
@@ -378,9 +392,10 @@ function DraftCard({ m, defaultOpen, onUse }: { m: SupportMessage; defaultOpen: 
       {open && (
         <div className="px-3 pb-3 space-y-2">
           {e.pendente && e.observacao && <p className="text-[11px] text-warning">{e.observacao}</p>}
+          {lang === "pt" && !pt && translating && <p className="text-[11px] text-muted-foreground">Traduzindo…</p>}
           <p className="text-sm whitespace-pre-wrap"><LinkedText text={text} /></p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setLang(lang === "pt" ? "en" : "pt")} className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:bg-muted flex items-center gap-1">
+            <button onClick={() => { if (lang === "en") setFailed(false); setLang(lang === "pt" ? "en" : "pt"); }} className="h-7 px-2 rounded-md text-[11px] text-muted-foreground hover:bg-muted flex items-center gap-1">
               <Languages className="size-3.5" /> {lang === "pt" ? "Ver em inglês" : "Ver em português"}
             </button>
             {e.pendente && onUse && (
