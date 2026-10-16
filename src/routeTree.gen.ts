@@ -35,6 +35,7 @@ import { Route as SettingsGeralRouteImport } from "./routes/settings.geral";
 import { Route as SettingsIntegracoesRouteImport } from "./routes/settings.integracoes";
 import { Route as SettingsMembersRouteImport } from "./routes/settings.members";
 import { Route as SettingsNotificacoesRouteImport } from "./routes/settings.notificacoes";
+import { Route as SettingsRastreamentoRouteImport } from "./routes/settings.rastreamento";
 import { Route as SettingsSegurancaRouteImport } from "./routes/settings.seguranca";
 import { Route as SettingsTemplatesRouteImport } from "./routes/settings.templates";
 import { Route as ShopsIndexRouteImport } from "./routes/shops.index";
@@ -197,6 +198,11 @@ const SettingsMembersRoute = SettingsMembersRouteImport.update({
 const SettingsNotificacoesRoute = SettingsNotificacoesRouteImport.update({
   id: "/notificacoes",
   path: "/notificacoes",
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsRastreamentoRoute = SettingsRastreamentoRouteImport.update({
+  id: "/rastreamento",
+  path: "/rastreamento",
   getParentRoute: () => SettingsRoute,
 } as any);
 const SettingsSegurancaRoute = SettingsSegurancaRouteImport.update({
@@ -401,6 +407,7 @@ export interface FileRoutesByFullPath {
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
+  "/settings/rastreamento": typeof SettingsRastreamentoRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
@@ -459,6 +466,7 @@ export interface FileRoutesByTo {
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
+  "/settings/rastreamento": typeof SettingsRastreamentoRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/track/$code": typeof TrackCodeRoute;
@@ -517,6 +525,7 @@ export interface FileRoutesById {
   "/settings/integracoes": typeof SettingsIntegracoesRoute;
   "/settings/members": typeof SettingsMembersRoute;
   "/settings/notificacoes": typeof SettingsNotificacoesRoute;
+  "/settings/rastreamento": typeof SettingsRastreamentoRoute;
   "/settings/seguranca": typeof SettingsSegurancaRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/shops/banco-de-lojas": typeof ShopsBancoDeLojasRouteWithChildren;
@@ -580,6 +589,7 @@ export interface FileRouteTypes {
     | "/settings/integracoes"
     | "/settings/members"
     | "/settings/notificacoes"
+    | "/settings/rastreamento"
     | "/settings/seguranca"
     | "/settings/templates"
     | "/shops/banco-de-lojas"
@@ -638,6 +648,7 @@ export interface FileRouteTypes {
     | "/settings/integracoes"
     | "/settings/members"
     | "/settings/notificacoes"
+    | "/settings/rastreamento"
     | "/settings/seguranca"
     | "/settings/templates"
     | "/track/$code"
@@ -695,6 +706,7 @@ export interface FileRouteTypes {
     | "/settings/integracoes"
     | "/settings/members"
     | "/settings/notificacoes"
+    | "/settings/rastreamento"
     | "/settings/seguranca"
     | "/settings/templates"
     | "/shops/banco-de-lojas"
@@ -955,6 +967,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsNotificacoesRouteImport;
       parentRoute: typeof SettingsRoute;
     };
+    "/settings/rastreamento": {
+      id: "/settings/rastreamento";
+      path: "/rastreamento";
+      fullPath: "/settings/rastreamento";
+      preLoaderRoute: typeof SettingsRastreamentoRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/settings/seguranca": {
       id: "/settings/seguranca";
       path: "/seguranca";
@@ -1210,6 +1229,7 @@ interface SettingsRouteChildren {
   SettingsIntegracoesRoute: typeof SettingsIntegracoesRoute;
   SettingsMembersRoute: typeof SettingsMembersRoute;
   SettingsNotificacoesRoute: typeof SettingsNotificacoesRoute;
+  SettingsRastreamentoRoute: typeof SettingsRastreamentoRoute;
   SettingsSegurancaRoute: typeof SettingsSegurancaRoute;
   SettingsTemplatesRoute: typeof SettingsTemplatesRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
@@ -1222,6 +1242,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsIntegracoesRoute: SettingsIntegracoesRoute,
   SettingsMembersRoute: SettingsMembersRoute,
   SettingsNotificacoesRoute: SettingsNotificacoesRoute,
+  SettingsRastreamentoRoute: SettingsRastreamentoRoute,
   SettingsSegurancaRoute: SettingsSegurancaRoute,
   SettingsTemplatesRoute: SettingsTemplatesRoute,
   SettingsIndexRoute: SettingsIndexRoute,
