@@ -122,7 +122,11 @@ export const CN_NEUTRAL: [RegExp, string][] = [
 ];
 
 // Local escrito dentro do texto: "【US Texas US， TX 76051】".
-const bracketPlace = (d: string) => d.match(/【([^】]*)】/)?.[1]?.replace(/^US\s+\w+\s+/i, "") ?? null;
+// "US New York Brooklyn，NY，US" → "Brooklyn，NY，US": o estado por extenso do
+// começo é o do cliente e pode ter duas palavras.
+const BRACKET_STATE_RE = new RegExp(`^US\\s+(${[...STATE_BY_NAME.keys()].sort((a, b) => b.length - a.length)
+  .map((n) => n.replace(/\./g, "\\.").replace(/ /g, "\\s+")).join("|")})\\s*`, "i");
+const bracketPlace = (d: string) => d.match(/【([^】]*)】/)?.[1]?.replace(BRACKET_STATE_RE, "") ?? null;
 
 function translateUsEvent(description: string, location: string | null): { description: string; place: { isUS: boolean; display: string | null } } | null {
   if (CN_HIDDEN.test(description)) return null;
@@ -170,7 +174,7 @@ export function tidyCase(d: string): string {
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
 // Cidade em CAIXA ALTA ("DANVILLE") → "Danville"; sigla do estado continua.
-const titleCity = (t: string) => (/[a-z]/.test(t) ? t : t.toLowerCase().replace(/[a-z]/g, (c) => c.toUpperCase()));
+const titleCity = (t: string) => (/[a-z]/.test(t) ? t : t.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()));
 
 // Chave do texto pros textos trocados na mão (Configurações › Rastreamento ›
 // Textos): sem maiúscula/minúscula, ponto final e números (datas, horários) —
@@ -281,7 +285,7 @@ const STAGES: [RegExp, number][] = [
   // Entrega à aérea vem antes ou depois da liberação, conforme a transportadora:
   // não decide ordem (fica como manuseio, que nunca sai).
   [/handed over to transport partner|accepted by transport partner/i, 1],
-  [/for departure|sealed for transport|awaiting departure|airway bill|departure airport|flight/i, 2],
+  [/for departure|sealed for transport|awaiting departure|departure rescheduled|airway bill|departure airport|flight/i, 2],
   [/handed over to local carrier|post office|postal service|usps|gofo|gateway|out for delivery|delivered|delivery|loaded on vehicle/i, 7],
   [/received by carrier|picked up|sorted|sorting|sort facility|warehouse|consignment|transit point|dispatched to next facility|inbound|outbound|processed through facility/i, 1],
 ];
@@ -327,7 +331,11 @@ export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
   { match: /^export customs clearance completed/i, from: ["Export customs clearance completed"], to: "Shipment processed for departure" },
   { match: /^(released by customs at origin|export released)/i, from: ["Released by customs at origin", "Export Released"], to: "Shipment cleared for departure" },
   { match: /^hand(ed)? over to airline/i, from: ["Hand over to airline"], to: "Handed over to transport partner" },
+  // Devolução ao remetente não é entrega (antes aparecia "Delivered", #WV1294).
+  { match: /^delivered,?\s+to\s+(the\s+)?original sender|^return(ed)? to sender/i, from: ["Delivered, To Original Sender", "Return to Sender"], to: "Returned to sender" },
   { match: /^delivered to\b/i, from: ["Delivered to local carrier"], to: "Handed over to local carrier" },
+  // Atraso de voo, qualquer mês ("Flight delayed. Estimated departure: Nov.3").
+  { match: /^flight delay/i, from: ["Flight delayed. Estimated departure: Oct.11", "flight delay"], to: "Departure rescheduled" },
   { match: /^parcel received by in [a-z]{3}\d*\.?$/i, from: ["Parcel received by in JFK01."], to: "Received at distribution center" },
   { match: /^parcel departed from facility\.?$/i, from: ["Parcel departed from Facility."], to: "Departed facility" },
   { match: /^acceptance\.?$/i, from: ["Acceptance"], to: "Package received by carrier" },

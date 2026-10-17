@@ -32,6 +32,8 @@ export function labelSaysDelivered(label: string | null | undefined): boolean {
   const t = label.trim().toLowerCase();
   if (!/^delivered\b/.test(t)) return false;
   if (/^delivered\s+to\b/.test(t)) return false;
+  // "Delivered, To Original Sender" = devolvido ao remetente (#WV1294).
+  if (/sender|return/.test(t)) return false;
   if (/\b(not|un|attempt\w*|fail\w*)\s*(to be\s*)?deliver/.test(t)) return false;
   return true;
 }
