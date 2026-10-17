@@ -81,23 +81,30 @@ export const CN_US_PHRASES: [RegExp, string][] = [
   [/离开处理中心|离开.*中心/, "Departed sorting facility"],
   [/到达处理中心|到达.*中心/, "Arrived at sorting facility"],
 ];
-// Etapas do China Post (em chinês) com nome neutro, os mesmos de EVENT_REWRITES
+// Etapas do China Post (em chinês) com nome neutro, os mesmos de EVENT_REWRITES.
+// Os nomes seguem a ordem real da entrega (recebido → separado → despachado →
+// saiu do centro → liberado pra partir → aguardando partida → partiu → chegou
+// → processando → liberado → centros nos EUA), pra a lista não "voltar etapa"
+// (ex.: "prepared for dispatch" depois de já ter saído)
 // — antes viravam todas "em trânsito" e o cliente via o mesmo texto 4-5 vezes
 // seguidas (186 de 1.144 rastreios em 16/10/2026). Vale depois da tradução dos
 // eventos nos EUA (translateUsEvent); local só nos EUA. O 1º que casar.
 export const CN_NEUTRAL: [RegExp, string][] = [
-  [/目的国清关完成/, "Processing complete – released for delivery"],
+  [/目的国清关完成|寄达地海关允许进口|进口海关.*放行/, "Processing complete – released for delivery"],
+  [/出口海关.*放行|出口.*放行/, "Shipment cleared for departure"],
+  [/送交境外进口海关|进口海关.*(留存|待验|扣留)/, "Shipment being processed – no action needed"],
   [/等待清关|清关中|海关查验/, "Shipment being processed – no action needed"],
   [/^抵达/, "Arrived at regional hub"],
   [/启运/, "Shipment departed sorting hub"],
   [/目的地转运/, "Handed over to local carrier"],
-  [/出口清关完成/, "Shipment prepared for dispatch"],
+  [/出口清关完成/, "Shipment processed for departure"],
   [/出口直封/, "Shipment sealed for transport"],
-  [/送交出口海关/, "Shipment submitted for dispatch"],
+  [/送交出口海关/, "Shipment submitted for departure processing"],
   [/交航/, "Handed over to transport partner"],
   [/已收取邮件/, "Package received by carrier"],
-  [/完成分拣/, "Processed at sorting facility"],
-  [/离开.*正在发往/, "In transit to next facility"],
+  [/完成分拣/, "Package sorted"],
+  [/离开.*正在发往/, "Dispatched to next facility"],
+  [/到达机场|等待航班/, "Awaiting departure"],
   [/到达处理中心|到达【.*互换局】/, "Arrived at sorting facility"],
   [/离开处理中心/, "Departed sorting facility"],
 ];
@@ -157,7 +164,8 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   const ordered = [...events].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
   // Desde quando o pacote está nos EUA (chegada/alfândega no destino, ou evento
   // de verdade com local de estado americano) — vale cidade sem estado.
-  const usSince = ordered.filter((e) => e.at && (US_ARRIVAL.test(e.description ?? "")
+  // Evento sem texto ("(中文:)" com local nos EUA) não conta.
+  const usSince = ordered.filter((e) => e.at && cleanEventText(e.description ?? "") && (US_ARRIVAL.test(e.description ?? "")
     || (usPlace(e.location).display && !INFO_ONLY.test(e.description ?? "")))).map((e) => e.at!).sort()[0];
   const place = (e: DisplayEvent) => usPlace(e.location).display ?? (usSince && e.at && e.at >= usSince ? cityOnly(e.location) : null);
   for (const e of ordered) {
@@ -204,6 +212,24 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   // pré-postagem em chinês, ex. "预报订单信息已收到") — sai.
   const labelAt = out.filter((e) => !e.generic && e.at && INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
   const kept = labelAt ? out.filter((e) => !(e.generic && e.at && e.at < labelAt)) : out;
+  // Etapa que volta: evento mais antigo dizendo que o pacote estava numa etapa
+  // MAIS adiantada que um mais novo sai. Algumas transportadoras publicam uma
+  // sequência "prevista" (entregue à aérea → partiu → chegou → liberado, todos
+  // com o mesmo minuto) dias antes da real, que repete tudo desde a liberação
+  // de exportação (ex.: JCZ0907024181DH) — sem isso a lista volta etapa.
+  let minRank = Infinity;
+  for (let i = 0; i < kept.length; i++) {
+    const e = kept[i];
+    // "Nos EUA" aqui só com local americano: a sequência prevista "chega" antes
+    // da hora e faria o armazém da China parecer evento nos EUA.
+    const r = e.generic ? null : stageOf(e.description, !!e.location);
+    // Manuseio na origem (armazém, triagem) nunca sai.
+    if (r == null || r === 1) continue;
+    // Evento nos EUA antes de o pacote sair da origem é da sequência prevista.
+    if (r === 7) { if (minRank <= 3) kept.splice(i--, 1); continue; }
+    if (r > minRank) { kept.splice(i--, 1); continue; }
+    minRank = r;
+  }
   // "Em trânsito" em dias seguidos com o mesmo texto parece pacote parado: cada
   // um da sequência ganha um texto diferente (do mais antigo pro mais novo).
   for (let i = kept.length - 1, k = 0; i >= 0; i--) {
@@ -213,6 +239,27 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   return kept;
 }
 export const LOCAL_TRANSIT = "In transit to local facility";
+// Etapa de cada texto mostrado, na ordem da entrega (usada pra tirar o que
+// "volta etapa"). null = sem etapa (o "em trânsito" genérico e textos soltos).
+// inUS: evento com local nos EUA ou depois da chegada — conta como etapa final.
+const STAGES: [RegExp, number][] = [
+  [/information received|info received|label created|order created|order received|electronic information|pre-shipment|preparing shipment|order info/i, 0],
+  [/processing complete|released for delivery/i, 6],
+  [/being processed/i, 5],
+  [/arrived at regional hub|destination hub/i, 4],
+  [/departed sorting hub/i, 3],
+  // Entrega à aérea vem antes ou depois da liberação, conforme a transportadora:
+  // não decide ordem (fica como manuseio, que nunca sai).
+  [/handed over to transport partner/i, 1],
+  [/for departure|sealed for transport|awaiting departure|airway bill|departure airport|flight/i, 2],
+  [/handed over to local carrier|post office|postal service|usps|gofo|gateway|out for delivery|delivered|delivery|loaded on vehicle/i, 7],
+  [/received by carrier|picked up|sorted|sorting|sort facility|warehouse|consignment|transit point|dispatched to next facility|inbound|outbound|processed through facility/i, 1],
+];
+export function stageOf(description: string, inUS: boolean): number | null {
+  const hit = STAGES.find(([re]) => re.test(description))?.[1] ?? null;
+  if (hit === 0 || hit == null) return null; // informação recebida vem fora de ordem às vezes — não tira nada por ela
+  return inUS && hit < 7 && hit !== 5 && hit !== 6 ? (hit === 1 ? 7 : hit) : hit;
+}
 // Textos do "em trânsito" em sequência (o 1º é o de sempre).
 export const TRANSIT_VARIANTS = [LOCAL_TRANSIT, "Shipment in transit", "Package moving through carrier network", "Shipment on the way"];
 // Já chegou nos EUA: a partir daqui o local que vem só com a cidade ("Atlanta",
@@ -247,8 +294,8 @@ export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
     from: ["Customs clearance to release", "Clearance processing completed at destination", "Import Released"], to: "Processing complete – released for delivery" },
   // Saída da origem: cada etapa com um nome diferente (o mesmo texto em
   // sequência parece pacote parado).
-  { match: /^export customs clearance completed/i, from: ["Export customs clearance completed"], to: "Shipment prepared for dispatch" },
-  { match: /^(released by customs at origin|export released)/i, from: ["Released by customs at origin", "Export Released"], to: "Shipment approved for departure" },
+  { match: /^export customs clearance completed/i, from: ["Export customs clearance completed"], to: "Shipment processed for departure" },
+  { match: /^(released by customs at origin|export released)/i, from: ["Released by customs at origin", "Export Released"], to: "Shipment cleared for departure" },
   { match: /^hand(ed)? over to airline/i, from: ["Hand over to airline"], to: "Handed over to transport partner" },
   { match: /^delivered to\b/i, from: ["Delivered to local carrier"], to: "Handed over to local carrier" },
   { match: /^parcel received by in [a-z]{3}\d*\.?$/i, from: ["Parcel received by in JFK01."], to: "Received at distribution center" },

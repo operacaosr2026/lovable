@@ -249,6 +249,8 @@ function RegrasTab() {
           "Evento que começa com “Delivered” e é entrega ao cliente (“Delivered, Front Door”, “Delivered, In/At Mailbox”…) conta como entregue, mesmo com o status geral ainda em “Out for delivery”.",
           "Pedido com mais de um pacote (itens em envios separados): só conta como entregue quando todos os pacotes forem entregues.",
           "Previsão de entrega: só a oficial da transportadora (não a estimada pelo 17track).",
+          "Ordem da entrega: algumas transportadoras publicam uma sequência “prevista” (partiu → chegou → liberado) dias antes da real. Marco mais antigo que diz uma etapa mais adiantada que um mais novo sai, e evento nos EUA antes de o pacote sair da origem também. Armazém e manuseio na origem nunca saem.",
+          "Nomes seguem a ordem real: recebido → separado → despachado → saiu do centro → liberado pra partir → aguardando partida → partiu → chegou → processando → liberado pra entrega → centros nos EUA.",
         ]} />
       </Section>
 
