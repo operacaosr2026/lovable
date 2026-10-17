@@ -8,7 +8,9 @@ export const TRACKING_BRAND = { name: "Voultie", logo: "/voultie-logo.png" };
 
 // generic: evento que não pode aparecer como veio (chinês, alfândega, aeroporto…)
 // e entrou só como "em trânsito".
-export type DisplayEvent = { at: string | null; description: string; location: string | null; generic?: boolean };
+// more: outros eventos da mesma leitura (mesmo minuto) e entregas repetidas —
+// a página mostra o principal e um "+" pra abrir os outros.
+export type DisplayEvent = { at: string | null; description: string; location: string | null; generic?: boolean; more?: DisplayEvent[] };
 export type DisplayStep = { label: string; at: string | null };
 
 // Qualquer caractere fora do ASCII (chinês, ou texto corrompido como "预报订�…").
@@ -276,8 +278,8 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   const kept = until ? out.filter((e) => !(e.generic && e.at && e.at <= until)) : out;
   // Vários eventos no mesmo minuto (a página mostra hora:minuto) = uma leitura
   // só com vários rótulos ("Parcel Departed" + "Picked Up", "Arrived at
-  // facility" + "information received"): fica um, o que mostra o pacote mais
-  // adiantado; empate, o texto mais completo.
+  // facility" + "information received"): aparece um, o que mostra o pacote mais
+  // adiantado (empate, o texto mais completo); os outros ficam no "+" dele.
   const minuteOf = (e: DisplayEvent) => (e.at ? isoMinute(e.at) : null);
   const byMin = new Map<string, DisplayEvent>();
   for (const e of kept) {
@@ -286,11 +288,23 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     const cur = byMin.get(m);
     if (!cur || sameScanScore(e) > sameScanScore(cur) || (sameScanScore(e) === sameScanScore(cur) && e.description.length > cur.description.length)) byMin.set(m, e);
   }
-  for (let i = 0; i < kept.length; i++) { const m = minuteOf(kept[i]); if (m && byMin.get(m) !== kept[i]) kept.splice(i--, 1); }
-  // Uma entrega só: algumas transportadoras mandam "Delivered" e horas depois
-  // "Delivered. (Recipient's front door)" — fica a 1ª (a hora de verdade).
+  const moreOf = new Map<DisplayEvent, DisplayEvent[]>();
+  const addMore = (main: DisplayEvent, e: DisplayEvent) => moreOf.set(main, [...(moreOf.get(main) ?? []), e]);
+  for (let i = 0; i < kept.length; i++) {
+    const m = minuteOf(kept[i]);
+    const main = m ? byMin.get(m) : undefined;
+    if (main && main !== kept[i]) { addMore(main, kept[i]); kept.splice(i--, 1); }
+  }
+  // Uma entrega à vista: algumas transportadoras mandam "Delivered" e horas
+  // depois "Delivered. (Recipient's front door)" — aparece a 1ª (a hora de
+  // verdade) e as outras ficam no "+" dela.
   const deliveries = kept.filter((e) => sameScanScore(e) === 9);
-  for (const e of deliveries.slice(0, -1)) kept.splice(kept.indexOf(e), 1);
+  const firstDelivery = deliveries[deliveries.length - 1];
+  for (const e of deliveries.slice(0, -1)) { addMore(firstDelivery, e); for (const x of moreOf.get(e) ?? []) addMore(firstDelivery, x); kept.splice(kept.indexOf(e), 1); }
+  for (let i = 0; i < kept.length; i++) {
+    const more = moreOf.get(kept[i]);
+    if (more?.length) kept[i] = { ...kept[i], more: more.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? "")) };
+  }
   // "Em trânsito" em dias seguidos com o mesmo texto parece pacote parado: cada
   // um da sequência ganha um texto diferente (do mais antigo pro mais novo).
   for (let i = kept.length - 1, k = 0; i >= 0; i--) {

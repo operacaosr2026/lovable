@@ -64,6 +64,7 @@ export function TrackingPageView({
   edd?: DisplayEdd | null;   // previsão oficial da transportadora (some depois de entregue)
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [openMore, setOpenMore] = useState<Set<number>>(new Set());
   const shown = showAll ? events : events.slice(0, 3);
   const title = STATUS_TEXT[status ?? ""] ?? steps[currentStep]?.label ?? "Order Ready";
 
@@ -108,8 +109,23 @@ export function TrackingPageView({
                       {i < shown.length - 1 && <span className="flex-1 border-l-2 border-dashed border-zinc-200 mt-2 -mb-6" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-base sm:text-lg">{e.location ? `${e.location}, ` : ""}{e.description}</p>
+                      <p className="text-base sm:text-lg">
+                        {e.location ? `${e.location}, ` : ""}{e.description}
+                        {/* Outros eventos da mesma leitura: "+N" abre embaixo. */}
+                        {!!e.more?.length && (
+                          <button onClick={() => setOpenMore((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; })}
+                            className="ml-2 align-middle text-xs sm:text-sm text-zinc-500 border border-zinc-300 rounded-full px-2 leading-5 hover:bg-zinc-100">
+                            {openMore.has(i) ? "−" : `+${e.more.length}`}
+                          </button>
+                        )}
+                      </p>
                       <p className="text-sm sm:text-base text-zinc-500">{fmtDateTime(e.at)}</p>
+                      {openMore.has(i) && e.more?.map((x, j) => (
+                        <div key={j} className="mt-2 pl-3 border-l-2 border-zinc-200">
+                          <p className="text-sm sm:text-base text-zinc-700">{x.location ? `${x.location}, ` : ""}{x.description}</p>
+                          <p className="text-xs sm:text-sm text-zinc-500">{fmtDateTime(x.at)}</p>
+                        </div>
+                      ))}
                     </div>
                   </li>
                 ))}
