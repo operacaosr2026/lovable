@@ -234,7 +234,7 @@ function RegrasTab() {
           <>Evento com alguma dessas palavras vira “{LOCAL_TRANSIT}”, sem local — no máximo um por dia:
             <div className="flex flex-wrap gap-1 mt-1.5">{HIDDEN_WORDS.map((w) => <Chip key={w}>{w.replace(/\\b/g, "").replace(/ \?/g, " ")}</Chip>)}</div></>,
           "Qualquer texto com caractere fora do padrão (chinês ou corrompido) também vira “em trânsito”.",
-          "Local só aparece se for nos EUA com estado (ex.: Phoenix, AZ), sem CEP. Fora dos EUA, o local some.",
+          "Local dos EUA aparece como vem, sem CEP: cidade e estado (Phoenix, AZ); só o estado vira o nome por extenso (US, CA 90640 → California); só a cidade (Atlanta) aparece depois que o pacote chega nos EUA. Local da China nunca aparece.",
           "Tira o local do começo do texto (“MA, US, Parcel has been delivered” → “Parcel has been delivered”) e a cópia “(中文:…)” do fim.",
           "Evento repetido (mesmo texto no mesmo lugar) aparece uma vez só.",
           "“Em trânsito” de antes da etiqueta criada sai (é o aviso de pré-postagem em chinês).",
