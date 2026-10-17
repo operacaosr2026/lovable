@@ -211,7 +211,11 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   // "Em trânsito" de antes da etiqueta criada não faz sentido (é o aviso de
   // pré-postagem em chinês, ex. "预报订单信息已收到") — sai.
   const labelAt = out.filter((e) => !e.generic && e.at && INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
-  const kept = labelAt ? out.filter((e) => !(e.generic && e.at && e.at < labelAt)) : out;
+  // Vale até o 1º movimento real (inclusive no mesmo segundo do aviso, e entre
+  // dois avisos: "order info received → em trânsito → label created").
+  const firstMove = out.filter((e) => !e.generic && e.at && !INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
+  const until = labelAt ? (firstMove && firstMove > labelAt ? firstMove : labelAt) : null;
+  const kept = until ? out.filter((e) => !(e.generic && e.at && e.at <= until)) : out;
   // Etapa que volta: evento mais antigo dizendo que o pacote estava numa etapa
   // MAIS adiantada que um mais novo sai. Algumas transportadoras publicam uma
   // sequência "prevista" (entregue à aérea → partiu → chegou → liberado, todos
@@ -303,7 +307,7 @@ export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
   { match: /^acceptance\.?$/i, from: ["Acceptance"], to: "Package received by carrier" },
 ];
 
-const INFO_ONLY = /information received|info received|label created|pre-shipment|electronic information|order created|shipment information/i;
+const INFO_ONLY = /information received|info received|label created|pre-shipment|electronic information|order created|order received|shipment information|preparing shipment/i;
 const OUT_FOR_DELIVERY = /out for delivery/i;
 // Entrega ao cliente ("Delivered, Front Door", "Parcel has been delivered") —
 // não "Delivered to local carrier" (repasse; na tela vira "Handed over to local carrier").
