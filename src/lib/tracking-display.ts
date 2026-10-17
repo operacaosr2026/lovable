@@ -140,13 +140,12 @@ function translateUsEvent(description: string, location: string | null): { descr
   return hit ? { description: hit[1], place } : null;
 }
 
-// Timeline gravada pelo sync (event_time_utc/event_detail) — e o formato antigo
-// do Track123 (eventTimeZeroUTC/eventDetail), que ainda existe em pedidos antigos.
+// Timeline gravada pelo sync do 17track (event_time_utc/event_detail/event_location).
 export function rawEvents(timeline: any[] | null | undefined): DisplayEvent[] {
   return (timeline ?? []).map((e: any) => ({
-    at: e?.event_time_utc ? `${String(e.event_time_utc).replace(" ", "T")}Z` : (e?.eventTimeZeroUTC ?? e?.time_utc ?? null),
-    description: String(e?.event_detail ?? e?.eventDetail ?? e?.description ?? "").trim(),
-    location: (e?.event_location || e?.address || e?.location || null) as string | null,
+    at: e?.event_time_utc ? `${String(e.event_time_utc).replace(" ", "T")}Z` : (e?.time_utc ?? null),
+    description: String(e?.event_detail ?? e?.description ?? "").trim(),
+    location: (e?.event_location || e?.location || null) as string | null,
   }));
 }
 
@@ -194,7 +193,6 @@ export function eventTextKey(d: string): string {
 export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, string>): DisplayEvent[] {
   const seen = new Set<string>();
   const out: DisplayEvent[] = [];
-  const allCaps = new Set<DisplayEvent>(); // texto original todo em maiúscula
   // Mais antigo primeiro: nos repetidos (e no "em trânsito" do dia) fica o 1º,
   // quando aconteceu de fato (a cópia que algumas transportadoras mandam horas
   // depois aparecia depois da entrega).
@@ -238,31 +236,10 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     } else {
       location = place(e);
     }
-    const shown: DisplayEvent = { at: e.at, description: description.charAt(0).toUpperCase() + description.slice(1), location };
-    if (!/[a-z]/.test(String(e.description ?? "")) && /[A-Z]/.test(String(e.description ?? ""))) allCaps.add(shown);
-    out.push(shown);
+    out.push({ at: e.at, description: description.charAt(0).toUpperCase() + description.slice(1), location });
   }
   out.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
-  // Cópia com fuso errado: o Track123 gravava cada evento também em CAIXA ALTA,
-  // horas cheias antes ("DELIVERED" 11:42:35 e "Delivered. (…front door)"
-  // 18:42:35 — mesmos minutos e segundos, JXCZI0004806217YQ). Sai a cópia em
-  // caixa alta; fica a que o 17track mostra.
-  const shiftKey = (e: DisplayEvent) => {
-    const t = e.at ? new Date(e.at) : null;
-    if (!t || Number.isNaN(t.getTime())) return null;
-    const d = e.description.toLowerCase().replace(/[.(].*$/, "").trim();
-    return `${(e.location ?? "").toLowerCase()}|${d}|${t.getUTCMinutes()}:${t.getUTCSeconds()}`;
-  };
-  const normalAt = new Map<string, number[]>();
-  for (const e of out) {
-    const k = shiftKey(e);
-    if (k && !allCaps.has(e)) normalAt.set(k, [...(normalAt.get(k) ?? []), new Date(e.at!).getTime()]);
-  }
-  for (let i = 0; i < out.length; i++) {
-    const e = out[i], k = allCaps.has(e) ? shiftKey(e) : null;
-    const t = e.at ? new Date(e.at).getTime() : NaN;
-    if (k && (normalAt.get(k) ?? []).some((n) => n !== t && (n - t) % 3_600_000 === 0 && Math.abs(n - t) <= 24 * 3_600_000)) out.splice(i--, 1);
-  }
+
   // Etapa que volta: evento mais antigo dizendo que o pacote estava numa etapa
   // MAIS adiantada que um mais novo sai. Algumas transportadoras publicam uma
   // sequência "prevista" (entregue à aérea → partiu → chegou → liberado, todos

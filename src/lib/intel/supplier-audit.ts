@@ -48,7 +48,7 @@ export function stageOf(detail: string): Stage {
 // Instante UTC do evento do rastreio: event_time_utc vem "2026-09-23 03:36:37" (sem fuso).
 function eventMs(e: any): number | null {
   const m = String(e?.event_time_utc ?? "").match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
-  const ms = m ? Date.parse(`${m[1]}T${m[2]}Z`) : Date.parse(e?.eventTimeZeroUTC ?? e?.date ?? "");
+  const ms = m ? Date.parse(`${m[1]}T${m[2]}Z`) : Date.parse(e?.date ?? "");
   return Number.isFinite(ms) ? ms : null;
 }
 
@@ -109,7 +109,7 @@ function buildOrder(o: AuditOrderInput, now: number) {
     if (Number.isFinite(at) && (codeAt == null || at < codeAt)) codeAt = at;
   }
   const events = ((o.timeline ?? []) as any[])
-    .map((e) => ({ ms: eventMs(e), detail: String(e?.event_detail ?? e?.eventDetail ?? ""), loc: e?.event_location ?? null }))
+    .map((e) => ({ ms: eventMs(e), detail: String(e?.event_detail ?? ""), loc: e?.event_location ?? null }))
     .filter((e): e is { ms: number; detail: string; loc: any } => e.ms != null)
     .sort((a, b) => a.ms - b.ms)
     .map((e) => ({ ...e, stage: stageOf(e.detail) }));
