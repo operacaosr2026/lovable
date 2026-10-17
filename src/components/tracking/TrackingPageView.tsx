@@ -140,8 +140,7 @@ export function TrackingPageView({
         </section>
 
         <section>
-          <h2 className="text-xl sm:text-2xl font-light mb-6">Package Info</h2>
-          <p className="text-base sm:text-lg mb-3">Destination</p>
+          <h2 className="text-xl sm:text-2xl font-light mb-6">Destination</h2>
           {destination ? (
             <div className="rounded-xl overflow-hidden border border-zinc-200 aspect-[4/3] relative">
               <iframe
