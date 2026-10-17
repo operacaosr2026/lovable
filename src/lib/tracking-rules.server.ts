@@ -1,3 +1,4 @@
+import { cleanEventText } from "@/lib/tracking-display";
 import { isoDateUS } from "@/lib/timezone";
 
 // Regras do rastreio usadas pelo sync (seventeen-track.server.ts): quando um
@@ -56,7 +57,9 @@ export function finalTrackingTarget(
 
 // Evento que é só a transportadora recebendo a info eletrônica / etiqueta
 // criada — o pacote ainda não foi postado.
-const INFO_ONLY_EVENT = /information received|info received|信息已收到|label created|pre-shipment|electronic information|order created/i;
+// "Order received" e "Preparing shipment" também são só aviso (postagem
+// adiantada em 9 pedidos, out/2026).
+const INFO_ONLY_EVENT = /information received|info received|信息已收到|label created|pre-shipment|electronic information|order created|order received|preparing shipment/i;
 
 // Dia (Nova York) da 1ª movimentação real do pacote no histórico — postagem
 // (definição do TM Postagem), pulando "informação eletrônica recebida".
@@ -64,7 +67,8 @@ export function firstCarrierEventDateUS(events: any[] | null | undefined): strin
   let first: string | null = null;
   for (const e of events ?? []) {
     const detail = String(e?.event_detail ?? e?.description ?? "");
-    if (!detail || INFO_ONLY_EVENT.test(detail)) continue;
+    // Evento vazio ("(中文:)", só com local) não é movimentação.
+    if (!cleanEventText(detail) || INFO_ONLY_EVENT.test(detail)) continue;
     const at = eventUtc(e?.event_time_utc, e?.time_utc ?? e?.event_time);
     if (at && Number.isFinite(Date.parse(at)) && (!first || Date.parse(at) < Date.parse(first))) first = at;
   }

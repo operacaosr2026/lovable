@@ -270,6 +270,9 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     } else if (cn) {
       description = cn.description;
       location = cn.place.display ?? place(e);
+      // 1ª chegada nos EUA do China Post vem só com "US" (sem cidade) e, horas
+      // depois, de novo com a cidade — nome diferente pra não parecer repetido.
+      if (!location && description === "Arrived at sorting facility") description = "Received at sorting center";
     } else if (cnNeutral) {
       description = cnNeutral;
       location = place(e);
