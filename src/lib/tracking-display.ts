@@ -34,7 +34,7 @@ export function usPlace(loc: string | null | undefined): { isUS: boolean; displa
   // CENTER") e "Chicago IL" sem vírgula → "ANAHEIM, CA"; "US ALMO,KY" → "ALMO, KY".
   const s = (loc ?? "").trim()
     .replace(/\s+(network\s+)?(distribution|processing|sort(ing)?)\s+(center|facility)$/i, "")
-    .replace(/^US\s+(?=[^,，]+[,，])/i, "")
+    .replace(/^US\s+(?=[^,，\s])/i, "")
     .replace(/^([^,，]+?)\s+([A-Za-z]{2})$/, (m, city, st) => (US_STATES.has(st.toUpperCase()) ? `${city}, ${st}` : m));
   if (!s || HIDDEN_EVENT.test(s)) return { isUS: false, display: null };
   const tokens = s.split(/\s*[,，]\s*/).map((t) => t.replace(/\s*\d{5}(-\d{4})?$/, "").trim()).filter(Boolean);
@@ -61,6 +61,24 @@ export const CN_US_PHRASES: [RegExp, string][] = [
   [/离开处理中心|离开.*中心/, "Departed sorting facility"],
   [/到达处理中心|到达.*中心/, "Arrived at sorting facility"],
 ];
+// Etapas do China Post (em chinês) com nome neutro, os mesmos de EVENT_REWRITES
+// — antes viravam todas "em trânsito" e o cliente via o mesmo texto 4-5 vezes
+// seguidas (186 de 1.144 rastreios em 16/10/2026). Vale depois da tradução dos
+// eventos nos EUA (translateUsEvent); local só nos EUA. O 1º que casar.
+export const CN_NEUTRAL: [RegExp, string][] = [
+  [/目的国清关完成/, "Processing complete – released for delivery"],
+  [/等待清关|清关中|海关查验/, "Shipment being processed – no action needed"],
+  [/^抵达/, "Arrived at regional hub"],
+  [/启运/, "Shipment departed sorting hub"],
+  [/目的地转运/, "Handed over to local carrier"],
+  [/出口清关完成|出口直封|送交出口海关/, "Shipment prepared for dispatch"],
+  [/已收取邮件/, "Package received by carrier"],
+  [/完成分拣/, "Processed at sorting facility"],
+  [/离开.*正在发往/, "In transit to next facility"],
+  [/到达处理中心|到达【.*互换局】/, "Arrived at sorting facility"],
+  [/离开处理中心/, "Departed sorting facility"],
+];
+
 // Local escrito dentro do texto: "【US Texas US， TX 76051】".
 const bracketPlace = (d: string) => d.match(/【([^】]*)】/)?.[1]?.replace(/^US\s+\w+\s+/i, "") ?? null;
 
@@ -119,12 +137,16 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     let location: string | null;
     const manual = description && overrides?.size ? overrides.get(eventTextKey(description)) : undefined;
     const cn = !manual && NON_ASCII.test(description) ? translateUsEvent(description, e.location) : null;
+    const cnNeutral = !manual && !cn && NON_ASCII.test(description) ? CN_NEUTRAL.find(([re]) => re.test(description))?.[1] : undefined;
     if (manual) {
       description = manual;
       location = usPlace(e.location).display;
     } else if (cn) {
       description = cn.description;
       location = cn.place.display;
+    } else if (cnNeutral) {
+      description = cnNeutral;
+      location = usPlace(e.location).display;
     } else if (!description) {
       continue;
     } else if (!NON_ASCII.test(description) && EVENT_REWRITES.some((r) => r.match.test(description))) {
@@ -153,7 +175,16 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   // "Em trânsito" de antes da etiqueta criada não faz sentido (é o aviso de
   // pré-postagem em chinês, ex. "预报订单信息已收到") — sai.
   const labelAt = out.filter((e) => !e.generic && e.at && INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
-  return labelAt ? out.filter((e) => !(e.generic && e.at && e.at < labelAt)) : out;
+  const kept = labelAt ? out.filter((e) => !(e.generic && e.at && e.at < labelAt)) : out;
+  // Mesmo texto em sequência parece pacote parado: "em trânsito" de dias
+  // seguidos fica só o mais novo, e o repetido sem local ao lado do mesmo texto
+  // com local sai (o com local diz mais).
+  return kept.filter((e, i) => {
+    const newer = kept[i - 1], older = kept[i + 1];
+    if (e.generic && newer?.generic) return false;
+    if (!e.location && [newer, older].some((n) => n && n.description === e.description && n.location)) return false;
+    return true;
+  });
 }
 export const LOCAL_TRANSIT = "In transit to local facility";
 // Textos em inglês trocados antes de aparecer pro cliente (o 1º que casar).
@@ -174,6 +205,8 @@ export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
     from: ["Customs clearance in progress", "Under Clearance", "Started the customs clearance process at destination", "Inbound Into Customs"], to: "Shipment being processed – no action needed" },
   { match: /^(customs clearance to release|clearance processing completed at destination|import released)/i,
     from: ["Customs clearance to release", "Clearance processing completed at destination", "Import Released"], to: "Processing complete – released for delivery" },
+  { match: /^(export customs clearance completed|released by customs at origin|export released|hand over to airline)/i,
+    from: ["Export customs clearance completed", "Released by customs at origin", "Export Released", "Hand over to airline"], to: "Shipment prepared for dispatch" },
   { match: /^delivered to\b/i, from: ["Delivered to local carrier"], to: "Handed over to local carrier" },
   { match: /^parcel received by in [a-z]{3}\d*\.?$/i, from: ["Parcel received by in JFK01."], to: "Received at distribution center" },
   { match: /^parcel departed from facility\.?$/i, from: ["Parcel departed from Facility."], to: "Departed facility" },

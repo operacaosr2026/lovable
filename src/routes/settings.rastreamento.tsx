@@ -7,7 +7,7 @@ import { ArrowRight, Check, Clock, EyeOff, Languages, Loader2, PackageCheck, Rep
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  TRACKING_BRAND, HIDDEN_WORDS, CN_HIDDEN, CN_US_PHRASES, LOCAL_TRANSIT, EVENT_REWRITES, cleanEventText,
+  TRACKING_BRAND, HIDDEN_WORDS, CN_HIDDEN, CN_US_PHRASES, CN_NEUTRAL, LOCAL_TRANSIT, EVENT_REWRITES, cleanEventText,
 } from "@/lib/tracking-display";
 import { listTrackingTexts, saveTrackingTextOverride, type TrackingTextRow } from "@/lib/tracking-texts.functions";
 
@@ -216,10 +216,10 @@ function RegrasTab() {
       </Section>
 
       <Section icon={Languages} title="Chinês traduzido (China Post / EMS)"
-        desc="Esses correios mandam tudo em chinês, até o que já acontece nos EUA. Só a movimentação dentro dos EUA é traduzida; o resto vira o “em trânsito” acima.">
+        desc="Esses correios mandam tudo em chinês, até o que já acontece nos EUA. Cada etapa vira um nome neutro (os mesmos dos textos em inglês); o que não está na lista vira o “em trânsito” acima.">
         <div className="space-y-2">
-          {CN_US_PHRASES.map(([re, to]) => (
-            <Rewrite key={to} to={to} from={<span className="flex flex-wrap gap-1">{alternatives(re).map((p) => <Chip key={p}>{p}</Chip>)}</span>} />
+          {[...CN_US_PHRASES, ...CN_NEUTRAL].map(([re, to]) => (
+            <Rewrite key={re.source} to={to} from={<span className="flex flex-wrap gap-1">{alternatives(re).map((p) => <Chip key={p}>{p}</Chip>)}</span>} />
           ))}
         </div>
         <div className="text-xs text-muted-foreground space-y-1.5">
