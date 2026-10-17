@@ -24,6 +24,18 @@ export const HIDDEN_WORDS = [
 ];
 const HIDDEN_EVENT = new RegExp(HIDDEN_WORDS.join("|"), "i");
 
+const STATE_BY_NAME = new Map(Object.entries({
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO", connecticut: "CT",
+  delaware: "DE", florida: "FL", georgia: "GA", hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA",
+  kansas: "KS", kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD", massachusetts: "MA", michigan: "MI",
+  minnesota: "MN", mississippi: "MS", missouri: "MO", montana: "MT", nebraska: "NE", nevada: "NV", "new hampshire": "NH",
+  "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", ohio: "OH",
+  oklahoma: "OK", oregon: "OR", pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+  tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT", virginia: "VA", washington: "WA", "west virginia": "WV",
+  wisconsin: "WI", wyoming: "WY",
+}));
+// Nome do estado no fim do local (depois de espaço/vírgula, ou o local inteiro).
+const STATE_NAME_RE = new RegExp(`(^|\\s+|\\s*[,，]\\s*)(${[...STATE_BY_NAME.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(" ", "\\s+")).join("|")})$`, "i");
 const US_STATES = new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC PR".split(" "));
 
 // Local nos EUA ("Phoenix,AZ", "MA, US", "US, TX 76051"). isUS diz se o lugar é
@@ -32,12 +44,14 @@ const US_STATES = new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA
 export function usPlace(loc: string | null | undefined): { isUS: boolean; display: string | null } {
   // Centro da USPS ("ANAHEIM CA DISTRIBUTION CENTER", "BATON ROUGE LA PROCESSING
   // CENTER") e "Chicago IL" sem vírgula → "ANAHEIM, CA"; "US ALMO,KY" → "ALMO, KY".
+  // Estado por extenso ("Scottsdale ARIZONA", "US LAKELAND FLORIDA") → sigla.
   const s = (loc ?? "").trim()
-    .replace(/\s+(network\s+)?(distribution|processing|sort(ing)?)\s+(center|facility)$/i, "")
+    .replace(/\s+(network\s+|package\s+)?(distribution|processing|logistics|sort(ing)?)\s+(center|facility)$/i, "")
     .replace(/^US\s+(?=[^,，\s])/i, "")
+    .replace(STATE_NAME_RE, (_m, sep: string, name: string) => `${sep ? ", " : ""}${STATE_BY_NAME.get(name.toLowerCase().replace(/\s+/g, " "))}`)
     .replace(/^([^,，]+?)\s+([A-Za-z]{2})$/, (m, city, st) => (US_STATES.has(st.toUpperCase()) ? `${city}, ${st}` : m));
   if (!s || HIDDEN_EVENT.test(s)) return { isUS: false, display: null };
-  const tokens = s.split(/\s*[,，]\s*/).map((t) => t.replace(/\s*\d{5}(-\d{4})?$/, "").trim()).filter(Boolean);
+  const tokens = s.split(/\s*[,，]\s*/).map((t) => t.replace(/\s*\d{4,5}(-\d{4})?$/, "").trim()).filter(Boolean);
   if (tokens.some((t) => NON_ASCII.test(t))) return { isUS: false, display: null };
   const isCountry = (t: string) => /^(US|USA|UNITED STATES)$/i.test(t);
   const hasCountry = tokens.some(isCountry);
@@ -71,7 +85,10 @@ export const CN_NEUTRAL: [RegExp, string][] = [
   [/^抵达/, "Arrived at regional hub"],
   [/启运/, "Shipment departed sorting hub"],
   [/目的地转运/, "Handed over to local carrier"],
-  [/出口清关完成|出口直封|送交出口海关/, "Shipment prepared for dispatch"],
+  [/出口清关完成/, "Shipment prepared for dispatch"],
+  [/出口直封/, "Shipment sealed for transport"],
+  [/送交出口海关/, "Shipment submitted for dispatch"],
+  [/交航/, "Handed over to transport partner"],
   [/已收取邮件/, "Package received by carrier"],
   [/完成分拣/, "Processed at sorting facility"],
   [/离开.*正在发往/, "In transit to next facility"],
@@ -132,6 +149,11 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   const out: DisplayEvent[] = [];
   // Mais novo primeiro: nos repetidos (e no "em trânsito" do dia) fica o mais recente.
   const ordered = [...events].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  // Desde quando o pacote está nos EUA (chegada/alfândega no destino, ou evento
+  // de verdade com local de estado americano) — vale cidade sem estado.
+  const usSince = ordered.filter((e) => e.at && (US_ARRIVAL.test(e.description ?? "")
+    || (usPlace(e.location).display && !INFO_ONLY.test(e.description ?? "")))).map((e) => e.at!).sort()[0];
+  const place = (e: DisplayEvent) => usPlace(e.location).display ?? (usSince && e.at && e.at >= usSince ? cityOnly(e.location) : null);
   for (const e of ordered) {
     let description = cleanEventText(String(e.description ?? "").trim());
     let location: string | null;
@@ -140,20 +162,20 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     const cnNeutral = !manual && !cn && NON_ASCII.test(description) ? CN_NEUTRAL.find(([re]) => re.test(description))?.[1] : undefined;
     if (manual) {
       description = manual;
-      location = usPlace(e.location).display;
+      location = place(e);
     } else if (cn) {
       description = cn.description;
-      location = cn.place.display;
+      location = cn.place.display ?? place(e);
     } else if (cnNeutral) {
       description = cnNeutral;
-      location = usPlace(e.location).display;
+      location = place(e);
     } else if (!description) {
       continue;
     } else if (!NON_ASCII.test(description) && EVENT_REWRITES.some((r) => r.match.test(description))) {
       // Etapa real com nome neutro (voo, alfândega, repasse…): aparece no lugar
       // do "em trânsito" repetido, com o local só se for nos EUA.
       description = EVENT_REWRITES.find((r) => r.match.test(description))!.to;
-      location = usPlace(e.location).display;
+      location = place(e);
     } else if (NON_ASCII.test(description) || HIDDEN_EVENT.test(description)) {
       // Não some (o cliente vê que o pacote está andando): vira "em trânsito",
       // sem local — um por dia, pra não encher o histórico de linhas iguais.
@@ -163,7 +185,7 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
       out.push({ at: e.at, description: LOCAL_TRANSIT, location: null, generic: true });
       continue;
     } else {
-      location = usPlace(e.location).display;
+      location = place(e);
     }
     // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
     const key = `${location}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
@@ -176,17 +198,29 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   // pré-postagem em chinês, ex. "预报订单信息已收到") — sai.
   const labelAt = out.filter((e) => !e.generic && e.at && INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
   const kept = labelAt ? out.filter((e) => !(e.generic && e.at && e.at < labelAt)) : out;
-  // Mesmo texto em sequência parece pacote parado: "em trânsito" de dias
-  // seguidos fica só o mais novo, e o repetido sem local ao lado do mesmo texto
-  // com local sai (o com local diz mais).
-  return kept.filter((e, i) => {
-    const newer = kept[i - 1], older = kept[i + 1];
-    if (e.generic && newer?.generic) return false;
-    if (!e.location && [newer, older].some((n) => n && n.description === e.description && n.location)) return false;
-    return true;
-  });
+  // "Em trânsito" em dias seguidos com o mesmo texto parece pacote parado: cada
+  // um da sequência ganha um texto diferente (do mais antigo pro mais novo).
+  for (let i = kept.length - 1, k = 0; i >= 0; i--) {
+    if (!kept[i].generic) { k = 0; continue; }
+    kept[i] = { ...kept[i], description: TRANSIT_VARIANTS[k++ % TRANSIT_VARIANTS.length] };
+  }
+  return kept;
 }
 export const LOCAL_TRANSIT = "In transit to local facility";
+// Textos do "em trânsito" em sequência (o 1º é o de sempre).
+export const TRANSIT_VARIANTS = [LOCAL_TRANSIT, "Shipment in transit", "Package moving through carrier network", "Shipment on the way"];
+// Já chegou nos EUA: a partir daqui o local que vem só com a cidade ("Atlanta",
+// "Los Angeles") aparece — antes disso pode ser cidade da China.
+const US_ARRIVAL = /arrived at destination airport|shipment arrived at airport|clearance in progress|under clearance|at destination|import released|inbound into customs|^delivered to\b|抵达【US】|【美国】|目的国|目的地转运/i;
+// Local que veio só com a cidade (sem estado): fica se não for da China/código.
+function cityOnly(loc: string | null | undefined): string | null {
+  const s = (loc ?? "").trim().replace(/\s*\d{5}(-\d{4})?$/, "").replace(/[,\s]+(US|USA)$/i, "").trim();
+  // Nome de galpão/código ("USPS Facility", "ORD HUB", "EWR_JFK Warehouse",
+  // "Delivery Location", "IND.H") não é cidade.
+  if (!s || NON_ASCII.test(s) || HIDDEN_EVENT.test(s) || /^[A-Z]{3}$/.test(s) || /^(US|USA)$/i.test(s)
+    || /facility|location|\bhub\b|warehouse|center|station|[_.]/i.test(s)) return null;
+  return s;
+}
 // Textos em inglês trocados antes de aparecer pro cliente (o 1º que casar).
 // Etapas reais com nome neutro — continua verdade e não fala de voo/alfândega —
 // pra o cliente não ver o mesmo "em trânsito" dias seguidos e achar que parou.
@@ -205,8 +239,11 @@ export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
     from: ["Customs clearance in progress", "Under Clearance", "Started the customs clearance process at destination", "Inbound Into Customs"], to: "Shipment being processed – no action needed" },
   { match: /^(customs clearance to release|clearance processing completed at destination|import released)/i,
     from: ["Customs clearance to release", "Clearance processing completed at destination", "Import Released"], to: "Processing complete – released for delivery" },
-  { match: /^(export customs clearance completed|released by customs at origin|export released|hand over to airline)/i,
-    from: ["Export customs clearance completed", "Released by customs at origin", "Export Released", "Hand over to airline"], to: "Shipment prepared for dispatch" },
+  // Saída da origem: cada etapa com um nome diferente (o mesmo texto em
+  // sequência parece pacote parado).
+  { match: /^export customs clearance completed/i, from: ["Export customs clearance completed"], to: "Shipment prepared for dispatch" },
+  { match: /^(released by customs at origin|export released)/i, from: ["Released by customs at origin", "Export Released"], to: "Shipment approved for departure" },
+  { match: /^hand(ed)? over to airline/i, from: ["Hand over to airline"], to: "Handed over to transport partner" },
   { match: /^delivered to\b/i, from: ["Delivered to local carrier"], to: "Handed over to local carrier" },
   { match: /^parcel received by in [a-z]{3}\d*\.?$/i, from: ["Parcel received by in JFK01."], to: "Received at distribution center" },
   { match: /^parcel departed from facility\.?$/i, from: ["Parcel departed from Facility."], to: "Departed facility" },
