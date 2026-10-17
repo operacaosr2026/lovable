@@ -47,6 +47,61 @@ const US_STATES = new Set(Object.keys(STATE_NAMES));
 // Local nos EUA ("Phoenix,AZ", "MA, US", "US, TX 76051"). isUS diz se o lugar é
 // nos EUA mesmo sem estado ("US"); display é o que aparece (sem CEP), só com estado.
 // Também usada em "Recent deliveries" (public-tracking.server.ts) pra validar a cidade.
+// Sigla do estado americano do local ("Boise,ID,US,83709" → "ID",
+// "US DANVILLE CALIFORNIA" → "CA"), ou null.
+export function usStateCode(loc: string | null | undefined): string | null {
+  const d = usPlace(loc).display;
+  if (!d) return null;
+  const m = d.match(/,\s*([A-Z]{2})$/);
+  if (m) return m[1];
+  return STATE_BY_NAME.get(d.toLowerCase()) ?? null;
+}
+
+// Fuso de cada estado (o principal, nos estados com mais de um).
+const STATE_TZ: Record<string, string> = Object.fromEntries([
+  ...["CT", "DE", "DC", "FL", "GA", "IN", "KY", "ME", "MD", "MA", "MI", "NH", "NJ", "NY", "NC", "OH", "PA", "RI", "SC", "VT", "VA", "WV"].map((s) => [s, "America/New_York"]),
+  ...["AL", "AR", "IL", "IA", "KS", "LA", "MN", "MS", "MO", "NE", "ND", "OK", "SD", "TN", "TX", "WI"].map((s) => [s, "America/Chicago"]),
+  ...["CO", "ID", "MT", "NM", "UT", "WY"].map((s) => [s, "America/Denver"]),
+  ["AZ", "America/Phoenix"],
+  ...["CA", "NV", "OR", "WA"].map((s) => [s, "America/Los_Angeles"]),
+  ["AK", "America/Anchorage"], ["HI", "Pacific/Honolulu"], ["PR", "America/Puerto_Rico"],
+  ["VI", "America/St_Thomas"], ["GU", "Pacific/Guam"], ["MP", "Pacific/Saipan"], ["AS", "Pacific/Pago_Pago"],
+]);
+
+// "2026-09-27 11:24:03" no fuso tz → instante UTC "2026-09-27 17:24:03".
+function localToUtcText(local: string, tz: string): string | null {
+  const m = local.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0));
+  const offsetAt = (ms: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      .formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - ms;
+  };
+  let utc = wall - offsetAt(wall);
+  utc = wall - offsetAt(utc); // acerta na virada do horário de verão
+  return new Date(utc).toISOString().replace("T", " ").slice(0, 19);
+}
+
+// Horário certo (UTC) de um evento do 17track. Algumas transportadoras (JCZ,
+// JXCZI) mandam o horário dos eventos nos EUA na hora LOCAL americana, mas
+// marcado como hora da China (+08:00); o 17track tira 8h e o horário fica
+// 13-16h errado (entrega às 11:24 em Boise aparecia 21:24 do dia anterior).
+// Medido em 16/10/2026: nesses eventos, 90-100% das "saiu pra entrega" caem
+// de manhã lendo o bruto como hora local. O China Post (texto em chinês) manda
+// mesmo na hora da China e fica como está; evento sem estado também.
+export function eventUtcFixed(e: { event_time?: string | null; event_time_utc?: string | null; event_detail?: string | null; event_location?: string | null }): string | null {
+  const utc = e.event_time_utc ?? null;
+  const raw = e.event_time ?? null;
+  if (!utc || !raw) return utc;
+  const rawMs = Date.parse(`${raw.replace(" ", "T").slice(0, 19)}Z`), utcMs = Date.parse(`${utc.replace(" ", "T").slice(0, 19)}Z`);
+  if (!Number.isFinite(rawMs) || !Number.isFinite(utcMs) || rawMs - utcMs !== 8 * 3_600_000) return utc;
+  if (NON_ASCII.test(cleanEventText(String(e.event_detail ?? "")))) return utc;
+  const st = usStateCode(e.event_location);
+  const tz = st ? STATE_TZ[st] : null;
+  return (tz && localToUtcText(raw, tz)) || utc;
+}
+
 export function usPlace(loc: string | null | undefined): { isUS: boolean; display: string | null } {
   // Centro da USPS ("ANAHEIM CA DISTRIBUTION CENTER", "BATON ROUGE LA PROCESSING
   // CENTER") e "Chicago IL" sem vírgula → "ANAHEIM, CA"; "US ALMO,KY" → "ALMO, KY".

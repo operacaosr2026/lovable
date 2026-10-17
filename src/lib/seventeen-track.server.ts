@@ -6,7 +6,7 @@ import { isoTodayUS } from "@/lib/timezone";
 import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent, labelSaysDelivered } from "@/lib/tracking-rules.server";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { pushFulfillmentStatusToShopify, updateFulfillmentTrackingUrl } from "@/lib/shopify-fulfillment-status.server";
-import { officialEdd } from "@/lib/tracking-display";
+import { eventUtcFixed, officialEdd } from "@/lib/tracking-display";
 
 // Rastreio pelo 17track (substituiu o Track123 em out/2026). Uma conta só pra
 // todas as lojas (SEVENTEEN_TRACK_API_KEY); a tabela track123_integrations
@@ -71,12 +71,14 @@ function toTimeline(item: any) {
   const providers: any[] = item?.track_info?.tracking?.providers ?? [];
   return providers.flatMap((p) => (p.events ?? []).map((e: any) => {
     const utc = e.time_utc ? utcText(e.time_utc) : null;
-    return {
+    const ev = {
       event_time_utc: utc,
       event_time: e.time_raw?.date ? `${e.time_raw.date} ${e.time_raw.time ?? ""}`.trim() : utc,
       event_detail: String(e.description ?? "").trim(),
       event_location: e.location || placeOf(e.address),
     };
+    // Evento nos EUA com a hora local marcada como hora da China (ver eventUtcFixed).
+    return { ...ev, event_time_utc: eventUtcFixed(ev) };
   })).filter((e) => e.event_detail).sort((a, b) => (b.event_time_utc ?? "").localeCompare(a.event_time_utc ?? ""));
 }
 
