@@ -161,6 +161,10 @@ export function cleanEventText(d: string): string {
   let t = stripLocationPrefix(d).split(/\s+->\s+/)[0].replace(/[.,]?\s*for delivery issues\b.*$/i, "").trim();
   const half = t.length / 2;
   if (t.length >= 10 && Number.isInteger(half) && t.slice(0, half) === t.slice(half)) t = t.slice(0, half).trim();
+  // Categoria que a USPS põe na frente ("On the Way, Arrived at USPS Facility",
+  // "Preparing for Delivery, Arrived at Post Office", "USPS Awaiting Item, …"):
+  // ela manda também a versão sem, no mesmo segundo.
+  t = t.replace(/^(on the way|preparing for delivery|usps awaiting item|usps in possession of item)[,\s]+(?=\S)/i, "");
   return t;
 }
 
@@ -231,13 +235,37 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     } else {
       location = place(e);
     }
-    // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
-    const key = `${(location ?? "").toLowerCase()}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
     out.push({ at: e.at, description: description.charAt(0).toUpperCase() + description.slice(1), location });
   }
   out.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  // Etapa que volta: evento mais antigo dizendo que o pacote estava numa etapa
+  // MAIS adiantada que um mais novo sai. Algumas transportadoras publicam uma
+  // sequência "prevista" (entregue à aérea → partiu → chegou → liberado, todos
+  // com o mesmo minuto) dias antes da real, que repete tudo desde a liberação
+  // de exportação (ex.: JCZ0907024181DH) — sem isso a lista volta etapa. Roda
+  // antes de juntar os repetidos: a prevista tem os mesmos textos da real.
+  let minRank = Infinity;
+  for (let i = 0; i < out.length; i++) {
+    const e = out[i];
+    // "Nos EUA" aqui só com local americano: a sequência prevista "chega" antes
+    // da hora e faria o armazém da China parecer evento nos EUA.
+    const r = e.generic ? null : stageOf(e.description, !!e.location);
+    // Manuseio na origem (armazém, triagem) nunca sai.
+    if (r == null || r === 1) continue;
+    // Evento nos EUA antes de o pacote sair da origem é da sequência prevista.
+    if (r === 7) { if (minRank <= 3) out.splice(i--, 1); continue; }
+    if (r > minRank) { out.splice(i--, 1); continue; }
+    minRank = r;
+  }
+  // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.")
+  // = repetido: fica o 1º, quando aconteceu de fato (a cópia que algumas
+  // transportadoras mandam horas depois aparecia depois da entrega). Marco de
+  // saída/chegada/liberação repetido fica o mais novo (o da sequência real).
+  const keyOf = (e: DisplayEvent) => `${(e.location ?? "").toLowerCase()}|${e.description.toLowerCase().replace(/[.\s]+$/, "")}`;
+  const milestone = (e: DisplayEvent) => /transport partner/i.test(e.description) || [2, 3, 4, 5, 6].includes(stageOf(e.description, false) ?? -1);
+  const pick = new Map<string, DisplayEvent>();
+  for (const e of out) { if (e.generic) continue; const k = keyOf(e); if (!pick.has(k) || !milestone(e)) pick.set(k, e); }
+  for (let i = 0; i < out.length; i++) if (!out[i].generic && pick.get(keyOf(out[i])) !== out[i]) out.splice(i--, 1);
   // "Em trânsito" de antes da etiqueta criada não faz sentido (é o aviso de
   // pré-postagem em chinês, ex. "预报订单信息已收到") — sai.
   const labelAt = out.filter((e) => !e.generic && e.at && INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
@@ -246,24 +274,23 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   const firstMove = out.filter((e) => !e.generic && e.at && !INFO_ONLY.test(e.description)).map((e) => e.at!).sort()[0];
   const until = labelAt ? (firstMove && firstMove > labelAt ? firstMove : labelAt) : null;
   const kept = until ? out.filter((e) => !(e.generic && e.at && e.at <= until)) : out;
-  // Etapa que volta: evento mais antigo dizendo que o pacote estava numa etapa
-  // MAIS adiantada que um mais novo sai. Algumas transportadoras publicam uma
-  // sequência "prevista" (entregue à aérea → partiu → chegou → liberado, todos
-  // com o mesmo minuto) dias antes da real, que repete tudo desde a liberação
-  // de exportação (ex.: JCZ0907024181DH) — sem isso a lista volta etapa.
-  let minRank = Infinity;
-  for (let i = 0; i < kept.length; i++) {
-    const e = kept[i];
-    // "Nos EUA" aqui só com local americano: a sequência prevista "chega" antes
-    // da hora e faria o armazém da China parecer evento nos EUA.
-    const r = e.generic ? null : stageOf(e.description, !!e.location);
-    // Manuseio na origem (armazém, triagem) nunca sai.
-    if (r == null || r === 1) continue;
-    // Evento nos EUA antes de o pacote sair da origem é da sequência prevista.
-    if (r === 7) { if (minRank <= 3) kept.splice(i--, 1); continue; }
-    if (r > minRank) { kept.splice(i--, 1); continue; }
-    minRank = r;
+  // Vários eventos no mesmo minuto (a página mostra hora:minuto) = uma leitura
+  // só com vários rótulos ("Parcel Departed" + "Picked Up", "Arrived at
+  // facility" + "information received"): fica um, o que mostra o pacote mais
+  // adiantado; empate, o texto mais completo.
+  const minuteOf = (e: DisplayEvent) => (e.at ? isoMinute(e.at) : null);
+  const byMin = new Map<string, DisplayEvent>();
+  for (const e of kept) {
+    const m = minuteOf(e);
+    if (!m) continue;
+    const cur = byMin.get(m);
+    if (!cur || sameScanScore(e) > sameScanScore(cur) || (sameScanScore(e) === sameScanScore(cur) && e.description.length > cur.description.length)) byMin.set(m, e);
   }
+  for (let i = 0; i < kept.length; i++) { const m = minuteOf(kept[i]); if (m && byMin.get(m) !== kept[i]) kept.splice(i--, 1); }
+  // Uma entrega só: algumas transportadoras mandam "Delivered" e horas depois
+  // "Delivered. (Recipient's front door)" — fica a 1ª (a hora de verdade).
+  const deliveries = kept.filter((e) => sameScanScore(e) === 9);
+  for (const e of deliveries.slice(0, -1)) kept.splice(kept.indexOf(e), 1);
   // "Em trânsito" em dias seguidos com o mesmo texto parece pacote parado: cada
   // um da sequência ganha um texto diferente (do mais antigo pro mais novo).
   for (let i = kept.length - 1, k = 0; i >= 0; i--) {
@@ -273,6 +300,22 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
   return kept;
 }
 export const LOCAL_TRANSIT = "In transit to local facility";
+// "2026-09-08T16:41:17Z" → "2026-09-08T16:41" (o que a página mostra).
+const isoMinute = (at: string) => { const d = new Date(at); return Number.isNaN(d.getTime()) ? at.slice(0, 16) : d.toISOString().slice(0, 16); };
+// Quanto o texto mostra o pacote adiantado (pra escolher um entre eventos do
+// mesmo segundo).
+function sameScanScore(e: DisplayEvent): number {
+  const d = e.description;
+  if (e.generic) return 0;
+  if (/^delivered\b(?!\s+to\b)|has been delivered/i.test(d)) return 9;
+  if (/out for delivery/i.test(d)) return 8;
+  if (/available for pickup|post office/i.test(d)) return 7;
+  if (/departed|leave|left|dispatched|in transit|moving|on the way|handed over/i.test(d)) return 5;
+  if (/arrived|arrival|received at|inbound|scan|accepted|processed|processing|sorted|outbound/i.test(d)) return 4;
+  if (/picked up|received by carrier/i.test(d)) return 3;
+  if (INFO_ONLY.test(d)) return 1;
+  return 2;
+}
 // Etapa de cada texto mostrado, na ordem da entrega (usada pra tirar o que
 // "volta etapa"). null = sem etapa (o "em trânsito" genérico e textos soltos).
 // inUS: evento com local nos EUA ou depois da chegada — conta como etapa final.
