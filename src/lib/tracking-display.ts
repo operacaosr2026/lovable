@@ -64,9 +64,10 @@ export function usPlace(loc: string | null | undefined): { isUS: boolean; displa
   if (state && US_STATES.has(state)) {
     // Só o estado (sem cidade): por extenso.
     if (rest.length === 1) return { isUS: true, display: STATE_NAMES[state] };
-    return { isUS: true, display: rest.map((p, i) => (i === rest.length - 1 ? p.toUpperCase() : p)).join(", ") };
+    return { isUS: true, display: rest.map((p, i) => (i === rest.length - 1 ? p.toUpperCase() : titleCity(p))).join(", ") };
   }
-  return { isUS: hasCountry && rest.length === 0, display: null };
+  // "US, Columbia": é nos EUA, mas sem estado reconhecido não mostra local.
+  return { isUS: hasCountry, display: null };
 }
 
 // Correios chineses (China Post/EMS) mandam tudo em chinês, inclusive o que já
@@ -91,6 +92,17 @@ export const CN_US_PHRASES: [RegExp, string][] = [
 // eventos nos EUA (translateUsEvent); local só nos EUA. O 1º que casar.
 export const CN_NEUTRAL: [RegExp, string][] = [
   [/目的国清关完成|寄达地海关允许进口|进口海关.*放行/, "Processing complete – released for delivery"],
+  [/清关异常/, "Shipment being processed – no action needed"],
+  [/已妥投|妥投/, "Delivered"],
+  [/安排投递|出门投递|(派送|投递)中/, "Out for delivery"],
+  [/投递局/, "Arrived at local post office"],
+  [/飞机进港/, "Arrived at regional hub"],
+  [/到达寄达地/, "Arrived at destination facility"],
+  [/到达境外经转局/, "Arrived at sorting facility"],
+  [/已交承运商运输/, "Handed over to transport partner"],
+  [/航空公司接收/, "Accepted by transport partner"],
+  [/等待.*取件|待取件/, "Available for pickup"],
+  [/延误|起飞/, "Awaiting departure"],
   [/出口海关.*放行|出口.*放行/, "Shipment cleared for departure"],
   [/送交境外进口海关|进口海关.*(留存|待验|扣留)/, "Shipment being processed – no action needed"],
   [/等待清关|清关中|海关查验/, "Shipment being processed – no action needed"],
@@ -148,6 +160,18 @@ export function cleanEventText(d: string): string {
   return t;
 }
 
+// Texto todo em CAIXA ALTA ("ARRIVED AT USPS FACILITY") → normal ("Arrived at
+// USPS facility"), mantendo siglas. Algumas transportadoras mandam cada evento
+// em caixa alta e de novo normal — assim viram o mesmo e um some.
+const KEEP_UPPER = new Set(["USPS", "UPS", "US", "USA", "GOFO", "DHL", "PO", "ID", "AM", "PM"]);
+export function tidyCase(d: string): string {
+  if (/[a-z]/.test(d) || !/[A-Z].*[A-Z]/.test(d)) return d;
+  const out = d.toLowerCase().replace(/[a-z]+/g, (w) => (KEEP_UPPER.has(w.toUpperCase()) ? w.toUpperCase() : w));
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+// Cidade em CAIXA ALTA ("DANVILLE") → "Danville"; sigla do estado continua.
+const titleCity = (t: string) => (/[a-z]/.test(t) ? t : t.toLowerCase().replace(/[a-z]/g, (c) => c.toUpperCase()));
+
 // Chave do texto pros textos trocados na mão (Configurações › Rastreamento ›
 // Textos): sem maiúscula/minúscula, ponto final e números (datas, horários) —
 // "Flight delayed. Estimated departure: Oct.11" e "…Oct.13" são o mesmo texto.
@@ -160,8 +184,10 @@ export function eventTextKey(d: string): string {
 export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, string>): DisplayEvent[] {
   const seen = new Set<string>();
   const out: DisplayEvent[] = [];
-  // Mais novo primeiro: nos repetidos (e no "em trânsito" do dia) fica o mais recente.
-  const ordered = [...events].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  // Mais antigo primeiro: nos repetidos (e no "em trânsito" do dia) fica o 1º,
+  // quando aconteceu de fato (a cópia que algumas transportadoras mandam horas
+  // depois aparecia depois da entrega).
+  const ordered = [...events].sort((a, b) => (a.at ?? "").localeCompare(b.at ?? ""));
   // Desde quando o pacote está nos EUA (chegada/alfândega no destino, ou evento
   // de verdade com local de estado americano) — vale cidade sem estado.
   // Evento sem texto ("(中文:)" com local nos EUA) não conta.
@@ -169,7 +195,7 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
     || (usPlace(e.location).display && !INFO_ONLY.test(e.description ?? "")))).map((e) => e.at!).sort()[0];
   const place = (e: DisplayEvent) => usPlace(e.location).display ?? (usSince && e.at && e.at >= usSince ? cityOnly(e.location) : null);
   for (const e of ordered) {
-    let description = cleanEventText(String(e.description ?? "").trim());
+    let description = tidyCase(cleanEventText(String(e.description ?? "").trim()));
     let location: string | null;
     const manual = description && overrides?.size ? overrides.get(eventTextKey(description)) : undefined;
     const cn = !manual && NON_ASCII.test(description) ? translateUsEvent(description, e.location) : null;
@@ -202,7 +228,7 @@ export function sanitizeEvents(events: DisplayEvent[], overrides?: Map<string, s
       location = place(e);
     }
     // Mesmo texto no mesmo lugar ("Shipment information received" e "…received.") = repetido.
-    const key = `${location}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
+    const key = `${(location ?? "").toLowerCase()}|${description.toLowerCase().replace(/[.\s]+$/, "")}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ at: e.at, description: description.charAt(0).toUpperCase() + description.slice(1), location });
@@ -250,11 +276,11 @@ const STAGES: [RegExp, number][] = [
   [/information received|info received|label created|order created|order received|electronic information|pre-shipment|preparing shipment|order info/i, 0],
   [/processing complete|released for delivery/i, 6],
   [/being processed/i, 5],
-  [/arrived at regional hub|destination hub/i, 4],
+  [/arrived at regional hub|destination hub|destination facility/i, 4],
   [/departed sorting hub/i, 3],
   // Entrega à aérea vem antes ou depois da liberação, conforme a transportadora:
   // não decide ordem (fica como manuseio, que nunca sai).
-  [/handed over to transport partner/i, 1],
+  [/handed over to transport partner|accepted by transport partner/i, 1],
   [/for departure|sealed for transport|awaiting departure|airway bill|departure airport|flight/i, 2],
   [/handed over to local carrier|post office|postal service|usps|gofo|gateway|out for delivery|delivered|delivery|loaded on vehicle/i, 7],
   [/received by carrier|picked up|sorted|sorting|sort facility|warehouse|consignment|transit point|dispatched to next facility|inbound|outbound|processed through facility/i, 1],
@@ -294,8 +320,8 @@ export const EVENT_REWRITES: { match: RegExp; from: string[]; to: string }[] = [
     from: ["Arrived at destination airport", "Shipment arrived at airport"], to: "Arrived at regional hub" },
   { match: /^(customs clearance in progress|under clearance|started the customs clearance process at destination|inbound into customs)/i,
     from: ["Customs clearance in progress", "Under Clearance", "Started the customs clearance process at destination", "Inbound Into Customs"], to: "Shipment being processed – no action needed" },
-  { match: /^(customs clearance to release|clearance processing completed at destination|import released)/i,
-    from: ["Customs clearance to release", "Clearance processing completed at destination", "Import Released"], to: "Processing complete – released for delivery" },
+  { match: /^(customs clearance to release|clearance processing completed at destination|import released|inbound out of customs)/i,
+    from: ["Customs clearance to release", "Clearance processing completed at destination", "Import Released", "Inbound Out of Customs"], to: "Processing complete – released for delivery" },
   // Saída da origem: cada etapa com um nome diferente (o mesmo texto em
   // sequência parece pacote parado).
   { match: /^export customs clearance completed/i, from: ["Export customs clearance completed"], to: "Shipment processed for departure" },
