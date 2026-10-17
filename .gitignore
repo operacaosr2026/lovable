@@ -41,3 +41,6 @@ supabase/.temp/
 
 # Configurações locais do Claude Code (permissões da máquina)
 .claude/settings.local.json
+
+# Gerado no build (scripts/build-track-page.mjs)
+public/track-page.js
