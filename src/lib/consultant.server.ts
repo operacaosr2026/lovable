@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { checkShippingPromise, shippingPromiseFacts, type ShippingPromiseFacts } from "@/lib/shipping-promise.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoTodayUS } from "@/lib/timezone";
@@ -326,6 +327,9 @@ export async function buildConsultantFacts(ownerId: string) {
       projecao_fim_do_mes: g.projecao != null ? r2(g.projecao) : null, situacao: g.status })))
     .catch(() => []);
 
+  // ── Prazo prometido na política de frete × real (shipping-promise.server.ts) ──
+  const prazo_politica_frete = await shippingPromiseFacts(ownerId, shopIds).catch((e) => ({ erro: String(e?.message ?? e) }));
+
   const { data: settings } = await supabaseAdmin.from("consultant_settings").select("context").eq("user_id", ownerId).maybeSingle();
 
   return {
@@ -338,6 +342,7 @@ export async function buildConsultantFacts(ownerId: string) {
       "Código de rastreio criado NÃO significa pedido enviado: o fornecedor pode gerar o código sem entregar o pacote. Postagem = 1ª movimentação real no rastreio. 'Pago ao fornecedor' = dia em que o pedido foi marcado como pago.",
       "Bandeira/risco/gateway: pedidos dos últimos ~150 dias. Chargeback costuma abrir semanas depois da compra, então a taxa com todos os pedidos subestima o risco dos recentes (o chargeback deles ainda não abriu); por_bandeira_so_pedidos_com_25_dias dá a taxa mais confiável, a de todos os pedidos mostra o sinal mais cedo.",
       "TM Postagem em dias úteis (sem fim de semana e feriados da China); TM Entrega em dias corridos.",
+      "prazo_politica_frete: o que a política de frete de cada loja promete (postagem e entrega nos EUA, em dias úteis) × o real dos pedidos entregues nos últimos 90 dias. Se menos de 90% cumprem, avise com o prazo que daria 90% (dias_uteis_para_90pct) — promessa descumprida gera reclamação e chargeback.",
     ],
     grupo,
     pagamento: {
@@ -345,6 +350,7 @@ export async function buildConsultantFacts(ownerId: string) {
       por_gateway: porGateway, por_risco_shopify: porRisco,
     },
     dicas_ignoradas_pelo_dono, insights_anteriores, padroes_cruzados, investigacao, tendencia_semanal, chargebacks, jornada_chargebacks, rastreamento_fornecedor, produtos, paises, atendimento, metas, testes_em_andamento,
+    prazo_politica_frete,
   };
 }
 
@@ -641,8 +647,13 @@ export async function runRequestedAnalysis(ownerId: string, pedido: string) {
   return { id: row.id as string, added: tips.length };
 }
 
+// Aviso do sino do prazo da política (some sozinho quando volta a cumprir).
+const checkPromise = (ownerId: string, facts: ConsultantFacts) =>
+  checkShippingPromise(ownerId, "erro" in (facts.prazo_politica_frete ?? {}) ? null : facts.prazo_politica_frete as ShippingPromiseFacts | null).catch(() => {});
+
 export async function runConsultant(ownerId: string) {
   const facts = await buildConsultantFacts(ownerId);
+  await checkPromise(ownerId, facts);
   const { result, model } = await analyzeConsultantFacts(facts);
   const { data: row, error } = await supabaseAdmin.from("consultant_reports").insert({
     user_id: ownerId, period_from: facts.periodo.ultimos_30d[0], period_to: facts.periodo.ultimos_30d[1],
@@ -666,6 +677,7 @@ export async function runConsultantWeekly() {
     if ((await pendingBatches("consultant", owner)).length) continue;
     try {
       const facts = await buildConsultantFacts(owner);
+      await checkPromise(owner, facts);
       await submitBatch(owner, "consultant", [{ custom_id: "semanal",
         params: batchParams({ model: MODEL, max_tokens: 32000, system: SYSTEM, content: `<dados>\n${JSON.stringify(facts)}\n</dados>`, effort: "high", schema: TIP_SCHEMA }) }],
         { facts });
