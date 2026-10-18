@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { withAiCredit } from "@/lib/ai-credit.server";
+import { withAiCredit, logAiUsage } from "@/lib/ai-credit.server";
 
 // IA em lote (Batch API da Anthropic): metade do preço, mesma IA — a resposta
 // chega em minutos (até 24h) em vez de na hora. Usado no que não é urgente:
@@ -60,6 +60,7 @@ export async function collectBatches(kind: BatchKind, apply: (row: BatchRow, res
       else if (res.message.stop_reason === "refusal") results.set(r.custom_id, { ok: false, error: "a IA não quis responder" });
       else if (res.message.stop_reason === "max_tokens") results.set(r.custom_id, { ok: false, error: "resposta cortada (max_tokens)" });
       else results.set(r.custom_id, { ok: true, message: res.message });
+      if (res.type === "succeeded") await logAiUsage(row.kind, res.message, true);
     }
     try {
       await apply(row, results);

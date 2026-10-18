@@ -231,7 +231,7 @@ Subject: ${m.subject ?? ""}
 
 ${emailText(html ?? "", 4000)}
 </email>` }],
-  } as any)) as Anthropic.Beta.BetaMessage;
+  } as any), "atendimento_resposta_auto") as Anthropic.Beta.BetaMessage;
   if (response.stop_reason === "refusal") return { kind: "pulado", motivo: "a IA não quis responder", orders: facts };
   const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("");
   const out = JSON.parse(text) as { responder: boolean; motivo: string; corpo: string };

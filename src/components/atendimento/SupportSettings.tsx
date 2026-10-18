@@ -528,8 +528,8 @@ function TrainingPanel() {
       <div>
         <h2 className="text-base font-semibold">Treino da IA</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Em todo e-mail que chega, a IA escreve a resposta que daria — aparece na Caixa como <strong>Sugestão da IA</strong> (nada é enviado).
-          Quando a equipe responde, ela compara com o que vocês mandaram e aprende a diferença; uma vez por dia junta tudo no manual abaixo.
+          A IA aprende só com as respostas reais da equipe: uma vez por dia, se houve resposta nova, ela atualiza o manual abaixo.
+          A <strong>Sugestão da IA</strong> em todo e-mail foi desligada (era o maior gasto com IA) — o placar abaixo mostra as comparações feitas até então.
         </p>
       </div>
       {q.isLoading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : (

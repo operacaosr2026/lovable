@@ -63,7 +63,7 @@ export async function classifyEmail(opts: { subject: string | null; text: string
     },
     // Se o filtro de segurança recusar, o próprio servidor refaz em outro modelo.
     ...(isOpus5 ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-  }));
+  }), "atendimento_tags");
   if (response.stop_reason === "refusal") return [];
   const text = response.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") return [];
@@ -170,7 +170,7 @@ export async function translateToPortuguese(text: string): Promise<string> {
     system: TRANSLATE_SYSTEM,
     messages: [{ role: "user", content: `<email>\n${text}\n</email>` }],
     output_config: { ...LOW_EFFORT },
-  }));
+  }), "atendimento_traducao");
   if (response.stop_reason === "refusal") throw new TranslationRefusedError("A IA não conseguiu traduzir este e-mail");
   return response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }
@@ -190,7 +190,7 @@ export async function translateReplyToEnglish(text: string): Promise<string> {
     system: REPLY_SYSTEM,
     messages: [{ role: "user", content: `<reply>\n${text}\n</reply>` }],
     output_config: { ...LOW_EFFORT },
-  }));
+  }), "atendimento_traducao_resposta");
   if (response.stop_reason === "refusal") throw new Error("A IA não conseguiu traduzir este texto");
   return response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }

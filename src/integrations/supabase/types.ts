@@ -44,6 +44,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_usage: {
+        Row: {
+          batch: boolean;
+          cache_read_tokens: number;
+          cache_write_tokens: number;
+          created_at: string;
+          feature: string;
+          id: number;
+          input_tokens: number;
+          model: string | null;
+          output_tokens: number;
+        };
+        Insert: {
+          batch?: boolean;
+          cache_read_tokens?: number;
+          cache_write_tokens?: number;
+          created_at?: string;
+          feature: string;
+          id?: number;
+          input_tokens?: number;
+          model?: string | null;
+          output_tokens?: number;
+        };
+        Update: {
+          batch?: boolean;
+          cache_read_tokens?: number;
+          cache_write_tokens?: number;
+          created_at?: string;
+          feature?: string;
+          id?: number;
+          input_tokens?: number;
+          model?: string | null;
+          output_tokens?: number;
+        };
+        Relationships: [];
+      };
       support_settings: {
         Row: {
           auto_reply_tracking: boolean;

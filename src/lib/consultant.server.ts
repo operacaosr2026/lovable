@@ -565,7 +565,7 @@ async function callAi(schema: object, system: string, content: string) {
     output_config: { effort: "high", format: { type: "json_schema", schema } },
     system,
     messages: [{ role: "user", content }],
-  } as any).finalMessage()) as Anthropic.Beta.BetaMessage;
+  } as any).finalMessage(), "inteligencia") as Anthropic.Beta.BetaMessage;
   if (response.stop_reason === "refusal") throw new Error("A IA não conseguiu fazer a análise desta vez. Tente de novo.");
   if (response.stop_reason === "max_tokens") throw new Error("A análise ficou longa demais e foi cortada. Tente de novo.");
   const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("");

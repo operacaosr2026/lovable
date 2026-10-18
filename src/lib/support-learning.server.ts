@@ -8,7 +8,9 @@ import { withAiCredit } from "@/lib/ai-credit.server";
 import { batchJson, batchParams, pendingBatches, submitBatch, type BatchItemResult, type BatchRow } from "@/lib/ai-batch.server";
 
 // Atendimento: treino da IA com as respostas da equipe. Roda no fim de cada
-// sincronização do Zoho (a cada 5 min), sem enviar nada:
+// sincronização do Zoho (a cada 5 min), sem enviar nada.
+// HOJE SÓ O 3 (manual) RODA — rascunho e comparação desligados em runSupportLearning
+// por custo (out/2026); o código fica pro teste em Configurações.
 //  1. Rascunho: todo e-mail do cliente (de qualquer tag) ganha a resposta que a
 //     IA daria — com o manual aprendido e respostas reais parecidas como exemplo.
 //     Aparece na Caixa como "Sugestão da IA" (botão Usar).
@@ -110,7 +112,7 @@ async function ai<T>(client: Anthropic, system: string, content: string, schema:
     ...(model.includes("haiku") ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }),
     output_config: { effort: opts.effort ?? "medium", format: { type: "json_schema", schema } },
     system, messages: [{ role: "user", content }],
-  } as any).finalMessage()) as Anthropic.Beta.BetaMessage;
+  } as any).finalMessage(), "atendimento_treino") as Anthropic.Beta.BetaMessage;
   if (res.stop_reason === "refusal") throw new Error("a IA não quis responder");
   const text = res.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("");
   return JSON.parse(text) as T;
@@ -315,56 +317,26 @@ export async function applyPlaybookBatch(row: BatchRow, results: Map<string, Bat
 
 // ─── Rodada ───────────────────────────────────────────────────────────────────
 
-export async function runSupportLearning(acc: ZohoAccount, opts: { budgetMs?: number } = {}) {
-  if (!process.env.ANTHROPIC_API_KEY) return { drafts: 0, evals: 0, playbook: false };
-  const deadline = Date.now() + (opts.budgetMs ?? 100_000);
-  const client = new Anthropic();
+export async function runSupportLearning(acc: ZohoAccount, _opts: { budgetMs?: number } = {}) {
+  if (!process.env.ANTHROPIC_API_KEY) return { playbook: false };
   const box = await loadMailbox(acc.owner_id);
   const pairs = teamPairs(box);
   const pb = await loadPlaybook(acc.owner_id);
-  let drafts = 0, evals = 0, playbook = false;
 
-  // Manual: o primeiro assim que houver respostas; depois 1x por dia, se houve comparação nova.
-  const lastEvalAt = box.msgs.reduce((mx, m) => { const a = (m.ai_draft_eval as any)?.reply_id ? String((m.ai_draft_eval as any).at) : ""; return a > mx ? a : mx; }, "");
+  // Só o manual, tirado das respostas reais da equipe: o primeiro assim que houver
+  // 3 respostas; depois no máximo 1x por dia, e só se a equipe respondeu algo novo.
   // Em lote; não manda outro enquanto o anterior não voltar.
-  if (pairs.length >= 3 && (!pb.rules || (Date.now() - Date.parse(pb.updated_at!) > 20 * 3_600_000 && lastEvalAt > pb.updated_at!))
+  // (O rascunho em todo e-mail e a comparação com a resposta da equipe foram
+  // desligados — eram o grosso do gasto com IA. As funções ficam pro teste.)
+  const lastReplyAt = pairs[0]?.outMsg.sent_at ?? "";
+  if (pairs.length >= 3 && (!pb.rules || (Date.now() - Date.parse(pb.updated_at!) > 20 * 3_600_000 && lastReplyAt > pb.updated_at!))
     && !(await pendingBatches("support_playbook", acc.owner_id)).length) {
     await submitBatch(acc.owner_id, "support_playbook", [{ custom_id: "playbook",
       params: batchParams({ model: MODEL, max_tokens: 16000, system: PLAYBOOK_SYSTEM, content: playbookContent(box, pairs), effort: "high", schema: PLAYBOOK_SCHEMA }) }],
       { based_on: pairs.length });
-    playbook = true;
+    return { playbook: true };
   }
-  const rules = pb.rules;
-
-  // Comparações pendentes (rascunho feito, equipe já respondeu) — num lote só; a
-  // marca "batch" evita mandar de novo enquanto o lote não volta.
-  const toEval = box.msgs.filter((m) => m.direction === "in" && m.ai_draft && (m.ai_draft_eval as any)?.pendente && !(m.ai_draft_eval as any)?.batch);
-  const reqs: { m: Msg; custom_id: string; params: Record<string, unknown>; item: { reply_id: string; tags: string[] } }[] = [];
-  for (const m of toEval) {
-    if (Date.now() > deadline) break;
-    const p = await evalPrep(acc, box, m);
-    if (p) reqs.push({ m, custom_id: m.id, item: { reply_id: p.reply.id, tags: p.tags },
-      params: batchParams({ model: EVAL_MODEL, max_tokens: 3000, system: EVAL_SYSTEM, content: p.content, effort: "low", schema: EVAL_SCHEMA }) });
-  }
-  const batchId = await submitBatch(acc.owner_id, "support_eval", reqs.map(({ custom_id, params }) => ({ custom_id, params })),
-    Object.fromEntries(reqs.map((r) => [r.custom_id, r.item])));
-  if (batchId) {
-    await Promise.all(reqs.map((r) => supabaseAdmin.from("support_messages").update({ ai_draft_eval: { ...(r.m.ai_draft_eval ?? {}), batch: batchId } }).eq("id", r.m.id)));
-    evals = reqs.length;
-  }
-
-  // Rascunhos: e-mails do cliente sem rascunho (fora os respondidos automaticamente), novos primeiro.
-  const since = new Date(Date.now() - WINDOW_DAYS * DAY).toISOString();
-  const toDraft = box.msgs
-    .filter((m) => m.direction === "in" && !m.ai_draft && m.auto_reply !== "enviado" && m.sent_at >= since && !(m.ai_draft_eval as any)?.sem_pedido)
-    .sort((a, b) => b.sent_at.localeCompare(a.sent_at));
-  for (let i = 0; i < toDraft.length && Date.now() < deadline; i += PER_RUN) {
-    const r = await Promise.allSettled(toDraft.slice(i, i + PER_RUN).map((m) => draftFor(acc, client, box, pairs, rules, m)));
-    drafts += r.filter((x) => x.status === "fulfilled" && x.value).length;
-    const fail = r.find((x) => x.status === "rejected") as PromiseRejectedResult | undefined;
-    if (fail) throw fail.reason;
-  }
-  return { drafts, evals, playbook };
+  return { playbook: false };
 }
 
 // ─── Placar (Configurações → Resposta automática) ─────────────────────────────
