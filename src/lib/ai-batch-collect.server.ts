@@ -1,5 +1,5 @@
 import { collectBatches } from "@/lib/ai-batch.server";
-import { applySupportEvalBatch, applyPlaybookBatch } from "@/lib/support-learning.server";
+import { applySupportEvalBatch, applyPlaybookBatch, applyCheckDraftBatch, applyCheckEvalBatch } from "@/lib/support-learning.server";
 import { applyConsultantBatch } from "@/lib/consultant.server";
 
 // A cada 5 min (zoho-mail-sync): lê os lotes de IA que ficaram prontos e grava
@@ -9,6 +9,8 @@ export async function collectAiBatches() {
   for (const [kind, apply] of [
     ["support_eval", applySupportEvalBatch],
     ["support_playbook", applyPlaybookBatch],
+    ["support_check_draft", applyCheckDraftBatch],
+    ["support_check_eval", applyCheckEvalBatch],
     ["consultant", applyConsultantBatch],
   ] as const) {
     try { out[kind] = await collectBatches(kind, apply); }

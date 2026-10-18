@@ -80,6 +80,65 @@ export type Database = {
         };
         Relationships: [];
       };
+      support_manual_checks: {
+        Row: {
+          created_at: string;
+          erro: string | null;
+          evaluated_at: string | null;
+          id: string;
+          licoes: string[];
+          message_id: string;
+          o_que_mudou: string | null;
+          owner_id: string;
+          rascunho: string | null;
+          reply_id: string | null;
+          semelhanca: string | null;
+          status: string;
+          tags: string[];
+          week: string;
+        };
+        Insert: {
+          created_at?: string;
+          erro?: string | null;
+          evaluated_at?: string | null;
+          id?: string;
+          licoes?: string[];
+          message_id: string;
+          o_que_mudou?: string | null;
+          owner_id: string;
+          rascunho?: string | null;
+          reply_id?: string | null;
+          semelhanca?: string | null;
+          status?: string;
+          tags?: string[];
+          week: string;
+        };
+        Update: {
+          created_at?: string;
+          erro?: string | null;
+          evaluated_at?: string | null;
+          id?: string;
+          licoes?: string[];
+          message_id?: string;
+          o_que_mudou?: string | null;
+          owner_id?: string;
+          rascunho?: string | null;
+          reply_id?: string | null;
+          semelhanca?: string | null;
+          status?: string;
+          tags?: string[];
+          week?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "support_manual_checks_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: false;
+            referencedRelation: "support_messages";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       support_settings: {
         Row: {
           auto_reply_tracking: boolean;

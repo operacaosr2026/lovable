@@ -8,7 +8,7 @@ import { withAiCredit, logAiUsage } from "@/lib/ai-credit.server";
 // O lote enviado fica em ai_batches; a cada 5 min (zoho-mail-sync) os prontos
 // são lidos e aplicados (ai-batch-collect.server.ts).
 
-export type BatchKind = "support_eval" | "support_playbook" | "consultant";
+export type BatchKind = "support_eval" | "support_playbook" | "support_check_draft" | "support_check_eval" | "consultant";
 export type BatchRequest = { custom_id: string; params: Record<string, unknown> };
 export type BatchRow = { id: string; owner_id: string; kind: BatchKind; batch_id: string; items: Record<string, any>; created_at: string };
 export type BatchItemResult = { ok: true; message: Anthropic.Message } | { ok: false; error: string };

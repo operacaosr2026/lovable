@@ -523,65 +523,111 @@ function TrainingPanel() {
   const q = useQuery({ queryKey: ["support-training"], queryFn: () => fn(), refetchInterval: 120_000 });
   const d = q.data as Awaited<ReturnType<typeof getSupportTraining>> | undefined;
   const [open, setOpen] = useState<string | null>(null);
+  const [wi, setWi] = useState(0);
+  const semanas = d?.semanas ?? [];
+  const sem = semanas[wi];
+  const prev = semanas[wi + 1];
+  const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const bar = (v: number | null) => (v ?? 0) >= 80 ? "bg-success" : (v ?? 0) >= 50 ? "bg-primary" : "bg-warning";
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold">Treino da IA</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
           A IA aprende só com as respostas reais da equipe: uma vez por dia, se houve resposta nova, ela atualiza o manual abaixo.
-          A <strong>Sugestão da IA</strong> em todo e-mail foi desligada (era o maior gasto com IA) — o placar abaixo mostra as comparações feitas até então.
+          Toda <strong>segunda às 8h (NY)</strong> o manual faz uma prova: a IA responde às cegas 15 e-mails que a equipe respondeu na semana e compara com o que vocês mandaram.
         </p>
       </div>
       {q.isLoading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : (
         <>
+          {semanas.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {semanas.map((s, i) => (
+                <button key={s.week} onClick={() => { setWi(i); setOpen(null); }}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] tabular-nums ${i === wi ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-muted/40"}`}>
+                  Semana {ddmm(s.week)} · {s.pendentes ? "em andamento" : `${s.acerto ?? "—"}%`}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="rounded-xl border border-border overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-muted/40 text-muted-foreground">
                 <tr>
                   <th className="text-left font-medium px-3 py-2">Tag</th>
-                  <th className="text-right font-medium px-2 py-2">Comparados</th>
+                  <th className="text-right font-medium px-2 py-2">Testados</th>
                   <th className="text-right font-medium px-2 py-2">Iguais</th>
                   <th className="text-right font-medium px-2 py-2">Parecidos</th>
                   <th className="text-right font-medium px-2 py-2">Diferentes</th>
                   <th className="text-left font-medium px-3 py-2 w-40">Acerto</th>
+                  <th className="text-right font-medium px-3 py-2">vs. semana anterior</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {!d?.tags.length && (
-                  <tr><td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">Nenhuma comparação ainda — aparece aqui assim que a equipe responder um e-mail que já tem sugestão da IA.</td></tr>
+                {!sem && (
+                  <tr><td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">A primeira prova roda na próxima segunda às 8h (NY) — o resultado chega em alguns minutos.</td></tr>
                 )}
-                {d?.tags.map((t) => (
-                  <Fragment key={t.tag}>
-                    <tr className="cursor-pointer hover:bg-muted/30" onClick={() => setOpen(open === t.tag ? null : t.tag)}>
-                      <td className="px-3 py-2 font-medium">{t.tag}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{t.total}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-success">{t.igual}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{t.parecida}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-warning">{t.diferente}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div className={`h-full ${(t.acerto ?? 0) >= 80 ? "bg-success" : (t.acerto ?? 0) >= 50 ? "bg-primary" : "bg-warning"}`} style={{ width: `${t.acerto ?? 0}%` }} />
+                {sem && !sem.tags.length && (
+                  <tr><td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">{sem.pendentes ? `Prova em andamento (${sem.pendentes} e-mails) — o resultado chega em alguns minutos.` : "Nenhum e-mail pôde ser avaliado nesta semana."}</td></tr>
+                )}
+                {sem?.tags.map((t) => {
+                  const before = prev?.tags.find((p) => p.tag === t.tag)?.acerto ?? null;
+                  const delta = t.acerto != null && before != null ? t.acerto - before : null;
+                  return (
+                    <Fragment key={t.tag}>
+                      <tr className="cursor-pointer hover:bg-muted/30" onClick={() => setOpen(open === t.tag ? null : t.tag)}>
+                        <td className="px-3 py-2 font-medium">{t.tag}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{t.total}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-success">{t.igual}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{t.parecida}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-warning">{t.diferente}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full ${bar(t.acerto)}`} style={{ width: `${t.acerto ?? 0}%` }} />
+                            </div>
+                            <span className="tabular-nums w-9 text-right">{t.acerto ?? "—"}%</span>
                           </div>
-                          <span className="tabular-nums w-9 text-right">{t.acerto ?? "—"}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                    {open === t.tag && (
-                      <tr><td colSpan={6} className="px-3 py-2 bg-muted/20">
-                        {!t.ultimas.length ? <p className="text-muted-foreground">Sem diferenças registradas.</p> : (
-                          <ul className="space-y-1">
-                            {t.ultimas.map((u, i) => <li key={i} className="text-muted-foreground"><span className="text-foreground">{fullTime(u.at)}:</span> {u.o_que_mudou}</li>)}
-                          </ul>
-                        )}
-                      </td></tr>
-                    )}
-                  </Fragment>
-                ))}
+                        </td>
+                        <td className={`px-3 py-2 text-right tabular-nums ${delta == null ? "text-muted-foreground" : delta > 0 ? "text-success" : delta < 0 ? "text-warning" : ""}`}>
+                          {delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta} p.p.`}
+                        </td>
+                      </tr>
+                      {open === t.tag && (
+                        <tr><td colSpan={7} className="px-3 py-2 bg-muted/20">
+                          {!t.casos.length ? <p className="text-muted-foreground">Todos iguais à resposta da equipe.</p> : (
+                            <ul className="space-y-2">
+                              {t.casos.map((c, i) => (
+                                <li key={i}>
+                                  <p>
+                                    <span className={c.semelhanca === "diferente" ? "text-warning font-medium" : "font-medium"}>{c.semelhanca === "diferente" ? "Diferente" : "Parecida"}</span>
+                                    {c.subject && <span className="text-muted-foreground"> · {c.subject}</span>}
+                                    {c.conversationId && <a href={`/atendimento?c=${c.conversationId}`} className="ml-2 text-primary hover:underline">abrir conversa</a>}
+                                  </p>
+                                  <p className="text-muted-foreground">{c.o_que_mudou}</p>
+                                  {c.rascunho && (
+                                    <details className="mt-0.5">
+                                      <summary className="cursor-pointer text-[11px] text-muted-foreground">O que a IA respondeu</summary>
+                                      <p className="whitespace-pre-wrap text-[11px] text-muted-foreground mt-1 border-l-2 border-border pl-2">{c.rascunho}</p>
+                                    </details>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td></tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-muted-foreground">Acerto = iguais + parecidos (mesma decisão da equipe). {d?.pendentes ? `${d.pendentes} sugestões esperando a resposta da equipe pra comparar.` : ""}</p>
+          <p className="text-[11px] text-muted-foreground">
+            Acerto = iguais + parecidos (mesma decisão da equipe). Clique numa tag pra ver o que a IA fez diferente — esses casos viram lições pro manual.
+            {sem && sem.acerto != null && <> Geral da semana: <strong className="text-foreground">{sem.acerto}%</strong>{prev?.acerto != null && <> (anterior: {prev.acerto}%)</>}.</>}
+            {d?.antes.acerto != null && <> Antes da prova semanal (sugestão em todo e-mail): {d.antes.acerto}% em {d.antes.total} comparações.</>}
+          </p>
 
           <div>
             <h3 className="text-sm font-semibold">O que a IA aprendeu</h3>

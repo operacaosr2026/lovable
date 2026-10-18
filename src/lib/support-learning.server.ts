@@ -6,6 +6,8 @@ import { emailText } from "@/lib/support-ai.server";
 import { ordersFor } from "@/lib/support-autoreply.server";
 import { withAiCredit } from "@/lib/ai-credit.server";
 import { batchJson, batchParams, pendingBatches, submitBatch, type BatchItemResult, type BatchRow } from "@/lib/ai-batch.server";
+import { nyParts } from "@/lib/timezone";
+import { broadcast } from "@/lib/realtime.server";
 
 // Atendimento: treino da IA com as respostas da equipe. Roda no fim de cada
 // sincronização do Zoho (a cada 5 min), sem enviar nada.
@@ -142,6 +144,28 @@ const DRAFT_SCHEMA = {
 };
 
 async function draftFor(acc: ZohoAccount, client: Anthropic, box: Mailbox, pairs: ReturnType<typeof teamPairs>, playbook: Playbook | null, m: Msg, write = true) {
+  const prep = await draftContent(acc, box, pairs, playbook, m, write);
+  if (!prep) return null;
+  const { content, facts } = prep;
+  // Esforço baixo e sem a versão em português (traduzida com Haiku só quando a
+  // sugestão é aberta — translateSupportMessage).
+  const d = await ai<{ corpo: string; confianca: string; observacao: string }>(client, DRAFT_SYSTEM, content, DRAFT_SCHEMA, { effort: "low" });
+  // Pra caixa de resposta (texto puro): o link vira a URL, numa linha só — no envio
+  // ela aparece como "Track your order here" (buildBody).
+  const link = (num?: string) => (num ? facts.find((o) => o.order?.replace("#", "") === num.replace("#", "")) : null)?.tracking_link ?? facts.find((o) => o.tracking_link)?.tracking_link ?? "";
+  const fill = (t: string) => t.replace(/\{\{TRACK_LINK(?:\s+([#\w-]+))?\}\}/g, (_x, n) => link(n)).replace(/\n{3,}/g, "\n\n").trim();
+  // Confiança/observação ficam no ai_draft_eval até a comparação (quando a equipe responder).
+  const patch = {
+    ai_draft: fill(d.corpo), ai_draft_pt: null as string | null, ai_draft_at: new Date().toISOString(),
+    ai_draft_eval: { pendente: true, confianca: d.confianca, observacao: d.observacao?.trim() || "" },
+  };
+  if (write) await supabaseAdmin.from("support_messages").update(patch).eq("id", m.id);
+  return patch;
+}
+
+// O que vai pra IA escrever o rascunho de um e-mail (manual, exemplos às cegas,
+// pedidos, conversa). Sem pedido na Shopify: null.
+async function draftContent(acc: ZohoAccount, box: Mailbox, pairs: ReturnType<typeof teamPairs>, playbook: Playbook | null, m: Msg, write = true) {
   const conv = box.convBy.get(m.conversation_id);
   if (!conv) return null;
   if (m.content_html == null) {
@@ -173,20 +197,7 @@ async function draftFor(acc: ZohoAccount, client: Anthropic, box: Mailbox, pairs
     `<conversation>\n${history.map((x) => `${x.direction === "in" ? "CUSTOMER" : "TEAM"} (${x.sent_at.slice(0, 10)}): ${txt(x, 800)}`).join("\n\n") || "(first email)"}\n</conversation>`,
     `<email>\nSubject: ${m.subject ?? ""}${m.has_attachment ? "\n(customer attached files — you can't see them)" : ""}\n\n${txt(m, 4000)}\n</email>`,
   ].join("\n");
-  // Esforço baixo e sem a versão em português (traduzida com Haiku só quando a
-  // sugestão é aberta — translateSupportMessage): o rascunho roda em todo e-mail.
-  const d = await ai<{ corpo: string; confianca: string; observacao: string }>(client, DRAFT_SYSTEM, content, DRAFT_SCHEMA, { effort: "low" });
-  // Pra caixa de resposta (texto puro): o link vira a URL, numa linha só — no envio
-  // ela aparece como "Track your order here" (buildBody).
-  const link = (num?: string) => (num ? facts.find((o) => o.order?.replace("#", "") === num.replace("#", "")) : null)?.tracking_link ?? facts.find((o) => o.tracking_link)?.tracking_link ?? "";
-  const fill = (t: string) => t.replace(/\{\{TRACK_LINK(?:\s+([#\w-]+))?\}\}/g, (_x, n) => link(n)).replace(/\n{3,}/g, "\n\n").trim();
-  // Confiança/observação ficam no ai_draft_eval até a comparação (quando a equipe responder).
-  const patch = {
-    ai_draft: fill(d.corpo), ai_draft_pt: null as string | null, ai_draft_at: new Date().toISOString(),
-    ai_draft_eval: { pendente: true, confianca: d.confianca, observacao: d.observacao?.trim() || "" },
-  };
-  if (write) await supabaseAdmin.from("support_messages").update(patch).eq("id", m.id);
-  return patch;
+  return { content, facts };
 }
 
 // ─── 2. Comparação com a resposta da equipe ───────────────────────────────────
@@ -284,7 +295,7 @@ const PLAYBOOK_SCHEMA = {
   additionalProperties: false,
 };
 
-function playbookContent(box: Mailbox, pairs: ReturnType<typeof teamPairs>) {
+function playbookContent(box: Mailbox, pairs: ReturnType<typeof teamPairs>, checkLessons: string[] = []) {
   const recent = pairs.filter((p) => Date.parse(p.outMsg.sent_at) > Date.now() - 60 * DAY);
   const perTag = new Map<string, number>();
   const chosen = recent.filter((p) => {
@@ -297,7 +308,8 @@ function playbookContent(box: Mailbox, pairs: ReturnType<typeof teamPairs>) {
   const lessons = box.msgs
     .filter((m) => (m.ai_draft_eval as any)?.licoes?.length && String((m.ai_draft_eval as any).at) >= lessonSince)
     .sort((a, b) => String((a.ai_draft_eval as any).at).localeCompare(String((b.ai_draft_eval as any).at)))
-    .map((m) => `(${String((m.ai_draft_eval as any).at).slice(0, 10)} · ${((m.ai_draft_eval as any).tags ?? []).join(", ") || "-"}) ${(m.ai_draft_eval as any).licoes.join(" | ")}`);
+    .map((m) => `(${String((m.ai_draft_eval as any).at).slice(0, 10)} · ${((m.ai_draft_eval as any).tags ?? []).join(", ") || "-"}) ${(m.ai_draft_eval as any).licoes.join(" | ")}`)
+    .concat(checkLessons);
   return `<respostas_da_equipe>\n${chosen.map((p) => `tags: ${p.tags.join(", ") || "-"}\nCLIENTE: ${txt(p.inMsg, 600)}\nEQUIPE: ${txt(p.outMsg, 800)}`).join("\n\n")}\n</respostas_da_equipe>\n<licoes>\n${lessons.join("\n") || "(nenhuma ainda)"}\n</licoes>`;
 }
 
@@ -320,6 +332,17 @@ export async function applyPlaybookBatch(row: BatchRow, results: Map<string, Bat
 export async function runSupportLearning(acc: ZohoAccount, _opts: { budgetMs?: number } = {}) {
   if (!process.env.ANTHROPIC_API_KEY) return { playbook: false };
   const box = await loadMailbox(acc.owner_id);
+  // O manual e a prova só usam respostas da equipe com o texto baixado — antes a
+  // comparação baixava; agora baixa aqui (Zoho, sem IA), até 20 por rodada.
+  const missing = box.msgs.filter((m) => m.direction === "in")
+    .map((m) => teamReplyFor(box, m).reply).filter((r): r is Msg => !!r && r.content_html == null)
+    .sort((a, b) => b.sent_at.localeCompare(a.sent_at)).slice(0, 20);
+  for (const r of missing) {
+    try {
+      r.content_html = await fetchMessageContent(acc, r.folder_id, r.message_id);
+      await supabaseAdmin.from("support_messages").update({ content_html: r.content_html }).eq("id", r.id);
+    } catch (e) { console.error("support learning reply content", r.id, e); }
+  }
   const pairs = teamPairs(box);
   const pb = await loadPlaybook(acc.owner_id);
 
@@ -329,42 +352,197 @@ export async function runSupportLearning(acc: ZohoAccount, _opts: { budgetMs?: n
   // (O rascunho em todo e-mail e a comparação com a resposta da equipe foram
   // desligados — eram o grosso do gasto com IA. As funções ficam pro teste.)
   const lastReplyAt = pairs[0]?.outMsg.sent_at ?? "";
+  let playbook = false;
   if (pairs.length >= 3 && (!pb.rules || (Date.now() - Date.parse(pb.updated_at!) > 20 * 3_600_000 && lastReplyAt > pb.updated_at!))
     && !(await pendingBatches("support_playbook", acc.owner_id)).length) {
     await submitBatch(acc.owner_id, "support_playbook", [{ custom_id: "playbook",
-      params: batchParams({ model: MODEL, max_tokens: 16000, system: PLAYBOOK_SYSTEM, content: playbookContent(box, pairs), effort: "high", schema: PLAYBOOK_SCHEMA }) }],
+      params: batchParams({ model: MODEL, max_tokens: 16000, system: PLAYBOOK_SYSTEM, content: playbookContent(box, pairs, await checkLessons(acc.owner_id)), effort: "high", schema: PLAYBOOK_SCHEMA }) }],
       { based_on: pairs.length });
-    return { playbook: true };
+    playbook = true;
   }
-  return { playbook: false };
+  // Prova semanal do manual (segunda 8h NY) e a comparação dos rascunhos que já voltaram.
+  const checkDrafts = await startManualCheck(acc, box, pairs, pb.rules);
+  const checkEvals = await submitManualCheckEvals(acc, box);
+  return { playbook, checkDrafts, checkEvals };
+}
+
+// ─── 4. Prova semanal do manual ───────────────────────────────────────────────
+// Toda segunda (8h NY): até 15 e-mails que a equipe respondeu nos últimos 7 dias,
+// alternando as tags, ganham o rascunho às cegas com o manual (lote) e depois a
+// comparação com a resposta real (lote). Placar por semana em Configurações →
+// Treino da IA; as lições dos "diferentes" voltam pro manual.
+
+const CHECK_SIZE = 15;
+const CHECK_HOUR_NY = 8;
+
+async function checkLessons(ownerId: string) {
+  const since = new Date(Date.now() - LESSON_DAYS * DAY).toISOString();
+  const { data } = await supabaseAdmin.from("support_manual_checks").select("evaluated_at,tags,licoes")
+    .eq("owner_id", ownerId).eq("status", "ok").gte("evaluated_at", since).order("evaluated_at");
+  return (data ?? []).filter((c) => c.licoes?.length)
+    .map((c) => `(${String(c.evaluated_at).slice(0, 10)} · ${c.tags.join(", ") || "-"}) ${c.licoes.join(" | ")}`);
+}
+
+async function startManualCheck(acc: ZohoAccount, box: Mailbox, pairs: ReturnType<typeof teamPairs>, playbook: Playbook | null) {
+  const now = nyParts(Date.now());
+  if (!playbook || now.weekday !== 1 || now.hour < CHECK_HOUR_NY) return 0;
+  const week = now.iso;
+  const { count } = await supabaseAdmin.from("support_manual_checks").select("id", { count: "exact", head: true })
+    .eq("owner_id", acc.owner_id).eq("week", week);
+  if (count) return 0;
+
+  // Respondidos pela equipe na semana (fora os da resposta automática), alternando as tags.
+  const since = Date.now() - 7 * DAY;
+  const byTag = new Map<string, ReturnType<typeof teamPairs>>();
+  for (const p of pairs) {
+    if (Date.parse(p.outMsg.sent_at) < since || p.inMsg.auto_reply === "enviado") continue;
+    const t = p.tags[0] ?? "Sem tag";
+    byTag.set(t, [...(byTag.get(t) ?? []), p]);
+  }
+  const order: ReturnType<typeof teamPairs> = [];
+  for (let i = 0; order.length < [...byTag.values()].reduce((s, l) => s + l.length, 0); i++) {
+    for (const list of byTag.values()) if (list[i]) order.push(list[i]);
+  }
+
+  const reqs: { custom_id: string; params: Record<string, unknown> }[] = [];
+  const rows: { owner_id: string; week: string; message_id: string; reply_id: string; tags: string[] }[] = [];
+  for (const p of order) {
+    if (reqs.length >= CHECK_SIZE) break;
+    const d = await draftContent(acc, box, pairs, playbook, { ...p.inMsg }, false);
+    if (!d) continue;   // sem pedido na Shopify
+    reqs.push({ custom_id: p.inMsg.id, params: batchParams({ model: MODEL, max_tokens: 3000, system: DRAFT_SYSTEM, content: d.content, effort: "low", schema: DRAFT_SCHEMA }) });
+    rows.push({ owner_id: acc.owner_id, week, message_id: p.inMsg.id, reply_id: p.outMsg.id, tags: p.tags });
+  }
+  if (!reqs.length) return 0;
+  // Grava antes (a chave única barra outra rodada que cruzar); se o lote falhar, desfaz.
+  const { error } = await supabaseAdmin.from("support_manual_checks").insert(rows);
+  if (error) return 0;
+  try {
+    await submitBatch(acc.owner_id, "support_check_draft", reqs, { week });
+  } catch (e) {
+    await supabaseAdmin.from("support_manual_checks").delete().eq("owner_id", acc.owner_id).eq("week", week);
+    throw e;
+  }
+  return reqs.length;
+}
+
+export async function applyCheckDraftBatch(row: BatchRow, results: Map<string, BatchItemResult>) {
+  const { data } = await supabaseAdmin.from("support_manual_checks").select("id,message_id")
+    .eq("owner_id", row.owner_id).eq("week", row.items.week).eq("status", "rascunho");
+  for (const c of data ?? []) {
+    const r = results.get(c.message_id);
+    if (r?.ok) {
+      const d = batchJson<{ corpo: string }>(r.message);
+      await supabaseAdmin.from("support_manual_checks").update({ rascunho: d.corpo.trim(), status: "comparar" }).eq("id", c.id);
+    } else {
+      await supabaseAdmin.from("support_manual_checks").update({ status: "erro", erro: r?.ok === false ? r.error : "sem resultado" }).eq("id", c.id);
+    }
+  }
+  await notifyCheckDone(row.owner_id, row.items.week);
+}
+
+async function submitManualCheckEvals(acc: ZohoAccount, box: Mailbox) {
+  const { data: todo } = await supabaseAdmin.from("support_manual_checks").select("id,message_id,reply_id,tags,rascunho")
+    .eq("owner_id", acc.owner_id).eq("status", "comparar");
+  if (!todo?.length || (await pendingBatches("support_check_eval", acc.owner_id)).length) return 0;
+  const byId = new Map(box.msgs.map((m) => [m.id, m]));
+  const reqs: { custom_id: string; params: Record<string, unknown> }[] = [];
+  for (const c of todo) {
+    const m = byId.get(c.message_id);
+    const reply = c.reply_id ? byId.get(c.reply_id) : undefined;
+    if (!m || !reply) {
+      await supabaseAdmin.from("support_manual_checks").update({ status: "erro", erro: "e-mail não encontrado" }).eq("id", c.id);
+      continue;
+    }
+    if (reply.content_html == null) {
+      reply.content_html = await fetchMessageContent(acc, reply.folder_id, reply.message_id);
+      await supabaseAdmin.from("support_messages").update({ content_html: reply.content_html }).eq("id", reply.id);
+    }
+    const content = `<tags>${c.tags.join(", ") || "-"}</tags>\n<email_do_cliente>\n${txt(m, 2500)}\n</email_do_cliente>\n<rascunho_da_ia>\n${c.rascunho}\n</rascunho_da_ia>\n<resposta_da_equipe>\n${txt(reply, 2500)}\n</resposta_da_equipe>`;
+    reqs.push({ custom_id: c.id, params: batchParams({ model: EVAL_MODEL, max_tokens: 3000, system: EVAL_SYSTEM, content, effort: "low", schema: EVAL_SCHEMA }) });
+  }
+  if (!reqs.length) return 0;
+  await submitBatch(acc.owner_id, "support_check_eval", reqs, { ids: reqs.map((r) => r.custom_id) });
+  await supabaseAdmin.from("support_manual_checks").update({ status: "comparando" }).in("id", reqs.map((r) => r.custom_id));
+  return reqs.length;
+}
+
+export async function applyCheckEvalBatch(row: BatchRow, results: Map<string, BatchItemResult>) {
+  const { data } = await supabaseAdmin.from("support_manual_checks").select("id,week")
+    .eq("owner_id", row.owner_id).eq("status", "comparando").in("id", (row.items.ids ?? []) as string[]);
+  const weeks = new Set<string>();
+  for (const c of data ?? []) {
+    const r = results.get(c.id);
+    weeks.add(c.week);
+    if (r?.ok) {
+      const e = evalFields(batchJson<EvalResult>(r.message));
+      await supabaseAdmin.from("support_manual_checks").update({ ...e, status: "ok", evaluated_at: new Date().toISOString() }).eq("id", c.id);
+    } else {
+      await supabaseAdmin.from("support_manual_checks").update({ status: "erro", erro: r?.ok === false ? r.error : "sem resultado" }).eq("id", c.id);
+    }
+  }
+  for (const w of weeks) await notifyCheckDone(row.owner_id, w);
+}
+
+// Prova da semana terminou (nenhum e-mail pendente): aviso no sino com o acerto.
+async function notifyCheckDone(ownerId: string, week: string) {
+  const { data } = await supabaseAdmin.from("support_manual_checks").select("status,semelhanca").eq("owner_id", ownerId).eq("week", week);
+  const list = data ?? [];
+  if (!list.length || list.some((c) => ["rascunho", "comparar", "comparando"].includes(c.status))) return;
+  const ok = list.filter((c) => c.status === "ok");
+  const hits = ok.filter((c) => c.semelhanca === "igual" || c.semelhanca === "parecida").length;
+  const body = ok.length
+    ? `Acerto ${Math.round((hits / ok.length) * 100)}% em ${ok.length} e-mails (mesma decisão da equipe). Veja os casos diferentes em Configurações → Treino da IA.`
+    : "Nenhum e-mail pôde ser avaliado nesta semana.";
+  const { error } = await supabaseAdmin.from("app_notifications").insert({
+    user_id: ownerId, key: `manual_check:${week}`, level: "info", title: "Atendimento: prova semanal do manual da IA", body, link: "/atendimento",
+  });
+  if (!error) await broadcast(ownerId, "notifications");
 }
 
 // ─── Placar (Configurações → Resposta automática) ─────────────────────────────
 
+type CheckCase = { semelhanca: string; o_que_mudou: string; rascunho: string | null; subject: string | null; conversationId: string | null };
+type Score = { total: number; igual: number; parecida: number; diferente: number; acerto: number | null };
+const score = (list: { semelhanca: string | null }[]): Score => {
+  const igual = list.filter((c) => c.semelhanca === "igual").length;
+  const parecida = list.filter((c) => c.semelhanca === "parecida").length;
+  const diferente = list.filter((c) => c.semelhanca === "diferente").length;
+  const total = igual + parecida + diferente;
+  return { total, igual, parecida, diferente, acerto: total ? Math.round(((igual + parecida) / total) * 100) : null };
+};
+
+// Placar da prova semanal (mais recente primeiro), por tag, com os casos que
+// não bateram; `antes` = acerto do rascunho em todo e-mail (até 18/10/2026).
 export async function supportTrainingStats(ownerId: string) {
-  const [{ data: rows }, pb] = await Promise.all([
-    selectAll<{ ai_draft_eval: any; sent_at: string }>(supabaseAdmin.from("support_messages").select("ai_draft_eval,sent_at")
+  const [{ data: checks }, { data: old }, pb] = await Promise.all([
+    selectAll<any>(supabaseAdmin.from("support_manual_checks")
+      .select("week,tags,status,semelhanca,o_que_mudou,rascunho,message:support_messages!support_manual_checks_message_id_fkey(subject,conversation_id)")
+      .eq("owner_id", ownerId).order("week", { ascending: false })),
+    selectAll<{ ai_draft_eval: any }>(supabaseAdmin.from("support_messages").select("ai_draft_eval")
       .eq("owner_id", ownerId).eq("direction", "in").not("ai_draft_eval", "is", null)),
     loadPlaybook(ownerId),
   ]);
-  const byTag = new Map<string, { tag: string; total: number; igual: number; parecida: number; diferente: number; ultimas: { o_que_mudou: string; at: string; semelhanca: string }[] }>();
-  let pendentes = 0;
-  for (const r of (rows ?? []) as any[]) {
-    const e = r.ai_draft_eval;
-    if (e?.pendente) { pendentes++; continue; }
-    if (!["igual", "parecida", "diferente"].includes(e?.semelhanca)) continue;
-    for (const tag of (e.tags?.length ? e.tags : ["Sem tag"]) as string[]) {
-      const g = byTag.get(tag) ?? { tag, total: 0, igual: 0, parecida: 0, diferente: 0, ultimas: [] };
-      g.total++; (g as any)[e.semelhanca]++;
-      if (e.o_que_mudou) g.ultimas.push({ o_que_mudou: e.o_que_mudou, at: e.at, semelhanca: e.semelhanca });
-      byTag.set(tag, g);
-    }
-  }
-  const tags = [...byTag.values()].map((g) => ({
-    ...g, acerto: g.total ? Math.round(((g.igual + g.parecida) / g.total) * 100) : null,
-    ultimas: g.ultimas.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 3),
-  })).sort((a, b) => b.total - a.total);
-  return { tags, pendentes, playbook: pb.rules, playbookAt: pb.updated_at };
+  const byWeek = new Map<string, any[]>();
+  for (const c of (checks ?? []) as any[]) byWeek.set(c.week, [...(byWeek.get(c.week) ?? []), c]);
+  const semanas = [...byWeek.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([week, list]) => {
+    const done = list.filter((c) => c.status === "ok");
+    const tagNames = [...new Set(done.flatMap((c) => (c.tags?.length ? c.tags : ["Sem tag"]) as string[]))];
+    const tags = tagNames.map((tag) => {
+      const mine = done.filter((c) => (c.tags?.length ? c.tags : ["Sem tag"]).includes(tag));
+      const casos: CheckCase[] = mine.filter((c) => c.semelhanca !== "igual" && c.o_que_mudou)
+        .sort((a, b) => (a.semelhanca === "diferente" ? 0 : 1) - (b.semelhanca === "diferente" ? 0 : 1))
+        .map((c) => ({ semelhanca: c.semelhanca, o_que_mudou: c.o_que_mudou, rascunho: c.rascunho, subject: c.message?.subject ?? null, conversationId: c.message?.conversation_id ?? null }));
+      return { tag, ...score(mine), casos };
+    }).sort((a, b) => b.total - a.total);
+    return {
+      week, ...score(done), tags,
+      pendentes: list.filter((c) => ["rascunho", "comparar", "comparando"].includes(c.status)).length,
+      erros: list.filter((c) => c.status === "erro").length,
+    };
+  });
+  const antes = score(((old ?? []) as any[]).map((r) => ({ semelhanca: r.ai_draft_eval?.semelhanca ?? null })));
+  return { semanas, antes, playbook: pb.rules, playbookAt: pb.updated_at };
 }
 
 // Teste sem gravar nada: manual a partir das respostas reais + rascunho às cegas e
