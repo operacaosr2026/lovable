@@ -6,8 +6,8 @@ import { businessDaysBetween, postingCalendar } from "@/lib/logistics-kpis";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 
 // Prazo prometido na política de frete × prazo real (Inteligência). A política
-// de cada loja ativa é lida da Shopify (policies.json): "processed within 3–7
-// business days" e "United States: 5–9 business days". O real vem dos pedidos
+// de cada loja ativa é lida da Shopify (policies.json): "processed within 1–3
+// business days" e "United States: 5–13 business days". O real vem dos pedidos
 // entregues dos últimos 90 dias (postagem = 1ª movimentação real; entrega = dia
 // da entrega). Menos de 90% dentro do prometido → aviso no sino; a análise
 // semanal do consultor também recebe esses números.
@@ -28,7 +28,7 @@ const range = (text: string, re: RegExp): PromiseRange | null => {
   const m = text.match(re);
   return m ? { min: Number(m[1]), max: Number(m[2]) } : null;
 };
-// "processed within 3–7 business days" / "United States: 5–9 business days".
+// "processed within 1–3 business days" / "United States: 5–13 business days".
 export function parseShippingPolicy(text: string) {
   return {
     postagem: range(text, /process\w*\s+within\s+(\d+)\s*(?:–|-|to)\s*(\d+)\s+business days/i),
