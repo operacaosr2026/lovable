@@ -984,10 +984,10 @@ function Dashboard() {
           ) : (
             <>
               {/* Donut ocupa o espaço livre do card (a linha é tão alta quanto a coluna de indicadores) */}
-              <div className="relative flex-1 min-h-[150px] max-h-[280px]">
+              <div className="relative flex-1 min-h-[220px] max-h-[340px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius="64%" outerRadius="94%" paddingAngle={2} strokeWidth={0}>
+                  <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                    <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius="66%" outerRadius="100%" paddingAngle={2} strokeWidth={0}>
                       {slices.map((s) => <Cell key={s.shop_id} fill={s.color} />)}
                     </Pie>
                     <Tooltip content={<DonutTooltip total={donutTotal} />} wrapperStyle={{ zIndex: 10 }} />
