@@ -176,7 +176,7 @@ function DashKpiCard({
   delta: number; deltaUnit?: string; invert?: boolean;
   sparklineKey?: keyof DailyPoint;
   chartData: DailyPoint[];
-  stats?: [{ label: string; value: string }, { label: string; value: string }];
+  stats?: { label: string; value: string }[];
   periodNote?: string;
   shopRows?: { shop_id: string; shop_name: string; taxaEstorno: number; totalPedidos: number }[];
   loading?: boolean;
@@ -798,6 +798,7 @@ function Dashboard() {
     faturamento: 0, faturamentoDelta: 0, anuncios: 0, anunciosDelta: 0,
     custoProduto: 0, custoProdutoDelta: 0, lucro: 0, lucroDelta: 0,
     taxaEstorno: 0, taxaEstornoDeltaPP: 0, pedidos: 0, pedidosDelta: 0,
+    reembolsos: 0, chargebacks: 0,
   };
   const chartData: DailyPoint[] = (data as any)?.chartData ?? [];
   const shopBreakdown: ShopBreakdownRow[] = (data as any)?.shopBreakdown ?? [];
@@ -892,6 +893,9 @@ function Dashboard() {
           stats={[
             { label: "Margem de lucro", value: fmtPct(totals.faturamento > 0 ? totals.lucro / totals.faturamento : 0) },
             { label: "Média diária", value: fmtMoney(totals.lucro / nDias) },
+            // Já descontados do faturamento e do lucro.
+            { label: "Reembolsos", value: fmtMoney(totals.reembolsos ?? 0) },
+            { label: "Chargebacks", value: fmtMoney(totals.chargebacks ?? 0) },
           ]}
         />
         {/* Estorno é sempre janela rolante de 90 dias (lg-cards.functions), comparada com os 90 antes. */}

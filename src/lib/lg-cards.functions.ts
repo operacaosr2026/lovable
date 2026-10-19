@@ -872,6 +872,9 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
         // Pontos percentuais, não delta relativo — cair de 2% pra 1% é "-1 p.p.", não "-50%".
         taxaEstorno,   taxaEstornoDeltaPP: Math.round((taxaEstorno - prevTaxaEstorno) * 1000) / 10,
         pedidos,       pedidosDelta:       dashboardDelta(pedidos, prevPedidos),
+        // Já descontados do faturamento (e do lucro) acima — o card do Lucro mostra quanto foi.
+        reembolsos:  shopIds.reduce((s, id) => s + (reembolsosByShop.get(id) ?? 0), 0),
+        chargebacks: shopIds.reduce((s, id) => s + (chargebacksByShop.get(id) ?? 0), 0),
       },
       chartData,
       shopBreakdown,
