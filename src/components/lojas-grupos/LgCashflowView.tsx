@@ -58,6 +58,7 @@ type Entry = {
   recurrence?: Recurrence | null; recurrence_until?: string | null;
   skip_weekend_rule?: boolean | null; reconciled?: boolean | null;
   shop_id?: string; created_at?: string | null;
+  via_balance?: boolean | null;
 };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
@@ -117,6 +118,16 @@ function shiftToMondayIfWeekend(k: string) {
 }
 function fmtMoney(n: number) {
   return n.toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:false});
+}
+
+// Lançamento que passou pelo Shopify Balance (repasse que caiu lá ou gasto no
+// cartão do Balance) — o resto é conta bancária.
+function BalanceTag({ className }: { className?: string }) {
+  return (
+    <span className={cn("shrink-0 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold leading-none bg-emerald-500/15 text-emerald-700 dark:text-emerald-400", className)} title="Shopify Balance">
+      Balance
+    </span>
+  );
 }
 
 // ─── Entry chip — cores diferenciadas por tipo ────────────────────────────────
@@ -193,6 +204,7 @@ function EntryChip({
           )}
           {entry.recurrence && entry.recurrence !== "none" && <Repeat className="size-3 opacity-70 shrink-0" />}
           <span className="truncate">{entryLabel(entry)}</span>
+          {entry.via_balance && <BalanceTag />}
         </span>
         <span className="font-semibold tabular-nums shrink-0">
           {isIncome ? "+" : "-"}{fmtMoney(Number(entry.amount))}
@@ -377,6 +389,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
             </span>
           )}
           <span className="truncate">{group.label}</span>
+          {e.via_balance && <BalanceTag />}
         </span>
         <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
       </button>
@@ -414,6 +427,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
               </span>
             )}
             <span className="truncate">{group.label}</span>
+            {group.entries.some((x) => x.via_balance) && <BalanceTag />}
           </span>
           <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
         </button>
@@ -455,6 +469,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
                 <span className="truncate">
                   {isConsolidated ? (shopNamesMap?.[e.shop_id ?? ""] ?? "—") : (e.category ?? (isIncome ? "Entrada" : "Saída"))}
                 </span>
+                {e.via_balance && <BalanceTag />}
               </span>
               <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(e.amount))}</span>
             </button>
@@ -665,8 +680,10 @@ function KpiChange({ current, base, label }: { current: number; base: number | n
   );
 }
 
-function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, alert, children, spark, sparkId }: {
+function KpiCard({ icon: Icon, tone, title, subtitle, value, valueNote, negative, badge, alert, children, spark, sparkId }: {
   icon: any; tone: keyof typeof KPI_TONES; title: string; subtitle: string; value: string; negative?: boolean;
+  // Detalhe ao lado do valor (ex.: conta + Balance).
+  valueNote?: React.ReactNode;
   badge?: string; children?: React.ReactNode; spark?: { key: string; v: number }[]; sparkId?: string;
   // Selo de alerta no canto superior direito (detalhe no tooltip; clique opcional).
   alert?: { label: string; detail: string; onClick?: () => void };
@@ -695,7 +712,10 @@ function KpiCard({ icon: Icon, tone, title, subtitle, value, negative, badge, al
           </Tooltip>
         )}
       </div>
-      <div className={`relative z-10 mt-2 text-xl font-bold leading-none tracking-tight tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
+      <div className="relative z-10 mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <div className={`text-xl font-bold leading-none tracking-tight tabular-nums ${negative ? "text-rose-600 dark:text-rose-400" : ""}`}>{value}</div>
+        {valueNote && <div className="text-[11px] text-muted-foreground tabular-nums">{valueNote}</div>}
+      </div>
       {children && <div className="relative z-10 mt-2">{children}</div>}
       {spark && sparkId && <KpiSparkline data={spark} color={t.line} id={sparkId} />}
     </div>
@@ -745,6 +765,7 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
   const [d, setD] = useState(date);
   const [recurrence, setRecurrence] = useState<"none"|"daily"|"weekly"|"monthly">("none");
   const [until, setUntil] = useState("");
+  const [viaBalance, setViaBalance] = useState(false);
 
   const isAllShops = shopId === QUICK_ADD_ALL_SHOPS;
   const catsShopId = isAllShops ? shopIds[0] : shopId;
@@ -795,6 +816,10 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
           <div><label className="text-xs text-muted-foreground">Repetir até (opcional)</label>
             <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></div>
         )}
+        <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
+          <input type="checkbox" checked={viaBalance} onChange={(e) => setViaBalance(e.target.checked)} className="size-3.5 accent-primary" />
+          <span>{kind === "income" ? "Entrou no Shopify Balance" : "Pago com o Shopify Balance"}</span>
+        </label>
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
@@ -804,10 +829,10 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
           if (isAllShops) {
             const shares = splitAmountEvenly(v, shopIds.length);
             for (let i = 0; i < shopIds.length; i++) {
-              onSave({ shop_id: shopIds[i], kind, amount: shares[i], date: d, category, description: description||null, recurrence, recurrence_until: until||null });
+              onSave({ shop_id: shopIds[i], kind, amount: shares[i], date: d, category, description: description||null, recurrence, recurrence_until: until||null, via_balance: viaBalance });
             }
           } else {
-            onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description||null, recurrence, recurrence_until: until||null });
+            onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description||null, recurrence, recurrence_until: until||null, via_balance: viaBalance });
           }
         }}>Salvar</Button>
       </div>
@@ -824,6 +849,7 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
   const [until, setUntil]             = useState(entry.recurrence_until ?? "");
   const [skipWeekend, setSkipWeekend] = useState(Boolean(entry.skip_weekend_rule));
   const [reconciled, setReconciled]   = useState(Boolean(entry.reconciled));
+  const [viaBalance, setViaBalance]   = useState(Boolean(entry.via_balance));
   const isShopify   = entry.source === "shopify_import" || entry.source === "shopify_sync";
   const canReconcile = !entry.virtual && entry.source !== "shopify_pending";
   return (
@@ -866,6 +892,10 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
         {typeof entry.shiftedFromWeekday === "number" && (
           <div className="text-[11px] text-amber-700 dark:text-amber-400">Originalmente previsto para {WEEKDAYS_FULL[entry.shiftedFromWeekday]}.</div>
         )}
+        <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
+          <input type="checkbox" checked={viaBalance} onChange={(e) => setViaBalance(e.target.checked)} className="size-3.5 accent-primary" />
+          <span>{entry.kind === "income" ? "Entrou no Shopify Balance" : "Pago com o Shopify Balance"}</span>
+        </label>
         {canReconcile && (
           <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
             <input type="checkbox" checked={reconciled} onChange={(e) => setReconciled(e.target.checked)} className="size-3.5 accent-primary" />
@@ -882,7 +912,7 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
           <Button onClick={() => {
             const v = parseFloat(amount);
             if (isNaN(v)) return;
-            onSave({ amount:v, category:category||null, description:description||null, date:d, recurrence, recurrence_until:until||null, skip_weekend_rule:skipWeekend, ...(canReconcile ? { reconciled } : {}) });
+            onSave({ amount:v, category:category||null, description:description||null, date:d, recurrence, recurrence_until:until||null, skip_weekend_rule:skipWeekend, via_balance:viaBalance, ...(canReconcile ? { reconciled } : {}) });
           }}>Salvar</Button>
         </div>
       </div>
@@ -1160,6 +1190,24 @@ export function LgCashflowView({
     return acc;
   }, [expanded, opening]);
 
+  // Parte do Saldo atual que está no Shopify Balance: repasses que caíram lá
+  // menos o que foi pago com o cartão dele (mesma regra: só conciliados).
+  const hasBalance = entries.some((e) => e.via_balance) || (data?.balance_shop_ids ?? []).length > 0;
+  // Cada loja tem a própria conta Balance: guarda por loja pra conferir uma a uma.
+  const balanceByShop = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const id of data?.balance_shop_ids ?? []) m.set(id, 0);
+    for (const e of expanded) {
+      if (e.virtual || !e.reconciled || !e.via_balance) continue;
+      const id = e.shop_id ?? shopId;
+      m.set(id, (m.get(id) ?? 0) + (e.kind==="income" ? Number(e.amount) : -Number(e.amount)));
+    }
+    return [...m.entries()]
+      .map(([id, amount]) => ({ id, amount }))
+      .sort((a, b) => (shopNamesMap[a.id] ?? "").localeCompare(shopNamesMap[b.id] ?? "", "pt-BR", { numeric: true, sensitivity: "base" }));
+  }, [expanded, data?.balance_shop_ids, shopId, shopNamesMap]);
+  const balanceAmount = balanceByShop.reduce((s, b) => s + b.amount, 0);
+
   // Lançamentos de dias anteriores a hoje ainda não conciliados. O Saldo atual
   // só soma conciliados, então ele ainda vai mudar quando forem conciliados —
   // o card avisa. Fora: payouts pendentes/agendados da Shopify, ocorrências
@@ -1338,6 +1386,25 @@ export function LgCashflowView({
           <KpiCard
             icon={Wallet} tone="blue" title="Saldo atual" subtitle="Disponível na conta"
             value={fmtMoneyGrouped(future)} negative={future < 0}
+            valueNote={hasBalance ? (
+              <>
+                (conta {fmtMoneyGrouped(future - balanceAmount)} +{" "}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help underline decoration-dotted underline-offset-2">Balance {fmtMoneyGrouped(balanceAmount)}</span>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">
+                    <div className="font-medium mb-1">Shopify Balance por loja</div>
+                    {balanceByShop.map((b) => (
+                      <div key={b.id} className="flex justify-between gap-4 tabular-nums">
+                        <span>{shopNamesMap[b.id] ?? b.id}</span>
+                        <span className="font-semibold">{fmtMoneyGrouped(b.amount)}</span>
+                      </div>
+                    ))}
+                  </TooltipContent>
+                </Tooltip>)
+              </>
+            ) : undefined}
             spark={saldoHistory} sparkId="caixa-kpi-saldo" alert={reconcileAlert}
           >
             <KpiChange current={future} base={saldoHistory.length ? saldoHistory[0].v : null} label="em relação a 30 dias atrás" />

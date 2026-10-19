@@ -2568,6 +2568,7 @@ export type Database = {
           source: string;
           updated_at: string;
           user_id: string;
+          via_balance: boolean;
         };
         Insert: {
           amount?: number;
@@ -2594,6 +2595,7 @@ export type Database = {
           source?: string;
           updated_at?: string;
           user_id: string;
+          via_balance?: boolean;
         };
         Update: {
           amount?: number;
@@ -2620,6 +2622,7 @@ export type Database = {
           source?: string;
           updated_at?: string;
           user_id?: string;
+          via_balance?: boolean;
         };
         Relationships: [
           {
@@ -3937,6 +3940,7 @@ export type Database = {
           logo_url: string | null;
           name: string;
           opening_balance: number;
+          payouts_to_balance: boolean;
           pipeline_position: number;
           pipeline_stage: string;
           position: number;
@@ -3957,6 +3961,7 @@ export type Database = {
           logo_url?: string | null;
           name: string;
           opening_balance?: number;
+          payouts_to_balance?: boolean;
           pipeline_position?: number;
           pipeline_stage?: string;
           position?: number;
@@ -3977,6 +3982,7 @@ export type Database = {
           logo_url?: string | null;
           name?: string;
           opening_balance?: number;
+          payouts_to_balance?: boolean;
           pipeline_position?: number;
           pipeline_stage?: string;
           position?: number;

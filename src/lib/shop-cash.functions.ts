@@ -33,7 +33,7 @@ export const listShopCash = createServerFn({ method: "GET" })
       context.supabase.from("shop_cash_imports").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .order("created_at", { ascending: false }),
-      context.supabase.from("shops").select("opening_balance, weekend_payouts_to_monday")
+      context.supabase.from("shops").select("id, opening_balance, weekend_payouts_to_monday, payouts_to_balance")
         .eq("user_id", context.ownerId).in("id", data.shop_ids),
     ]);
     if (entries.error) throw new Error(entries.error.message);
@@ -41,11 +41,14 @@ export const listShopCash = createServerFn({ method: "GET" })
     const shopRows = shops.data ?? [];
     const opening_balance = shopRows.reduce((s, r) => s + Number(r.opening_balance ?? 0), 0);
     const weekend_payouts_to_monday = shopRows.some((r) => Boolean(r.weekend_payouts_to_monday));
+    // Lojas cujos repasses caem no Shopify Balance (Configurações de Repasse).
+    const balance_shop_ids = shopRows.filter((r) => Boolean(r.payouts_to_balance)).map((r) => r.id as string);
     return {
       entries: entries.data ?? [],
       imports: imports.data ?? [],
       opening_balance,
       weekend_payouts_to_monday,
+      balance_shop_ids,
     };
   });
 
@@ -147,6 +150,27 @@ export const setWeekendRule = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Loja cujos repasses caem no Shopify Balance: os payouts que o sync gravar
+// daqui pra frente entram marcados (trigger no banco). Ligar também marca os
+// payouts dos últimos 30 dias — o caso típico é acabar de mudar pro Balance.
+export const setPayoutsToBalance = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ shop_id: z.string().uuid(), enabled: z.boolean() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase.from("shops")
+      .update({ payouts_to_balance: data.enabled })
+      .eq("user_id", context.ownerId).eq("id", data.shop_id);
+    if (error) throw new Error(error.message);
+    if (data.enabled) {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+      await context.supabase.from("shop_cash_entries")
+        .update({ via_balance: true })
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
+        .not("shopify_payout_id", "is", null).gte("date", since);
+    }
+    return { ok: true };
+  });
+
 export const createCashEntry = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) =>
@@ -159,6 +183,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
       description: z.string().max(300).nullable().optional(),
       recurrence: z.enum(RECURRENCES).optional(),
       recurrence_until: z.string().nullable().optional(),
+      via_balance: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -174,6 +199,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
       recurrence_until: data.recurrence_until ?? null,
       source: "manual",
       reconciled: true,
+      via_balance: data.via_balance ?? false,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };
@@ -194,6 +220,7 @@ export const updateCashEntry = createServerFn({ method: "POST" })
         recurrence_until: z.string().nullable().optional(),
         skip_weekend_rule: z.boolean().optional(),
         reconciled: z.boolean().optional(),
+        via_balance: z.boolean().optional(),
       }),
     }).parse(d),
   )

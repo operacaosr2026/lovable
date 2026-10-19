@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { LgCashflowView } from "@/components/lojas-grupos/LgCashflowView";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
+import { listShopCash, setPayoutsToBalance } from "@/lib/shop-cash.functions";
 import { toast } from "sonner";
 
 type ShopConfig = {
@@ -36,6 +37,23 @@ export function LgCaixa({
   });
   const [saving, setSaving] = useState<string | null>(null);
 
+  // Mesma consulta (e cache) do LgCashflowView — traz quais lojas têm o
+  // repasse caindo no Shopify Balance.
+  const cashKey  = ["shop-cash", shopIds.slice().sort().join(",")];
+  const listFn   = useServerFn(listShopCash);
+  const cashQuery = useQuery({ queryKey: cashKey, queryFn: () => listFn({ data: { shop_ids: shopIds } }) });
+  const balanceIds = new Set<string>((cashQuery.data as any)?.balance_shop_ids ?? []);
+  const setBalanceFn = useServerFn(setPayoutsToBalance);
+  const toggleBalance = async (shopId: string, enabled: boolean) => {
+    try {
+      await setBalanceFn({ data: { shop_id: shopId, enabled } });
+      qc.invalidateQueries({ queryKey: cashKey });
+      toast.success(enabled ? "Repasses dessa loja marcados como Shopify Balance" : "Repasses voltam pro banco");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao salvar");
+    }
+  };
+
   const savePayoutDays = async (shopId: string) => {
     const val = parseInt(payoutDraft[shopId] ?? "10", 10);
     if (isNaN(val) || val < 0 || val > 365) return;
@@ -65,6 +83,10 @@ export function LgCaixa({
                   {shop.name?.[0]?.toUpperCase()}
                 </div>
                 <span className="text-sm text-foreground flex-1 truncate">{shop.name}</span>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none shrink-0" title="Os repasses dessa loja caem no Shopify Balance">
+                  <input type="checkbox" checked={balanceIds.has(shop.id)} onChange={(e) => toggleBalance(shop.id, e.target.checked)} className="size-3.5 accent-primary" />
+                  Balance
+                </label>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-xs text-muted-foreground">D+</span>
                   <input
@@ -91,6 +113,7 @@ export function LgCaixa({
             <div className="pt-2">
               <p className="text-[11px] text-muted-foreground">
                 Os payouts pendentes são estimados usando D+ configurado por loja. Altere para ajustar a previsão no caixa.
+                Marque "Balance" nas lojas cujo repasse cai no Shopify Balance — os depósitos dela ganham a marca no caixa.
               </p>
             </div>
           </div>
