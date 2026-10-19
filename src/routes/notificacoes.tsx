@@ -230,7 +230,7 @@ function NotificacoesPage() {
               Nenhum pedido atrasado com esses filtros.
             </div>
           ) : (
-            <table className="w-full text-sm min-w-[1100px] table-fixed">
+            <table className="w-full text-sm min-w-[1280px] table-fixed">
               {/* Larguras fixas: sem isso a coluna Rastreio esticava e sobrava um vão. */}
               <colgroup>
                 <col className="w-12" />
@@ -240,7 +240,8 @@ function NotificacoesPage() {
                 <col />
                 <col className="w-[210px]" />
                 <col className="w-[200px]" />
-                <col className="w-20" />
+                <col className="w-[200px]" />
+                <col className="w-14" />
               </colgroup>
               <thead>
                 <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
@@ -254,6 +255,7 @@ function NotificacoesPage() {
                   <th className="font-medium py-2.5 px-2">Rastreio</th>
                   <th className="font-medium py-2.5 px-2">Código de rastreio</th>
                   <th className="font-medium py-2.5 px-2">Último aviso</th>
+                  <th className="font-medium py-2.5 px-2">Nota</th>
                   <th className="font-medium py-2.5 pr-4 pl-2 text-right">Ações</th>
                 </tr>
               </thead>
@@ -274,11 +276,6 @@ function NotificacoesPage() {
                           <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400 mt-1" icon={ShieldAlert}>
                             {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"}
                           </Pill>
-                        )}
-                        {o.note && (
-                          <div className="mt-1 flex items-start gap-1 text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 rounded-md px-1.5 py-0.5" title={o.note}>
-                            <StickyNote className="size-3 mt-0.5 shrink-0" /><span className="line-clamp-2 break-words">{o.note}</span>
-                          </div>
                         )}
                       </td>
                       <td className="py-3 px-2">
@@ -332,8 +329,10 @@ function NotificacoesPage() {
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 pr-3 pl-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <NoteButton order={o} />
+                      <td className="py-2.5 px-2" onClick={(e) => e.stopPropagation()}>
+                        <NoteCell order={o} />
+                      </td>
+                      <td className="py-2.5 pr-3 pl-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button type="button" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Ações">
@@ -376,7 +375,7 @@ function NotificacoesPage() {
 
 // ─── Nota da equipe ───────────────────────────────────────────────────────────
 
-function NoteButton({ order }: { order: NoticeOrder }) {
+function NoteCell({ order }: { order: NoticeOrder }) {
   const saveFn = useServerFn(saveNoticeNote);
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -395,12 +394,19 @@ function NoteButton({ order }: { order: NoticeOrder }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" aria-label={order.note ? "Editar nota" : "Adicionar nota"} title={order.note ? "Editar nota" : "Adicionar nota"}
-          className={`p-1.5 rounded-lg hover:bg-muted ${order.note ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
-          <StickyNote className="size-4" />
-        </button>
+        {order.note ? (
+          <button type="button" title="Editar nota"
+            className="w-full text-left flex items-start gap-1.5 text-xs text-amber-900 dark:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 rounded-md px-2 py-1.5">
+            <StickyNote className="size-3.5 mt-px shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="whitespace-pre-wrap break-words line-clamp-4">{order.note}</span>
+          </button>
+        ) : (
+          <button type="button" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground rounded-md px-1.5 py-1 hover:bg-muted">
+            <Plus className="size-3.5" /> Nota
+          </button>
+        )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 space-y-2" onClick={(e) => e.stopPropagation()}>
+      <PopoverContent align="start" className="w-80 space-y-2" onClick={(e) => e.stopPropagation()}>
         <p className="text-xs font-medium">Nota — {customerOrderNumber(order.orderNumber)}</p>
         <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={1000} autoFocus
           placeholder="Ex.: cliente pediu pra esperar mais uns dias"
