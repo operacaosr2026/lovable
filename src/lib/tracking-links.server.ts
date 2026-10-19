@@ -21,6 +21,38 @@ async function activeShopIds(): Promise<string[]> {
   return [...new Set(((data ?? []) as any[]).map((r) => r.shop_id as string))];
 }
 
+// Loja nova em card ativo já entra no 17track com o link de rastreio do card (o
+// mais usado entre as outras lojas dele) — antes era preciso ir em Integrações
+// e colar o mesmo link à mão. Loja com link vazio também recebe o padrão; card
+// sem nenhum link definido fica como está.
+export async function ensureDefaultTrackingLinks(ownerId?: string): Promise<number> {
+  let q = supabaseAdmin.from("lg_card_shops").select("card_id,shop_id,lg_cards!inner(status,user_id)").eq("lg_cards.status", "ativo");
+  if (ownerId) q = q.eq("lg_cards.user_id", ownerId);
+  const { data: links, error } = await q;
+  if (error) throw new Error(error.message);
+  const rows = (links ?? []) as any[];
+  if (!rows.length) return 0;
+  const { data: integs } = await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template")
+    .in("shop_id", [...new Set(rows.map((r) => r.shop_id as string))]);
+  const templateBy = new Map(((integs ?? []) as any[]).map((i) => [i.shop_id as string, String(i.tracking_link_template ?? "").trim()]));
+  const todo: { user_id: string; shop_id: string; provider: string; tracking_link_template: string }[] = [];
+  for (const cardId of new Set(rows.map((r) => r.card_id as string))) {
+    const shops = rows.filter((r) => r.card_id === cardId);
+    const count = new Map<string, number>();
+    for (const s of shops) { const t = templateBy.get(s.shop_id); if (t) count.set(t, (count.get(t) ?? 0) + 1); }
+    const def = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (!def) continue;
+    for (const s of shops) {
+      if (templateBy.get(s.shop_id) || todo.some((t) => t.shop_id === s.shop_id)) continue;
+      todo.push({ user_id: s.lg_cards.user_id, shop_id: s.shop_id, provider: "17track", tracking_link_template: def });
+    }
+  }
+  if (!todo.length) return 0;
+  const { error: upErr } = await supabaseAdmin.from("track123_integrations").upsert(todo, { onConflict: "shop_id" });
+  if (upErr) throw new Error(upErr.message);
+  return todo.length;
+}
+
 export async function fixShopifyTrackingLinks(opts: { limit?: number; deadline?: number } = {}): Promise<FixResult> {
   const out: FixResult = { checked: 0, wrong: 0, fixed: 0, failed: 0, errors: [] };
   const shopIds = await activeShopIds();

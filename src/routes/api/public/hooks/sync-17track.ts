@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { reportSystemError, clearSystemError } from "@/lib/system-errors.server";
 import { broadcast } from "@/lib/realtime.server";
 import { runSeventeenTrackSync, seventeenTrackConfigured } from "@/lib/seventeen-track.server";
-import { fixShopifyTrackingLinks } from "@/lib/tracking-links.server";
+import { ensureDefaultTrackingLinks, fixShopifyTrackingLinks } from "@/lib/tracking-links.server";
 
 // Cron do 17track (pg_cron a cada 30 min, migração 20261006000000): só as lojas
 // com "Rastreio por: 17track". Sem loja ligada, não faz nada nem gasta crédito.
@@ -17,6 +17,8 @@ export const Route = createFileRoute("/api/public/hooks/sync-17track")({
         if (unauthorized) return unauthorized;
         if (!seventeenTrackConfigured()) return Response.json({ skipped: "sem SEVENTEEN_TRACK_API_KEY" });
 
+        // Loja nova em card ativo ganha o link padrão do card antes do sync.
+        const linked = await ensureDefaultTrackingLinks().catch((e) => { console.error("17track link padrão", e); return 0; });
         const { data: owners } = await supabaseAdmin.from("track123_integrations").select("user_id").eq("provider", "17track");
         const ownerIds = [...new Set((owners ?? []).map((o) => o.user_id as string))];
         try {
@@ -33,7 +35,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-17track")({
             await clearSystemError(u, "seventeen_track:run");
             if (r.updated) await broadcast(u, "orders", {});
           }
-          return Response.json({ ...r, links });
+          return Response.json({ ...r, links, linked });
         } catch (e) {
           console.error("17track sync fail", e);
           for (const u of ownerIds) await reportSystemError(u, "seventeen_track:run", "Rastreio (17track) não sincronizou", e);

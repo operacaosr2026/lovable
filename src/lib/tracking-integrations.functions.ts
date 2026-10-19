@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runSeventeenTrackSync } from "@/lib/seventeen-track.server";
+import { ensureDefaultTrackingLinks } from "@/lib/tracking-links.server";
 
 // Rastreio por loja (17track): modelo do link de rastreio e status do último
 // sync. A tabela ainda se chama track123_integrations (nome antigo).
@@ -30,6 +31,8 @@ export const getTrackingIntegrations = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const shopIds = await filterOwnedShopIds(context.ownerId, data.shop_ids);
     if (!shopIds.length) return [];
+    // Abriu a tela: loja nova de card ativo já aparece com o link padrão.
+    await ensureDefaultTrackingLinks(context.ownerId).catch((e) => console.error("link padrão", e));
     const { data: rows, error } = await supabaseAdmin
       .from("track123_integrations")
       .select("shop_id,tracking_link_template,last_sync_at,last_sync_status,last_sync_error")
