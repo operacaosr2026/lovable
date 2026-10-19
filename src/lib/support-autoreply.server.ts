@@ -36,7 +36,7 @@ Thanks for reaching out!    (if the order is late or had a problem, a short apol
 
 If you have any questions or need any assistance with your order, just let us know. We'll be happy to help!
 Tracking link: never write a URL. {{TRACK_LINK}} goes alone on its own line exactly as above — it becomes a clickable "Track your order here". If the customer has more than one order, use {{TRACK_LINK #ORDERNUMBER}}, one per line. Leave the line out when the order has no tracking_link.
-Use ONLY the facts in <orders>. The store's promise is processing 1–3 business days + 5–13 business days in transit — use it only to judge whether the order is on time; never quote or remind the customer of the delivery window.
+Use ONLY the facts in <orders>. The store's promise is processing 1–5 business days + 5–13 business days in transit — use it only to judge whether the order is on time; never quote or remind the customer of the delivery window.
 - Never mention dates or details of carrier events (when it left, which facility, sorting center, customs, airport, export/import, origin country). Describe the situation in simple words only: on its way / out for delivery / delivered.
 - Within the promised window: just say the order is on its way and that they can follow it through the tracking link. Do not say it is within the expected delivery time / on schedule. Nothing more.
 - Past the window, or no movement for several days: say sorry for the wait, that the order is on its way and that the team is keeping an eye on it and will update them — never promise a refund, reship, discount or a delivery date.
@@ -62,7 +62,7 @@ Thanks for reaching out!    (se o pedido está atrasado ou teve problema, um ped
 
 If you have any questions or need any assistance with your order, just let us know. We'll be happy to help!
 Link de rastreio: nunca escreva uma URL. {{TRACK_LINK}} fica sozinho numa linha, exatamente como acima — vira o texto clicável "Track your order here". Se o cliente tem mais de um pedido, use {{TRACK_LINK #NUMERODOPEDIDO}}, um por linha. Tire a linha quando o pedido não tem link de rastreio.
-Use SÓ os fatos de <orders>. A promessa da loja é processamento em 1–3 dias úteis + 5–13 dias úteis em trânsito — use isso só pra julgar se o pedido está no prazo; nunca cite nem lembre o cliente do prazo de entrega.
+Use SÓ os fatos de <orders>. A promessa da loja é processamento em 1–5 dias úteis + 5–13 dias úteis em trânsito — use isso só pra julgar se o pedido está no prazo; nunca cite nem lembre o cliente do prazo de entrega.
 - Nunca fale de datas ou detalhes dos eventos da transportadora (quando saiu, qual unidade, centro de triagem, alfândega, aeroporto, exportação/importação, país de origem). Descreva a situação em palavras simples: a caminho / saiu para entrega / entregue.
 - Dentro do prazo prometido: diga só que o pedido está a caminho e que dá pra acompanhar pelo link de rastreio. Não diga que está dentro do prazo / no tempo previsto. Nada mais.
 - Fora do prazo, ou sem movimentação há vários dias: peça desculpas pela espera, diga que o pedido está a caminho e que a equipe está acompanhando e vai dar notícias — nunca prometa reembolso, reenvio, desconto ou data de entrega.
