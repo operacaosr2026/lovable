@@ -3214,6 +3214,7 @@ export type Database = {
           items_count: number;
           kpi_excluded: boolean;
           logistics_note: string | null;
+          notice_note: string | null;
           order_date: string;
           order_number: string | null;
           paid_at: string | null;
@@ -3245,6 +3246,7 @@ export type Database = {
           items_count?: number;
           kpi_excluded?: boolean;
           logistics_note?: string | null;
+          notice_note?: string | null;
           order_date: string;
           order_number?: string | null;
           paid_at?: string | null;
@@ -3276,6 +3278,7 @@ export type Database = {
           items_count?: number;
           kpi_excluded?: boolean;
           logistics_note?: string | null;
+          notice_note?: string | null;
           order_date?: string;
           order_number?: string | null;
           paid_at?: string | null;

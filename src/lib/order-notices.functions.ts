@@ -128,6 +128,7 @@ export type NoticeOrder = {
   supportAt: string | null;   // última vez que o cliente escreveu pro suporte
   notices: { at: string; title: string }[];  // enviados, mais recente primeiro
   queued: boolean;            // tem e-mail esperando na fila
+  note: string | null;        // nota da equipe (shop_orders.notice_note)
 };
 
 const cleanLabel = (label: string | null | undefined) =>
@@ -156,7 +157,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
 
     // Em aberto: sem entrega/devolução, sem cancelamento nem reembolso.
     const { data: orders, error } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-      .select("id,shop_id,external_id,order_number,order_date,tracking_code,tracking_url,delivery_status,shipped_at,problem_at,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,ship_first:raw->shipping_address->>first_name,ship_last:raw->shipping_address->>last_name")
+      .select("id,shop_id,external_id,order_number,order_date,tracking_code,tracking_url,delivery_status,shipped_at,problem_at,notice_note,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,ship_first:raw->shipping_address->>first_name,ship_last:raw->shipping_address->>last_name")
       .eq("user_id", ownerId)
       .in("shop_id", [...shops.keys()])
       .lte("order_date", day(NOTICE_MIN_DAYS))
@@ -238,9 +239,24 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
         supportAt: email ? supportBy.get(email) ?? null : null,
         notices: noticesBy.get(o.id) ?? [],
         queued: queued.has(o.id),
+        note: o.notice_note ?? null,
       });
     }
     return out.sort((a, b) => b.days - a.days);
+  });
+
+// Nota da equipe no pedido (vazia apaga). Só pedido de loja do workspace.
+export const saveNoticeNote = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ orderId: z.string().uuid(), note: z.string().max(1000) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { data: row, error } = await supabaseAdmin.from("shop_orders")
+      .update({ notice_note: data.note.trim() || null })
+      .eq("id", data.orderId).eq("user_id", context.ownerId).select("id").maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Pedido não encontrado");
+    return { ok: true };
   });
 
 // ─── Envio (fila) ─────────────────────────────────────────────────────────────

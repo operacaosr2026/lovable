@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
   Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Store, Tag, ListFilter, ArrowRight,
-  Copy, MoreVertical, ExternalLink,
+  Copy, MoreVertical, ExternalLink, StickyNote,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue,
+  listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue, saveNoticeNote,
   type NoticeOrder, type NoticeTemplate, type NoticeQueue,
 } from "@/lib/order-notices.functions";
 import { NOTICE_STAGES, NOTICE_INTERVAL_MIN, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
@@ -111,7 +111,7 @@ function NotificacoesPage() {
       if (hideDispute && o.dispute) return false;
       if (hideWaiting && o.status === "esperando_cliente") return false;
       if (hideSupport && o.supportAt) return false;
-      if (term && !`${o.orderNumber} ${o.customerName} ${o.email ?? ""} ${o.trackingCode ?? ""}`.toLowerCase().includes(term)) return false;
+      if (term && !`${o.orderNumber} ${o.customerName} ${o.email ?? ""} ${o.trackingCode ?? ""} ${o.note ?? ""}`.toLowerCase().includes(term)) return false;
       return true;
     });
   }, [orders, search, shop, status, hideRecent, hideDispute, hideWaiting, hideSupport]);
@@ -240,7 +240,7 @@ function NotificacoesPage() {
                 <col />
                 <col className="w-[210px]" />
                 <col className="w-[200px]" />
-                <col className="w-14" />
+                <col className="w-20" />
               </colgroup>
               <thead>
                 <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
@@ -274,6 +274,11 @@ function NotificacoesPage() {
                           <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400 mt-1" icon={ShieldAlert}>
                             {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"}
                           </Pill>
+                        )}
+                        {o.note && (
+                          <div className="mt-1 flex items-start gap-1 text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 rounded-md px-1.5 py-0.5" title={o.note}>
+                            <StickyNote className="size-3 mt-0.5 shrink-0" /><span className="line-clamp-2 break-words">{o.note}</span>
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-2">
@@ -327,7 +332,8 @@ function NotificacoesPage() {
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 pr-3 pl-2 text-right" onClick={(e) => e.stopPropagation()}>
+                      <td className="py-2.5 pr-3 pl-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <NoteButton order={o} />
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button type="button" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Ações">
@@ -365,6 +371,50 @@ function NotificacoesPage() {
         onDone={() => setSelected(new Set())} />
       <TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} templates={templates.data ?? []} />
     </PageShell>
+  );
+}
+
+// ─── Nota da equipe ───────────────────────────────────────────────────────────
+
+function NoteButton({ order }: { order: NoticeOrder }) {
+  const saveFn = useServerFn(saveNoticeNote);
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(order.note ?? "");
+  useEffect(() => { if (open) setText(order.note ?? ""); }, [open, order.note]);
+  const save = useMutation({
+    mutationFn: (note: string) => saveFn({ data: { orderId: order.id, note } }),
+    onSuccess: (_r, note) => {
+      // Atualiza a lista na hora, sem esperar recarregar.
+      qc.setQueryData<NoticeOrder[]>(["notice-orders"], (cur) => cur?.map((x) => (x.id === order.id ? { ...x, note: note.trim() || null } : x)));
+      setOpen(false);
+      toast.success(note.trim() ? "Nota salva" : "Nota apagada");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" aria-label={order.note ? "Editar nota" : "Adicionar nota"} title={order.note ? "Editar nota" : "Adicionar nota"}
+          className={`p-1.5 rounded-lg hover:bg-muted ${order.note ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
+          <StickyNote className="size-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 space-y-2" onClick={(e) => e.stopPropagation()}>
+        <p className="text-xs font-medium">Nota — {customerOrderNumber(order.orderNumber)}</p>
+        <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={1000} autoFocus
+          placeholder="Ex.: cliente pediu pra esperar mais uns dias"
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save.mutate(text); }} />
+        <div className="flex justify-between gap-2">
+          {order.note ? (
+            <Button variant="ghost" size="sm" className="text-rose-600" disabled={save.isPending} onClick={() => save.mutate("")}>Apagar</Button>
+          ) : <span />}
+          <Button size="sm" disabled={save.isPending || text.trim() === (order.note ?? "")} onClick={() => save.mutate(text)}>
+            {save.isPending && <Loader2 className="size-3.5 animate-spin" />} Salvar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
