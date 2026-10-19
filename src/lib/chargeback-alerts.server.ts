@@ -36,10 +36,12 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
   const { data: shops } = await supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId);
   const shopName = new Map(((shops ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]));
 
-  // Só pedidos com reembolso (o resto do pedido não interessa aqui).
+  // Só pedidos com reembolso (o resto do pedido não interessa aqui). Todo pedido
+  // vem com "refunds": [] — filtrar só "not null" puxava os ~2 mil pedidos e
+  // estourava o tempo do banco quando coincidia com o sync de pedidos.
   const { data: orders, error } = await selectAll<any>(supabaseAdmin.from("shop_orders")
     .select("id,shop_id,external_id,order_number,order_date,delivery_status,delivered_at,tracking_code,tracking_url,shopify_financial_status,tags:raw->>tags,currency:raw->>currency,refunds:raw->refunds,email:raw->>email,fn:raw->customer->>first_name,ln:raw->customer->>last_name,items:raw->line_items")
-    .eq("user_id", ownerId).in("shop_id", shopIds).not("raw->refunds", "is", null));
+    .eq("user_id", ownerId).in("shop_id", shopIds).neq("raw->refunds", "[]"));
   if (error) throw new Error(error.message);
 
   const found: any[] = [];
