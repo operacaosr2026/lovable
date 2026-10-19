@@ -4,15 +4,15 @@
 // limita 50–500 e-mails externos por hora, contando os do Atendimento).
 export const NOTICE_INTERVAL_MIN = 3;
 
-// Pedido entra na lista a partir de 7 dias da compra e sai depois de 180.
-export const NOTICE_MIN_DAYS = 7;
+// Pedido entra na lista a partir de 5 dias da compra e sai depois de 180.
+export const NOTICE_MIN_DAYS = 5;
 export const NOTICE_MAX_DAYS = 180;
 
 // Etapas por dias desde a compra. Chargeback de "produto não recebido" abre,
 // na mediana, 20 dias depois da compra (metade entre 14 e 29 — out/2026).
 export const NOTICE_STAGES = [
-  { key: "7", label: "7 a 13 dias", hint: "Antes do pico de chargebacks", from: 7, to: 13 },
-  { key: "14", label: "14 a 20 dias", hint: "Começam os chargebacks", from: 14, to: 20 },
+  { key: "5", label: "5 a 9 dias", hint: "Antes do pico de chargebacks", from: 5, to: 9 },
+  { key: "10", label: "10 a 20 dias", hint: "Começam os chargebacks", from: 10, to: 20 },
   { key: "21", label: "21 a 29 dias", hint: "Pico de chargebacks", from: 21, to: 29 },
   { key: "30", label: "30 dias ou mais", hint: "Muito atrasado", from: 30, to: Infinity },
 ] as const;

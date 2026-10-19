@@ -49,8 +49,8 @@ const TONE = {
 } as const;
 type Tone = (typeof TONE)[keyof typeof TONE];
 const STAGE_LOOK: Record<NoticeStageKey, { tone: Tone; icon: typeof Truck }> = {
-  "7":  { tone: TONE.amber,  icon: Clock },
-  "14": { tone: TONE.orange, icon: Clock },
+  "5":  { tone: TONE.amber,  icon: Clock },
+  "10": { tone: TONE.orange, icon: Clock },
   "21": { tone: TONE.rose,   icon: Clock },
   "30": { tone: TONE.rose,   icon: AlertTriangle },
 };
@@ -148,7 +148,7 @@ function NotificacoesPage() {
       {/* Etapas */}
       <div className={`${CARD} grid grid-cols-2 lg:grid-cols-5 gap-1 p-2 mb-4`}>
         <StageCard active={stage === "todos"} onClick={() => setStage("todos")} tone={TONE.violet} icon={Mail}
-          label="Todos os atrasados" hint="7 dias ou mais desde a compra"
+          label="Todos os atrasados" hint="5 dias ou mais desde a compra"
           count={base.length} notNotified={base.filter((o) => !o.notices.length).length} />
         {NOTICE_STAGES.map((s) => {
           const list = base.filter((o) => stageOf(o.days) === s.key);
