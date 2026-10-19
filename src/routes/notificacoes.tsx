@@ -230,18 +230,19 @@ function NotificacoesPage() {
               Nenhum pedido atrasado com esses filtros.
             </div>
           ) : (
-            <table className="w-full text-sm min-w-[1280px] table-fixed">
-              {/* Larguras fixas: sem isso a coluna Rastreio esticava e sobrava um vão. */}
+            <table className="w-full text-sm min-w-[1180px] table-fixed">
+              {/* Larguras fixas; só Cliente estica (nome/e-mail cortam com "…"). Antes Rastreio
+                  era a coluna flexível e, com a Nota, ficava espremida e o texto encavalava. */}
               <colgroup>
-                <col className="w-12" />
-                <col className="w-[150px]" />
-                <col className="w-[22%]" />
-                <col className="w-[96px]" />
+                <col className="w-11" />
+                <col className="w-[130px]" />
                 <col />
-                <col className="w-[210px]" />
-                <col className="w-[200px]" />
-                <col className="w-[200px]" />
-                <col className="w-14" />
+                <col className="w-[84px]" />
+                <col className="w-[190px]" />
+                <col className="w-[185px]" />
+                <col className="w-[165px]" />
+                <col className="w-[180px]" />
+                <col className="w-12" />
               </colgroup>
               <thead>
                 <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
