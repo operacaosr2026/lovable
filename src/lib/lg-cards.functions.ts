@@ -823,6 +823,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     }
     const lucro = profit({ faturamento, custoProduto, taxas, anuncios });
     const prevLucro = profit({ faturamento: prevFaturamento, custoProduto: prevCustoProduto, taxas: prevTaxas, anuncios: prevAnuncios });
+    const chargebacks = shopIds.reduce((s, id) => s + (chargebacksByShop.get(id) ?? 0), 0);
+    const prevChargebacks = shopIds.reduce((s, id) => s + (prevChargebacksByShop.get(id) ?? 0), 0);
     const taxaEstorno = totalPedidosEstorno > 0 ? totalEstornosEstorno / totalPedidosEstorno : 0;
     const prevTaxaEstorno = prevTotalPedidosEstorno > 0 ? prevTotalEstornosEstorno / prevTotalPedidosEstorno : 0;
 
@@ -846,6 +848,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
           anuncios: Math.round(dayAnuncios * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
           lucro: Math.round((dayFaturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          chargebacks: Math.round(dayChargebacks * 100) / 100,
         };
       });
 
@@ -874,7 +877,10 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
         pedidos,       pedidosDelta:       dashboardDelta(pedidos, prevPedidos),
         // Já descontados do faturamento (e do lucro) acima — o card do Lucro mostra quanto foi.
         reembolsos:  shopIds.reduce((s, id) => s + (reembolsosByShop.get(id) ?? 0), 0),
-        chargebacks: shopIds.reduce((s, id) => s + (chargebacksByShop.get(id) ?? 0), 0),
+        chargebacks,
+        // Chave "sem chargebacks" do card do Lucro: o mesmo lucro somando de volta os chargebacks.
+        lucroSemCb: lucro + chargebacks,
+        lucroSemCbDelta: dashboardDelta(lucro + chargebacks, prevLucro + prevChargebacks),
       },
       chartData,
       shopBreakdown,

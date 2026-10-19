@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageHeader";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -118,7 +118,7 @@ function DashDelta({ value, unit = "%", invert = false }: { value: number; unit?
 
 // ─── Sparkline (mini gráfico sem eixos, dentro do card de KPI) ─────────────────
 
-type DailyPoint = { date: string; faturamento: number; anuncios: number; custo: number; lucro: number };
+type DailyPoint = { date: string; faturamento: number; anuncios: number; custo: number; lucro: number; chargebacks?: number; lucroSemCb?: number };
 
 function Sparkline({ data, dataKey, color }: { data: DailyPoint[]; dataKey: keyof DailyPoint; color: string }) {
   if (data.length < 2) return <div className="h-full" />;
@@ -170,8 +170,9 @@ function Sparkline({ data, dataKey, color }: { data: DailyPoint[]; dataKey: keyo
 
 function DashKpiCard({
   icon: Icon, accent, label, value, delta, deltaUnit = "%", invert = false,
-  sparklineKey, chartData, stats, periodNote, shopRows, loading, compareLabel = "vs. período anterior",
+  sparklineKey, chartData, stats, periodNote, shopRows, loading, compareLabel = "vs. período anterior", headerAction,
 }: {
+  headerAction?: ReactNode;
   icon: any; accent: MetricAccent; label: string; value: string;
   delta: number; deltaUnit?: string; invert?: boolean;
   sparklineKey?: keyof DailyPoint;
@@ -190,6 +191,7 @@ function DashKpiCard({
           <Icon className="size-4.5" />
         </div>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{label}</p>
+        {headerAction && <div className="ml-auto shrink-0">{headerAction}</div>}
       </div>
       {loading
         ? <div className="h-7 w-24 bg-muted animate-pulse rounded-lg" />
@@ -805,6 +807,13 @@ function Dashboard() {
     reembolsos: 0, chargebacks: 0,
   };
   const chartData: DailyPoint[] = (data as any)?.chartData ?? [];
+  // Card do Lucro: chave pra ver o lucro sem os chargebacks (lembra a escolha neste navegador).
+  const [semCb, setSemCb] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem("dash-lucro-sem-cb") === "1") setSemCb(true); } catch { /* sem storage */ } }, []);
+  const toggleSemCb = () => setSemCb((v) => { try { localStorage.setItem("dash-lucro-sem-cb", v ? "0" : "1"); } catch { /* sem storage */ } return !v; });
+  const lucroChart = useMemo(() => chartData.map((d) => ({ ...d, lucroSemCb: d.lucro + (d.chargebacks ?? 0) })), [chartData]);
+  const lucroShown = semCb ? (totals.lucroSemCb ?? totals.lucro + (totals.chargebacks ?? 0)) : totals.lucro;
+  const fatShown = semCb ? totals.faturamento + (totals.chargebacks ?? 0) : totals.faturamento;
   const shopBreakdown: ShopBreakdownRow[] = (data as any)?.shopBreakdown ?? [];
   const productBreakdown: DashboardProductRow[] = (data as any)?.productBreakdown ?? [];
 
@@ -892,11 +901,21 @@ function Dashboard() {
         />
         <DashKpiCard compareLabel={compareLabel}
           icon={Wallet} accent="success" loading={isLoading}
-          label="Lucro" value={fmtMoney(totals.lucro)}
-          delta={totals.lucroDelta} sparklineKey="lucro" chartData={chartData}
+          label={semCb ? "Lucro sem chargebacks" : "Lucro"} value={fmtMoney(lucroShown)}
+          delta={semCb ? (totals.lucroSemCbDelta ?? totals.lucroDelta) : totals.lucroDelta}
+          sparklineKey={semCb ? "lucroSemCb" : "lucro"} chartData={lucroChart}
+          headerAction={
+            <button type="button" onClick={toggleSemCb}
+              title={semCb ? "Chargebacks fora da conta — clique pra descontar" : "Chargebacks descontados — clique pra tirar da conta"}
+              className={`text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors ${
+                semCb ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+              }`}>
+              {semCb ? "sem CB" : "com CB"}
+            </button>
+          }
           stats={[
-            { label: "Margem de lucro", value: fmtPct(totals.faturamento > 0 ? totals.lucro / totals.faturamento : 0) },
-            { label: "Média diária", value: fmtMoney(totals.lucro / nDias) },
+            { label: "Margem de lucro", value: fmtPct(fatShown > 0 ? lucroShown / fatShown : 0) },
+            { label: "Média diária", value: fmtMoney(lucroShown / nDias) },
             // Já descontados do faturamento e do lucro.
             { label: "Reembolsos", value: fmtMoney(totals.reembolsos ?? 0) },
             { label: "Chargebacks", value: fmtMoney(totals.chargebacks ?? 0) },
