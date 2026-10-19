@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
   Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Store, Tag, ListFilter, ArrowRight,
-  StickyNote,
+  StickyNote, Copy, ListTodo,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -22,7 +22,8 @@ import {
   type NoticeOrder, type NoticeTemplate, type NoticeQueue,
 } from "@/lib/order-notices.functions";
 import { NOTICE_STAGES, NOTICE_INTERVAL_MIN, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
-import { US_TIME_ZONE } from "@/lib/timezone";
+import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
+import { createTask, listTaskAssignees } from "@/lib/tasks.functions";
 
 export const Route = createFileRoute("/notificacoes")({
   beforeLoad: requireAuth,
@@ -68,6 +69,25 @@ const fmtDateTime = (iso: string) =>
 const daysAgo = (iso: string) => (Date.now() - new Date(iso).getTime()) / 86_400_000;
 const recentlyNotified = (o: NoticeOrder) => !!o.notices[0] && daysAgo(o.notices[0].at) < RECENT_DAYS;
 
+// Texto pra cobrar o fornecedor no WhatsApp: um pedido por linha, com loja,
+// data/dias, situação do envio (rastreio e último evento) e a nota da equipe.
+function supplierMessage(orders: NoticeOrder[]) {
+  const lines = orders.map((o) => {
+    const parts = [`${customerOrderNumber(o.orderNumber)} (${o.shopName})`, `comprado ${fmtDate(o.orderDate)} · ${o.days} dias`];
+    if (o.trackingCode) {
+      parts.push(`${STATUS[o.status].label.toLowerCase()} · rastreio ${o.trackingCode}`);
+      if (o.lastEvent) parts.push(`último evento${o.lastEventAt ? ` ${fmtDate(o.lastEventAt)}` : ""}: ${o.lastEvent}`);
+    } else {
+      parts.push("ainda não enviado (sem rastreio)");
+    }
+    if (o.note) parts.push(`obs: ${o.note}`);
+    return `• ${parts.join(" — ")}`;
+  });
+  const n = orders.length;
+  const intro = `Olá! Preciso de uma atualização ${n === 1 ? "deste pedido atrasado" : `destes ${n} pedidos atrasados`}:`;
+  return [intro, "", ...lines, "", "Pode verificar, por favor? Obrigado!"].join("\n");
+}
+
 function NotificacoesPage() {
   const listFn = useServerFn(listNoticeOrders);
   const tplFn = useServerFn(listNoticeTemplates);
@@ -94,6 +114,16 @@ function NotificacoesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sendOpen, setSendOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+
+  const copySupplierMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(supplierMessage(selectedOrders));
+      toast.success("Mensagem copiada — é só colar no WhatsApp do fornecedor");
+    } catch {
+      toast.error("Não deu pra copiar");
+    }
+  };
 
   const orders = q.data ?? [];
   const shops = useMemo(() => [...new Map(orders.map((o) => [o.shopId, o.shopName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [orders]);
@@ -211,9 +241,17 @@ function NotificacoesPage() {
               </>
             )}
           </div>
-          <Button disabled={!selectedOrders.length} onClick={() => setSendOpen(true)}>
-            <Send className="size-4" /> Enviar e-mail
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" disabled={!selectedOrders.length} onClick={copySupplierMessage}>
+              <Copy className="size-4" /> Copiar p/ fornecedor
+            </Button>
+            <Button variant="outline" disabled={!selectedOrders.length} onClick={() => setTaskOpen(true)}>
+              <ListTodo className="size-4" /> Criar tarefa
+            </Button>
+            <Button disabled={!selectedOrders.length} onClick={() => setSendOpen(true)}>
+              <Send className="size-4" /> Enviar e-mail
+            </Button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -330,7 +368,81 @@ function NotificacoesPage() {
         onEditTemplates={() => { setSendOpen(false); setTemplatesOpen(true); }}
         onDone={() => setSelected(new Set())} />
       <TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} templates={templates.data ?? []} />
+      {taskOpen && <TaskDialog orders={selectedOrders} onClose={() => setTaskOpen(false)} />}
     </PageShell>
+  );
+}
+
+// ─── Tarefa a partir da seleção ───────────────────────────────────────────────
+// Vai pra página Tarefas (área Pedidos). Título e descrição saem da nota de
+// cada pedido — é ela que diz o que precisa ser feito.
+
+function taskFromNotes(orders: NoticeOrder[]) {
+  const n = orders.length;
+  const notes = [...new Set(orders.map((o) => o.note?.trim()).filter(Boolean) as string[])];
+  const nums = orders.map((o) => customerOrderNumber(o.orderNumber));
+  const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  const title = n === 1
+    ? (notes[0] ? `${nums[0]} — ${capital(notes[0])}` : `Pedido ${nums[0]} atrasado`)
+    : notes.length === 1
+      ? `${capital(notes[0])} — ${n} pedidos`
+      : `${n} pedidos atrasados`;
+  const lines = orders.map((o) => {
+    const parts = [`${customerOrderNumber(o.orderNumber)} (${o.shopName})`, `${fmtDate(o.orderDate)} · ${o.days} dias`, STATUS[o.status].label.toLowerCase()];
+    if (o.trackingCode) parts.push(`rastreio ${o.trackingCode}`);
+    if (o.note) parts.push(`nota: ${o.note}`);
+    return `• ${parts.join(" — ")}`;
+  });
+  return { title: title.slice(0, 200), description: lines.join("\n").slice(0, 2000) };
+}
+
+function TaskDialog({ orders, onClose }: { orders: NoticeOrder[]; onClose: () => void }) {
+  const createFn = useServerFn(createTask);
+  const assigneesFn = useServerFn(listTaskAssignees);
+  const assignees = useQuery({ queryKey: ["task-assignees"], queryFn: () => assigneesFn() });
+  const n = orders.length;
+  const [prefill] = useState(() => taskFromNotes(orders));
+  const [title, setTitle] = useState(prefill.title);
+  const [description, setDescription] = useState(prefill.description);
+  const [assignee, setAssignee] = useState("");
+  const [due, setDue] = useState(isoTodayUS());
+  const save = useMutation({
+    mutationFn: () => createFn({ data: {
+      title: title.trim(), description: description.trim() || null, area: "pedidos", priority: "alta",
+      status: "pendente", due_date: due || null, assignee_id: assignee || null,
+    } }),
+    onSuccess: () => { toast.success("Tarefa criada"); onClose(); },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao criar tarefa"),
+  });
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Criar tarefa</DialogTitle>
+          <DialogDescription>Área Pedidos · prioridade alta</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Field label="Título"><Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} /></Field>
+          <Field label="Descrição"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} maxLength={2000} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Responsável">
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <option value="">Ninguém</option>
+                {(assignees.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Prazo"><Input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={!title.trim() || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />} Criar tarefa
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
