@@ -11,6 +11,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { AppLayout } from "@/components/AppLayout";
+import { ProfitPopup } from "@/components/ProfitPopup";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSettingsProvider } from "@/lib/app-settings";
 import { useLocation, Navigate } from "@tanstack/react-router";
@@ -193,5 +194,10 @@ function AuthGate() {
     return <Navigate to={dest} />;
   }
   if (isLogin || isInvite) return <Outlet />;
-  return <AppLayout />;
+  return (
+    <>
+      <AppLayout />
+      <ProfitPopup />
+    </>
+  );
 }
