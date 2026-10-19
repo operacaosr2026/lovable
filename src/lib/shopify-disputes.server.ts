@@ -3,6 +3,7 @@ import { refreshEstornoDisputeCounts } from "@/lib/estorno-daily.server";
 import { tracked } from "@/lib/system-errors.server";
 import { fetchWithRetry } from "@/lib/http";
 import { handleShopifyAccess } from "@/lib/shopify-access.server";
+import { disputeStatusesBefore, notifyDisputeResults } from "@/lib/dispute-results.server";
 
 // Grava disputas (chargeback e inquiry) da Shopify Payments em
 // shop_order_disputes — usado pelo sync completo (de hora em hora) e pelo
@@ -23,9 +24,13 @@ export async function upsertShopDisputes(shopId: string, userId: string, dispute
     evidence_due_by: d.evidence_due_by ?? null,
   }));
   if (!rows.length) return;
+  const before = await disputeStatusesBefore(shopId, rows.map((r) => r.shopify_dispute_id));
   const { error } = await supabaseAdmin.from("shop_order_disputes")
     .upsert(rows as any[], { onConflict: "shop_id,shopify_dispute_id" });
   if (error) throw new Error(error.message);
+  // Ganhou/perdeu agora → aviso no sino (não pode derrubar o sync).
+  await tracked(userId, `dispute_result:${shopId}`, "Aviso de chargeback ganho/perdido falhou",
+    () => notifyDisputeResults(userId, shopId, before, rows));
   // Chargeback novo já entra na taxa de estorno (sem esperar a meia-noite).
   await tracked(userId, `estorno_recount:${shopId}`, "Taxa de estorno não recontou o chargeback novo",
     () => refreshEstornoDisputeCounts(userId, shopId));
