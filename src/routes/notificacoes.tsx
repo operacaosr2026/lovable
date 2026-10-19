@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
   Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Store, Tag, ListFilter, ArrowRight,
-  Copy, MoreVertical, ExternalLink, StickyNote,
+  StickyNote,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -16,7 +16,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue, saveNoticeNote,
@@ -66,8 +65,6 @@ const fmtDate = (iso: string) => {
 };
 const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: US_TIME_ZONE }).replace(",", "");
-const copy = (text: string, msg: string) =>
-  navigator.clipboard.writeText(text).then(() => toast.success(msg), () => toast.error("Não deu pra copiar"));
 const daysAgo = (iso: string) => (Date.now() - new Date(iso).getTime()) / 86_400_000;
 const recentlyNotified = (o: NoticeOrder) => !!o.notices[0] && daysAgo(o.notices[0].at) < RECENT_DAYS;
 
@@ -240,7 +237,6 @@ function NotificacoesPage() {
                 <col className="w-[185px]" />
                 <col className="w-[165px]" />
                 <col className="w-[180px]" />
-                <col className="w-16" />
               </colgroup>
               <thead>
                 <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
@@ -253,8 +249,7 @@ function NotificacoesPage() {
                   <th className="font-medium py-2.5 px-2">Rastreio</th>
                   <th className="font-medium py-2.5 px-2">Código de rastreio</th>
                   <th className="font-medium py-2.5 px-2">Último aviso</th>
-                  <th className="font-medium py-2.5 px-2">Nota</th>
-                  <th className="font-medium py-2.5 pr-4 pl-2 text-right">Ações</th>
+                  <th className="font-medium py-2.5 pl-2 pr-4">Nota</th>
                 </tr>
               </thead>
               <tbody>
@@ -319,32 +314,8 @@ function NotificacoesPage() {
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-2" onClick={(e) => e.stopPropagation()}>
+                      <td className="py-2.5 pl-2 pr-4" onClick={(e) => e.stopPropagation()}>
                         <NoteCell order={o} />
-                      </td>
-                      <td className="py-2.5 pr-3 pl-2 text-right" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button type="button" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Ações">
-                              <MoreVertical className="size-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem disabled={!o.email || o.queued} onSelect={() => { setSelected(new Set([o.id])); setSendOpen(true); }}>
-                              <Send className="size-4" /> Enviar e-mail só pra este
-                            </DropdownMenuItem>
-                            {o.trackingUrl && (
-                              <DropdownMenuItem onSelect={() => window.open(o.trackingUrl!, "_blank", "noopener")}>
-                                <ExternalLink className="size-4" /> Abrir rastreio
-                              </DropdownMenuItem>
-                            )}
-                            {o.email && (
-                              <DropdownMenuItem onSelect={() => copy(o.email!, "E-mail copiado")}>
-                                <Copy className="size-4" /> Copiar e-mail
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </td>
                     </tr>
                   );
