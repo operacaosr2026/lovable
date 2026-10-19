@@ -201,8 +201,12 @@ function DashKpiCard({
       </div>
 
       {sparklineKey && (
-        <div className="flex-1 min-h-9 mt-2">
-          <Sparkline data={chartData} dataKey={sparklineKey} color={a.solid} />
+        // Absoluto: o gráfico ocupa a sobra do card sem entrar na altura dele
+        // (senão gráfico e card se esticavam um ao outro sem parar).
+        <div className="relative flex-1 min-h-9 mt-2">
+          <div className="absolute inset-0">
+            <Sparkline data={chartData} dataKey={sparklineKey} color={a.solid} />
+          </div>
         </div>
       )}
 
