@@ -258,7 +258,7 @@ function BreakdownDialog({
   open: boolean; onClose: () => void; label: string;
   shopIds: string[]; shopNamesMap: Record<string, string>;
   from: string; to: string; prevFrom: string; prevTo: string;
-  metric: "faturamento" | "taxas" | "pedidos" | "custoProduto";
+  metric: "faturamento" | "taxas" | "pedidos" | "custoProduto" | "custoTotal";
   currency: string; currencyRate: number;
 }) {
   const getMetricsFn = useServerFn(getShopDashboardMetrics);
@@ -283,6 +283,7 @@ function BreakdownDialog({
     if (metric === "taxas")         return m.taxas;
     if (metric === "pedidos")       return m.pedidos;
     if (metric === "custoProduto")  return m.custoProduto;
+    if (metric === "custoTotal")    return m.custoTotal;
     return null;
   };
 
@@ -304,6 +305,12 @@ function BreakdownDialog({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{row.name}</p>
+                {/* Custo Total: de onde vem o valor de cada loja */}
+                {metric === "custoTotal" && row.data && (
+                  <p className="text-[11px] text-muted-foreground truncate tabular-nums">
+                    Anúncios {formatValue(row.data.anuncios ?? 0)} · Taxas {formatValue(row.data.taxas ?? 0)} · Produto {formatValue(row.data.custoProduto ?? 0)}
+                  </p>
+                )}
               </div>
               <div className="text-sm font-semibold text-foreground">
                 {row.loading
@@ -431,7 +438,7 @@ export function LgDashboard({
   const rateDebounce                  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeLines, setActiveLines] = useState({ faturamento: true, lucro: true, custo: false, anuncios: false });
   const [breakdown, setBreakdown]     = useState<null | {
-    metric: "faturamento" | "taxas" | "pedidos" | "custoProduto";
+    metric: "faturamento" | "taxas" | "pedidos" | "custoProduto" | "custoTotal";
     label:  string;
   }>(null);
 
@@ -682,6 +689,7 @@ export function LgDashboard({
               </div>
             </div>
           }
+          onClick={isConsolidated ? () => openBreakdown("custoTotal", "Custo Total") : undefined}
         />
         <div className="hidden sm:block">
           <KpiCard loading={isLoading}
