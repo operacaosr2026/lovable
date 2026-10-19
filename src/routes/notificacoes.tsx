@@ -230,19 +230,17 @@ function NotificacoesPage() {
               Nenhum pedido atrasado com esses filtros.
             </div>
           ) : (
-            <table className="w-full text-sm min-w-[1180px] table-fixed">
-              {/* Larguras fixas; só Cliente estica (nome/e-mail cortam com "…"). Antes Rastreio
-                  era a coluna flexível e, com a Nota, ficava espremida e o texto encavalava. */}
+            <table className="w-full text-sm min-w-[1080px] table-fixed">
+              {/* Larguras fixas; só Rastreio estica (com mínimo de ~230px pela largura mínima da tabela). */}
               <colgroup>
                 <col className="w-11" />
                 <col className="w-[130px]" />
-                <col />
                 <col className="w-[84px]" />
-                <col className="w-[190px]" />
+                <col />
                 <col className="w-[185px]" />
                 <col className="w-[165px]" />
                 <col className="w-[180px]" />
-                <col className="w-12" />
+                <col className="w-16" />
               </colgroup>
               <thead>
                 <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
@@ -251,7 +249,6 @@ function NotificacoesPage() {
                       onCheckedChange={() => setSelected(allChecked ? new Set() : new Set(rows.map((o) => o.id)))} aria-label="Marcar todos" />
                   </th>
                   <th className="font-medium py-2.5 px-2">Pedido</th>
-                  <th className="font-medium py-2.5 px-2">Cliente</th>
                   <th className="font-medium py-2.5 px-2 text-center">Compra</th>
                   <th className="font-medium py-2.5 px-2">Rastreio</th>
                   <th className="font-medium py-2.5 px-2">Código de rastreio</th>
@@ -273,15 +270,12 @@ function NotificacoesPage() {
                       <td className="py-3 px-2">
                         <div className="font-semibold">{customerOrderNumber(o.orderNumber)}</div>
                         <div className="text-xs text-muted-foreground">{o.shopName}</div>
+                        {!o.email && <div className="text-xs text-rose-600">sem e-mail</div>}
                         {o.dispute && (
                           <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400 mt-1" icon={ShieldAlert}>
                             {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"}
                           </Pill>
                         )}
-                      </td>
-                      <td className="py-3 px-2">
-                        <div className="truncate font-medium">{o.customerName}</div>
-                        <div className={`text-xs truncate ${o.email ? "text-muted-foreground" : "text-rose-600"}`}>{o.email ?? "sem e-mail"}</div>
                       </td>
                       <td className="py-3 px-2 text-center whitespace-nowrap">
                         <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${stg ? STAGE_LOOK[stg].tone.pill : "bg-muted"}`}>
@@ -306,18 +300,13 @@ function NotificacoesPage() {
                                 {o.trackingCode}
                               </a>
                             ) : <span className="text-xs tabular-nums">{o.trackingCode}</span>}
-                            <button type="button" className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                              title="Copiar código" aria-label="Copiar código"
-                              onClick={(e) => { e.stopPropagation(); copy(o.trackingCode!, "Código copiado"); }}>
-                              <Copy className="size-3.5" />
-                            </button>
                           </span>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </td>
                       <td className="py-3 px-2">
                         {o.notices[0] ? (
                           <>
-                            <div className="flex items-center gap-1.5 whitespace-nowrap"><Mail className="size-3.5 text-emerald-600" />{fmtDateTime(o.notices[0].at)}</div>
+                            <div className="flex items-center gap-1.5 whitespace-nowrap text-xs"><Mail className="size-3.5 text-emerald-600" />{fmtDateTime(o.notices[0].at)}</div>
                             <div className="text-xs text-muted-foreground">
                               {o.notices[0].title}{o.notices.length > 1 && ` · ${o.notices.length} avisos`}
                             </div>
