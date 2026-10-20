@@ -595,7 +595,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
 
         {!isLoading && sortedOrders.length > 0 && (
         <div className="min-w-[990px]">
-        <div className="grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
+        <div className="grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.6fr_64px_64px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
           <div className="flex items-center">
             <input
               type="checkbox"
@@ -612,15 +612,15 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           <div>Rastreio</div>
           <div>Status</div>
           <div>Obs</div>
-          <div className="text-center">Aguarda cliente</div>
-          <div className="text-center" title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do KPI</div>
+          <div className="text-center leading-tight">Aguarda<br />cliente</div>
+          <div className="text-center leading-tight" title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do<br />KPI</div>
         </div>
 
         {sortedOrders.map((o: any, i: number) => (
             <div
               key={o.id}
               className={cn(
-                "grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.2fr_110px_100px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                "grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.6fr_64px_64px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
               )}
               onClick={() => setEditingOrder(o)}
