@@ -48,6 +48,20 @@ export function QuotedText({ text }: { text: string }) {
   );
 }
 
+// Foto HEIC/HEIF (padrão do iPhone): Chrome e Firefox não abrem — converte pra
+// JPEG no navegador (heic2any, carregado só quando aparece uma). Os outros
+// formatos passam direto.
+const HEIC = /\.(heic|heif)$/i;
+async function displayableUrl(res: Response, name: string) {
+  let blob = await res.blob();
+  if (HEIC.test(name) || /hei[cf]/i.test(blob.type)) {
+    const { default: heic2any } = await import("heic2any");
+    const out = await heic2any({ blob, toType: "image/jpeg", quality: 0.85 });
+    blob = Array.isArray(out) ? out[0] : out;
+  }
+  return URL.createObjectURL(blob);
+}
+
 // Imagens coladas no corpo (inline): o Zoho manda "/mail/ImageDisplay?...&cid=X",
 // que só abre logado no Zoho. Busca cada uma em /api/atendimento/inline (com o
 // token da sessão) e devolve cid → endereço local (blob) pra mostrar.
@@ -72,7 +86,7 @@ export function useInlineImages(messageId: string | null | undefined, html: stri
             headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
           });
           if (!res.ok) return;
-          const u = URL.createObjectURL(await res.blob());
+          const u = await displayableUrl(res, r.name);
           made.push(u);
           out[r.cid] = u;
         } catch { /* fica sem a imagem */ }
@@ -85,10 +99,10 @@ export function useInlineImages(messageId: string | null | undefined, html: stri
 }
 
 // Anexos que são imagem: mostra no corpo (baixa por /api/atendimento/attachment).
-// Até 10 MB cada; HEIC e outros formatos que o navegador não abre ficam só no botão de baixar.
-const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+// Até 15 MB cada (HEIC é convertido); outros formatos ficam só no botão de baixar.
+const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i;
 export function useAttachmentImages(messageId: string | null | undefined, attachments: { id: string; name: string; size: number }[]) {
-  const imgs = useMemo(() => attachments.filter((a) => IMG_EXT.test(a.name) && a.size <= 10 * 1024 * 1024), [attachments]);
+  const imgs = useMemo(() => attachments.filter((a) => IMG_EXT.test(a.name) && a.size <= 15 * 1024 * 1024), [attachments]);
   const key = imgs.map((a) => a.id).join(",");
   const [urls, setUrls] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -104,7 +118,7 @@ export function useAttachmentImages(messageId: string | null | undefined, attach
             headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
           });
           if (!res.ok) return;
-          const u = URL.createObjectURL(await res.blob());
+          const u = await displayableUrl(res, a.name);
           made.push(u);
           out[a.id] = u;
         } catch { /* fica só o botão de baixar */ }

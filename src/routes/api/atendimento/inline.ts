@@ -6,7 +6,7 @@ import { getZohoAccount, zohoRaw } from "@/lib/zoho-mail.server";
 // Imagem colada no corpo do e-mail (inline). No HTML do Zoho ela vem como
 // "/mail/ImageDisplay?...&cid=..." — endereço que só abre logado no Zoho. A tela
 // busca aqui (fetch + token da sessão) e mostra; repassa direto do Zoho.
-const TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml" };
+const TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml", heic: "image/heic", heif: "image/heif" };
 
 export const Route = createFileRoute("/api/atendimento/inline")({
   server: {
