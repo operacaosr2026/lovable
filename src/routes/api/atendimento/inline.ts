@@ -23,12 +23,28 @@ export const Route = createFileRoute("/api/atendimento/inline")({
         const id = q.get("message") ?? "";
         const cid = q.get("cid") ?? "";
         if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[\w.@+\/-]{1,200}$/.test(cid)) return new Response("Bad Request", { status: 400 });
-        const { data: msg } = await supabaseAdmin.from("support_messages").select("message_id,folder_id")
+        const { data: msg } = await supabaseAdmin.from("support_messages").select("message_id,folder_id,conversation_id")
           .eq("id", id).eq("owner_id", ownerId).maybeSingle();
         const acc = await getZohoAccount(ownerId);
         if (!msg || !acc?.account_id) return new Response("Not Found", { status: 404 });
 
-        const res = await zohoRaw(acc, `/api/accounts/${acc.account_id}/folders/${msg.folder_id}/messages/${msg.message_id}/inline?contentId=${encodeURIComponent(cid)}`);
+        const get = (m: { folder_id: string | null; message_id: string }) =>
+          zohoRaw(acc, `/api/accounts/${acc.account_id}/folders/${m.folder_id}/messages/${m.message_id}/inline?contentId=${encodeURIComponent(cid)}`);
+        let res = await get(msg);
+        // Foto no histórico citado (resposta do iPhone, nossa resposta): o e-mail só
+        // referencia a imagem, sem o arquivo — o Zoho dá 400. Busca nas mensagens
+        // anteriores da conversa que têm a mesma imagem (a original primeiro).
+        if (!res.ok && msg.conversation_id) {
+          await res.body?.cancel().catch(() => {});
+          const { data: others } = await supabaseAdmin.from("support_messages").select("message_id,folder_id")
+            .eq("owner_id", ownerId).eq("conversation_id", msg.conversation_id).neq("id", id)
+            .like("content_html", `%cid=${cid}%`).order("sent_at").limit(3);
+          for (const o of others ?? []) {
+            res = await get(o);
+            if (res.ok) break;
+            await res.body?.cancel().catch(() => {});
+          }
+        }
         if (!res.ok) return new Response(`Zoho: HTTP ${res.status}`, { status: 502 });
         const ext = (q.get("f") ?? "").split(".").pop()?.toLowerCase() ?? "";
         return new Response(res.body, {
