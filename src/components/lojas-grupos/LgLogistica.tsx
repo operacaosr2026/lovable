@@ -400,7 +400,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
         <button
           onClick={() => setStatusFilter(statusFilter === "atencao" ? "todos" : "atencao")}
           className={cn(
-            "rounded-xl border p-3 text-left transition-all",
+            "rounded-xl border p-3 text-left transition-all min-w-0",
             statusFilter === "atencao" ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
           )}
         >
@@ -408,14 +408,14 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-rose-500/10">
               <AlertTriangle className="size-4 text-rose-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">{attentionCount}</p>
+            <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">{attentionCount}</p>
           </div>
-          <p className="text-xs text-muted-foreground">Precisa de atenção</p>
+          <p className="text-[11px] text-muted-foreground truncate">Atenção</p>
         </button>
         <button
           onClick={() => setStatusFilter(statusFilter === "waiting_customer" ? "todos" : "waiting_customer")}
           className={cn(
-            "rounded-xl border p-3 text-left transition-all",
+            "rounded-xl border p-3 text-left transition-all min-w-0",
             statusFilter === "waiting_customer" ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
           )}
         >
@@ -423,9 +423,9 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-violet-500/10">
               <Hourglass className="size-4 text-violet-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">{waitingCustomerCount}</p>
+            <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">{waitingCustomerCount}</p>
           </div>
-          <p className="text-xs text-muted-foreground">Esperando o cliente</p>
+          <p className="text-[11px] text-muted-foreground truncate">Aguarda cliente</p>
         </button>
         {([
           { key: "pending",   label: "Pendente envio", color: "amber",   icon: Package },
@@ -436,7 +436,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             key={key}
             onClick={() => setStatusFilter(statusFilter === key ? "todos" : key)}
             className={cn(
-              "rounded-xl border p-3 text-left transition-all",
+              "rounded-xl border p-3 text-left transition-all min-w-0",
               statusFilter === key ? "border-primary bg-primary/5" : "border-border bg-surface hover:bg-muted/30",
             )}
           >
@@ -454,18 +454,18 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                   color === "emerald" && "text-emerald-600",
                 )} />
               </div>
-              <p className="text-xl font-bold text-foreground">
+              <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">
                 {kpis[key]}
                 {key === "delivered" && (
-                  <span className="text-xs font-normal text-muted-foreground"> / {kpiScopedOrders.length}</span>
+                  <span className="text-[11px] font-normal text-muted-foreground"> / {kpiScopedOrders.length}</span>
                 )}
               </p>
             </div>
-            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{label}</p>
           </button>
         ))}
         <div
-          className="rounded-xl border border-border bg-surface p-3 text-left"
+          className="rounded-xl border border-border bg-surface p-3 text-left min-w-0"
           title={isConsolidated && shopFilter === "todas"
             ? perStoreCounts.map((s) => `${s.name}: ${s.count}`).join("\n")
             : undefined}
@@ -474,42 +474,42 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-slate-500/10">
               <Layers className="size-4 text-slate-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">{kpiScopedOrders.length}</p>
+            <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">{kpiScopedOrders.length}</p>
           </div>
-          <p className="text-xs text-muted-foreground">Total de pedidos</p>
+          <p className="text-[11px] text-muted-foreground truncate">Total de pedidos</p>
         </div>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left" title="Dias úteis da compra até a postagem (1ª movimentação real da transportadora)">
+        <div className="rounded-xl border border-border bg-surface p-3 text-left min-w-0" title="Dias úteis da compra até a postagem (1ª movimentação real da transportadora)">
           <div className="flex items-center gap-2 mb-1">
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-indigo-500/10">
               <Clock className="size-4 text-indigo-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">
+            <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">
               {avgPostingDays != null ? `${avgPostingDays.toFixed(1)}d` : "—"}
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">TM Postagem</p>
+          <p className="text-[11px] text-muted-foreground truncate">TM Postagem</p>
         </div>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left" title="Dias corridos da postagem até a entrega (só o transporte)">
+        <div className="rounded-xl border border-border bg-surface p-3 text-left min-w-0" title="Dias corridos da postagem até a entrega (só o transporte)">
           <div className="flex items-center gap-2 mb-1">
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-violet-500/10">
               <Clock className="size-4 text-violet-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">
+            <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">
               {avgDeliveryDays != null ? `${avgDeliveryDays.toFixed(1)}d` : "—"}
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">TM Entrega</p>
+          <p className="text-[11px] text-muted-foreground truncate">TM Entrega</p>
         </div>
-        <div className="rounded-xl border border-border bg-surface p-3 text-left" title="Tempo que o cliente sente: dias corridos da compra até a entrega (postagem + transporte), dos pedidos já entregues">
+        <div className="rounded-xl border border-border bg-surface p-3 text-left min-w-0" title="Tempo que o cliente sente: dias corridos da compra até a entrega (postagem + transporte), dos pedidos já entregues">
           <div className="flex items-center gap-2 mb-1">
             <div className="size-7 rounded-lg grid place-items-center shrink-0 bg-teal-500/10">
               <Clock className="size-4 text-teal-600" />
             </div>
-            <p className="text-xl font-bold text-foreground">
+            <p className="text-xl font-bold text-foreground whitespace-nowrap leading-none">
               {avgCustomerDays != null ? `${avgCustomerDays.toFixed(1)}d` : "—"}
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">TM Cliente</p>
+          <p className="text-[11px] text-muted-foreground truncate">TM Cliente</p>
         </div>
       </div>
 
