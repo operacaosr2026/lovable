@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/atendimento/inline")({
         const q = new URL(request.url).searchParams;
         const id = q.get("message") ?? "";
         const cid = q.get("cid") ?? "";
-        if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[\w.@+-]{1,200}$/.test(cid)) return new Response("Bad Request", { status: 400 });
+        if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[\w.@+\/-]{1,200}$/.test(cid)) return new Response("Bad Request", { status: 400 });
         const { data: msg } = await supabaseAdmin.from("support_messages").select("message_id,folder_id")
           .eq("id", id).eq("owner_id", ownerId).maybeSingle();
         const acc = await getZohoAccount(ownerId);
