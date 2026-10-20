@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoTodayUS } from "@/lib/timezone";
+import { buildTrackingUrl } from "@/lib/tracking-url";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -152,7 +153,27 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }: any) => {
     const { order_id, ...patch } = data;
-    const extra: Record<string, string> = {};
+    const extra: Record<string, string | null> = {};
+    // Código trocado à mão (pacote reenviado fora da Shopify): marca pro sync do
+    // 17track não voltar pro código da Shopify, e refaz o link se ele ainda era o do código antigo.
+    let codeChanged = false;
+    if (patch.tracking_code !== undefined) {
+      const { data: cur } = await supabaseAdmin.from("shop_orders").select("shop_id,tracking_code,tracking_url")
+        .eq("id", order_id).eq("user_id", context.ownerId).maybeSingle();
+      const next = String(patch.tracking_code ?? "").trim().toUpperCase();
+      if (cur && next && next !== String(cur.tracking_code ?? "").trim().toUpperCase()) {
+        codeChanged = true;
+        patch.tracking_code = next;
+        extra.tracking_code_manual_at = new Date().toISOString();
+        extra.logistics_note = null; // problema do pacote antigo — o sync preenche de novo se o novo tiver
+        if (!patch.tracking_url || patch.tracking_url === cur.tracking_url) {
+          const { data: integ } = await supabaseAdmin.from("track123_integrations").select("tracking_link_template")
+            .eq("shop_id", cur.shop_id).eq("provider", "17track").maybeSingle();
+          const url = buildTrackingUrl(integ?.tracking_link_template ?? null, next);
+          if (url) patch.tracking_url = url;
+        }
+      }
+    }
     if (patch.delivery_status === "shipped") extra.shipped_at = isoTodayUS();
     if (patch.delivery_status === "delivered") extra.delivered_at = isoTodayUS();
     if (patch.delivery_status === "problem") extra.problem_at = isoTodayUS();
@@ -162,5 +183,5 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
       .eq("id", order_id)
       .eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
-    return { ok: true };
+    return { ok: true, codeChanged };
   });

@@ -250,11 +250,19 @@ export function LgLogistica({
   ), null as string | null);
 
   const save = useMutation({
-    mutationFn: (vars: any) => updateFn({ data: vars }),
-    onSuccess: () => {
+    mutationFn: ({ shop_id: _shop, ...vars }: any) => updateFn({ data: vars }),
+    onSuccess: (r: any, vars: any) => {
       toast.success("Logística atualizada");
       qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] });
       qc.invalidateQueries({ queryKey: ["notice-orders"] });
+      // Código novo: cadastra no 17track e busca o rastreio dele agora (só a loja do pedido).
+      if (r?.codeChanged && vars.shop_id) {
+        const t = toast.loading("Buscando o rastreio do código novo…");
+        syncFn({ data: { shop_ids: [vars.shop_id] } })
+          .then(() => toast.success("Rastreio atualizado", { id: t }))
+          .catch((e: any) => toast.error(e?.message ?? "Erro ao buscar o rastreio", { id: t }))
+          .finally(() => qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] }));
+      }
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -710,7 +718,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
         <EditLogisticsModal
           order={editingOrder}
           onClose={() => setEditingOrder(null)}
-          onSave={(patch) => save.mutateAsync({ order_id: editingOrder.id, ...patch })}
+          onSave={(patch) => save.mutateAsync({ order_id: editingOrder.id, shop_id: editingOrder.shop_id, ...patch })}
         />
       )}
     </div>
