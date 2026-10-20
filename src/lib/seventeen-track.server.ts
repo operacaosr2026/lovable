@@ -156,7 +156,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   // Não gasta crédito: os antigos já estão cadastrados no 17track.
   const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-    .select("id,user_id,shop_id,order_date,tracking_code,shipped_at,delivered_at,problem_at,logistics_note,tracking_code_manual_at,fulfillments:raw->fulfillments")
+    .select("id,user_id,shop_id,order_date,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,tracking_code_manual_at,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))
     .not("tracking_code", "is", null)
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
@@ -169,7 +169,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!orders.length) return result;
 
   const { data: tracks } = await selectAllIn<any>(orders.map((o: any) => o.id), (ids) => supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_number,tracking_status,last_event_at,registered_17track_at,timeline,extra_packages").in("order_id", ids));
+    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,carrier,edd_from,edd_to,edd_source,registered_17track_at,timeline,extra_packages").in("order_id", ids));
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
   const code = (o: any) => String(o.tracking_code).trim().toUpperCase();
   // Código trocado à mão na aba Rastreamento: os envios da Shopify de antes da
@@ -422,6 +422,12 @@ export function problemNote(lastLabel: string | null | undefined, status: string
   return "Problema no rastreio";
 }
 
+// Compara campo a campo (o jsonb do banco volta com as chaves em outra ordem).
+function sameTimeline(a: any[] | null | undefined, b: any[]) {
+  const key = (e: any) => [e?.event_time_utc, e?.event_time, e?.event_detail, e?.event_location].map((v) => v ?? "").join("\u0001");
+  return (a ?? []).length === b.length && (a ?? []).every((e, i) => key(e) === key(b[i]));
+}
+
 // Grava o rastreio de um pedido. Devolve false quando não havia nada novo.
 // holdDelivered: pedido com outro pacote ainda não entregue — mesmo com este
 // entregue, o pedido não vira "entregue" (fica enviado).
@@ -430,11 +436,12 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   const timeline = toTimeline(item);
   const edd = eddOf(item);
   const base = { user_id: o.user_id, shop_id: o.shop_id, order_id: o.id, provider: "17track", edd_from: edd.from, edd_to: edd.to, edd_source: edd.source };
+  const sameEdd = (stored?.edd_from ?? null) === edd.from && (stored?.edd_to ?? null) === edd.to && (stored?.edd_source ?? null) === edd.source;
 
   // Sem nenhum evento ainda (recém-cadastrado): não apaga o histórico que já
   // existe — só marca a previsão.
   if (!timeline.length) {
-    await supabaseAdmin.from("shop_order_tracking").update({ edd_from: edd.from, edd_to: edd.to, edd_source: edd.source }).eq("order_id", o.id);
+    if (!sameEdd) await supabaseAdmin.from("shop_order_tracking").update({ edd_from: edd.from, edd_to: edd.to, edd_source: edd.source }).eq("order_id", o.id);
     return false;
   }
 
@@ -443,7 +450,7 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   const lastLabel = last.event_detail;
   // Evento mais antigo que o já gravado não volta o status.
   if (isOlderEvent(lastAt, stored?.last_event_at) && (stored?.timeline?.length ?? 0) > timeline.length) {
-    await supabaseAdmin.from("shop_order_tracking").update({ edd_from: edd.from, edd_to: edd.to, edd_source: edd.source }).eq("order_id", o.id);
+    if (!sameEdd) await supabaseAdmin.from("shop_order_tracking").update({ edd_from: edd.from, edd_to: edd.to, edd_source: edd.source }).eq("order_id", o.id);
     return false;
   }
 
@@ -468,7 +475,25 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
     if (!String(o.logistics_note ?? "").trim()) orderUpdate.logistics_note = problemNote(lastLabel, status);
   }
   const url = buildTrackingUrl(template, String(o.tracking_code));
-  if (url) orderUpdate.tracking_url = url;
+  if (url && url !== o.tracking_url) orderUpdate.tracking_url = url;
+  // Só manda pro pedido o que mudou.
+  for (const k of Object.keys(orderUpdate) as (keyof typeof orderUpdate)[]) {
+    if ((orderUpdate[k] ?? null) === (o[k] ?? null)) delete orderUpdate[k];
+  }
+
+  // Nada novo no rastreio (mesmo status, último evento, histórico, previsão e
+  // transportadora): não regrava — o sync roda de 30 em 30 min pra ~250 pedidos.
+  const trackingNumber = String(o.tracking_code).trim().toUpperCase();
+  const carrier = carriers.join(" → ") || null;
+  const sameTracking = stored
+    && String(stored.tracking_number ?? "").toUpperCase() === trackingNumber
+    && (stored.tracking_status ?? null) === statusLabel
+    && (stored.last_event_at ? new Date(stored.last_event_at).getTime() : null) === (lastAt ? new Date(lastAt).getTime() : null)
+    && (stored.last_event_label ?? null) === lastLabel
+    && (stored.carrier ?? null) === carrier
+    && sameEdd
+    && sameTimeline(stored.timeline, timeline);
+  if (sameTracking && !Object.keys(orderUpdate).length) return false;
 
   await Promise.all([
     supabaseAdmin.from("shop_order_tracking").upsert({

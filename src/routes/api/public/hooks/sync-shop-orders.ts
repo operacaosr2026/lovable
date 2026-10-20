@@ -52,6 +52,78 @@ async function fetchOrders(domain: string, token: string, sinceISO: string) {
   return out;
 }
 
+// Grava os pedidos da Shopify em shop_orders e espelha transportadora/código/link
+// de rastreio (lido pela aba Rastreamento), sem sobrescrever ajustes manuais.
+// Só grava o que mudou: pedido com o mesmo updated_at da Shopify não é
+// regravado e o patch de rastreio só sai com valor diferente — antes cada
+// rodada (de 10 em 10 min) regravava os ~500 pedidos dos últimos 30 dias e
+// fazia um update por pedido, e isso esgotou o Disk IO do Supabase (20/10/2026).
+async function saveOrders(s: any, orders: any[], today: string) {
+  if (!orders.length) return;
+  const dbOrders = async (ext: string[]) => (await selectAllIn<any>(ext, (c) => supabaseAdmin.from("shop_orders")
+    .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status,shopify_updated_at:raw->>updated_at")
+    .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
+    .in("external_id", c))).data ?? [];
+  const before = new Map((await dbOrders(orders.map((o: any) => String(o.id)))).map((r: any) => [r.external_id, r]));
+  const changed = orders.filter((o: any) => {
+    const cur = before.get(String(o.id));
+    return !cur || !o.updated_at || cur.shopify_updated_at !== o.updated_at;
+  });
+  if (changed.length) {
+    const rows = changed.map((o: any) => ({
+      user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
+      external_id: String(o.id), order_number: o.name ?? null,
+      created_at_shopify: o.created_at,
+      order_date: orderDateFor(o.created_at as string),
+      items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
+      revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
+      shopify_financial_status: o.financial_status ?? null,
+    }));
+    await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
+  }
+  const created = changed.filter((o: any) => !before.has(String(o.id))).map((o: any) => String(o.id));
+  if (created.length) for (const r of await dbOrders(created)) before.set(r.external_id, r);
+
+  // O tracking_url que a própria Shopify manda no fulfillment pode estar
+  // errado (app de rastreio configurado com o domínio de outra loja) —
+  // com um template próprio configurado pra loja, ele manda sempre,
+  // corrigindo até URLs já salvas erradas em syncs anteriores.
+  const { data: integ } = await supabaseAdmin.from("track123_integrations")
+    .select("tracking_link_template").eq("shop_id", s.shop_id).maybeSingle();
+  const template: string | null = integ?.tracking_link_template ?? null;
+
+  for (const o of orders) {
+    const existing = before.get(String(o.id));
+    if (!existing) continue;
+    const fulfillments = (o.fulfillments ?? []) as any[];
+    const fWithTrack = [...fulfillments].reverse()
+      .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
+    if (!fWithTrack) continue;
+    const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
+    if (!trackingNumber) continue;
+    const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
+    if (!existing.carrier && fWithTrack.tracking_company) patch.carrier = fWithTrack.tracking_company;
+    if (!existing.tracking_code) patch.tracking_code = String(trackingNumber);
+    if (template) {
+      // Link do código do pedido (que pode ter sido trocado à mão), não o da
+      // Shopify — senão este sync e o do 17track ficavam trocando o link um do outro.
+      const url = template.replace("[CODE]", encodeURIComponent(String(existing.tracking_code ?? trackingNumber)));
+      if (url !== existing.tracking_url) patch.tracking_url = url;
+    } else if (!existing.tracking_url) {
+      const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
+      if (url) patch.tracking_url = url;
+    }
+    if (!existing.delivery_status || existing.delivery_status === "pending_shipment") {
+      patch.delivery_status = "shipped";
+      patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : today;
+    }
+    if (Object.keys(patch).length) {
+      await supabaseAdmin.from("shop_orders").update(patch)
+        .eq("id", existing.id).eq("user_id", s.user_id);
+    }
+  }
+}
+
 const PAYOUT_CATEGORY = "Depósito Shopify";
 const PAYOUT_STATUS_LABEL: Record<string, string> = {
   paid: "depositado",
@@ -258,60 +330,9 @@ async function syncOrdersOnlyForShop(s: any, today: string) {
   if (!store?.access_token || !store?.shop_domain) return;
   try {
     const orders = (await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`)).filter((o: any) => !isRecoveryOrder(o));
-    if (orders.length) {
-      const rows = orders.map((o: any) => ({
-        user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
-        external_id: String(o.id), order_number: o.name ?? null,
-        created_at_shopify: o.created_at,
-        order_date: orderDateFor(o.created_at as string),
-        items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
-        revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
-        shopify_financial_status: o.financial_status ?? null,
-      }));
-      await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
-
-      // Espelha transportadora/código/link de rastreio do Shopify em shop_orders
-      // (lido pela aba Rastreamento) — igual ao processShop completo. Sem isso,
-      // um pedido só ganha código de rastreio na sincronização completa (2x/dia),
-      // não nesse ciclo leve que roda a cada poucos minutos.
-      const { data: dbOrders } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => supabaseAdmin.from("shop_orders")
-        .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
-        .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
-        .in("external_id", ext));
-      const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
-
-      const { data: track123Integ } = await supabaseAdmin.from("track123_integrations")
-        .select("tracking_link_template").eq("shop_id", s.shop_id).maybeSingle();
-      const trackingLinkTemplate: string | null = track123Integ?.tracking_link_template ?? null;
-
-      for (const o of orders) {
-        const existing = dbOrderByExt.get(String(o.id));
-        if (!existing) continue;
-        const fulfillments = (o.fulfillments ?? []) as any[];
-        const fWithTrack = [...fulfillments].reverse()
-          .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
-        if (!fWithTrack) continue;
-        const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
-        if (!trackingNumber) continue;
-        const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
-        if (!existing.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
-        if (!existing.tracking_code) patch.tracking_code = String(trackingNumber);
-        if (trackingLinkTemplate) {
-          patch.tracking_url = trackingLinkTemplate.replace("[CODE]", encodeURIComponent(String(trackingNumber)));
-        } else if (!existing.tracking_url) {
-          const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
-          if (url) patch.tracking_url = url;
-        }
-        if (!existing.delivery_status || existing.delivery_status === "pending_shipment") {
-          patch.delivery_status = "shipped";
-          patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : today;
-        }
-        if (Object.keys(patch).length) {
-          await supabaseAdmin.from("shop_orders").update(patch)
-            .eq("id", existing.id).eq("user_id", s.user_id);
-        }
-      }
-    }
+    // Também espelha o rastreio — sem isso, um pedido só ganharia código de
+    // rastreio na sincronização completa (2x/dia), não nesse ciclo leve.
+    await saveOrders(s, orders, today);
     await clearSystemError(s.user_id, `orders_sync:${s.shop_id}`);
   } catch (e: any) {
     console.error("orders-only sync fail", s.shop_id, e);
@@ -355,62 +376,7 @@ async function processShop(s: any, today: string) {
     if (store?.access_token && store?.shop_domain) {
       try {
         const orders = (await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`)).filter((o: any) => !isRecoveryOrder(o));
-        if (orders.length) {
-          const rows = orders.map((o: any) => ({
-            user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
-            external_id: String(o.id), order_number: o.name ?? null,
-            created_at_shopify: o.created_at,
-            order_date: orderDateFor(o.created_at as string),
-            items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
-            revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
-            shopify_financial_status: o.financial_status ?? null,
-          }));
-          await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
-
-          // Espelha transportadora/código/link de rastreio do Shopify em shop_orders
-          // (lido pela aba Rastreamento), sem sobrescrever ajustes manuais.
-          const { data: dbOrders } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => supabaseAdmin.from("shop_orders")
-            .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
-            .eq("user_id", s.user_id).eq("shop_id", s.shop_id).eq("source", "shopify")
-            .in("external_id", ext));
-          const dbOrderByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r]));
-
-          // O tracking_url que a própria Shopify manda no fulfillment pode estar
-          // errado (app de rastreio configurado com o domínio de outra loja) —
-          // com um template próprio configurado pra loja, ele manda sempre,
-          // corrigindo até URLs já salvas erradas em syncs anteriores.
-          const { data: track123Integ } = await supabaseAdmin.from("track123_integrations")
-            .select("tracking_link_template").eq("shop_id", s.shop_id).maybeSingle();
-          const trackingLinkTemplate: string | null = track123Integ?.tracking_link_template ?? null;
-
-          for (const o of orders) {
-            const existing = dbOrderByExt.get(String(o.id));
-            if (!existing) continue;
-            const fulfillments = (o.fulfillments ?? []) as any[];
-            const fWithTrack = [...fulfillments].reverse()
-              .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
-            if (!fWithTrack) continue;
-            const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
-            if (!trackingNumber) continue;
-            const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
-            if (!existing.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
-            if (!existing.tracking_code) patch.tracking_code = String(trackingNumber);
-            if (trackingLinkTemplate) {
-              patch.tracking_url = trackingLinkTemplate.replace("[CODE]", encodeURIComponent(String(trackingNumber)));
-            } else if (!existing.tracking_url) {
-              const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
-              if (url) patch.tracking_url = url;
-            }
-            if (!existing.delivery_status || existing.delivery_status === "pending_shipment") {
-              patch.delivery_status = "shipped";
-              patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : today;
-            }
-            if (Object.keys(patch).length) {
-              await supabaseAdmin.from("shop_orders").update(patch)
-                .eq("id", existing.id).eq("user_id", s.user_id);
-            }
-          }
-        }
+        await saveOrders(s, orders, today);
         // Webhooks de pedido (tempo real): cria os que faltarem. Falha aqui não
         // derruba o sync — o de 10 em 10 min continua cobrindo.
         await tracked(s.user_id, `webhooks:${s.shopify_store_id}`, `Webhooks da Shopify não configurados — ${store.name ?? store.shop_domain}`,

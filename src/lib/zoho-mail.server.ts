@@ -372,11 +372,17 @@ async function upsertMessages(
     };
   });
   // Quais já existiam — o resto é e-mail novo de verdade (pro push).
-  const { data: known } = await selectAllIn<{ message_id: string }>(rows.map((r) => r.message_id), (c) =>
-    supabaseAdmin.from("support_messages").select("message_id").eq("owner_id", ownerId).in("message_id", c));
+  const { data: known } = await selectAllIn<{ message_id: string; is_read: boolean }>(rows.map((r) => r.message_id), (c) =>
+    supabaseAdmin.from("support_messages").select("message_id,is_read").eq("owner_id", ownerId).in("message_id", c));
   const knownIds = new Set(known.map((k) => k.message_id));
-  const { error } = await supabaseAdmin.from("support_messages").upsert(rows, { onConflict: "owner_id,message_id" });
-  if (error) throw new Error(error.message);
+  // Só grava mensagem nova ou que mudou de lida/não lida — o sync relê os
+  // últimos 2 dias a cada 5 min e regravava tudo (Disk IO do Supabase, 20/10/2026).
+  const readBy = new Map(known.map((k) => [k.message_id, k.is_read]));
+  const toSave = rows.filter((r) => !readBy.has(r.message_id) || readBy.get(r.message_id) !== r.is_read);
+  if (toSave.length) {
+    const { error } = await supabaseAdmin.from("support_messages").upsert(toSave, { onConflict: "owner_id,message_id" });
+    if (error) throw new Error(error.message);
+  }
   const newInbound = rows.filter((r) => r.direction === "in" && !knownIds.has(r.message_id)).map((r) => ({
     conversationId: r.conversation_id, messageId: r.message_id, fromEmail: r.from_email, fromName: r.from_name,
     subject: r.subject, sentAt: r.sent_at,
@@ -458,14 +464,20 @@ export async function recomputeConversations(ownerId: string, ids: string[], opt
         status = "resolvido"; resolvedAt = last.sent_at;
       }
 
-      await supabaseAdmin.from("support_conversations").update({
+      const patch = {
         customer_name: lastIn?.from_name ?? c.customer_name,
         subject: last.subject, summary: last.summary,
         last_message_at: last.sent_at, last_inbound_at: newIn, last_outbound_at: newOut,
         message_count: list.length,
         unread_count: list.filter((m) => m.direction === "in" && !m.is_read).length,
-        status, resolved_at: resolvedAt, updated_at: new Date().toISOString(),
-      }).eq("id", c.id).eq("owner_id", ownerId);
+        status, resolved_at: resolvedAt,
+      };
+      // Nada mudou: não regrava (roda pra todas as conversas tocadas a cada 5 min).
+      const same = (a: any, b: any) => (a ?? null) === (b ?? null)
+        || (typeof a === "string" && typeof b === "string" && /^\d{4}-\d\d-\d\dT/.test(a) && Date.parse(a) === Date.parse(b));
+      if ((Object.keys(patch) as (keyof typeof patch)[]).every((k) => same(patch[k], c[k]))) return;
+      await supabaseAdmin.from("support_conversations").update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", c.id).eq("owner_id", ownerId);
     }));
   }
 }
