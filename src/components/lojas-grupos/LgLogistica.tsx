@@ -6,7 +6,7 @@ import { syncTrackingForShops, getTrackingIntegrations } from "@/lib/tracking-in
 import { listShopDomains } from "@/lib/shop-orders.functions";
 import { buildTrackingMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers, Copy, Mail, StickyNote } from "lucide-react";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, Clock, Hourglass, Layers, Copy, Mail, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -650,9 +650,9 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="text-primary hover:underline inline-flex items-center gap-1"
+                    className="text-primary hover:underline"
                   >
-                    {o.tracking_code ?? "Ver"} <ExternalLink className="size-3" />
+                    {o.tracking_code ?? "Ver"}
                   </a>
                 ) : o.tracking_code ? (
                   <span className="text-muted-foreground">{o.tracking_code}</span>
