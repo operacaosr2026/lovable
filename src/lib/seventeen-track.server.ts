@@ -25,6 +25,7 @@ const API_BASE = "https://api.17track.net/track/v2.4";
 const BATCH = 40;                 // máximo por chamada no 17track
 const MIN_INTERVAL_MS = 400;      // limite deles: 3 chamadas/s
 const ALREADY_REGISTERED = -18019901;
+const NOT_REGISTERED = -18019902;
 const OUT_OF_QUOTA = /quota|insufficient|balance/i;
 
 export const seventeenTrackConfigured = () => !!process.env.SEVENTEEN_TRACK_API_KEY;
@@ -268,11 +269,15 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   }
   const codes = [...wanted];
   const itemBy = new Map<string, any>();
+  // Código que o 17track diz não estar cadastrado (sumiu de lá — caso #L4-1460,
+  // ficou parado em 07/10): limpa o cadastro pra próxima rodada cadastrar de novo.
+  const lostReg = new Set<string>();
   for (let i = 0; i < codes.length; i += BATCH) {
     if (Date.now() > deadline) break;
     try {
       const data = await call17("/gettrackinfo", codes.slice(i, i + BATCH).map((number) => ({ number })));
       for (const item of data?.accepted ?? []) itemBy.set(String(item.number).toUpperCase(), item);
+      for (const r of data?.rejected ?? []) if (r.error?.code === NOT_REGISTERED) lostReg.add(String(r.number).toUpperCase());
     } catch (e: any) {
       result.errors.push(String(e?.message ?? e).slice(0, 200));
     }
@@ -284,6 +289,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     const template = integBy.get(o.shop_id)?.tracking_link_template ?? null;
     const extras = extrasBy.get(o.id) ?? [];
     for (const x of extras) {
+      if (lostReg.has(x.number)) { x.registered_17track_at = null; dirtyExtras.add(o.id); continue; }
       const item = itemBy.get(x.number);
       if (!item) continue;
       const before = x.tracking_status ?? null;
@@ -296,6 +302,11 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
       if (error) result.errors.push(`${code(o)} (pacotes extras): ${error.message.slice(0, 120)}`);
     }
 
+    if (lostReg.has(code(o))) {
+      const { error } = await supabaseAdmin.from("shop_order_tracking").update({ registered_17track_at: null }).eq("order_id", o.id);
+      if (error) result.errors.push(`${code(o)} (recadastro): ${error.message.slice(0, 120)}`);
+      continue;
+    }
     const item = itemBy.get(code(o));
     if (!item) continue;
     const stored = trackBy.get(o.id);
