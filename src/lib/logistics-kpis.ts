@@ -65,7 +65,7 @@ export function attentionReason(o: any, nowMs: number): string | null {
     if (d != null && d >= 5) return `${Math.floor(d)}d sem atualização`;
   }
   if (status !== "delivered" && status !== "returned") {
-    const d = daysSince(o.order_date, nowMs);
+    const d = daysSince(o.clock_from ?? o.order_date, nowMs);
     if (d != null && d >= DELIVERY_ALERT_DAYS) return `${Math.floor(d)}d sem entrega`;
   }
   return null;
@@ -79,7 +79,7 @@ export function attentionReason(o: any, nowMs: number): string | null {
 // nesses 3 dias — senão a Golden Week acusava todo pedido como parado.
 export function needsAttention(o: any, nowMs: number, cal?: PostingCalendar): boolean {
   const status = o.delivery_status ?? "pending_shipment";
-  if (status === "pending_shipment") return businessDaysSince(o.order_date, nowMs, cal) > 3;
+  if (status === "pending_shipment") return businessDaysSince(o.clock_from ?? o.order_date, nowMs, cal) > 3;
   return status === "problem" || attentionReason(o, nowMs) != null;
 }
 

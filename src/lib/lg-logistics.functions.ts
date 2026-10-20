@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
-import { isoTodayUS } from "@/lib/timezone";
+import { isoTodayUS, isoDateUS } from "@/lib/timezone";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
@@ -31,7 +31,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
   // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
   const { data: rows, error } = await selectAll(supabaseAdmin
     .from("shop_orders")
-    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,kpi_excluded,customer_notified_at")
+    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,tracking_code_manual_at,kpi_excluded,customer_notified_at")
     .eq("user_id", ownerId)
     .in("shop_id", data.shop_ids)
     .gte("order_date", data.from)
@@ -50,7 +50,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     const floor = new Date(new Date(`${data.from}T00:00:00Z`).getTime() - 180 * 86_400_000).toISOString().slice(0, 10);
     const { data: older, error: olderErr } = await selectAll(supabaseAdmin
       .from("shop_orders")
-      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,kpi_excluded,customer_notified_at")
+      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,tracking_code_manual_at,kpi_excluded,customer_notified_at")
       .eq("user_id", ownerId)
       .in("shop_id", data.shop_ids)
       .lt("order_date", data.from)
@@ -122,15 +122,17 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
       shippedAt = null;
     }
 
+    // Reenvio (código trocado à mão): os prazos de atraso contam do reenvio, não da compra.
+    const clockFrom = o.tracking_code_manual_at ? isoDateUS(o.tracking_code_manual_at) : o.order_date;
     let note = o.logistics_note;
     if (status !== "delivered" && status !== "problem" && status !== "returned" && status !== "waiting_customer") {
-      const daysSinceOrder = (nowMs - new Date(o.order_date).getTime()) / 86_400_000;
+      const daysSinceOrder = (nowMs - new Date(clockFrom).getTime()) / 86_400_000;
       if (daysSinceOrder >= 25) {
         status = "problem";
         if (!note) note = "tempo de entrega demorado";
       }
     }
-    return { ...o, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
+    return { ...o, clock_from: clockFrom, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
   });
 
   return withEffectiveStatus;
@@ -158,7 +160,7 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
     // 17track não voltar pro código da Shopify, e refaz o link se ele ainda era o do código antigo.
     let codeChanged = false;
     if (patch.tracking_code !== undefined) {
-      const { data: cur } = await supabaseAdmin.from("shop_orders").select("shop_id,tracking_code,tracking_url")
+      const { data: cur } = await supabaseAdmin.from("shop_orders").select("shop_id,tracking_code,tracking_url,delivery_status")
         .eq("id", order_id).eq("user_id", context.ownerId).maybeSingle();
       const next = String(patch.tracking_code ?? "").trim().toUpperCase();
       if (cur && next && next !== String(cur.tracking_code ?? "").trim().toUpperCase()) {
@@ -166,6 +168,14 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
         patch.tracking_code = next;
         extra.tracking_code_manual_at = new Date().toISOString();
         extra.logistics_note = null; // problema do pacote antigo — o sync preenche de novo se o novo tiver
+        // Pacote novo começa do zero: postagem e problema eram do antigo (o sync
+        // grava a postagem do novo na 1ª movimentação). Se o status escolhido na
+        // tela foi outro, ele vale.
+        if (!patch.delivery_status || patch.delivery_status === cur.delivery_status || patch.delivery_status === "problem") {
+          patch.delivery_status = "pending_shipment";
+          extra.shipped_at = null;
+          extra.problem_at = null;
+        }
         if (!patch.tracking_url || patch.tracking_url === cur.tracking_url) {
           const { data: integ } = await supabaseAdmin.from("track123_integrations").select("tracking_link_template")
             .eq("shop_id", cur.shop_id).eq("provider", "17track").maybeSingle();

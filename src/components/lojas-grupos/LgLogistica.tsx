@@ -673,6 +673,11 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 {attentionReason(o, nowMs) && (
                   <p className="text-[10px] text-rose-600 mt-0.5">{attentionReason(o, nowMs)}</p>
                 )}
+                {o.tracking_code_manual_at && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5" title="Código de rastreio trocado à mão — os prazos contam a partir daqui">
+                    Reenviado {fmtShortDate(o.clock_from)}
+                  </p>
+                )}
                 {o.customer_notified_at && (
                   <p className="text-[10px] text-success mt-0.5 flex items-center gap-1" title="E-mail &quot;Update on your order&quot; enviado pelo Avisar cliente">
                     <Mail className="size-3" /> Avisado {fmtNotified(o.customer_notified_at)}
