@@ -30,7 +30,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
   // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
   const { data: rows, error } = await selectAll(supabaseAdmin
     .from("shop_orders")
-    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
+    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,kpi_excluded,customer_notified_at")
     .eq("user_id", ownerId)
     .in("shop_id", data.shop_ids)
     .gte("order_date", data.from)
@@ -49,7 +49,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     const floor = new Date(new Date(`${data.from}T00:00:00Z`).getTime() - 180 * 86_400_000).toISOString().slice(0, 10);
     const { data: older, error: olderErr } = await selectAll(supabaseAdmin
       .from("shop_orders")
-      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,kpi_excluded,customer_notified_at")
+      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,kpi_excluded,customer_notified_at")
       .eq("user_id", ownerId)
       .in("shop_id", data.shop_ids)
       .lt("order_date", data.from)
@@ -145,6 +145,8 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
       tracking_url: z.string().optional().nullable(),
       delivery_status: z.string().optional(),
       logistics_note: z.string().max(500).optional().nullable(),
+      // Nota da equipe — a mesma da aba Notificações.
+      notice_note: z.string().max(1000).optional().nullable(),
       kpi_excluded: z.boolean().optional(),
     }).parse(d)
   )

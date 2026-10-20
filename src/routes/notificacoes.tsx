@@ -459,6 +459,8 @@ function NoteCell({ order }: { order: NoticeOrder }) {
     onSuccess: (_r, note) => {
       // Atualiza a lista na hora, sem esperar recarregar.
       qc.setQueryData<NoticeOrder[]>(["notice-orders"], (cur) => cur?.map((x) => (x.id === order.id ? { ...x, note: note.trim() || null } : x)));
+      // Mesma nota aparece na OBS da aba Rastreamento.
+      qc.invalidateQueries({ queryKey: ["lg-logistics"] });
       setOpen(false);
       toast.success(note.trim() ? "Nota salva" : "Nota apagada");
     },

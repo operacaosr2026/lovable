@@ -6,7 +6,7 @@ import { syncTrackingForShops, getTrackingIntegrations } from "@/lib/tracking-in
 import { listShopDomains } from "@/lib/shop-orders.functions";
 import { buildTrackingMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
-import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers, Copy, Mail } from "lucide-react";
+import { RefreshCw, Package, Truck, CheckCircle2, AlertTriangle, ExternalLink, Clock, Hourglass, Layers, Copy, Mail, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,7 +96,7 @@ function EditLogisticsModal({
   const [trackingCode, setTrackingCode] = useState(order.tracking_code ?? "");
   const [trackingUrl, setTrackingUrl]   = useState(order.tracking_url ?? "");
   const [status, setStatus]             = useState(order.delivery_status ?? "pending_shipment");
-  const [note, setNote]                 = useState(order.logistics_note ?? "");
+  const [note, setNote]                 = useState(order.notice_note ?? "");
   const [saving, setSaving]             = useState(false);
 
   const handleSave = async () => {
@@ -104,7 +104,7 @@ function EditLogisticsModal({
     try {
       await onSave({
         carrier: carrier || null, tracking_code: trackingCode || null, tracking_url: trackingUrl || null,
-        delivery_status: status, logistics_note: note || null,
+        delivery_status: status, notice_note: note.trim() || null,
       });
       onClose();
     } finally {
@@ -146,6 +146,10 @@ function EditLogisticsModal({
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">Obs</label>
             <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação sobre o envio..." />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Mesma nota da aba Notificações.
+              {order.logistics_note && <> Rastreio: {order.logistics_note}</>}
+            </p>
           </div>
         </div>
         <DialogFooter>
@@ -250,6 +254,7 @@ export function LgLogistica({
     onSuccess: () => {
       toast.success("Logística atualizada");
       qc.invalidateQueries({ queryKey: ["lg-logistics", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["notice-orders"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -666,7 +671,13 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                   </p>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground truncate">{o.logistics_note || "—"}</div>
+              {/* Nota da equipe (mesma da aba Notificações) na frente; sem ela, o problema que o rastreio detectou. */}
+              <div
+                className={cn("text-xs truncate", o.notice_note ? "text-foreground" : "text-muted-foreground")}
+                title={[o.notice_note, o.logistics_note && `Rastreio: ${o.logistics_note}`].filter(Boolean).join("\n") || undefined}
+              >
+                {o.notice_note ? <><StickyNote className="size-3 inline -mt-0.5 mr-1 text-amber-600 dark:text-amber-400" />{o.notice_note}</> : o.logistics_note || "—"}
+              </div>
               <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
