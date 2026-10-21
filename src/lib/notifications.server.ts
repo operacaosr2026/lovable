@@ -23,6 +23,33 @@ const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
 const PRODUCT_MISSING_DAYS = 30;  // vendas olhadas pro aviso "Produto sem cadastro"
 const STALLED_LOT_DAYS = 7;       // aviso "Lote parado": sem evento de rastreio há 7 dias…
 const STALLED_LOT_MIN = 3;        // …em pelo menos 3 pacotes com o mesmo último dia de evento
+const CUSTOMS_STUCK_DAYS = 15;    // aviso "Alfândega": último evento é de alfândega há 15+ dias
+
+// Último evento do rastreio (timeline do 17track: event_time_utc "AAAA-MM-DD HH:MM:SS" em UTC).
+function lastTrackingEvent(timeline: unknown): { ms: number; detail: string } | null {
+  let best: { ms: number; detail: string } | null = null;
+  for (const e of (Array.isArray(timeline) ? timeline : []) as any[]) {
+    const m = String(e?.event_time_utc ?? "").match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+    if (!m) continue;
+    const ms = Date.parse(`${m[1]}T${m[2]}Z`);
+    if (Number.isFinite(ms) && (!best || ms > best.ms)) best = { ms, detail: String(e?.event_detail ?? "").trim() };
+  }
+  return best;
+}
+
+// Evento de pacote retido na alfândega do destino (ainda não liberado).
+const CUSTOMS_HOLD = /customs clearance in progress|under clearance|inbound into customs|started the customs clearance|clearance in progress|customs.*(inspection|exception|abnormal|hold|delay)|clearance.*(exception|abnormal|failed|delay)|海关查验|等待清关|清关异常|目的国清关|进口海关|清关中/i;
+const CUSTOMS_RELEASED = /import released|inbound out of customs|clearance to release|clearance processing completed|released by customs|customs released|海关允许进口|已放行|清关完成/i;
+function isCustomsHold(detail: string) {
+  return CUSTOMS_HOLD.test(detail) && !CUSTOMS_RELEASED.test(detail);
+}
+// Nome legível do evento (o 17track manda muito em chinês).
+function customsLabel(detail: string) {
+  if (/海关查验|inspection/i.test(detail)) return "inspeção da alfândega";
+  if (/清关异常|exception|abnormal|failed/i.test(detail)) return "erro no desembaraço aduaneiro";
+  if (/等待清关|拆板|delay/i.test(detail)) return "aguardando liberação da alfândega";
+  return "desembaraço aduaneiro em andamento";
+}
 
 // Motivos de disputa da Shopify Payments em português.
 const DISPUTE_REASON_PT: Record<string, string> = {
@@ -436,11 +463,37 @@ export async function refreshSystemNotifications(ownerId: string) {
     const ids = [...numberOf.keys()];
     if (ids.length) {
       const { data: tracks } = await selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking")
-        .select("order_id,last_event_at").in("order_id", c).lt("last_event_at", stalledBefore));
+        .select("order_id,last_event_at,timeline").in("order_id", c).lt("last_event_at", stalledBefore));
       const byDay = new Map<string, string[]>();
+      // Parado na alfândega: o último evento é de alfândega (inspeção, aguardando
+      // liberação, erro no desembaraço) há CUSTOMS_STUCK_DAYS ou mais. Esse pacote
+      // vai pro aviso de alfândega e sai do "Lote parado" (não aparece 2 vezes).
+      const customs = new Map<string, { label: string; nums: string[] }>();
+      const customsBefore = Date.now() - CUSTOMS_STUCK_DAYS * 86_400_000;
       for (const t of (tracks ?? []) as any[]) {
+        const num = numberOf.get(t.order_id) ?? "sem número";
+        const last = lastTrackingEvent(t.timeline);
+        if (last && last.ms <= customsBefore && isCustomsHold(last.detail)) {
+          const day = isoDateUS(last.ms);
+          const k = `${day}|${last.detail}`;
+          const g = customs.get(k) ?? { label: customsLabel(last.detail), nums: [] };
+          g.nums.push(num);
+          customs.set(k, g);
+          continue;
+        }
         const day = isoDateUS(t.last_event_at);
-        byDay.set(day, [...(byDay.get(day) ?? []), numberOf.get(t.order_id) ?? "sem número"]);
+        byDay.set(day, [...(byDay.get(day) ?? []), num]);
+      }
+      for (const [k, g] of customs) {
+        const day = k.slice(0, 10);
+        const dias = Math.floor((Date.now() - Date.parse(`${day}T12:00:00Z`)) / 86_400_000);
+        g.nums.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        want.set(`track123:alfandega:${day}:${g.label}`.slice(0, 160), {
+          level: "error",
+          title: `Alfândega: ${g.nums.length} pacote${g.nums.length === 1 ? "" : "s"} parado${g.nums.length === 1 ? "" : "s"} há ${dias} dias`,
+          body: `Pedidos: ${g.nums.join(", ")}. Último evento: ${g.label}, em ${fmtDateBR(day)}, sem movimento desde então. Cobre a transportadora e avise os clientes antes de virar chargeback.`,
+          link: "/shops/lojas-grupos",
+        });
       }
       for (const [day, nums] of byDay) {
         if (nums.length < STALLED_LOT_MIN) continue;
