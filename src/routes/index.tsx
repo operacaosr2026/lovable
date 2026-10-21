@@ -851,7 +851,9 @@ function Dashboard() {
   const negStop = zeroOffset >= 1 ? activeColor : negColor;
 
   return (
-    <PageShell fit>
+    // Sem `fit`: rola a página inteira (barra na borda da janela, como Tarefas) em
+    // vez de uma área de rolagem própria com a barra no meio da tela.
+    <PageShell>
       {/* ── Cabeçalho ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
         <div>
