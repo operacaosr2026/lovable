@@ -430,23 +430,25 @@ export async function refreshSystemNotifications(ownerId: string) {
   // chama atenção; junto é sinal de problema — e de chargeback "não recebido".
   if (activeShopIds.length) {
     const stalledBefore = new Date(Date.now() - STALLED_LOT_DAYS * 86_400_000).toISOString();
-    const shipped = must(await selectAll(supabaseAdmin.from("shop_orders").select("id")
+    const shipped = must(await selectAll(supabaseAdmin.from("shop_orders").select("id,order_number")
       .eq("user_id", ownerId).in("shop_id", activeShopIds).in("delivery_status", ["shipped", "in_transit"])) as any, "pedidos enviados") as any[];
-    const ids = (shipped ?? []).map((o) => o.id as string);
+    const numberOf = new Map((shipped ?? []).map((o) => [o.id as string, (o.order_number as string | null) ?? "sem número"]));
+    const ids = [...numberOf.keys()];
     if (ids.length) {
       const { data: tracks } = await selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking")
         .select("order_id,last_event_at").in("order_id", c).lt("last_event_at", stalledBefore));
-      const byDay = new Map<string, number>();
+      const byDay = new Map<string, string[]>();
       for (const t of (tracks ?? []) as any[]) {
         const day = isoDateUS(t.last_event_at);
-        byDay.set(day, (byDay.get(day) ?? 0) + 1);
+        byDay.set(day, [...(byDay.get(day) ?? []), numberOf.get(t.order_id) ?? "sem número"]);
       }
-      for (const [day, n] of byDay) {
-        if (n < STALLED_LOT_MIN) continue;
+      for (const [day, nums] of byDay) {
+        if (nums.length < STALLED_LOT_MIN) continue;
+        nums.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
         want.set(`track123:lote:${day}`, {
           level: "warning",
-          title: `Lote parado: ${n} pacotes sem movimento desde ${fmtDateBR(day)}`,
-          body: `${n} pedidos enviados tiveram o último evento de rastreio em ${fmtDateBR(day)} e não andaram mais. Pode ser lote retido na transportadora — veja em Rastreamento e avise os clientes antes de virar chargeback.`,
+          title: `Lote parado: ${nums.length} pacotes sem movimento desde ${fmtDateBR(day)}`,
+          body: `Pedidos: ${nums.join(", ")}. O último evento de rastreio foi em ${fmtDateBR(day)} e não andaram mais — pode ser lote retido na transportadora. Avise os clientes antes de virar chargeback.`,
           link: "/shops/lojas-grupos",
         });
       }
