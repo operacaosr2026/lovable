@@ -520,8 +520,8 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
             <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-destructive" /> &lt; 70%</span>
           </div>
           {atual && (
-            <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-xl border border-border px-3 py-2">
-              <div className="flex items-center gap-2 min-w-0 col-span-2 sm:col-span-1">
+            <div className="mt-2.5 grid grid-cols-3 sm:grid-cols-4 gap-2 rounded-xl border border-border px-3 py-2">
+              <div className="flex items-center gap-2 min-w-0 col-span-3 sm:col-span-1">
                 <span className="size-7 rounded-lg bg-primary/10 text-primary grid place-items-center shrink-0"><CalendarDays className="size-3.5" /></span>
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-foreground truncate">{MONTH_FULL[Number(atual.month.slice(5, 7)) - 1]} de {atual.month.slice(0, 4)}</p>

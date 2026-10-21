@@ -147,27 +147,28 @@ function DunningSettings({ initial }: { initial: ChargebackSettings }) {
         )}
         {steps.map((s, i) => (
           <div key={i} className="rounded-xl border border-border">
-            <div className="flex items-center justify-between gap-2 flex-wrap p-3 pl-2">
-              <div className="flex items-center gap-2 text-sm flex-wrap min-w-0 flex-1">
-                <button onClick={() => toggleOpen(i)} title={open.has(i) ? "Recolher" : "Expandir"}
-                  className="flex items-center gap-2 min-w-0 rounded-lg px-1.5 py-1 hover:bg-muted">
-                  <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform ${open.has(i) ? "" : "-rotate-90"}`} />
-                  <span className="font-semibold whitespace-nowrap">E-mail {i + 1}</span>
-                </button>
-                <span className="text-muted-foreground">·</span>
+            {/* No celular: título e botões em cima, prazo e assunto na linha de baixo. */}
+            <div className="flex items-center gap-x-2 gap-y-1.5 flex-wrap sm:flex-nowrap p-3 pl-2 text-sm">
+              <button onClick={() => toggleOpen(i)} title={open.has(i) ? "Recolher" : "Expandir"}
+                className="flex items-center gap-2 shrink-0 rounded-lg px-1.5 py-1 hover:bg-muted">
+                <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform ${open.has(i) ? "" : "-rotate-90"}`} />
+                <span className="font-semibold whitespace-nowrap">E-mail {i + 1}</span>
+              </button>
+              <div className="order-last sm:order-none basis-full sm:basis-auto flex items-center gap-2 min-w-0 sm:flex-1 pl-1.5 sm:pl-0">
+                <span className="text-muted-foreground hidden sm:inline">·</span>
                 <input type="number" min={0} max={90} value={s.days} onChange={(e) => upd(i, { days: Math.max(0, Math.min(90, Number(e.target.value) || 0)) })}
                   className={NUM} />
-                <span className="text-muted-foreground">{i === 0 ? "dias depois da entrega" : "dias depois do e-mail anterior"}</span>
+                <span className="text-muted-foreground whitespace-nowrap">{i === 0 ? "dias depois da entrega" : "dias depois do e-mail anterior"}</span>
                 {!open.has(i) && (
                   <button onClick={() => toggleOpen(i)} className="min-w-0 flex-1 text-left truncate text-muted-foreground hover:text-foreground">
                     · {s.subject.trim() || <i>sem assunto</i>}
                   </button>
                 )}
               </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPreview(i)} disabled={!s.subject.trim() && !s.body.trim()}
+              <div className="flex items-center gap-1 ml-auto shrink-0">
+                <button onClick={() => setPreview(i)} disabled={!s.subject.trim() && !s.body.trim()} title="Pré-visualizar"
                   className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50">
-                  <Eye className="size-3.5" /> Pré-visualizar
+                  <Eye className="size-3.5" /> <span className="hidden sm:inline">Pré-visualizar</span>
                 </button>
                 <IconBtn title="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" /></IconBtn>
                 <IconBtn title="Descer" disabled={i === steps.length - 1} onClick={() => move(i, 1)}><ArrowDown className="size-3.5" /></IconBtn>

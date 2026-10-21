@@ -31,20 +31,21 @@ export function SupportSettings({ status, tab, setTab }: { status: ZohoStatus; t
     { key: "treino", label: "Treino da IA", desc: "Placar e o que a IA aprendeu", icon: Sparkles },
   ];
   return (
-    <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
-      <nav className="rounded-2xl border border-border bg-card p-2 flex md:flex-col gap-1">
+    <div className="grid grid-cols-[minmax(0,1fr)] md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
+      {/* No celular as abas viram uma faixa que rola na horizontal. */}
+      <nav className="rounded-2xl border border-border bg-card p-2 flex md:flex-col gap-1 overflow-x-auto">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-1 md:flex-none flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors ${tab === t.key ? "bg-primary/10 text-primary" : "hover:bg-muted text-foreground"}`}>
+            className={`shrink-0 md:shrink flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors ${tab === t.key ? "bg-primary/10 text-primary" : "hover:bg-muted text-foreground"}`}>
             <t.icon className="size-4 shrink-0" />
             <div className="min-w-0">
-              <p className="text-sm font-medium">{t.label}</p>
+              <p className="text-sm font-medium whitespace-nowrap md:whitespace-normal">{t.label}</p>
               <p className="hidden md:block text-[11px] text-muted-foreground truncate">{t.desc}</p>
             </div>
           </button>
         ))}
       </nav>
-      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 max-w-2xl">
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-6 max-w-2xl min-w-0">
         {tab === "integracao" ? <Integration status={status} /> : tab === "mensagens" ? <TemplatesSettings /> : tab === "tags" ? <TagsSettings /> : tab === "metas" ? <GoalsSettings /> : tab === "autoresposta" ? <AutoReplySettings /> : tab === "treino" ? <TrainingPanel /> : <Signature />}
       </div>
     </div>
@@ -550,8 +551,8 @@ function TrainingPanel() {
               ))}
             </div>
           )}
-          <div className="rounded-xl border border-border overflow-hidden">
-            <table className="w-full text-xs">
+          <div className="rounded-xl border border-border overflow-x-auto">
+            <table className="w-full text-xs min-w-[560px]">
               <thead className="bg-muted/40 text-muted-foreground">
                 <tr>
                   <th className="text-left font-medium px-3 py-2">Tag</th>

@@ -101,7 +101,7 @@ function BancoDeLojasIndex() {
           )}
         </div>
         {/* Tudo numa linha só: a busca encolhe pra caber. */}
-        <div className="flex items-center gap-2 min-w-0 lg:flex-1 lg:justify-end">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 min-w-0 lg:flex-1 lg:justify-end">
           <div className="relative flex-1 min-w-[140px] max-w-60">
             <Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -156,7 +156,8 @@ function BancoDeLojasIndex() {
       {!isLoading && stores.length > 0 && (
         // Mesmo espaçamento das colunas da esteira (gap + faixa do "+" no fim),
         // pra cada card ficar alinhado com a coluna de baixo.
-        <div className="flex gap-2.5 mb-4">
+        // No celular os cards não cabem lado a lado: rolam na horizontal.
+        <div className="flex gap-2.5 mb-4 overflow-x-auto lg:overflow-visible p-px lg:p-0">
           {kpiColumns.map((c) => {
             const tone = columnTone(c.name, c.color);
             const n = countIn(c.id);
@@ -170,7 +171,7 @@ function BancoDeLojasIndex() {
               <button
                 key={c.id}
                 onClick={() => setColumnFilter(columnFilter === c.id ? null : c.id)}
-                className={`rounded-2xl border bg-card px-3 py-3 flex items-center gap-2.5 min-w-0 flex-1 basis-0 text-left transition-colors ${columnFilter === c.id ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:border-primary/30"}`}
+                className={`rounded-2xl border bg-card px-3 py-3 flex items-center gap-2.5 min-w-[160px] lg:min-w-0 flex-1 basis-0 text-left transition-colors ${columnFilter === c.id ? "border-primary/50 ring-1 ring-primary/30" : "border-border hover:border-primary/30"}`}
                 title="Filtrar por esta etapa"
               >
                 <div className={`size-10 rounded-full grid place-items-center shrink-0 ${tone.chip}`}><ToneIcon tone={tone} className="size-5" /></div>
