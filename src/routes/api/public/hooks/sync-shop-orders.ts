@@ -4,7 +4,7 @@ import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { verifyCronApiKey } from "@/lib/cron-auth";
-import { recomputePayoutLag, recomputeOrderCostForecast, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor } from "@/lib/shop-orders.functions";
+import { recomputePayoutLag, recomputeOrderCostForecast, syncShopifyFeesForShop, notifyRefundsFailed, refreshStoreBalance, payoutLagDaysFor, getShopPaymentDays as getShopPaymentDaysShared } from "@/lib/shop-orders.functions";
 import { resolveNotification } from "@/lib/notifications.server";
 import { reportSystemError, clearSystemError, tracked, shopLabel, reportPaginationCap } from "@/lib/system-errors.server";
 import { upsertShopDisputes, fetchShopifyDisputes } from "@/lib/shopify-disputes.server";
@@ -20,7 +20,6 @@ import { broadcast } from "@/lib/realtime.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { recordCronRun } from "@/lib/cron-runs.server";
 import { relevantPayouts, payoutPatch, roundCents } from "@/lib/finance-rules";
-const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
@@ -291,10 +290,9 @@ async function processShopPayoutsOnly(s: any) {
 // Prazo real de pagamento ao fornecedor (D+X), configurável por loja em
 // "Lojas e Grupos" (lg_card_shops.payment_days — ver LgOrders.tsx). Lojas
 // fora de um card de grupo, ou sem configuração, caem no padrão de 7 dias.
+// Mesma regra do botão (getShopPaymentDays em shop-orders.functions): card ativo primeiro.
 async function getShopPaymentDays(shopId: string): Promise<number> {
-  const { data } = await supabaseAdmin.from("lg_card_shops")
-    .select("payment_days").eq("shop_id", shopId).limit(1).maybeSingle();
-  return data?.payment_days ?? PROCESSING_DELAY_DAYS;
+  return getShopPaymentDaysShared(supabaseAdmin, shopId);
 }
 
 async function processShop(s: any, today: string) {

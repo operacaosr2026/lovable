@@ -346,10 +346,19 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
     if (!tokenRow?.access_token) throw new Error("Integração não configurada");
     const accessToken = tokenRow.access_token;
 
-    const { data: accounts } = await supabaseAdmin.from("shop_meta_ad_accounts")
+    const { data: allAccounts } = await supabaseAdmin.from("shop_meta_ad_accounts")
       .select("ad_account_id, selected_campaign_ids")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).eq("enabled", true);
-    if (!accounts || accounts.length === 0) throw new Error("Nenhuma conta de anúncios conectada");
+    if (!allAccounts || allAccounts.length === 0) throw new Error("Nenhuma conta de anúncios conectada");
+    // Conta que também está num card (lg_card_meta_accounts): o gasto que conta no
+    // lucro é o do card. Gravar de novo por loja repetia o gasto (várias lojas com
+    // a mesma conta e campanhas sobrepostas) sem uso nenhum — só chamada à Meta e
+    // escrita no banco a cada 10 min. As cobranças do cartão seguem pela loja.
+    const { data: cardAccs } = await supabaseAdmin.from("lg_card_meta_accounts")
+      .select("ad_account_id").eq("user_id", ownerId).eq("enabled", true);
+    const onCard = new Set((cardAccs ?? []).map((a) => a.ad_account_id as string));
+    const accounts = allAccounts.filter((a) => !onCard.has(a.ad_account_id));
+    if (!accounts.length) return { synced: 0, totalSpend: 0, errors: [] as string[] };
 
     let since: string;
     let today: string;
@@ -783,26 +792,3 @@ export const syncMetaAdsActivities = createServerFn({ method: "POST" })
     return { synced: allActivities.length, journal_page_id: pageId };
   });
 
-// ===== Metrics =====
-
-export const getMetaAdsMetrics = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shop_id: string }) => z.object({ shop_id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const today = isoTodayUS();
-    const since30 = addDays(today, -30);
-    const since7 = addDays(today, -7);
-
-    const { data: rows } = await selectAll(supabase.from("shop_cash_entries")
-      .select("amount,date").eq("shop_id", data.shop_id)
-      .eq("auto_kind", "meta_ads_spend").gte("date", since30));
-
-    let spend7 = 0, spend30 = 0;
-    for (const r of rows ?? []) {
-      const amount = Number(r.amount ?? 0);
-      spend30 += amount;
-      if (r.date >= since7) spend7 += amount;
-    }
-    return { spend7, spend30 };
-  });

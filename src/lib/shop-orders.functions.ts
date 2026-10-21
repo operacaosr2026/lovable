@@ -6,7 +6,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
-import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
+import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
@@ -37,10 +37,14 @@ function addDays(date: string, days: number) {
 // Prazo real de pagamento ao fornecedor (D+X), configurável por loja em
 // "Lojas e Grupos" (lg_card_shops.payment_days — ver LgOrders.tsx). Lojas
 // fora de um card de grupo, ou sem configuração, caem no padrão de 7 dias.
+// Loja em mais de um card (ex.: card arquivado antigo + card ativo): vale o do
+// card ativo — antes pegava o primeiro que o banco devolvesse.
 export async function getShopPaymentDays(supabase: any, shopId: string): Promise<number> {
   const { data } = await supabase.from("lg_card_shops")
-    .select("payment_days").eq("shop_id", shopId).limit(1).maybeSingle();
-  return data?.payment_days ?? PROCESSING_DELAY_DAYS;
+    .select("payment_days,lg_cards!inner(status)").eq("shop_id", shopId);
+  const rows = (data ?? []) as any[];
+  const row = rows.find((r) => r.lg_cards?.status === "ativo") ?? rows[0];
+  return row?.payment_days ?? PROCESSING_DELAY_DAYS;
 }
 function daysBetween(from: string, to: string) {
   const a = new Date(from + "T00:00:00Z").getTime();
@@ -63,14 +67,6 @@ export const getShopifyCreds = createServerOnlyFn(async (_supabase: any, ownerId
   return { domain: data.shop_domain as string, token: data.access_token as string, ianaTimezone: data.iana_timezone as string | null };
 });
 
-function shopifyLocalDate(created_at: string, ianaTimezone: string | null): string {
-  if (!ianaTimezone) return created_at.slice(0, 10);
-  try {
-    return new Date(created_at).toLocaleDateString("en-CA", { timeZone: ianaTimezone });
-  } catch {
-    return created_at.slice(0, 10);
-  }
-}
 
 // Loga (sem lançar) quando um fetch paginado bate no teto de páginas antes de
 // esgotar a Shopify (`url` ainda não-vazio) — sem isso, uma loja de alto
@@ -1048,7 +1044,7 @@ export const syncShopifyFeesForShop = createServerOnlyFn(async (
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
-    const { domain, token, ianaTimezone } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
+    const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
     const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
     const feeTxs = txs.filter((t: any) => Number(t.fee ?? 0) > 0);
     if (!feeTxs.length) return { synced: 0, total_found: 0 };
@@ -1064,7 +1060,9 @@ export const syncShopifyFeesForShop = createServerOnlyFn(async (
     const toUpdate: { id: string; date: string }[] = [];
     for (const t of feeTxs) {
       const extId = `shopify_fee_${t.id}`;
-      const correctDate = shopifyLocalDate(t.processed_at as string, ianaTimezone);
+      // Dia de NY, como o pedido (antes era o fuso da loja — Halifax, 1h à frente:
+      // taxa das 23h de NY caía no dia seguinte). Taxa já gravada noutro dia é movida.
+      const correctDate = isoDateUS(t.processed_at as string);
       const ex = existingById.get(extId);
       if (!ex) {
         toInsert.push({
@@ -1228,11 +1226,31 @@ async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: 
   if (disputes.error) throw new Error(disputes.error.message);
   if (wonDisputes.error) throw new Error(wonDisputes.error.message);
   if (recoveries.error) throw new Error(recoveries.error.message);
+
+  // Recuperação só abate reembolso de pedido que está no banco e é do período
+  // do Caixa (a partir de cashflow_start_date): de pedido anterior, o reembolso
+  // original nunca foi descontado — abater o pagamento inflava o lucro.
+  let recs = (recoveries.data ?? []) as any[];
+  if (recs.length) {
+    const extIds = [...new Set(recs.map((r) => String(r.order_external_id)))];
+    const [{ data: recOrders }, { data: starts }] = await Promise.all([
+      selectAllIn<any>(extIds, (c) => supabaseAdmin.from("shop_orders").select("shop_id,external_id,order_date")
+        .eq("user_id", ownerId).in("shop_id", shopIds).eq("source", "shopify").in("external_id", c)),
+      supabaseAdmin.from("shop_order_settings").select("shop_id,cashflow_start_date").eq("user_id", ownerId).in("shop_id", shopIds),
+    ]);
+    const startBy = new Map(((starts ?? []) as any[]).map((s) => [s.shop_id as string, s.cashflow_start_date as string | null]));
+    const dateBy = new Map(((recOrders ?? []) as any[]).map((o) => [`${o.shop_id}:${o.external_id}`, o.order_date as string]));
+    recs = recs.filter((r) => {
+      const d = dateBy.get(`${r.shop_id}:${r.order_external_id}`);
+      const start = startBy.get(r.shop_id);
+      return !!d && (!start || d >= start);
+    });
+  }
   return {
     refundOrders: (refundOrders.data ?? []) as any[],
     disputes: (disputes.data ?? []) as any[],
     wonDisputes: (wonDisputes.data ?? []) as any[],
-    recoveries: (recoveries.data ?? []) as any[],
+    recoveries: recs,
   };
 }
 
@@ -1456,63 +1474,6 @@ export const getGroupShopifyPendingBalance = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => computeShopsReceivable(context.supabase, context.ownerId, data.shop_ids));
 
-export const getMonthlyProfit = createServerFn({ method: "GET" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({
-    shop_ids: z.array(z.string().uuid()).min(1),
-    month_start: z.string(),
-    month_end: z.string(),
-  }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { supabase, ownerId } = context;
-    const { shop_ids, month_start, month_end } = data;
-
-    const [ordersRes, settingsRes, adRes, feesRes, costProducts, refundsAndChargebacks] = await Promise.all([
-      selectAll(supabase.from("shop_orders").select("revenue,order_date,items_count,shop_id,line_items:raw->line_items,tags:raw->>tags,tracking_code")
-        .eq("user_id", ownerId).in("shop_id", shop_ids)
-        .gte("order_date", month_start).lte("order_date", month_end)),
-      supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
-        .eq("user_id", ownerId).in("shop_id", shop_ids),
-      selectAll(supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("kind", "expense").eq("category", "Facebook Ads")
-        // Cobrança do cartão (meta_billing_charge) é saída de caixa, não gasto
-        // de anúncio — o gasto já está nas entradas diárias (meta_ads_spend).
-        .or("auto_kind.is.null,auto_kind.neq.meta_billing_charge")
-        .gte("date", month_start).lte("date", month_end)),
-      selectAll(supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", month_start).lte("date", month_end)),
-      costProductsFor(supabase, ownerId),
-      // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
-      // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
-      getGroupRefundsAndChargebacks(ownerId, shop_ids, month_start, month_end),
-    ]);
-    if (ordersRes.error) throw new Error(ordersRes.error.message);
-    if (adRes.error) throw new Error(adRes.error.message);
-
-    const orders = ordersRes.data ?? [];
-    const ordersRevenue = orders.reduce((s: number, o: any) => s + Number(o.revenue ?? 0), 0);
-    const reembolsos = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
-    const chargebacks = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
-    const sales = ordersRevenue - reembolsos - chargebacks;
-
-    const costByShop = new Map((settingsRes.data ?? []).map((r: any) => [r.shop_id, Number(r.default_unit_cost ?? 0)]));
-    const configuredCosts = Array.from(costByShop.values()).filter(c => c > 0);
-    const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
-
-    // Mesmo cálculo por produto/palavra-chave usado no Dashboard
-    // (orderLineItemsCost), em vez de items_count × custo fixo da loja.
-    const productCost = orders.reduce((s: number, o: any) => {
-      const shopCost = costByShop.get(o.shop_id);
-      const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
-      return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags, costOpts(o));
-    }, 0);
-
-    const adSpend = (adRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-    const taxas = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
-
-    return { sales, productCost, adSpend, taxas, profit: sales - productCost - adSpend - taxas };
-  });
 
 // ---------- Recompute ----------
 async function recomputeForShop(context: any, shopId: string, processingDate: string, preloadedSettings?: any, paymentDays?: number, preloadedProducts?: CostProduct[]) {

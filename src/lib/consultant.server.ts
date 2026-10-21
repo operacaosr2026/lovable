@@ -113,12 +113,14 @@ export async function buildConsultantFacts(ownerId: string) {
   ]);
   const fat = (pred: (o: Order) => boolean) => r2(orders.filter(pred).reduce((s, o) => s + Number(o.revenue ?? 0), 0));
   const sumRef = (rows: any[], k: "refAmt" | "cbAmt") => r2(rows.reduce((s, r) => s + Number(r[k] ?? 0), 0));
-  const grupo = {
-    ultimos_30d: { pedidos: gA.pedidos, faturamento: fat(inA), lucro: r2(gA.lucro), anuncio_por_pedido: r2(gA.cpa),
-      reembolsos_valor: sumRef(refA, "refAmt"), chargebacks_valor: sumRef(refA, "cbAmt") },
-    anteriores_30d: { pedidos: gB.pedidos, faturamento: fat(inB), lucro: r2(gB.lucro), anuncio_por_pedido: r2(gB.cpa),
-      reembolsos_valor: sumRef(refB, "refAmt"), chargebacks_valor: sumRef(refB, "cbAmt") },
+  // "Faturamento" do Dashboard é o líquido (vendas − reembolsos − chargebacks):
+  // manda os dois com nome explícito, senão a IA citava o bruto como se fosse o do painel.
+  const periodo = (pred: (o: Order) => boolean, g: typeof gA, ref: any[]) => {
+    const bruto = fat(pred), reemb = sumRef(ref, "refAmt"), cb = sumRef(ref, "cbAmt");
+    return { pedidos: g.pedidos, faturamento_bruto: bruto, faturamento_liquido: r2(bruto - reemb - cb), lucro: r2(g.lucro),
+      anuncio_por_pedido: r2(g.cpa), reembolsos_valor: reemb, chargebacks_valor: cb };
   };
+  const grupo = { ultimos_30d: periodo(inA, gA, refA), anteriores_30d: periodo(inB, gB, refB) };
 
   // ── Pagamento: bandeira (análise de risco da Shopify) e gateway ───────────
   const { data: risks } = await selectAll<any>(supabaseAdmin.from("shop_order_risks")

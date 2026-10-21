@@ -1,10 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { requireOwnerContext, getSectionResourceFilter } from "@/integrations/supabase/workspace-middleware";
-import { COST_CATEGORY, attachLiveShopifyNames, recomputeShopAutomation, getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
-import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
-import { selectAll } from "@/lib/select-all";
+import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
+import { recomputeShopAutomation } from "@/lib/shop-orders.functions";
 
 export const SHOP_STATUSES = ["ativa", "pausada", "arquivada"] as const;
 
@@ -18,70 +16,6 @@ const ShopInput = z.object({
   pipeline_stage: z.string().trim().min(1).max(64).optional(),
   pipeline_position: z.number().int().optional(),
 });
-
-export const listShops = createServerFn({ method: "GET" })
-  .middleware([requireOwnerContext])
-  .handler(async ({ context }) => {
-    const { supabase, ownerId } = context;
-    const filter = getSectionResourceFilter(context, "shops");
-    if (filter === "none") return { shops: [] };
-
-    let query = supabase.from("shops").select("*").eq("user_id", ownerId).is("group_id", null);
-    if (Array.isArray(filter)) query = query.in("id", filter);
-    const { data: shops, error } = await query.order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-
-    const ids = (shops ?? []).map((s: any) => s.id);
-    const counters: Record<string, { products: number; pendingTasks: number; routinesToday: number; balance: number; monthProfit: number }> = {};
-    if (ids.length) {
-      // Fuso de Nova York (horário padrão do negócio), não UTC do servidor.
-      const todayStr = isoTodayUS();
-      const monthStart = isoMonthStartUS();
-      const monthEnd = todayStr;
-      const [{ data: prods }, { data: tasks }, { data: routines }, { data: cash }, { data: monthOrders }, { data: costRows }, { data: adRows }, { data: feeRows }, refundsAndChargebacks] = await Promise.all([
-        supabase.from("shop_products").select("shop_id").in("shop_id", ids),
-        selectAll(supabase.from("shop_tasks").select("shop_id,status").in("shop_id", ids).neq("status", "done")),
-        supabase.from("shop_routines").select("shop_id,due_at").in("shop_id", ids),
-        selectAll(supabase.from("shop_cash_entries").select("shop_id,kind,amount,date").in("shop_id", ids).lte("date", todayStr)),
-        selectAll(supabase.from("shop_orders").select("shop_id,revenue").in("shop_id", ids).gte("order_date", monthStart).lte("order_date", monthEnd)),
-        selectAll(supabase.from("shop_cash_entries").select("shop_id,amount,auto_ref_date,date").in("shop_id", ids).eq("kind", "expense").eq("category", COST_CATEGORY)
-          .or(`and(auto_ref_date.gte.${monthStart},auto_ref_date.lte.${monthEnd}),and(auto_ref_date.is.null,date.gte.${monthStart},date.lte.${monthEnd})`)),
-        selectAll(supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Facebook Ads")
-          .or("auto_kind.is.null,auto_kind.neq.meta_billing_charge")
-          .gte("date", monthStart).lte("date", monthEnd)),
-        selectAll(supabase.from("shop_cash_entries").select("shop_id,amount").in("shop_id", ids).eq("kind", "expense").eq("category", "Taxas Shopify")
-          .gte("date", monthStart).lte("date", monthEnd)),
-        // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
-        // usada pelo Dashboard, pra "lucro do mês" bater com as outras telas.
-        getGroupRefundsAndChargebacks(ownerId, ids, monthStart, monthEnd),
-      ]);
-      const today = new Date(`${todayStr}T23:59:59`);
-      const init = (k: string) => (counters[k] ??= { products: 0, pendingTasks: 0, routinesToday: 0, balance: 0, monthProfit: 0 });
-      for (const s of shops ?? []) init((s as any).id).balance = Number((s as any).opening_balance ?? 0);
-      for (const p of prods ?? []) init((p as any).shop_id).products++;
-      for (const t of tasks ?? []) init((t as any).shop_id).pendingTasks++;
-      for (const r of routines ?? []) {
-        const c = init((r as any).shop_id);
-        if (!(r as any).due_at || new Date((r as any).due_at) <= today) c.routinesToday++;
-      }
-      for (const e of cash ?? []) {
-        const c = init((e as any).shop_id);
-        const amt = Number((e as any).amount ?? 0);
-        c.balance += (e as any).kind === "income" ? amt : -amt;
-      }
-      for (const o of (monthOrders ?? []) as any[]) init(o.shop_id).monthProfit += Number(o.revenue ?? 0);
-      for (const r of (costRows ?? []) as any[]) init(r.shop_id).monthProfit -= Number(r.amount ?? 0);
-      for (const r of (adRows ?? []) as any[]) init(r.shop_id).monthProfit -= Number(r.amount ?? 0);
-      for (const r of (feeRows ?? []) as any[]) init(r.shop_id).monthProfit -= Number(r.amount ?? 0);
-      for (const r of refundsAndChargebacks) init(r.shop_id).monthProfit -= (r.refAmt + r.cbAmt);
-    }
-    return {
-      shops: await attachLiveShopifyNames(ownerId, (shops ?? []).map((s: any) => ({
-        ...s,
-        ...(counters[s.id] ?? { products: 0, pendingTasks: 0, routinesToday: 0, balance: Number(s.opening_balance ?? 0), monthProfit: 0 }),
-      }))),
-    };
-  });
 
 export const getShop = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

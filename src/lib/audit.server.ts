@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // Leituras, automáticos e ruído — não entram na auditoria.
 const SKIP = new Set([
-  "listLogisticsOrders", "listKanbanColumns", "getMetaAdsIntegration", "getMetaAdsMetrics",
+  "listLogisticsOrders", "listKanbanColumns", "getMetaAdsIntegration",
   "getTrackingIntegrations", "recordLogin", "recomputeRange", "recomputeDay", "markNotificationsRead",
   "syncShopifyOrders", "syncShopifyPaymentsFees", "syncMetaAdsSpend", "syncCardMetaSpend", "syncMetaAdsActivities",
   "syncShopifyVisitors", "syncOrderPaymentTasks", "syncShopifyPayouts", "syncTrackingForShops",

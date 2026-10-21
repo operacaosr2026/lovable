@@ -3,8 +3,9 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { broadcast } from "@/lib/realtime.server";
 import { notifyPeople } from "@/lib/notify.server";
 import { cronHealthAlerts } from "@/lib/cron-runs.server";
-import { matchLineItemCost } from "@/lib/product-cost-match";
-import { selectAll } from "@/lib/select-all";
+import { matchLineItemCost, matchLineItemProduct } from "@/lib/product-cost-match";
+import { selectAll, selectAllIn } from "@/lib/select-all";
+import { isoDateUS } from "@/lib/timezone";
 
 export type NotificationLevel = "info" | "warning" | "error";
 type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
@@ -20,6 +21,8 @@ const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shop
 const TRACKING_STALE_HOURS = 4;
 const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
 const PRODUCT_MISSING_DAYS = 30;  // vendas olhadas pro aviso "Produto sem cadastro"
+const STALLED_LOT_DAYS = 7;       // aviso "Lote parado": sem evento de rastreio há 7 dias…
+const STALLED_LOT_MIN = 3;        // …em pelo menos 3 pacotes com o mesmo último dia de evento
 
 // Motivos de disputa da Shopify Payments em português.
 const DISPUTE_REASON_PT: Record<string, string> = {
@@ -383,10 +386,19 @@ export async function refreshSystemNotifications(ownerId: string) {
     const products = must(productsRes as any, "produtos") as any[];
     const shopNameOf = new Map(((must(shopsNamesRes as any, "nomes das lojas") ?? []) as any[]).map((r) => [r.id as string, r.name as string]));
     const missing = new Map<string, { title: string; orders: number; first: string; shops: Set<string> }>();
+    // Produto cadastrado com custo 0: o pedido entra no lucro sem custo nenhum.
+    const zeroCost = new Map<string, { name: string; orders: number; first: string }>();
     for (const o of orders ?? []) {
       for (const li of (o.line_items ?? []) as any[]) {
         const title = String(li.title ?? li.name ?? "").trim();
-        if (!title || matchLineItemCost(title, products) != null) continue;
+        if (!title) continue;
+        const product = matchLineItemProduct(title, products);
+        if (product && !(Number(product.cost) > 0)) {
+          const z = zeroCost.get(product.name) ?? { name: product.name, orders: 0, first: o.order_date };
+          z.orders++; if (o.order_date < z.first) z.first = o.order_date;
+          zeroCost.set(product.name, z);
+        }
+        if (matchLineItemCost(title, products) != null) continue;
         const k = title.toLowerCase();
         const m = missing.get(k) ?? { title, orders: 0, first: o.order_date, shops: new Set<string>() };
         m.orders++; m.shops.add(o.shop_id);
@@ -402,6 +414,42 @@ export async function refreshSystemNotifications(ownerId: string) {
         body: `${m.orders} venda${m.orders === 1 ? "" : "s"} desde ${fmtDateBR(m.first)} (${shopNames}) usando o custo padrão da loja. Cadastre em Produtos (nome ou palavra-chave) com o custo certo.`.slice(0, 240),
         link: "/shops/products",
       });
+    }
+    for (const z of zeroCost.values()) {
+      want.set(`product_missing:zero:${z.name.toLowerCase().slice(0, 110)}`, {
+        level: "error",
+        title: `Produto com custo zero: ${z.name}`,
+        body: `${z.orders} venda${z.orders === 1 ? "" : "s"} desde ${fmtDateBR(z.first)} entrando no lucro sem custo de produto. Coloque o custo em Produtos.`,
+        link: "/shops/products",
+      });
+    }
+  }
+
+  // Lote parado: vários pacotes enviados com o mesmo último evento de rastreio e
+  // sem movimento há dias (lote retido na transportadora). Cada pedido sozinho não
+  // chama atenção; junto é sinal de problema — e de chargeback "não recebido".
+  if (activeShopIds.length) {
+    const stalledBefore = new Date(Date.now() - STALLED_LOT_DAYS * 86_400_000).toISOString();
+    const shipped = must(await selectAll(supabaseAdmin.from("shop_orders").select("id")
+      .eq("user_id", ownerId).in("shop_id", activeShopIds).in("delivery_status", ["shipped", "in_transit"])) as any, "pedidos enviados") as any[];
+    const ids = (shipped ?? []).map((o) => o.id as string);
+    if (ids.length) {
+      const { data: tracks } = await selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking")
+        .select("order_id,last_event_at").in("order_id", c).lt("last_event_at", stalledBefore));
+      const byDay = new Map<string, number>();
+      for (const t of (tracks ?? []) as any[]) {
+        const day = isoDateUS(t.last_event_at);
+        byDay.set(day, (byDay.get(day) ?? 0) + 1);
+      }
+      for (const [day, n] of byDay) {
+        if (n < STALLED_LOT_MIN) continue;
+        want.set(`track123:lote:${day}`, {
+          level: "warning",
+          title: `Lote parado: ${n} pacotes sem movimento desde ${fmtDateBR(day)}`,
+          body: `${n} pedidos enviados tiveram o último evento de rastreio em ${fmtDateBR(day)} e não andaram mais. Pode ser lote retido na transportadora — veja em Rastreamento e avise os clientes antes de virar chargeback.`,
+          link: "/shops/lojas-grupos",
+        });
+      }
     }
   }
 

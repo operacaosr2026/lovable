@@ -20,6 +20,7 @@ Início e fim: 20–21/10/2026. Produção no commit `f17bc38`; correções da a
 - CROSS-004: corrigido — o mês só congela 3 dias depois de fechar; até lá o realizado é ao vivo.
 - CROSS-001: mantido como está (decisão do usuário). Os lançamentos manuais em "Taxas Shopify" foram conciliados com o banco e continuam contando no Caixa e no lucro.
 - Commits publicados (push) junto com estas correções.
+- Restantes corrigidos (21/10/2026): CROSS-005 (detalhe por loja sem o anúncio do grupo em cada loja; anúncio do grupo à parte), CROSS-007 (IA recebe faturamento_bruto e faturamento_liquido), CROSS-008 (recuperação só abate reembolso de pedido no banco e a partir do início do Caixa), CROSS-009 (gasto por loja não sincroniza conta que já está num card), CROSS-010 (saem getMonthlyProfit, listShops e getMetaAdsMetrics, sem uso), CROSS-011 (taxas no dia de NY), CROSS-012 (prazo de pagamento do card ativo), CROSS-013 (aviso "Produto com custo zero" quando vende), CROSS-014 (aviso "Lote parado": ≥3 pacotes com o mesmo último evento há 7+ dias).
 
 ## Para continuar
 

@@ -277,13 +277,20 @@ function BreakdownDialog({
     data: queries[i].data?.metrics, loading: queries[i].isLoading,
   }));
 
+  // O gasto de anúncios é do grupo (conta da Meta do card), não dá pra separar por
+  // loja: pedido por loja, cada uma vinha com o anúncio do grupo inteiro e a soma
+  // das linhas ficava N vezes o total. Com mais de uma loja, o custo por loja fica
+  // sem anúncios e o anúncio do grupo aparece à parte embaixo.
+  const splitAds = metric === "custoTotal" && shopIds.length > 1;
+  const groupAds = splitAds ? rows.find((r) => r.data)?.data?.anuncios ?? null : null;
+
   const getValue = (m: any) => {
     if (!m) return null;
     if (metric === "faturamento")   return m.faturamento;
     if (metric === "taxas")         return m.taxas;
     if (metric === "pedidos")       return m.pedidos;
     if (metric === "custoProduto")  return m.custoProduto;
-    if (metric === "custoTotal")    return m.custoTotal;
+    if (metric === "custoTotal")    return splitAds ? (m.custoProduto ?? 0) + (m.taxas ?? 0) : m.custoTotal;
     return null;
   };
 
@@ -308,7 +315,7 @@ function BreakdownDialog({
                 {/* Custo Total: de onde vem o valor de cada loja */}
                 {metric === "custoTotal" && row.data && (
                   <p className="text-[11px] text-muted-foreground truncate tabular-nums">
-                    Anúncios {formatValue(row.data.anuncios ?? 0)} · Taxas {formatValue(row.data.taxas ?? 0)} · Produto {formatValue(row.data.custoProduto ?? 0)}
+                    {!splitAds && <>Anúncios {formatValue(row.data.anuncios ?? 0)} · </>}Taxas {formatValue(row.data.taxas ?? 0)} · Produto {formatValue(row.data.custoProduto ?? 0)}
                   </p>
                 )}
               </div>
@@ -320,6 +327,12 @@ function BreakdownDialog({
             </div>
           ))}
         </div>
+        {splitAds && groupAds != null && (
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-3 text-sm">
+            <span className="text-muted-foreground">Anúncios do grupo (não separados por loja)</span>
+            <span className="font-semibold text-foreground tabular-nums">{formatValue(groupAds)}</span>
+          </div>
+        )}
         <p className="text-[11px] text-muted-foreground">{fmtDate(from)} → {fmtDate(to)}</p>
       </DialogContent>
     </Dialog>
