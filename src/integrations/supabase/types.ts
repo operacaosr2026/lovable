@@ -80,764 +80,8 @@ export type Database = {
         };
         Relationships: [];
       };
-      support_manual_checks: {
-        Row: {
-          created_at: string;
-          erro: string | null;
-          evaluated_at: string | null;
-          id: string;
-          licoes: string[];
-          message_id: string;
-          o_que_mudou: string | null;
-          owner_id: string;
-          rascunho: string | null;
-          reply_id: string | null;
-          semelhanca: string | null;
-          status: string;
-          tags: string[];
-          week: string;
-        };
-        Insert: {
-          created_at?: string;
-          erro?: string | null;
-          evaluated_at?: string | null;
-          id?: string;
-          licoes?: string[];
-          message_id: string;
-          o_que_mudou?: string | null;
-          owner_id: string;
-          rascunho?: string | null;
-          reply_id?: string | null;
-          semelhanca?: string | null;
-          status?: string;
-          tags?: string[];
-          week: string;
-        };
-        Update: {
-          created_at?: string;
-          erro?: string | null;
-          evaluated_at?: string | null;
-          id?: string;
-          licoes?: string[];
-          message_id?: string;
-          o_que_mudou?: string | null;
-          owner_id?: string;
-          rascunho?: string | null;
-          reply_id?: string | null;
-          semelhanca?: string | null;
-          status?: string;
-          tags?: string[];
-          week?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "support_manual_checks_message_id_fkey";
-            columns: ["message_id"];
-            isOneToOne: false;
-            referencedRelation: "support_messages";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      support_settings: {
-        Row: {
-          auto_reply_tracking: boolean;
-          owner_id: string;
-          signature: string | null;
-          signature_enabled: boolean;
-          tags: string[];
-          ai_tags_enabled: boolean;
-          goal_first_response_min: number;
-          goal_resolution_min: number;
-          bh_start: number;
-          bh_end: number;
-          bh_days: number[];
-          bh_timezone: string;
-          updated_at: string;
-        };
-        Insert: {
-          auto_reply_tracking?: boolean;
-          owner_id: string;
-          signature?: string | null;
-          signature_enabled?: boolean;
-          tags?: string[];
-          ai_tags_enabled?: boolean;
-          goal_first_response_min?: number;
-          goal_resolution_min?: number;
-          bh_start?: number;
-          bh_end?: number;
-          bh_days?: number[];
-          bh_timezone?: string;
-          updated_at?: string;
-        };
-        Update: {
-          auto_reply_tracking?: boolean;
-          owner_id?: string;
-          signature?: string | null;
-          signature_enabled?: boolean;
-          tags?: string[];
-          ai_tags_enabled?: boolean;
-          goal_first_response_min?: number;
-          goal_resolution_min?: number;
-          bh_start?: number;
-          bh_end?: number;
-          bh_days?: number[];
-          bh_timezone?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      chargeback_settings: {
-        Row: { id: string; owner_id: string; dunning_enabled: boolean; dunning_steps: Json; dunning_final_wait_days: number; updated_at: string; updated_by: string | null };
-        Insert: { id?: string; owner_id: string; dunning_enabled?: boolean; dunning_steps?: Json; dunning_final_wait_days?: number; updated_at?: string; updated_by?: string | null };
-        Update: { id?: string; owner_id?: string; dunning_enabled?: boolean; dunning_steps?: Json; dunning_final_wait_days?: number; updated_at?: string; updated_by?: string | null };
-        Relationships: [];
-      };
-      chargeback_dunning_sends: {
-        Row: { id: string; user_id: string; shop_id: string; order_external_id: string; step: number; subject: string | null; sent_at: string };
-        Insert: { id?: string; user_id: string; shop_id: string; order_external_id: string; step: number; subject?: string | null; sent_at?: string };
-        Update: { id?: string; user_id?: string; shop_id?: string; order_external_id?: string; step?: number; subject?: string | null; sent_at?: string };
-        Relationships: [];
-      };
-      chargeback_alert_followups: {
-        Row: { id: string; shop_id: string; order_external_id: string; user_id: string; status: string; recovered_amount: number | null; note: string | null; updated_at: string; updated_by: string | null; dunning_step: number; dunning_started_at: string | null; dunning_last_at: string | null; dunning_paused: boolean; dunning_stop_reason: string | null; dunning_replied_at: string | null; dunning_replied_step: number | null; recovered_at: string | null; recovered_step: number | null; recovery_draft_id: string | null; recovery_invoice_url: string | null; recovery_order_id: string | null; recovery_order_name: string | null; recovery_paid_at: string | null; recovery_fulfilled: boolean; recovery_error: string | null; excluded_at: string | null; excluded_reason: string | null; excluded_by: string | null; };
-        Insert: { id?: string; shop_id: string; order_external_id: string; user_id: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; dunning_replied_at?: string | null; dunning_replied_step?: number | null; recovered_at?: string | null; recovered_step?: number | null; recovery_draft_id?: string | null; recovery_invoice_url?: string | null; recovery_order_id?: string | null; recovery_order_name?: string | null; recovery_paid_at?: string | null; recovery_fulfilled?: boolean; recovery_error?: string | null; excluded_at?: string | null; excluded_reason?: string | null; excluded_by?: string | null; };
-        Update: { id?: string; shop_id?: string; order_external_id?: string; user_id?: string; status?: string; recovered_amount?: number | null; note?: string | null; updated_at?: string; updated_by?: string | null; dunning_step?: number; dunning_started_at?: string | null; dunning_last_at?: string | null; dunning_paused?: boolean; dunning_stop_reason?: string | null; dunning_replied_at?: string | null; dunning_replied_step?: number | null; recovered_at?: string | null; recovered_step?: number | null; recovery_draft_id?: string | null; recovery_invoice_url?: string | null; recovery_order_id?: string | null; recovery_order_name?: string | null; recovery_paid_at?: string | null; recovery_fulfilled?: boolean; recovery_error?: string | null; excluded_at?: string | null; excluded_reason?: string | null; excluded_by?: string | null; };
-        Relationships: [];
-      };
-      shop_order_risks: {
-        Row: {
-          shop_id: string; order_external_id: string; user_id: string; order_name: string | null; order_created_at: string | null;
-          risk_level: string | null; recommendation: string | null; facts: Json; updated_at: string; financial_status: string | null; id: string; payment_brand: string | null;
-        };
-        Insert: {
-          shop_id: string; order_external_id: string; user_id: string; order_name?: string | null; order_created_at?: string | null;
-          risk_level?: string | null; recommendation?: string | null; facts?: Json; updated_at?: string; financial_status?: string | null; payment_brand?: string | null;
-        };
-        Update: {
-          shop_id?: string; order_external_id?: string; user_id?: string; order_name?: string | null; order_created_at?: string | null;
-          risk_level?: string | null; recommendation?: string | null; facts?: Json; updated_at?: string; financial_status?: string | null; payment_brand?: string | null;
-        };
-        Relationships: [];
-      };
-      support_templates: {
-        Row: { id: string; owner_id: string; title: string; body: string; created_at: string; updated_at: string };
-        Insert: { id?: string; owner_id: string; title: string; body: string; created_at?: string; updated_at?: string };
-        Update: { id?: string; owner_id?: string; title?: string; body?: string; created_at?: string; updated_at?: string };
-        Relationships: [];
-      };
-      order_notice_templates: {
-        Row: { id: string; owner_id: string; title: string; subject: string; body: string; position: number; created_at: string; updated_at: string };
-        Insert: { id?: string; owner_id: string; title: string; subject: string; body: string; position?: number; created_at?: string; updated_at?: string };
-        Update: { id?: string; owner_id?: string; title?: string; subject?: string; body?: string; position?: number; created_at?: string; updated_at?: string };
-        Relationships: [];
-      };
-      order_notices: {
-        Row: { id: string; owner_id: string; order_id: string; shop_id: string; template_id: string | null; template_title: string; to_email: string; subject: string; body: string | null; status: string; error: string | null; sent_by: string | null; queued_at: string; sent_at: string | null };
-        Insert: { id?: string; owner_id: string; order_id: string; shop_id: string; template_id?: string | null; template_title: string; to_email: string; subject: string; body?: string | null; status?: string; error?: string | null; sent_by?: string | null; queued_at?: string; sent_at?: string | null };
-        Update: { id?: string; owner_id?: string; order_id?: string; shop_id?: string; template_id?: string | null; template_title?: string; to_email?: string; subject?: string; body?: string | null; status?: string; error?: string | null; sent_by?: string | null; queued_at?: string; sent_at?: string | null };
-        Relationships: [
-          { foreignKeyName: "order_notices_order_id_fkey"; columns: ["order_id"]; isOneToOne: false; referencedRelation: "shop_orders"; referencedColumns: ["id"] },
-        ];
-      };
-      push_subscriptions: {
-        Row: {
-          id: string;
-          user_id: string;
-          owner_id: string;
-          endpoint: string;
-          p256dh: string;
-          auth: string;
-          device_label: string | null;
-          created_at: string;
-          last_used_at: string | null;
-          failure_count: number;
-          disabled_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          owner_id: string;
-          endpoint: string;
-          p256dh: string;
-          auth: string;
-          device_label?: string | null;
-          created_at?: string;
-          last_used_at?: string | null;
-          failure_count?: number;
-          disabled_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          owner_id?: string;
-          endpoint?: string;
-          p256dh?: string;
-          auth?: string;
-          device_label?: string | null;
-          created_at?: string;
-          last_used_at?: string | null;
-          failure_count?: number;
-          disabled_at?: string | null;
-        };
-        Relationships: [];
-      };
-      notification_settings: {
-        Row: {
-          user_id: string;
-          muted_categories: string[];
-          dnd_enabled: boolean;
-          dnd_start: string;
-          dnd_end: string;
-          timezone: string;
-          profit_times: string[];
-          updated_at: string;
-        };
-        Insert: {
-          user_id: string;
-          muted_categories?: string[];
-          dnd_enabled?: boolean;
-          dnd_start?: string;
-          dnd_end?: string;
-          timezone?: string;
-          profit_times?: string[];
-          updated_at?: string;
-        };
-        Update: {
-          user_id?: string;
-          muted_categories?: string[];
-          dnd_enabled?: boolean;
-          dnd_start?: string;
-          dnd_end?: string;
-          timezone?: string;
-          profit_times?: string[];
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      push_log: {
-        Row: {
-          id: string;
-          owner_id: string;
-          user_id: string;
-          subscription_id: string | null;
-          notification_key: string | null;
-          title: string | null;
-          status: string;
-          error: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          owner_id: string;
-          user_id: string;
-          subscription_id?: string | null;
-          notification_key?: string | null;
-          title?: string | null;
-          status: string;
-          error?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          owner_id?: string;
-          user_id?: string;
-          subscription_id?: string | null;
-          notification_key?: string | null;
-          title?: string | null;
-          status?: string;
-          error?: string | null;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
-      notification_events: {
-        Row: { owner_id: string; key: string; created_at: string };
-        Insert: { owner_id: string; key: string; created_at?: string };
-        Update: { owner_id?: string; key?: string; created_at?: string };
-        Relationships: [];
-      };
-      support_conversations: {
-        Row: {
-          id: string;
-          owner_id: string;
-          customer_email: string;
-          customer_name: string | null;
-          subject: string | null;
-          summary: string | null;
-          last_message_at: string | null;
-          last_inbound_at: string | null;
-          last_outbound_at: string | null;
-          message_count: number;
-          unread_count: number;
-          status: string;
-          shop_id: string | null;
-          shop_manual: boolean;
-          resolved_at: string | null;
-          favorite: boolean;
-          tags: string[];
-          note: string | null;
-          ai_tags: string[];
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          owner_id: string;
-          customer_email: string;
-          customer_name?: string | null;
-          subject?: string | null;
-          summary?: string | null;
-          last_message_at?: string | null;
-          last_inbound_at?: string | null;
-          last_outbound_at?: string | null;
-          message_count?: number;
-          unread_count?: number;
-          status?: string;
-          shop_id?: string | null;
-          shop_manual?: boolean;
-          resolved_at?: string | null;
-          favorite?: boolean;
-          tags?: string[];
-          note?: string | null;
-          ai_tags?: string[];
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          owner_id?: string;
-          customer_email?: string;
-          customer_name?: string | null;
-          subject?: string | null;
-          summary?: string | null;
-          last_message_at?: string | null;
-          last_inbound_at?: string | null;
-          last_outbound_at?: string | null;
-          message_count?: number;
-          unread_count?: number;
-          status?: string;
-          shop_id?: string | null;
-          shop_manual?: boolean;
-          resolved_at?: string | null;
-          favorite?: boolean;
-          tags?: string[];
-          note?: string | null;
-          ai_tags?: string[];
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      support_playbook: {
-        Row: { based_on: number; owner_id: string; rules: Json; updated_at: string };
-        Insert: { based_on?: number; owner_id: string; rules?: Json; updated_at?: string };
-        Update: { based_on?: number; owner_id?: string; rules?: Json; updated_at?: string };
-        Relationships: [];
-      };
-      support_messages: {
-        Row: {
-          ai_draft: string | null;
-          ai_draft_at: string | null;
-          ai_draft_eval: Json | null;
-          ai_draft_pt: string | null;
-          auto_reply: string | null;
-          auto_reply_at: string | null;
-          auto_reply_text: string | null;
-          id: string;
-          owner_id: string;
-          conversation_id: string;
-          message_id: string;
-          folder_id: string;
-          thread_id: string | null;
-          direction: string;
-          from_email: string | null;
-          from_name: string | null;
-          to_emails: string | null;
-          subject: string | null;
-          summary: string | null;
-          sent_at: string;
-          is_read: boolean;
-          has_attachment: boolean;
-          content_html: string | null;
-          content_pt: string | null;
-          ai_checked: boolean;
-          created_at: string;
-        };
-        Insert: {
-          ai_draft?: string | null;
-          ai_draft_at?: string | null;
-          ai_draft_eval?: Json | null;
-          ai_draft_pt?: string | null;
-          auto_reply?: string | null;
-          auto_reply_at?: string | null;
-          auto_reply_text?: string | null;
-          id?: string;
-          owner_id: string;
-          conversation_id: string;
-          message_id: string;
-          folder_id: string;
-          thread_id?: string | null;
-          direction: string;
-          from_email?: string | null;
-          from_name?: string | null;
-          to_emails?: string | null;
-          subject?: string | null;
-          summary?: string | null;
-          sent_at: string;
-          is_read?: boolean;
-          has_attachment?: boolean;
-          content_html?: string | null;
-          content_pt?: string | null;
-          ai_checked?: boolean;
-          created_at?: string;
-        };
-        Update: {
-          ai_draft?: string | null;
-          ai_draft_at?: string | null;
-          ai_draft_eval?: Json | null;
-          ai_draft_pt?: string | null;
-          auto_reply?: string | null;
-          auto_reply_at?: string | null;
-          auto_reply_text?: string | null;
-          id?: string;
-          owner_id?: string;
-          conversation_id?: string;
-          message_id?: string;
-          folder_id?: string;
-          thread_id?: string | null;
-          direction?: string;
-          from_email?: string | null;
-          from_name?: string | null;
-          to_emails?: string | null;
-          subject?: string | null;
-          summary?: string | null;
-          sent_at?: string;
-          is_read?: boolean;
-          has_attachment?: boolean;
-          content_html?: string | null;
-          content_pt?: string | null;
-          ai_checked?: boolean;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
-      training_lessons: {
-        Row: {
-          content: Json;
-          created_at: string;
-          duration_min: number | null;
-          id: string;
-          kind: string;
-          position: number;
-          title: string;
-          track_id: string;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          content?: Json;
-          created_at?: string;
-          duration_min?: number | null;
-          id?: string;
-          kind: string;
-          position?: number;
-          title: string;
-          track_id: string;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          content?: Json;
-          created_at?: string;
-          duration_min?: number | null;
-          id?: string;
-          kind?: string;
-          position?: number;
-          title?: string;
-          track_id?: string;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "training_lessons_track_id_fkey";
-            columns: ["track_id"];
-            isOneToOne: false;
-            referencedRelation: "training_tracks";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      training_progress: {
-        Row: {
-          completed_at: string;
-          lesson_id: string;
-          member_id: string;
-          user_id: string;
-        };
-        Insert: {
-          completed_at?: string;
-          lesson_id: string;
-          member_id: string;
-          user_id: string;
-        };
-        Update: {
-          completed_at?: string;
-          lesson_id?: string;
-          member_id?: string;
-          user_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "training_progress_lesson_id_fkey";
-            columns: ["lesson_id"];
-            isOneToOne: false;
-            referencedRelation: "training_lessons";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      training_tracks: {
-        Row: {
-          color: string;
-          created_at: string;
-          description: string | null;
-          emoji: string | null;
-          id: string;
-          position: number;
-          title: string;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          color?: string;
-          created_at?: string;
-          description?: string | null;
-          emoji?: string | null;
-          id?: string;
-          position?: number;
-          title: string;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          color?: string;
-          created_at?: string;
-          description?: string | null;
-          emoji?: string | null;
-          id?: string;
-          position?: number;
-          title?: string;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
-      zoho_mail_accounts: {
-        Row: {
-          owner_id: string;
-          client_id: string;
-          client_secret: string;
-          refresh_token: string | null;
-          access_token: string | null;
-          access_token_expires_at: string | null;
-          accounts_server: string;
-          mail_api_base: string;
-          account_id: string | null;
-          email: string | null;
-          display_name: string | null;
-          inbox_folder_id: string | null;
-          sent_folder_id: string | null;
-          send_as: string | null;
-          send_as_options: string[];
-          addresses: string[];
-          last_sync_at: string | null;
-          last_sync_error: string | null;
-          connected_at: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          owner_id: string;
-          client_id: string;
-          client_secret: string;
-          refresh_token?: string | null;
-          access_token?: string | null;
-          access_token_expires_at?: string | null;
-          accounts_server?: string;
-          mail_api_base?: string;
-          account_id?: string | null;
-          email?: string | null;
-          display_name?: string | null;
-          inbox_folder_id?: string | null;
-          sent_folder_id?: string | null;
-          send_as?: string | null;
-          send_as_options?: string[];
-          addresses?: string[];
-          last_sync_at?: string | null;
-          last_sync_error?: string | null;
-          connected_at?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          owner_id?: string;
-          client_id?: string;
-          client_secret?: string;
-          refresh_token?: string | null;
-          access_token?: string | null;
-          access_token_expires_at?: string | null;
-          accounts_server?: string;
-          mail_api_base?: string;
-          account_id?: string | null;
-          email?: string | null;
-          display_name?: string | null;
-          inbox_folder_id?: string | null;
-          sent_folder_id?: string | null;
-          send_as?: string | null;
-          send_as_options?: string[];
-          addresses?: string[];
-          last_sync_at?: string | null;
-          last_sync_error?: string | null;
-          connected_at?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      zoho_oauth_states: {
-        Row: {
-          state: string;
-          owner_id: string;
-          client_id: string;
-          client_secret: string;
-          redirect_uri: string;
-          expires_at: string;
-          created_at: string;
-        };
-        Insert: {
-          state: string;
-          owner_id: string;
-          client_id: string;
-          client_secret: string;
-          redirect_uri: string;
-          expires_at: string;
-          created_at?: string;
-        };
-        Update: {
-          state?: string;
-          owner_id?: string;
-          client_id?: string;
-          client_secret?: string;
-          redirect_uri?: string;
-          expires_at?: string;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
-      audit_log: {
-        Row: {
-          action: string;
-          actor_email: string | null;
-          actor_id: string;
-          created_at: string;
-          data: Json | null;
-          id: string;
-          label: string;
-          owner_id: string;
-        };
-        Insert: {
-          action: string;
-          actor_email?: string | null;
-          actor_id: string;
-          created_at?: string;
-          data?: Json | null;
-          id?: string;
-          label: string;
-          owner_id: string;
-        };
-        Update: {
-          action?: string;
-          actor_email?: string | null;
-          actor_id?: string;
-          created_at?: string;
-          data?: Json | null;
-          id?: string;
-          label?: string;
-          owner_id?: string;
-        };
-        Relationships: [];
-      };
-      company_goals: {
-        Row: {
-          created_at: string;
-          frozen_at: string | null;
-          id: string;
-          lucro_por_venda: number | null;
-          meta: number;
-          month: string;
-          realizado_final: number | null;
-          shop_ids_final: string[] | null;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          created_at?: string;
-          frozen_at?: string | null;
-          id?: string;
-          lucro_por_venda?: number | null;
-          meta: number;
-          month: string;
-          realizado_final?: number | null;
-          shop_ids_final?: string[] | null;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          created_at?: string;
-          frozen_at?: string | null;
-          id?: string;
-          lucro_por_venda?: number | null;
-          meta?: number;
-          month?: string;
-          realizado_final?: number | null;
-          shop_ids_final?: string[] | null;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
-      caixa_daily_snapshots: {
-        Row: {
-          created_at: string;
-          date: string;
-          receivable: number;
-          saldo: number;
-          shop_id: string;
-          user_id: string;
-        };
-        Insert: {
-          created_at?: string;
-          date: string;
-          receivable: number;
-          saldo: number;
-          shop_id: string;
-          user_id: string;
-        };
-        Update: {
-          created_at?: string;
-          date?: string;
-          receivable?: number;
-          saldo?: number;
-          shop_id?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
       app_notifications: {
         Row: {
-          target_user_id: string | null;
           body: string | null;
           created_at: string;
           dismissed_at: string | null;
@@ -847,12 +91,12 @@ export type Database = {
           link: string | null;
           read_at: string | null;
           resolved_at: string | null;
+          target_user_id: string | null;
           title: string;
           updated_at: string;
           user_id: string;
         };
         Insert: {
-          target_user_id?: string | null;
           body?: string | null;
           created_at?: string;
           dismissed_at?: string | null;
@@ -862,12 +106,12 @@ export type Database = {
           link?: string | null;
           read_at?: string | null;
           resolved_at?: string | null;
+          target_user_id?: string | null;
           title: string;
           updated_at?: string;
           user_id: string;
         };
         Update: {
-          target_user_id?: string | null;
           body?: string | null;
           created_at?: string;
           dismissed_at?: string | null;
@@ -877,6 +121,7 @@ export type Database = {
           link?: string | null;
           read_at?: string | null;
           resolved_at?: string | null;
+          target_user_id?: string | null;
           title?: string;
           updated_at?: string;
           user_id?: string;
@@ -931,6 +176,39 @@ export type Database = {
           timezone?: string;
           updated_at?: string;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      audit_log: {
+        Row: {
+          action: string;
+          actor_email: string | null;
+          actor_id: string;
+          created_at: string;
+          data: Json | null;
+          id: string;
+          label: string;
+          owner_id: string;
+        };
+        Insert: {
+          action: string;
+          actor_email?: string | null;
+          actor_id: string;
+          created_at?: string;
+          data?: Json | null;
+          id?: string;
+          label: string;
+          owner_id: string;
+        };
+        Update: {
+          action?: string;
+          actor_email?: string | null;
+          actor_id?: string;
+          created_at?: string;
+          data?: Json | null;
+          id?: string;
+          label?: string;
+          owner_id?: string;
         };
         Relationships: [];
       };
@@ -1023,6 +301,374 @@ export type Database = {
           updated_at?: string;
           user_id?: string;
           wise_profile_id?: string | null;
+        };
+        Relationships: [];
+      };
+      caixa_daily_snapshots: {
+        Row: {
+          created_at: string;
+          date: string;
+          receivable: number;
+          saldo: number;
+          shop_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          date: string;
+          receivable: number;
+          saldo: number;
+          shop_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          date?: string;
+          receivable?: number;
+          saldo?: number;
+          shop_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "caixa_daily_snapshots_shop_id_fkey";
+            columns: ["shop_id"];
+            isOneToOne: false;
+            referencedRelation: "shops";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      chargeback_alert_followups: {
+        Row: {
+          dunning_last_at: string | null;
+          dunning_paused: boolean;
+          dunning_replied_at: string | null;
+          dunning_replied_step: number | null;
+          dunning_started_at: string | null;
+          dunning_step: number;
+          dunning_stop_reason: string | null;
+          excluded_at: string | null;
+          excluded_by: string | null;
+          excluded_reason: string | null;
+          id: string;
+          note: string | null;
+          order_external_id: string;
+          recovered_amount: number | null;
+          recovered_at: string | null;
+          recovered_step: number | null;
+          recovery_draft_id: string | null;
+          recovery_error: string | null;
+          recovery_fulfilled: boolean;
+          recovery_invoice_url: string | null;
+          recovery_order_id: string | null;
+          recovery_order_name: string | null;
+          recovery_paid_at: string | null;
+          shop_id: string;
+          status: string;
+          updated_at: string;
+          updated_by: string | null;
+          user_id: string;
+        };
+        Insert: {
+          dunning_last_at?: string | null;
+          dunning_paused?: boolean;
+          dunning_replied_at?: string | null;
+          dunning_replied_step?: number | null;
+          dunning_started_at?: string | null;
+          dunning_step?: number;
+          dunning_stop_reason?: string | null;
+          excluded_at?: string | null;
+          excluded_by?: string | null;
+          excluded_reason?: string | null;
+          id?: string;
+          note?: string | null;
+          order_external_id: string;
+          recovered_amount?: number | null;
+          recovered_at?: string | null;
+          recovered_step?: number | null;
+          recovery_draft_id?: string | null;
+          recovery_error?: string | null;
+          recovery_fulfilled?: boolean;
+          recovery_invoice_url?: string | null;
+          recovery_order_id?: string | null;
+          recovery_order_name?: string | null;
+          recovery_paid_at?: string | null;
+          shop_id: string;
+          status?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+          user_id: string;
+        };
+        Update: {
+          dunning_last_at?: string | null;
+          dunning_paused?: boolean;
+          dunning_replied_at?: string | null;
+          dunning_replied_step?: number | null;
+          dunning_started_at?: string | null;
+          dunning_step?: number;
+          dunning_stop_reason?: string | null;
+          excluded_at?: string | null;
+          excluded_by?: string | null;
+          excluded_reason?: string | null;
+          id?: string;
+          note?: string | null;
+          order_external_id?: string;
+          recovered_amount?: number | null;
+          recovered_at?: string | null;
+          recovered_step?: number | null;
+          recovery_draft_id?: string | null;
+          recovery_error?: string | null;
+          recovery_fulfilled?: boolean;
+          recovery_invoice_url?: string | null;
+          recovery_order_id?: string | null;
+          recovery_order_name?: string | null;
+          recovery_paid_at?: string | null;
+          shop_id?: string;
+          status?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      chargeback_dunning_sends: {
+        Row: {
+          id: string;
+          order_external_id: string;
+          sent_at: string;
+          shop_id: string;
+          step: number;
+          subject: string | null;
+          user_id: string;
+        };
+        Insert: {
+          id?: string;
+          order_external_id: string;
+          sent_at?: string;
+          shop_id: string;
+          step: number;
+          subject?: string | null;
+          user_id: string;
+        };
+        Update: {
+          id?: string;
+          order_external_id?: string;
+          sent_at?: string;
+          shop_id?: string;
+          step?: number;
+          subject?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      chargeback_settings: {
+        Row: {
+          dunning_enabled: boolean;
+          dunning_final_wait_days: number;
+          dunning_steps: Json;
+          id: string;
+          owner_id: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          dunning_enabled?: boolean;
+          dunning_final_wait_days?: number;
+          dunning_steps?: Json;
+          id?: string;
+          owner_id: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          dunning_enabled?: boolean;
+          dunning_final_wait_days?: number;
+          dunning_steps?: Json;
+          id?: string;
+          owner_id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
+      company_goals: {
+        Row: {
+          created_at: string;
+          frozen_at: string | null;
+          id: string;
+          lucro_por_venda: number | null;
+          meta: number;
+          month: string;
+          realizado_final: number | null;
+          shop_ids_final: string[] | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          frozen_at?: string | null;
+          id?: string;
+          lucro_por_venda?: number | null;
+          meta: number;
+          month: string;
+          realizado_final?: number | null;
+          shop_ids_final?: string[] | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          frozen_at?: string | null;
+          id?: string;
+          lucro_por_venda?: number | null;
+          meta?: number;
+          month?: string;
+          realizado_final?: number | null;
+          shop_ids_final?: string[] | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      competitor_templates: {
+        Row: {
+          created_at: string;
+          fields: Json;
+          id: string;
+          is_default: boolean;
+          name: string;
+          position: number;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          fields?: Json;
+          id?: string;
+          is_default?: boolean;
+          name: string;
+          position?: number;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          fields?: Json;
+          id?: string;
+          is_default?: boolean;
+          name?: string;
+          position?: number;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      consultant_reports: {
+        Row: {
+          created_at: string;
+          facts: Json;
+          id: string;
+          model: string | null;
+          period_from: string;
+          period_to: string;
+          result: Json;
+          tips_status: Json;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          facts: Json;
+          id?: string;
+          model?: string | null;
+          period_from: string;
+          period_to: string;
+          result: Json;
+          tips_status?: Json;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          facts?: Json;
+          id?: string;
+          model?: string | null;
+          period_from?: string;
+          period_to?: string;
+          result?: Json;
+          tips_status?: Json;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      consultant_settings: {
+        Row: {
+          context: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          context?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          context?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      cron_runs: {
+        Row: {
+          finished_at: string;
+          id: number;
+          job: string;
+          ok: boolean;
+          started_at: string;
+          status: number | null;
+          summary: string | null;
+        };
+        Insert: {
+          finished_at?: string;
+          id?: never;
+          job: string;
+          ok: boolean;
+          started_at: string;
+          status?: number | null;
+          summary?: string | null;
+        };
+        Update: {
+          finished_at?: string;
+          id?: never;
+          job?: string;
+          ok?: boolean;
+          started_at?: string;
+          status?: number | null;
+          summary?: string | null;
+        };
+        Relationships: [];
+      };
+      fix_rastreio_20261001_backup: {
+        Row: {
+          delivered_at: string | null;
+          delivery_status: string | null;
+          id: string | null;
+          order_number: string | null;
+          shipped_at: string | null;
+        };
+        Insert: {
+          delivered_at?: string | null;
+          delivery_status?: string | null;
+          id?: string | null;
+          order_number?: string | null;
+          shipped_at?: string | null;
+        };
+        Update: {
+          delivered_at?: string | null;
+          delivery_status?: string | null;
+          id?: string | null;
+          order_number?: string | null;
+          shipped_at?: string | null;
         };
         Relationships: [];
       };
@@ -1145,6 +791,38 @@ export type Database = {
         };
         Relationships: [];
       };
+      lg_card_ad_spend: {
+        Row: {
+          amount: number;
+          card_id: string;
+          date: string;
+          synced_at: string;
+          user_id: string;
+        };
+        Insert: {
+          amount?: number;
+          card_id: string;
+          date: string;
+          synced_at?: string;
+          user_id: string;
+        };
+        Update: {
+          amount?: number;
+          card_id?: string;
+          date?: string;
+          synced_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_ad_spend_card_id_fkey";
+            columns: ["card_id"];
+            isOneToOne: false;
+            referencedRelation: "lg_cards";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       lg_card_currency_rates: {
         Row: {
           brl_rate: number;
@@ -1227,6 +905,62 @@ export type Database = {
           },
         ];
       };
+      lg_card_meta_accounts: {
+        Row: {
+          account_name: string | null;
+          ad_account_id: string;
+          card_id: string;
+          created_at: string;
+          currency: string | null;
+          enabled: boolean;
+          id: string;
+          last_sync_at: string | null;
+          last_sync_error: string | null;
+          last_sync_status: string | null;
+          selected_campaign_ids: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          account_name?: string | null;
+          ad_account_id: string;
+          card_id: string;
+          created_at?: string;
+          currency?: string | null;
+          enabled?: boolean;
+          id?: string;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          last_sync_status?: string | null;
+          selected_campaign_ids?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          account_name?: string | null;
+          ad_account_id?: string;
+          card_id?: string;
+          created_at?: string;
+          currency?: string | null;
+          enabled?: boolean;
+          id?: string;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          last_sync_status?: string | null;
+          selected_campaign_ids?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_meta_accounts_card_id_fkey";
+            columns: ["card_id"];
+            isOneToOne: false;
+            referencedRelation: "lg_cards";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       lg_card_note_attachments: {
         Row: {
           created_at: string;
@@ -1258,7 +992,15 @@ export type Database = {
           size_bytes?: number | null;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "lg_card_note_attachments_note_id_fkey";
+            columns: ["note_id"];
+            isOneToOne: false;
+            referencedRelation: "lg_card_notes";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       lg_card_notes: {
         Row: {
@@ -1339,11 +1081,11 @@ export type Database = {
       };
       lg_cards: {
         Row: {
-          inactive_since: string | null;
           country: string | null;
           created_at: string | null;
           description: string | null;
           id: string;
+          inactive_since: string | null;
           logo_url: string | null;
           matriz_shop_id: string | null;
           name: string;
@@ -1352,11 +1094,11 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          inactive_since?: string | null;
           country?: string | null;
           created_at?: string | null;
           description?: string | null;
           id?: string;
+          inactive_since?: string | null;
           logo_url?: string | null;
           matriz_shop_id?: string | null;
           name: string;
@@ -1365,11 +1107,11 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          inactive_since?: string | null;
           country?: string | null;
           created_at?: string | null;
           description?: string | null;
           id?: string;
+          inactive_since?: string | null;
           logo_url?: string | null;
           matriz_shop_id?: string | null;
           name?: string;
@@ -1653,47 +1395,158 @@ export type Database = {
         };
         Relationships: [];
       };
-      consultant_settings: {
-        Row: { context: string; updated_at: string; user_id: string };
-        Insert: { context?: string; updated_at?: string; user_id: string };
-        Update: { context?: string; updated_at?: string; user_id?: string };
-        Relationships: [];
-      };
-      consultant_reports: {
+      notification_events: {
         Row: {
           created_at: string;
-          facts: Json;
-          id: string;
-          model: string | null;
-          period_from: string;
-          period_to: string;
-          result: Json;
-          tips_status: Json;
-          user_id: string;
+          key: string;
+          owner_id: string;
         };
         Insert: {
           created_at?: string;
-          facts: Json;
-          id?: string;
-          model?: string | null;
-          period_from: string;
-          period_to: string;
-          result: Json;
-          tips_status?: Json;
-          user_id: string;
+          key: string;
+          owner_id: string;
         };
         Update: {
           created_at?: string;
-          facts?: Json;
-          id?: string;
-          model?: string | null;
-          period_from?: string;
-          period_to?: string;
-          result?: Json;
-          tips_status?: Json;
+          key?: string;
+          owner_id?: string;
+        };
+        Relationships: [];
+      };
+      notification_settings: {
+        Row: {
+          dnd_enabled: boolean;
+          dnd_end: string;
+          dnd_start: string;
+          muted_categories: string[];
+          profit_times: string[];
+          timezone: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          dnd_enabled?: boolean;
+          dnd_end?: string;
+          dnd_start?: string;
+          muted_categories?: string[];
+          profit_times?: string[];
+          timezone?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          dnd_enabled?: boolean;
+          dnd_end?: string;
+          dnd_start?: string;
+          muted_categories?: string[];
+          profit_times?: string[];
+          timezone?: string;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [];
+      };
+      order_notice_templates: {
+        Row: {
+          body: string;
+          created_at: string;
+          id: string;
+          owner_id: string;
+          position: number;
+          subject: string;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          body: string;
+          created_at?: string;
+          id?: string;
+          owner_id: string;
+          position?: number;
+          subject: string;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          body?: string;
+          created_at?: string;
+          id?: string;
+          owner_id?: string;
+          position?: number;
+          subject?: string;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      order_notices: {
+        Row: {
+          body: string | null;
+          error: string | null;
+          id: string;
+          order_id: string;
+          owner_id: string;
+          queued_at: string;
+          sending_at: string | null;
+          sent_at: string | null;
+          sent_by: string | null;
+          shop_id: string;
+          status: string;
+          subject: string;
+          template_id: string | null;
+          template_title: string;
+          to_email: string;
+        };
+        Insert: {
+          body?: string | null;
+          error?: string | null;
+          id?: string;
+          order_id: string;
+          owner_id: string;
+          queued_at?: string;
+          sending_at?: string | null;
+          sent_at?: string | null;
+          sent_by?: string | null;
+          shop_id: string;
+          status?: string;
+          subject: string;
+          template_id?: string | null;
+          template_title: string;
+          to_email: string;
+        };
+        Update: {
+          body?: string | null;
+          error?: string | null;
+          id?: string;
+          order_id?: string;
+          owner_id?: string;
+          queued_at?: string;
+          sending_at?: string | null;
+          sent_at?: string | null;
+          sent_by?: string | null;
+          shop_id?: string;
+          status?: string;
+          subject?: string;
+          template_id?: string | null;
+          template_title?: string;
+          to_email?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "order_notices_order_id_fkey";
+            columns: ["order_id"];
+            isOneToOne: false;
+            referencedRelation: "shop_orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "order_notices_template_id_fkey";
+            columns: ["template_id"];
+            isOneToOne: false;
+            referencedRelation: "order_notice_templates";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       posting_holidays: {
         Row: {
@@ -1718,6 +1571,84 @@ export type Database = {
           id?: string;
           kind?: string;
           name?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      product_ad_campaigns: {
+        Row: {
+          ad_account_id: string;
+          campaign_id: string;
+          campaign_name: string | null;
+          created_at: string;
+          id: string;
+          product_id: string;
+          shop_id: string;
+          user_id: string;
+        };
+        Insert: {
+          ad_account_id: string;
+          campaign_id: string;
+          campaign_name?: string | null;
+          created_at?: string;
+          id?: string;
+          product_id: string;
+          shop_id: string;
+          user_id: string;
+        };
+        Update: {
+          ad_account_id?: string;
+          campaign_id?: string;
+          campaign_name?: string | null;
+          created_at?: string;
+          id?: string;
+          product_id?: string;
+          shop_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_ad_campaigns_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "product_ad_campaigns_shop_id_fkey";
+            columns: ["shop_id"];
+            isOneToOne: false;
+            referencedRelation: "shops";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_board_columns: {
+        Row: {
+          color: string | null;
+          created_at: string;
+          id: string;
+          name: string;
+          position: number;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          color?: string | null;
+          created_at?: string;
+          id?: string;
+          name: string;
+          position?: number;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          color?: string | null;
+          created_at?: string;
+          id?: string;
+          name?: string;
+          position?: number;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [];
@@ -1753,6 +1684,85 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "product_checklist_items_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_competitors: {
+        Row: {
+          created_at: string;
+          fields: Json;
+          id: string;
+          name: string;
+          position: number;
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+          values: Json;
+        };
+        Insert: {
+          created_at?: string;
+          fields?: Json;
+          id?: string;
+          name?: string;
+          position?: number;
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+          values?: Json;
+        };
+        Update: {
+          created_at?: string;
+          fields?: Json;
+          id?: string;
+          name?: string;
+          position?: number;
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+          values?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_competitors_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_cost_history: {
+        Row: {
+          cost: number;
+          created_at: string;
+          id: string;
+          product_id: string;
+          user_id: string;
+          valid_from: string;
+        };
+        Insert: {
+          cost: number;
+          created_at?: string;
+          id?: string;
+          product_id: string;
+          user_id: string;
+          valid_from: string;
+        };
+        Update: {
+          cost?: number;
+          created_at?: string;
+          id?: string;
+          product_id?: string;
+          user_id?: string;
+          valid_from?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_cost_history_product_id_fkey";
             columns: ["product_id"];
             isOneToOne: false;
             referencedRelation: "products";
@@ -1824,6 +1834,116 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      product_diary_entries: {
+        Row: {
+          author_id: string | null;
+          content: string;
+          created_at: string;
+          edited_at: string | null;
+          id: string;
+          image_urls: Json;
+          note_type_id: string | null;
+          product_id: string;
+          user_id: string;
+        };
+        Insert: {
+          author_id?: string | null;
+          content: string;
+          created_at?: string;
+          edited_at?: string | null;
+          id?: string;
+          image_urls?: Json;
+          note_type_id?: string | null;
+          product_id: string;
+          user_id: string;
+        };
+        Update: {
+          author_id?: string | null;
+          content?: string;
+          created_at?: string;
+          edited_at?: string | null;
+          id?: string;
+          image_urls?: Json;
+          note_type_id?: string | null;
+          product_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_diary_entries_note_type_id_fkey";
+            columns: ["note_type_id"];
+            isOneToOne: false;
+            referencedRelation: "product_diary_note_types";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "product_diary_entries_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_diary_focus: {
+        Row: {
+          current_test: string | null;
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          current_test?: string | null;
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          current_test?: string | null;
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_diary_focus_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_diary_note_types: {
+        Row: {
+          color: string;
+          created_at: string;
+          id: string;
+          is_system: boolean;
+          name: string;
+          position: number;
+          user_id: string;
+        };
+        Insert: {
+          color?: string;
+          created_at?: string;
+          id?: string;
+          is_system?: boolean;
+          name: string;
+          position?: number;
+          user_id: string;
+        };
+        Update: {
+          color?: string;
+          created_at?: string;
+          id?: string;
+          is_system?: boolean;
+          name?: string;
+          position?: number;
+          user_id?: string;
+        };
+        Relationships: [];
       };
       product_doc_folders: {
         Row: {
@@ -1911,6 +2031,79 @@ export type Database = {
           },
         ];
       };
+      product_funnel_events: {
+        Row: {
+          client_id: string;
+          created_at: string;
+          day: string;
+          id: number;
+          shopify_product_id: string;
+          shopify_store_id: string;
+          step: string;
+          title: string;
+          user_id: string;
+        };
+        Insert: {
+          client_id: string;
+          created_at?: string;
+          day: string;
+          id?: never;
+          shopify_product_id?: string;
+          shopify_store_id: string;
+          step: string;
+          title?: string;
+          user_id: string;
+        };
+        Update: {
+          client_id?: string;
+          created_at?: string;
+          day?: string;
+          id?: never;
+          shopify_product_id?: string;
+          shopify_store_id?: string;
+          step?: string;
+          title?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_funnel_events_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_funnel_pages: {
+        Row: {
+          created_at: string;
+          pagefly_page_id: string;
+          product_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          pagefly_page_id: string;
+          product_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          pagefly_page_id?: string;
+          product_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_funnel_pages_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       product_images: {
         Row: {
           created_at: string;
@@ -1961,6 +2154,35 @@ export type Database = {
           },
         ];
       };
+      product_pages: {
+        Row: {
+          data: Json;
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          data?: Json;
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          data?: Json;
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_pages_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       product_pricing: {
         Row: {
           dom_pagamentos_pct: number;
@@ -2001,6 +2223,280 @@ export type Database = {
             columns: ["product_id"];
             isOneToOne: true;
             referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_production: {
+        Row: {
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+          values: Json;
+        };
+        Insert: {
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+          values?: Json;
+        };
+        Update: {
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+          values?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_production_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_production_files: {
+        Row: {
+          created_at: string;
+          id: string;
+          mime: string | null;
+          name: string;
+          path: string;
+          product_id: string;
+          size: number;
+          uploaded_by: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          mime?: string | null;
+          name: string;
+          path: string;
+          product_id: string;
+          size?: number;
+          uploaded_by?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          mime?: string | null;
+          name?: string;
+          path?: string;
+          product_id?: string;
+          size?: number;
+          uploaded_by?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_production_files_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_production_policies: {
+        Row: {
+          content: string;
+          created_at: string;
+          id: string;
+          position: number;
+          product_id: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          content?: string;
+          created_at?: string;
+          id?: string;
+          position?: number;
+          product_id: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          content?: string;
+          created_at?: string;
+          id?: string;
+          position?: number;
+          product_id?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_production_policies_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_production_tasks: {
+        Row: {
+          assignee_id: string | null;
+          checklist: Json;
+          created_at: string;
+          description: string | null;
+          done: boolean;
+          due_date: string | null;
+          id: string;
+          position: number;
+          product_id: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          assignee_id?: string | null;
+          checklist?: Json;
+          created_at?: string;
+          description?: string | null;
+          done?: boolean;
+          due_date?: string | null;
+          id?: string;
+          position?: number;
+          product_id: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          assignee_id?: string | null;
+          checklist?: Json;
+          created_at?: string;
+          description?: string | null;
+          done?: boolean;
+          due_date?: string | null;
+          id?: string;
+          position?: number;
+          product_id?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_production_tasks_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_production_templates: {
+        Row: {
+          fields: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          fields?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          fields?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      product_shopify_listings: {
+        Row: {
+          data: Json;
+          product_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          data?: Json;
+          product_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          data?: Json;
+          product_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_shopify_listings_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      product_shopify_publications: {
+        Row: {
+          created_at: string;
+          error: string | null;
+          handle: string | null;
+          id: string;
+          product_id: string;
+          role: string | null;
+          shopify_product_id: string | null;
+          shopify_store_id: string;
+          status: string;
+          updated_at: string;
+          user_id: string;
+          warnings: Json;
+        };
+        Insert: {
+          created_at?: string;
+          error?: string | null;
+          handle?: string | null;
+          id?: string;
+          product_id: string;
+          role?: string | null;
+          shopify_product_id?: string | null;
+          shopify_store_id: string;
+          status: string;
+          updated_at?: string;
+          user_id: string;
+          warnings?: Json;
+        };
+        Update: {
+          created_at?: string;
+          error?: string | null;
+          handle?: string | null;
+          id?: string;
+          product_id?: string;
+          role?: string | null;
+          shopify_product_id?: string | null;
+          shopify_store_id?: string;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+          warnings?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_shopify_publications_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "product_shopify_publications_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
             referencedColumns: ["id"];
           },
         ];
@@ -2091,128 +2587,11 @@ export type Database = {
         };
         Relationships: [];
       };
-      product_pages: {
-        Row: {
-          data: Json;
-          product_id: string;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          data?: Json;
-          product_id: string;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          data?: Json;
-          product_id?: string;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
-      product_shopify_listings: {
-        Row: {
-          data: Json;
-          product_id: string;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          data?: Json;
-          product_id: string;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          data?: Json;
-          product_id?: string;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
-      product_shopify_publications: {
-        Row: {
-          created_at: string;
-          error: string | null;
-          handle: string | null;
-          id: string;
-          product_id: string;
-          role: string | null;
-          shopify_product_id: string | null;
-          shopify_store_id: string;
-          status: string;
-          updated_at: string;
-          user_id: string;
-          warnings: Json;
-        };
-        Insert: {
-          created_at?: string;
-          error?: string | null;
-          handle?: string | null;
-          id?: string;
-          product_id: string;
-          role?: string | null;
-          shopify_product_id?: string | null;
-          shopify_store_id: string;
-          status: string;
-          updated_at?: string;
-          user_id: string;
-          warnings?: Json;
-        };
-        Update: {
-          created_at?: string;
-          error?: string | null;
-          handle?: string | null;
-          id?: string;
-          product_id?: string;
-          role?: string | null;
-          shopify_product_id?: string | null;
-          shopify_store_id?: string;
-          status?: string;
-          updated_at?: string;
-          user_id?: string;
-          warnings?: Json;
-        };
-        Relationships: [];
-      };
-      product_board_columns: {
-        Row: {
-          color: string | null;
-          created_at: string;
-          id: string;
-          name: string;
-          position: number;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          color?: string | null;
-          created_at?: string;
-          id?: string;
-          name: string;
-          position?: number;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          color?: string | null;
-          created_at?: string;
-          id?: string;
-          name?: string;
-          position?: number;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [];
-      };
       products: {
         Row: {
+          archived: boolean;
           board_column_id: string | null;
           board_position: number;
-          archived: boolean;
           cost: number;
           created_at: string;
           description: string | null;
@@ -2229,9 +2608,9 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          archived?: boolean;
           board_column_id?: string | null;
           board_position?: number;
-          archived?: boolean;
           cost?: number;
           created_at?: string;
           description?: string | null;
@@ -2248,9 +2627,9 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          archived?: boolean;
           board_column_id?: string | null;
           board_position?: number;
-          archived?: boolean;
           cost?: number;
           created_at?: string;
           description?: string | null;
@@ -2266,7 +2645,15 @@ export type Database = {
           updated_at?: string;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "products_board_column_id_fkey";
+            columns: ["board_column_id"];
+            isOneToOne: false;
+            referencedRelation: "product_board_columns";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       profiles: {
         Row: {
@@ -2484,6 +2871,105 @@ export type Database = {
           priority?: string;
           status?: string;
           updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      public_rate_limits: {
+        Row: {
+          at: string;
+          bucket: string;
+          id: number;
+          ip: string;
+        };
+        Insert: {
+          at?: string;
+          bucket: string;
+          id?: never;
+          ip: string;
+        };
+        Update: {
+          at?: string;
+          bucket?: string;
+          id?: never;
+          ip?: string;
+        };
+        Relationships: [];
+      };
+      push_log: {
+        Row: {
+          created_at: string;
+          error: string | null;
+          id: string;
+          notification_key: string | null;
+          owner_id: string;
+          status: string;
+          subscription_id: string | null;
+          title: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          notification_key?: string | null;
+          owner_id: string;
+          status: string;
+          subscription_id?: string | null;
+          title?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          notification_key?: string | null;
+          owner_id?: string;
+          status?: string;
+          subscription_id?: string | null;
+          title?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      push_subscriptions: {
+        Row: {
+          auth: string;
+          created_at: string;
+          device_label: string | null;
+          disabled_at: string | null;
+          endpoint: string;
+          failure_count: number;
+          id: string;
+          last_used_at: string | null;
+          owner_id: string;
+          p256dh: string;
+          user_id: string;
+        };
+        Insert: {
+          auth: string;
+          created_at?: string;
+          device_label?: string | null;
+          disabled_at?: string | null;
+          endpoint: string;
+          failure_count?: number;
+          id?: string;
+          last_used_at?: string | null;
+          owner_id: string;
+          p256dh: string;
+          user_id: string;
+        };
+        Update: {
+          auth?: string;
+          created_at?: string;
+          device_label?: string | null;
+          disabled_at?: string | null;
+          endpoint?: string;
+          failure_count?: number;
+          id?: string;
+          last_used_at?: string | null;
+          owner_id?: string;
+          p256dh?: string;
           user_id?: string;
         };
         Relationships: [];
@@ -2844,13 +3330,13 @@ export type Database = {
       };
       shop_meta_ad_accounts: {
         Row: {
+          account_name: string | null;
           account_status: number | null;
           account_status_at: string | null;
-          account_name: string | null;
+          ad_account_id: string;
           billing_seen_tx: string[];
           billing_started_at: string | null;
           billing_synced_until: string | null;
-          ad_account_id: string;
           created_at: string | null;
           currency: string | null;
           enabled: boolean;
@@ -2865,13 +3351,13 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          account_name?: string | null;
           account_status?: number | null;
           account_status_at?: string | null;
-          account_name?: string | null;
+          ad_account_id: string;
           billing_seen_tx?: string[];
           billing_started_at?: string | null;
           billing_synced_until?: string | null;
-          ad_account_id: string;
           created_at?: string | null;
           currency?: string | null;
           enabled?: boolean;
@@ -2886,13 +3372,13 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          account_name?: string | null;
           account_status?: number | null;
           account_status_at?: string | null;
-          account_name?: string | null;
+          ad_account_id?: string;
           billing_seen_tx?: string[];
           billing_started_at?: string | null;
           billing_synced_until?: string | null;
-          ad_account_id?: string;
           created_at?: string | null;
           currency?: string | null;
           enabled?: boolean;
@@ -3064,15 +3550,60 @@ export type Database = {
         };
         Relationships: [];
       };
+      shop_order_risks: {
+        Row: {
+          facts: Json;
+          financial_status: string | null;
+          id: string;
+          order_created_at: string | null;
+          order_external_id: string;
+          order_name: string | null;
+          payment_brand: string | null;
+          recommendation: string | null;
+          risk_level: string | null;
+          shop_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          facts?: Json;
+          financial_status?: string | null;
+          id?: string;
+          order_created_at?: string | null;
+          order_external_id: string;
+          order_name?: string | null;
+          payment_brand?: string | null;
+          recommendation?: string | null;
+          risk_level?: string | null;
+          shop_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          facts?: Json;
+          financial_status?: string | null;
+          id?: string;
+          order_created_at?: string | null;
+          order_external_id?: string;
+          order_name?: string | null;
+          payment_brand?: string | null;
+          recommendation?: string | null;
+          risk_level?: string | null;
+          shop_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       shop_order_settings: {
         Row: {
+          automation_enabled: boolean;
+          cashflow_start_date: string | null;
           chargeback_count_30d: number | null;
           chargeback_count_prev: number | null;
           chargeback_orders_30d: number | null;
           chargeback_orders_prev: number | null;
           chargeback_stats_at: string | null;
-          automation_enabled: boolean;
-          cashflow_start_date: string | null;
           created_at: string;
           default_unit_cost: number;
           last_synced_at: string | null;
@@ -3087,13 +3618,13 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          automation_enabled?: boolean;
+          cashflow_start_date?: string | null;
           chargeback_count_30d?: number | null;
           chargeback_count_prev?: number | null;
           chargeback_orders_30d?: number | null;
           chargeback_orders_prev?: number | null;
           chargeback_stats_at?: string | null;
-          automation_enabled?: boolean;
-          cashflow_start_date?: string | null;
           created_at?: string;
           default_unit_cost?: number;
           last_synced_at?: string | null;
@@ -3108,13 +3639,13 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          automation_enabled?: boolean;
+          cashflow_start_date?: string | null;
           chargeback_count_30d?: number | null;
           chargeback_count_prev?: number | null;
           chargeback_orders_30d?: number | null;
           chargeback_orders_prev?: number | null;
           chargeback_stats_at?: string | null;
-          automation_enabled?: boolean;
-          cashflow_start_date?: string | null;
           created_at?: string;
           default_unit_cost?: number;
           last_synced_at?: string | null;
@@ -3135,17 +3666,17 @@ export type Database = {
           carrier: string | null;
           created_at: string;
           delivered_at: string | null;
-          edd_from: string | null
-          edd_source: string | null
-          edd_to: string | null
-          extra_packages: Json
+          edd_from: string | null;
+          edd_source: string | null;
+          edd_to: string | null;
+          extra_packages: Json;
           id: string;
           last_event_at: string | null;
           last_event_label: string | null;
           order_id: string;
           problem_at: string | null;
-          provider: string | null
-          registered_17track_at: string | null
+          provider: string | null;
+          registered_17track_at: string | null;
           shipped_at: string | null;
           shop_id: string;
           timeline: Json;
@@ -3158,17 +3689,17 @@ export type Database = {
           carrier?: string | null;
           created_at?: string;
           delivered_at?: string | null;
-          edd_from?: string | null
-          edd_source?: string | null
-          edd_to?: string | null
-          extra_packages?: Json
+          edd_from?: string | null;
+          edd_source?: string | null;
+          edd_to?: string | null;
+          extra_packages?: Json;
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;
           order_id: string;
           problem_at?: string | null;
-          provider?: string | null
-          registered_17track_at?: string | null
+          provider?: string | null;
+          registered_17track_at?: string | null;
           shipped_at?: string | null;
           shop_id: string;
           timeline?: Json;
@@ -3181,17 +3712,17 @@ export type Database = {
           carrier?: string | null;
           created_at?: string;
           delivered_at?: string | null;
-          edd_from?: string | null
-          edd_source?: string | null
-          edd_to?: string | null
-          extra_packages?: Json
+          edd_from?: string | null;
+          edd_source?: string | null;
+          edd_to?: string | null;
+          extra_packages?: Json;
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;
           order_id?: string;
           problem_at?: string | null;
-          provider?: string | null
-          registered_17track_at?: string | null
+          provider?: string | null;
+          registered_17track_at?: string | null;
           shipped_at?: string | null;
           shop_id?: string;
           timeline?: Json;
@@ -3200,7 +3731,15 @@ export type Database = {
           updated_at?: string;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "shop_order_tracking_order_id_fkey";
+            columns: ["order_id"];
+            isOneToOne: true;
+            referencedRelation: "shop_orders";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       shop_orders: {
         Row: {
@@ -3208,8 +3747,8 @@ export type Database = {
           connection_id: string | null;
           created_at: string;
           created_at_shopify: string;
-          customer_notified_at: string | null;
           currency: string | null;
+          customer_notified_at: string | null;
           delivered_at: string | null;
           delivery_status: string | null;
           external_id: string;
@@ -3231,6 +3770,7 @@ export type Database = {
           shopify_financial_status: string | null;
           source: string;
           tracking_code: string | null;
+          tracking_code_manual_at: string | null;
           tracking_url: string | null;
           updated_at: string;
           user_id: string;
@@ -3240,8 +3780,8 @@ export type Database = {
           connection_id?: string | null;
           created_at?: string;
           created_at_shopify: string;
-          customer_notified_at?: string | null;
           currency?: string | null;
+          customer_notified_at?: string | null;
           delivered_at?: string | null;
           delivery_status?: string | null;
           external_id: string;
@@ -3263,6 +3803,7 @@ export type Database = {
           shopify_financial_status?: string | null;
           source?: string;
           tracking_code?: string | null;
+          tracking_code_manual_at?: string | null;
           tracking_url?: string | null;
           updated_at?: string;
           user_id: string;
@@ -3272,8 +3813,8 @@ export type Database = {
           connection_id?: string | null;
           created_at?: string;
           created_at_shopify?: string;
-          customer_notified_at?: string | null;
           currency?: string | null;
+          customer_notified_at?: string | null;
           delivered_at?: string | null;
           delivery_status?: string | null;
           external_id?: string;
@@ -3295,6 +3836,7 @@ export type Database = {
           shopify_financial_status?: string | null;
           source?: string;
           tracking_code?: string | null;
+          tracking_code_manual_at?: string | null;
           tracking_url?: string | null;
           updated_at?: string;
           user_id?: string;
@@ -3827,15 +4369,12 @@ export type Database = {
       };
       shopify_stores: {
         Row: {
-          board_avg_orders: number | null;
-          board_metrics_at: string | null;
-          board_payout_days: number | null;
-          payments_balance: number | null;
-          payments_balance_at: string | null;
-          payments_balance_currency: string | null;
           access_token: string | null;
+          board_avg_orders: number | null;
           board_column_id: string | null;
+          board_metrics_at: string | null;
           board_note: string | null;
+          board_payout_days: number | null;
           board_position: number;
           client_id: string | null;
           client_secret: string | null;
@@ -3844,13 +4383,16 @@ export type Database = {
           id: string;
           installed_at: string | null;
           is_placeholder: boolean;
-          policy_base: boolean;
-          setup_check_until: string | null;
           last_sync_at: string | null;
           last_sync_error: string | null;
           last_sync_status: string | null;
           name: string | null;
+          payments_balance: number | null;
+          payments_balance_at: string | null;
+          payments_balance_currency: string | null;
+          policy_base: boolean;
           scope: string | null;
+          setup_check_until: string | null;
           shop_domain: string | null;
           store_id: string | null;
           token_secret_name: string | null;
@@ -3858,15 +4400,12 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          board_avg_orders?: number | null;
-          board_metrics_at?: string | null;
-          board_payout_days?: number | null;
-          payments_balance?: number | null;
-          payments_balance_at?: string | null;
-          payments_balance_currency?: string | null;
           access_token?: string | null;
+          board_avg_orders?: number | null;
           board_column_id?: string | null;
+          board_metrics_at?: string | null;
           board_note?: string | null;
+          board_payout_days?: number | null;
           board_position?: number;
           client_id?: string | null;
           client_secret?: string | null;
@@ -3875,13 +4414,16 @@ export type Database = {
           id?: string;
           installed_at?: string | null;
           is_placeholder?: boolean;
-          policy_base?: boolean;
-          setup_check_until?: string | null;
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           last_sync_status?: string | null;
           name?: string | null;
+          payments_balance?: number | null;
+          payments_balance_at?: string | null;
+          payments_balance_currency?: string | null;
+          policy_base?: boolean;
           scope?: string | null;
+          setup_check_until?: string | null;
           shop_domain?: string | null;
           store_id?: string | null;
           token_secret_name?: string | null;
@@ -3889,15 +4431,12 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          board_avg_orders?: number | null;
-          board_metrics_at?: string | null;
-          board_payout_days?: number | null;
-          payments_balance?: number | null;
-          payments_balance_at?: string | null;
-          payments_balance_currency?: string | null;
           access_token?: string | null;
+          board_avg_orders?: number | null;
           board_column_id?: string | null;
+          board_metrics_at?: string | null;
           board_note?: string | null;
+          board_payout_days?: number | null;
           board_position?: number;
           client_id?: string | null;
           client_secret?: string | null;
@@ -3906,13 +4445,16 @@ export type Database = {
           id?: string;
           installed_at?: string | null;
           is_placeholder?: boolean;
-          policy_base?: boolean;
-          setup_check_until?: string | null;
           last_sync_at?: string | null;
           last_sync_error?: string | null;
           last_sync_status?: string | null;
           name?: string | null;
+          payments_balance?: number | null;
+          payments_balance_at?: string | null;
+          payments_balance_currency?: string | null;
+          policy_base?: boolean;
           scope?: string | null;
+          setup_check_until?: string | null;
           shop_domain?: string | null;
           store_id?: string | null;
           token_secret_name?: string | null;
@@ -4482,59 +5024,6 @@ export type Database = {
           },
         ];
       };
-      store_production_tasks: {
-        Row: {
-          assignee_id: string | null;
-          checklist: Json;
-          created_at: string;
-          description: string | null;
-          done: boolean;
-          due_date: string | null;
-          id: string;
-          position: number;
-          shopify_store_id: string;
-          title: string;
-          updated_at: string;
-          user_id: string;
-        };
-        Insert: {
-          assignee_id?: string | null;
-          checklist?: Json;
-          created_at?: string;
-          description?: string | null;
-          done?: boolean;
-          due_date?: string | null;
-          id?: string;
-          position?: number;
-          shopify_store_id: string;
-          title: string;
-          updated_at?: string;
-          user_id: string;
-        };
-        Update: {
-          assignee_id?: string | null;
-          checklist?: Json;
-          created_at?: string;
-          description?: string | null;
-          done?: boolean;
-          due_date?: string | null;
-          id?: string;
-          position?: number;
-          shopify_store_id?: string;
-          title?: string;
-          updated_at?: string;
-          user_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "store_production_tasks_shopify_store_id_fkey";
-            columns: ["shopify_store_id"];
-            isOneToOne: false;
-            referencedRelation: "shopify_stores";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       store_production_preset_files: {
         Row: {
           created_at: string;
@@ -4624,6 +5113,59 @@ export type Database = {
         };
         Relationships: [];
       };
+      store_production_tasks: {
+        Row: {
+          assignee_id: string | null;
+          checklist: Json;
+          created_at: string;
+          description: string | null;
+          done: boolean;
+          due_date: string | null;
+          id: string;
+          position: number;
+          shopify_store_id: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          assignee_id?: string | null;
+          checklist?: Json;
+          created_at?: string;
+          description?: string | null;
+          done?: boolean;
+          due_date?: string | null;
+          id?: string;
+          position?: number;
+          shopify_store_id: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          assignee_id?: string | null;
+          checklist?: Json;
+          created_at?: string;
+          description?: string | null;
+          done?: boolean;
+          due_date?: string | null;
+          id?: string;
+          position?: number;
+          shopify_store_id?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_production_tasks_shopify_store_id_fkey";
+            columns: ["shopify_store_id"];
+            isOneToOne: false;
+            referencedRelation: "shopify_stores";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       store_production_templates: {
         Row: {
           fields: Json;
@@ -4701,6 +5243,336 @@ export type Database = {
           name?: string;
           position?: number;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      support_conversations: {
+        Row: {
+          ai_tags: string[];
+          created_at: string;
+          customer_email: string;
+          customer_name: string | null;
+          favorite: boolean;
+          id: string;
+          last_inbound_at: string | null;
+          last_message_at: string | null;
+          last_outbound_at: string | null;
+          message_count: number;
+          note: string | null;
+          owner_id: string;
+          resolved_at: string | null;
+          shop_id: string | null;
+          shop_manual: boolean;
+          status: string;
+          subject: string | null;
+          summary: string | null;
+          tags: string[];
+          unread_count: number;
+          updated_at: string;
+        };
+        Insert: {
+          ai_tags?: string[];
+          created_at?: string;
+          customer_email: string;
+          customer_name?: string | null;
+          favorite?: boolean;
+          id?: string;
+          last_inbound_at?: string | null;
+          last_message_at?: string | null;
+          last_outbound_at?: string | null;
+          message_count?: number;
+          note?: string | null;
+          owner_id: string;
+          resolved_at?: string | null;
+          shop_id?: string | null;
+          shop_manual?: boolean;
+          status?: string;
+          subject?: string | null;
+          summary?: string | null;
+          tags?: string[];
+          unread_count?: number;
+          updated_at?: string;
+        };
+        Update: {
+          ai_tags?: string[];
+          created_at?: string;
+          customer_email?: string;
+          customer_name?: string | null;
+          favorite?: boolean;
+          id?: string;
+          last_inbound_at?: string | null;
+          last_message_at?: string | null;
+          last_outbound_at?: string | null;
+          message_count?: number;
+          note?: string | null;
+          owner_id?: string;
+          resolved_at?: string | null;
+          shop_id?: string | null;
+          shop_manual?: boolean;
+          status?: string;
+          subject?: string | null;
+          summary?: string | null;
+          tags?: string[];
+          unread_count?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "support_conversations_shop_id_fkey";
+            columns: ["shop_id"];
+            isOneToOne: false;
+            referencedRelation: "shops";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      support_manual_checks: {
+        Row: {
+          created_at: string;
+          erro: string | null;
+          evaluated_at: string | null;
+          id: string;
+          licoes: string[];
+          message_id: string;
+          o_que_mudou: string | null;
+          owner_id: string;
+          rascunho: string | null;
+          reply_id: string | null;
+          semelhanca: string | null;
+          status: string;
+          tags: string[];
+          week: string;
+        };
+        Insert: {
+          created_at?: string;
+          erro?: string | null;
+          evaluated_at?: string | null;
+          id?: string;
+          licoes?: string[];
+          message_id: string;
+          o_que_mudou?: string | null;
+          owner_id: string;
+          rascunho?: string | null;
+          reply_id?: string | null;
+          semelhanca?: string | null;
+          status?: string;
+          tags?: string[];
+          week: string;
+        };
+        Update: {
+          created_at?: string;
+          erro?: string | null;
+          evaluated_at?: string | null;
+          id?: string;
+          licoes?: string[];
+          message_id?: string;
+          o_que_mudou?: string | null;
+          owner_id?: string;
+          rascunho?: string | null;
+          reply_id?: string | null;
+          semelhanca?: string | null;
+          status?: string;
+          tags?: string[];
+          week?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "support_manual_checks_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: false;
+            referencedRelation: "support_messages";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      support_messages: {
+        Row: {
+          ai_checked: boolean;
+          ai_draft: string | null;
+          ai_draft_at: string | null;
+          ai_draft_eval: Json | null;
+          ai_draft_pt: string | null;
+          auto_reply: string | null;
+          auto_reply_at: string | null;
+          auto_reply_text: string | null;
+          content_html: string | null;
+          content_pt: string | null;
+          conversation_id: string;
+          created_at: string;
+          direction: string;
+          folder_id: string;
+          from_email: string | null;
+          from_name: string | null;
+          has_attachment: boolean;
+          id: string;
+          is_read: boolean;
+          message_id: string;
+          owner_id: string;
+          sent_at: string;
+          subject: string | null;
+          summary: string | null;
+          thread_id: string | null;
+          to_emails: string | null;
+        };
+        Insert: {
+          ai_checked?: boolean;
+          ai_draft?: string | null;
+          ai_draft_at?: string | null;
+          ai_draft_eval?: Json | null;
+          ai_draft_pt?: string | null;
+          auto_reply?: string | null;
+          auto_reply_at?: string | null;
+          auto_reply_text?: string | null;
+          content_html?: string | null;
+          content_pt?: string | null;
+          conversation_id: string;
+          created_at?: string;
+          direction: string;
+          folder_id: string;
+          from_email?: string | null;
+          from_name?: string | null;
+          has_attachment?: boolean;
+          id?: string;
+          is_read?: boolean;
+          message_id: string;
+          owner_id: string;
+          sent_at: string;
+          subject?: string | null;
+          summary?: string | null;
+          thread_id?: string | null;
+          to_emails?: string | null;
+        };
+        Update: {
+          ai_checked?: boolean;
+          ai_draft?: string | null;
+          ai_draft_at?: string | null;
+          ai_draft_eval?: Json | null;
+          ai_draft_pt?: string | null;
+          auto_reply?: string | null;
+          auto_reply_at?: string | null;
+          auto_reply_text?: string | null;
+          content_html?: string | null;
+          content_pt?: string | null;
+          conversation_id?: string;
+          created_at?: string;
+          direction?: string;
+          folder_id?: string;
+          from_email?: string | null;
+          from_name?: string | null;
+          has_attachment?: boolean;
+          id?: string;
+          is_read?: boolean;
+          message_id?: string;
+          owner_id?: string;
+          sent_at?: string;
+          subject?: string | null;
+          summary?: string | null;
+          thread_id?: string | null;
+          to_emails?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "support_conversations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      support_playbook: {
+        Row: {
+          based_on: number;
+          owner_id: string;
+          rules: Json;
+          updated_at: string;
+        };
+        Insert: {
+          based_on?: number;
+          owner_id: string;
+          rules?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          based_on?: number;
+          owner_id?: string;
+          rules?: Json;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      support_settings: {
+        Row: {
+          ai_tags_enabled: boolean;
+          auto_reply_tracking: boolean;
+          bh_days: number[];
+          bh_end: number;
+          bh_start: number;
+          bh_timezone: string;
+          goal_first_response_min: number;
+          goal_resolution_min: number;
+          owner_id: string;
+          signature: string | null;
+          signature_enabled: boolean;
+          tags: string[];
+          updated_at: string;
+        };
+        Insert: {
+          ai_tags_enabled?: boolean;
+          auto_reply_tracking?: boolean;
+          bh_days?: number[];
+          bh_end?: number;
+          bh_start?: number;
+          bh_timezone?: string;
+          goal_first_response_min?: number;
+          goal_resolution_min?: number;
+          owner_id: string;
+          signature?: string | null;
+          signature_enabled?: boolean;
+          tags?: string[];
+          updated_at?: string;
+        };
+        Update: {
+          ai_tags_enabled?: boolean;
+          auto_reply_tracking?: boolean;
+          bh_days?: number[];
+          bh_end?: number;
+          bh_start?: number;
+          bh_timezone?: string;
+          goal_first_response_min?: number;
+          goal_resolution_min?: number;
+          owner_id?: string;
+          signature?: string | null;
+          signature_enabled?: boolean;
+          tags?: string[];
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      support_templates: {
+        Row: {
+          body: string;
+          created_at: string;
+          id: string;
+          owner_id: string;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          body: string;
+          created_at?: string;
+          id?: string;
+          owner_id: string;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          body?: string;
+          created_at?: string;
+          id?: string;
+          owner_id?: string;
+          title?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -4828,7 +5700,7 @@ export type Database = {
           last_sync_error: string | null;
           last_sync_status: string | null;
           mcp_store_uuid: string | null;
-          provider: string
+          provider: string;
           shop_id: string;
           token: string | null;
           tracking_link_template: string;
@@ -4845,7 +5717,7 @@ export type Database = {
           last_sync_error?: string | null;
           last_sync_status?: string | null;
           mcp_store_uuid?: string | null;
-          provider?: string
+          provider?: string;
           shop_id: string;
           token?: string | null;
           tracking_link_template?: string;
@@ -4862,7 +5734,7 @@ export type Database = {
           last_sync_error?: string | null;
           last_sync_status?: string | null;
           mcp_store_uuid?: string | null;
-          provider?: string
+          provider?: string;
           shop_id?: string;
           token?: string | null;
           tracking_link_template?: string;
@@ -4895,6 +5767,118 @@ export type Database = {
           id?: string;
           text_key?: string;
           updated_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      training_lessons: {
+        Row: {
+          content: Json;
+          created_at: string;
+          duration_min: number | null;
+          id: string;
+          kind: string;
+          position: number;
+          title: string;
+          track_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          content?: Json;
+          created_at?: string;
+          duration_min?: number | null;
+          id?: string;
+          kind: string;
+          position?: number;
+          title: string;
+          track_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          content?: Json;
+          created_at?: string;
+          duration_min?: number | null;
+          id?: string;
+          kind?: string;
+          position?: number;
+          title?: string;
+          track_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "training_lessons_track_id_fkey";
+            columns: ["track_id"];
+            isOneToOne: false;
+            referencedRelation: "training_tracks";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      training_progress: {
+        Row: {
+          completed_at: string;
+          lesson_id: string;
+          member_id: string;
+          user_id: string;
+        };
+        Insert: {
+          completed_at?: string;
+          lesson_id: string;
+          member_id: string;
+          user_id: string;
+        };
+        Update: {
+          completed_at?: string;
+          lesson_id?: string;
+          member_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "training_progress_lesson_id_fkey";
+            columns: ["lesson_id"];
+            isOneToOne: false;
+            referencedRelation: "training_lessons";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      training_tracks: {
+        Row: {
+          color: string;
+          created_at: string;
+          description: string | null;
+          emoji: string | null;
+          id: string;
+          position: number;
+          title: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          color?: string;
+          created_at?: string;
+          description?: string | null;
+          emoji?: string | null;
+          id?: string;
+          position?: number;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          color?: string;
+          created_at?: string;
+          description?: string | null;
+          emoji?: string | null;
+          id?: string;
+          position?: number;
+          title?: string;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [];
@@ -4952,24 +5936,24 @@ export type Database = {
       };
       workspace_members: {
         Row: {
-          home_path: string | null;
           created_at: string;
+          home_path: string | null;
           id: string;
           is_admin: boolean;
           member_id: string;
           owner_id: string;
         };
         Insert: {
-          home_path?: string | null;
           created_at?: string;
+          home_path?: string | null;
           id?: string;
           is_admin?: boolean;
           member_id: string;
           owner_id: string;
         };
         Update: {
-          home_path?: string | null;
           created_at?: string;
+          home_path?: string | null;
           id?: string;
           is_admin?: boolean;
           member_id?: string;
@@ -5084,25 +6068,113 @@ export type Database = {
           },
         ];
       };
+      zoho_mail_accounts: {
+        Row: {
+          access_token: string | null;
+          access_token_expires_at: string | null;
+          account_id: string | null;
+          accounts_server: string;
+          addresses: string[];
+          client_id: string;
+          client_secret: string;
+          connected_at: string | null;
+          created_at: string;
+          display_name: string | null;
+          email: string | null;
+          inbox_folder_id: string | null;
+          last_sync_at: string | null;
+          last_sync_error: string | null;
+          mail_api_base: string;
+          owner_id: string;
+          refresh_token: string | null;
+          send_as: string | null;
+          send_as_options: string[];
+          sent_folder_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          access_token?: string | null;
+          access_token_expires_at?: string | null;
+          account_id?: string | null;
+          accounts_server?: string;
+          addresses?: string[];
+          client_id: string;
+          client_secret: string;
+          connected_at?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string | null;
+          inbox_folder_id?: string | null;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          mail_api_base?: string;
+          owner_id: string;
+          refresh_token?: string | null;
+          send_as?: string | null;
+          send_as_options?: string[];
+          sent_folder_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          access_token?: string | null;
+          access_token_expires_at?: string | null;
+          account_id?: string | null;
+          accounts_server?: string;
+          addresses?: string[];
+          client_id?: string;
+          client_secret?: string;
+          connected_at?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string | null;
+          inbox_folder_id?: string | null;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          mail_api_base?: string;
+          owner_id?: string;
+          refresh_token?: string | null;
+          send_as?: string | null;
+          send_as_options?: string[];
+          sent_folder_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      zoho_oauth_states: {
+        Row: {
+          client_id: string;
+          client_secret: string;
+          created_at: string;
+          expires_at: string;
+          owner_id: string;
+          redirect_uri: string;
+          state: string;
+        };
+        Insert: {
+          client_id: string;
+          client_secret: string;
+          created_at?: string;
+          expires_at: string;
+          owner_id: string;
+          redirect_uri: string;
+          state: string;
+        };
+        Update: {
+          client_id?: string;
+          client_secret?: string;
+          created_at?: string;
+          expires_at?: string;
+          owner_id?: string;
+          redirect_uri?: string;
+          state?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      shop_by_customer_emails: {
-        Args: {
-          p_emails: string[];
-          p_user_id: string;
-        };
-        Returns: { email: string; shop_id: string }[];
-      };
-      shop_order_ids_by_email: {
-        Args: {
-          p_email: string;
-          p_user_id: string;
-        };
-        Returns: string[];
-      };
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];
@@ -5119,9 +6191,33 @@ export type Database = {
         };
         Returns: boolean;
       };
-      srx_painel_saude: {
-        Args: { p_ate?: string; p_desde?: string; p_janela?: string };
-        Returns: Json;
+      public_rate_limit_hit: {
+        Args: {
+          p_bucket: string;
+          p_ip: string;
+          p_max: number;
+          p_window_min: number;
+        };
+        Returns: boolean;
+      };
+      replace_member_permissions: {
+        Args: { p_member: string; p_perms: Json };
+        Returns: undefined;
+      };
+      replace_pending_payouts: {
+        Args: { p_rows: Json; p_shop_id: string; p_user_id: string };
+        Returns: undefined;
+      };
+      shop_by_customer_emails: {
+        Args: { p_emails: string[]; p_user_id: string };
+        Returns: {
+          email: string;
+          shop_id: string;
+        }[];
+      };
+      shop_order_ids_by_email: {
+        Args: { p_email: string; p_user_id: string };
+        Returns: string[];
       };
     };
     Enums: {
@@ -5141,12 +6237,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -5166,13 +6262,12 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -5191,13 +6286,12 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -5216,13 +6310,12 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -5233,13 +6326,12 @@ export type Enums<
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    keyof DefaultSchema["CompositeTypes"] | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }

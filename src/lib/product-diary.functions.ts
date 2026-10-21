@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 
 // Aba Diário do produto. Tipos de nota são do workspace; "Alteração" é fixo
 // (is_system) e alimenta "Última alteração" no topo do diário.
@@ -14,7 +15,7 @@ export type DiaryEntry = {
   image_urls: string[]; created_at: string; edited_at: string | null;
 };
 
-const db = (table: string) => (supabaseAdmin as any).from(table);
+const db = <T extends keyof Database["public"]["Tables"]>(table: T) => supabaseAdmin.from(table);
 const ImageUrls = z.array(z.string().url().max(4000)).max(20);
 
 async function assertProduct(ownerId: string, productId: string) {

@@ -32,7 +32,7 @@ const ProductInput = z.object({
 // Nicho saiu do cadastro e virou campo da aba Informações (id "nicho").
 async function productNiches(ownerId: string, ids: string[]): Promise<Map<string, string | null>> {
   if (!ids.length) return new Map();
-  const { data } = await supabaseAdmin.from("product_production" as any).select("product_id,values")
+  const { data } = await supabaseAdmin.from("product_production").select("product_id,values")
     .eq("user_id", ownerId).in("product_id", ids);
   return new Map(((data ?? []) as any[]).map((r) => [r.product_id as string, ((r.values ?? {}).nicho as string) || null]));
 }

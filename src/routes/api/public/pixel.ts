@@ -61,7 +61,7 @@ export const Route = createFileRoute("/api/public/pixel")({
           user_id: s.user_id, shopify_store_id: s.id, step, day, client_id, shopify_product_id: id, title,
         })));
         if (rows.length) {
-          await (supabaseAdmin as any).from("product_funnel_events")
+          await supabaseAdmin.from("product_funnel_events")
             .upsert(rows, { onConflict: "shopify_store_id,step,day,client_id,shopify_product_id", ignoreDuplicates: true });
         }
         return ok();

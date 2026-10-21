@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { fetchWithRetry } from "@/lib/http";
 import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 
@@ -6,7 +7,7 @@ import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 // no próprio card (lg_card_meta_accounts). O token é o da conexão Meta de
 // qualquer loja do dono que enxergue a conta de anúncios.
 export const META_GRAPH = "https://graph.facebook.com/v21.0";
-const db = (table: string) => (supabaseAdmin as any).from(table);
+const db = <T extends keyof Database["public"]["Tables"]>(table: T) => supabaseAdmin.from(table);
 
 export async function metaTokenForAccount(ownerId: string, adAccountId: string): Promise<string | null> {
   const { data } = await supabaseAdmin.from("shop_meta_tokens")
@@ -35,7 +36,7 @@ export async function syncCardAdSpend(
   const errors: string[] = [];
 
   for (const account of accounts as any[]) {
-    const setStatus = (patch: Record<string, unknown>) => db("lg_card_meta_accounts").update(patch)
+    const setStatus = (patch: Database["public"]["Tables"]["lg_card_meta_accounts"]["Update"]) => db("lg_card_meta_accounts").update(patch)
       .eq("user_id", ownerId).eq("card_id", cardId).eq("ad_account_id", account.ad_account_id);
     try {
       const token = await metaTokenForAccount(ownerId, account.ad_account_id);

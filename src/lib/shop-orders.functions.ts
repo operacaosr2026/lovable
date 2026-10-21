@@ -993,7 +993,7 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
         amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
       }));
-      const { error: pendErr } = await supabaseAdmin.rpc("replace_pending_payouts" as any, {
+      const { error: pendErr } = await supabaseAdmin.rpc("replace_pending_payouts", {
         p_user_id: context.ownerId, p_shop_id: data.shop_id, p_rows: provisionals,
       });
       if (pendErr) throw new Error(`Previsto do Caixa: ${pendErr.message}`);

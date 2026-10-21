@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import type { ProductionField } from "@/lib/store-production.server";
 
 // Aba Concorrentes do produto: um quadro por concorrente. O quadro copia os
@@ -13,7 +14,7 @@ export type Competitor = {
   id: string; name: string; fields: ProductionField[]; values: Record<string, string>; position: number; updated_at: string;
 };
 
-const db = (table: string) => (supabaseAdmin as any).from(table);
+const db = <T extends keyof Database["public"]["Tables"]>(table: T) => supabaseAdmin.from(table);
 
 const FieldsInput = z.array(z.object({
   id: z.string().min(1).max(60),
@@ -110,7 +111,7 @@ export const createCompetitor = createServerFn({ method: "POST" })
       const { data: tpl } = await db("competitor_templates").select("fields")
         .eq("id", data.template_id).eq("user_id", ownerId).maybeSingle();
       if (!tpl) throw new Error("Template não encontrado");
-      fields = tpl.fields ?? [];
+      fields = (tpl.fields ?? []) as unknown as ProductionField[];
     }
     const { count } = await db("product_competitors").select("id", { count: "exact", head: true })
       .eq("user_id", ownerId).eq("product_id", data.product_id);

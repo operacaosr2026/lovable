@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 
 export type ProductionFieldType = "text" | "longtext" | "link" | "email" | "currency";
 export type ProductionField = { id: string; label: string; type: ProductionFieldType };
@@ -33,8 +34,10 @@ export const KINDS = {
   },
 } as const;
 
-// Nomes de tabela variam por tipo — o cliente tipado não aceita união.
-export const db = (table: string) => (supabaseAdmin as any).from(table);
+// Nomes de tabela variam por tipo — o cliente tipado não aceita união (a coluna
+// chave também é dinâmica: shopify_store_id ou product_id). Fica sem tipo de
+// propósito; as tabelas daqui estão em types.ts mesmo assim.
+export const db = (table: keyof Database["public"]["Tables"]) => (supabaseAdmin as any).from(table);
 
 export const filesPrefix = (kind: ProductionKind, ownerId: string, targetId: string) =>
   kind === "store" ? `${ownerId}/${targetId}/` : `${ownerId}/products/${targetId}/`;

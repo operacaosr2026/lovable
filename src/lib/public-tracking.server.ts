@@ -118,7 +118,7 @@ export function clientIp(headers: Headers): string {
 }
 export async function allowPublicLookup(ip: string, bucket = "order_lookup", max = LOOKUP_MAX, windowMin = LOOKUP_WINDOW_MIN): Promise<boolean> {
   try {
-    const { data, error } = await supabaseAdmin.rpc("public_rate_limit_hit" as any, {
+    const { data, error } = await supabaseAdmin.rpc("public_rate_limit_hit", {
       p_bucket: bucket, p_ip: ip, p_max: max, p_window_min: windowMin,
     });
     if (error) { console.error("rate limit", bucket, error.message); return false; }

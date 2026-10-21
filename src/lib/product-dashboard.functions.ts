@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { attachLiveShopifyNames, costProductsFor } from "@/lib/shop-orders.functions";
 import { isSupplierFree, lineItemCostQty, matchLineItemProduct, productCostAt } from "@/lib/product-cost-match";
 import { comparisonPeriod } from "@/lib/finance-rules";
@@ -15,7 +16,7 @@ import { fetchWithRetry } from "@/lib/http";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const ISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const db = (table: string) => (supabaseAdmin as any).from(table);
+const db = <T extends keyof Database["public"]["Tables"]>(table: T) => supabaseAdmin.from(table);
 
 type Campaign = { shop_id: string; ad_account_id: string; campaign_id: string; campaign_name: string | null };
 

@@ -47,11 +47,11 @@ export async function recordCronRun(job: string, fn: () => Promise<Response>): P
 
 async function saveRun(job: string, startedAt: Date, ok: boolean, status: number, summary: string) {
   try {
-    await supabaseAdmin.from("cron_runs" as any).insert({
+    await supabaseAdmin.from("cron_runs").insert({
       job, started_at: startedAt.toISOString(), finished_at: new Date().toISOString(),
       ok, status, summary: summary.slice(0, 1000),
     });
-    await supabaseAdmin.from("cron_runs" as any).delete()
+    await supabaseAdmin.from("cron_runs").delete()
       .lt("started_at", new Date(Date.now() - KEEP_DAYS * 86_400_000).toISOString());
   } catch (e) {
     console.error("cron_runs", job, e);
@@ -64,7 +64,7 @@ type Alert = { key: string; level: "warning" | "error"; title: string; body: str
 // Só avisa "parada" depois que o histórico já cobre o intervalo da rotina
 // (logo depois de ligar o histórico, as semanais ainda não rodaram).
 export async function cronHealthAlerts(): Promise<Alert[]> {
-  const { data, error } = await supabaseAdmin.from("cron_runs" as any)
+  const { data, error } = await supabaseAdmin.from("cron_runs")
     .select("job,started_at,ok,status,summary")
     .gte("started_at", new Date(Date.now() - KEEP_DAYS * 86_400_000).toISOString())
     .order("started_at", { ascending: false }).limit(5000);

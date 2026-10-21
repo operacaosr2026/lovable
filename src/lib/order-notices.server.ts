@@ -53,7 +53,7 @@ async function sendNext(ownerId: string): Promise<string> {
   const acc = await getZohoAccount(ownerId);
   if (!acc?.refresh_token || !acc.account_id) return "Zoho não conectado (fila parada)";
   // Trava o e-mail: duas rodadas ao mesmo tempo não mandam o mesmo duas vezes.
-  const { data: claimed } = await supabaseAdmin.from("order_notices").update({ status: "enviando", sending_at: new Date().toISOString() } as any)
+  const { data: claimed } = await supabaseAdmin.from("order_notices").update({ status: "enviando", sending_at: new Date().toISOString() })
     .eq("id", n.id).eq("status", "na_fila").select("id");
   if (!claimed?.length) return "já sendo enviado";
   try {

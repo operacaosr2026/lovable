@@ -261,7 +261,7 @@ export const updateMemberPermissions = createServerFn({ method: "POST" })
     }
     // Apaga e regrava numa transação só (replace_member_permissions): em dois
     // passos, uma falha no insert deixava o membro sem acesso nenhum.
-    const { error } = await supabase.rpc("replace_member_permissions" as any, {
+    const { error } = await supabase.rpc("replace_member_permissions", {
       p_member: data.member_id,
       p_perms: data.permissions.map((p) => ({ section: p.section, resource_id: p.resource_id ?? null })),
     });

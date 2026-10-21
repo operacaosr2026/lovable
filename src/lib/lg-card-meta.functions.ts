@@ -2,10 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { fetchWithRetry } from "@/lib/http";
 import { META_GRAPH, metaTokenForAccount, syncCardAdSpend } from "@/lib/lg-card-ad-spend.server";
 
-const db = (table: string) => (supabaseAdmin as any).from(table);
+const db = <T extends keyof Database["public"]["Tables"]>(table: T) => supabaseAdmin.from(table);
 const ISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const cardInput = z.object({ card_id: z.string().uuid() });
 const accountInput = cardInput.extend({ ad_account_id: z.string().min(1) });

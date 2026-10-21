@@ -40,7 +40,7 @@ async function productLinks(ownerId: string): Promise<Map<string, string>> {
   const fields = await loadFields(ownerId, "product");
   const field = fields.find((f) => f.type === "link" && (f.id === "link_pagina" || /p[aá]gina/i.test(f.label)));
   if (!field) return new Map();
-  const { data } = await (supabaseAdmin as any).from("product_production").select("product_id,values").eq("user_id", ownerId);
+  const { data } = await supabaseAdmin.from("product_production").select("product_id,values").eq("user_id", ownerId);
   return new Map(((data ?? []) as { product_id: string; values: Record<string, string> }[])
     .map((r) => [r.product_id, String(r.values?.[field.id] ?? "").trim()] as [string, string])
     .filter(([, v]) => v));

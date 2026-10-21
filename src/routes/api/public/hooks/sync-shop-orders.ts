@@ -244,7 +244,7 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
     amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
   }));
   // Apaga e recria numa transação só, com trava por loja (botão e cron juntos duplicavam).
-  const { error } = await supabaseAdmin.rpc("replace_pending_payouts" as any, { p_user_id: userId, p_shop_id: shopId, p_rows: provisionals });
+  const { error } = await supabaseAdmin.rpc("replace_pending_payouts", { p_user_id: userId, p_shop_id: shopId, p_rows: provisionals });
   if (error) throw new Error(`Previsto do Caixa: ${error.message}`);
   return pendingTx.length;
 }
@@ -474,7 +474,7 @@ async function runCostsSync(request: Request, only: { ads: boolean; fees: boolea
   // Gasto de anúncios dos cards (lg_card_ad_spend): hoje + 2 dias pra trás,
   // a Meta ainda ajusta o gasto de ontem.
   if (only.ads && Date.now() - start < TIME_BUDGET_MS) {
-    const { data: cardAccounts } = await (supabaseAdmin as any).from("lg_card_meta_accounts")
+    const { data: cardAccounts } = await supabaseAdmin.from("lg_card_meta_accounts")
       .select("user_id,card_id,lg_cards!inner(name,status)").eq("enabled", true).neq("lg_cards.status", "arquivado");
     const cards = new Map<string, { ownerId: string; name: string }>();
     for (const a of (cardAccounts ?? []) as any[]) cards.set(a.card_id, { ownerId: a.user_id, name: a.lg_cards?.name ?? "card" });
