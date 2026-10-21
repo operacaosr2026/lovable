@@ -18,7 +18,7 @@ Início e fim: 20–21/10/2026. Produção no commit `f17bc38`; correções da a
 - CROSS-003: os valores conciliados ao fornecedor estão certos (decisão do usuário). Nada a corrigir nos dados.
 - CROSS-006: reembolso pendente fica de fora até concluir (regra do usuário). A regra local passou a contar só transação concluída, e a diferença de preço não substitui reembolso pendente.
 - CROSS-004: corrigido — o mês só congela 3 dias depois de fechar; até lá o realizado é ao vivo.
-- CROSS-001: em avaliação pelo usuário.
+- CROSS-001: mantido como está (decisão do usuário). Os lançamentos manuais em "Taxas Shopify" foram conciliados com o banco e continuam contando no Caixa e no lucro.
 - Commits publicados (push) junto com estas correções.
 
 ## Para continuar
