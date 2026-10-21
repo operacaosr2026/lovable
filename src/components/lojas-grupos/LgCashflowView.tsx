@@ -1288,21 +1288,31 @@ export function LgCashflowView({
     ? `desde ${saldoTotalHistory.points[0].key.slice(8, 10)}/${saldoTotalHistory.points[0].key.slice(5, 7)}`
     : "em relação a 30 dias atrás";
 
+  // Cada loja sincroniza por conta própria: antes, um erro numa loja parava o
+  // loop e as lojas seguintes ficavam sem sincronizar (depósito novo não aparecia).
   const syncPayouts = async () => {
     setSyncing(true);
+    let total = 0;
+    const failed: string[] = [];
     try {
-      let total = 0;
       for (const id of shopIds) {
-        const r = await syncPaysFn({ data: { shop_id: id, since_days: 90 } });
-        total += r?.synced ?? 0;
+        try {
+          const r = await syncPaysFn({ data: { shop_id: id, since_days: 90 } });
+          total += r?.synced ?? 0;
+        } catch (e: any) {
+          failed.push(`${shopNamesMap[id] ?? "Loja"}: ${e?.message ?? "erro"}`);
+        }
       }
       qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ["shop-group-cash-pending", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash-pending", cacheKey] });
       qc.invalidateQueries({ queryKey: ["shop-cash-last-synced", cacheKey] });
-      toast.success(total ? `${total} depósitos sincronizados` : "Depósitos já atualizados");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Erro ao sincronizar");
+      if (failed.length) {
+        toast.error(`Não sincronizou: ${failed.join(" · ")}`, { duration: 15000 });
+        if (total) toast.success(`${total} depósitos sincronizados nas outras lojas`);
+      } else {
+        toast.success(total ? `${total} depósitos sincronizados` : "Depósitos já atualizados");
+      }
     } finally {
       setSyncing(false);
     }
