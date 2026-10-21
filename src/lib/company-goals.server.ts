@@ -38,16 +38,28 @@ async function lucroDoMes(ownerId: string, shopIds: string[], monthStart: string
   return r.lucro;
 }
 
-// Congela o realizado dos meses já fechados que ainda não foram congelados.
-// Roda na leitura do histórico e todo dia à meia-noite (estorno-daily), então
-// na virada do mês o realizado fica gravado antes de alguém arquivar um grupo.
+// Carência antes de congelar: o gasto da Meta do último dia ainda é ajustado por
+// ~2 dias e taxas/reembolsos chegam atrasados. Congelar na virada (00:00 do dia
+// 1) gravava o mês incompleto pra sempre. Até lá o realizado é calculado ao vivo.
+const FREEZE_GRACE_DAYS = 3;
+function addDaysIso(iso: string, n: number) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+const freezable = (monthStart: string, today: string) => addDaysIso(monthEndOf(monthStart), FREEZE_GRACE_DAYS) < today;
+
+// Congela o realizado dos meses já fechados (passada a carência) que ainda não
+// foram congelados. Roda na leitura do histórico e todo dia à meia-noite
+// (estorno-daily), então o realizado fica gravado logo depois da carência,
+// antes de alguém arquivar um grupo.
 export async function freezeClosedCompanyGoals(ownerId: string) {
   const today = isoTodayUS();
   const current = monthStartOf(today);
   const { data: rows } = await supabaseAdmin.from("company_goals")
     .select("id,month,shop_ids_final")
     .eq("user_id", ownerId).lt("month", current).is("realizado_final", null);
-  for (const r of (rows ?? []) as any[]) {
+  for (const r of ((rows ?? []) as any[]).filter((x) => freezable(x.month, today))) {
     const shops = (r.shop_ids_final as string[] | null) ?? await companyShopIdsForMonth(ownerId, r.month);
     const realizado = await lucroDoMes(ownerId, shops, r.month, today);
     await supabaseAdmin.from("company_goals")
@@ -80,8 +92,11 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
     const meta = Number(r.meta);
     let realizado: number | null = null;
     let projecao: number | null = null;
-    if (r.month < current) realizado = Number(r.realizado_final ?? 0);
-    else if (r.month === current) {
+    if (r.month < current && r.realizado_final != null) realizado = Number(r.realizado_final);
+    else if (r.month < current) {
+      // Mês fechado ainda na carência (não congelado): ao vivo, com as lojas do mês.
+      realizado = await lucroDoMes(ownerId, await companyShopIdsForMonth(ownerId, r.month), r.month, today);
+    } else if (r.month === current) {
       const shops = await companyShopIdsForMonth(ownerId, current);
       if (shops.length) {
         const acc = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, current, today);

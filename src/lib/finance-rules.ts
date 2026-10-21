@@ -32,9 +32,9 @@ export function monthEndCapped(m: string, cap: string) {
 }
 
 // Valor reembolsado de um pedido por dia do reembolso (raw.refunds): o que saiu
-// de dinheiro nas transações de reembolso/estorno (com sucesso ou ainda
-// pendentes). O dia é o de NY, como no resto do sistema (antes era o dia em UTC
-// e reembolso das 20h–24h caía no dia seguinte). Reembolso parcial "pra manter o cliente" (devolve 30%) tira o
+// de dinheiro nas transações de reembolso/estorno concluídas — reembolso ainda
+// pendente não conta até a Shopify concluir. O dia é o de NY, como no resto do
+// sistema (antes era o dia em UTC e reembolso das 20h–24h caía no dia seguinte). Reembolso parcial "pra manter o cliente" (devolve 30%) tira o
 // item do pedido — o total atual vai a 0 — e a Shopify registra a parte NÃO
 // devolvida como ajuste "refund_discrepancy"; antes a diferença de preço
 // contava como reembolso e o pedido inteiro saía do lucro. A diferença de preço
@@ -43,9 +43,11 @@ export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: 
   const byDate: Record<string, number> = {};
   let txSum = 0;
   let discrepancy = 0;
+  let hasRefundTx = false;
   for (const r of (o.refunds ?? [])) {
     for (const t of (r.transactions ?? [])) {
-      if ((t.kind === "refund" || t.kind === "void") && (t.status === "success" || t.status === "pending")) {
+      if (t.kind === "refund" || t.kind === "void") hasRefundTx = true;
+      if ((t.kind === "refund" || t.kind === "void") && t.status === "success") {
         const amt = Number(t.amount ?? 0);
         const when = t.processed_at || r.created_at;
         const date = when ? isoDateUS(when) : fallbackDate;
@@ -57,7 +59,8 @@ export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: 
       if (a.kind === "refund_discrepancy") discrepancy += Number(a.amount ?? 0);
     }
   }
-  if (txSum > 0) return { total: txSum, byDate };
+  // Tem transação (concluída, pendente ou que falhou): vale só o que concluiu.
+  if (txSum > 0 || hasRefundTx) return { total: txSum, byDate };
   const extra = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0) - discrepancy);
   if (extra > 0) {
     const lastRefundDate = (o.refunds ?? [])

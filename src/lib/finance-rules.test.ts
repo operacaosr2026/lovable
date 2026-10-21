@@ -102,6 +102,18 @@ describe("reembolso e chargeback", () => {
     expect(r.refAmt).toBeCloseTo(74.69);
   });
 
+  it("13d. reembolso pendente não conta até a Shopify concluir", () => {
+    const o = {
+      shop_id: SHOP, total_price: "129.90", current_total_price: "0.00",
+      refunds: [{ created_at: "2026-10-20T11:32:14-03:00", transactions: [{ kind: "refund", status: "pending", amount: "129.90", processed_at: "2026-10-20T11:32:14-03:00" }], order_adjustments: [{ kind: "refund_discrepancy", amount: "129.90" }] }],
+    };
+    const r = aggregateRefundsAndChargebacks([SHOP], "2026-10-01", "2026-10-31", { ...empty, refundOrders: [o] })[0];
+    expect(r.refAmt).toBeCloseTo(0);
+    // mesmo sem o ajuste refund_discrepancy, a diferença de preço não entra no lugar
+    const noAdj = { ...o, refunds: [{ ...o.refunds[0], order_adjustments: [] }] };
+    expect(aggregateRefundsAndChargebacks([SHOP], "2026-10-01", "2026-10-31", { ...empty, refundOrders: [noAdj] })[0].refAmt).toBeCloseTo(0);
+  });
+
   it("15. lucro = faturamento líquido − produtos − taxas − anúncios", () => {
     const faturamento = netRevenue(1000, 100, 50);
     expect(faturamento).toBe(850);
