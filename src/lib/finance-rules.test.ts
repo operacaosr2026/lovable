@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateRefundsAndChargebacks, diluteRefundsAndChargebacks, netRevenue, profit,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, comparisonPeriod,
+  payoutLagDays,
 } from "@/lib/finance-rules";
 import { orderDateFor } from "@/lib/order-date";
 
@@ -179,6 +180,19 @@ describe("Caixa", () => {
   it("21. nada é lançado antes do início do Caixa", () => {
     expect(orderCostGuard(null, "2026-09-01", "2026-08-31")).toBe("cutoff");
     expect(orderCostGuard(null, "2026-09-01", "2026-09-01")).toBe("compute");
+  });
+
+  it("22b. prazo de repasse pela venda mais nova de cada depósito (loja nova pondo em dia)", () => {
+    // Loja 6: 19/10 pagou vendas de 06–08/10; 21/10 pagou 09–14/10 → calendário D+7.
+    const payouts = [
+      { payoutDate: "2026-10-19", saleDays: ["2026-10-06", "2026-10-07", "2026-10-08"] },
+      { payoutDate: "2026-10-21", saleDays: ["2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12", "2026-10-14"] },
+    ];
+    expect(payoutLagDays(payouts)).toBe(9); // mediana de 11 e 7
+    // com depósitos diários depois, converge pra 7
+    const daily = [...payouts, ...["22", "23", "24"].map((d) => ({ payoutDate: `2026-10-${d}`, saleDays: [`2026-10-${Number(d) - 7}`] }))];
+    expect(payoutLagDays(daily)).toBe(7);
+    expect(payoutLagDays([])).toBeNull();
   });
 
   it("22. depósito apagado à mão não volta; conciliado não muda data/valor", () => {

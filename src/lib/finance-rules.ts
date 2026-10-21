@@ -255,6 +255,29 @@ export function orderCostWrite(existing: CostEntry, amount: number, items: numbe
 
 // ─── Caixa: depósitos da Shopify ──────────────────────────────────────────────
 
+// Prazo de repasse (D+N) a partir dos depósitos já feitos: dias entre a venda MAIS
+// NOVA de cada depósito e o depósito — é o que define o calendário da Shopify —,
+// mediana dos últimos `n` depósitos. A média de todas as vendas de cada depósito
+// enganava: loja nova recebe os primeiros depósitos "pondo em dia" uma semana de
+// vendas, e as mais antigas puxavam a média (Loja 6: D+12 com o calendário em D+7).
+// `saleDays` = dias (de NY) das vendas do depósito; `payoutDate` = dia do depósito.
+export function payoutLagDays(payouts: { payoutDate: string; saleDays: string[] }[], n = 5): number | null {
+  const lags = payouts
+    .filter((p) => p.saleDays.length)
+    .map((p) => {
+      const newest = p.saleDays.reduce((a, b) => (b > a ? b : a));
+      return { date: p.payoutDate, days: Math.round((Date.parse(`${p.payoutDate}T00:00:00Z`) - Date.parse(`${newest}T00:00:00Z`)) / 86_400_000) };
+    })
+    .filter((p) => p.days >= 0)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, n)
+    .map((p) => p.days)
+    .sort((a, b) => a - b);
+  if (!lags.length) return null;
+  const mid = Math.floor(lags.length / 2);
+  return lags.length % 2 ? lags[mid] : (lags[mid - 1] + lags[mid]) / 2;
+}
+
 export const PAYOUT_STATUS_LABEL: Record<string, string> = {
   paid: "depositado", in_transit: "em trânsito", scheduled: "agendado", pending: "previsto",
 };

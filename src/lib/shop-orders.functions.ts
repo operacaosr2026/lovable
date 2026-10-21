@@ -17,7 +17,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import {
   aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
-  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, roundCents,
+  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, roundCents, payoutLagDays,
 } from "@/lib/finance-rules";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
 // usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
@@ -223,9 +223,10 @@ export const getStoreBalances = createServerOnlyFn(async (ownerId: string, store
 // Dias entre a venda e o repasse, pra estimar no Caixa quando cai o dinheiro
 // de vendas que a Shopify ainda não colocou em nenhum payout. Ordem:
 //  1. ajuste manual da loja (payout_lag_days);
-//  2. média dos últimos 3 payouts — o mesmo número do badge "dias até payout"
-//     do Banco de Lojas e do "Repasse" do card (shopify_stores.board_payout_days);
-//  3. média de todos os payouts (payout_lag_avg_days), enquanto a loja não tem o 2;
+//  2. prazo dos últimos 5 payouts (venda mais nova → depósito, payoutLagDays) — o
+//     mesmo número do badge "dias até payout" do Banco de Lojas e do "Repasse" do
+//     card (shopify_stores.board_payout_days);
+//  3. a mesma conta guardada pelo sync (payout_lag_avg_days), enquanto a loja não tem o 2;
 //  4. 7 dias.
 // Arredondamento: ,5 pra cima sobe, abaixo de ,5 desce.
 export function payoutLagDaysFor(
@@ -257,17 +258,21 @@ export const recomputePayoutLag = createServerOnlyFn(async (shopId: string, doma
   const payouts = await fetchShopifyPayouts(domain, token, since.toISOString());
   const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
 
-  const days: number[] = [];
+  // Prazo pela venda mais nova de cada depósito, mediana dos últimos 5
+  // (payoutLagDays) — mesma regra do "Repasse" do card (store-metrics.server).
+  const byPayout = new Map<string, string[]>();
   for (const t of charges) {
-    const payoutDate = payoutDateById.get(String(t.payout_id));
-    if (!payoutDate) continue;
-    const diff = (new Date(`${payoutDate}T00:00:00Z`).getTime() - new Date(t.processed_at).getTime()) / 86400_000;
-    if (diff >= 0) days.push(diff);
+    const pid = String(t.payout_id);
+    byPayout.set(pid, [...(byPayout.get(pid) ?? []), isoDateUS(t.processed_at as string)]);
   }
+  const items = [...byPayout.entries()]
+    .map(([pid, saleDays]) => ({ payoutDate: payoutDateById.get(pid) as string, saleDays }))
+    .filter((p) => !!p.payoutDate);
+  const lag = payoutLagDays(items);
 
   await supabaseAdmin.from("shop_order_settings").update({
-    payout_lag_avg_days: days.length ? days.reduce((s, d) => s + d, 0) / days.length : null,
-    payout_lag_sample_size: days.length,
+    payout_lag_avg_days: lag,
+    payout_lag_sample_size: Math.min(items.length, 5),
   }).eq("shop_id", shopId);
 });
 

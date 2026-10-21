@@ -6,6 +6,8 @@ import {
 } from "@/lib/shop-orders.functions";
 import { fetchWithRetry } from "@/lib/http";
 import { getPausedShopifyStores } from "@/lib/sync-pause.server";
+import { payoutLagDays } from "@/lib/finance-rules";
+import { isoDateUS } from "@/lib/timezone";
 
 // Números da Shopify guardados em shopify_stores pra as telas só lerem, sem
 // chamar a Shopify na abertura (ver *_store_cached_metrics.sql):
@@ -36,7 +38,7 @@ async function fetchShopifyBalanceTransactionsForPayout(domain: string, token: s
 
 // Mesmos cálculos que o Banco de Lojas fazia ao vivo:
 //  - pedidos/dia: pedidos pagos dos últimos 7 dias corridos / 7;
-//  - dias até payout: média de dias entre a venda e o depósito, nos últimos 3 payouts.
+//  - dias até payout: dias da venda mais nova até o depósito, mediana dos últimos 5 payouts.
 export async function computeStoreBoardMetrics(ownerId: string, storeId: string) {
   const { domain, token } = await getShopifyCreds(supabaseAdmin, ownerId, storeId);
   const toISO = new Date().toISOString();
@@ -47,21 +49,17 @@ export async function computeStoreBoardMetrics(ownerId: string, storeId: string)
     fetchShopifyPayouts(domain, token, since.toISOString()),
   ]);
 
+  // Prazo pela venda mais nova de cada um dos últimos 5 depósitos (payoutLagDays).
   let payoutDays: number | null = null;
   if (payouts.length) {
-    const last3 = [...payouts]
+    const last = [...payouts]
       .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 3);
-    const days: number[] = [];
-    for (const p of last3 as any[]) {
+      .slice(0, 5);
+    const items = await Promise.all((last as any[]).map(async (p) => {
       const txns = await fetchShopifyBalanceTransactionsForPayout(domain, token, p.id);
-      for (const t of txns) {
-        if (t.type !== "charge") continue;
-        const diff = (new Date(`${p.date}T00:00:00Z`).getTime() - new Date(t.processed_at).getTime()) / 86400_000;
-        if (diff >= 0) days.push(diff);
-      }
-    }
-    payoutDays = days.length ? days.reduce((s, d) => s + d, 0) / days.length : null;
+      return { payoutDate: p.date as string, saleDays: txns.filter((t: any) => t.type === "charge").map((t: any) => isoDateUS(t.processed_at)) };
+    }));
+    payoutDays = payoutLagDays(items);
   }
 
   const avgPerDay = totalOrders / 7;
