@@ -33,7 +33,7 @@ const LABELS: Record<string, string> = {
   deleteCompanyGoal: "Apagou meta do mês", deleteConsolidatedCashEntry: "Apagou lançamento do Caixa (geral)",
   deleteCreative: "Apagou criativo", deleteGratitude: "Apagou gratidão", deleteGratitudeEntry: "Apagou gratidão",
   deleteKanbanColumn: "Apagou coluna de kanban", deleteLgCard: "Apagou grupo", deleteLgCardNote: "Apagou nota do Diário",
-  deleteLgCardNoteAttachment: "Apagou anexo de nota do Diário", deleteOrders: "Apagou pedidos", deleteProduct: "Apagou produto",
+  deleteLgCardNoteAttachment: "Apagou anexo de nota do Diário", deleteProduct: "Apagou produto",
   deleteProductImage: "Apagou imagem de produto", deleteProductTemplate: "Apagou template de produto", deleteProject: "Apagou projeto",
   deleteProjectAttachment: "Apagou anexo de projeto", deleteProjectNote: "Apagou nota de projeto",
   deleteProjectTask: "Apagou tarefa de projeto", deleteShop: "Apagou loja", deleteShopRoutine: "Apagou rotina de loja",

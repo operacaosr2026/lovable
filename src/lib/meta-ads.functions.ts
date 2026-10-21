@@ -388,7 +388,7 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
         : "";
       // Insights pagina em 25 linhas (= 25 dias com time_increment=1): sem seguir
       // paging.next, períodos maiores ficavam com os últimos dias desatualizados.
-      let url: string | null = `${META_GRAPH_API_BASE}/${account.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&limit=500&access_token=${encodeURIComponent(accessToken)}`;
+      let url: string | null = `${META_GRAPH_API_BASE}/${account.ad_account_id}/insights?level=account&fields=spend,account_currency&time_increment=1&time_range=${timeRange}${filtering}&limit=500&access_token=${encodeURIComponent(accessToken)}`;
 
       try {
         const accountSpend = new Map<string, number>();
@@ -397,6 +397,9 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
           const r = await fetchWithRetry(url);
           const json: any = await r.json();
           if (!r.ok || json.error) { failMsg = json?.error?.message || `Falha (${r.status})`; break; }
+          // O lucro é em USD e o gasto não é convertido: conta em BRL somaria reais como dólares.
+          const cur = (json.data ?? []).find((d: any) => d.account_currency)?.account_currency;
+          if (cur && cur !== "USD") { failMsg = `Conta de anúncios em ${cur}: só contas em USD entram no lucro — gasto não importado`; break; }
           for (const d of (json.data ?? []) as any[]) {
             const date = d.date_start as string;
             if (!date) continue;

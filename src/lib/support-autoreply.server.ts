@@ -127,15 +127,28 @@ async function claim(id: string): Promise<boolean> {
 
 // Pedidos do cliente (pelo e-mail e pelo nº citado) com a situação real do rastreio.
 // detailed (rascunhos do treino): também produtos, valor, pagamento e chargeback.
-export async function ordersFor(ownerId: string, email: string, texts: (string | null)[], opts: { detailed?: boolean } = {}) {
+// ownOnly (resposta automática, sem revisão humana): pedido citado pelo número
+// só entra se for do e-mail de quem escreveu — senão qualquer um que chutasse
+// um número (#L1-1246) recebia o status e o link de rastreio do pedido de outra
+// pessoa. Citou pedido de outro e-mail: foreignCited = true (fica pra equipe).
+export async function ordersFor(ownerId: string, email: string, texts: (string | null)[], opts: { detailed?: boolean; ownOnly?: boolean } = {}) {
   const { data: ids } = await supabaseAdmin.rpc("shop_order_ids_by_email", { p_user_id: ownerId, p_email: email.toLowerCase() });
   const idList = [...((ids ?? []) as string[])];
+  let foreignCited = false;
   const nums = [...new Set(texts.flatMap((t) => orderNumbersInText(t)))];
   if (nums.length) {
     const { data: cited } = await supabaseAdmin.from("shop_orders").select("id").eq("user_id", ownerId).in("order_number", orderNumberVariants(nums)).limit(10);
-    for (const o of cited ?? []) if (!idList.includes(o.id)) idList.push(o.id);
+    for (const o of cited ?? []) {
+      if (idList.includes(o.id)) continue;
+      if (opts.ownOnly) foreignCited = true;
+      else idList.push(o.id);
+    }
   }
-  if (!idList.length) return [];
+  if (!idList.length) return Object.assign([], { foreignCited });
+  return Object.assign(await loadOrderFacts(ownerId, idList, opts), { foreignCited });
+}
+
+async function loadOrderFacts(ownerId: string, idList: string[], opts: { detailed?: boolean }) {
   const { data: orders } = await supabaseAdmin.from("shop_orders")
     .select("id,shop_id,external_id,order_number,created_at_shopify,tracking_code,tracking_url,delivered_at,shopify_financial_status,first_name:raw->customer->>first_name,cancelled_at:raw->>cancelled_at" + (opts.detailed ? ",items:raw->line_items,total:raw->>total_price,refunds:raw->refunds" : ""))
     .eq("user_id", ownerId).in("id", idList).order("created_at_shopify", { ascending: false }).limit(3);
@@ -213,7 +226,8 @@ export async function decideAutoReply(acc: ZohoAccount, m: any, client: Anthropi
     html = await fetchMessageContent(acc, m.folder_id, m.message_id);
     if (!opts.preview) await supabaseAdmin.from("support_messages").update({ content_html: html }).eq("id", m.id);
   }
-  const orders = await ordersFor(ownerId, conv.customer_email, [m.subject, m.summary, emailText(html ?? "", 3000)]);
+  const orders = await ordersFor(ownerId, conv.customer_email, [m.subject, m.summary, emailText(html ?? "", 3000)], { ownOnly: true });
+  if (orders.foreignCited) return { kind: "pulado", motivo: "citou pedido de outro e-mail", orders };
   if (orders.some((o) => o.cancelled_or_refunded)) return { kind: "pulado", motivo: "pedido cancelado/reembolsado", orders };
   const name = (conv.customer_name || orders[0]?._firstName || "").split(" ")[0];
   const facts = orders.map(({ _firstName, ...o }) => o);

@@ -284,9 +284,11 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
       .match(key).eq("dunning_step", r.dunningStep).eq("dunning_paused", false).in("status", ["a_contatar", "contatado"])
       .is("excluded_at", null).select("id");
     if (!claimed?.length) continue;
+    let mailAttempted = false;
     try {
       // E-mail com {link_pagamento}: cria (ou reaproveita) o pedido de cobrança na Shopify antes.
       if (`${step.subject}\n${step.body}`.includes("{link_pagamento}")) await ensureRecoveryLink(ownerId, r);
+      mailAttempted = true;
       await sendDunningEmail(ownerId, ownerId, r.customerEmail!, step, r);
       sent++;
       canSend = false;   // próximo só daqui a 30 min
@@ -297,6 +299,16 @@ export async function runChargebackDunning(ownerId: string, all?: AlertRow[]) {
     } catch (e: any) {
       const msg = String(e?.message ?? e).slice(0, 200);
       errors.push(`${r.orderNumber}: ${msg}`);
+      // Sem resposta do Zoho: o e-mail pode ter saído. Desfazer o passo fazia a
+      // próxima rodada mandar a mesma cobrança de novo — mantém o passo e pausa
+      // a sequência desse cliente pra alguém conferir nos Enviados.
+      if (mailAttempted && /timeout|aborted/i.test(msg)) {
+        canSend = false;
+        await supabaseAdmin.from("chargeback_alert_followups").update({
+          dunning_paused: true, dunning_stop_reason: `envio incerto (sem resposta do Zoho) — confira nos Enviados: ${msg}`.slice(0, 300),
+        }).match(key);
+        continue;
+      }
       await supabaseAdmin.from("chargeback_alert_followups").update({
         dunning_step: r.dunningStep, dunning_last_at: r.dunningLastAt, status: r.status, dunning_stop_reason: `erro: ${msg}`,
         ...(r.dunningStep === 0 ? { dunning_started_at: null } : {}),

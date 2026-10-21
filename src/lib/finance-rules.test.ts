@@ -74,6 +74,34 @@ describe("reembolso e chargeback", () => {
     expect(rows[0].refByDate["2026-10-10"]).toBeUndefined();
   });
 
+  it("13b. reembolso parcial conta só o que saiu, não o pedido inteiro (refund_discrepancy)", () => {
+    // #L2-1146: pedido 129,90, devolveu 38,97; a Shopify zera o total atual e
+    // registra 90,93 como ajuste não devolvido.
+    const partial = {
+      shop_id: SHOP, total_price: "129.90", current_total_price: "0.00",
+      refunds: [{
+        created_at: "2026-10-17T19:40:28-04:00",
+        transactions: [{ kind: "refund", status: "success", amount: "38.97", processed_at: "2026-10-17T19:40:28-04:00" }],
+        order_adjustments: [{ kind: "refund_discrepancy", amount: "90.93" }, { kind: "refund_discrepancy", amount: "38.97" }, { kind: "refund_discrepancy", amount: "-38.97" }],
+      }],
+    };
+    const r = aggregateRefundsAndChargebacks([SHOP], "2026-10-01", "2026-10-31", { ...empty, refundOrders: [partial] })[0];
+    expect(r.refAmt).toBeCloseTo(38.97);
+  });
+
+  it("13c. item tirado sem devolver dinheiro (reembolso sem transação, com transação em outro reembolso) não conta", () => {
+    // #WV1416: 1º reembolso só tira um item (sem transação); 2º devolve 74,69.
+    const o = {
+      shop_id: SHOP, total_price: "259.80", current_total_price: "0.00",
+      refunds: [
+        { created_at: "2026-09-21T12:59:18-03:00", transactions: [] },
+        { created_at: "2026-10-14T13:32:36-03:00", transactions: [{ kind: "refund", status: "success", amount: "74.69", processed_at: "2026-10-14T13:32:36-03:00" }], order_adjustments: [{ kind: "refund_discrepancy", amount: "55.21" }] },
+      ],
+    };
+    const r = aggregateRefundsAndChargebacks([SHOP], "2026-09-01", "2026-10-31", { ...empty, refundOrders: [o] })[0];
+    expect(r.refAmt).toBeCloseTo(74.69);
+  });
+
   it("15. lucro = faturamento líquido − produtos − taxas − anúncios", () => {
     const faturamento = netRevenue(1000, 100, 50);
     expect(faturamento).toBe(850);

@@ -36,9 +36,9 @@ function warnPaginationCap(fnName: string, domain: string, url: string) {
   reportPaginationCap(fnName, domain);
 }
 
-async function fetchOrders(domain: string, token: string, sinceISO: string) {
+async function fetchOrders(domain: string, token: string, sinceISO: string, by: "created_at" | "updated_at" = "created_at") {
   const out: any[] = [];
-  let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&created_at_min=${encodeURIComponent(sinceISO)}`;
+  let url = `https://${domain}/admin/api/2024-10/orders.json?status=any&limit=250&${by}_min=${encodeURIComponent(sinceISO)}`;
   for (let i = 0; i < 20 && url; i++) {
     const res = await fetchWithRetry(url, { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } });
     if (!res.ok) throw new Error(`Shopify ${res.status}`);
@@ -79,7 +79,9 @@ async function saveOrders(s: any, orders: any[], today: string) {
       revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
       shopify_financial_status: o.financial_status ?? null,
     }));
-    await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
+    // Erro aqui tem que subir: antes o pedido não gravava e o aviso do sino era limpo.
+    const { error } = await supabaseAdmin.from("shop_orders").upsert(rows, { onConflict: "shop_id,source,external_id" });
+    if (error) throw new Error(`Gravar pedidos: ${error.message}`);
   }
   const created = changed.filter((o: any) => !before.has(String(o.id))).map((o: any) => String(o.id));
   if (created.length) for (const r of await dbOrders(created)) before.set(r.external_id, r);
@@ -118,8 +120,9 @@ async function saveOrders(s: any, orders: any[], today: string) {
       patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : today;
     }
     if (Object.keys(patch).length) {
-      await supabaseAdmin.from("shop_orders").update(patch)
+      const { error } = await supabaseAdmin.from("shop_orders").update(patch)
         .eq("id", existing.id).eq("user_id", s.user_id);
+      if (error) throw new Error(`Gravar rastreio: ${error.message}`);
     }
   }
 }
@@ -282,11 +285,6 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
     (t.payout_id == null || !payoutDateById.has(String(t.payout_id)))
   );
 
-  await supabaseAdmin.from("shop_cash_entries").delete()
-    .eq("user_id", userId).eq("shop_id", shopId).eq("source", "shopify_pending_sync");
-
-  if (!pendingTx.length) return 0;
-
   const byDate = new Map<string, number>();
   for (const t of pendingTx) {
     const realDate = t.payout_id ? payoutDateById.get(String(t.payout_id)) : null;
@@ -301,14 +299,11 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
     byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
   }
   const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
-    user_id: userId, shop_id: shopId,
-    kind: "income" as const,
-    amount, date,
-    category: PAYOUT_CATEGORY,
-    description: `Payout Shopify · previsto`,
-    source: "shopify_pending_sync",
+    amount, date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
   }));
-  await supabaseAdmin.from("shop_cash_entries").insert(provisionals);
+  // Apaga e recria numa transação só, com trava por loja (botão e cron juntos duplicavam).
+  const { error } = await supabaseAdmin.rpc("replace_pending_payouts" as any, { p_user_id: userId, p_shop_id: shopId, p_rows: provisionals });
+  if (error) throw new Error(`Previsto do Caixa: ${error.message}`);
   return pendingTx.length;
 }
 
@@ -368,6 +363,10 @@ async function processShop(s: any, today: string) {
   // ter os últimos 30 dias completos.
   const rolling30 = addDays(today, -30);
   const sinceDate = cutoff && cutoff < rolling30 ? cutoff : rolling30;
+  // Falha da Shopify/banco no meio: a previsão de custo abaixo ainda roda, e o
+  // erro sobe no fim pro runOne avisar no sino (antes ficava só em
+  // shopify_stores.last_sync_status e o aviso de sync da loja era limpo).
+  let syncErr: unknown = null;
 
   // sync orders from the configured cashflow cutoff date (fallback: last 30 days)
   if (s.shopify_store_id) {
@@ -376,6 +375,16 @@ async function processShop(s: any, today: string) {
     if (store?.access_token && store?.shop_domain) {
       try {
         const orders = (await fetchOrders(store.shop_domain, store.access_token, `${sinceDate}T00:00:00Z`)).filter((o: any) => !isRecoveryOrder(o));
+        // Pedido mais antigo que a janela, mas alterado nas últimas 26h (reembolso,
+        // cancelamento, envio): antes só chegava pelo webhook — se o webhook
+        // falhasse, a mudança se perdia. Respeita o início do Caixa, como o webhook.
+        const seen = new Set(orders.map((o: any) => String(o.id)));
+        const updatedSince = new Date(Date.now() - 26 * 3_600_000).toISOString();
+        for (const o of await fetchOrders(store.shop_domain, store.access_token, updatedSince, "updated_at")) {
+          if (seen.has(String(o.id)) || isRecoveryOrder(o)) continue;
+          if (cutoff && orderDateFor(o.created_at as string) < cutoff) continue;
+          orders.push(o);
+        }
         await saveOrders(s, orders, today);
         // Webhooks de pedido (tempo real): cria os que faltarem. Falha aqui não
         // derruba o sync — o de 10 em 10 min continua cobrindo.
@@ -403,6 +412,7 @@ async function processShop(s: any, today: string) {
           last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
         }).eq("id", s.shopify_store_id);
       } catch (e: any) {
+        syncErr = e;
         await supabaseAdmin.from("shopify_stores").update({
           last_sync_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: e.message?.slice(0, 500),
         }).eq("id", s.shopify_store_id);
@@ -419,6 +429,7 @@ async function processShop(s: any, today: string) {
   const paymentDays = await getShopPaymentDays(s.shop_id);
   await tracked(s.user_id, `cost_forecast:${s.shop_id}`, `Previsão de custo do Caixa não recalculou — ${await shopLabel(s.shop_id)}`,
     () => recomputeOrderCostForecast(s.user_id, s.shop_id, addDays(today, -paymentDays)));
+  if (syncErr) throw syncErr;
 }
 
 // api/ssr.js tem maxDuration=300s (vercel.json, Fluid compute). Processar todas as lojas sequencialmente

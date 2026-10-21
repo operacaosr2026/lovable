@@ -44,12 +44,15 @@ export async function syncCardAdSpend(
       const filtering = ids.length
         ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: ids }]))}`
         : "";
-      let url: string | null = `${META_GRAPH}/${account.ad_account_id}/insights?level=account&fields=spend&time_increment=1&time_range=${timeRange}${filtering}&limit=500&access_token=${encodeURIComponent(token)}`;
+      let url: string | null = `${META_GRAPH}/${account.ad_account_id}/insights?level=account&fields=spend,account_currency&time_increment=1&time_range=${timeRange}${filtering}&limit=500&access_token=${encodeURIComponent(token)}`;
       const accountSpend = new Map<string, number>();
       while (url) {
         const r = await fetchWithRetry(url);
         const json: any = await r.json();
         if (!r.ok || json.error) throw new Error(json?.error?.message || `Falha (${r.status})`);
+        // O lucro é em USD e o gasto não é convertido: conta em BRL somaria reais como dólares.
+        const cur = (json.data ?? []).find((d: any) => d.account_currency)?.account_currency;
+        if (cur && cur !== "USD") throw new Error(`Conta de anúncios em ${cur}: só contas em USD entram no lucro — gasto não importado`);
         for (const d of (json.data ?? []) as any[]) {
           if (d.date_start) accountSpend.set(d.date_start, (accountSpend.get(d.date_start) ?? 0) + Number(d.spend ?? 0));
         }

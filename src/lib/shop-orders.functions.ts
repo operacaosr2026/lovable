@@ -391,21 +391,18 @@ export const upsertOrderSettings = createServerFn({ method: "POST" })
       .upsert({ user_id: context.ownerId, shop_id: data.shop_id, ...data.patch }, { onConflict: "shop_id" });
     if (error) throw new Error(error.message);
 
-    // Setting the sync cutoff means data before it shouldn't count anymore —
-    // purge whatever was already auto-synced before that date, everywhere the
-    // shop is shown (it's the same shop_id/data no matter which card/group
-    // references it). Manual entries are never touched. This isn't a
-    // permanent loss: moving the cutoff earlier again and re-syncing re-fetches
-    // those orders/payouts straight from Shopify.
+    // Início do Caixa: lançamentos automáticos anteriores à data saem do Caixa —
+    // menos os conciliados ou com data/valor travados (ajuste manual é sagrado).
+    // Pedidos e disputas NÃO são apagados: o sync reimporta os últimos 30 dias de
+    // qualquer jeito (o pedido voltava sem rastreio trocado à mão, pagamento ao
+    // fornecedor e observações) e as disputas voltam no sync completo.
     if (data.patch.cashflow_start_date) {
       const cutoff = data.patch.cashflow_start_date;
-      await context.supabase.from("shop_orders")
-        .delete().eq("shop_id", data.shop_id).lt("order_date", cutoff);
-      await context.supabase.from("shop_cash_entries")
+      const { error: purgeErr } = await context.supabase.from("shop_cash_entries")
         .delete().eq("shop_id", data.shop_id).lt("date", cutoff)
-        .in("source", ["auto", "shopify_sync", "shopify_fees_sync", "shopify_pending_sync", "shopify_auto_sync"]);
-      await context.supabase.from("shop_order_disputes")
-        .delete().eq("shop_id", data.shop_id).lt("initiated_at", cutoff);
+        .in("source", ["auto", "shopify_sync", "shopify_fees_sync", "shopify_pending_sync", "shopify_auto_sync"])
+        .eq("reconciled", false).eq("date_locked", false).eq("amount_locked", false);
+      if (purgeErr) throw new Error(purgeErr.message);
     }
 
     return { ok: true };
@@ -1021,12 +1018,9 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
       (t.payout_id == null || !payoutDateById.has(String(t.payout_id)))
     );
 
-    // Remove provisórios antigos e recria com dados atuais
-    await context.supabase.from("shop_cash_entries").delete()
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .eq("source", "shopify_pending_sync");
-
-    if (pendingTx.length) {
+    // Remove provisórios antigos e recria com dados atuais — numa transação só,
+    // com trava por loja (replace_pending_payouts), mesma do cron de depósitos.
+    {
       const byDate = new Map<string, number>();
       for (const t of pendingTx) {
         // Se a transação já tem um payout_id, usa a data real; senão estima com lag
@@ -1042,16 +1036,12 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
         byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
       }
       const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
-        user_id: context.ownerId,
-        shop_id: data.shop_id,
-        kind: "income" as const,
-        amount,
-        date,
-        category: PAYOUT_CATEGORY,
-        description: `Payout Shopify · previsto`,
-        source: "shopify_pending_sync",
+        amount, date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
       }));
-      await context.supabase.from("shop_cash_entries").insert(provisionals);
+      const { error: pendErr } = await supabaseAdmin.rpc("replace_pending_payouts" as any, {
+        p_user_id: context.ownerId, p_shop_id: data.shop_id, p_rows: provisionals,
+      });
+      if (pendErr) throw new Error(`Previsto do Caixa: ${pendErr.message}`);
     }
 
     await context.supabase.from("shop_order_settings")
@@ -2203,38 +2193,6 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
     }
 
     return { updated: allBatchIds.length + batchesCreated, ordersFound: (orders ?? []).length, batchIds: allBatchIds, searchedCount: data.order_ids.length };
-  });
-
-export const deleteOrders = createServerFn({ method: "POST" })
-  .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({
-    shop_id: z.string().uuid(),
-    order_ids: z.array(z.string().uuid()).min(1).max(2000),
-  }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { data: orders, error } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
-      .select("id,order_date,payment_status")
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .in("id", ids).neq("payment_status", "shipped"));
-    if (error) throw new Error(error.message);
-    if (!orders || orders.length === 0) throw new Error("Nenhum pedido elegível para exclusão (pedidos enviados não podem ser excluídos)");
-
-    // O rastreio sai junto (FK shop_order_tracking.order_id ON DELETE CASCADE).
-    for (const ids of chunk(orders.map((o: any) => o.id as string))) {
-      const { error: delErr } = await context.supabase.from("shop_orders").delete()
-        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).in("id", ids);
-      if (delErr) throw new Error(delErr.message);
-    }
-
-    const dates = Array.from(new Set(orders.map((o) => o.order_date as string)));
-    const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
-      .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    const paymentDaysDel = await getShopPaymentDays(context.supabase, data.shop_id);
-    for (const d of dates) {
-      await recomputeForShop(context, data.shop_id, addDays(d, paymentDaysDel), settings, paymentDaysDel);
-    }
-
-    return { deleted: orders.length };
   });
 
 export const listPaymentBatches = createServerFn({ method: "GET" })

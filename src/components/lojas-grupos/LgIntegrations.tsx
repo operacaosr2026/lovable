@@ -15,6 +15,7 @@ import {
   CheckCircle2, AlertCircle, Settings2, ChevronDown, ChevronUp, Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { isoTodayUS } from "@/lib/timezone";
 
@@ -109,8 +110,26 @@ function SyncCutoffRow({ shop }: { shop: ShopStub }) {
     queryFn: () => getSettFn({ data: { shop_id: shop.id } }),
   });
 
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<string | null>(null);
-  const value = draft ?? (settings.data as any)?.cashflow_start_date ?? "";
+  const saved: string = (settings.data as any)?.cashflow_start_date ?? "";
+  const value = draft ?? saved;
+
+  // Data mais pra frente tira do Caixa os lançamentos automáticos anteriores
+  // (conciliados e travados ficam): confirma antes.
+  const save = async (date: string | null) => {
+    if (date && (!saved || date > saved)) {
+      const ok = await confirm({
+        title: "Mudar o início do Caixa",
+        description: `Os lançamentos automáticos de ${shop.name} anteriores a ${date.split("-").reverse().join("/")} (depósitos, previsões, taxas) saem do Caixa. Conciliados e com data/valor travados ficam. Pedidos não são apagados.`,
+        confirmText: "Mudar",
+        cancelText: "Cancelar",
+        variant: "destructive",
+      });
+      if (!ok) return;
+    }
+    saveMut.mutate(date);
+  };
 
   const saveMut = useMutation({
     mutationFn: (date: string | null) => upsertFn({ data: { shop_id: shop.id, patch: { cashflow_start_date: date } } }),
@@ -144,7 +163,7 @@ function SyncCutoffRow({ shop }: { shop: ShopStub }) {
           </button>
         )}
         <button
-          onClick={() => saveMut.mutate(value || null)}
+          onClick={() => save(value || null)}
           disabled={saveMut.isPending}
           className="size-7 rounded-lg bg-primary grid place-items-center text-primary-foreground disabled:opacity-50"
         >

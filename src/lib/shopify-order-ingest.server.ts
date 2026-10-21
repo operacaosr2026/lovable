@@ -56,8 +56,13 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
     if (s.cashflow_start_date && orderDate < s.cashflow_start_date) continue;
 
     const { data: before } = await supabaseAdmin.from("shop_orders")
-      .select("id,shopify_financial_status,carrier,tracking_code,tracking_url,delivery_status,cancelled_at:raw->>cancelled_at")
+      .select("id,shopify_financial_status,carrier,tracking_code,tracking_url,delivery_status,cancelled_at:raw->>cancelled_at,shopify_updated_at:raw->>updated_at")
       .eq("shop_id", s.shop_id).eq("source", "shopify").eq("external_id", externalId).maybeSingle();
+    // A Shopify não garante a ordem dos webhooks: um orders/updated de antes do
+    // reembolso chegando depois devolvia o pedido pra "paid" (o reembolso sumia
+    // do lucro) — e pedido com mais de 30 dias o sync não corrige mais.
+    const storedAt = Date.parse((before as any)?.shopify_updated_at ?? "");
+    if (Number.isFinite(storedAt) && Date.parse(o.updated_at ?? "") < storedAt) continue;
 
     const { error: upErr } = await supabaseAdmin.from("shop_orders").upsert({
       user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
@@ -94,7 +99,9 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
         if (!row.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
         if (!row.tracking_code) patch.tracking_code = String(trackingNumber);
         if (template) {
-          const url = template.replace("[CODE]", encodeURIComponent(String(trackingNumber)));
+          // Código do pedido (pode ter sido trocado à mão), não o da Shopify —
+          // mesma regra do sync de 10 em 10 min.
+          const url = template.replace("[CODE]", encodeURIComponent(String(row.tracking_code ?? trackingNumber)));
           if (url !== row.tracking_url) patch.tracking_url = url;
         } else if (!row.tracking_url) {
           const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
@@ -105,7 +112,8 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
           patch.shipped_at = fWithTrack.created_at ? isoDateUS(String(fWithTrack.created_at)) : isoTodayUS();
         }
         if (Object.keys(patch).length) {
-          await supabaseAdmin.from("shop_orders").update(patch).eq("id", row.id);
+          const { error: trErr } = await supabaseAdmin.from("shop_orders").update(patch).eq("id", row.id);
+          if (trErr) throw new Error(trErr.message);
           trackingChanged = true;
         }
       }

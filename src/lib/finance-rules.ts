@@ -24,25 +24,32 @@ export function monthEndCapped(m: string, cap: string) {
   return last < cap ? last : cap;
 }
 
-// Valor reembolsado de um pedido por dia do reembolso (raw.refunds). Usa as
-// transações de reembolso/estorno com sucesso; se a diferença entre o total e
-// o total atual do pedido for maior (reembolso sem transação), o resto cai no
-// dia do último reembolso.
+// Valor reembolsado de um pedido por dia do reembolso (raw.refunds): o que
+// saiu de dinheiro nas transações de reembolso/estorno (com sucesso ou ainda
+// pendentes). Reembolso parcial "pra manter o cliente" (devolve 30%) tira o
+// item do pedido — o total atual vai a 0 — e a Shopify registra a parte NÃO
+// devolvida como ajuste "refund_discrepancy"; antes a diferença de preço
+// contava como reembolso e o pedido inteiro saía do lucro. A diferença de preço
+// (menos esses ajustes) só vale quando o pedido não tem transação nenhuma.
 export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: number; byDate: Record<string, number> } {
   const byDate: Record<string, number> = {};
   let txSum = 0;
+  let discrepancy = 0;
   for (const r of (o.refunds ?? [])) {
     for (const t of (r.transactions ?? [])) {
-      if ((t.kind === "refund" || t.kind === "void") && t.status === "success") {
+      if ((t.kind === "refund" || t.kind === "void") && (t.status === "success" || t.status === "pending")) {
         const amt = Number(t.amount ?? 0);
         const date = String(t.processed_at || r.created_at || "").slice(0, 10) || fallbackDate;
         byDate[date] = (byDate[date] ?? 0) + amt;
         txSum += amt;
       }
     }
+    for (const a of (r.order_adjustments ?? [])) {
+      if (a.kind === "refund_discrepancy") discrepancy += Number(a.amount ?? 0);
+    }
   }
-  const priceDiff = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0));
-  const extra = priceDiff - txSum;
+  if (txSum > 0) return { total: txSum, byDate };
+  const extra = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0) - discrepancy);
   if (extra > 0) {
     const lastRefundDate = (o.refunds ?? [])
       .map((r: any) => String(r.created_at ?? "").slice(0, 10))
@@ -50,7 +57,7 @@ export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: 
     const date = lastRefundDate || fallbackDate;
     byDate[date] = (byDate[date] ?? 0) + extra;
   }
-  return { total: Math.max(txSum, priceDiff), byDate };
+  return { total: extra, byDate };
 }
 
 // Cada movimento de reembolso/chargeback do período [from, to], no dia em que o

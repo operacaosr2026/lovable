@@ -61,8 +61,15 @@ async function sendNext(ownerId: string): Promise<string> {
     await sendZohoMail(acc, { to: n.to_email, subject: n.subject, html });
   } catch (e: any) {
     const msg = String(e?.message ?? e).slice(0, 300);
-    // Limite do Zoho (ou fora do ar): volta pra fila e tenta na próxima rodada.
-    if (/limit|too many|rate|exceed|temporar|timeout|5\d\d/i.test(msg)) {
+    // Zoho recusou (limite, fora do ar): volta pra fila e tenta na próxima rodada.
+    // Tempo esgotado ou erro 5xx genérico NÃO volta: o Zoho pode ter mandado e só
+    // a resposta falhou — reenviar mandava o mesmo aviso 2x pro cliente. Fica em
+    // "erro" pra conferir nos Enviados do Zoho antes de mandar de novo.
+    if (/timeout|aborted/i.test(msg)) {
+      await supabaseAdmin.from("order_notices").update({ status: "erro", error: `Envio incerto (sem resposta do Zoho) — confira nos Enviados antes de reenviar. ${msg}`.slice(0, 300) }).eq("id", n.id);
+      return `incerto: ${msg}`;
+    }
+    if (/limit|too many|rate|exceed|temporar|\b(429|503)\b/i.test(msg)) {
       await supabaseAdmin.from("order_notices").update({ status: "na_fila" }).eq("id", n.id);
       return `tentar de novo: ${msg}`;
     }

@@ -28,9 +28,13 @@ async function shopCreds(shopId: string) {
 
 async function gql<T = any>(shopId: string, query: string, variables: Record<string, unknown>): Promise<T> {
   const { domain, token } = await shopCreds(shopId);
+  // Mutação (draftOrderCreate, fulfillmentCreate…) não é idempotente: a Shopify
+  // pode ter criado e só a resposta falhar — nova tentativa criava o pedido de
+  // cobrança 2x. Só leitura tenta de novo.
+  const isMutation = /^\s*mutation\b/.test(query);
   const res = await fetchWithRetry(`https://${domain}/admin/api/${API}/graphql.json`, {
     method: "POST", headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" }, body: JSON.stringify({ query, variables }),
-  });
+  }, isMutation ? { retries: 0 } : {});
   const body: any = await res.json().catch(() => null);
   if (!res.ok || body?.errors?.length) {
     const msg = body?.errors?.[0]?.message ?? body?.errors ?? `HTTP ${res.status}`;
