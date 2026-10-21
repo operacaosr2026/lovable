@@ -17,7 +17,7 @@ Início: 20/10/2026 (noite, horário de NY). Commit auditado: `f17bc38` (main, �
 
 21/10/2026 — P1 e P2 corrigidos no código (ver cabeçalho do relatório final). BUG-020 era falso positivo.
 Migração `20261021120000_replace_pending_payouts.sql` aplicada em produção.
-P3 corrigidos (menos 011, que aguarda decisão, e 022, não pedido). Falta aplicar `20261021130000_audit_p3.sql` antes do push.
+P3 corrigidos, inclusive o 011 (regras unificadas em `shopify-order-apply.ts`). Só o 022 ficou aberto (não pedido). As duas migrações foram aplicadas em produção.
 
 ## Como continuar numa próxima sessão
 

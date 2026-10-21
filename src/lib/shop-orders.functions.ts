@@ -6,13 +6,13 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
-import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
+import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
 import { applyPresetToStore } from "@/lib/store-production.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
-import { orderDateFor } from "@/lib/order-date";
+import { beforeCashflowStart, shopifyOrderRow, shopifyTrackingPatch } from "@/lib/shopify-order-apply";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import {
@@ -818,86 +818,41 @@ export const syncShopifyOrders = createServerFn({ method: "POST" })
     const todayForSince = isoTodayUS();
     const sinceDateStr = data.since_date ?? addDays(todayForSince, -(data.since_days ?? 30));
     const sinceDays = Math.max(1, Math.min(90, daysBetween(sinceDateStr, todayForSince)));
-    const orders = (await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`)).filter((o: any) => !isRecoveryOrder(o));
+    // Pedido anterior ao início do Caixa não entra (mesma regra do cron e do webhook).
+    const orders = (await fetchShopifyOrders(domain, token, `${sinceDateStr}T00:00:00.000Z`))
+      .filter((o: any) => !isRecoveryOrder(o) && !beforeCashflowStart(o, settings.cashflow_start_date));
 
     if (orders.length) {
-      const rows = orders.map((o: any) => {
-        const items = (o.line_items ?? []).reduce((s: number, li: any) => s + Number(li.quantity ?? 0), 0);
-        return {
-          user_id: context.ownerId,
-          shop_id: data.shop_id,
-          source: "shopify",
-          external_id: String(o.id),
-          order_number: o.name ?? null,
-          created_at_shopify: o.created_at,
-          order_date: orderDateFor(o.created_at as string),
-          items_count: items,
-          revenue: Number(o.total_price ?? 0),
-          currency: o.currency ?? null,
-          raw: o,
-          shopify_financial_status: o.financial_status ?? null,
-        };
-      });
+      // Botão manual: regrava todos os pedidos do período (serve pra forçar correção).
+      const rows = orders.map((o: any) => shopifyOrderRow(o, { user_id: context.ownerId, shop_id: data.shop_id }));
       const { error } = await context.supabase.from("shop_orders")
         .upsert(rows, { onConflict: "shop_id,source,external_id" });
       if (error) throw new Error(error.message);
 
-      // Auto-pull tracking from Shopify fulfillments
-      const { data: dbOrders } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => context.supabase.from("shop_orders")
-        .select("id,external_id")
+      // Rastreio do envio — mesmas regras do cron e do webhook (shopify-order-apply.ts):
+      // template de link da loja, código trocado à mão respeitado. Não grava em
+      // shop_order_tracking (é do sync do 17track; gravar ali com o código da
+      // Shopify brigava com código trocado à mão).
+      const { data: existingRows } = await selectAllIn<any>(orders.map((o: any) => String(o.id)), (ext) => context.supabase.from("shop_orders")
+        .select("id,external_id,carrier,tracking_code,tracking_url,delivery_status")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .eq("source", "shopify")
         .in("external_id", ext));
-      const orderIdByExt = new Map((dbOrders ?? []).map((r: any) => [r.external_id, r.id]));
+      const existingByExt = new Map((existingRows ?? []).map((r: any) => [r.external_id, r]));
+      const { data: integ } = await context.supabase.from("track123_integrations")
+        .select("tracking_link_template").eq("shop_id", data.shop_id).maybeSingle();
+      const template: string | null = (integ as any)?.tracking_link_template ?? null;
+      const today = isoTodayUS();
 
-      const { data: existingLogistics } = await selectAllIn<any>(Array.from(orderIdByExt.values()) as string[], (ids) => context.supabase.from("shop_orders")
-        .select("id,carrier,tracking_code,tracking_url,delivery_status")
-        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-        .in("id", ids));
-      const existingById = new Map((existingLogistics ?? []).map((r: any) => [r.id, r]));
-
-      const trackingRows: any[] = [];
       for (const o of orders) {
-        const orderId = orderIdByExt.get(String(o.id));
-        if (!orderId) continue;
-        const fulfillments = (o.fulfillments ?? []) as any[];
-        // pick latest fulfillment with a tracking number
-        const fWithTrack = [...fulfillments]
-          .reverse()
-          .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
-        if (!fWithTrack) continue;
-        const trackingNumber = fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null;
-        if (!trackingNumber) continue;
-        trackingRows.push({
-          user_id: context.ownerId,
-          shop_id: data.shop_id,
-          order_id: orderId,
-          tracking_number: String(trackingNumber),
-          carrier: fWithTrack.tracking_company ?? null,
-        });
-
-        // Espelha transportadora/código/link direto em shop_orders — é o que a
-        // aba Rastreamento lê — sem sobrescrever o que já foi ajustado manualmente.
-        const existing = existingById.get(orderId);
-        const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
-        if (!existing?.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
-        if (!existing?.tracking_code) patch.tracking_code = String(trackingNumber);
-        if (!existing?.tracking_url) {
-          const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
-          if (url) patch.tracking_url = url;
+        const existing = existingByExt.get(String(o.id));
+        if (!existing) continue;
+        const patch = shopifyTrackingPatch(o, existing, template, today);
+        if (patch) {
+          const { error: trErr } = await context.supabase.from("shop_orders").update(patch)
+            .eq("id", existing.id).eq("user_id", context.ownerId);
+          if (trErr) throw new Error(trErr.message);
         }
-        if (!existing?.delivery_status || existing.delivery_status === "pending_shipment") {
-          patch.delivery_status = "shipped";
-          patch.shipped_at = fWithTrack.created_at ? isoDateUS(String(fWithTrack.created_at)) : isoTodayUS();
-        }
-        if (Object.keys(patch).length) {
-          await context.supabase.from("shop_orders").update(patch)
-            .eq("id", orderId).eq("user_id", context.ownerId);
-        }
-      }
-      if (trackingRows.length) {
-        await context.supabase.from("shop_order_tracking")
-          .upsert(trackingRows, { onConflict: "order_id" });
       }
     }
 

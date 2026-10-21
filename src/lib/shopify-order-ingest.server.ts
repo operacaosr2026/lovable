@@ -5,7 +5,8 @@ import { recomputeOrderCostForecast } from "@/lib/shop-orders.functions";
 import { emitEvent } from "@/lib/notify.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { tracked } from "@/lib/system-errors.server";
-import { isoDateUS, isoTodayUS } from "@/lib/timezone";
+import { isoTodayUS } from "@/lib/timezone";
+import { beforeCashflowStart, shopifyOrderRow, shopifyTrackingPatch } from "@/lib/shopify-order-apply";
 
 // Push "Nova venda": loja + número + valor; o toque abre os pedidos do grupo
 // da loja. Só pedido que acabou de entrar (não reprocessamento de antigo).
@@ -27,9 +28,9 @@ async function notifyNewSale(ownerId: string, shopId: string, o: any) {
   });
 }
 
-// Grava em shop_orders um pedido que chegou pelo webhook da Shopify — mesmos
-// campos e mesma regra de rastreio do sync de 10 em 10 min (sync-shop-orders
-// syncOrdersOnlyForShop), que continua rodando como rede de segurança.
+// Grava em shop_orders um pedido que chegou pelo webhook da Shopify — mesmas
+// regras do sync de 10 em 10 min e do botão (shopify-order-apply.ts); o sync
+// continua rodando como rede de segurança.
 // Devolve os donos (workspaces) em que algo relevante mudou, pra avisar as
 // telas abertas.
 export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ changedOwners: string[] }> {
@@ -51,9 +52,8 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
   const cancelledAt = o.cancelled_at ?? null;
 
   for (const s of (settingsRows ?? []) as any[]) {
-    // Corte de data da integração ("pedidos a partir de 01/09"): pedido
-    // anterior não entra (ex.: reembolso de um pedido antigo).
-    if (s.cashflow_start_date && orderDate < s.cashflow_start_date) continue;
+    // Pedido anterior ao início do Caixa não entra (mesma regra do cron e do botão).
+    if (beforeCashflowStart(o, s.cashflow_start_date)) continue;
 
     const { data: before } = await supabaseAdmin.from("shop_orders")
       .select("id,shopify_financial_status,carrier,tracking_code,tracking_url,delivery_status,cancelled_at:raw->>cancelled_at,shopify_updated_at:raw->>updated_at")
@@ -64,15 +64,8 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
     const storedAt = Date.parse((before as any)?.shopify_updated_at ?? "");
     if (Number.isFinite(storedAt) && Date.parse(o.updated_at ?? "") < storedAt) continue;
 
-    const { error: upErr } = await supabaseAdmin.from("shop_orders").upsert({
-      user_id: s.user_id, shop_id: s.shop_id, source: "shopify",
-      external_id: externalId, order_number: o.name ?? null,
-      created_at_shopify: o.created_at,
-      order_date: orderDate,
-      items_count: (o.line_items ?? []).reduce((x: number, li: any) => x + Number(li.quantity ?? 0), 0),
-      revenue: Number(o.total_price ?? 0), currency: o.currency ?? null, raw: o,
-      shopify_financial_status: financial,
-    }, { onConflict: "shop_id,source,external_id" });
+    const { error: upErr } = await supabaseAdmin.from("shop_orders")
+      .upsert(shopifyOrderRow(o, s), { onConflict: "shop_id,source,external_id" });
     if (upErr) throw new Error(upErr.message);
     // Pedido novo (não existia) e não cancelado → push de venda (nunca derruba o webhook).
     if (!before && !cancelledAt) await notifyNewSale(s.user_id, s.shop_id, o).catch((e) => console.error("push venda", e));
@@ -82,36 +75,17 @@ export async function ingestShopifyOrder(storeId: string, o: any): Promise<{ cha
     await tracked(s.user_id, `cost_forecast:${s.shop_id}`, "Previsão de pagamento ao fornecedor (Caixa) não recalculou",
       () => recomputeOrderCostForecast(s.user_id, s.shop_id, orderDate));
 
+    // Rastreio do envio (mesmas regras do cron e do botão — shopify-order-apply.ts).
     let trackingChanged = false;
-    const fulfillments = (o.fulfillments ?? []) as any[];
-    const fWithTrack = [...fulfillments].reverse()
-      .find((f) => f.tracking_number || (f.tracking_numbers && f.tracking_numbers.length));
-    const trackingNumber = fWithTrack ? (fWithTrack.tracking_number ?? fWithTrack.tracking_numbers?.[0] ?? null) : null;
-    if (fWithTrack && trackingNumber) {
+    if ((o.fulfillments ?? []).length) {
       const { data: row } = await supabaseAdmin.from("shop_orders")
         .select("id,carrier,tracking_code,tracking_url,delivery_status")
         .eq("shop_id", s.shop_id).eq("source", "shopify").eq("external_id", externalId).maybeSingle();
       if (row) {
         const { data: integ } = await supabaseAdmin.from("track123_integrations")
           .select("tracking_link_template").eq("shop_id", s.shop_id).maybeSingle();
-        const template: string | null = integ?.tracking_link_template ?? null;
-        const patch: { carrier?: string | null; tracking_code?: string; tracking_url?: string; delivery_status?: string; shipped_at?: string } = {};
-        if (!row.carrier) patch.carrier = fWithTrack.tracking_company ?? null;
-        if (!row.tracking_code) patch.tracking_code = String(trackingNumber);
-        if (template) {
-          // Código do pedido (pode ter sido trocado à mão), não o da Shopify —
-          // mesma regra do sync de 10 em 10 min.
-          const url = template.replace("[CODE]", encodeURIComponent(String(row.tracking_code ?? trackingNumber)));
-          if (url !== row.tracking_url) patch.tracking_url = url;
-        } else if (!row.tracking_url) {
-          const url = fWithTrack.tracking_url ?? fWithTrack.tracking_urls?.[0] ?? null;
-          if (url) patch.tracking_url = url;
-        }
-        if (!row.delivery_status || row.delivery_status === "pending_shipment") {
-          patch.delivery_status = "shipped";
-          patch.shipped_at = fWithTrack.created_at ? isoDateUS(String(fWithTrack.created_at)) : isoTodayUS();
-        }
-        if (Object.keys(patch).length) {
+        const patch = shopifyTrackingPatch(o, row, integ?.tracking_link_template ?? null, isoTodayUS());
+        if (patch) {
           const { error: trErr } = await supabaseAdmin.from("shop_orders").update(patch).eq("id", row.id);
           if (trErr) throw new Error(trErr.message);
           trackingChanged = true;
