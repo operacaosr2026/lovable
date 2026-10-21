@@ -27,8 +27,9 @@ function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      const dest = redirectTo && !redirectTo.startsWith("/login") ? redirectTo : "/";
-      navigate({ to: dest });
+      const dest = redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("/login") ? redirectTo : "/";
+      // href (não to): o destino pode trazer ?busca (ex.: card na aba Caixa).
+      navigate({ href: dest, replace: true });
     }
   }, [loading, user, navigate, redirectTo]);
 

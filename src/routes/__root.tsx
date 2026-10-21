@@ -188,10 +188,12 @@ function AuthGate() {
     return <Navigate to="/login" search={safeRedirect ? { redirect: safeRedirect } : {}} />;
   }
   if (user && isLogin) {
-    const params = new URLSearchParams(typeof location.search === "string" ? location.search : "");
-    const stored = params.get("redirect");
-    const dest = stored && !stored.startsWith("/login") ? stored : "/";
-    return <Navigate to={dest} />;
+    // location.search é objeto (já com o parse); antes lia como texto, achava
+    // vazio e todo link aberto direto (push, favorito, nova aba) caía no Dashboard.
+    const stored = (location.search as { redirect?: unknown }).redirect;
+    const dest = typeof stored === "string" && stored.startsWith("/") && !stored.startsWith("/login") ? stored : "/";
+    // href (prevalece sobre o to): o destino pode trazer ?busca (ex.: card na aba Caixa).
+    return <Navigate to="/" href={dest} replace />;
   }
   if (isLogin || isInvite) return <Outlet />;
   return (
