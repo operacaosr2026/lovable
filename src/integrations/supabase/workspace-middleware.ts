@@ -12,7 +12,9 @@ export async function resolveWorkspaceAccess(supabase: SupabaseClient<Database>,
     .select("role")
     .eq("user_id", userId)
     .maybeSingle();
-  const role: WorkspaceRole = (roleRow?.role as WorkspaceRole) ?? "admin";
+  // Sem papel = membro sem permissão nenhuma (antes virava admin). Toda conta
+  // nasce com papel (handle_new_user), então isso só pega conta criada por fora.
+  const role: WorkspaceRole = (roleRow?.role as WorkspaceRole) ?? "member";
 
   let ownerId = userId;
   const permissions: WorkspacePermission[] = [];

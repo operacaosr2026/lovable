@@ -259,22 +259,13 @@ export const updateMemberPermissions = createServerFn({ method: "POST" })
         .eq("owner_id", userId).eq("member_id", data.member_id);
       if (homeErr) throw new Error(homeErr.message);
     }
-    // wipe & rewrite
-    await supabase
-      .from("member_permissions")
-      .delete()
-      .eq("owner_id", userId)
-      .eq("member_id", data.member_id);
-    if (data.permissions.length) {
-      const rows = data.permissions.map((p) => ({
-        owner_id: userId,
-        member_id: data.member_id,
-        section: p.section,
-        resource_id: p.resource_id ?? null,
-      }));
-      const { error } = await supabase.from("member_permissions").insert(rows);
-      if (error) throw new Error(error.message);
-    }
+    // Apaga e regrava numa transação só (replace_member_permissions): em dois
+    // passos, uma falha no insert deixava o membro sem acesso nenhum.
+    const { error } = await supabase.rpc("replace_member_permissions" as any, {
+      p_member: data.member_id,
+      p_perms: data.permissions.map((p) => ({ section: p.section, resource_id: p.resource_id ?? null })),
+    });
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 

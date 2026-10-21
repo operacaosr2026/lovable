@@ -17,7 +17,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import {
   aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
-  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch,
+  supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, roundCents,
 } from "@/lib/finance-rules";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
 // usado para "hoje" no caixa) — evita depender do fuso de cada loja Shopify,
@@ -1036,7 +1036,7 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
         byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
       }
       const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
-        amount, date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
+        amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
       }));
       const { error: pendErr } = await supabaseAdmin.rpc("replace_pending_payouts" as any, {
         p_user_id: context.ownerId, p_shop_id: data.shop_id, p_rows: provisionals,
@@ -1605,7 +1605,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   const items = (orders ?? []).reduce((s: number, o: any) => s + Number(o.items_count ?? 0), 0);
   const unit = await unitCostFor(context.supabase, context.ownerId, shopId, orderDate, settings.default_unit_cost);
   const products = preloadedProducts ?? await costProductsFor(context.supabase, context.ownerId);
-  const amount = (orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, products, unit, o.tags, costOpts(o)), 0);
+  const amount = roundCents((orders ?? []).reduce((s: number, o: any) => s + orderLineItemsCost(o.line_items, products, unit, o.tags, costOpts(o)), 0));
 
   await ensureCostCategory(context.supabase, context.ownerId, shopId);
 
@@ -1846,6 +1846,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       const unit = costByDate.get(o.order_date as string) ?? defaultCost;
       totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags, costOpts(o as any));
     }
+    totalAmount = roundCents(totalAmount);
 
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
 
@@ -1876,7 +1877,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       const mergedOrderDates = Array.from(
         new Set([...(existingBatch.order_dates as string[] ?? []), ...sortedDates]),
       ).sort();
-      totalAmount += Number(existingBatch.total_amount ?? 0);
+      totalAmount = roundCents(totalAmount + Number(existingBatch.total_amount ?? 0));
       totalItems += Number(existingBatch.total_items ?? 0);
       const mergedTotalOrders = Number(existingBatch.total_orders ?? 0) + orders.length;
       const mergedDesc = mergedOrderDates.length === 1
@@ -2147,6 +2148,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
         const unit = costByDate.get(o.order_date as string) ?? defaultCost;
         totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags, costOpts(o as any));
       }
+      totalAmount = roundCents(totalAmount);
 
       const batchNumber = await nextBatchNumber(context, data.shop_id);
       const desc = dates.length === 1

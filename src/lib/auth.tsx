@@ -7,13 +7,7 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
-  signUpWithPassword: (
-    email: string,
-    password: string,
-    options?: { fullName?: string; inviteToken?: string }
-  ) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
 };
 
@@ -37,41 +31,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    if (error) throw error;
-  };
-
+  // Conta nova só por convite (acceptInvitation, no servidor) — o cadastro é
+  // fechado no banco (handle_new_user). Sem signUp nem login Google aqui.
   const signInWithPassword = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     recordLogin().catch(() => {});
-  };
-
-  const signUpWithPassword = async (
-    email: string,
-    password: string,
-    options?: { fullName?: string; inviteToken?: string }
-  ) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-        data: {
-          ...(options?.fullName ? { full_name: options.fullName } : {}),
-          ...(options?.inviteToken ? { invite_token: options.inviteToken } : {}),
-        },
-      },
-    });
-    if (error) throw error;
-    if (data.session) recordLogin().catch(() => {});
-    return { needsConfirmation: !data.session };
   };
 
   const signOut = async () => {
@@ -84,9 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user: session?.user ?? null,
         loading,
-        signInWithGoogle,
         signInWithPassword,
-        signUpWithPassword,
         signOut,
       }}
     >

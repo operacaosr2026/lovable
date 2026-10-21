@@ -17,9 +17,9 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { ensureShopifyWebhooks } from "@/lib/shopify-webhooks.server";
 import { orderDateFor } from "@/lib/order-date";
 import { broadcast } from "@/lib/realtime.server";
-import { isoTodayUS } from "@/lib/timezone";
+import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { recordCronRun } from "@/lib/cron-runs.server";
-import { relevantPayouts, payoutPatch } from "@/lib/finance-rules";
+import { relevantPayouts, payoutPatch, roundCents } from "@/lib/finance-rules";
 const PROCESSING_DELAY_DAYS = 7;
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
@@ -117,7 +117,8 @@ async function saveOrders(s: any, orders: any[], today: string) {
     }
     if (!existing.delivery_status || existing.delivery_status === "pending_shipment") {
       patch.delivery_status = "shipped";
-      patch.shipped_at = fWithTrack.created_at ? String(fWithTrack.created_at).slice(0, 10) : today;
+      // Dia de NY, igual ao webhook e ao botão (o slice pegava o dia em UTC).
+      patch.shipped_at = fWithTrack.created_at ? isoDateUS(String(fWithTrack.created_at)) : today;
     }
     if (Object.keys(patch).length) {
       const { error } = await supabaseAdmin.from("shop_orders").update(patch)
@@ -229,41 +230,13 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   return relevant.length;
 }
 
+// Disputas (chargeback e inquiry) — mesma função do webhook de disputas. Os
+// reembolsos/chargebacks não viram lançamento no Caixa: os depósitos da Shopify
+// já vêm descontados, e o lucro lê shop_orders/shop_order_disputes. (Antes havia
+// um upsert de lançamentos "shopify_auto_sync" que nenhuma tela lia e que falhava
+// sempre em silêncio — nunca gravou nada.)
 async function syncRefundsAndChargebacks(shopId: string, userId: string, domain: string, token: string) {
-  const transactions = await fetchBalanceTransactions(domain, token, 10);
-  const refunds = transactions.filter((t: any) => t.type === "refund" && t.amount != null && t.id != null);
-
   const disputes = await fetchDisputes(domain, token, 10);
-  const chargebacks = disputes.filter((d: any) => d.type === "chargeback" && d.amount != null && d.id != null);
-
-  const cashRows = [
-    ...refunds.map((t: any) => ({
-      user_id: userId, shop_id: shopId,
-      kind: "expense" as const,
-      amount: Math.abs(Number(t.amount)),
-      date: String(t.processed_at).slice(0, 10),
-      category: "Reembolso",
-      description: "Reembolso Shopify",
-      source: "shopify_auto_sync",
-      shopify_transaction_id: String(t.id),
-    })),
-    ...chargebacks.map((d: any) => ({
-      user_id: userId, shop_id: shopId,
-      kind: "expense" as const,
-      amount: Math.abs(Number(d.amount)),
-      date: String(d.initiated_at).slice(0, 10),
-      category: "Chargeback",
-      description: "Chargeback Shopify",
-      source: "shopify_auto_sync",
-      shopify_transaction_id: `dispute_${d.id}`,
-    })),
-  ];
-  if (cashRows.length) {
-    await supabaseAdmin.from("shop_cash_entries")
-      .upsert(cashRows as any[], { onConflict: "shop_id,shopify_transaction_id" });
-  }
-
-  // Grava toda disputa (chargeback e inquiry) — mesma função do webhook de disputas.
   await upsertShopDisputes(shopId, userId, disputes);
 }
 
@@ -299,7 +272,7 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
     byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
   }
   const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
-    amount, date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
+    amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
   }));
   // Apaga e recria numa transação só, com trava por loja (botão e cron juntos duplicavam).
   const { error } = await supabaseAdmin.rpc("replace_pending_payouts" as any, { p_user_id: userId, p_shop_id: shopId, p_rows: provisionals });

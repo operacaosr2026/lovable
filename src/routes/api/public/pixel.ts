@@ -2,6 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isoDateUS } from "@/lib/timezone";
+import { allowPublicLookup, clientIp } from "@/lib/public-tracking.server";
+
+// Público e sem assinatura (o pixel da Shopify não assina): sem limite, qualquer
+// um inflava o funil de qualquer loja. Um cliente navegando de verdade manda
+// poucos eventos — acima disso o evento é descartado em silêncio.
+const PIXEL_MAX = 60;
+const PIXEL_WINDOW_MIN = 15;
 
 // Recebe os eventos do Custom Pixel da Shopify (código em funnelPixelCode,
 // lib/product-funnel-pixel.ts) pro funil por produto: product_viewed na matriz vira
@@ -42,6 +49,7 @@ export const Route = createFileRoute("/api/public/pixel")({
 
         const { data: stores } = await supabaseAdmin.from("shopify_stores").select("id,user_id").eq("shop_domain", shop);
         if (!stores?.length) return ok();
+        if (!(await allowPublicLookup(clientIp(request.headers), "pixel", PIXEL_MAX, PIXEL_WINDOW_MIN))) return ok();
 
         const day = isoDateUS(new Date());
         const seen = new Map<string, string>();

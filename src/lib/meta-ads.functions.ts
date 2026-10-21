@@ -445,7 +445,7 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
       user_id: ownerId,
       shop_id: data.shop_id,
       kind: "expense",
-      amount: spend,
+      amount: Math.round(spend * 100) / 100,
       date,
       category: SPEND_CATEGORY,
       description: "Gasto Meta Ads (sincronizado)",

@@ -106,27 +106,26 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
   };
 }
 
-// Limite de tentativas da busca por pedido + contato (sem login): sem isso dava
-// pra testar números de pedido e telefones à vontade. Por IP: LOOKUP_MAX por
-// LOOKUP_WINDOW_MIN. Falha no banco (ou tabela public_rate_limits ainda não
-// criada) não bloqueia o cliente de verdade.
+// Limite de tentativas das rotas públicas, por IP: `max` por `windowMin`.
+// Busca por pedido + contato (sem login): sem isso dava pra testar números de
+// pedido e telefones à vontade. Contar e registrar é uma transação só
+// (public_rate_limit_hit) — rajadas paralelas passavam do limite. Erro no banco
+// bloqueia (antes liberava tudo).
 const LOOKUP_MAX = 10;
 const LOOKUP_WINDOW_MIN = 15;
 export function clientIp(headers: Headers): string {
   return (headers.get("x-forwarded-for")?.split(",")[0] ?? headers.get("x-real-ip") ?? "").trim() || "desconhecido";
 }
-export async function allowPublicLookup(ip: string, bucket = "order_lookup"): Promise<boolean> {
+export async function allowPublicLookup(ip: string, bucket = "order_lookup", max = LOOKUP_MAX, windowMin = LOOKUP_WINDOW_MIN): Promise<boolean> {
   try {
-    const since = new Date(Date.now() - LOOKUP_WINDOW_MIN * 60_000).toISOString();
-    const { count, error } = await supabaseAdmin.from("public_rate_limits" as any)
-      .select("id", { count: "exact", head: true }).eq("bucket", bucket).eq("ip", ip).gte("at", since);
-    if (error) return true;
-    if ((count ?? 0) >= LOOKUP_MAX) return false;
-    await supabaseAdmin.from("public_rate_limits" as any).insert({ bucket, ip });
-    await supabaseAdmin.from("public_rate_limits" as any).delete().lt("at", new Date(Date.now() - 86_400_000).toISOString());
-    return true;
-  } catch {
-    return true;
+    const { data, error } = await supabaseAdmin.rpc("public_rate_limit_hit" as any, {
+      p_bucket: bucket, p_ip: ip, p_max: max, p_window_min: windowMin,
+    });
+    if (error) { console.error("rate limit", bucket, error.message); return false; }
+    return data === true;
+  } catch (e) {
+    console.error("rate limit", bucket, e);
+    return false;
   }
 }
 

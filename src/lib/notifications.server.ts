@@ -13,7 +13,7 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
 const SHOPIFY_STALE_HOURS = 13;
-const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:", "product_missing:"];
+const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:", "product_missing:", "stuck:"];
 
 // Rastreio (17track): cron a cada 30 min. A chave "track123:<loja>" do aviso
 // ficou com o nome antigo pra não duplicar avisos já abertos.
@@ -407,6 +407,28 @@ export async function refreshSystemNotifications(ownerId: string) {
 
   // Rotinas automáticas com erro ou paradas (histórico em cron_runs).
   for (const a of await cronHealthAlerts()) want.set(a.key, { level: a.level, title: a.title, body: a.body, link: a.link });
+
+  // E-mail ao cliente preso em "enviando" (o processo morreu no meio do envio):
+  // de propósito não é reenviado sozinho (pode ter saído) — alguém confere.
+  {
+    const stuckBefore = new Date(Date.now() - 15 * 60_000).toISOString();
+    const [notices, replies] = await Promise.all([
+      supabaseAdmin.from("order_notices").select("id", { count: "exact", head: true })
+        .eq("owner_id", ownerId).eq("status", "enviando").or(`sending_at.is.null,sending_at.lt.${stuckBefore}`),
+      supabaseAdmin.from("support_messages").select("id", { count: "exact", head: true })
+        .eq("owner_id", ownerId).eq("auto_reply", "enviando").lt("auto_reply_at", stuckBefore),
+    ]);
+    if (notices.count) want.set("stuck:order_notices", {
+      level: "warning", link: "/notificacoes",
+      title: `${notices.count} aviso${notices.count === 1 ? "" : "s"} ao cliente travado${notices.count === 1 ? "" : "s"} em "enviando"`,
+      body: "O envio parou no meio e pode ter saído ou não. Confira nos Enviados do Zoho antes de mandar de novo.",
+    });
+    if (replies.count) want.set("stuck:auto_reply", {
+      level: "warning", link: "/atendimento",
+      title: `${replies.count} resposta${replies.count === 1 ? "" : "s"} automática${replies.count === 1 ? "" : "s"} travada${replies.count === 1 ? "" : "s"} em "enviando"`,
+      body: "A resposta da IA pode ter saído ou não. Confira nos Enviados do Zoho e responda à mão se faltar.",
+    });
+  }
 
   const current = must(await supabaseAdmin.from("app_notifications")
     .select("id,key,level,title,body,link,resolved_at")

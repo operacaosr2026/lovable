@@ -4,6 +4,9 @@ import { tracked } from "@/lib/system-errors.server";
 import { fetchWithRetry } from "@/lib/http";
 import { handleShopifyAccess } from "@/lib/shopify-access.server";
 import { disputeStatusesBefore, notifyDisputeResults } from "@/lib/dispute-results.server";
+import { isoDateUS } from "@/lib/timezone";
+
+const FINAL_STATUS = new Set(["won", "lost"]);
 
 // Grava disputas (chargeback e inquiry) da Shopify Payments em
 // shop_order_disputes — usado pelo sync completo (de hora em hora) e pelo
@@ -19,12 +22,27 @@ export async function upsertShopDisputes(shopId: string, userId: string, dispute
     reason: d.reason ?? null,
     amount: Math.abs(Number(d.amount ?? 0)),
     currency: d.currency ?? null,
-    initiated_at: String(d.initiated_at).slice(0, 10),
+    // Dia de NY (como o resto do sistema) — o slice pegava o dia em UTC.
+    initiated_at: d.initiated_at ? isoDateUS(d.initiated_at) : String(d.initiated_at).slice(0, 10),
     finalized_on: d.finalized_on ? String(d.finalized_on).slice(0, 10) : null,
     evidence_due_by: d.evidence_due_by ?? null,
   }));
   if (!rows.length) return;
   const before = await disputeStatusesBefore(shopId, rows.map((r) => r.shopify_dispute_id));
+  // A Shopify não garante a ordem dos webhooks: um disputes/update antigo
+  // chegando depois do resultado voltava a disputa ganha/perdida pra aberta
+  // (até o sync completo). Resultado final não regride.
+  const finalIds = rows.filter((r) => FINAL_STATUS.has(before.get(r.shopify_dispute_id) ?? "") && !FINAL_STATUS.has(r.status ?? ""))
+    .map((r) => r.shopify_dispute_id);
+  if (finalIds.length) {
+    const { data: kept } = await supabaseAdmin.from("shop_order_disputes").select("shopify_dispute_id,status,finalized_on")
+      .eq("shop_id", shopId).in("shopify_dispute_id", finalIds);
+    const keptBy = new Map((kept ?? []).map((k: any) => [k.shopify_dispute_id as string, k]));
+    for (const r of rows) {
+      const k: any = keptBy.get(r.shopify_dispute_id);
+      if (k) { r.status = k.status; r.finalized_on = k.finalized_on; }
+    }
+  }
   const { error } = await supabaseAdmin.from("shop_order_disputes")
     .upsert(rows as any[], { onConflict: "shop_id,shopify_dispute_id" });
   if (error) throw new Error(error.message);

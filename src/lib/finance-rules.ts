@@ -1,4 +1,5 @@
 import { orderDateFor } from "@/lib/order-date";
+import { isoDateUS } from "@/lib/timezone";
 
 // Regras de dinheiro em funções puras (só cálculo, sem banco): reembolso,
 // chargeback, diluição, previsão de pagamento ao fornecedor no Caixa e
@@ -10,6 +11,12 @@ export type RefundCbRow = {
   shop_id: string; refAmt: number; cbAmt: number;
   refByDate: Record<string, number>; cbByDate: Record<string, number>;
 };
+
+// Valor em centavos antes de gravar: somas em JS deixavam resíduo de ponto
+// flutuante no banco (2502.4000000000005), e conferência por igual falhava.
+export function roundCents(v: number) {
+  return Math.round(v * 100) / 100;
+}
 
 export function addDayISO(d: string, n: number) {
   const dt = new Date(`${d}T00:00:00Z`);
@@ -24,9 +31,10 @@ export function monthEndCapped(m: string, cap: string) {
   return last < cap ? last : cap;
 }
 
-// Valor reembolsado de um pedido por dia do reembolso (raw.refunds): o que
-// saiu de dinheiro nas transações de reembolso/estorno (com sucesso ou ainda
-// pendentes). Reembolso parcial "pra manter o cliente" (devolve 30%) tira o
+// Valor reembolsado de um pedido por dia do reembolso (raw.refunds): o que saiu
+// de dinheiro nas transações de reembolso/estorno (com sucesso ou ainda
+// pendentes). O dia é o de NY, como no resto do sistema (antes era o dia em UTC
+// e reembolso das 20h–24h caía no dia seguinte). Reembolso parcial "pra manter o cliente" (devolve 30%) tira o
 // item do pedido — o total atual vai a 0 — e a Shopify registra a parte NÃO
 // devolvida como ajuste "refund_discrepancy"; antes a diferença de preço
 // contava como reembolso e o pedido inteiro saía do lucro. A diferença de preço
@@ -39,7 +47,8 @@ export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: 
     for (const t of (r.transactions ?? [])) {
       if ((t.kind === "refund" || t.kind === "void") && (t.status === "success" || t.status === "pending")) {
         const amt = Number(t.amount ?? 0);
-        const date = String(t.processed_at || r.created_at || "").slice(0, 10) || fallbackDate;
+        const when = t.processed_at || r.created_at;
+        const date = when ? isoDateUS(when) : fallbackDate;
         byDate[date] = (byDate[date] ?? 0) + amt;
         txSum += amt;
       }
@@ -52,7 +61,7 @@ export function orderRefundAmountByDate(o: any, fallbackDate: string): { total: 
   const extra = Math.max(0, Number(o.total_price ?? 0) - Number(o.current_total_price ?? 0) - discrepancy);
   if (extra > 0) {
     const lastRefundDate = (o.refunds ?? [])
-      .map((r: any) => String(r.created_at ?? "").slice(0, 10))
+      .map((r: any) => (r.created_at ? isoDateUS(r.created_at) : ""))
       .filter(Boolean).sort().pop();
     const date = lastRefundDate || fallbackDate;
     byDate[date] = (byDate[date] ?? 0) + extra;

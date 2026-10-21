@@ -7,6 +7,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { sanitizeEvents } from "@/lib/tracking-display";
 import { getZohoAccount } from "@/lib/zoho-mail.server";
 import { renderNotice, NOTICE_MIN_DAYS, NOTICE_MAX_DAYS } from "@/lib/order-notices";
+import { isoDateUS } from "@/lib/timezone";
 import type { Database } from "@/integrations/supabase/types";
 
 // Aba Notificações: e-mail manual pro cliente de pedido atrasado, antes que ele
@@ -153,7 +154,8 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
     const shops = await activeShops(ownerId);
     if (!shops.size) return [];
     const now = Date.now();
-    const day = (offset: number) => new Date(now - offset * 86_400_000).toISOString().slice(0, 10);
+    // Dia de NY (order_date é dia de NY) — o toISOString dava o dia em UTC.
+    const day = (offset: number) => isoDateUS(now - offset * 86_400_000);
 
     // Em aberto: sem entrega/devolução, sem cancelamento nem reembolso.
     const { data: orders, error } = await selectAll<any>(supabaseAdmin.from("shop_orders")

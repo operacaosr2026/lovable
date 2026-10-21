@@ -251,6 +251,11 @@ export const deleteLgCard = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { ownerId } = context;
 
+    // Posse primeiro: antes lia as lojas e recalculava a automação delas mesmo
+    // com o id de um card de outro dono.
+    const { data: owned } = await supabaseAdmin.from("lg_cards").select("id").eq("id", data.id).eq("user_id", ownerId).maybeSingle();
+    if (!owned) throw new Error("Card não encontrado.");
+
     const { data: links } = await supabaseAdmin.from("lg_card_shops").select("shop_id").eq("card_id", data.id);
     const shopIds = (links ?? []).map((s: any) => s.shop_id as string);
 
