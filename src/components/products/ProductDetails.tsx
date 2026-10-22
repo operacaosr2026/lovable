@@ -13,6 +13,7 @@ import { ProductionTab } from "@/components/shops/StoreProduction";
 import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
 import { ProductPageTab } from "@/components/products/ProductPageTab";
 import { ProductCompetitors } from "@/components/products/ProductCompetitors";
+import { ProductAds } from "@/components/products/ProductAds";
 
 const GROUPS = [
   {
@@ -117,16 +118,7 @@ export function ProductDetails({ productId }: { productId: string }) {
       {tab === "pagina" && <ProductPageTab productId={productId} />}
       {tab === "shopify" && <ProductShopifyTab productId={productId} />}
       {tab === "concorrentes" && <ProductCompetitors productId={productId} />}
-      {tab === "anuncios" && <ComingSoon title="Anúncios" description="Em breve: publique as campanhas deste produto nas contas de anúncio." />}
-    </div>
-  );
-}
-
-function ComingSoon({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-border py-16 text-center">
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="text-xs text-muted-foreground mt-1">{description}</div>
+      {tab === "anuncios" && <ProductAds productId={productId} />}
     </div>
   );
 }

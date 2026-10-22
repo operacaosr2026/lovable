@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createProductInStore, findExistingProduct, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
 import { isVideoMime } from "@/lib/product-page";
+import { matrizStoreIds } from "@/lib/store-roles.server";
 import {
   REQUIRED_SCOPES, UPDATE_PARTS, buildVariants, emptyListing, imagesFor,
   type ShopifyListing, type ShopifyOption, type StoreRole, type VariantTemplate,
@@ -47,7 +48,7 @@ async function loadProduct(ownerId: string, productId: string) {
 }
 
 // Lojas da coluna "Ativas" do Banco de Lojas (só nelas se publica produto),
-// com papel (matriz/subloja) vindo dos grupos e se a conexão já tem as
+// com papel (matriz/subloja: o mais usado nas publicações, senão o do grupo) e se a conexão já tem as
 // permissões de criar produto.
 async function loadStores(ownerId: string) {
   const { data: columns } = await supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId);
@@ -57,10 +58,7 @@ async function loadStores(ownerId: string) {
     .select("id,name,shop_domain,scope,access_token,is_placeholder").eq("user_id", ownerId).eq("is_placeholder", false)
     .in("board_column_id", activeIds).order("name");
   const ids = (stores ?? []).map((s) => s.id);
-  const { data: roles } = ids.length
-    ? await supabaseAdmin.from("shop_group_stores").select("shopify_store_id,role").in("shopify_store_id", ids)
-    : { data: [] as { shopify_store_id: string; role: string }[] };
-  const matriz = new Set((roles ?? []).filter((r) => r.role === "matriz").map((r) => r.shopify_store_id));
+  const matriz = await matrizStoreIds(ownerId, ids);
   const list = (stores ?? []).filter((s) => s.shop_domain);
   const live = await Promise.all(list.map((s) => (s.access_token ? liveShopifyScopes(s.shop_domain!, s.access_token) : null)));
   return list.map((s, i) => {
