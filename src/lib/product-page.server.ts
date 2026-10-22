@@ -2,7 +2,7 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { fetchWithRetry } from "@/lib/http";
 import { TEMPLATE_FILE_NAME, TEMPLATE_JSON } from "@/lib/pagefly/pgvendas2.template";
 import { GALLERY_VIDEO_MARKER, SRX_GALLERY_CODE } from "@/lib/pagefly/srx-gallery";
-import { htmlToText, textToHtml, type CdnImage, type PageReview, type ProductPageData } from "@/lib/product-page";
+import { htmlToText, textToHtml, type CdnImage, type PageReview, type PageStory, type ProductPageData } from "@/lib/product-page";
 
 const API = "2026-07";
 
@@ -154,6 +154,8 @@ export type TemplateTargets = {
   testimonialsSlideshow: string | null; finalImages: string[];
   // Blocos em código: depoimentos em texto (#srx-reviews) e produtos recomendados (#srx-recommendations).
   reviewsHtml: string | null; recsHtml: string | null;
+  // Carrossel de vídeos (data-srx-stories) e o título da seção dele.
+  storiesHtml: string | null; storiesHeading: string | null;
 };
 export type PageTemplate = { doc: Doc; jsonName: string; targets: TemplateTargets };
 
@@ -204,6 +206,8 @@ export function findTargets(doc: Doc): TemplateTargets {
   const penult = withContent.length >= 2 ? subtree(withContent[withContent.length - 1].id) : [];
   const htmlWith = (re: RegExp) => all.find((i) => i.type === "Custom.HTML" && re.test(String(i.data?.code ?? ""))) ?? null;
   const paragraphs = penult.filter(isParagraph);
+  const stories = htmlWith(/data-srx-stories/);
+  const storiesSection = stories ? sections.find((s) => subtree(s.id).some((i) => i.id === stories.id)) : undefined;
 
   return {
     title: penult.find(isHeading)?.id ?? null,
@@ -218,6 +222,8 @@ export function findTargets(doc: Doc): TemplateTargets {
     finalImages: penult.filter((i) => isImage(i) && !inSlides.has(i.id)).slice(0, 3).map((i) => i.id),
     reviewsHtml: htmlWith(/id=["']srx-reviews["']/)?.id ?? null,
     recsHtml: htmlWith(/id=["']srx-recommendations["']/)?.id ?? null,
+    storiesHtml: stories?.id ?? null,
+    storiesHeading: storiesSection ? subtree(storiesSection.id).find(isHeading)?.id ?? null : null,
   };
 }
 
@@ -297,6 +303,7 @@ export function templateBlocks(tpl: PageTemplate) {
     reviews_rating: oneLine(rev.match(REVIEWS_RATING_RE)?.[2] ?? ""),
     reviews_count: oneLine(rev.match(REVIEWS_COUNT_RE)?.[2] ?? ""),
     reviews,
+    stories_heading: tpl.targets.storiesHeading ? htmlToText(String(tpl.doc.items.find((i) => i.id === tpl.targets.storiesHeading)?.data?.value ?? "")) : "",
     recs_title: oneLine(recs.match(/<h2 class=["']srx-rec-title["'][^>]*>([\s\S]*?)<\/h2>/i)?.[1] ?? ""),
   };
 }
@@ -361,8 +368,24 @@ function buildRecsCode(code: string, page: ProductPageData, cards: RecCard[]): s
   return out.replace(/(<span id=["']srxTotal["']>)\d*(<\/span>)/, (_m, a, b) => `${a}${cards.length}${b}`);
 }
 
+// ── Vídeos em stories (data-srx-stories) ──
+
+const STORIES_LIST_RE = /(const\s+VIDEOS\s*=\s*)\[[\s\S]*?\];/;
+
+function storiesCount(code: string) {
+  return code.match(STORIES_LIST_RE)?.[0].match(/\bvideo\s*:/g)?.length ?? 0;
+}
+
+function buildStoriesCode(code: string, stories: PageStory[], urls: (CdnImage | undefined)[]): string {
+  const list = stories.flatMap((s, i) => (urls[i] ? [{
+    video: urls[i].url, name: s.person.trim(), product: s.product.trim(), link: s.link.trim() || "#", verified: s.verified,
+  }] : []));
+  if (list.length === 0) return code;
+  return code.replace(STORIES_LIST_RE, (_m, open) => `${open}${JSON.stringify(list, null, 2).replace(/</g, "\\u003c").replace(/\n/g, "\n  ")};`);
+}
+
 // Ordem das partes editáveis como aparecem na página (o formulário segue).
-export type PageSectionKey = "carousel" | "details" | "testimonials" | "reviews" | "final" | "recs";
+export type PageSectionKey = "carousel" | "details" | "stories" | "testimonials" | "reviews" | "final" | "recs";
 function sectionOrder(tpl: PageTemplate): PageSectionKey[] {
   const t = tpl.targets;
   const byId = new Map(tpl.doc.items.map((i) => [i.id, i]));
@@ -371,11 +394,11 @@ function sectionOrder(tpl: PageTemplate): PageSectionKey[] {
   const walk = (id: string) => { pos.set(id, pos.size); for (const c of byId.get(id)?.children ?? []) walk(c); };
   if (body) walk(body.id);
   const anchors: [PageSectionKey, string | null | undefined][] = [
-    ["carousel", t.galleryHtml ?? t.mainImage], ["details", t.details], ["testimonials", t.testimonialsSlideshow],
+    ["carousel", t.galleryHtml ?? t.mainImage], ["details", t.details], ["stories", t.storiesHtml], ["testimonials", t.testimonialsSlideshow],
     ["reviews", t.reviewsHtml], ["final", t.title ?? t.text1 ?? t.finalImages[0]], ["recs", t.recsHtml],
   ];
   const at = (id: string | null | undefined) => (id && pos.has(id) ? pos.get(id)! : Number.MAX_SAFE_INTEGER);
-  return anchors.filter(([k, id]) => id || (k !== "reviews" && k !== "recs"))
+  return anchors.filter(([k, id]) => id || (k !== "reviews" && k !== "recs" && k !== "stories"))
     .map(([k, id], i) => ({ k, p: at(id), i }))
     .sort((a, b) => a.p - b.p || a.i - b.i)
     .map((x) => x.k);
@@ -395,6 +418,7 @@ export function templatePreview(tpl: PageTemplate) {
     finals: t.finalImages.length,
     reviews: t.reviewsHtml ? [...codeOf(tpl, t.reviewsHtml).matchAll(REVIEW_CARD_RE)].length : null,
     recs: !!t.recsHtml,
+    stories: t.storiesHtml ? storiesCount(codeOf(tpl, t.storiesHtml)) : null,
     order: sectionOrder(tpl),
     buttonLink: t.button ? String(byId.get(t.button)?.data?.link ?? "") : null,
     missing: missingTargets(t),
@@ -443,7 +467,7 @@ function resizeSlideshow(items: Item[], styles: Style[], slideshowId: string, co
 }
 
 export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
-  carousel: CdnImage[]; testimonials: CdnImage[]; finals: CdnImage[]; recs?: RecCard[];
+  carousel: CdnImage[]; testimonials: CdnImage[]; finals: CdnImage[]; recs?: RecCard[]; stories?: (CdnImage | undefined)[];
 }): { bytes: Uint8Array; fileName: string; warnings: string[] } {
   const doc = structuredClone(tpl.doc);
   const t = tpl.targets;
@@ -452,7 +476,9 @@ export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
   let map = byId();
 
   // Textos (vazio = mantém o do modelo).
-  const texts: [string | null, string][] = [[t.title, page.title], [t.text1, page.text1], [t.text2, page.text2], [t.details, page.details]];
+  const texts: [string | null, string][] = [
+    [t.title, page.title], [t.text1, page.text1], [t.text2, page.text2], [t.details, page.details], [t.storiesHeading, page.stories_heading],
+  ];
   for (const [id, text] of texts) {
     const item = id ? map.get(id) : undefined;
     if (item?.data && text.trim()) item.data.value = textToHtml(text);
@@ -505,6 +531,8 @@ export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
   if (reviewsItem?.data) reviewsItem.data.code = buildReviewsCode(String(reviewsItem.data.code), page);
   const recsItem = t.recsHtml ? map.get(t.recsHtml) : undefined;
   if (recsItem?.data) recsItem.data.code = buildRecsCode(String(recsItem.data.code), page, images.recs ?? []);
+  const storiesItem = t.storiesHtml ? map.get(t.storiesHtml) : undefined;
+  if (storiesItem?.data) storiesItem.data.code = buildStoriesCode(String(storiesItem.data.code), page.stories, images.stories ?? []);
 
   const missing = missingTargets(t);
   if (missing.length) warnings.push(`Não achei no modelo (ficou como está): ${missing.join(", ")}.`);

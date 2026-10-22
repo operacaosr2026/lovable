@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AlertTriangle, AlignLeft, ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Download, FileText, FileUp, Film, ImageOff, Images,
-  LayoutPanelTop, Loader2, MessageSquareQuote, RotateCcw, ShoppingBag, Upload, X, type LucideIcon,
+  BadgeCheck, Clapperboard, LayoutPanelTop, Loader2, MessageSquareQuote, RotateCcw, ShoppingBag, Upload, X, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,12 +12,12 @@ import {
 } from "@/lib/product-page.functions";
 import { addProductImage, deleteProductImage } from "@/lib/products.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { isVideoMime, type PageTestimonial, type ProductPageData } from "@/lib/product-page";
+import { isVideoMime, type PageStory, type PageTestimonial, type ProductPageData } from "@/lib/product-page";
 import { AutoTextarea } from "@/components/shops/StoreProduction";
 import { Field, RecsEditor, ReviewsEditor, areaCls, inputCls, move } from "@/components/products/page-fields";
 
 type Page = Omit<ProductPageData, "cdn">;
-type SectionKey = "carousel" | "details" | "testimonials" | "reviews" | "final" | "recs";
+type SectionKey = "carousel" | "details" | "stories" | "testimonials" | "reviews" | "final" | "recs";
 const uploadBtn = "h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50";
 
 // Aba "Página": preenche o modelo do PageFly e gera o .pagefly. As seções do
@@ -94,6 +94,33 @@ export function ProductPageTab({ productId }: { productId: string }) {
     }
     if (added.length) {
       const next = { ...page, [kind]: [...page[kind], ...added] };
+      setPage(next);
+      setThumbs((t) => ({ ...t, ...views }));
+      save.mutate(next);
+    }
+  };
+
+  // Vídeos (stories): arquivos da própria página, cada um com nome, produto e link.
+  const sendStories = async (list: FileList | null) => {
+    const files = Array.from(list ?? []).filter((f) => f.type.startsWith("video/"));
+    if (!files.length) return;
+    track("stories", files.length);
+    const added: PageStory[] = [];
+    const views: Record<string, string> = {};
+    for (const file of files) {
+      try {
+        const r = await uploadFn({ data: { product_id: productId, name: file.name } });
+        const { error: upErr } = await supabase.storage.from("store-production").uploadToSignedUrl(r.path, r.token, file, { contentType: file.type || undefined });
+        if (upErr) throw upErr;
+        added.push({ id: r.id, path: r.path, name: file.name, person: "", product: "", link: "", verified: true });
+        if (r.viewUrl) views[r.id] = r.viewUrl;
+      } catch (e: any) {
+        toast.error(`${file.name}: ${e?.message ?? "erro ao enviar"}`);
+      }
+      track("stories", -1);
+    }
+    if (added.length) {
+      const next = { ...page, stories: [...page.stories, ...added] };
       setPage(next);
       setThumbs((t) => ({ ...t, ...views }));
       save.mutate(next);
@@ -189,6 +216,17 @@ export function ProductPageTab({ productId }: { productId: string }) {
       done: !!page.details.trim(),
       hint: "Enter = nova linha; **texto** = negrito",
       body: <AutoTextarea value={page.details} onChange={(e) => set({ details: e.target.value })} className={areaCls} />,
+    },
+    stories: data.template.stories === null ? null : {
+      title: "Vídeos (stories)", icon: Clapperboard,
+      done: page.stories.length > 0 && page.stories.every((v) => v.person.trim() && v.product.trim()),
+      hint: page.stories.length ? `${page.stories.length} vídeos` : "vazio = ficam os do modelo",
+      body: (
+        <StoriesEditor
+          heading={page.stories_heading} stories={page.stories} thumbs={thumbs} busy={busy("stories")} count={uploading.stories}
+          onFiles={sendStories} onChange={set}
+        />
+      ),
     },
     testimonials: {
       title: "Depoimentos (fotos)", icon: Camera,
@@ -413,9 +451,60 @@ function FileStrip({ files, thumbs, busy, count, max, empty, onFiles, onChange }
   );
 }
 
+// Vídeos do carrossel de stories: um por linha, com os textos que aparecem no card.
+function StoriesEditor({ heading, stories, thumbs, busy, count, onFiles, onChange }: {
+  heading: string; stories: PageStory[]; thumbs: Record<string, string>; busy: boolean; count?: number;
+  onFiles: (l: FileList | null) => void; onChange: (patch: Partial<Page>) => void;
+}) {
+  const edit = (id: string, patch: Partial<PageStory>) => onChange({ stories: stories.map((v) => (v.id === id ? { ...v, ...patch } : v)) });
+  return (
+    <div className="space-y-3">
+      <Field label="Título da seção">
+        <input value={heading} onChange={(e) => onChange({ stories_heading: e.target.value })} className={inputCls} />
+      </Field>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          {stories.length === 0 ? "Nenhum vídeo — sem vídeos aqui, ficam os do modelo." : "Na ordem dos números. Tocam sem som, um de cada vez, trocando a cada 5 s."}
+        </p>
+        <FilePick label="Enviar vídeos" accept="video/*" busy={busy} count={count} onFiles={onFiles} />
+      </div>
+      {stories.map((v, i) => (
+        <div key={v.id} className="flex gap-3 rounded-xl border border-border p-2.5">
+          <div className="relative w-20 shrink-0 aspect-[320/520] rounded-lg overflow-hidden bg-black">
+            {thumbs[v.id]
+              ? <video src={`${thumbs[v.id]}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover" />
+              : <Film className="size-5 m-auto mt-[60%] text-white/60" />}
+            <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{i + 1}</span>
+          </div>
+          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
+            <Field label="Nome da pessoa">
+              <input value={v.person} onChange={(e) => edit(v.id, { person: e.target.value })} placeholder="ex.: Liam Parker" className={inputCls} />
+            </Field>
+            <Field label="Produto">
+              <input value={v.product} onChange={(e) => edit(v.id, { product: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label='Link do "Get product"' hint="Vazio = sem link">
+              <input value={v.link} onChange={(e) => edit(v.id, { link: e.target.value })} placeholder="https://..." className={inputCls} />
+            </Field>
+            <label className="flex items-center gap-2 text-sm self-center sm:mt-4">
+              <input type="checkbox" checked={v.verified} onChange={(e) => edit(v.id, { verified: e.target.checked })} className="size-4 accent-primary" />
+              <BadgeCheck className="size-4 text-[#3478F6]" /> Selo de verificado
+            </label>
+          </div>
+          <div className="flex flex-col gap-1 shrink-0">
+            <button onClick={() => onChange({ stories: move(stories, i, -1) })} disabled={i === 0} title="Subir" className="size-7 rounded grid place-items-center hover:bg-muted disabled:opacity-30"><ArrowLeft className="size-3.5 rotate-90" /></button>
+            <button onClick={() => onChange({ stories: move(stories, i, 1) })} disabled={i === stories.length - 1} title="Descer" className="size-7 rounded grid place-items-center hover:bg-muted disabled:opacity-30"><ArrowRight className="size-3.5 rotate-90" /></button>
+            <button onClick={() => onChange({ stories: stories.filter((x) => x.id !== v.id) })} title="Remover" className="size-7 rounded grid place-items-center hover:bg-muted text-destructive"><X className="size-3.5" /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type TemplateInfo = {
   custom: boolean; name: string; title: string | null; carousel: number; carouselKind: string; testimonials: number; finals: number;
-  reviews: number | null; recs: boolean; order: SectionKey[]; buttonLink: string | null; missing: string[];
+  reviews: number | null; stories: number | null; recs: boolean; order: SectionKey[]; buttonLink: string | null; missing: string[];
 };
 
 // Modelo .pagefly usado pra gerar (vale pra todos os produtos): o original ou
@@ -461,7 +550,7 @@ function TemplateBox({ template, onChanged }: { template: TemplateInfo; onChange
             Modelo: {template.name} <span className="text-xs font-normal text-muted-foreground">({template.custom ? "enviado por você" : "original"})</span>
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Carrossel ({template.carouselKind}) com {template.carousel} imagens · {template.testimonials} fotos de depoimento · {template.finals} imagens finais{template.reviews !== null ? ` · ${template.reviews} depoimentos em texto` : ""}{template.recs ? " · produtos recomendados" : ""}
+            Carrossel ({template.carouselKind}) com {template.carousel} imagens · {template.testimonials} fotos de depoimento · {template.finals} imagens finais{template.stories !== null ? ` · ${template.stories} vídeos (stories)` : ""}{template.reviews !== null ? ` · ${template.reviews} depoimentos em texto` : ""}{template.recs ? " · produtos recomendados" : ""}
             {template.title ? ` · título "${template.title.slice(0, 50)}"` : ""}
           </p>
           {template.missing.length > 0 && (

@@ -7,6 +7,7 @@ import {
   type PageTemplate, type RecCard,
 } from "@/lib/product-page.server";
 import { PRODUCTION_BUCKET, loadFields, safeFileName } from "@/lib/store-production.server";
+import { matrizStoreIds } from "@/lib/store-roles.server";
 import { emptyPage, isVideoMime, type CdnImage, type ProductPageData } from "@/lib/product-page";
 
 const ProductIdInput = z.object({ product_id: z.string().uuid() });
@@ -30,6 +31,11 @@ const PageInput = z.object({
     id: z.string().max(60), title: z.string().max(300), text: z.string().max(3000),
     author: z.string().max(120), rating: z.number().min(0).max(5),
   })).max(40).default([]),
+  stories_heading: z.string().max(300).default(""),
+  stories: z.array(z.object({
+    id: z.string().uuid(), path: z.string().max(500), name: z.string().max(255),
+    person: z.string().max(120), product: z.string().max(200), link: z.string().trim().max(2000), verified: z.boolean(),
+  })).max(30).default([]),
   recs_title: z.string().max(300).default(""),
   recs: z.array(z.object({ product_id: z.string().uuid(), link: z.string().trim().max(2000) })).max(30).default([]),
 });
@@ -131,11 +137,10 @@ export const getProductPage = createServerFn({ method: "GET" })
     const ownerId = context.ownerId;
     const product = await loadProduct(ownerId, data.product_id);
     const { tpl, custom } = await loadTemplate(ownerId);
-    const [saved, images, columns, roles, pubs] = await Promise.all([
+    const [saved, images, columns, pubs] = await Promise.all([
       loadPage(product.id),
       supabaseAdmin.from("product_images").select("id,file_url,file_name,mime_type,position").eq("product_id", product.id).order("position", { ascending: true }),
       supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId),
-      supabaseAdmin.from("shop_group_stores").select("shopify_store_id,role"),
       supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,handle").eq("product_id", product.id).eq("status", "ok"),
     ]);
     const [options, recsTpl] = await Promise.all([productOptions(ownerId), loadRecsTemplate(ownerId)]);
@@ -146,7 +151,7 @@ export const getProductPage = createServerFn({ method: "GET" })
       ? await supabaseAdmin.from("shopify_stores").select("id,name,shop_domain").eq("user_id", ownerId)
         .eq("is_placeholder", false).in("board_column_id", activeIds).order("name")
       : { data: [] as { id: string; name: string | null; shop_domain: string | null }[] };
-    const matriz = new Set((roles.data ?? []).filter((r) => r.role === "matriz").map((r) => r.shopify_store_id));
+    const matriz = await matrizStoreIds(ownerId, (stores ?? []).map((s) => s.id));
     const storeList = (stores ?? []).filter((s) => s.shop_domain).map((s) => ({
       id: s.id, name: s.name || s.shop_domain!, is_matriz: matriz.has(s.id),
     }));
@@ -167,6 +172,8 @@ export const getProductPage = createServerFn({ method: "GET" })
     else if (page.reviews.length === 0 && !page.reviews_heading && !page.recs_title) {
       page = { ...page, ...templateBlocks(tpl) };
     }
+    // Página salva antes do bloco de vídeos: abre com o título do modelo.
+    if (!page.stories_heading && page.stories.length === 0) page = { ...page, stories_heading: templateBlocks(tpl).stories_heading };
     // Sem recomendados ainda: começa com o template.
     if (page.recs.length === 0 && fromTemplate.recs.length > 0) {
       page = { ...page, recs: fromTemplate.recs, recs_title: fromTemplate.recs_title || page.recs_title };
@@ -177,7 +184,7 @@ export const getProductPage = createServerFn({ method: "GET" })
     page = { ...page, carousel_ids: [...kept, ...imageIds.filter((id) => !kept.includes(id))] };
     // Links temporários pra mostrar as fotos de depoimento.
     const thumbs: Record<string, string> = {};
-    for (const t of [...page.testimonials, ...page.finals]) {
+    for (const t of [...page.testimonials, ...page.finals, ...page.stories]) {
       const { data: s } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).createSignedUrl(t.path, 60 * 60);
       if (s?.signedUrl) thumbs[t.id] = s.signedUrl;
     }
@@ -201,12 +208,12 @@ export const saveProductPage = createServerFn({ method: "POST" })
 
 async function savePage(ownerId: string, productId: string, page: z.infer<typeof PageInput>, cdn?: ProductPageData["cdn"]) {
   const prev = await loadPage(productId);
-  const files = [...page.testimonials, ...page.finals];
+  const files = [...page.testimonials, ...page.finals, ...page.stories];
   for (const t of files) {
     if (!t.path.startsWith(pagesPrefix(ownerId, productId))) throw new Error("Caminho inválido");
   }
-  // Foto de depoimento / imagem final tirada da lista sai também do armazenamento.
-  const removed = [...(prev?.testimonials ?? []), ...(prev?.finals ?? [])].filter((t) => !files.some((x) => x.id === t.id));
+  // Foto de depoimento / imagem final / vídeo tirado da lista sai também do armazenamento.
+  const removed = [...(prev?.testimonials ?? []), ...(prev?.finals ?? []), ...(prev?.stories ?? [])].filter((t) => !files.some((x) => x.id === t.id));
   if (removed.length) await supabaseAdmin.storage.from(PRODUCTION_BUCKET).remove(removed.map((t) => t.path));
   const { error } = await supabaseAdmin.from("product_pages").upsert({
     product_id: productId, user_id: ownerId, data: { ...page, cdn: cdn ?? prev?.cdn ?? {} },
@@ -301,6 +308,12 @@ export const generatePagefly = createServerFn({ method: "POST" })
         if (s?.signedUrl) sources.push({ key, url: s.signedUrl, name: t.name });
       }
     }
+    for (const v of page.stories) {
+      const key = `s:${v.id}`;
+      if (done[key]) continue;
+      const { data: blob } = await supabaseAdmin.storage.from(PRODUCTION_BUCKET).download(v.path);
+      if (blob) videos.push({ key, blob, name: v.name, mime: blob.type.startsWith("video/") ? blob.type : "video/mp4" });
+    }
     const shop = { shop_domain: store.shop_domain, access_token: store.access_token };
     Object.assign(done, await uploadToShopifyFiles(shop, sources));
     Object.assign(done, await uploadVideosToShopifyFiles(shop, videos));
@@ -330,6 +343,7 @@ export const generatePagefly = createServerFn({ method: "POST" })
       testimonials: pick(page.testimonials.map((t) => `t:${t.id}`)),
       finals: page.finals.length ? pick(page.finals.map((f) => `f:${f.id}`)) : pick(legacyFinals.map((id) => `img:${id}`)),
       recs,
+      stories: page.stories.map((v) => done[`s:${v.id}`]),
     });
     return { fileName: built.fileName, base64: Buffer.from(built.bytes).toString("base64"), warnings: built.warnings, uploaded: sources.length + videos.length };
   });
