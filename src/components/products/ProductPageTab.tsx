@@ -39,6 +39,16 @@ export function ProductPageTab({ productId }: { productId: string }) {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState<Record<string, number>>({});
   const [open, setOpen] = useState<string | null>("arquivo");
+  // Envios terminam fora de ordem (ex.: duas cores subindo ao mesmo tempo):
+  // cada um parte da página mais recente, não da do começo do envio.
+  const pageRef = useRef<Page | null>(null);
+  pageRef.current = page;
+  const commit = (change: (p: Page) => Page) => {
+    const next = change(pageRef.current!);
+    pageRef.current = next;
+    setPage(next);
+    save.mutate(next);
+  };
   useEffect(() => {
     if (data && !page) { setPage(data.page); setThumbs(data.thumbs); }
   }, [data, page]);
@@ -94,10 +104,8 @@ export function ProductPageTab({ productId }: { productId: string }) {
       track(kind, -1);
     }
     if (added.length) {
-      const next = { ...page, [kind]: [...page[kind], ...added] };
-      setPage(next);
+      commit((p) => ({ ...p, [kind]: [...p[kind], ...added] }));
       setThumbs((t) => ({ ...t, ...views }));
-      save.mutate(next);
     }
   };
 
@@ -121,10 +129,8 @@ export function ProductPageTab({ productId }: { productId: string }) {
       track("stories", -1);
     }
     if (added.length) {
-      const next = { ...page, stories: [...page.stories, ...added] };
-      setPage(next);
+      commit((p) => ({ ...p, stories: [...p.stories, ...added] }));
       setThumbs((t) => ({ ...t, ...views }));
-      save.mutate(next);
     }
   };
 
@@ -145,12 +151,13 @@ export function ProductPageTab({ productId }: { productId: string }) {
       track(key, -1);
     }
     if (ids.length) {
-      const groups = page.color_carousels.some((c) => c.color === color)
-        ? page.color_carousels.map((c) => (c.color === color ? { ...c, ids: [...c.ids, ...ids] } : c))
-        : [...page.color_carousels, { color: color!, ids }];
-      const next = color ? { ...page, color_carousels: groups } : { ...page, carousel_ids: [...page.carousel_ids, ...ids] };
-      setPage(next);
-      save.mutate(next);
+      commit((p) => {
+        if (!color) return { ...p, carousel_ids: [...p.carousel_ids, ...ids] };
+        const groups = p.color_carousels.some((c) => c.color === color)
+          ? p.color_carousels.map((c) => (c.color === color ? { ...c, ids: [...c.ids, ...ids] } : c))
+          : [...p.color_carousels, { color, ids }];
+        return { ...p, color_carousels: groups };
+      });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["product", productId] });
     }
@@ -160,13 +167,11 @@ export function ProductPageTab({ productId }: { productId: string }) {
     if (!(await confirm(`Excluir ${isVideoMime(img?.mime_type) ? "este vídeo" : "esta imagem"} da página?`))) return;
     try {
       await deleteImageFn({ data: { id, from: "page" } });
-      const next = {
-        ...page,
-        carousel_ids: page.carousel_ids.filter((x) => x !== id),
-        color_carousels: page.color_carousels.map((c) => ({ ...c, ids: c.ids.filter((x) => x !== id) })).filter((c) => c.ids.length > 0),
-      };
-      setPage(next);
-      save.mutate(next);
+      commit((p) => ({
+        ...p,
+        carousel_ids: p.carousel_ids.filter((x) => x !== id),
+        color_carousels: p.color_carousels.map((c) => ({ ...c, ids: c.ids.filter((x) => x !== id) })).filter((c) => c.ids.length > 0),
+      }));
     } catch (e: any) {
       toast.error(e.message);
     }
