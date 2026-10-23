@@ -25,6 +25,11 @@ function fmtMoney(n: number) {
 }
 function localDate(date: string) { return new Date(date + "T00:00:00"); }
 function fmtDayMonth(date: string) { return localDate(date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); }
+// "2026-10-22" → "22-10-2026"
+function fmtDate(date: string | null | undefined) {
+  const m = String(date ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : (date ?? "");
+}
 // order_number já vem com "#" do Shopify (ex: "#WV1145") — não duplica o prefixo.
 function orderLabel(o: any) {
   const n = o.order_number ?? o.id.slice(0, 8);
@@ -659,7 +664,7 @@ export function LgOrders({
                               {cost > 0 || isSupplierFree(o.raw?.tags) ? fmtMoney(cost) : "—"}
                             </div>
                             <div className="text-right text-xs text-muted-foreground">
-                              {o.payment_status !== "pending" ? (o.paid_at ?? o.order_date) : o.order_date}
+                              {fmtDate(o.payment_status !== "pending" ? (o.paid_at ?? o.order_date) : o.order_date)}
                             </div>
                           </div>
                         );
