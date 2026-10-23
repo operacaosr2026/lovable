@@ -394,7 +394,7 @@ function MetaAdsSection({ cardId, shops }: { cardId: string; shops: ShopStub[] }
         )}
       </div>
 
-      {openDialog && <CardMetaAdsDialog cardId={cardId} open={openDialog} onClose={() => setOpenDialog(false)} />}
+      {openDialog && <CardMetaAdsDialog cardId={cardId} shopId={shops[0]?.id} open={openDialog} onClose={() => setOpenDialog(false)} />}
       {connectShopId && (
         <MetaAdsIntegrationDialog
           shopId={connectShopId}

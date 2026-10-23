@@ -11,14 +11,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2, Megaphone, RefreshCw, Plus, X, Check, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { MetaReconnectLink } from "@/components/shops/MetaAdsIntegration";
 
 export const cardMetaSetupKey = (cardId: string) => ["card-meta-setup", cardId];
 
 // Contas e campanhas do card: o gasto do card é o dessas campanhas, contado
 // uma vez, independente de quais lojas estão no card.
 export function CardMetaAdsDialog({
-  cardId, open, onClose,
-}: { cardId: string; open: boolean; onClose: () => void }) {
+  cardId, shopId, open, onClose,
+}: { cardId: string; shopId?: string; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const getSetupFn      = useServerFn(getCardMetaSetup);
   const connectFn       = useServerFn(connectCardMetaAccount);
@@ -193,6 +194,7 @@ export function CardMetaAdsDialog({
                   </button>
                 ))}
               </div>
+              {shopId && <MetaReconnectLink shopId={shopId} onAuthenticated={invalidate} />}
               <Button variant="outline" className="w-full" onClick={() => setShowPicker(false)}>Cancelar</Button>
             </div>
           )}

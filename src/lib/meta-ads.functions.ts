@@ -33,6 +33,7 @@ export const createMetaOAuthUrl = createServerFn({ method: "POST" })
       state:         stateRow.id,
       scope:         "ads_read,ads_management,business_management",
       response_type: "code",
+      auth_type:     "rerequest",
     });
 
     return { url: `https://www.facebook.com/v19.0/dialog/oauth?${params}` };

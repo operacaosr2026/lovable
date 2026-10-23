@@ -64,11 +64,15 @@ serve(async (req) => {
   const meJson = await meRes.json();
 
   // Fetch ad accounts
-  const adRes  = await fetch(
+  const adAccounts: unknown[] = [];
+  let next: string | undefined =
     `https://graph.facebook.com/v19.0/me/adaccounts` +
-    `?fields=id,name,account_id,account_status,currency&limit=50&access_token=${token}`
-  );
-  const adJson = await adRes.json();
+    `?fields=id,name,account_id,account_status,currency&limit=100&access_token=${token}`;
+  while (next) {
+    const adJson = await (await fetch(next)).json();
+    adAccounts.push(...(adJson.data ?? []));
+    next = adJson.paging?.next;
+  }
 
   await supabase.from("shop_meta_tokens").upsert({
     user_id:          stateRow.user_id,
@@ -77,7 +81,7 @@ serve(async (req) => {
     token_expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
     fb_user_id:       meJson.id,
     fb_user_name:     meJson.name,
-    ad_accounts:      adJson.data ?? [],
+    ad_accounts:      adAccounts,
     updated_at:       new Date().toISOString(),
   }, { onConflict: "user_id,shop_id" });
 

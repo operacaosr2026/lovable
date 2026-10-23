@@ -280,6 +280,7 @@ export function MetaAdsIntegrationDialog({
                   </button>
                 ))}
               </div>
+              <MetaReconnectLink shopId={shopId} onAuthenticated={refresh} />
               <Button variant="outline" className="w-full" onClick={() => setShowPicker(false)}>Cancelar</Button>
             </div>
           )}
@@ -345,5 +346,58 @@ export function MetaAdsIntegrationDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Refaz o OAuth pra trazer contas de outra BM; o callback só atualiza a lista
+// do perfil, as contas já conectadas ficam como estão.
+export function MetaReconnectLink({ shopId, onAuthenticated }: { shopId: string; onAuthenticated: () => void }) {
+  const createUrlFn = useServerFn(createMetaOAuthUrl);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [copied, setCopied]   = useState(false);
+
+  const generateUrl = useMutation({
+    mutationFn: () => createUrlFn({ data: { shop_id: shopId } }),
+    onSuccess: (res) => setAuthUrl(res.url),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const copyUrl = () => {
+    if (!authUrl) return;
+    navigator.clipboard.writeText(authUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="rounded-xl border border-dashed border-border p-3 space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Não achou a conta? Autentique de novo e, na tela da Meta, clique em <strong className="text-foreground">Editar acesso</strong> para marcar a outra BM e as contas dela.
+      </p>
+      {!authUrl && (
+        <Button variant="outline" size="sm" className="w-full" onClick={() => generateUrl.mutate()} disabled={generateUrl.isPending}>
+          {generateUrl.isPending && <Loader2 className="size-4 animate-spin" />}
+          Gerar link para incluir outra BM
+        </Button>
+      )}
+      {authUrl && (
+        <div className="space-y-2">
+          <div className="relative rounded-xl border border-border bg-muted overflow-hidden">
+            <p className="text-xs font-mono text-muted-foreground px-3 py-2.5 pr-10 break-all leading-relaxed">{authUrl}</p>
+            <button
+              onClick={copyUrl}
+              title="Copiar link"
+              className="absolute top-2 right-2 size-7 rounded-lg bg-primary text-primary-foreground grid place-items-center hover:opacity-90 transition-opacity"
+            >
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            </button>
+          </div>
+          <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => { onAuthenticated(); setAuthUrl(null); }}>
+            <RefreshCw className="size-4" />
+            Já autentiquei — Atualizar
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
