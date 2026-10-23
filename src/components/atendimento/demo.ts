@@ -399,6 +399,7 @@ const demoApi = {
   requestExchange: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
   decideExchange: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
   listRefundRequests: async () => ({ canApprove: false, requests: [] }),
+  listSupportImages: async () => ({ items: [], nextBefore: null, pending: 0 }),
   getRefundSetup: async () => { throw new Error("Modo demonstração — reembolso só com pedidos de verdade"); },
   previewRefund: async () => ({ amount: 0 }),
   requestRefund: async () => { throw new Error("Modo demonstração — nada foi pedido"); },

@@ -52,7 +52,7 @@ export function QuotedText({ text }: { text: string }) {
 // JPEG no navegador (heic2any, carregado só quando aparece uma). Os outros
 // formatos passam direto.
 const HEIC = /\.(heic|heif)$/i;
-async function displayableUrl(res: Response, name: string) {
+export async function displayableUrl(res: Response, name: string) {
   let blob = await res.blob();
   if (HEIC.test(name) || /hei[cf]/i.test(blob.type)) {
     const { default: heic2any } = await import("heic2any");

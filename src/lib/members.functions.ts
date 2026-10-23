@@ -37,6 +37,7 @@ export const SECTIONS = [
   // Subabas de Atendimento.
   "at_caixa",
   "at_kpi",
+  "at_imagens",
   "at_config",
   // Banco de Lojas: badges dos cards (hold, pedidos/dia, payout, nota) e aba
   // Pedidos da janela da loja.

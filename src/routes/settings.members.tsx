@@ -20,7 +20,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Copy, Trash2, UserPlus, Shield, Check, X, LayoutDashboard, Target, CheckSquare, Package, Wallet,
   Database, Layers, Bell, StickyNote, ShoppingBag, Truck, Plug, Store, FolderKanban, Workflow, Headphones, Inbox, BarChart3, Settings, Megaphone, ShieldAlert, DollarSign, Mail, TrendingUp, AlertTriangle,
-  Lightbulb, GraduationCap, PenLine, Swords, Repeat,
+  Lightbulb, GraduationCap, PenLine, Swords, Repeat, Images,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -64,6 +64,7 @@ const SECTION_LABELS: Record<Section, string> = {
   lg_integracoes: "Integrações",
   at_caixa: "Caixa",
   at_kpi: "KPI",
+  at_imagens: "Imagens",
   at_config: "Configurações",
   bl_indicadores: "Indicadores das lojas",
   ac_editar: "Criar e editar trilhas",
@@ -87,7 +88,7 @@ const SECTION_LABELS: Record<Section, string> = {
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
 const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
-const AT_SUBTABS: Section[] = ["at_caixa", "at_kpi", "at_config"];
+const AT_SUBTABS: Section[] = ["at_caixa", "at_imagens", "at_kpi", "at_config"];
 // Tipos de notificação (aparecem quando "Notificações" está marcado).
 const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_sistema", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro", "nt_consultor", "nt_trocas"];
 const NT_HINTS: Partial<Record<Section, string>> = {
@@ -295,7 +296,7 @@ const SECTION_ICONS: Partial<Record<Section, any>> = {
   banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, avisos_clientes: Mail, consultor: Lightbulb, academia: GraduationCap, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
-  at_caixa: Inbox, at_kpi: BarChart3, at_config: Settings, bl_indicadores: BarChart3, ac_editar: PenLine,
+  at_caixa: Inbox, at_kpi: BarChart3, at_imagens: Images, at_config: Settings, bl_indicadores: BarChart3, ac_editar: PenLine,
   nt_meta: Megaphone, nt_shopify: ShoppingBag, nt_disputas: ShieldAlert, nt_rastreio: Truck, nt_atendimento: Headphones, nt_sistema: AlertTriangle, nt_tarefas: CheckSquare,
   nt_vendas: DollarSign, nt_email: Mail, nt_metas: Target, nt_lucro: TrendingUp, nt_consultor: Lightbulb, nt_trocas: Repeat, cfg_seguranca: Shield, cfg_integracoes: Plug,
   shops: Store, projects: FolderKanban, sops: Workflow,
