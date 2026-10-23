@@ -6,7 +6,7 @@ import {
   getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
-import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
+import { orderLineItemsCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
@@ -655,7 +655,8 @@ export function LgOrders({
                               )}
                             </div>
                             <div className="text-right text-sm font-semibold text-foreground">
-                              {cost > 0 ? fmtMoney(cost) : "—"}
+                              {/* Reenvio do fornecedor: custo 0 de verdade (ele manda sem cobrar), não "sem custo". */}
+                              {cost > 0 || isSupplierFree(o.raw?.tags) ? fmtMoney(cost) : "—"}
                             </div>
                             <div className="text-right text-xs text-muted-foreground">
                               {o.payment_status !== "pending" ? (o.paid_at ?? o.order_date) : o.order_date}
