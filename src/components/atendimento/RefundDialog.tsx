@@ -156,10 +156,19 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
               <div>
                 <div className="flex items-center gap-2 h-9 rounded-lg border border-border bg-background px-3 focus-within:border-primary">
                   <span className="text-xs text-muted-foreground">{s.currency}</span>
-                  <input autoFocus inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ""))}
+                  <input autoFocus inputMode="decimal" value={value}
+                    onChange={(e) => {
+                      // Acima do disponível trava no máximo (a Shopify recusaria).
+                      const v = e.target.value.replace(/[^\d.,]/g, "");
+                      setValue(Number(v.replace(",", ".")) > s.maxRefundable ? s.maxRefundable.toFixed(2).replace(".", ",") : v);
+                    }}
                     placeholder="0,00" className="flex-1 bg-transparent text-sm outline-none" />
+                  <button onClick={() => setValue(s.maxRefundable.toFixed(2).replace(".", ","))}
+                    className="text-[11px] text-primary hover:underline shrink-0">Máximo</button>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">Ex.: compensação pelo atraso. Não mexe nos itens do pedido.</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Até {formatMoney(s.maxRefundable, s.currency)}. Ex.: compensação pelo atraso. Não mexe nos itens do pedido.
+                </p>
               </div>
             )}
 
