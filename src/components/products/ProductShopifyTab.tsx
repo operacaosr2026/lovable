@@ -87,8 +87,10 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
 
   // Imagens desta aba: enviadas aqui, separadas das da aba Página. Novas já
   // entram escolhidas na matriz.
-  const sendImages = async (list: FileList | null) => {
-    const files = Array.from(list ?? []).filter((f) => f.type.startsWith("image/"));
+  // Com cor: a foto vai só pras imagens desta aba (não pra galeria) e fica
+  // como a foto da cor.
+  const sendImages = async (list: FileList | null, color?: string) => {
+    const files = Array.from(list ?? []).filter((f) => f.type.startsWith("image/")).slice(0, color ? 1 : undefined);
     if (!files.length) return;
     setUploading(files.length);
     const ids: string[] = [];
@@ -101,7 +103,9 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
       setUploading((n) => n - 1);
     }
     if (ids.length) {
-      const next = { ...listing, image_pool: [...listing.image_pool, ...ids], image_ids: [...listing.image_ids, ...ids] };
+      const next = color
+        ? { ...listing, image_pool: [...listing.image_pool, ...ids], value_images: { ...listing.value_images, [color]: ids[0] } }
+        : { ...listing, image_pool: [...listing.image_pool, ...ids], image_ids: [...listing.image_ids, ...ids] };
       setListing(next);
       save.mutate(next);
     }
@@ -307,12 +311,15 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
             />
           ))}
         </div>
-        {colorOptionIndex(listing.options) !== -1 && data.images.length > 0 && (
+        {colorOptionIndex(listing.options) !== -1 && (
           <ColorImages
             values={listing.options.filter((o) => o.name.trim() && o.values.length > 0)[colorOptionIndex(listing.options)].values}
             images={data.images}
             value={listing.value_images}
             onChange={(value_images) => set({ value_images })}
+            onUpload={(color, files) => sendImages(files, color)}
+            onRemove={removeImage}
+            uploading={uploading > 0}
           />
         )}
         {hasVariants && (
@@ -598,41 +605,70 @@ export function ImagePicker({ images, value, onChange, onRemove }: {
 }
 
 // Foto de cada cor: vai pra variante na Shopify (aparece ao escolher a cor).
-function ColorImages({ values, images, value, onChange }: {
+function ColorImages({ values, images, value, onChange, onUpload, onRemove, uploading }: {
   values: string[]; images: { id: string; file_url: string | null; file_name: string | null }[];
   value: Record<string, string>; onChange: (v: Record<string, string>) => void;
+  onUpload: (color: string, files: FileList | null) => void; onRemove: (id: string) => void; uploading: boolean;
 }) {
   return (
     <div className="mt-3 rounded-xl border border-border p-3 space-y-3">
       <div>
         <p className="text-xs font-medium">Foto de cada cor</p>
-        <p className="text-[11px] text-muted-foreground">Clique na imagem da cor — na loja, ao escolher a cor, aparece essa foto. Se ela não estiver nas imagens escolhidas acima, entra no fim da galeria.</p>
+        <p className="text-[11px] text-muted-foreground">Clique na imagem da cor ou envie uma nova — na loja, ao escolher a cor, aparece essa foto. Se ela não estiver nas imagens escolhidas acima, entra no fim da galeria.</p>
       </div>
       {values.map((color) => (
         <div key={color} className="flex items-start gap-3">
           <span className="w-24 shrink-0 pt-2 text-sm font-medium truncate" title={color}>{color}</span>
           <div className="flex-1 flex gap-1.5 overflow-x-auto pb-1">
+            <ColorUpload disabled={uploading} onFiles={(files) => onUpload(color, files)} />
             {images.map((img) => {
               const on = value[color] === img.id;
               return (
-                <button
-                  key={img.id}
-                  type="button"
-                  onClick={() => {
-                    const { [color]: _, ...rest } = value;
-                    onChange(on ? rest : { ...rest, [color]: img.id });
-                  }}
-                  className={`relative size-12 shrink-0 rounded-md overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50 hover:opacity-100"}`}
-                >
-                  {img.file_url ? <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" /> : <ImageOff className="size-4 m-auto text-muted-foreground" />}
-                  {on && <Check className="absolute top-0.5 right-0.5 size-3.5 rounded-full bg-primary text-primary-foreground p-0.5" />}
-                </button>
+                <div key={img.id} className="relative group shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { [color]: _, ...rest } = value;
+                      onChange(on ? rest : { ...rest, [color]: img.id });
+                    }}
+                    className={`relative block size-12 rounded-md overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50 hover:opacity-100"}`}
+                  >
+                    {img.file_url ? <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" /> : <ImageOff className="size-4 m-auto text-muted-foreground" />}
+                    {on && <Check className="absolute bottom-0.5 left-0.5 size-3.5 rounded-full bg-primary text-primary-foreground p-0.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(img.id)}
+                    title="Excluir imagem"
+                    className="absolute top-0.5 right-0.5 size-4 rounded-full bg-black/60 text-white grid place-items-center opacity-0 group-hover:opacity-100 hover:bg-destructive"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
               );
             })}
           </div>
         </div>
       ))}
     </div>
+  );
+}
+
+function ColorUpload({ disabled, onFiles }: { disabled: boolean; onFiles: (files: FileList | null) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/*" hidden onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={disabled}
+        title="Enviar foto desta cor"
+        className="size-12 shrink-0 rounded-md border-2 border-dashed border-border grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+      >
+        {disabled ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+      </button>
+    </>
   );
 }
 
