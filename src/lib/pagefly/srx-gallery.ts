@@ -2,11 +2,14 @@
 // vídeo: .mp4 vira <video> sem som, em loop, tocando só no slide atual, e abre
 // com controles no zoom. O gerador usa este código quando o carrossel tem vídeo
 // e o do modelo ainda não suporta (marca srx-gallery-video-support).
+// Também troca as imagens pela cor escolhida no seletor de variantes do
+// PageFly (lista em .srx-gallery-colors; marca srx-gallery-colors-support).
 export const GALLERY_VIDEO_MARKER = "srx-gallery-video-support";
+export const GALLERY_COLORS_MARKER = "srx-gallery-colors-support";
 
 export const SRX_GALLERY_CODE = String.raw`<style>
 /* ================================
-   SRX PRODUCT GALLERY (srx-gallery-video-support)
+   SRX PRODUCT GALLERY (srx-gallery-video-support, srx-gallery-colors-support)
 ================================ */
 
 .srx-gallery {
@@ -365,6 +368,12 @@ export const SRX_GALLERY_CODE = String.raw`<style>
   []
   </script>
 
+  <!-- IMAGES BY COLOR: { "colors": [...], "groups": { "Black": [...] } } -->
+
+  <script type="application/json" class="srx-gallery-colors">
+  {}
+  </script>
+
   <div class="srx-gallery-main"
        aria-label="Product image gallery">
 
@@ -554,6 +563,15 @@ export const SRX_GALLERY_CODE = String.raw`<style>
 
     /* CREATE SLIDES AND THUMBNAILS */
 
+    const baseImages = images;
+    let thumbButtons = [];
+    let slideVideos = [];
+
+    function build() {
+
+    track.innerHTML = "";
+    thumbs.innerHTML = "";
+
     images.forEach((url, index) => {
 
       const slide = document.createElement("div");
@@ -608,11 +626,15 @@ export const SRX_GALLERY_CODE = String.raw`<style>
 
     });
 
-    const thumbButtons = Array.from(thumbs.children);
+    thumbButtons = Array.from(thumbs.children);
 
-    const slideVideos = Array.from(track.children).map(
+    slideVideos = Array.from(track.children).map(
       slide => slide.querySelector("video")
     );
+
+    }
+
+    build();
 
     /* CHANGE IMAGE */
 
@@ -881,6 +903,96 @@ export const SRX_GALLERY_CODE = String.raw`<style>
       }
 
     });
+
+    /* IMAGES BY COLOR
+       Cor clicada no seletor de variantes (botão, select ou rádio) troca
+       a lista; cor sem grupo volta pras imagens principais. */
+
+    let colorData = {};
+    try {
+      const el = gallery.querySelector(".srx-gallery-colors");
+      colorData = el ? JSON.parse(el.textContent || "{}") || {} : {};
+    } catch (error) {
+      colorData = {};
+    }
+
+    const colorNames = Array.isArray(colorData.colors) ? colorData.colors : [];
+    const colorGroups = colorData.groups || {};
+    let activeColor = null;
+
+    function norm(value) {
+      return String(value == null ? "" : value).trim().toLowerCase();
+    }
+
+    function findColor(value) {
+      const v = norm(value);
+      if (!v) return null;
+      return colorNames.find(name => norm(name) === v) || null;
+    }
+
+    function setColor(name) {
+      if (name === activeColor) return;
+      activeColor = name;
+      const list = (colorGroups[name] || []).filter(url =>
+        typeof url === "string" &&
+        /^https?:\/\//i.test(url)
+      );
+      images = list.length ? list : baseImages;
+      build();
+      goTo(0);
+    }
+
+    function colorFrom(el) {
+      for (let node = el, depth = 0; node && node.nodeType === 1 && depth < 5; node = node.parentElement, depth++) {
+        if (node === gallery || node === document.body) return null;
+        const candidates = [
+          node.getAttribute("data-value"),
+          node.getAttribute("data-pf-value"),
+          node.getAttribute("value"),
+          node.getAttribute("title"),
+          node.getAttribute("aria-label"),
+          node.children.length === 0 || depth < 2 ? node.textContent : null
+        ];
+        for (const c of candidates) {
+          const found = findColor(c);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    function colorFromControl(el) {
+      if (el.tagName === "SELECT") {
+        const opt = el.options[el.selectedIndex];
+        return findColor(el.value) || (opt ? findColor(opt.textContent) : null);
+      }
+      if (el.tagName === "INPUT" && (el.type === "radio" || el.type === "checkbox") && el.checked) {
+        return findColor(el.value) || colorFrom(el.parentElement);
+      }
+      return null;
+    }
+
+    if (colorNames.length) {
+
+      document.addEventListener("click", event => {
+        if (gallery.contains(event.target) || lightbox.contains(event.target)) return;
+        const found = colorFrom(event.target);
+        if (found) setColor(found);
+      }, true);
+
+      document.addEventListener("change", event => {
+        const found = colorFromControl(event.target);
+        if (found) setColor(found);
+      }, true);
+
+      /* Cor já marcada ao abrir a página. */
+      document.querySelectorAll("select, input:checked").forEach(el => {
+        if (activeColor) return;
+        const found = colorFromControl(el);
+        if (found && colorGroups[found]) setColor(found);
+      });
+
+    }
 
     /* INITIAL IMAGE */
 

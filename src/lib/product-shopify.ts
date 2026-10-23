@@ -14,6 +14,7 @@ export type ShopifyListing = {
   title_matriz: string;
   title_subloja: string;     // vazio = usa o da matriz
   description_html: string;
+  image_pool: string[];      // product_images enviadas nesta aba (separadas das da aba Página)
   image_ids: string[];       // product_images, na ordem (matriz)
   image_ids_subloja: string[] | null; // null = sublojas usam as da matriz
   price: string;
@@ -33,7 +34,7 @@ export type ShopifyListing = {
 export type StoreRole = "matriz" | "subloja";
 
 export const emptyListing = (name = ""): ShopifyListing => ({
-  title_matriz: name, title_subloja: "", description_html: "", image_ids: [], image_ids_subloja: null,
+  title_matriz: name, title_subloja: "", description_html: "", image_pool: [], image_ids: [], image_ids_subloja: null,
   price: "", compare_at_price: "", sku: "", weight_grams: null, inventory: 0,
   options: [], variants: [], value_images: {}, seo_title: "", seo_description: "", handle: "",
 });

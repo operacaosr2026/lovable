@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, Film, ImageOff, LayoutTemplate, Loader2, Plus, RefreshCw, Send, Settings2, X, XCircle,
+  AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, Film, ImageOff, LayoutTemplate, Loader2, Plus, RefreshCw, Send, Settings2, Upload, X, XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -10,6 +10,8 @@ import {
   getProductShopify, saveProductShopify, publishProductShopify, updateProductShopify, listVariantTemplates, linkExistingShopifyProduct,
 } from "@/lib/product-shopify.functions";
 import { Link } from "@tanstack/react-router";
+import { addProductImage, deleteProductImage } from "@/lib/products.functions";
+import { uploadProductImage } from "@/lib/product-image-upload";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -28,6 +30,10 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
   const publishFn = useServerFn(publishProductShopify);
   const updateFn = useServerFn(updateProductShopify);
   const variantTplFn = useServerFn(listVariantTemplates);
+  const addImageFn = useServerFn(addProductImage);
+  const deleteImageFn = useServerFn(deleteProductImage);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(0);
   const { data: variantTemplates = [] } = useQuery({ queryKey: ["variant-templates"], queryFn: () => variantTplFn() });
   const queryKey = ["product-shopify", productId];
   const { data, isLoading, error } = useQuery({ queryKey, queryFn: () => getFn({ data: { product_id: productId } }) });
@@ -78,6 +84,41 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
     return patch.options ? { ...next, variants: buildVariants(next) } : next;
   });
   const hasVariants = listing.variants.length > 0;
+
+  // Imagens desta aba: enviadas aqui, separadas das da aba Página. Novas já
+  // entram escolhidas na matriz.
+  const sendImages = async (list: FileList | null) => {
+    const files = Array.from(list ?? []).filter((f) => f.type.startsWith("image/"));
+    if (!files.length) return;
+    setUploading(files.length);
+    const ids: string[] = [];
+    for (const file of files) {
+      try {
+        ids.push(await uploadProductImage(productId, file, addImageFn));
+      } catch (e: any) {
+        toast.error(`${file.name}: ${e?.message ?? "erro ao enviar"}`);
+      }
+      setUploading((n) => n - 1);
+    }
+    if (ids.length) {
+      const next = { ...listing, image_pool: [...listing.image_pool, ...ids], image_ids: [...listing.image_ids, ...ids] };
+      setListing(next);
+      save.mutate(next);
+    }
+  };
+  const removeImage = async (id: string) => {
+    if (!(await confirm({ title: "Excluir esta imagem?", description: "Sai das imagens desta aba (a aba Página não muda).", confirmText: "Excluir" }))) return;
+    const drop = (ids: string[]) => ids.filter((x) => x !== id);
+    const next = {
+      ...listing,
+      image_pool: drop(listing.image_pool),
+      image_ids: drop(listing.image_ids),
+      image_ids_subloja: listing.image_ids_subloja && drop(listing.image_ids_subloja),
+      value_images: Object.fromEntries(Object.entries(listing.value_images).filter(([, x]) => x !== id)),
+    };
+    setListing(next);
+    save.mutate(next, { onSuccess: () => deleteImageFn({ data: { id, from: "shopify" } }).catch(() => {}) });
+  };
   const pubByStore = new Map(data.publications.map((p) => [p.shopify_store_id, p]));
   const chosen = Object.entries(selected).map(([shopify_store_id, role]) => ({ shopify_store_id, role }));
   // Loja marcada onde o produto já existe = atualizar; onde não existe = criar.
@@ -139,15 +180,31 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
       </section>
 
       <section>
-        <SectionTitle>Imagens</SectionTitle>
+        <SectionTitle
+          action={
+            <>
+              <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { sendImages(e.target.files); e.target.value = ""; }} />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading > 0}
+                className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+              >
+                {uploading > 0 ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                {uploading > 0 ? `Enviando (${uploading})...` : "Enviar imagens"}
+              </button>
+            </>
+          }
+        >
+          Imagens
+        </SectionTitle>
         {data.images.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma imagem — envie no Carrossel da aba Página.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma imagem. Envie as imagens do produto da loja aqui — são separadas das da aba Página.</p>
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">Clique pra incluir ou tirar. A ordem dos números é a ordem na Shopify; a 1ª vira a imagem principal.</p>
             <div>
               <p className="text-xs font-medium mb-1.5">{listing.image_ids_subloja ? "Matriz" : "Matriz e sublojas"}</p>
-              <ImagePicker images={data.images} value={listing.image_ids} onChange={(image_ids) => set({ image_ids })} />
+              <ImagePicker images={data.images} value={listing.image_ids} onChange={(image_ids) => set({ image_ids })} onRemove={removeImage} />
             </div>
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none w-fit">
               <input
@@ -501,8 +558,9 @@ function LinkExisting({ productId, storeId, role, onLinked }: { productId: strin
   );
 }
 
-export function ImagePicker({ images, value, onChange }: {
+export function ImagePicker({ images, value, onChange, onRemove }: {
   images: { id: string; file_url: string | null; file_name: string | null; mime_type?: string | null }[]; value: string[]; onChange: (ids: string[]) => void;
+  onRemove?: (id: string) => void;
 }) {
   return (
     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
@@ -510,11 +568,11 @@ export function ImagePicker({ images, value, onChange }: {
         const idx = value.indexOf(img.id);
         const on = idx !== -1;
         return (
+          <div key={img.id} className="relative group">
           <button
-            key={img.id}
             type="button"
             onClick={() => onChange(on ? value.filter((x) => x !== img.id) : [...value, img.id])}
-            className={`relative aspect-square rounded-lg overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50"}`}
+            className={`relative w-full aspect-square rounded-lg overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50"}`}
           >
             {!img.file_url ? <ImageOff className="size-5 m-auto text-muted-foreground" />
               : img.mime_type?.startsWith("video/") ? <video src={`${img.file_url}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover bg-black" />
@@ -522,6 +580,17 @@ export function ImagePicker({ images, value, onChange }: {
             {img.mime_type?.startsWith("video/") && <Film className="absolute bottom-1 right-1 size-3.5 text-white drop-shadow" />}
             {on && <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{idx + 1}</span>}
           </button>
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(img.id)}
+              title="Excluir imagem"
+              className="absolute top-1 right-1 size-5 rounded-full bg-black/60 text-white grid place-items-center opacity-0 group-hover:opacity-100 hover:bg-destructive"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+          </div>
         );
       })}
     </div>

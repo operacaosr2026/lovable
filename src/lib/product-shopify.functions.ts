@@ -18,6 +18,7 @@ const ListingInput = z.object({
   title_matriz: z.string().trim().max(255),
   title_subloja: z.string().trim().max(255),
   description_html: z.string().max(100_000),
+  image_pool: z.array(z.string().uuid()).max(100).default([]),
   image_ids: z.array(z.string().uuid()).max(100),
   image_ids_subloja: z.array(z.string().uuid()).max(100).nullable(),
   price: priceStr,
@@ -108,12 +109,20 @@ export const getProductShopify = createServerFn({ method: "GET" })
       return { ...p, status: (deleted ? "deleted" : p.status) as "ok" | "error" | "deleted" };
     }));
     const saved = listing.data?.data as Partial<ShopifyListing> | undefined;
-    const imgs = ((images.data ?? []) as { id: string; file_url: string | null; file_name: string | null; mime_type: string | null }[])
+    const allImgs = ((images.data ?? []) as { id: string; file_url: string | null; file_name: string | null; mime_type: string | null }[])
       .filter((i) => !isVideoMime(i.mime_type));
+    // Imagens desta aba: as enviadas aqui. Ficha de antes da separação das
+    // abas fica com todas as imagens que o produto tinha.
+    const pool = saved ? saved.image_pool ?? allImgs.map((i) => i.id) : [];
+    const byId = new Map(allImgs.map((i) => [i.id, i]));
+    const imgs = pool.flatMap((id) => byId.get(id) ?? []);
+    if (saved && !saved.image_pool) {
+      await supabaseAdmin.from("product_shopify_listings").update({ data: { ...saved, image_pool: pool } }).eq("product_id", product.id);
+    }
     // Ficha nova já vem com as variantes do template padrão.
     let fresh: ShopifyListing | null = null;
     if (!saved) {
-      fresh = { ...emptyListing(product.name), image_ids: imgs.map((i) => i.id) };
+      fresh = emptyListing(product.name);
       const { data: def } = await supabaseAdmin.from("product_variant_templates").select("options")
         .eq("user_id", ownerId).eq("is_default", true).maybeSingle();
       if (def?.options) {
@@ -122,7 +131,7 @@ export const getProductShopify = createServerFn({ method: "GET" })
       }
     }
     return {
-      listing: saved ? { ...emptyListing(product.name), ...saved } : fresh!,
+      listing: saved ? { ...emptyListing(product.name), ...saved, image_pool: imgs.map((i) => i.id) } : fresh!,
       images: imgs,
       stores,
       publications: publications as {

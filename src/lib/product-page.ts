@@ -10,6 +10,9 @@ export type PageRec = { product_id: string; link: string };
 // aba + nome da pessoa, produto, link do "Get product" e selo de verificado.
 export type PageStory = PageTestimonial & { person: string; product: string; link: string; verified: boolean };
 export type CdnImage = { url: string; width: number | null; height: number | null };
+// Carrossel de uma cor: na página, escolher a cor troca a galeria por estas
+// imagens (product_images, na ordem). Cor sem grupo usa o carrossel principal.
+export type ColorCarousel = { color: string; ids: string[] };
 
 // O carrossel do produto também aceita vídeos: entram na galeria em código,
 // mas nunca como imagem principal, imagem final ou foto do produto na Shopify.
@@ -20,6 +23,7 @@ export type ProductPageData = {
   handle: string;                // handle do produto no link do botão
   file_name: string;             // nome do arquivo/página no PageFly
   carousel_ids: string[];        // product_images, na ordem (1ª imagem = principal do produto)
+  color_carousels: ColorCarousel[];
   final_ids: string[];           // antigo: product_images como imagens finais (vale enquanto finals estiver vazio)
   finals: PageTestimonial[];     // imagens finais enviadas na própria aba, até 3
   testimonials: PageTestimonial[];
@@ -43,7 +47,7 @@ export type ProductPageData = {
 };
 
 export const emptyPage = (): ProductPageData => ({
-  store_id: null, handle: "", file_name: "", carousel_ids: [], final_ids: [], finals: [], testimonials: [],
+  store_id: null, handle: "", file_name: "", carousel_ids: [], color_carousels: [], final_ids: [], finals: [], testimonials: [],
   title: "", text1: "", text2: "", details: "",
   reviews_heading: "", reviews_rating: "", reviews_count: "", reviews: [], stories_heading: "", stories: [], recs_title: "", recs: [], cdn: {},
 });

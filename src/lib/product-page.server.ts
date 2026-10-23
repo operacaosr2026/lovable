@@ -1,7 +1,7 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { fetchWithRetry } from "@/lib/http";
 import { TEMPLATE_FILE_NAME, TEMPLATE_JSON } from "@/lib/pagefly/pgvendas2.template";
-import { GALLERY_VIDEO_MARKER, SRX_GALLERY_CODE } from "@/lib/pagefly/srx-gallery";
+import { GALLERY_COLORS_MARKER, GALLERY_VIDEO_MARKER, SRX_GALLERY_CODE } from "@/lib/pagefly/srx-gallery";
 import { htmlToText, textToHtml, type CdnImage, type PageReview, type PageStory, type ProductPageData } from "@/lib/product-page";
 
 const API = "2026-07";
@@ -160,6 +160,7 @@ export type TemplateTargets = {
 export type PageTemplate = { doc: Doc; jsonName: string; targets: TemplateTargets };
 
 const GALLERY_DATA_RE = /(<script[^>]*class=["'][^"']*srx-gallery-data[^"']*["'][^>]*>)([\s\S]*?)(<\/script>)/i;
+const GALLERY_COLORS_RE = /(<script[^>]*class=["'][^"']*srx-gallery-colors[^"']*["'][^>]*>)([\s\S]*?)(<\/script>)/i;
 
 export function findTargets(doc: Doc): TemplateTargets {
   const byId = new Map(doc.items.map((i) => [i.id, i]));
@@ -468,6 +469,9 @@ function resizeSlideshow(items: Item[], styles: Style[], slideshowId: string, co
 
 export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
   carousel: CdnImage[]; testimonials: CdnImage[]; finals: CdnImage[]; recs?: RecCard[]; stories?: (CdnImage | undefined)[];
+  // Carrossel por cor: todas as cores do produto (cor sem grupo volta pro
+  // carrossel principal) e as imagens de cada uma.
+  colors?: { names: string[]; groups: Record<string, CdnImage[]> };
 }): { bytes: Uint8Array; fileName: string; warnings: string[] } {
   const doc = structuredClone(tpl.doc);
   const t = tpl.targets;
@@ -497,14 +501,28 @@ export function buildPagefly(tpl: PageTemplate, page: ProductPageData, images: {
   // outras = slides.
   // Vídeo só na galeria em código; no carrossel do PageFly fica de fora.
   const galleryItem = t.galleryHtml ? map.get(t.galleryHtml) : undefined;
-  const hasVideo = images.carousel.some((i) => isVideoUrl(i.url));
+  const colorGroups = Object.fromEntries(Object.entries(images.colors?.groups ?? {}).filter(([, list]) => list.length > 0));
+  const hasColors = Object.keys(colorGroups).length > 0;
+  const hasVideo = [...images.carousel, ...Object.values(colorGroups).flat()].some((i) => isVideoUrl(i.url));
+  if (hasColors && !galleryItem) warnings.push("Este modelo usa o carrossel do PageFly — o carrossel por cor só funciona na galeria em código e ficou de fora.");
   if (images.carousel.length > 0 && galleryItem?.data) {
     if (hasVideo && !String(galleryItem.data.code).includes(GALLERY_VIDEO_MARKER)) {
       galleryItem.data.code = SRX_GALLERY_CODE;
       warnings.push("O código da galeria foi trocado pela versão que toca vídeo (mesmo visual do PGdeVendas3).");
     }
+    if (hasColors && !String(galleryItem.data.code).includes(GALLERY_COLORS_MARKER)) {
+      galleryItem.data.code = SRX_GALLERY_CODE;
+      warnings.push("O código da galeria foi trocado pela versão que troca as imagens pela cor (mesmo visual do PGdeVendas3).");
+    }
     const urls = JSON.stringify(images.carousel.map((i) => i.url), null, 4);
     galleryItem.data.code = String(galleryItem.data.code).replace(GALLERY_DATA_RE, (_m, open, _list, close) => `${open}\n  ${urls}\n  ${close}`);
+    if (hasColors) {
+      const colors = JSON.stringify({
+        colors: images.colors!.names,
+        groups: Object.fromEntries(Object.entries(colorGroups).map(([color, list]) => [color, list.map((i) => i.url)])),
+      }, null, 2);
+      galleryItem.data.code = String(galleryItem.data.code).replace(GALLERY_COLORS_RE, (_m, open, _list, close) => `${open}\n  ${colors}\n  ${close}`);
+    }
   } else if (images.carousel.length > 0 && t.mainImage) {
     const onlyImages = images.carousel.filter((i) => !isVideoUrl(i.url));
     if (hasVideo) warnings.push("Este modelo usa o carrossel do PageFly, que não aceita vídeo — os vídeos ficaram de fora.");

@@ -11,6 +11,7 @@ import {
   getProductPage, saveProductPage, createTestimonialUpload, generatePagefly, createTemplateUpload, activateTemplate, resetTemplate,
 } from "@/lib/product-page.functions";
 import { addProductImage, deleteProductImage } from "@/lib/products.functions";
+import { uploadProductImage } from "@/lib/product-image-upload";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { isVideoMime, type PageStory, type PageTestimonial, type ProductPageData } from "@/lib/product-page";
 import { AutoTextarea } from "@/components/shops/StoreProduction";
@@ -127,36 +128,27 @@ export function ProductPageTab({ productId }: { productId: string }) {
     }
   };
 
-  // Carrossel: imagens e vídeos do produto (a 1ª imagem vira a principal do produto).
-  const sendCarousel = async (list: FileList | null) => {
+  // Carrossel: imagens e vídeos do produto (a 1ª imagem vira a principal do
+  // produto). Com cor, vão pro carrossel daquela cor.
+  const sendCarousel = async (list: FileList | null, color?: string) => {
     const files = Array.from(list ?? []).filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (!files.length) return;
-    track("carousel", files.length);
+    const key = color ? `color:${color}` : "carousel";
+    track(key, files.length);
     const ids: string[] = [];
-    try {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) throw new Error("Não autenticado");
-      for (const file of files) {
-        try {
-          const path = `${u.user.id}/products/${productId}/${Date.now()}_${file.name.replace(/[^\w.-]+/g, "_")}`;
-          const { error: upErr } = await supabase.storage.from("project-attachments").upload(path, file);
-          if (upErr) throw upErr;
-          const { data: signed } = await supabase.storage.from("project-attachments").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
-          const r = await addImageFn({ data: {
-            product_id: productId, file_path: path, file_url: signed?.signedUrl ?? null, file_name: file.name, mime_type: file.type, size_bytes: file.size,
-          } });
-          ids.push((r.image as { id: string }).id);
-        } catch (e: any) {
-          toast.error(`${file.name}: ${e?.message ?? "erro ao enviar"}`);
-        }
-        track("carousel", -1);
+    for (const file of files) {
+      try {
+        ids.push(await uploadProductImage(productId, file, addImageFn));
+      } catch (e: any) {
+        toast.error(`${file.name}: ${e?.message ?? "erro ao enviar"}`);
       }
-    } catch (e: any) {
-      toast.error(e.message);
-      setUploading((u) => ({ ...u, carousel: 0 }));
+      track(key, -1);
     }
     if (ids.length) {
-      const next = { ...page, carousel_ids: [...page.carousel_ids, ...ids] };
+      const groups = page.color_carousels.some((c) => c.color === color)
+        ? page.color_carousels.map((c) => (c.color === color ? { ...c, ids: [...c.ids, ...ids] } : c))
+        : [...page.color_carousels, { color: color!, ids }];
+      const next = color ? { ...page, color_carousels: groups } : { ...page, carousel_ids: [...page.carousel_ids, ...ids] };
       setPage(next);
       save.mutate(next);
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -165,16 +157,23 @@ export function ProductPageTab({ productId }: { productId: string }) {
   };
   const removeCarousel = async (id: string) => {
     const img = imageById.get(id);
-    if (!(await confirm(`Excluir ${isVideoMime(img?.mime_type) ? "este vídeo" : "esta imagem"} do produto?`))) return;
+    if (!(await confirm(`Excluir ${isVideoMime(img?.mime_type) ? "este vídeo" : "esta imagem"} da página?`))) return;
     try {
-      await deleteImageFn({ data: { id } });
-      const next = { ...page, carousel_ids: page.carousel_ids.filter((x) => x !== id) };
+      await deleteImageFn({ data: { id, from: "page" } });
+      const next = {
+        ...page,
+        carousel_ids: page.carousel_ids.filter((x) => x !== id),
+        color_carousels: page.color_carousels.map((c) => ({ ...c, ids: c.ids.filter((x) => x !== id) })).filter((c) => c.ids.length > 0),
+      };
       setPage(next);
       save.mutate(next);
     } catch (e: any) {
       toast.error(e.message);
     }
   };
+  const moveInColor = (color: string, i: number, d: 1 | -1) =>
+    set({ color_carousels: page.color_carousels.map((c) => (c.color === color ? { ...c, ids: move(c.ids, i, d) } : c)) });
+  const colors = [...new Set([...data.colors, ...page.color_carousels.map((c) => c.color)])];
 
   const reviewsDone = page.reviews.length > 0 && page.reviews.every((r) => r.text.trim() && r.author.trim());
   const finalsCount = page.finals.length || page.final_ids.length;
@@ -208,6 +207,54 @@ export function ProductPageTab({ productId }: { productId: string }) {
               })}
             </div>
           )}
+          <div className="mt-4 pt-3 border-t border-border">
+            <p className="text-xs font-medium">Carrossel por cor</p>
+            {colors.length === 0 ? (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Pra trocar as imagens pela cor escolhida na página, crie a opção Cor (com os valores) em Publicar nas lojas › Variantes.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                  Ao escolher a cor na página, a galeria mostra as imagens dela. Cor sem imagens mostra o carrossel principal acima. Só na galeria em código.
+                </p>
+                <div className="space-y-3">
+                  {colors.map((color) => {
+                    const ids = page.color_carousels.find((c) => c.color === color)?.ids ?? [];
+                    return (
+                      <div key={color} className="rounded-xl border border-border p-2.5">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <p className="text-sm font-medium">
+                            {color}
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              {ids.length ? `${ids.length} ${ids.length === 1 ? "item" : "itens"}` : "usa o carrossel principal"}
+                              {!data.colors.includes(color) && " · não está mais na opção Cor"}
+                            </span>
+                          </p>
+                          <FilePick label="Enviar" accept="image/*,video/*" busy={busy(`color:${color}`)} count={uploading[`color:${color}`]} onFiles={(l) => sendCarousel(l, color)} />
+                        </div>
+                        {ids.length > 0 && (
+                          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                            {ids.map((id, i) => {
+                              const img = imageById.get(id);
+                              return (
+                                <Tile
+                                  key={id} n={i} src={img?.file_url ?? null} video={isVideoMime(img?.mime_type)}
+                                  onLeft={() => moveInColor(color, i, -1)}
+                                  onRight={() => moveInColor(color, i, 1)}
+                                  onRemove={() => removeCarousel(id)}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </>
       ),
     },

@@ -9,6 +9,7 @@ import {
 import { PRODUCTION_BUCKET, loadFields, safeFileName } from "@/lib/store-production.server";
 import { matrizStoreIds } from "@/lib/store-roles.server";
 import { emptyPage, isVideoMime, type CdnImage, type ProductPageData } from "@/lib/product-page";
+import { colorOptionIndex, type ShopifyListing } from "@/lib/product-shopify";
 
 const ProductIdInput = z.object({ product_id: z.string().uuid() });
 
@@ -17,6 +18,10 @@ const PageInput = z.object({
   handle: z.string().trim().max(255),
   file_name: z.string().trim().max(150),
   carousel_ids: z.array(z.string().uuid()).max(30),
+  color_carousels: z.array(z.object({
+    color: z.string().trim().min(1).max(60),
+    ids: z.array(z.string().uuid()).max(30),
+  })).max(30).default([]),
   final_ids: z.array(z.string().uuid()).max(3),
   finals: z.array(z.object({ id: z.string().uuid(), path: z.string().max(500), name: z.string().max(255) })).max(3).default([]),
   testimonials: z.array(z.object({ id: z.string().uuid(), path: z.string().max(500), name: z.string().max(255) })).max(30),
@@ -61,6 +66,14 @@ async function loadProduct(ownerId: string, productId: string) {
 async function loadPage(productId: string): Promise<ProductPageData | null> {
   const { data } = await supabaseAdmin.from("product_pages").select("data").eq("product_id", productId).maybeSingle();
   return data ? { ...emptyPage(), ...(data.data as Partial<ProductPageData>) } : null;
+}
+
+// Cores do produto: valores da opção Cor da ficha (aba Publicar nas lojas).
+async function listingColors(productId: string): Promise<string[]> {
+  const { data } = await supabaseAdmin.from("product_shopify_listings").select("data").eq("product_id", productId).maybeSingle();
+  const options = ((data?.data as Partial<ShopifyListing> | undefined)?.options ?? []).filter((o) => o.name.trim() && o.values.length > 0);
+  const i = colorOptionIndex(options);
+  return i === -1 ? [] : options[i].values;
 }
 
 const pagesPrefix = (ownerId: string, productId: string) => `${ownerId}/product-pages/${productId}/`;
@@ -143,7 +156,7 @@ export const getProductPage = createServerFn({ method: "GET" })
       supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId),
       supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,handle").eq("product_id", product.id).eq("status", "ok"),
     ]);
-    const [options, recsTpl] = await Promise.all([productOptions(ownerId), loadRecsTemplate(ownerId)]);
+    const [options, recsTpl, colors] = await Promise.all([productOptions(ownerId), loadRecsTemplate(ownerId), listingColors(product.id)]);
     const fromTemplate = applyRecsTemplate(recsTpl, product.id, options);
     // Lojas da coluna Ativas (a página vai pra matriz).
     const activeIds = (columns.data ?? []).filter((c) => /^ativ/i.test(c.name.trim())).map((c) => c.id);
@@ -165,7 +178,7 @@ export const getProductPage = createServerFn({ method: "GET" })
         store_id: store?.id ?? null,
         handle: (store && handleByStore[store.id]) || "",
         file_name: product.name,
-        carousel_ids: (images.data ?? []).map((i) => i.id),
+        carousel_ids: [],
       };
     }
     // Página salva antes dos blocos de depoimentos/recomendados: abre com os do modelo.
@@ -178,10 +191,13 @@ export const getProductPage = createServerFn({ method: "GET" })
     if (page.recs.length === 0 && fromTemplate.recs.length > 0) {
       page = { ...page, recs: fromTemplate.recs, recs_title: fromTemplate.recs_title || page.recs_title };
     }
-    // Carrossel = todas as imagens do produto: as já ordenadas primeiro, as que faltam no fim.
-    const imageIds = (images.data ?? []).map((i) => i.id);
-    const kept = page.carousel_ids.filter((id) => imageIds.includes(id));
-    page = { ...page, carousel_ids: [...kept, ...imageIds.filter((id) => !kept.includes(id))] };
+    // Carrossel = só as imagens enviadas nesta aba (as da aba Publicar ficam de fora).
+    const imageIds = new Set((images.data ?? []).map((i) => i.id));
+    page = {
+      ...page,
+      color_carousels: page.color_carousels.map((c) => ({ ...c, ids: c.ids.filter((id) => imageIds.has(id)) })),
+      carousel_ids: page.carousel_ids.filter((id) => imageIds.has(id)),
+    };
     // Links temporários pra mostrar as fotos de depoimento.
     const thumbs: Record<string, string> = {};
     for (const t of [...page.testimonials, ...page.finals, ...page.stories]) {
@@ -190,7 +206,7 @@ export const getProductPage = createServerFn({ method: "GET" })
     }
     const { cdn: _cdn, ...pageNoCdn } = page;
     return {
-      page: pageNoCdn, images: images.data ?? [], stores: storeList, handleByStore, thumbs,
+      page: pageNoCdn, images: images.data ?? [], stores: storeList, colors, handleByStore, thumbs,
       products: options.filter((p) => p.id !== product.id),
       recsTemplate: fromTemplate,
       template: { custom, ...templatePreview(tpl) },
@@ -269,7 +285,7 @@ export const generatePagefly = createServerFn({ method: "POST" })
     // O que precisa estar no CDN: imagens do produto (carrossel/finais) e depoimentos.
     // Imagens finais: as enviadas na aba; sem nenhuma, as escolhidas antes entre as imagens do produto.
     const legacyFinals = page.finals.length ? [] : page.final_ids;
-    const imgIds = [...new Set([...page.carousel_ids, ...legacyFinals])];
+    const imgIds = [...new Set([...page.carousel_ids, ...page.color_carousels.flatMap((c) => c.ids), ...legacyFinals])];
     const { data: imgs } = await supabaseAdmin.from("product_images").select("id,file_path,file_name,mime_type")
       .eq("product_id", data.product_id).in("id", imgIds.length ? imgIds : ["00000000-0000-0000-0000-000000000000"]);
     const sources: { key: string; url: string; name: string }[] = [];
@@ -338,8 +354,13 @@ export const generatePagefly = createServerFn({ method: "POST" })
       }];
     });
     const { tpl } = await loadTemplate(ownerId);
+    const colors = await listingColors(data.product_id);
     const built = buildPagefly(tpl, { ...emptyPage(), ...page, cdn }, {
       carousel: pick(page.carousel_ids.map((id) => `img:${id}`)),
+      colors: {
+        names: [...new Set([...colors, ...page.color_carousels.map((c) => c.color)])],
+        groups: Object.fromEntries(page.color_carousels.map((c) => [c.color, pick(c.ids.map((id) => `img:${id}`))])),
+      },
       testimonials: pick(page.testimonials.map((t) => `t:${t.id}`)),
       finals: page.finals.length ? pick(page.finals.map((f) => `f:${f.id}`)) : pick(legacyFinals.map((id) => `img:${id}`)),
       recs,

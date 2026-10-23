@@ -380,12 +380,29 @@ export const setMainImage = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Imagem usada pela outra aba (Página × Publicar nas lojas)? Aí só sai da
+// aba que pediu e o arquivo fica.
+async function usedByOtherTab(productId: string, imageId: string, from: "page" | "shopify") {
+  if (from === "shopify") {
+    const { data } = await supabaseAdmin.from("product_pages").select("data").eq("product_id", productId).maybeSingle();
+    const p = (data?.data ?? {}) as { carousel_ids?: string[]; final_ids?: string[]; color_carousels?: { ids: string[] }[] };
+    return [...(p.carousel_ids ?? []), ...(p.final_ids ?? []), ...(p.color_carousels ?? []).flatMap((c) => c.ids)].includes(imageId);
+  }
+  const { data } = await supabaseAdmin.from("product_shopify_listings").select("data").eq("product_id", productId).maybeSingle();
+  const l = (data?.data ?? null) as { image_pool?: string[]; image_ids?: string[]; image_ids_subloja?: string[] | null; value_images?: Record<string, string> } | null;
+  if (!l) return false;
+  // Ficha de antes da separação: todas as imagens do produto estão nela.
+  if (!l.image_pool) return true;
+  return [...l.image_pool, ...(l.image_ids ?? []), ...(l.image_ids_subloja ?? []), ...Object.values(l.value_images ?? {})].includes(imageId);
+}
+
 export const deleteProductImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .inputValidator((d) => z.object({ id: z.string().uuid(), from: z.enum(["page", "shopify"]).optional() }).parse(d))
   .handler(async ({ context, data }) => {
     const { data: img } = await context.supabase.from("product_images").select("*").eq("id", data.id).maybeSingle();
     if (!img) return { ok: true };
+    if (data.from && await usedByOtherTab(img.product_id, img.id, data.from)) return { ok: true };
     await context.supabase.storage.from("project-attachments").remove([img.file_path]);
     await context.supabase.from("product_images").delete().eq("id", data.id);
     if (img.is_main) {
