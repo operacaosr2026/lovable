@@ -61,6 +61,7 @@ export async function createProductInStore(
   listing: ShopifyListing,
   role: StoreRole,
   imageUrls: string[],
+  variantImageUrl: (values: string[]) => string | undefined,
 ): Promise<PublishResult> {
   const { shop_domain: domain, access_token: token } = store;
   const warnings: string[] = [];
@@ -89,11 +90,15 @@ export async function createProductInStore(
         compareAtPrice: money(v.compare_at_price) ?? baseCompare,
         sku: v.sku.trim() || variantSku(listing.sku, v.values) || null,
         inventory: v.inventory,
+        imageUrl: variantImageUrl(v.values),
       }))
     : [{
         optionValues: [{ optionName: "Title", name: "Default Title" }],
         price: basePrice, compareAtPrice: baseCompare, sku: listing.sku.trim() || null, inventory: listing.inventory,
+        imageUrl: undefined,
       }];
+  // Foto de cor que não está na galeria entra no fim dela.
+  const files = [...new Set([...imageUrls, ...rows.flatMap((r) => (r.imageUrl ? [r.imageUrl] : []))])];
 
   const input: Record<string, unknown> = {
     title,
@@ -107,8 +112,9 @@ export async function createProductInStore(
       inventoryPolicy: "CONTINUE",
       inventoryItem: { tracked: true, ...(r.sku ? { sku: r.sku } : {}) },
       ...(storeLoc ? { inventoryQuantities: [{ locationId: storeLoc.id, name: "available", quantity: Math.max(0, Math.round(r.inventory || 0)) }] } : {}),
+      ...(r.imageUrl ? { file: { originalSource: r.imageUrl, contentType: "IMAGE" } } : {}),
     })),
-    ...(imageUrls.length > 0 ? { files: imageUrls.map((url) => ({ originalSource: url, contentType: "IMAGE" })) } : {}),
+    ...(files.length > 0 ? { files: files.map((url) => ({ originalSource: url, contentType: "IMAGE" })) } : {}),
     ...(listing.handle.trim() ? { handle: listing.handle.trim() } : {}),
     ...(listing.seo_title.trim() || listing.seo_description.trim()
       ? { seo: { title: listing.seo_title.trim() || null, description: listing.seo_description.trim() || null } }
@@ -171,8 +177,8 @@ const GET_PRODUCT = `query($id: ID!) {
 const PRODUCT_UPDATE = `mutation($product: ProductUpdateInput!) {
   productUpdate(product: $product) { userErrors { message } }
 }`;
-const VARIANTS_UPDATE = `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-  productVariantsBulkUpdate(productId: $productId, variants: $variants) { userErrors { message } }
+const VARIANTS_UPDATE = `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!, $media: [CreateMediaInput!]) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants, media: $media) { userErrors { message } }
 }`;
 const SET_QUANTITIES = `mutation($input: InventorySetQuantitiesInput!, $key: String!) {
   inventorySetQuantities(input: $input) @idempotent(key: $key) { userErrors { message } }
@@ -260,6 +266,7 @@ export async function updateProductInStore(
   listing: ShopifyListing,
   role: StoreRole,
   parts: UpdatePart[],
+  variantImageUrl: (values: string[]) => string | undefined,
 ): Promise<{ done: string[]; warnings: string[] }> {
   const { shop_domain: domain, access_token: token } = store;
   const gid = `gid://shopify/Product/${shopifyProductId}`;
@@ -329,6 +336,25 @@ export async function updateProductInStore(
     }
   }
 
+  // Fotos das cores: a Shopify sobe cada foto na galeria (vai pro fim) e
+  // liga na variante da cor. Mandar de novo sobe outra cópia.
+  if (want.has("fotos_cores")) {
+    const rows = variants.flatMap((v) => {
+      const sheet = sheetFor(v);
+      const url = sheet ? variantImageUrl(sheet.values) : undefined;
+      return url ? [{ id: v.id, mediaSrc: [url] }] : [];
+    });
+    if (rows.length === 0) warnings.push("Fotos das cores: nenhuma cor com foto escolhida na ficha.");
+    else {
+      const media = [...new Set(rows.map((r) => r.mediaSrc[0]))].map((originalSource) => ({ originalSource, mediaContentType: "IMAGE" }));
+      try {
+        const r = await gql(domain, token, VARIANTS_UPDATE, { productId: gid, variants: rows, media });
+        const err = firstError(r.productVariantsBulkUpdate?.userErrors);
+        if (err) warnings.push(`Fotos das cores: ${err}`); else done.push(UPDATE_PART_LABELS.fotos_cores);
+      } catch (e: any) { warnings.push(`Fotos das cores: ${e.message}`); }
+    }
+  }
+
   // Variante criada agora já ganha estoque e Aprodrop, mesmo sem marcar essas
   // partes — e aí só ela (o estoque das que já existiam não é tocado).
   const fresh = new Set(createdVariants);
@@ -379,17 +405,14 @@ export async function updateProductInStore(
 
 // Links temporários das imagens escolhidas pra Shopify baixar. Quem chama já
 // conferiu que o produto é do workspace.
-export async function signedImageUrls(productId: string, imageIds: string[]): Promise<string[]> {
-  if (imageIds.length === 0) return [];
+export async function signedImageUrlMap(productId: string, imageIds: string[]): Promise<Map<string, string>> {
+  const urls = new Map<string, string>();
+  if (imageIds.length === 0) return urls;
   const { data } = await supabaseAdmin.from("product_images").select("id,file_path")
     .eq("product_id", productId).in("id", imageIds);
-  const byId = new Map((data ?? []).map((r) => [r.id, r.file_path as string]));
-  const urls: string[] = [];
-  for (const id of imageIds) {
-    const path = byId.get(id);
-    if (!path) continue;
-    const { data: signed } = await supabaseAdmin.storage.from("project-attachments").createSignedUrl(path, 60 * 60);
-    if (signed?.signedUrl) urls.push(signed.signedUrl);
+  for (const r of data ?? []) {
+    const { data: signed } = await supabaseAdmin.storage.from("project-attachments").createSignedUrl(r.file_path as string, 60 * 60);
+    if (signed?.signedUrl) urls.set(r.id, signed.signedUrl);
   }
   return urls;
 }

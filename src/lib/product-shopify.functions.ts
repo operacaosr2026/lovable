@@ -2,12 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createProductInStore, findExistingProduct, productExistsInStore, signedImageUrls, updateProductInStore } from "@/lib/product-shopify.server";
+import { createProductInStore, findExistingProduct, productExistsInStore, signedImageUrlMap, updateProductInStore } from "@/lib/product-shopify.server";
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
 import { isVideoMime } from "@/lib/product-page";
 import { matrizStoreIds } from "@/lib/store-roles.server";
 import {
-  REQUIRED_SCOPES, UPDATE_PARTS, buildVariants, emptyListing, imagesFor,
+  REQUIRED_SCOPES, UPDATE_PARTS, buildVariants, emptyListing, imagesFor, variantImageId,
   type ShopifyListing, type ShopifyOption, type StoreRole, type VariantTemplate,
 } from "@/lib/product-shopify";
 
@@ -36,6 +36,7 @@ const ListingInput = z.object({
     sku: z.string().trim().max(100),
     inventory: z.number().int().min(0).max(1_000_000),
   })).max(100),
+  value_images: z.record(z.string().max(60), z.string().uuid()).default({}),
   seo_title: z.string().trim().max(70),
   seo_description: z.string().trim().max(320),
   handle: z.string().trim().max(255),
@@ -161,11 +162,14 @@ export const publishProductShopify = createServerFn({ method: "POST" })
     const { data: done } = await supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,shopify_product_id")
       .eq("product_id", data.product_id).eq("status", "ok");
     const createdIn = new Map((done ?? []).map((r) => [r.shopify_store_id, r.shopify_product_id as string | null]));
-    // Imagens por papel (matriz / subloja), geradas uma vez cada.
-    const urlsByRole = new Map<StoreRole, Promise<string[]>>();
-    const imageUrlsFor = (role: StoreRole) => {
-      if (!urlsByRole.has(role)) urlsByRole.set(role, signedImageUrls(data.product_id, imagesFor(listing, role)));
-      return urlsByRole.get(role)!;
+    // Links das imagens gerados uma vez só: a foto da cor precisa do mesmo
+    // link na galeria e na variante pra Shopify não duplicar.
+    const variantImageIds = listing.variants.map((v) => variantImageId(listing, v.values)).filter((id): id is string => !!id);
+    const urlById = await signedImageUrlMap(data.product_id, [...new Set([...imagesFor(listing, "matriz"), ...imagesFor(listing, "subloja"), ...variantImageIds])]);
+    const imageUrlsFor = (role: StoreRole) => imagesFor(listing, role).map((id) => urlById.get(id)).filter((u): u is string => !!u);
+    const variantImageUrl = (values: string[]) => {
+      const id = variantImageId(listing, values);
+      return id ? urlById.get(id) : undefined;
     };
 
     const results: { shopify_store_id: string; ok: boolean; message: string }[] = [];
@@ -187,7 +191,7 @@ export const publishProductShopify = createServerFn({ method: "POST" })
       try {
         if (!store?.shop_domain || !store.access_token) throw new Error("Loja sem conexão com a Shopify.");
         const r = await createProductInStore(
-          { shop_domain: store.shop_domain, access_token: store.access_token }, listing, target.role, await imageUrlsFor(target.role),
+          { shop_domain: store.shop_domain, access_token: store.access_token }, listing, target.role, imageUrlsFor(target.role), variantImageUrl,
         );
         await supabaseAdmin.from("product_shopify_publications").upsert({
           ...base, status: "ok", shopify_product_id: r.productId, handle: r.handle, error: null, warnings: r.warnings,
@@ -245,6 +249,13 @@ export const updateProductShopify = createServerFn({ method: "POST" })
     const listing = data.listing as ShopifyListing;
     await supabaseAdmin.from("product_shopify_listings")
       .upsert({ product_id: data.product_id, user_id: ownerId, data: listing }, { onConflict: "product_id" });
+    const urlById = data.parts.includes("fotos_cores")
+      ? await signedImageUrlMap(data.product_id, [...new Set(listing.variants.map((v) => variantImageId(listing, v.values)).filter((id): id is string => !!id))])
+      : new Map<string, string>();
+    const variantImageUrl = (values: string[]) => {
+      const id = variantImageId(listing, values);
+      return id ? urlById.get(id) : undefined;
+    };
 
     const results: { shopify_store_id: string; ok: boolean; message: string }[] = [];
     for (const target of data.stores) {
@@ -258,7 +269,7 @@ export const updateProductShopify = createServerFn({ method: "POST" })
         if (!pub?.shopify_product_id) throw new Error("Produto ainda não foi criado nesta loja.");
         if (!store?.shop_domain || !store.access_token) throw new Error("Loja sem conexão com a Shopify.");
         const r = await updateProductInStore(
-          { shop_domain: store.shop_domain, access_token: store.access_token }, pub.shopify_product_id, listing, target.role, data.parts,
+          { shop_domain: store.shop_domain, access_token: store.access_token }, pub.shopify_product_id, listing, target.role, data.parts, variantImageUrl,
         );
         // Avisos da criação dão lugar aos desta atualização.
         await supabaseAdmin.from("product_shopify_publications").update({ warnings: r.warnings, role: target.role })

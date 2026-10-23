@@ -14,7 +14,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  UPDATE_PARTS, UPDATE_PART_LABELS, buildVariants, variantSku, type ShopifyListing, type StoreRole, type UpdatePart,
+  UPDATE_PARTS, UPDATE_PART_LABELS, buildVariants, colorOptionIndex, variantSku, type ShopifyListing, type StoreRole, type UpdatePart,
 } from "@/lib/product-shopify";
 import { SectionTitle } from "@/components/shops/StoreProduction";
 
@@ -243,10 +243,21 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                 // Renomeia na opção e nas variantes, mantendo preço, SKU e estoque já preenchidos.
                 options: l!.options.map((x, i) => (i === oi ? { ...x, values: x.values.map((v) => (v === from ? to : v)) } : x)),
                 variants: l!.variants.map((vr) => (vr.values[oi] === from ? { ...vr, values: vr.values.map((v, i) => (i === oi ? to : v)) } : vr)),
+                value_images: from in l!.value_images
+                  ? Object.fromEntries(Object.entries(l!.value_images).map(([k, id]) => [k === from ? to : k, id]))
+                  : l!.value_images,
               }))}
             />
           ))}
         </div>
+        {colorOptionIndex(listing.options) !== -1 && data.images.length > 0 && (
+          <ColorImages
+            values={listing.options.filter((o) => o.name.trim() && o.values.length > 0)[colorOptionIndex(listing.options)].values}
+            images={data.images}
+            value={listing.value_images}
+            onChange={(value_images) => set({ value_images })}
+          />
+        )}
         {hasVariants && (
           <div className="mt-3 rounded-xl border border-border overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">
@@ -409,7 +420,13 @@ export function ProductShopifyTab({ productId }: { productId: string }) {
                 </label>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. Imagens não são atualizadas por aqui.</p>
+            <p className="text-[11px] text-muted-foreground mt-2">Usa o que está na ficha acima. A galeria de imagens não é atualizada por aqui.</p>
+            {parts.includes("fotos_cores") && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-start gap-1">
+                <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                Fotos das cores: cada foto é enviada de novo e entra no fim da galeria da loja (se já estava lá, fica repetida — apague a cópia antiga na Shopify).
+              </p>
+            )}
             {parts.includes("variantes") && (
               <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-start gap-1">
                 <AlertTriangle className="size-3.5 shrink-0 mt-px" />
@@ -507,6 +524,45 @@ export function ImagePicker({ images, value, onChange }: {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Foto de cada cor: vai pra variante na Shopify (aparece ao escolher a cor).
+function ColorImages({ values, images, value, onChange }: {
+  values: string[]; images: { id: string; file_url: string | null; file_name: string | null }[];
+  value: Record<string, string>; onChange: (v: Record<string, string>) => void;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-border p-3 space-y-3">
+      <div>
+        <p className="text-xs font-medium">Foto de cada cor</p>
+        <p className="text-[11px] text-muted-foreground">Clique na imagem da cor — na loja, ao escolher a cor, aparece essa foto. Se ela não estiver nas imagens escolhidas acima, entra no fim da galeria.</p>
+      </div>
+      {values.map((color) => (
+        <div key={color} className="flex items-start gap-3">
+          <span className="w-24 shrink-0 pt-2 text-sm font-medium truncate" title={color}>{color}</span>
+          <div className="flex-1 flex gap-1.5 overflow-x-auto pb-1">
+            {images.map((img) => {
+              const on = value[color] === img.id;
+              return (
+                <button
+                  key={img.id}
+                  type="button"
+                  onClick={() => {
+                    const { [color]: _, ...rest } = value;
+                    onChange(on ? rest : { ...rest, [color]: img.id });
+                  }}
+                  className={`relative size-12 shrink-0 rounded-md overflow-hidden border-2 ${on ? "border-primary" : "border-transparent opacity-50 hover:opacity-100"}`}
+                >
+                  {img.file_url ? <img src={img.file_url} alt={img.file_name ?? ""} className="w-full h-full object-cover" /> : <ImageOff className="size-4 m-auto text-muted-foreground" />}
+                  {on && <Check className="absolute top-0.5 right-0.5 size-3.5 rounded-full bg-primary text-primary-foreground p-0.5" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

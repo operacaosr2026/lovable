@@ -23,6 +23,8 @@ export type ShopifyListing = {
   inventory: number;         // estoque no local do endereço da loja
   options: ShopifyOption[];  // vazio = produto sem variantes
   variants: ShopifyVariant[];
+  // Imagem (product_images) de cada valor da opção de cor, ex.: { Azul: "<id>" }.
+  value_images: Record<string, string>;
   seo_title: string;
   seo_description: string;
   handle: string;
@@ -33,7 +35,7 @@ export type StoreRole = "matriz" | "subloja";
 export const emptyListing = (name = ""): ShopifyListing => ({
   title_matriz: name, title_subloja: "", description_html: "", image_ids: [], image_ids_subloja: null,
   price: "", compare_at_price: "", sku: "", weight_grams: null, inventory: 0,
-  options: [], variants: [], seo_title: "", seo_description: "", handle: "",
+  options: [], variants: [], value_images: {}, seo_title: "", seo_description: "", handle: "",
 });
 
 // Todas as combinações das opções (Cor × Tamanho...), mantendo preço, SKU e
@@ -58,16 +60,29 @@ export function variantSku(baseSku: string, values: string[]): string {
   return [base, ...values.map((v) => v.trim())].join("-");
 }
 
+// Opção que leva foto por valor: a primeira chamada Cor/Color. Índice nas
+// opções preenchidas (mesma ordem de ShopifyVariant.values), ou -1.
+export function colorOptionIndex(options: ShopifyOption[]): number {
+  return options.filter((o) => o.name.trim() && o.values.length > 0).findIndex((o) => /^(cor|cores|colou?rs?)$/i.test(o.name.trim()));
+}
+
+// Imagem da variante pela cor dela.
+export function variantImageId(listing: ShopifyListing, values: string[]): string | undefined {
+  const i = colorOptionIndex(listing.options);
+  return i === -1 ? undefined : listing.value_images[values[i]];
+}
+
 export type VariantTemplate = { id: string; name: string; options: ShopifyOption[]; is_default: boolean };
 
 // Partes que dá pra reenviar a um produto já criado na loja.
-export const UPDATE_PARTS = ["aprodrop", "nome", "descricao", "variantes", "preco", "sku", "estoque", "seo"] as const;
+export const UPDATE_PARTS = ["aprodrop", "nome", "descricao", "variantes", "fotos_cores", "preco", "sku", "estoque", "seo"] as const;
 export type UpdatePart = (typeof UPDATE_PARTS)[number];
 export const UPDATE_PART_LABELS: Record<UpdatePart, string> = {
   aprodrop: "Disponível na Aprodrop",
   nome: "Nome",
   descricao: "Descrição",
   variantes: "Variantes",
+  fotos_cores: "Fotos das cores",
   preco: "Preço",
   sku: "SKU",
   estoque: "Estoque",
