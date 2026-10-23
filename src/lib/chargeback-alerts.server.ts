@@ -44,6 +44,12 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
     .eq("user_id", ownerId).in("shop_id", shopIds).neq("raw->refunds", "[]"));
   if (error) throw new Error(error.message);
 
+  // Reembolso total feito pelo Atendimento sem "cobrar quando entregar" marcado:
+  // foi de propósito (tamanho errado, acordo com o cliente) — não entra como "Reembolso".
+  const { data: noCharge } = await supabaseAdmin.from("support_refund_requests" as any).select("order_id")
+    .eq("owner_id", ownerId).eq("mode", "total").eq("status", "aprovado").eq("charge_on_delivery", false);
+  const skipRefund = new Set(((noCharge ?? []) as any[]).map((r) => r.order_id));
+
   const found: any[] = [];
   const refundSum = (txs: any[]) => txs.filter((t) => (t.kind ?? "refund") === "refund" && (t.status ?? "success") === "success")
     .reduce((s, t) => s + Number(t.amount ?? 0), 0);
@@ -62,7 +68,7 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
       break;   // um alerta por pedido
     }
     // Reembolso total (não de alerta) de pedido já enviado.
-    if (found.length === before && o.shopify_financial_status === "refunded" && o.tracking_code) {
+    if (found.length === before && o.shopify_financial_status === "refunded" && o.tracking_code && !skipRefund.has(o.id)) {
       const refunds = (o.refunds ?? []) as any[];
       const last = [...refunds].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""))).pop();
       const amount = refunds.reduce((sum, r) => sum + refundSum((r.transactions ?? []) as any[]), 0);

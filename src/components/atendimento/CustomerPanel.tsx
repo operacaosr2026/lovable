@@ -221,7 +221,12 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                   <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Cancelado</span>}
                     {o.financial && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{FINANCIAL[o.financial] ?? o.financial}</span>}
-                    {o.delivery && <span className={`text-[10px] px-1.5 py-0.5 rounded ${DELIVERY[o.delivery]?.cls ?? "bg-info/10 text-info"}`}>{DELIVERY[o.delivery]?.label ?? o.delivery}</span>}
+                    {o.delivery && !o.tracking && <DeliveryBadge status={o.delivery} />}
+                    {o.dispute && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.dispute.status === "won" ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>
+                        {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"} · {DISPUTE[o.dispute.status ?? ""] ?? o.dispute.status}
+                      </span>
+                    )}
                   </div>
                   {o.tracking && (
                     <div className="flex items-center gap-1.5 mt-2 text-[11px]">
@@ -229,17 +234,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                       {o.trackingUrl
                         ? <a href={o.trackingUrl} target="_blank" rel="noreferrer" className="font-mono text-primary hover:underline truncate">{o.tracking}</a>
                         : <span className="font-mono truncate">{o.tracking}</span>}
-                      {/* Copia o link da página de rastreio da loja (já com o código). */}
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(o.trackingUrl ?? o.tracking!);
-                          if (o.trackingUrl) toast.success("Link de rastreio copiado");
-                          else toast.success("Código copiado", { description: "Esta loja não tem URL de rastreio configurada." });
-                        }}
-                        title={o.trackingUrl ? `Copiar link: ${o.trackingUrl}` : "Copiar código (loja sem URL de rastreio)"}
-                        className="text-muted-foreground hover:text-foreground" aria-label="Copiar link de rastreio">
-                        <Copy className="size-3" />
-                      </button>
+                      {o.delivery && <DeliveryBadge status={o.delivery} />}
                     </div>
                   )}
                   {((exchanges.data?.requests ?? []) as ExchangeRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
@@ -248,13 +243,15 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                   {((refunds.data?.requests ?? []) as RefundRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
                     <RefundRequestCard key={r.id} r={r} canApprove={!!refunds.data?.canApprove} />
                   ))}
-                  {!o.cancelled && (
+                  {/* Reembolsado por inteiro (na Shopify ou por um pedido aqui ainda não sincronizado): sem troca nem novo reembolso. */}
+                  {!o.cancelled && o.financial !== "refunded"
+                    && !((refunds.data?.requests ?? []) as RefundRequestView[]).some((r) => r.order_id === o.id && r.mode === "total" && r.status !== "recusado" && r.status !== "erro") && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       <button onClick={() => setExchangeOrder(o.id)}
                         className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
                         <Repeat className="size-3" /> Gerar troca
                       </button>
-                      {o.financial !== "refunded" && o.revenue > 0 && (
+                      {o.revenue > 0 && (
                         <button onClick={() => setRefundOrder(o.id)}
                           className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
                           <Undo2 className="size-3" /> Reembolsar
@@ -311,6 +308,18 @@ const FINANCIAL: Record<string, string> = {
   paid: "Pago", pending: "Pendente", refunded: "Reembolsado", partially_refunded: "Reembolso parcial",
   voided: "Anulado", authorized: "Autorizado", partially_paid: "Pago parcial",
 };
+const DISPUTE: Record<string, string> = {
+  needs_response: "aguardando resposta", under_review: "em análise", won: "ganho", lost: "perdido",
+  warning_needs_response: "aguardando resposta", warning_under_review: "em análise", accepted: "aceito", charge_refunded: "reembolsado",
+};
+
+function DeliveryBadge({ status }: { status: string }) {
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${DELIVERY[status]?.cls ?? "bg-info/10 text-info"}`}>
+      {DELIVERY[status]?.label ?? status}
+    </span>
+  );
+}
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (

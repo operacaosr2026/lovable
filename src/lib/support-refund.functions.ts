@@ -120,7 +120,7 @@ export const listRefundRequests = createServerFn({ method: "GET" })
     assertAccess(context as Ctx);
     if (!data.orderIds.length) return { canApprove: isApprover(context as Ctx), requests: [] };
     const { data: rows, error } = await db("support_refund_requests")
-      .select("id,order_id,order_number,mode,line_items,include_shipping,amount,currency,notify_customer,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at")
+      .select("id,order_id,order_number,mode,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at")
       .eq("owner_id", context.ownerId).in("order_id", data.orderIds).order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const name = await personNames((rows ?? []).flatMap((r: any) => [r.requested_by, r.decided_by]));
@@ -145,6 +145,7 @@ export const requestRefund = createServerFn({ method: "POST" })
     includeShipping: z.boolean(),
     amount: z.number().positive().max(100_000).nullable(),
     notifyCustomer: z.boolean(),
+    chargeOnDelivery: z.boolean().default(false),
     note: z.string().trim().max(1000).nullable(),
   }).parse(d))
   .handler(async ({ data, context }) => {
@@ -169,7 +170,7 @@ export const requestRefund = createServerFn({ method: "POST" })
       owner_id: ctx.ownerId, requested_by: ctx.userId, shop_id: o.shop_id, conversation_id: data.conversationId,
       order_id: o.id, order_number: o.order_number, customer_email: customer.email, customer_name: customer.name,
       mode: data.mode, line_items: data.mode === "itens" ? data.lines : [], include_shipping: data.mode === "itens" && data.includeShipping,
-      amount, currency: plan.currency, notify_customer: data.notifyCustomer, note: data.note,
+      amount, currency: plan.currency, notify_customer: data.notifyCustomer, charge_on_delivery: data.mode === "total" && data.chargeOnDelivery, note: data.note,
     }).select("id").single();
     if (error) throw new Error(error.message);
 

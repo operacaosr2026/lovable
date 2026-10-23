@@ -40,6 +40,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
   const [shipping, setShipping] = useState(false);
   const [value, setValue] = useState("");
   const [notify, setNotify] = useState(true);
+  const [charge, setCharge] = useState(false);
   const [note, setNote] = useState("");
 
   const lines: RefundLine[] = useMemo(() => (s?.lines ?? [])
@@ -71,7 +72,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
       }))) return null;
       return requestFn({ data: {
         orderId, conversationId, mode, lines: mode === "itens" ? lines : [], includeShipping: mode === "itens" && shipping,
-        amount: mode === "valor" ? amount : null, notifyCustomer: notify, note: note.trim() || null,
+        amount: mode === "valor" ? amount : null, notifyCustomer: notify, chargeOnDelivery: mode === "total" && charge, note: note.trim() || null,
       } });
     },
     onSuccess: (res: any) => {
@@ -184,6 +185,17 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
               Shopify avisa o cliente por e-mail
             </label>
 
+            {/* Só reembolso total entra em Chargebacks > Alertas (rede "Reembolso"). */}
+            {mode === "total" && (
+              <label className="flex items-start gap-2 text-xs cursor-pointer">
+                <input type="checkbox" checked={charge} onChange={(e) => setCharge(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Cobrar o cliente quando o produto for entregue
+                  <span className="block text-[11px] text-muted-foreground">Entra em Chargebacks › Alertas. Desmarcado, não é cobrado.</span>
+                </span>
+              </label>
+            )}
+
             <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
               <span className="text-xs text-muted-foreground">Vai devolver</span>
               <span className={`text-sm font-semibold ${overMax ? "text-destructive" : ""}`}>
@@ -219,17 +231,27 @@ function Stat({ label, value }: { label: string; value: string }) {
 const STATUS: Record<string, { label: string; cls: string }> = {
   pendente: { label: "Aguardando aprovação", cls: "bg-amber-500/10 text-amber-600" },
   gerando: { label: "Reembolsando…", cls: "bg-blue-500/10 text-blue-600" },
-  aprovado: { label: "Reembolsado", cls: "bg-emerald-500/10 text-emerald-600" },
+  aprovado: { label: "Concluído", cls: "bg-emerald-500/10 text-emerald-600" },
   recusado: { label: "Recusado", cls: "bg-rose-500/10 text-rose-600" },
   erro: { label: "Erro ao reembolsar", cls: "bg-rose-500/10 text-rose-600" },
 };
 
 export type RefundRequestView = {
   id: string; order_id: string; mode: RefundMode; line_items: RefundLine[]; include_shipping: boolean;
-  amount: number; currency: string; notify_customer: boolean; note: string | null; status: string;
-  requestedByName: string | null; decidedByName: string | null; reject_reason: string | null;
+  amount: number; currency: string; notify_customer: boolean; charge_on_delivery: boolean; note: string | null; status: string;
+  requestedByName: string | null; decidedByName: string | null; decided_at: string | null; reject_reason: string | null;
   refunded_amount: number | null; error: string | null; created_at: string;
 };
+
+// "Solicitado · Lidianne ......... 23/10/2026, 13:23" numa linha só (nome corta, data não).
+function WhoWhen({ label, name, at }: { label: string; name: string; at: string }) {
+  return (
+    <div className="flex items-center gap-2 text-[10px] text-muted-foreground whitespace-nowrap">
+      <span className="truncate min-w-0">{label} · {name}</span>
+      <span className="ml-auto shrink-0">{fullTime(at)}</span>
+    </div>
+  );
+}
 
 // Cartão do reembolso embaixo do pedido. O dono aprova/recusa daqui.
 export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; canApprove: boolean }) {
@@ -266,16 +288,18 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
   return (
     <div className="mt-2 rounded-lg border border-dashed border-border p-2.5 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold flex items-center gap-1">
+        <p className="text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap">
           <Undo2 className="size-3" /> Reembolso {formatMoney(r.status === "aprovado" && r.refunded_amount != null ? r.refunded_amount : r.amount, r.currency)}
         </p>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${st.cls}`}>{st.label}</span>
+        {/* Feito não precisa de etiqueta: a linha "Aprovado por" já diz. */}
+        {r.status !== "aprovado" && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${st.cls}`}>{st.label}</span>}
       </div>
-      <p className="text-[11px]">{what}</p>
-      <p className="text-[10px] text-muted-foreground">
-        {r.requestedByName ?? "Equipe"} · {fullTime(r.created_at)}{r.notify_customer ? " · avisa o cliente" : ""}
-      </p>
-      {r.note && <p className="text-[11px] text-muted-foreground italic">{r.note}</p>}
+      <p className="text-[11px]">{what}{r.charge_on_delivery ? " · cobrar quando entregar" : ""}</p>
+      <WhoWhen label="Solicitado" name={r.requestedByName ?? "Equipe"} at={r.created_at} />
+      {r.status === "aprovado" && r.decided_at && (
+        <WhoWhen label="Aprovado" name={r.decidedByName ?? r.requestedByName ?? "Equipe"} at={r.decided_at} />
+      )}
+      {r.note && <p className="text-[10px] text-muted-foreground italic">{r.note}</p>}
       {r.status === "recusado" && (
         <p className="text-[11px] text-rose-600">Recusado por {r.decidedByName ?? "—"}{r.reject_reason ? `: ${r.reject_reason}` : ""}</p>
       )}
