@@ -43,6 +43,13 @@ async function saveImage(ownerId: string, m: Msg, conv: Conv, source: "anexo" | 
   const hash = crypto.createHash("sha256").update(bytes).digest("hex");
   const { data: dup } = await db("support_images").select("id").eq("conversation_id", m.conversation_id).eq("content_hash", hash).maybeSingle();
   if (dup) return false;
+  // iPhone às vezes anexa a mesma foto 2x com metadados diferentes (hash muda,
+  // nome e tamanho não): mesmo nome + mesmo tamanho na conversa = repetida.
+  if (name) {
+    const { data: twin } = await db("support_images").select("id").eq("conversation_id", m.conversation_id)
+      .eq("file_name", name).eq("size", bytes.length).limit(1);
+    if (twin?.length) return false;
+  }
   const ext = extOf(name) || "png";
   const mime = MIME[ext] ?? "image/png";
   const path = `${ownerId}/${m.conversation_id}/${hash.slice(0, 32)}.${ext}`;
