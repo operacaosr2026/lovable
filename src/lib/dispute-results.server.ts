@@ -1,14 +1,12 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { raiseNotification } from "@/lib/notifications.server";
-import { selectAll, selectAllIn } from "@/lib/select-all";
-import { addDaysIso, isoTodayUS, nyParts } from "@/lib/timezone";
+import { selectAllIn } from "@/lib/select-all";
 
-// Resultado de disputa no sino: um aviso por chargeback/inquiry ganho ou perdido
-// (na hora em que o sync/webhook vê a mudança de status) + um resumo diário com
-// os decididos de ontem. Só lojas ativas.
+// Resultado de disputa no sino: um aviso por chargeback/inquiry ganho ou perdido,
+// na hora em que o sync/webhook vê a mudança de status. Só lojas ativas. (O
+// resumo diário dos decididos de ontem saiu a pedido — só o aviso de cada um.)
 
 const FINAL = new Set(["won", "lost"]);
-const SUMMARY_HOUR_NY = 9;   // depois do sync completo das 7h (NY)
 
 type DisputeRow = { shopify_dispute_id: string; order_external_id: string | null; type: string; status: string | null; amount: number; currency: string | null };
 
@@ -49,35 +47,4 @@ export async function notifyDisputeResults(userId: string, shopId: string, befor
       link: "/chargebacks",
     });
   }
-}
-
-// Resumo de ontem (NY), 1x por dia a partir das 9h. Chamado a cada 5 min pelo
-// notifications-refresh; a chave do dia impede repetir.
-export async function checkDisputeDailySummary(ownerId: string) {
-  if (nyParts(Date.now()).hour < SUMMARY_HOUR_NY) return;
-  const day = addDaysIso(isoTodayUS(), -1);
-  const key = `dispute_daily:${day}`;
-  const { data: done } = await supabaseAdmin.from("app_notifications").select("id").eq("user_id", ownerId).eq("key", key).maybeSingle();
-  if (done) return;
-  const { data: shops } = await supabaseAdmin.from("shops").select("id").eq("user_id", ownerId).eq("status", "ativa").eq("archived", false);
-  const shopIds = ((shops ?? []) as { id: string }[]).map((s) => s.id);
-  if (!shopIds.length) return;
-  const { data: rows, error } = await selectAll<{ status: string; amount: number }>(supabaseAdmin.from("shop_order_disputes")
-    .select("status,amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("finalized_on", day).in("status", ["won", "lost"]));
-  if (error) throw new Error(error.message);
-  if (!rows.length) return;   // dia sem decisão: sem aviso
-  const sum = (s: string) => rows.filter((r) => r.status === s);
-  const total = (xs: { amount: number }[]) => money(xs.reduce((a, r) => a + Number(r.amount ?? 0), 0));
-  const won = sum("won"), lost = sum("lost");
-  const parts = [
-    lost.length ? `${lost.length} perdido${lost.length > 1 ? "s" : ""} (${total(lost)})` : null,
-    won.length ? `${won.length} ganho${won.length > 1 ? "s" : ""} (${total(won)})` : null,
-  ].filter(Boolean);
-  const [, m, d] = day.split("-");
-  await raiseNotification(ownerId, key, {
-    level: lost.length ? "warning" : "info",
-    title: `Chargebacks decididos ontem (${d}/${m}): ${parts.join(", ")}`,
-    body: "Detalhes na aba Chargebacks.",
-    link: "/chargebacks",
-  });
 }

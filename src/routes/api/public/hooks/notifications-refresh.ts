@@ -5,7 +5,6 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
 import { checkGoalEvents, checkProfitReports } from "@/lib/goal-events.server";
 import { recheckStoreSetups } from "@/lib/store-policies.server";
-import { checkDisputeDailySummary } from "@/lib/dispute-results.server";
 
 // Disparado a cada 5 min pelo pg_cron (ver *_push_notifications_cron.sql):
 // recalcula os avisos do sino de cada workspace (token da Meta, sync da
@@ -38,9 +37,6 @@ export const Route = createFileRoute("/api/public/hooks/notifications-refresh")(
           // Loja nova: só as com aviso aberto (some sozinho quando corrigir) e as esperando os 1ºs pedidos.
           try { await recheckStoreSetups(owner); }
           catch (e: any) { console.error("notifications-refresh loja nova", owner, e); out[owner] += ` · loja nova: ${String(e?.message ?? e).slice(0, 120)}`; }
-          // Resumo diário dos chargebacks ganhos/perdidos ontem (a partir das 9h NY).
-          try { await checkDisputeDailySummary(owner); }
-          catch (e: any) { console.error("notifications-refresh chargebacks do dia", owner, e); out[owner] += ` · chargebacks do dia: ${String(e?.message ?? e).slice(0, 120)}`; }
         }
         return Response.json(out);
       }),
