@@ -551,13 +551,14 @@ function resolveAppOrigin(): string {
 }
 
 // write_draft_orders + write_customers: pedido de troca (rascunho com o mesmo cliente, finalizado como pago).
+// write_orders: reembolso pelo Atendimento (Pedidos > Reembolsar).
 // (dispute_evidences não entra: a Shopify só libera pra apps públicos de disputa.)
 // read_all_orders: pedidos com mais de 60 dias (sem ela a Shopify só libera os últimos 60).
 // read_reports: visitas da loja (sessões) pro cálculo de conversão.
 // write_merchant_managed_fulfillment_orders: dar o pedido de cobrança dos Alertas como atendido (sem rastreio).
 // write_fulfillments: mandar o status do rastreio (em trânsito, entregue…) pro envio do pedido.
 // write_products/inventory/publications/files + read_locations: criar produto nas lojas (Produtos > Publicar nas lojas).
-export const SHOPIFY_SCOPES = "read_orders,read_all_orders,write_products,write_inventory,write_publications,write_files,read_locations,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders,write_fulfillments";
+export const SHOPIFY_SCOPES = "read_orders,write_orders,read_all_orders,write_products,write_inventory,write_publications,write_files,read_locations,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders,write_fulfillments";
 
 function shopifyAuthorizeUrl(domain: string, clientId: string, state: string) {
   const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;

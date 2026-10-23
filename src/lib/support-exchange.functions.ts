@@ -4,7 +4,10 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { shopifyGql } from "@/lib/chargeback-recovery.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
-import { emitEvent } from "@/lib/notify.server";
+import {
+  assertSupportAccess as assertAccess, conversationLink, customerOf, db, isApprover, loadSupportOrder as loadOrder,
+  personName, personNames, tellRequester as tellRequesterBase, type SupportCtx as Ctx,
+} from "@/lib/support-approval.server";
 
 // Atendimento › Pedidos › Gerar troca. A equipe escolhe o tamanho novo (ou outro
 // modelo) e de quem foi o erro; o dono do workspace aprova; aprovado, vira pedido
@@ -20,31 +23,7 @@ export type ExchangeItem = { variant_id: string; product_title: string; variant_
 export type ExchangeVariant = { id: string; title: string; sku: string | null; available: boolean };
 export type ExchangeProduct = { id: string; title: string; image: string | null; variants: ExchangeVariant[] };
 
-const db = (table: string) => (supabaseAdmin as any).from(table);
-
-type Ctx = { role: "admin" | "member"; ownerId: string; userId: string; permissions: { section: string }[] };
-
-function assertAccess(ctx: Ctx) {
-  if (ctx.role !== "admin" && !ctx.permissions.some((p) => p.section === "atendimento")) {
-    throw new Error("Sem acesso ao Atendimento");
-  }
-}
-// Quem aprova: o dono do workspace.
-const isApprover = (ctx: Ctx) => ctx.role === "admin" && ctx.userId === ctx.ownerId;
-
 const noticeKey = (id: string) => `troca:${id}`;
-
-async function loadOrder(ownerId: string, orderId: string) {
-  const { data: o } = await supabaseAdmin.from("shop_orders")
-    .select("id,shop_id,order_number,raw").eq("id", orderId).eq("user_id", ownerId).maybeSingle();
-  if (!o) throw new Error("Pedido não encontrado");
-  return o as { id: string; shop_id: string; order_number: string | null; raw: any };
-}
-
-async function personName(userId: string) {
-  const { data } = await supabaseAdmin.from("profiles").select("full_name").eq("id", userId).maybeSingle();
-  return data?.full_name?.trim() || "Equipe";
-}
 
 const PRODUCT_FIELDS = `id title featuredMedia { preview { image { url } } }
   variants(first: 100) { nodes { id title sku availableForSale } }`;
@@ -122,11 +101,7 @@ export const listExchangeRequests = createServerFn({ method: "GET" })
       .select("id,order_id,order_number,fault,items,note,status,requested_by,decided_by,decided_at,reject_reason,new_order_name,error,created_at")
       .eq("owner_id", context.ownerId).in("order_id", data.orderIds).order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    const people = [...new Set((rows ?? []).flatMap((r: any) => [r.requested_by, r.decided_by]).filter(Boolean))] as string[];
-    const { data: profs } = people.length
-      ? await supabaseAdmin.from("profiles").select("id,full_name").in("id", people)
-      : { data: [] as { id: string; full_name: string | null }[] };
-    const name = new Map((profs ?? []).map((p) => [p.id, p.full_name]));
+    const name = await personNames((rows ?? []).flatMap((r: any) => [r.requested_by, r.decided_by]));
     return {
       canApprove: isApprover(context as Ctx),
       requests: ((rows ?? []) as any[]).map((r) => ({
@@ -162,13 +137,11 @@ export const requestExchange = createServerFn({ method: "POST" })
     const { data: open } = await db("support_exchange_requests").select("id")
       .eq("owner_id", ctx.ownerId).eq("order_id", o.id).in("status", ["pendente", "gerando"]).limit(1);
     if (open?.length) throw new Error("Este pedido já tem uma troca aguardando aprovação");
-    const raw = o.raw ?? {};
-    const customerName = [raw.customer?.first_name, raw.customer?.last_name].filter(Boolean).join(" ")
-      || raw.shipping_address?.name || null;
+    const customer = customerOf(o.raw);
     const { data: row, error } = await db("support_exchange_requests").insert({
       owner_id: ctx.ownerId, requested_by: ctx.userId, shop_id: o.shop_id, conversation_id: data.conversationId,
-      order_id: o.id, order_number: o.order_number, customer_email: raw.email ?? raw.customer?.email ?? null,
-      customer_name: customerName, fault: data.fault, items: data.items, note: data.note,
+      order_id: o.id, order_number: o.order_number, customer_email: customer.email,
+      customer_name: customer.name, fault: data.fault, items: data.items, note: data.note,
     }).select("id").single();
     if (error) throw new Error(error.message);
 
@@ -183,7 +156,7 @@ export const requestExchange = createServerFn({ method: "POST" })
       level: "warning",
       title: `Troca para aprovar — ${o.order_number ?? "pedido"}`,
       body: `${who} pediu: ${what}. Erro ${data.fault === "empresa" ? "da empresa" : "do fornecedor"}.${data.note ? ` Obs.: ${data.note}` : ""}`,
-      link: data.conversationId ? `/atendimento?c=${data.conversationId}` : "/atendimento",
+      link: conversationLink(data.conversationId),
       targetUserId: ctx.ownerId,
     });
     return { status: "pendente" as const, orderName: null };
@@ -211,14 +184,8 @@ export const decideExchange = createServerFn({ method: "POST" })
     return { status: "recusado" as const, orderName: null };
   });
 
-async function tellRequester(ctx: Ctx, r: { id: string; requested_by: string; conversation_id: string | null }, title: string, body: string) {
-  if (r.requested_by === ctx.userId) return;
-  await emitEvent(ctx.ownerId, {
-    key: `troca_res:${r.id}:${Date.now()}`, title, body,
-    link: r.conversation_id ? `/atendimento?c=${r.conversation_id}` : "/atendimento",
-    targetUserId: r.requested_by,
-  });
-}
+const tellRequester = (ctx: Ctx, r: { id: string; requested_by: string; conversation_id: string | null }, title: string, body: string) =>
+  tellRequesterBase(ctx, "troca_res", r, title, body);
 
 // Cria o pedido na Shopify. Trava a linha em "gerando" pra dois cliques não
 // criarem dois pedidos; rascunho já criado numa tentativa que falhou é

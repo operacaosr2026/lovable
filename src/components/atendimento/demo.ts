@@ -398,6 +398,11 @@ const demoApi = {
   searchExchangeProducts: async () => [],
   requestExchange: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
   decideExchange: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
+  listRefundRequests: async () => ({ canApprove: false, requests: [] }),
+  getRefundSetup: async () => { throw new Error("Modo demonstração — reembolso só com pedidos de verdade"); },
+  previewRefund: async () => ({ amount: 0 }),
+  requestRefund: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
+  decideRefund: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
 
   // Tradução usa a IA de verdade (manda só o texto do e-mail fictício).
   translateSupportMessage: async ({ data }: { data: { id: string } }) => {

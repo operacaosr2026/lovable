@@ -43,8 +43,10 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
   const [rows, setRows] = useState<Row[]>([]);
   const [fault, setFault] = useState<ExchangeFault | null>(null);
   const [note, setNote] = useState("");
+  // Monta os itens uma vez (a consulta pode atualizar sozinha e não pode
+  // apagar o que já foi escolhido).
   useEffect(() => {
-    if (!setup.data) return;
+    if (!setup.data || rows.length) return;
     const lines = setup.data.lines;
     setRows(lines.map((l, i) => ({
       key: String(i),
@@ -55,8 +57,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
       quantity: l.quantity,
       searching: !l.product,
     })));
-    setFault(null);
-    setNote("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setup.data]);
 
   const patch = (key: string, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));

@@ -79,7 +79,7 @@ const SECTION_LABELS: Record<Section, string> = {
   nt_metas: "Metas",
   nt_lucro: "Lucro do dia",
   nt_consultor: "Inteligência",
-  nt_trocas: "Trocas",
+  nt_trocas: "Trocas e reembolsos",
   cfg_seguranca: "Segurança",
   cfg_integracoes: "Integrações",
 };
@@ -103,7 +103,7 @@ const NT_HINTS: Partial<Record<Section, string>> = {
   nt_metas: "Meta do mês atingida (só no celular)",
   nt_lucro: "Lucro de hoje nos horários que a pessoa escolher (só no celular)",
   nt_consultor: "Análise semanal da Inteligência com dicas novas",
-  nt_trocas: "Troca que a pessoa pediu foi aprovada ou recusada (só no celular)",
+  nt_trocas: "Troca ou reembolso que a pessoa pediu foi aprovado ou recusado (só no celular)",
 };
 // Subpermissões de Banco de Lojas (aparecem quando Banco de Lojas está marcado).
 const BL_SUBTABS: Section[] = ["bl_indicadores"];

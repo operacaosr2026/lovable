@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, Loader2, Package, Repeat, Sparkles, Truck, X } from "lucide-react";
+import { Copy, Loader2, Package, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
 } from "@/lib/atendimento.functions";
 import { listExchangeRequests } from "@/lib/support-exchange.functions";
 import { ExchangeDialog, ExchangeRequestCard, type ExchangeRequestView } from "./ExchangeDialog";
+import { listRefundRequests } from "@/lib/support-refund.functions";
+import { RefundDialog, RefundRequestCard, type RefundRequestView } from "./RefundDialog";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { formatDateUS } from "@/lib/timezone";
@@ -114,6 +116,13 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
     enabled: orderIds.length > 0, staleTime: 30_000,
   });
   const [exchangeOrder, setExchangeOrder] = useState<string | null>(null);
+  const refundsFn = useSupportFn(listRefundRequests, "listRefundRequests");
+  const refunds = useQuery({
+    queryKey: ["refund-requests", orderIds],
+    queryFn: () => refundsFn({ data: { orderIds } }),
+    enabled: orderIds.length > 0, staleTime: 30_000,
+  });
+  const [refundOrder, setRefundOrder] = useState<string | null>(null);
 
   const update = useMutation({
     mutationFn: (patch: { tags?: string[]; note?: string | null; shop_id?: string | null }) => updateFn({ data: { ids: [conversationId!], patch } }),
@@ -236,16 +245,30 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                   {((exchanges.data?.requests ?? []) as ExchangeRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
                     <ExchangeRequestCard key={r.id} r={r} canApprove={!!exchanges.data?.canApprove} />
                   ))}
+                  {((refunds.data?.requests ?? []) as RefundRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
+                    <RefundRequestCard key={r.id} r={r} canApprove={!!refunds.data?.canApprove} />
+                  ))}
                   {!o.cancelled && (
-                    <button onClick={() => setExchangeOrder(o.id)}
-                      className="mt-2 h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
-                      <Repeat className="size-3" /> Gerar troca
-                    </button>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      <button onClick={() => setExchangeOrder(o.id)}
+                        className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
+                        <Repeat className="size-3" /> Gerar troca
+                      </button>
+                      {o.financial !== "refunded" && o.revenue > 0 && (
+                        <button onClick={() => setRefundOrder(o.id)}
+                          className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
+                          <Undo2 className="size-3" /> Reembolsar
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
               {exchangeOrder && (
                 <ExchangeDialog orderId={exchangeOrder} conversationId={conversationId} open onClose={() => setExchangeOrder(null)} />
+              )}
+              {refundOrder && (
+                <RefundDialog orderId={refundOrder} conversationId={conversationId} open onClose={() => setRefundOrder(null)} />
               )}
             </div>
           )
