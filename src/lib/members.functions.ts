@@ -57,6 +57,7 @@ export const SECTIONS = [
   "nt_metas",
   "nt_lucro",
   "nt_consultor",
+  "nt_trocas",
   // Páginas de Configurações liberáveis pra membro (Membros e Auditoria são só
   // do admin; Notificações segue a seção "notificacoes").
   "cfg_seguranca",
