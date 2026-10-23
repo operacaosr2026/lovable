@@ -1,5 +1,8 @@
 import crypto from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { imagePhash, phashDistance, SAME_PHOTO_MAX_DISTANCE } from "@/lib/image-phash.server";
+import { imageKind } from "@/lib/image-kind.server";
+import { imageOrderProducts } from "@/lib/support-image-products.server";
 import { fetchAttachmentInfo, fetchMessageContent, getZohoAccount, zohoRaw, type ZohoAccount } from "@/lib/zoho-mail.server";
 
 // Banco de imagens do Atendimento: a cada rodada do cron do Zoho, olha os
@@ -55,9 +58,24 @@ async function saveImage(ownerId: string, m: Msg, conv: Conv, source: "anexo" | 
   const path = `${ownerId}/${m.conversation_id}/${hash.slice(0, 32)}.${ext}`;
   const up = await supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
   if (up.error) throw new Error(`storage: ${up.error.message}`);
+  // Mesma foto reenviada comprimida / com outro nome (o arquivo muda, a imagem
+  // não): compara a impressão digital visual com as da conversa.
+  const phash = await imagePhash(SUPPORT_IMAGES_BUCKET, path).catch(() => null);
+  if (phash) {
+    const { data: seen } = await db("support_images").select("phash").eq("conversation_id", m.conversation_id).not("phash", "is", null);
+    if (((seen ?? []) as { phash: string }[]).some((s) => phashDistance(s.phash, phash) <= SAME_PHOTO_MAX_DISTANCE)) {
+      await supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET).remove([path]);
+      return false;
+    }
+  }
+  // Print de tela / e-mail fica guardado, mas fora da grade (só foto aparece).
+  const kind = await imageKind(SUPPORT_IMAGES_BUCKET, path).catch(() => null);
+  const { orderId, products } = await imageOrderProducts(ownerId, conv.customer_email, conv.subject, m.sent_at)
+    .catch(() => ({ orderId: null, products: [] as string[] }));
   const { error } = await db("support_images").insert({
     owner_id: ownerId, conversation_id: m.conversation_id, message_id: m.id, source, ref,
-    file_name: name || null, mime, size: bytes.length, content_hash: hash, storage_path: path,
+    file_name: name || null, mime, size: bytes.length, content_hash: hash, phash, kind, storage_path: path,
+    order_id: orderId, products,
     customer_email: conv.customer_email, customer_name: conv.customer_name, subject: conv.subject, shop_id: conv.shop_id,
     sent_at: m.sent_at,
   });
