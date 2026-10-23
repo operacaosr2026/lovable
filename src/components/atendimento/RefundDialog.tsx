@@ -39,7 +39,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
   const [qty, setQty] = useState<Record<string, number>>({});   // line id → quantidade (0 = fora)
   const [shipping, setShipping] = useState(false);
   const [value, setValue] = useState("");
-  const [notify, setNotify] = useState(false);
+  const [notify, setNotify] = useState(true);
   const [note, setNote] = useState("");
 
   const lines: RefundLine[] = useMemo(() => (s?.lines ?? [])
