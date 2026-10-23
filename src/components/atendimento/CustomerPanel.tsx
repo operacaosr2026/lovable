@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, Loader2, Package, Sparkles, Truck, X } from "lucide-react";
+import { Copy, Loader2, Package, Repeat, Sparkles, Truck, X } from "lucide-react";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
 } from "@/lib/atendimento.functions";
+import { listExchangeRequests } from "@/lib/support-exchange.functions";
+import { ExchangeDialog, ExchangeRequestCard, type ExchangeRequestView } from "./ExchangeDialog";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { formatDateUS } from "@/lib/timezone";
@@ -104,6 +106,14 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
     queryFn: () => customerFn({ data: { email: c!.customer_email, conversationId: c!.id } }),
     enabled: !!c, staleTime: 5 * 60_000,
   });
+  const exchangesFn = useSupportFn(listExchangeRequests, "listExchangeRequests");
+  const orderIds = (customer.data?.orders ?? []).map((o) => o.id);
+  const exchanges = useQuery({
+    queryKey: ["exchange-requests", orderIds],
+    queryFn: () => exchangesFn({ data: { orderIds } }),
+    enabled: orderIds.length > 0, staleTime: 30_000,
+  });
+  const [exchangeOrder, setExchangeOrder] = useState<string | null>(null);
 
   const update = useMutation({
     mutationFn: (patch: { tags?: string[]; note?: string | null; shop_id?: string | null }) => updateFn({ data: { ids: [conversationId!], patch } }),
@@ -223,8 +233,20 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                       </button>
                     </div>
                   )}
+                  {((exchanges.data?.requests ?? []) as ExchangeRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
+                    <ExchangeRequestCard key={r.id} r={r} canApprove={!!exchanges.data?.canApprove} />
+                  ))}
+                  {!o.cancelled && (
+                    <button onClick={() => setExchangeOrder(o.id)}
+                      className="mt-2 h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
+                      <Repeat className="size-3" /> Gerar troca
+                    </button>
+                  )}
                 </div>
               ))}
+              {exchangeOrder && (
+                <ExchangeDialog orderId={exchangeOrder} conversationId={conversationId} open onClose={() => setExchangeOrder(null)} />
+              )}
             </div>
           )
         ) : (

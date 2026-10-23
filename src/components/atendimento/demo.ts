@@ -392,6 +392,13 @@ const demoApi = {
     };
   },
 
+  // Gerar troca: no demo os pedidos não existem na Shopify.
+  listExchangeRequests: async () => ({ canApprove: false, requests: [] }),
+  getExchangeSetup: async () => { throw new Error("Modo demonstração — troca só com pedidos de verdade"); },
+  searchExchangeProducts: async () => [],
+  requestExchange: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
+  decideExchange: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
+
   // Tradução usa a IA de verdade (manda só o texto do e-mail fictício).
   translateSupportMessage: async ({ data }: { data: { id: string } }) => {
     const m = db().messages.find((x) => x.id === data.id);

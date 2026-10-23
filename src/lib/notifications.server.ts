@@ -8,7 +8,8 @@ import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoDateUS } from "@/lib/timezone";
 
 export type NotificationLevel = "info" | "warning" | "error";
-type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null };
+// targetUserId: o push vai só pra essa pessoa (o aviso no sino continua do workspace).
+type NotificationInput = { level: NotificationLevel; title: string; body?: string | null; link?: string | null; targetUserId?: string | null };
 
 // Chaves geradas por refreshSystemNotifications (recalculadas a cada leitura).
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem

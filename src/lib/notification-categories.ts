@@ -10,6 +10,7 @@ export const NOTIFICATION_CATEGORIES = [
   { key: "nt_disputas", label: "Disputas", desc: "Chargeback e inquiry aguardando resposta", prefixes: ["dispute:"] },
   { key: "nt_rastreio", label: "Rastreio", desc: "17track com erro ou sem atualizar", prefixes: ["track123:"] },
   { key: "nt_atendimento", label: "Atendimento", desc: "Zoho Mail com erro ou parado", prefixes: ["zoho_mail:"] },
+  { key: "nt_trocas", label: "Trocas", desc: "Pedido de troca aguardando aprovação (só o dono recebe no celular) e troca aprovada ou recusada (só quem pediu)", prefixes: ["troca:", "troca_res:"] },
   { key: "nt_consultor", label: "Inteligência", desc: "Análise semanal da Inteligência com dicas novas", prefixes: ["consultor:"] },
   { key: "nt_sistema", label: "Erros do sistema", desc: "Rotina automática que falhou (sincronização, webhook, job diário, cobrança dos Alertas, IA…)", prefixes: ["system:"] },
 
