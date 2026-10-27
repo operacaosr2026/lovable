@@ -33,7 +33,7 @@ export const listSupportImages = createServerFn({ method: "GET" })
     assertImagesAccess(context);
 
     let query = db("support_images")
-      .select("id,conversation_id,source,file_name,mime,size,storage_path,customer_email,customer_name,subject,shop_id,sent_at,products,downloaded_at")
+      .select("id,conversation_id,source,file_name,mime,size,storage_path,thumb_path,large_path,customer_email,customer_name,subject,shop_id,sent_at,products,downloaded_at")
       .eq("owner_id", context.ownerId).or("kind.is.null,kind.eq.foto")   // print de tela/e-mail fica de fora
       .order("sent_at", { ascending: false }).order("id").limit(PAGE + 1);
     query = data.downloaded ? query.not("downloaded_at", "is", null) : query.is("downloaded_at", null);
@@ -51,28 +51,27 @@ export const listSupportImages = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const page = ((rows ?? []) as any[]).slice(0, PAGE);
 
-    const signed = page.length
-      ? (await supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET).createSignedUrls(page.map((r) => r.storage_path), 60 * 60)).data ?? []
+    // Foto de celular tem ~1,5 MB: a grade usa as miniaturas feitas quando a
+    // foto entrou (400px e 1400px, JPEG). Sem miniatura (HEIC, ou ainda não
+    // feita), a tela cai pro original.
+    const paths = page.flatMap((r) => [r.storage_path, r.thumb_path, r.large_path].filter(Boolean) as string[]);
+    const signed = paths.length
+      ? (await supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET).createSignedUrls(paths, 60 * 60)).data ?? []
       : [];
     const urlByPath = new Map(signed.map((s) => [s.path, s.signedUrl]));
-    // Foto de celular tem ~1,5 MB: a grade usa a versão reduzida pelo Supabase
-    // (Image Transformations, plano Pro) — sai em WebP, uns 30 KB.
-    const bucket = supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET);
-    const resized = (width: number, resize: "cover" | "contain") => Promise.all(page.map(async (r) =>
-      (await bucket.createSignedUrl(r.storage_path, 60 * 60, { transform: { width, height: width, resize, quality: 70 } })).data?.signedUrl ?? null));
-    const [thumbs, larges] = await Promise.all([resized(400, "cover"), resized(1400, "contain")]);
+    const urlOf = (p: string | null) => (p ? urlByPath.get(p) ?? null : null);
 
     // E-mails de clientes ainda não olhados (histórico entrando aos poucos).
     const { count: pending } = await db("support_messages").select("id", { count: "exact", head: true })
       .eq("owner_id", context.ownerId).eq("direction", "in").is("images_scanned_at", null).lt("images_attempts", 3);
 
     return {
-      items: page.map((r, i): SupportImage => ({
+      items: page.map((r): SupportImage => ({
         id: r.id, conversationId: r.conversation_id, source: r.source, fileName: r.file_name, mime: r.mime, size: r.size,
         customerEmail: r.customer_email, customerName: r.customer_name, subject: r.subject, shopId: r.shop_id, sentAt: r.sent_at,
         products: r.products ?? [], downloadedAt: r.downloaded_at,
-        url: urlByPath.get(r.storage_path) ?? null,
-        thumb: thumbs[i], large: larges[i],
+        url: urlOf(r.storage_path),
+        thumb: urlOf(r.thumb_path), large: urlOf(r.large_path),
       })),
       nextBefore: (rows ?? []).length > PAGE ? `${page[page.length - 1].sent_at}|${page[page.length - 1].id}` : null,
       pending: pending ?? 0,

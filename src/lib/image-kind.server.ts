@@ -17,16 +17,23 @@ Answer "foto" if it is a photograph taken with a camera of something physical: a
 Answer "print" if it is a screenshot or digital image: a phone/computer screen capture, e-mail, website, order confirmation, tracking page, receipt, chat, document, text, logo or banner — even if it shows a product picture inside the screen.
 Reply with exactly one word: foto or print.`;
 
-export async function imageKind(bucket: string, path: string): Promise<"foto" | "print" | null> {
+// `jpeg`: a miniatura já feita no servidor (JPEG/PNG). Sem ela (HEIC etc.), a
+// miniatura vem do Supabase (Image Transformations).
+export async function imageKind(bucket: string, path: string, jpeg?: Uint8Array): Promise<"foto" | "print" | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
-  const { data } = await supabaseAdmin.storage.from(bucket)
-    .createSignedUrl(path, 600, { transform: { width: 400, height: 400, resize: "contain", quality: 70 } });
-  if (!data?.signedUrl) return null;
+  let source: Anthropic.ImageBlockParam["source"];
+  if (jpeg) source = { type: "base64", media_type: "image/jpeg", data: Buffer.from(jpeg).toString("base64") };
+  else {
+    const { data } = await supabaseAdmin.storage.from(bucket)
+      .createSignedUrl(path, 600, { transform: { width: 400, height: 400, resize: "contain", quality: 70 } });
+    if (!data?.signedUrl) return null;
+    source = { type: "url", url: data.signedUrl };
+  }
   const response = await withAiCredit(() => anthropic().messages.create({
     model: MODEL,
     max_tokens: 16,
     system: SYSTEM,
-    messages: [{ role: "user", content: [{ type: "image", source: { type: "url", url: data.signedUrl } }, { type: "text", text: "foto or print?" }] }],
+    messages: [{ role: "user", content: [{ type: "image", source }, { type: "text", text: "foto or print?" }] }],
     output_config: { ...LOW_EFFORT },
   }), "atendimento_imagens");
   const out = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim().toLowerCase();

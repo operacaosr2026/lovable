@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { imagePhash, phashDistance, SAME_PHOTO_MAX_DISTANCE } from "@/lib/image-phash.server";
+import { dhash, imagePhash, phashDistance, SAME_PHOTO_MAX_DISTANCE } from "@/lib/image-phash.server";
+import { makePreviews, type Previews } from "@/lib/image-resize.server";
 import { imageKind } from "@/lib/image-kind.server";
 import { imageOrderProducts } from "@/lib/support-image-products.server";
 import { fetchAttachmentInfo, fetchMessageContent, getZohoAccount, zohoRaw, type ZohoAccount } from "@/lib/zoho-mail.server";
@@ -41,6 +42,50 @@ async function download(acc: ZohoAccount, path: string): Promise<Buffer | null> 
   return Buffer.from(await res.arrayBuffer());
 }
 
+// Miniaturas feitas aqui (JPEG/PNG) e guardadas do lado do original — a grade
+// não usa o Image Transformations do Supabase (cobrado por imagem acima de
+// 100/mês). HEIC e afins: sem miniatura, a tela mostra o original.
+function previewsOf(bytes: Uint8Array): Previews | null {
+  try { return makePreviews(bytes); }
+  catch (e) { console.error("support images previews", e instanceof Error ? e.message : e); return null; }
+}
+
+async function uploadPreviews(path: string, pv: Previews) {
+  const base = path.replace(/\.[a-z0-9]+$/i, "");
+  const thumb = `${base}-400.jpg`, large = `${base}-1400.jpg`;
+  const bucket = supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET);
+  for (const [p, b] of [[thumb, pv.thumb], [large, pv.large]] as const) {
+    const up = await bucket.upload(p, b, { contentType: "image/jpeg", upsert: true });
+    if (up.error) throw new Error(`storage: ${up.error.message}`);
+  }
+  return { thumb, large };
+}
+
+// Fotos que entraram antes das miniaturas: faz as delas aos poucos.
+const BACKFILL_PER_RUN = 10;
+const BACKFILL_BUDGET_MS = 20_000;
+
+async function backfillPreviews() {
+  const { data: rows, error } = await db("support_images").select("id,storage_path")
+    .is("thumb_path", null).eq("previews_failed", false)
+    .order("sent_at", { ascending: false }).limit(BACKFILL_PER_RUN);
+  if (error) throw new Error(error.message);
+  const started = Date.now();
+  let done = 0, failed = 0;
+  for (const r of (rows ?? []) as { id: string; storage_path: string }[]) {
+    if (Date.now() - started > BACKFILL_BUDGET_MS) break;
+    const { data: blob } = await supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET).download(r.storage_path);
+    const pv = blob ? previewsOf(new Uint8Array(await blob.arrayBuffer())) : null;
+    if (!pv) { await db("support_images").update({ previews_failed: true }).eq("id", r.id); failed++; continue; }
+    const saved = await uploadPreviews(r.storage_path, pv);
+    // Impressão digital refeita pelo mesmo método das novas (a do Supabase usa
+    // outro filtro e dá até ~18 bits de diferença pra mesma foto).
+    await db("support_images").update({ thumb_path: saved.thumb, large_path: saved.large, phash: dhash(pv.hashGrid) }).eq("id", r.id);
+    done++;
+  }
+  return { done, failed };
+}
+
 async function saveImage(ownerId: string, m: Msg, conv: Conv, source: "anexo" | "inline", ref: string, name: string, bytes: Buffer) {
   if (bytes.length < MIN_BYTES || bytes.length > MAX_BYTES) return false;
   const hash = crypto.createHash("sha256").update(bytes).digest("hex");
@@ -56,11 +101,12 @@ async function saveImage(ownerId: string, m: Msg, conv: Conv, source: "anexo" | 
   const ext = extOf(name) || "png";
   const mime = MIME[ext] ?? "image/png";
   const path = `${ownerId}/${m.conversation_id}/${hash.slice(0, 32)}.${ext}`;
+  const pv = previewsOf(bytes);
   const up = await supabaseAdmin.storage.from(SUPPORT_IMAGES_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
   if (up.error) throw new Error(`storage: ${up.error.message}`);
   // Mesma foto reenviada comprimida / com outro nome (o arquivo muda, a imagem
   // não): compara a impressão digital visual com as da conversa.
-  const phash = await imagePhash(SUPPORT_IMAGES_BUCKET, path).catch(() => null);
+  const phash = pv ? dhash(pv.hashGrid) : await imagePhash(SUPPORT_IMAGES_BUCKET, path).catch(() => null);
   if (phash) {
     const { data: seen } = await db("support_images").select("phash").eq("conversation_id", m.conversation_id).not("phash", "is", null);
     if (((seen ?? []) as { phash: string }[]).some((s) => phashDistance(s.phash, phash) <= SAME_PHOTO_MAX_DISTANCE)) {
@@ -68,13 +114,15 @@ async function saveImage(ownerId: string, m: Msg, conv: Conv, source: "anexo" | 
       return false;
     }
   }
+  const saved = pv ? await uploadPreviews(path, pv) : null;
   // Print de tela / e-mail fica guardado, mas fora da grade (só foto aparece).
-  const kind = await imageKind(SUPPORT_IMAGES_BUCKET, path).catch(() => null);
+  const kind = await imageKind(SUPPORT_IMAGES_BUCKET, path, pv?.small).catch(() => null);
   const { orderId, products } = await imageOrderProducts(ownerId, conv.customer_email, conv.subject, m.sent_at)
     .catch(() => ({ orderId: null, products: [] as string[] }));
   const { error } = await db("support_images").insert({
     owner_id: ownerId, conversation_id: m.conversation_id, message_id: m.id, source, ref,
     file_name: name || null, mime, size: bytes.length, content_hash: hash, phash, kind, storage_path: path,
+    thumb_path: saved?.thumb ?? null, large_path: saved?.large ?? null, previews_failed: !pv,
     order_id: orderId, products,
     customer_email: conv.customer_email, customer_name: conv.customer_name, subject: conv.subject, shop_id: conv.shop_id,
     sent_at: m.sent_at,
@@ -156,5 +204,7 @@ export async function collectAllSupportImages() {
     try { out[a.owner_id] = await collectSupportImages(a.owner_id); }
     catch (e: any) { out[a.owner_id] = { error: String(e?.message ?? e).slice(0, 200) }; }
   }
+  try { out.previews = await backfillPreviews(); }
+  catch (e: any) { out.previews = { error: String(e?.message ?? e).slice(0, 200) }; }
   return out;
 }

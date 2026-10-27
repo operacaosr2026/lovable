@@ -176,7 +176,7 @@ export function SupportImagesView({ onOpenConversation }: { onOpenConversation: 
   );
 }
 
-// Mostra a versão reduzida (Supabase). Se ela falhar, cai pro original — e foto
+// Mostra a miniatura salva. Se não tiver ou falhar, cai pro original — e foto
 // do iPhone (HEIC), que não abre no Chrome, é convertida pra JPEG no navegador.
 const HEIC = /hei[cf]/i;
 function Thumb({ image, size, className }: { image: SupportImage; size: "thumb" | "large"; className?: string }) {
