@@ -15,8 +15,15 @@ export function assertSupportAccess(ctx: SupportCtx) {
   }
 }
 
-// Quem aprova: o dono do workspace.
-export const isApprover = (ctx: SupportCtx) => ctx.role === "admin" && ctx.userId === ctx.ownerId;
+const has = (ctx: SupportCtx, section: string) => ctx.permissions.some((p) => p.section === section);
+
+// Quem aprova: dono e admins, ou membro com "Pode aprovar trocas e reembolsos"
+// (Configurações › Membros › Atendimento).
+export const isApprover = (ctx: SupportCtx) =>
+  ctx.userId === ctx.ownerId || ctx.role === "admin" || (has(ctx, "atendimento") && has(ctx, "at_aprovar"));
+
+// Quem vê a aba Aprovações: quem aprova, ou membro com "Aprovações (ver a fila)".
+export const canSeeApprovals = (ctx: SupportCtx) => isApprover(ctx) || (has(ctx, "atendimento") && has(ctx, "at_aprovacoes"));
 
 export async function loadSupportOrder(ownerId: string, orderId: string) {
   const { data: o } = await supabaseAdmin.from("shop_orders")

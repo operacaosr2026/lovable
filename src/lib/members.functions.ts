@@ -39,6 +39,9 @@ export const SECTIONS = [
   "at_kpi",
   "at_imagens",
   "at_config",
+  // Aprovações: ver a fila de trocas/reembolsos; aprovar/recusar é à parte.
+  "at_aprovacoes",
+  "at_aprovar",
   // Banco de Lojas: badges dos cards (hold, pedidos/dia, payout, nota) e aba
   // Pedidos da janela da loja.
   "bl_indicadores",

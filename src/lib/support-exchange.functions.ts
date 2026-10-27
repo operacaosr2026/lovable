@@ -169,7 +169,7 @@ export const decideExchange = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
-    if (!isApprover(ctx)) throw new Error("Só o dono do workspace aprova trocas");
+    if (!isApprover(ctx)) throw new Error("Sem permissão para aprovar trocas");
     if (data.approve) {
       const order = await generateExchangeOrder(ctx, data.id);
       return { status: "aprovado" as const, orderName: order.name };

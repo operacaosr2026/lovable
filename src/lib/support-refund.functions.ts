@@ -200,7 +200,7 @@ export const decideRefund = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
-    if (!isApprover(ctx)) throw new Error("Só o dono do workspace aprova reembolsos");
+    if (!isApprover(ctx)) throw new Error("Sem permissão para aprovar reembolsos");
     if (data.approve) {
       const r = await executeRefund(ctx, data.id);
       return { status: "aprovado" as const, amount: r.amount };

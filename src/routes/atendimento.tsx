@@ -91,10 +91,11 @@ type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 function Inboxes({ status }: { status: ZohoStatus }) {
   const demo = useIsDemo();
   // Subabas liberadas (Configurações > Membros); admin e modo de exemplo veem todas.
-  // Aprovações é do gestor: só quem aprova (dono do workspace) vê a aba.
-  const { canAccessSection, isLoading: accessLoading, role, ownerId } = useMyAccess();
+  // Aprovações é do gestor: dono/admin, ou quem tem "Aprovações (ver a fila)" ou
+  // "Pode aprovar" em Configurações › Membros › Atendimento.
+  const { canAccessSection, isLoading: accessLoading, ownerId } = useMyAccess();
   const { user } = useAuth();
-  const approver = role === "admin" && !!user && user.id === ownerId;
+  const approver = (!!user && user.id === ownerId) || canAccessSection("at_aprovacoes") || canAccessSection("at_aprovar");
   const VIEW_SECTION = { inbox: "at_caixa", imagens: "at_imagens", kpi: "at_kpi", config: "at_config" } as const;
   const canView = (v: View) => demo || accessLoading || (v === "aprovacoes" ? approver : canAccessSection(VIEW_SECTION[v]));
   const [view, setViewState] = useState<View>("inbox");
