@@ -6,6 +6,7 @@ import { createProductInStore, findExistingProduct, productExistsInStore, signed
 import { liveShopifyScopes } from "@/lib/shopify-scopes.server";
 import { isVideoMime } from "@/lib/product-page";
 import { matrizStoreIds } from "@/lib/store-roles.server";
+import { linkShopifyProduct } from "@/lib/product-links.server";
 import {
   REQUIRED_SCOPES, UPDATE_PARTS, buildVariants, emptyListing, imagesFor, variantImageId,
   type ShopifyListing, type ShopifyOption, type StoreRole, type VariantTemplate,
@@ -205,6 +206,8 @@ export const publishProductShopify = createServerFn({ method: "POST" })
         await supabaseAdmin.from("product_shopify_publications").upsert({
           ...base, status: "ok", shopify_product_id: r.productId, handle: r.handle, error: null, warnings: r.warnings,
         }, { onConflict: "product_id,shopify_store_id" });
+        await linkShopifyProduct(ownerId, data.product_id, target.shopify_store_id, r.productId,
+          target.role === "matriz" ? listing.title_matriz : listing.title_subloja || listing.title_matriz);
         results.push({ shopify_store_id: target.shopify_store_id, ok: true, message: r.warnings.length ? r.warnings.join(" ") : "Criado" });
       } catch (e: any) {
         const message = String(e?.message ?? e).slice(0, 500);
@@ -240,6 +243,7 @@ export const linkExistingShopifyProduct = createServerFn({ method: "POST" })
       warnings: ["Vinculado a um produto criado à mão — use Atualizar pra mandar as partes da ficha."],
     }, { onConflict: "product_id,shopify_store_id" });
     if (error) throw new Error(error.message);
+    await linkShopifyProduct(ownerId, data.product_id, data.shopify_store_id, found.productId, found.title);
     return { title: found.title, handle: found.handle };
   });
 

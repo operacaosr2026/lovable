@@ -3,29 +3,40 @@ import { orderLineItemsCost, matchLineItemCost, type CostProduct } from "@/lib/p
 
 // Regras 1–9: custo do fornecedor de um pedido.
 const products: CostProduct[] = [
-  { name: "Air 1 Low Georgetown", keywords: ["georgetown"], cost: 38 },
-  { name: "Air Force 1 Low Cheetah Print", keywords: ["Cheetah Print"], cost: 50 },
-  { name: "Handball Spezial", keywords: ["handball"], cost: 38, history: [
+  { name: "Air 1 Low Georgetown", shopify_product_ids: ["101"], line_item_titles: ["adidas samba og"], cost: 38 },
+  { name: "Air Force 1 Low Cheetah Print", shopify_product_ids: ["102", "202"], cost: 50 },
+  { name: "Handball Spezial", shopify_product_ids: ["103"], cost: 38, history: [
     { from: "2026-10-11", cost: 40 },
     { from: "1900-01-01", cost: 38 },
   ] },
 ];
+// product_id da Shopify de cada título usado nos testes (Leopard: sem card).
+const SHOPIFY_ID: Record<string, string> = {
+  "Georgetown": "101", "Cheetah Print": "102", "Handball Shoes": "103", "Leopard Shoes": "999",
+};
 const FALLBACK = 30; // custo padrão da loja
 
 // Item como a Shopify manda: enviado = fulfillment_status "fulfilled".
 const li = (title: string, o: { qty?: number; current?: number; shipped?: "fulfilled" | "partial" | null; fulfillable?: number } = {}) => ({
-  title, quantity: o.qty ?? 1, current_quantity: o.current ?? o.qty ?? 1,
+  title, product_id: SHOPIFY_ID[title] ?? null, quantity: o.qty ?? 1, current_quantity: o.current ?? o.qty ?? 1,
   fulfillment_status: o.shipped ?? null, fulfillable_quantity: o.fulfillable ?? 0,
 });
 
 describe("custo do fornecedor", () => {
-  it("1. casa pelo nome ou palavra-chave; vence o trecho mais longo", () => {
-    expect(matchLineItemCost("Nike Air Force 1 Low Cheetah Print", products)).toBe(50);
-    expect(matchLineItemCost("Georgetown Retro", products)).toBe(38);
-    expect(matchLineItemCost("HANDBALL SHOES", products)).toBe(38);
+  it("1. casa pelo produto da Shopify ligado ao card, não pelo título", () => {
+    expect(matchLineItemCost({ title: "Qualquer nome", product_id: 202 }, products)).toBe(50);
+    expect(matchLineItemCost({ title: "Air 1 Low Georgetown", product_id: 555 }, products)).toBeNull();
+    expect(matchLineItemCost({ title: "Air 1 Low Georgetown" }, products)).toBeNull();
   });
 
-  it("2. item sem produto cadastrado usa o custo padrão da loja", () => {
+  it("1b. item sem produto na Shopify casa pelo título exato ligado", () => {
+    expect(matchLineItemCost({ title: "  Adidas  SAMBA OG " }, products)).toBe(38);
+    expect(matchLineItemCost({ title: "Adidas Samba OG Leopard" }, products)).toBeNull();
+    // com product_id, o título não conta
+    expect(matchLineItemCost({ title: "Adidas Samba OG", product_id: 555 }, products)).toBeNull();
+  });
+
+  it("2. item sem card usa o custo padrão da loja", () => {
     expect(orderLineItemsCost([li("Leopard Shoes")], products, FALLBACK)).toBe(30);
   });
 

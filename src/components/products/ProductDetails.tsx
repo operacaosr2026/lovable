@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Brain, DollarSign, Hammer, Loader2, Megaphone, Package, Tag as TagIcon, Target, TrendingUp, X } from "lucide-react";
+import { Brain, DollarSign, Hammer, Loader2, Megaphone, Package, Target, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getProduct, updateProduct, saveProductPricing } from "@/lib/products.functions";
@@ -14,6 +14,7 @@ import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
 import { ProductPageTab } from "@/components/products/ProductPageTab";
 import { ProductCompetitors } from "@/components/products/ProductCompetitors";
 import { ProductAds } from "@/components/products/ProductAds";
+import { ProductSyncCard } from "@/components/products/ProductSyncCard";
 
 const GROUPS = [
   {
@@ -102,7 +103,7 @@ export function ProductDetails({ productId }: { productId: string }) {
 
       {tab === "informacoes" && (
         <div className="space-y-4">
-          <Card icon={Package} accent="primary" title="Cadastro" subtitle="Nome, custo e palavras-chave identificam o produto nos pedidos">
+          <Card icon={Package} accent="primary" title="Cadastro" subtitle="Nome, custo e os produtos da Shopify que são este card nos pedidos">
             <FixedFields product={product} onSave={(patch) => update.mutate(patch)} />
           </Card>
           <Card icon={DollarSign} accent="success" title="Precificação" subtitle="Margem por unidade com o CPA que você estima">
@@ -295,14 +296,12 @@ function Metric({ icon: Icon, accent, label, value, hint, negative, highlight }:
   );
 }
 
-// Campos fixos (não vêm do template): custo e palavras-chave alimentam o custo
-// dos pedidos no dashboard. Salvam ao sair do campo.
+// Campos fixos (não vêm do template): o custo e os produtos da Shopify ligados
+// (Sincronizar Card) alimentam o custo dos pedidos no dashboard. Salvam ao sair do campo.
 function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) => void }) {
   const [name, setName] = useState(product.name);
   const [cost, setCost] = useState(String(product.cost ?? 0));
   const { statuses } = useProductStatuses();
-  const [keywordInput, setKeywordInput] = useState("");
-  const keywords: string[] = product.keywords ?? [];
   useEffect(() => { setName(product.name); }, [product.name]);
   useEffect(() => { setCost(String(product.cost ?? 0)); }, [product.cost]);
 
@@ -315,11 +314,6 @@ function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) =
     const v = Number(cost.replace(",", "."));
     if (!Number.isFinite(v) || v < 0) setCost(String(product.cost ?? 0));
     else if (v !== Number(product.cost ?? 0)) onSave({ cost: v });
-  };
-  const addKeyword = () => {
-    const v = keywordInput.trim();
-    setKeywordInput("");
-    if (v && !keywords.some((k) => k.toLowerCase() === v.toLowerCase())) onSave({ keywords: [...keywords, v] });
   };
   const inputCls = "w-full px-3 h-9 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50";
 
@@ -341,24 +335,10 @@ function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) =
           </Field>
         </div>
       </div>
-      <Field label="Palavras-chave (para identificar este produto nos pedidos)">
-        <div className="flex flex-wrap gap-1.5 items-center px-3 py-1.5 rounded-lg bg-background border border-border">
-          {keywords.map((k) => (
-            <span key={k} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted">
-              <TagIcon className="size-3" /> {k}
-              <button type="button" onClick={() => onSave({ keywords: keywords.filter((x) => x !== k) })}><X className="size-3" /></button>
-            </span>
-          ))}
-          <input
-            value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addKeyword(); } }}
-            onBlur={addKeyword}
-            placeholder="+ palavra-chave"
-            className="text-xs px-2 h-7 rounded-md bg-transparent outline-none flex-1 min-w-24"
-          />
-        </div>
-      </Field>
+      <div>
+        <div className="text-xs text-muted-foreground mb-1">Produtos da Shopify (identificam este produto nos pedidos)</div>
+        <ProductSyncCard productId={product.id} productName={product.name} />
+      </div>
     </div>
   );
 }

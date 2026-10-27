@@ -17,6 +17,8 @@ import { minePatterns, orderFeatures, OUTCOME_LABEL, type PatternRow } from "@/l
 import { interactions, caseControlByDay, precursors, thresholds, chargebackGroups, weeklyLineMix } from "@/lib/intel/deep";
 import { listCompanyGoalsFor } from "@/lib/company-goals.server";
 import { computeSupportKpis, monthRange, DEFAULT_BUSINESS_HOURS, DEFAULT_GOALS } from "@/lib/support-kpis";
+import { matchLineItemProduct } from "@/lib/product-cost-match";
+import { withShopifyLinks } from "@/lib/product-links.server";
 
 // Consultor: o sistema calcula os números da operação (buildConsultantFacts) e a
 // IA lê e devolve dicas acionáveis — cada uma com o que viu (números), hipótese,
@@ -50,7 +52,7 @@ export async function buildConsultantFacts(ownerId: string) {
   if (!shopIds.length) throw new Error("Nenhuma loja ativa (grupos ativos em Lojas e Grupos) pra analisar");
   const [{ data: shops }, { data: products }, { data: holidays }] = await Promise.all([
     supabaseAdmin.from("shops").select("id,name").in("id", shopIds),
-    supabaseAdmin.from("products").select("name,keywords").eq("user_id", ownerId),
+    supabaseAdmin.from("products").select("id,name").eq("user_id", ownerId),
     supabaseAdmin.from("posting_holidays").select("day,kind").eq("user_id", ownerId),
   ]);
   const cal = postingCalendar(holidays as any);
@@ -82,19 +84,14 @@ export async function buildConsultantFacts(ownerId: string) {
   const cbOrders = (disputes ?? []).map((d: any) => ({ d, o: d.order_external_id ? orderByExt.get(`${d.shop_id}:${d.order_external_id}`) ?? null : null }));
   const cbKeys = new Set(cbOrders.map((x) => `${x.d.shop_id}:${x.d.order_external_id}`));
 
-  // Produto do cadastro que casa com o título do item (nome ou palavra-chave).
-  const productTerms = ((products ?? []) as any[]).map((p) => ({
-    name: p.name as string, terms: [p.name, ...(p.keywords ?? [])].map((s: string) => (s ?? "").trim().toLowerCase()).filter(Boolean),
-  }));
-  const productOf = (title: string) => {
-    const t = (title ?? "").toLowerCase();
-    return productTerms.find((p) => p.terms.some((x) => t.includes(x)))?.name ?? (title || "Sem nome");
-  };
-  const productsOfOrder = (o: Order | null) => [...new Set(((o?.line_items ?? []) as any[]).map((li) => productOf(li.title ?? li.name ?? "")))];
+  // Card de Produtos ligado ao produto da Shopify do item; sem card, o título.
+  const catalog = await withShopifyLinks(ownerId, (products ?? []) as { id: string; name: string }[]);
+  const productOf = (li: any) => matchLineItemProduct(li, catalog)?.name ?? (li?.title || li?.name || "Sem nome");
+  const productsOfOrder = (o: Order | null) => [...new Set(((o?.line_items ?? []) as any[]).map(productOf))];
   // Pedido de antes da loja entrar no sistema: a aba Chargebacks guarda uma
   // cópia (order_snapshot) com os itens e o rastreio.
   const productsOfDispute = (x: { d: any; o: Order | null }) => x.o ? productsOfOrder(x.o)
-    : [...new Set(((x.d.order_snapshot?.items ?? []) as any[]).map((i) => productOf(i.title ?? "")))];
+    : [...new Set(((x.d.order_snapshot?.items ?? []) as any[]).map(productOf))];
   const deliveryOfDispute = (x: { d: any; o: Order | null }) => {
     if (x.o) return x.o.delivered_at ? "entregue" : x.o.shipped_at ? "postado, não entregue" : "não postado";
     const snap = x.d.order_snapshot;
@@ -170,7 +167,7 @@ export async function buildConsultantFacts(ownerId: string) {
     const a = inA(o), b = inB(o); if (!a && !b) continue;
     const seen = new Set<string>();
     for (const li of (o.line_items ?? []) as any[]) {
-      const p = productOf(li.title ?? li.name ?? ""); const g = prod.get(p) ?? { a_un: 0, a_rec: 0, b_un: 0, b_rec: 0, pedidos_a: 0, reemb_a: 0 };
+      const p = productOf(li); const g = prod.get(p) ?? { a_un: 0, a_rec: 0, b_un: 0, b_rec: 0, pedidos_a: 0, reemb_a: 0 };
       const q = Number(li.quantity ?? 0), v = q * Number(li.price ?? 0);
       if (a) { g.a_un += q; g.a_rec += v; if (!seen.has(p)) { g.pedidos_a++; if (isRefund(o)) g.reemb_a++; } }
       if (b) { g.b_un += q; g.b_rec += v; }

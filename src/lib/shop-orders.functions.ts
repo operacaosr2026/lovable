@@ -6,6 +6,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
+import { costProductsFor } from "@/lib/product-links.server";
 import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
 
@@ -298,24 +299,7 @@ async function unitCostFor(supabase: any, ownerId: string, shopId: string, date:
   return Number(fallback ?? 0);
 }
 
-// Produtos com o histórico de custo (product_cost_history): o custo de um pedido
-// é o da data do pedido (productCostAt). Sem a tabela/histórico, usa o atual.
-export async function costProductsFor(supabase: any, ownerId: string): Promise<CostProduct[]> {
-  const [{ data }, hist] = await Promise.all([
-    supabase.from("products").select("id,name,keywords,cost").eq("user_id", ownerId),
-    supabase.from("product_cost_history").select("product_id,cost,valid_from").eq("user_id", ownerId)
-      .order("valid_from", { ascending: false }),
-  ]);
-  const byProduct = new Map<string, { from: string; cost: number }[]>();
-  if (!hist.error) {
-    for (const h of (hist.data ?? []) as any[]) {
-      const list = byProduct.get(h.product_id) ?? [];
-      list.push({ from: h.valid_from as string, cost: Number(h.cost ?? 0) });
-      byProduct.set(h.product_id, list);
-    }
-  }
-  return (data ?? []).map((p: any) => ({ name: p.name, keywords: p.keywords, cost: p.cost, history: byProduct.get(p.id) }));
-}
+export { costProductsFor };
 
 // Produtos com histórico de custo pra telas que calculam o custo no navegador
 // (aba Pedidos de Lojas e Grupos) — mesmo custo da época que o servidor usa.

@@ -10,6 +10,8 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { sanitizeEvents } from "@/lib/tracking-display";
 import { fetchShopifyDisputes, upsertShopDisputes } from "@/lib/shopify-disputes.server";
 import { runSeventeenTrackSync, seventeenTrackStatus } from "@/lib/seventeen-track.server";
+import { matchLineItemProduct } from "@/lib/product-cost-match";
+import { withShopifyLinks } from "@/lib/product-links.server";
 
 // Aba Chargebacks: cada disputa (chargeback/inquiry) da Shopify Payments
 // cruzada com o pedido (produto, data), o rastreio (situação e último evento),
@@ -75,7 +77,7 @@ export async function fetchOrderSnapshot(domain: string, token: string, orderId:
   return {
     name: o.name ?? null, created_at: o.created_at ?? null, email: o.email ?? o.customer?.email ?? null,
     first_name: o.customer?.first_name ?? null, last_name: o.customer?.last_name ?? null, tags: o.tags ?? null,
-    items: ((o.line_items ?? []) as any[]).map((li) => ({ title: li?.title ?? null })),
+    items: ((o.line_items ?? []) as any[]).map((li) => ({ title: li?.title ?? null, product_id: li?.product_id ?? null })),
     tracking_number: f?.tracking_number ?? null, tracking_url: f?.tracking_url ?? null,
     shipment_status: f?.shipment_status ?? null, fulfilled_at: f?.created_at ?? null,
   };
@@ -196,19 +198,13 @@ export const getChargebacks = createServerFn({ method: "GET" })
       });
     }
 
-    // Foto do produto: cadastro de Produtos (nome/palavra-chave no título, a
-    // mais específica ganha — mesma regra do custo).
-    const { data: products } = await supabaseAdmin.from("products").select("name,keywords,main_image_url").eq("user_id", ownerId);
-    const matchProduct = (title: string | null | undefined) => {
-      const t = (title ?? "").toLowerCase();
-      let best: { name: string; url: string | null; len: number } | null = null;
-      for (const p of (products ?? []) as { name: string; keywords: string[] | null; main_image_url: string | null }[]) {
-        for (const c of [p.name, ...(p.keywords ?? [])]) {
-          const k = (c ?? "").trim().toLowerCase();
-          if (k && t.includes(k) && (!best || k.length > best.len)) best = { name: p.name, url: p.main_image_url, len: k.length };
-        }
-      }
-      return best;
+    // Foto do produto: card de Produtos ligado ao produto da Shopify do item
+    // (mesma regra do custo).
+    const { data: productRows } = await supabaseAdmin.from("products").select("id,name,main_image_url").eq("user_id", ownerId);
+    const products = await withShopifyLinks(ownerId, (productRows ?? []) as { id: string; name: string; main_image_url: string | null }[]);
+    const matchProduct = (li: any) => {
+      const p = matchLineItemProduct(li, products);
+      return p ? { name: p.name, url: p.main_image_url } : null;
     };
 
     // Conversa no Atendimento com o e-mail do pedido.
@@ -282,8 +278,8 @@ export const getChargebacks = createServerFn({ method: "GET" })
         daysToDispute: days != null && days >= 0 ? days : null,
         customerName: o ? [o.first_name, o.last_name].filter(Boolean).join(" ") || null : null, customerEmail: email,
         product: o ? ((o.items ?? []) as any[]).map((li) => li?.title).filter(Boolean).join(", ") || null : null,
-        productImage: o ? matchProduct(((o.items ?? []) as any[])[0]?.title)?.url ?? null : null,
-        productGroup: o ? matchProduct(((o.items ?? []) as any[])[0]?.title)?.name ?? (((o.items ?? []) as any[])[0]?.title ?? null) : null,
+        productImage: o ? matchProduct(((o.items ?? []) as any[])[0])?.url ?? null : null,
+        productGroup: o ? matchProduct(((o.items ?? []) as any[])[0])?.name ?? (((o.items ?? []) as any[])[0]?.title ?? null) : null,
         deliveryStatus: o?.delivery_status ?? null, shippedAt: o?.shipped_at ?? null, deliveredAt: o?.delivered_at ?? null,
         lastEvent: cleanLabel(t?.last_event_label ?? o?.last_event_label), lastEventAt: t?.last_event_at ?? o?.last_event_at ?? null,
         trackingCode: o?.tracking_code ?? null,

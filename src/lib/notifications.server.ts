@@ -3,7 +3,8 @@ import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
 import { broadcast } from "@/lib/realtime.server";
 import { notifyPeople } from "@/lib/notify.server";
 import { cronHealthAlerts } from "@/lib/cron-runs.server";
-import { matchLineItemCost, matchLineItemProduct } from "@/lib/product-cost-match";
+import { lineItemShopifyProductId, matchLineItemProduct, normalizeLineItemTitle } from "@/lib/product-cost-match";
+import { costProductsFor } from "@/lib/product-links.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoDateUS } from "@/lib/timezone";
 
@@ -21,7 +22,7 @@ const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shop
 // ficou com o nome antigo pra não duplicar avisos já abertos.
 const TRACKING_STALE_HOURS = 4;
 const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
-const PRODUCT_MISSING_DAYS = 30;  // vendas olhadas pro aviso "Produto sem cadastro"
+const PRODUCT_MISSING_DAYS = 30;  // vendas olhadas pro aviso "Produto sem card"
 const STALLED_LOT_DAYS = 7;       // aviso "Lote parado": sem evento de rastreio há 7 dias…
 const STALLED_LOT_MIN = 3;        // …em pelo menos 3 pacotes com o mesmo último dia de evento
 const CUSTOMS_STUCK_DAYS = 15;    // aviso "Alfândega": último evento é de alfândega há 15+ dias
@@ -399,47 +400,50 @@ export async function refreshSystemNotifications(ownerId: string) {
     });
   }
 
-  // Produto vendido sem cadastro em Produtos (nem pelo nome, nem por palavra-
-  // chave): o custo do pedido cai no custo padrão da loja sem ninguém saber —
-  // lucro e Caixa podem ficar errados. Um aviso por produto; some quando cadastrar.
+  // Produto vendido sem card em Produtos (botão "Sincronizar Card"): o custo do
+  // pedido cai no custo padrão da loja sem ninguém saber — lucro e Caixa podem
+  // ficar errados. Um aviso por produto da Shopify, ou por título quando o item
+  // não tem produto na Shopify (apagado, avulso, app); some quando ligar a um card.
   if (activeShopIds.length) {
     const since = new Date(Date.now() - PRODUCT_MISSING_DAYS * 86_400_000).toISOString().slice(0, 10);
-    const [ordersRes, productsRes, shopsNamesRes] = await Promise.all([
+    const [ordersRes, products, shopsNamesRes] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id,order_date,line_items:raw->line_items")
         .eq("user_id", ownerId).in("shop_id", activeShopIds).gte("order_date", since)),
-      supabaseAdmin.from("products").select("name,keywords,cost").eq("user_id", ownerId),
+      costProductsFor(supabaseAdmin, ownerId),
       supabaseAdmin.from("shops").select("id,name").in("id", activeShopIds),
     ]);
     const orders = must(ordersRes as any, "pedidos sem produto") as any[];
-    const products = must(productsRes as any, "produtos") as any[];
     const shopNameOf = new Map(((must(shopsNamesRes as any, "nomes das lojas") ?? []) as any[]).map((r) => [r.id as string, r.name as string]));
-    const missing = new Map<string, { title: string; orders: number; first: string; shops: Set<string> }>();
+    const missing = new Map<string, { title: string; loose: boolean; orders: number; first: string; shops: Set<string> }>();
     // Produto cadastrado com custo 0: o pedido entra no lucro sem custo nenhum.
     const zeroCost = new Map<string, { name: string; orders: number; first: string }>();
     for (const o of orders ?? []) {
       for (const li of (o.line_items ?? []) as any[]) {
+        const shopifyId = lineItemShopifyProductId(li);
         const title = String(li.title ?? li.name ?? "").trim();
-        if (!title) continue;
-        const product = matchLineItemProduct(title, products);
-        if (product && !(Number(product.cost) > 0)) {
-          const z = zeroCost.get(product.name) ?? { name: product.name, orders: 0, first: o.order_date };
-          z.orders++; if (o.order_date < z.first) z.first = o.order_date;
-          zeroCost.set(product.name, z);
+        const key = shopifyId ? `shopify:${shopifyId}` : `title:${normalizeLineItemTitle(title).slice(0, 120)}`;
+        if (!shopifyId && !title) continue;
+        const product = matchLineItemProduct(li, products);
+        if (product) {
+          if (!(Number(product.cost) > 0)) {
+            const z = zeroCost.get(product.name) ?? { name: product.name, orders: 0, first: o.order_date };
+            z.orders++; if (o.order_date < z.first) z.first = o.order_date;
+            zeroCost.set(product.name, z);
+          }
+          continue;
         }
-        if (matchLineItemCost(title, products) != null) continue;
-        const k = title.toLowerCase();
-        const m = missing.get(k) ?? { title, orders: 0, first: o.order_date, shops: new Set<string>() };
+        const m = missing.get(key) ?? { title: title || `Produto ${shopifyId}`, loose: !shopifyId, orders: 0, first: o.order_date, shops: new Set<string>() };
         m.orders++; m.shops.add(o.shop_id);
         if (o.order_date < m.first) m.first = o.order_date;
-        missing.set(k, m);
+        missing.set(key, m);
       }
     }
-    for (const [k, m] of missing) {
+    for (const [key, m] of missing) {
       const shopNames = [...m.shops].map((id) => shopNameOf.get(id) ?? "Loja").join(", ");
-      want.set(`product_missing:${k.slice(0, 120)}`, {
+      want.set(`product_missing:${key}`, {
         level: "error",
-        title: `Produto sem cadastro: ${m.title}`,
-        body: `${m.orders} venda${m.orders === 1 ? "" : "s"} desde ${fmtDateBR(m.first)} (${shopNames}) usando o custo padrão da loja. Cadastre em Produtos (nome ou palavra-chave) com o custo certo.`.slice(0, 240),
+        title: `${m.loose ? "Item sem produto na Shopify" : "Produto sem card"}: ${m.title}`,
+        body: `${m.orders} venda${m.orders === 1 ? "" : "s"} desde ${fmtDateBR(m.first)} (${shopNames}) usando o custo padrão da loja. Ligue a um card em Produtos › Sincronizar Card.`.slice(0, 240),
         link: "/shops/products",
       });
     }

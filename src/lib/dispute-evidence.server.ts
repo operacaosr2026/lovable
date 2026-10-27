@@ -3,6 +3,8 @@ import { fetchWithRetry } from "@/lib/http";
 import { emailText } from "@/lib/support-ai.server";
 import { rawEvents, sanitizeEvents } from "@/lib/tracking-display";
 import type { DisputeEvidence } from "@/lib/dispute-evidence.functions";
+import { matchLineItemProduct } from "@/lib/product-cost-match";
+import { withShopifyLinks } from "@/lib/product-links.server";
 
 // Lógica das provas de chargeback (só servidor): junta os dados pros PDFs.
 // Os createServerFn ficam em dispute-evidence.functions.ts.
@@ -69,20 +71,13 @@ export async function collectEvidence(ownerId: string, disputeId: string): Promi
   const shopifyProducts = domain && token
     ? await Promise.all(productIds.map((id) => shopify(domain, token, `products/${id}.json?fields=title,body_html,image,product_type`).catch(() => null)))
     : [];
-  const { data: catalog } = await supabaseAdmin.from("products").select("name,keywords,main_image_url").eq("user_id", ownerId);
-  const catalogImage = (title: string) => {
-    const t = title.toLowerCase();
-    let best: { url: string; len: number } | null = null;
-    for (const p of (catalog ?? []) as any[]) for (const c of [p.name, ...(p.keywords ?? [])]) {
-      const k = String(c ?? "").trim().toLowerCase();
-      if (k && p.main_image_url && t.includes(k) && (!best || k.length > best.len)) best = { url: p.main_image_url, len: k.length };
-    }
-    return best?.url ?? null;
-  };
+  const { data: catalogRows } = await supabaseAdmin.from("products").select("id,main_image_url").eq("user_id", ownerId);
+  const catalog = await withShopifyLinks(ownerId, (catalogRows ?? []) as { id: string; main_image_url: string | null }[]);
+  const catalogImage = (productId: string | null, title: string) => matchLineItemProduct({ product_id: productId, title }, catalog)?.main_image_url ?? null;
   const products = items.map((it) => {
     const sp = shopifyProducts[productIds.indexOf(it.productId ?? "")]?.product;
     const desc = htmlText(sp?.body_html, 4000);
-    return { title: sp?.title ?? it.title, description: desc.length > 20 ? desc : null, imageUrl: sp?.image?.src ?? catalogImage(it.title), productType: sp?.product_type || null };
+    return { title: sp?.title ?? it.title, description: desc.length > 20 ? desc : null, imageUrl: sp?.image?.src ?? catalogImage(it.productId, it.title), productType: sp?.product_type || null };
   });
 
   // Envio e rastreio.

@@ -4,7 +4,8 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { attachLiveShopifyNames, costProductsFor } from "@/lib/shop-orders.functions";
-import { isSupplierFree, lineItemCostQty, matchLineItemProduct, productCostAt } from "@/lib/product-cost-match";
+import { isSupplierFree, lineItemCostQty, matchLineItemProduct, productCostAt, type CostProduct } from "@/lib/product-cost-match";
+import { linksByProduct } from "@/lib/product-links.server";
 import { comparisonPeriod } from "@/lib/finance-rules";
 import { selectAll } from "@/lib/select-all";
 import { fetchWithRetry } from "@/lib/http";
@@ -82,13 +83,12 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // Faturamento, custo e unidades só dos itens deste produto no pedido (null se
 // o pedido não tem o produto).
-function productOrderTotals(o: any, catalog: { id: string; name: string; keywords: string[] | null }[], productId: string, myCost: any) {
+function productOrderTotals(o: any, catalog: { id: string; shopify_product_ids: string[] }[], productId: string, myCost: any) {
   const date = String(o.order_date);
   let faturamento = 0, custo = 0, unidades = 0, matched = false;
   const free = isSupplierFree(o.tags);
   for (const li of (o.line_items ?? []) as any[]) {
-    const title = String(li?.title ?? li?.name ?? "");
-    if (matchLineItemProduct(title, catalog)?.id !== productId) continue;
+    if (matchLineItemProduct(li, catalog)?.id !== productId) continue;
     matched = true;
     const qty = Number(li?.quantity ?? 0);
     const allocs = Array.isArray(li?.discount_allocations) ? li.discount_allocations : [];
@@ -110,17 +110,15 @@ export const getProductDashboard = createServerFn({ method: "GET" })
     await assertProduct(ownerId, data.product_id);
     const { prevFrom, prevTo } = comparisonPeriod(data.from, data.to);
 
-    const [ordersRes, catalogRes, costProducts, campaigns] = await Promise.all([
+    const [ordersRes, costProducts, campaigns] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_orders")
         .select("order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
         .eq("user_id", ownerId).gte("order_date", prevFrom).lte("order_date", data.to)),
-      supabaseAdmin.from("products").select("id,name,keywords").eq("user_id", ownerId),
       costProductsFor(supabaseAdmin, ownerId),
       loadCampaigns(ownerId, data.product_id),
     ]);
-    const catalog = (catalogRes.data ?? []) as { id: string; name: string; keywords: string[] | null }[];
-    const me = catalog.find((p) => p.id === data.product_id)!;
-    const myCost = costProducts.find((p) => p.name === me.name);
+    const catalog = costProducts as (CostProduct & { id: string; shopify_product_ids: string[] })[];
+    const myCost = catalog.find((p) => p.id === data.product_id);
 
     type Day = { faturamento: number; custo: number; pedidos: number; unidades: number };
     const days = new Map<string, Day>();
@@ -280,17 +278,15 @@ export const getProductCreatives = createServerFn({ method: "GET" })
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
 
-    const [ordersRes, catalogRes, costProducts, campaigns] = await Promise.all([
+    const [ordersRes, costProducts, campaigns] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_orders")
         .select("shop_id,external_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
         .eq("user_id", ownerId).gte("order_date", data.from).lte("order_date", data.to)),
-      supabaseAdmin.from("products").select("id,name,keywords").eq("user_id", ownerId),
       costProductsFor(supabaseAdmin, ownerId),
       loadCampaigns(ownerId, data.product_id),
     ]);
-    const catalog = (catalogRes.data ?? []) as { id: string; name: string; keywords: string[] | null }[];
-    const me = catalog.find((p) => p.id === data.product_id)!;
-    const myCost = costProducts.find((p) => p.name === me.name);
+    const catalog = costProducts as (CostProduct & { id: string; shopify_product_ids: string[] })[];
+    const myCost = catalog.find((p) => p.id === data.product_id);
 
     const sales: { shop_id: string; external_id: string; faturamento: number; custo: number; unidades: number }[] = [];
     for (const o of (ordersRes.data ?? []) as any[]) {
@@ -448,18 +444,19 @@ export const getProductFunnel = createServerFn({ method: "GET" })
     if (!since) return { installed: false as const, pages };
     const { prevFrom, prevTo } = comparisonPeriod(data.from, data.to);
 
-    const [eventsRes, catalogRes, pubsRes, ordersRes] = await Promise.all([
+    const [eventsRes, links, pubsRes, ordersRes] = await Promise.all([
       selectAll(db("product_funnel_events")
         .select("id,shopify_store_id,step,day,client_id,shopify_product_id,title")
         .eq("user_id", ownerId).gte("day", prevFrom).lte("day", data.to)),
-      supabaseAdmin.from("products").select("id,name,keywords").eq("user_id", ownerId),
+      linksByProduct(ownerId),
       db("product_shopify_publications").select("product_id,shopify_store_id,shopify_product_id,handle")
         .eq("user_id", ownerId).eq("status", "ok").not("shopify_product_id", "is", null),
       selectAll(supabaseAdmin.from("shop_orders")
         .select("id,order_date,line_items:raw->line_items")
         .eq("user_id", ownerId).gte("order_date", prevFrom > since ? prevFrom : since).lte("order_date", data.to)),
     ]);
-    const catalog = (catalogRes.data ?? []) as { id: string; name: string; keywords: string[] | null }[];
+    const catalog = [...links].map(([id, l]) => ({ id, ...l }));
+    const linked = new Map(catalog.flatMap((p) => p.shopify_product_ids.map((s) => [s, p.id] as const)));
     // Pixel da matriz manda "pf:<página do PageFly>", o ID do produto ou "h:<handle>" (pela URL).
     const published = new Map<string, string>();
     for (const p of (pubsRes.data ?? []) as any[]) {
@@ -477,7 +474,7 @@ export const getProductFunnel = createServerFn({ method: "GET" })
     for (const e of (eventsRes.data ?? []) as any[]) {
       const productId = pageProduct.get(e.shopify_product_id)
         ?? published.get(`${e.shopify_store_id}|${e.shopify_product_id}`)
-        ?? matchLineItemProduct(e.title, catalog)?.id;
+        ?? linked.get(String(e.shopify_product_id));
       if (productId !== data.product_id) continue;
       const key = `${e.step}|${e.shopify_store_id}|${e.day}|${e.client_id}`;
       if (seen.has(key)) continue;
@@ -488,7 +485,7 @@ export const getProductFunnel = createServerFn({ method: "GET" })
     for (const o of (ordersRes.data ?? []) as any[]) {
       const b = bucket(String(o.order_date));
       if (!b) continue;
-      if (((o.line_items ?? []) as any[]).some((li) => matchLineItemProduct(String(li?.title ?? li?.name ?? ""), catalog)?.id === data.product_id)) b.orders += 1;
+      if (((o.line_items ?? []) as any[]).some((li) => matchLineItemProduct(li, catalog)?.id === data.product_id)) b.orders += 1;
     }
 
     return { installed: true as const, pages, since, cur, prev: prevTo >= since ? prev : null };

@@ -706,7 +706,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       getPanelRefundsAndChargebacks(ownerId, shopIds, from, to),
       getPanelRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
       costProductsFor(supabaseAdmin, ownerId),
-      supabaseAdmin.from("products").select("id,name,keywords,main_image_url").eq("user_id", ownerId),
+      supabaseAdmin.from("products").select("id,name,main_image_url").eq("user_id", ownerId),
     ]);
 
     const shopNameById = new Map(shopsWithLiveNames.map((s) => [s.id, s.name]));
@@ -714,7 +714,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const costByShop = new Map((costRes.data ?? []).map((s: any) => [s.shop_id, Number(s.default_unit_cost ?? 0)]));
     const configuredCosts = Array.from(costByShop.values()).filter((c) => c > 0);
     const avgCost = configuredCosts.length > 0 ? configuredCosts.reduce((a, b) => a + b, 0) / configuredCosts.length : 0;
-    // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+    // Mesmo cálculo por produto (card ligado na Shopify) usado no Dashboard (orderLineItemsCost),
     // em vez de items_count × custo fixo da loja.
     function costFor(shopId: string, o: any) {
       const shopCost = costByShop.get(shopId);
@@ -738,16 +738,16 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     }
     const pedidos = (monthOrdersRes.data ?? []).length;
 
-    // Produtos vendidos no período: item classificado pelo catálogo (nome ou
-    // palavra-chave, mesma regra do custo); sem correspondência, agrupa pelo
+    // Produtos vendidos no período: item classificado pelo card ligado ao produto
+    // da Shopify (mesma regra do custo); sem card, agrupa pelo
     // título do item na Shopify. Faturamento = preço × qtd − descontos do item.
-    const catalog = (catalogRes.data ?? []) as { id: string; name: string; keywords: string[] | null; main_image_url: string | null }[];
+    const imageOf = new Map(((catalogRes.data ?? []) as { id: string; main_image_url: string | null }[]).map((p) => [p.id, p.main_image_url]));
     const productsByKey = new Map<string, DashboardProductRow>();
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const seen = new Set<string>();
       for (const li of (o.line_items ?? []) as any[]) {
         const title = String(li?.title ?? li?.name ?? "").trim() || "Sem nome";
-        const match = matchLineItemProduct(title, catalog);
+        const match = matchLineItemProduct(li, costProducts);
         const key = match ? `p:${match.id}` : `t:${title.toLowerCase()}`;
         const qty = Number(li?.quantity ?? 0);
         const allocs = Array.isArray(li?.discount_allocations) ? li.discount_allocations : [];
@@ -755,7 +755,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
           ? allocs.reduce((s: number, a: any) => s + Number(a?.amount ?? 0), 0)
           : Number(li?.total_discount ?? 0);
         const row = productsByKey.get(key) ?? {
-          key, product_id: match?.id ?? null, name: match?.name ?? title, image_url: match?.main_image_url ?? null,
+          key, product_id: match?.id ?? null, name: match?.name ?? title, image_url: (match?.id && imageOf.get(match.id)) || null,
           pedidos: 0, unidades: 0, faturamento: 0,
         };
         row.unidades += qty;
@@ -973,7 +973,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const reembolsos    = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
     const chargebacks   = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
     const faturamento   = ordersRevenue - reembolsos - chargebacks;
-    // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+    // Mesmo cálculo por produto (card ligado na Shopify) usado no Dashboard (orderLineItemsCost),
     // pra "lucro" bater entre as duas telas em vez de items_count × custo fixo da loja.
     const custoProduto  = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id as string);

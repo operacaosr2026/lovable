@@ -1,8 +1,8 @@
 // `history`: custos com a data de início (product_cost_history), mais recente
 // primeiro. Mudar o custo de um produto vale da data da mudança pra frente —
 // pedidos antigos continuam com o custo da época.
-export type CostProduct = {
-  name: string; keywords: string[] | null; cost: number;
+export type CostProduct = LinkedProduct & {
+  id?: string; name: string; cost: number;
   history?: { from: string; cost: number }[];
 };
 
@@ -15,19 +15,10 @@ export function productCostAt(p: CostProduct, date?: string | null): number {
   return Number(p.cost ?? 0);
 }
 
-export function matchLineItemCost(title: string, products: CostProduct[], date?: string | null): number | null {
-  const t = (title || "").toLowerCase();
-  let best: { p: CostProduct; len: number } | null = null;
-  for (const p of products) {
-    const candidates = [p.name, ...(p.keywords ?? [])];
-    for (const c of candidates) {
-      const cLower = c.trim().toLowerCase();
-      if (cLower && t.includes(cLower)) {
-        if (!best || cLower.length > best.len) best = { p, len: cLower.length };
-      }
-    }
-  }
-  return best ? productCostAt(best.p, date) : null;
+// `li`: item do pedido como a Shopify manda (product_id).
+export function matchLineItemCost(li: any, products: CostProduct[], date?: string | null): number | null {
+  const p = matchLineItemProduct(li, products);
+  return p ? productCostAt(p, date) : null;
 }
 
 // Tag do pedido na Shopify que zera o custo do fornecedor: reenvio que o
@@ -66,7 +57,7 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
   for (const li of rawLineItems ?? []) {
     const qty = lineItemCostQty(li, opts.hasTracking);
     if (!qty) continue;
-    const matched = matchLineItemCost(li.title ?? li.name ?? "", products, opts.date);
+    const matched = matchLineItemCost(li, products, opts.date);
     total += qty * (matched ?? fallbackUnitCost);
   }
   return total;
@@ -76,16 +67,36 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
 export const costOpts = (o: { order_date?: string | null; tracking_code?: string | null }): OrderCostOpts =>
   ({ date: o.order_date ?? null, hasTracking: !!o.tracking_code });
 
-// Produto do catálogo que casa com o título do item (mesma regra do custo:
-// nome ou palavra-chave contida no título, vence o trecho mais longo).
-export function matchLineItemProduct<P extends { name: string; keywords: string[] | null }>(title: string, products: P[]): P | null {
-  const t = (title || "").toLowerCase();
-  let best: { p: P; len: number } | null = null;
-  for (const p of products) {
-    for (const c of [p.name, ...(p.keywords ?? [])]) {
-      const cLower = c.trim().toLowerCase();
-      if (cLower && t.includes(cLower) && (!best || cLower.length > best.len)) best = { p, len: cLower.length };
+// Card de Produto do item do pedido (product_shopify_links, botão "Sincronizar
+// Card"): o card ligado ao produto da Shopify do item; item sem product_id
+// (produto apagado na Shopify, item avulso, app) vai pelo título exato ligado.
+// Sem ligação: null.
+export type LinkedProduct = { shopify_product_ids?: string[] | null; line_item_titles?: string[] | null };
+
+// Mesma normalização de normalize_line_item_title no banco.
+export function normalizeLineItemTitle(title: string | null | undefined): string {
+  return (title ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function lineItemShopifyProductId(li: any): string | null {
+  const id = li?.product_id;
+  return id == null || id === "" ? null : String(id);
+}
+
+type LinkIndex = { byId: Map<string, LinkedProduct>; byTitle: Map<string, LinkedProduct> };
+const linkIndexes = new WeakMap<readonly LinkedProduct[], LinkIndex>();
+
+export function matchLineItemProduct<P extends LinkedProduct>(li: any, products: P[]): P | null {
+  let index = linkIndexes.get(products);
+  if (!index) {
+    index = { byId: new Map(), byTitle: new Map() };
+    for (const p of products) {
+      for (const s of p.shopify_product_ids ?? []) index.byId.set(s, p);
+      for (const t of p.line_item_titles ?? []) index.byTitle.set(t, p);
     }
+    linkIndexes.set(products, index);
   }
-  return best ? best.p : null;
+  const id = lineItemShopifyProductId(li);
+  const p = id ? index.byId.get(id) : index.byTitle.get(normalizeLineItemTitle(li?.title ?? li?.name));
+  return (p as P | undefined) ?? null;
 }

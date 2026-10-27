@@ -51,7 +51,7 @@ async function computeAccumulatedLucro(
     : 0;
 
   const orders = ordersRes.data ?? [];
-  // Mesmo cálculo por produto/palavra-chave usado no Dashboard (orderLineItemsCost),
+  // Mesmo cálculo por produto (card ligado na Shopify) usado no Dashboard (orderLineItemsCost),
   // em vez de items_count × custo fixo da loja.
   const orderCost = (o: any) => {
     const shopCost = costByShop.get(o.shop_id);

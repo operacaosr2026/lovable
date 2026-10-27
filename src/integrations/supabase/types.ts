@@ -2441,6 +2441,39 @@ export type Database = {
           },
         ];
       };
+      product_shopify_links: {
+        Row: {
+          created_at: string;
+          id: string;
+          line_item_title: string | null;
+          product_id: string;
+          shopify_product_id: string | null;
+          shopify_store_id: string;
+          title: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          line_item_title?: string | null;
+          product_id: string;
+          shopify_product_id?: string | null;
+          shopify_store_id: string;
+          title?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          line_item_title?: string | null;
+          product_id?: string;
+          shopify_product_id?: string | null;
+          shopify_store_id?: string;
+          title?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       product_shopify_publications: {
         Row: {
           created_at: string;
@@ -6175,6 +6208,11 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      loose_line_item_titles: {
+        Args: { p_shop_ids: string[]; p_user_id: string };
+        Returns: { line_item_title: string; orders: number; title: string }[];
+      };
+      normalize_line_item_title: { Args: { t: string }; Returns: string };
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];

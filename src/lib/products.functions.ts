@@ -11,6 +11,8 @@ import { orderDateFor } from "@/lib/order-date";
 import { firstProductColumnId } from "@/lib/product-board.server";
 import { applyPreset } from "@/lib/store-production.server";
 import { isVideoMime } from "@/lib/product-page";
+import { linksByProduct } from "@/lib/product-links.server";
+import { matchLineItemProduct } from "@/lib/product-cost-match";
 
 export const PRODUCT_STATUSES = ["ativo", "teste", "escala", "pausado", "arquivado"] as const;
 export const CREATIVE_STATUSES = ["lancar", "validacao", "aprovado", "rejeitado"] as const;
@@ -258,14 +260,14 @@ export const getProductMonthlySales = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { supabase, ownerId } = context;
     const { data: product, error: pErr } = await supabase
-      .from("products").select("id,name,keywords")
+      .from("products").select("id")
       .eq("user_id", ownerId).eq("id", data.product_id).maybeSingle();
     if (pErr) throw new Error(pErr.message);
     if (!product) throw new Error("Produto não encontrado");
 
-    const terms = [product.name, ...((product.keywords as string[] | null) ?? [])]
-      .map((s) => (s ?? "").trim().toLowerCase())
-      .filter(Boolean);
+    // O que está ligado ao card (Sincronizar Card).
+    const links = (await linksByProduct(ownerId)).get(data.product_id);
+    const catalog = links ? [{ id: data.product_id, ...links }] : [];
 
     const since = monthsAgoISO(data.months - 1);
     const orders = await shopifyOrdersSince(ownerId, since);
@@ -275,8 +277,7 @@ export const getProductMonthlySales = createServerFn({ method: "GET" })
       const lineItems = o.line_items ?? [];
       let units = 0, revenue = 0, matched = false;
       for (const li of lineItems) {
-        const title = ((li.title ?? li.name ?? "") as string).toLowerCase();
-        if (!terms.some((t) => title.includes(t))) continue;
+        if (!matchLineItemProduct(li, catalog)) continue;
         matched = true;
         const qty = Number(li.quantity ?? 0);
         units += qty;
