@@ -11,6 +11,7 @@ import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useMyAccess } from "@/hooks/useMyAccess";
+import { useAuth } from "@/lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SupportSettings, type ConfigTab } from "@/components/atendimento/SupportSettings";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -90,9 +91,12 @@ type ZohoStatus = Awaited<ReturnType<typeof getZohoStatus>>;
 function Inboxes({ status }: { status: ZohoStatus }) {
   const demo = useIsDemo();
   // Subabas liberadas (Configurações > Membros); admin e modo de exemplo veem todas.
-  const { canAccessSection, isLoading: accessLoading } = useMyAccess();
-  const VIEW_SECTION = { inbox: "at_caixa", aprovacoes: "at_caixa", imagens: "at_imagens", kpi: "at_kpi", config: "at_config" } as const;
-  const canView = (v: View) => demo || accessLoading || canAccessSection(VIEW_SECTION[v]);
+  // Aprovações é do gestor: só quem aprova (dono do workspace) vê a aba.
+  const { canAccessSection, isLoading: accessLoading, role, ownerId } = useMyAccess();
+  const { user } = useAuth();
+  const approver = role === "admin" && !!user && user.id === ownerId;
+  const VIEW_SECTION = { inbox: "at_caixa", imagens: "at_imagens", kpi: "at_kpi", config: "at_config" } as const;
+  const canView = (v: View) => demo || accessLoading || (v === "aprovacoes" ? approver : canAccessSection(VIEW_SECTION[v]));
   const [view, setViewState] = useState<View>("inbox");
   const setView = (v: View) => setViewState(v);
   // Notificação de troca/reembolso para aprovar abre /atendimento?v=aprovacoes
@@ -107,7 +111,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   }, [href]);
   // Número na aba Aprovações (mesma consulta da tela).
   const approvalsFn = useSupportFn(listSupportApprovals, "listSupportApprovals");
-  const approvals = useQuery({ queryKey: ["support-approvals"], queryFn: () => approvalsFn(), refetchInterval: 60_000, enabled: canView("aprovacoes") });
+  const approvals = useQuery({ queryKey: ["support-approvals"], queryFn: () => approvalsFn(), refetchInterval: 60_000, enabled: demo || approver });
   const approvalsOpen = ((approvals.data?.items ?? []) as { status: string }[]).filter((i) => i.status === "pendente" || i.status === "erro").length;
   useEffect(() => {
     if (!canView(view)) {
@@ -313,7 +317,7 @@ function Inboxes({ status }: { status: ZohoStatus }) {
             </span>
           )}
           <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1 shrink-0">
-            {([["inbox", "Caixa de entrada", Inbox], ["aprovacoes", "Aprovações", ClipboardCheck], ["imagens", "Imagens", Images], ["kpi", "KPI", BarChart3], ["config", "Configurações", Settings]] as const).filter(([key]) => canView(key)).map(([key, label, Icon]) => (
+            {([["inbox", "Caixa de entrada", Inbox], ["aprovacoes", "Aprovações", ClipboardCheck], ["imagens", "Imagens", Images], ["kpi", "KPI", BarChart3], ["config", "Configurações", Settings]] as const).filter(([key]) => canView(key) && (key !== "aprovacoes" || demo || approver)).map(([key, label, Icon]) => (
               <button key={key} onClick={() => setView(key)}
                 className={`h-7 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors ${view === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-3.5" /> <span className="hidden sm:inline">{key === "inbox" ? <><span className="2xl:hidden">Caixa</span><span className="hidden 2xl:inline">Caixa de entrada</span></> : label}</span>

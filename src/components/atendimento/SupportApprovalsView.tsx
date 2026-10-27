@@ -55,7 +55,6 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
             Reembolsos na fila: <span className="font-semibold text-foreground">{[...totals].map(([cur, v]) => formatMoney(v, cur)).join(" + ")}</span>
           </p>
         )}
-        {!canApprove && open.length > 0 && <p className="text-xs text-muted-foreground">Só o dono do workspace aprova.</p>}
       </div>
 
       {open.length === 0 ? (
