@@ -110,7 +110,11 @@ export const fetchShopifyPayouts = createServerOnlyFn(async (domain: string, tok
   return out;
 });
 
-async function fetchShopifyBalanceTransactions(domain: string, token: string, maxPages: number) {
+// A listagem vem da mais nova pra mais antiga e não filtra por data. Com
+// `sinceISO`, para quando a página já chegou antes dessa data (o que o chamador
+// precisa) e só avisa do teto se parou antes disso. Sem `sinceISO`, são as
+// `maxPages` mais recentes de propósito — sem aviso.
+async function fetchShopifyBalanceTransactions(domain: string, token: string, maxPages: number, sinceISO?: string) {
   const out: any[] = [];
   let url = `https://${domain}/admin/api/2024-10/shopify_payments/balance/transactions.json?limit=250`;
   for (let i = 0; i < maxPages && url; i++) {
@@ -119,14 +123,19 @@ async function fetchShopifyBalanceTransactions(domain: string, token: string, ma
     if (await handleShopifyAccess(res, domain, "balance_transactions")) return [];
     if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     const json: any = await res.json();
-    out.push(...(json.transactions ?? []));
+    const page: any[] = json.transactions ?? [];
+    out.push(...page);
     const link = res.headers.get("link") || res.headers.get("Link") || "";
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1] : "";
+    const oldest = page[page.length - 1]?.processed_at;
+    if (sinceISO && oldest && new Date(oldest).getTime() < new Date(sinceISO).getTime()) url = "";
   }
-  warnPaginationCap("fetchShopifyBalanceTransactions", domain, url);
+  if (sinceISO) warnPaginationCap("fetchShopifyBalanceTransactions", domain, url);
   return out;
 }
+
+const daysAgoISO = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
 
 async function fetchShopifyDisputes(domain: string, token: string, sinceISO: string) {
   const out: any[] = [];
@@ -246,7 +255,8 @@ export function payoutLagDaysFor(
 // (sync-shop-orders), so the Repasse metric refreshes on either trigger
 // instead of only waiting for the cron's schedule.
 export const recomputePayoutLag = createServerOnlyFn(async (shopId: string, domain: string, token: string) => {
-  const transactions = await fetchShopifyBalanceTransactions(domain, token, 10);
+  // Vendas dos últimos 5 depósitos: 45 dias cobre com folga.
+  const transactions = await fetchShopifyBalanceTransactions(domain, token, 10, daysAgoISO(45));
   const charges = transactions.filter((t: any) => t.type === "charge" && t.payout_id != null);
   if (!charges.length) {
     await supabaseAdmin.from("shop_order_settings")
@@ -950,7 +960,8 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     // Mapa payout_id → date a partir dos payouts já buscados
     const payoutDateById = new Map(payouts.map((p: any) => [String(p.id), p.date as string]));
 
-    const transactions = await fetchShopifyBalanceTransactions(domain, token, 3);
+    // Pendente = venda que ainda não entrou em depósito: só as recentes.
+    const transactions = await fetchShopifyBalanceTransactions(domain, token, 10, daysAgoISO(30));
     // Exclui transações cujo payout já foi sincronizado como entrada real (in_transit, scheduled, paid)
     const pendingTx = transactions.filter((t: any) =>
       t.payout_status === "pending" &&
@@ -1026,14 +1037,14 @@ async function ensureCategory(supabase: any, ownerId: string, shopId: string, ki
 // (sync-shop-orders, modo costs_only), que passa supabaseAdmin e poucas páginas
 // (as taxas novas vêm no topo da listagem).
 export const syncShopifyFeesForShop = createServerOnlyFn(async (
-  supabase: any, ownerId: string, data: { shop_id: string; pages: number },
+  supabase: any, ownerId: string, data: { shop_id: string; pages: number; sinceISO?: string },
 ) => {
     const { data: settings } = await supabase.from("shop_order_settings").select("*")
       .eq("user_id", ownerId).eq("shop_id", data.shop_id).maybeSingle();
     if (!settings?.shopify_store_id) throw new Error("Vincule uma loja Shopify nas configurações");
 
     const { domain, token } = await getShopifyCreds(supabase, ownerId, settings.shopify_store_id);
-    const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages);
+    const txs = await fetchShopifyBalanceTransactions(domain, token, data.pages, data.sinceISO);
     const feeTxs = txs.filter((t: any) => Number(t.fee ?? 0) > 0);
     if (!feeTxs.length) return { synced: 0, total_found: 0 };
 

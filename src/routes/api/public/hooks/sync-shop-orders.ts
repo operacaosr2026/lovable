@@ -392,7 +392,11 @@ async function syncCostsForShop(ownerId: string, shopId: string, hasShopify: boo
   let changed = false;
   if (hasShopify) {
     try {
-      const r: any = await syncShopifyFeesForShop(supabaseAdmin, ownerId, { shop_id: shopId, pages: 2 });
+      // Roda toda hora: as taxas dos últimos 3 dias cobrem com folga (para
+      // na data, não num número fixo de páginas — loja grande não perde taxa).
+      const r: any = await syncShopifyFeesForShop(supabaseAdmin, ownerId, {
+        shop_id: shopId, pages: 20, sinceISO: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+      });
       if ((r?.synced ?? 0) > 0 || (r?.updated ?? 0) > 0) changed = true;
       await clearSystemError(ownerId, `fees:${shopId}`);
     } catch (e) {
