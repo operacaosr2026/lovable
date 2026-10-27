@@ -299,8 +299,6 @@ async function unitCostFor(supabase: any, ownerId: string, shopId: string, date:
   return Number(fallback ?? 0);
 }
 
-export { costProductsFor };
-
 // Produtos com histórico de custo pra telas que calculam o custo no navegador
 // (aba Pedidos de Lojas e Grupos) — mesmo custo da época que o servidor usa.
 export const listCostProducts = createServerFn({ method: "GET" })

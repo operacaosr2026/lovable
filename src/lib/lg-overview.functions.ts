@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
-import { costProductsFor, getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { costProductsFor } from "@/lib/product-links.server";
 import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
 
