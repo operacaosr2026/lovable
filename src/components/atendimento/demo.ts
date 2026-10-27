@@ -406,6 +406,7 @@ const demoApi = {
   previewRefund: async () => ({ amount: 0 }),
   requestRefund: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
   decideRefund: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
+  listSupportApprovals: async () => ({ canApprove: false, items: [] }),
 
   // Tradução usa a IA de verdade (manda só o texto do e-mail fictício).
   translateSupportMessage: async ({ data }: { data: { id: string } }) => {

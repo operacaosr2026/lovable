@@ -82,6 +82,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
       else toast.success("Troca enviada pra aprovação", { description: "O Sergio recebe o aviso no sino e no celular." });
       qc.invalidateQueries({ queryKey: ["exchange-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
+      qc.invalidateQueries({ queryKey: ["support-approvals"] });
       onClose();
     },
     onError: (e: any) => toast.error(e.message ?? "Erro ao pedir a troca"),
@@ -266,6 +267,7 @@ export function ExchangeRequestCard({ r, canApprove }: { r: ExchangeRequestView;
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["exchange-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
+      qc.invalidateQueries({ queryKey: ["support-approvals"] });
     },
   });
   const st = STATUS[r.status] ?? STATUS.pendente;

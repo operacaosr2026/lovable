@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { shopifyGql } from "@/lib/chargeback-recovery.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import {
-  assertSupportAccess as assertAccess, conversationLink, customerOf, db, isApprover, loadSupportOrder as loadOrder,
+  APPROVALS_LINK, assertSupportAccess as assertAccess, customerOf, db, isApprover, loadSupportOrder as loadOrder,
   personName, personNames, tellRequester as tellRequesterBase, type SupportCtx as Ctx,
 } from "@/lib/support-approval.server";
 
@@ -156,7 +156,7 @@ export const requestExchange = createServerFn({ method: "POST" })
       level: "warning",
       title: `Troca para aprovar — ${o.order_number ?? "pedido"}`,
       body: `${who} pediu: ${what}. Erro ${data.fault === "empresa" ? "da empresa" : "do fornecedor"}.${data.note ? ` Obs.: ${data.note}` : ""}`,
-      link: conversationLink(data.conversationId),
+      link: APPROVALS_LINK,
       targetUserId: ctx.ownerId,
     });
     return { status: "pendente" as const, orderName: null };

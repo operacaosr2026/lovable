@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, MailWarning, MessageCircle, Percent, CircleCheck, Timer, Search, SlidersHorizontal, Settings, PenSquare,
   RefreshCw, Loader2, Star, Paperclip, X, ChevronDown, Inbox, Check, ArrowDownUp, Sparkles, BarChart3, CalendarDays,
-  Bot, Images,
+  Bot, Images, ClipboardCheck,
 } from "lucide-react";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -19,6 +19,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { businessHoursLabel, currentMonth } from "@/lib/support-kpis";
 import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import { SupportImagesView } from "@/components/atendimento/SupportImagesView";
+import { SupportApprovalsView } from "@/components/atendimento/SupportApprovalsView";
+import { listSupportApprovals } from "@/lib/support-approvals.functions";
 import type { DateRange } from "react-day-picker";
 import { localDateKey } from "@/lib/timezone";
 import {
@@ -55,7 +57,7 @@ const fmtDay = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
 type Sort = "recentes" | "antigos" | "nao_lidos";
 const SORT_LABELS: Record<Sort, string> = { recentes: "Mais recentes", antigos: "Mais antigos", nao_lidos: "Não lidos primeiro" };
 
-type View = "inbox" | "imagens" | "kpi" | "config";
+type View = "inbox" | "aprovacoes" | "imagens" | "kpi" | "config";
 
 function AtendimentoPage() {
   // Modo demonstração (?demo=1): lido só no navegador, antes de qualquer consulta.
@@ -89,13 +91,27 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   const demo = useIsDemo();
   // Subabas liberadas (Configurações > Membros); admin e modo de exemplo veem todas.
   const { canAccessSection, isLoading: accessLoading } = useMyAccess();
-  const VIEW_SECTION = { inbox: "at_caixa", imagens: "at_imagens", kpi: "at_kpi", config: "at_config" } as const;
+  const VIEW_SECTION = { inbox: "at_caixa", aprovacoes: "at_caixa", imagens: "at_imagens", kpi: "at_kpi", config: "at_config" } as const;
   const canView = (v: View) => demo || accessLoading || canAccessSection(VIEW_SECTION[v]);
   const [view, setViewState] = useState<View>("inbox");
   const setView = (v: View) => setViewState(v);
+  // Notificação de troca/reembolso para aprovar abre /atendimento?v=aprovacoes
+  // (também quando a tela já está aberta).
+  const navigate = useNavigate();
+  const href = useRouterState({ select: (s) => s.location.href });
+  useEffect(() => {
+    if (new URLSearchParams(href.split("?")[1] ?? "").get("v") !== "aprovacoes") return;
+    setViewState("aprovacoes");
+    navigate({ to: "/atendimento", replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [href]);
+  // Número na aba Aprovações (mesma consulta da tela).
+  const approvalsFn = useSupportFn(listSupportApprovals, "listSupportApprovals");
+  const approvals = useQuery({ queryKey: ["support-approvals"], queryFn: () => approvalsFn(), refetchInterval: 60_000, enabled: canView("aprovacoes") });
+  const approvalsOpen = ((approvals.data?.items ?? []) as { status: string }[]).filter((i) => i.status === "pendente" || i.status === "erro").length;
   useEffect(() => {
     if (!canView(view)) {
-      const first = (["inbox", "imagens", "kpi", "config"] as View[]).find(canView);
+      const first = (["inbox", "aprovacoes", "imagens", "kpi", "config"] as View[]).find(canView);
       if (first) setViewState(first);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -297,10 +313,13 @@ function Inboxes({ status }: { status: ZohoStatus }) {
             </span>
           )}
           <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted ml-1 shrink-0">
-            {([["inbox", "Caixa de entrada", Inbox], ["imagens", "Imagens", Images], ["kpi", "KPI", BarChart3], ["config", "Configurações", Settings]] as const).filter(([key]) => canView(key)).map(([key, label, Icon]) => (
+            {([["inbox", "Caixa de entrada", Inbox], ["aprovacoes", "Aprovações", ClipboardCheck], ["imagens", "Imagens", Images], ["kpi", "KPI", BarChart3], ["config", "Configurações", Settings]] as const).filter(([key]) => canView(key)).map(([key, label, Icon]) => (
               <button key={key} onClick={() => setView(key)}
                 className={`h-7 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors ${view === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-3.5" /> <span className="hidden sm:inline">{key === "inbox" ? <><span className="2xl:hidden">Caixa</span><span className="hidden 2xl:inline">Caixa de entrada</span></> : label}</span>
+                {key === "aprovacoes" && approvalsOpen > 0 && (
+                  <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold grid place-items-center">{approvalsOpen}</span>
+                )}
               </button>
             ))}
           </div>
@@ -398,7 +417,9 @@ function Inboxes({ status }: { status: ZohoStatus }) {
         )}
       </div>
 
-      {view === "imagens" ? (
+      {view === "aprovacoes" ? (
+        <SupportApprovalsView onOpenConversation={(id) => { setView("inbox"); setSelectedId(id); }} />
+      ) : view === "imagens" ? (
         <SupportImagesView onOpenConversation={(id) => { setView("inbox"); setSelectedId(id); }} />
       ) : view === "kpi" ? (
         <SupportKpisView month={kpiMonth} />

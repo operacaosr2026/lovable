@@ -45,6 +45,8 @@ export async function personNames(ids: (string | null)[]) {
 }
 
 export const conversationLink = (conversationId: string | null) => (conversationId ? `/atendimento?c=${conversationId}` : "/atendimento");
+// Notificação "para aprovar" abre a fila de Aprovações do Atendimento.
+export const APPROVALS_LINK = "/atendimento?v=aprovacoes";
 
 // Push só pra quem pediu (quem decidiu a própria solicitação não recebe).
 export async function tellRequester(

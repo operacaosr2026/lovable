@@ -81,6 +81,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
       else toast.success("Reembolso enviado pra aprovação", { description: "O Sergio recebe o aviso no sino e no celular." });
       qc.invalidateQueries({ queryKey: ["refund-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
+      qc.invalidateQueries({ queryKey: ["support-approvals"] });
       onClose();
     },
     onError: (e: any) => toast.error(e.message ?? "Erro ao pedir o reembolso"),
@@ -278,6 +279,7 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["refund-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
+      qc.invalidateQueries({ queryKey: ["support-approvals"] });
     },
   });
   const st = STATUS[r.status] ?? STATUS.pendente;
