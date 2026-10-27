@@ -108,9 +108,13 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
 
   const openCount = (k: string) => all.filter((i) => OPEN.has(i.status) && (k === "todos" || i.kind === k)).length;
 
+  // Painel aberto: tabela enxuta (loja embaixo do cliente, sem a coluna Tipo,
+  // Recusar no menu) pra caber ao lado sem cortar.
+  const compact = !!openItem;
+  const headers = compact ? ["Pedido", "Cliente", "Valor", "Solicitado em", "Status"] : ["Pedido", "Cliente", "Loja", "Tipo", "Valor", "Solicitado em", "Status"];
+
   return (
-    <div className="flex gap-4 items-start pb-6">
-      <div className="flex-1 min-w-0 space-y-4">
+    <div className="space-y-4 pb-6">
         <Kpis all={all} />
 
         {/* ── Filtros ── */}
@@ -157,6 +161,8 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
           </div>
         )}
 
+      <div className="flex gap-4 items-start">
+      <div className="flex-1 min-w-0">
         {rows.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-card py-16 grid place-items-center text-center gap-2">
             <CheckCircle2 className="size-8 text-emerald-500" />
@@ -180,7 +186,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                             })} className="size-3.5 accent-primary" />
                         )}
                       </th>
-                      {["Pedido", "Cliente", "Loja", "Tipo", "Valor", "Solicitado em", "Status"].map((h) => (
+                      {headers.map((h) => (
                         <th key={h} className="px-3 py-3 text-left font-medium whitespace-nowrap">{h}</th>
                       ))}
                       <th className="px-3 py-3 text-left font-medium">Ações</th>
@@ -204,9 +210,12 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 max-w-[160px] truncate" title={i.customer_email ?? ""}>{i.customer_name || i.customer_email || "—"}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>
-                        <td className="px-3 py-2.5"><KindBadge kind={i.kind} /></td>
+                        <td className="px-3 py-2.5 max-w-[160px]" title={i.customer_email ?? ""}>
+                          <p className="truncate">{i.customer_name || i.customer_email || "—"}</p>
+                          {compact && <p className="text-[11px] text-muted-foreground truncate">{i.store ?? "—"}</p>}
+                        </td>
+                        {!compact && <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>}
+                        {!compact && <td className="px-3 py-2.5"><KindBadge kind={i.kind} /></td>}
                         <td className="px-3 py-2.5 font-semibold whitespace-nowrap">{i.kind === "reembolso" ? formatMoney(i.amount, i.currency) : "—"}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <p>{day(i.created_at)}</p>
@@ -214,7 +223,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                         </td>
                         <td className="px-3 py-2.5"><StatusBadge status={i.status} /></td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          <RowActions i={i} canApprove={canApprove} actions={actions} onOpen={() => setOpenId(i.id)} onOpenConversation={onOpenConversation} />
+                          <RowActions i={i} canApprove={canApprove} actions={actions} compact={compact} onOpen={() => setOpenId(i.id)} onOpenConversation={onOpenConversation} />
                         </td>
                       </tr>
                     ))}
@@ -222,7 +231,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                 </table>
               </div>
             ) : (
-              <div className="p-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              <div className={`p-3 grid gap-3 sm:grid-cols-2 ${compact ? "" : "2xl:grid-cols-3"}`}>
                 {shown.map((i) => (
                   <div key={i.id} onClick={() => setOpenId(i.id)}
                     className={`rounded-xl border p-3 cursor-pointer transition-colors ${openId === i.id ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/30"}`}>
@@ -275,10 +284,10 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
           </div>
         )}
       </div>
-
       {openItem && (
         <DetailPanel i={openItem} canApprove={canApprove} actions={actions} onClose={() => setOpenId(null)} onOpenConversation={onOpenConversation} />
       )}
+      </div>
       <RejectDialog actions={actions} />
     </div>
   );
@@ -390,9 +399,10 @@ function StatusBadge({ status, long }: { status: string; long?: boolean }) {
   );
 }
 
-function RowActions({ i, canApprove, actions, onOpen, onOpenConversation }: {
-  i: Item; canApprove: boolean; actions: Actions; onOpen: () => void; onOpenConversation: (id: string) => void;
+function RowActions({ i, canApprove, actions, compact, onOpen, onOpenConversation }: {
+  i: Item; canApprove: boolean; actions: Actions; compact?: boolean; onOpen: () => void; onOpenConversation: (id: string) => void;
 }) {
+  const decidable = canApprove && DECIDABLE.has(i.status);
   const busy = actions.busyIds.has(i.id);
   return (
     <div className="flex items-center gap-1.5">
@@ -408,19 +418,22 @@ function RowActions({ i, canApprove, actions, onOpen, onOpenConversation }: {
           {i.order_number && (
             <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(i.order_number!); toast.success("Número do pedido copiado"); }}>Copiar nº do pedido</DropdownMenuItem>
           )}
+          {compact && decidable && <DropdownMenuItem onClick={() => actions.askReject([i])} className="text-destructive">Recusar</DropdownMenuItem>}
         </DropdownMenuContent>
       </DropdownMenu>
-      {canApprove && DECIDABLE.has(i.status) && (
+      {decidable && (
         <>
           <button onClick={() => actions.approve([i])} disabled={busy}
             className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
             {i.status === "erro" ? "Tentar de novo" : "Aprovar"}
           </button>
-          <button onClick={() => actions.askReject([i])} disabled={busy}
-            className="h-8 px-3 rounded-lg border border-border text-xs font-medium hover:border-destructive hover:text-destructive disabled:opacity-50">
-            Recusar
-          </button>
+          {!compact && (
+            <button onClick={() => actions.askReject([i])} disabled={busy}
+              className="h-8 px-3 rounded-lg border border-border text-xs font-medium hover:border-destructive hover:text-destructive disabled:opacity-50">
+              Recusar
+            </button>
+          )}
         </>
       )}
     </div>
