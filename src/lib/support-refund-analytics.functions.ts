@@ -14,6 +14,7 @@ const ISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const r2 = (n: number) => Math.round(n * 100) / 100;
 // Pedido com menos disso ainda costuma ser reembolsado (média ~24 dias).
 const MATURITY_DAYS = 30;
+const MIN_PREV_ORDERS = 200;
 const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T00:00:00Z`).getTime() - new Date(`${a}T00:00:00Z`).getTime()) / 86_400_000);
 
 function assertSee(ctx: Ctx) {
@@ -117,7 +118,8 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         avgDaysToRefund: daysToRefund.length ? daysToRefund.reduce((s, d) => s + d, 0) / daysToRefund.length : null,
         approvalHours: a.approvalHours,
       },
-      prev: { total: sum(prev.events), ...prevRates },
+      // Período anterior com pouca venda (ex.: lojas começando) não serve de comparação.
+      prev: { total: sum(prev.events), ...prevRates, orders: prev.orders, comparable: prev.orders >= MIN_PREV_ORDERS },
       byReason: group(a.events, (e) => (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) as string),
       byGroup: group(a.cohort, (e) => groupOf.get(e.shopId) ?? `loja:${e.shopId}`).map((x) => {
         const card = cardShops.get(x.key);

@@ -112,8 +112,8 @@ function Basis({ d }: { d: Data }) {
   );
 }
 
-function Delta({ cur, prev }: { cur: number; prev: number }) {
-  if (!prev) return <span className="text-muted-foreground">sem base no período anterior</span>;
+function Delta({ cur, prev, comparable = true }: { cur: number; prev: number; comparable?: boolean }) {
+  if (!prev || !comparable) return <span className="text-muted-foreground">sem base no período anterior</span>;
   const p = Math.round(((cur - prev) / prev) * 100);
   const good = p <= 0;
   return (
@@ -132,9 +132,9 @@ function Kpis({ d }: { d: Data }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
-        sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} /></>} />
+        sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} comparable={d.prev.comparable} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>dos pedidos do período · antes {pct(d.prev.rateOrders)} na mesma altura</>} />
+        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)} na mesma altura</> : "sem base no período anterior"}</>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
