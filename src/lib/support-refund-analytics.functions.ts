@@ -56,11 +56,16 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
       return [...m].map(([key, x]) => ({ key, count: x.count, amount: r2(x.amount) })).sort((p, q) => q.amount - p.amount);
     };
 
-    const daily = new Map<string, { amount: number; count: number }>();
-    for (let d = data.from; d <= data.to; d = addDaysIso(d, 1)) daily.set(d, { amount: 0, count: 0 });
+    // Por dia: o gráfico e as minilinhas dos cartões (valor, taxa, pendente, dias até o reembolso).
+    const daily = new Map<string, { amount: number; count: number; pending: number; days: number[] }>();
+    for (let d = data.from; d <= data.to; d = addDaysIso(d, 1)) daily.set(d, { amount: 0, count: 0, pending: 0, days: [] });
     for (const e of a.events) {
       const x = daily.get(e.date);
-      if (x) { x.amount += e.amount; x.count++; }
+      if (!x) continue;
+      x.amount += e.amount; x.count++;
+      if (e.status === "pendente") x.pending += e.amount;
+      const dd = daysBetween(e.orderDate, e.date);
+      if (dd >= 0) x.days.push(dd);
     }
 
     return {
@@ -81,7 +86,14 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
       }),
       byPerson: group((e) => (e.requestedByName ?? "Fora do app (Shopify)")),
       byProduct: productBreakdown(a).slice(0, 30),
-      daily: [...daily].map(([date, x]) => ({ date, amount: r2(x.amount), count: x.count })),
+      daily: [...daily].map(([date, x]) => {
+        const rev = a.revenueByDate.get(date) ?? 0;
+        return {
+          date, amount: r2(x.amount), count: x.count, pending: r2(x.pending),
+          rate: rev > 0 ? x.amount / rev : null,
+          avgDays: x.days.length ? x.days.reduce((s, v) => s + v, 0) / x.days.length : null,
+        };
+      }),
       events: a.events.slice(0, 500).map(({ products, ...e }) => ({ ...e, product: products.map((p) => p.name).join(", ") })),
     };
   });

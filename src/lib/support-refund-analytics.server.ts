@@ -46,7 +46,7 @@ async function cardsByShopifyProduct(ownerId: string) {
 
 export async function refundAnalytics(ownerId: string, from: string, to: string) {
   const shopIds = await companyShopIdsForMonth(ownerId, monthStartOf(from));
-  const empty = { from, to, shops: [] as { id: string; name: string }[], events: [] as RefundEvent[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), approvalHours: null as number | null };
+  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), approvalHours: null as number | null };
   if (!shopIds.length) return empty;
 
   const lookback = addDaysIso(from, -LOOKBACK_DAYS);
@@ -59,7 +59,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     // Reembolso pendente na Shopify deixa o pedido "paid": vem pelo pedido do app.
     db("support_refund_requests").select("id,order_id,reason,requested_by,created_at,decided_at,refund_id,conversation_id,status")
       .eq("owner_id", ownerId).in("shop_id", shopIds),
-    selectAll(supabaseAdmin.from("shop_orders").select("id,shop_id,revenue,line_items:raw->line_items")
+    selectAll(supabaseAdmin.from("shop_orders").select("id,shop_id,order_date,revenue,line_items:raw->line_items")
       .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
     cardsByShopifyProduct(ownerId),
   ]);
@@ -89,9 +89,11 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
   // Vendidos no período (pra taxa por produto) e faturamento por loja.
   const sold = new Map<string, number>();
   const revenueByShop = new Map<string, number>();
+  const revenueByDate = new Map<string, number>();
   let revenue = 0;
   for (const o of (periodRes.data ?? []) as any[]) {
     revenue += Number(o.revenue ?? 0);
+    revenueByDate.set(o.order_date, (revenueByDate.get(o.order_date) ?? 0) + Number(o.revenue ?? 0));
     revenueByShop.set(o.shop_id, (revenueByShop.get(o.shop_id) ?? 0) + Number(o.revenue ?? 0));
     for (const li of (o.line_items ?? []) as LineItem[]) {
       const k = productOf(li);
@@ -165,7 +167,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     : null;
 
   return {
-    from, to, events, revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, approvalHours,
+    from, to, events, revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, revenueByDate, approvalHours,
     shops: shopIds.map((id) => ({ id, name: shopName.get(id) ?? "—" })),
   };
 }
