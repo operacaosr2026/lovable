@@ -5,6 +5,7 @@ import { addDaysIso, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { personNames } from "@/lib/support-approval.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
 import { refundReasonLabel } from "@/lib/refund-reasons";
+import { disputifierRefund } from "@/lib/chargeback-alerts.shared";
 
 // Análise de reembolsos (Atendimento › Aprovações › Análise) e o alerta de
 // reembolso alto. Duas visões de propósito:
@@ -29,7 +30,7 @@ type LineItem = { product_id?: number | string | null; title?: string; name?: st
 export type RefundEvent = {
   key: string; orderId: string; refundId: string; requestId: string | null; orderNumber: string | null; shopId: string; shop: string;
   date: string; at: string; orderDate: string; amount: number; status: "concluido" | "pendente";
-  pendingDays: number | null; reason: string | null; source: "app" | "shopify";
+  pendingDays: number | null; reason: string | null; source: "app" | "shopify" | "disputifier";
   requestedBy: string | null; requestedByName: string | null; conversationId: string | null;
   products: { key: string; name: string; units: number; amount: number }[];
 };
@@ -159,11 +160,13 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       const list = reqByOrder.get(o.id) ?? [];
       const req = list.find((q) => q.refund_id && String(q.refund_id).endsWith(`/${rf.id}`))
         ?? list.filter((q) => q.status === "aprovado").sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at)))[0] ?? null;
+      // Reembolso do Disputifier (alerta de pré-chargeback) é sempre "Possível chargeback".
+      const dsp = !!disputifierRefund(rf);
       all.push({
         key: `${o.id}:${rf.id}`, orderId: o.id, refundId: String(rf.id), requestId: req?.id ?? null, orderNumber: o.order_number, shopId: o.shop_id, shop: shopName.get(o.shop_id) ?? "—",
         date, at, orderDate: o.order_date, amount: r2(amount), status: pending ? "pendente" : "concluido",
         pendingDays: pending ? Math.floor((now - new Date(at).getTime()) / 86_400_000) : null,
-        reason: req?.reason ?? manualReason.get(`${o.id}:${rf.id}`) ?? null, source: req ? "app" : "shopify",
+        reason: dsp ? "chargeback" : req?.reason ?? manualReason.get(`${o.id}:${rf.id}`) ?? null, source: dsp ? "disputifier" : req ? "app" : "shopify",
         requestedBy: req?.requested_by ?? null, requestedByName: req ? names.get(req.requested_by) ?? "Equipe" : null,
         conversationId: req?.conversation_id ?? null,
         products: [...prods].map(([k, p]) => ({ key: k, name: products.get(k)?.name ?? k, units: p.units, amount: r2(p.amount) })),

@@ -440,6 +440,8 @@ function ReasonCell({ e, canEdit }: { e: Data["events"][number]; canEdit: boolea
     },
     onError: (err: any) => toast.error(err.message ?? "Erro"),
   });
+  // Disputifier: sempre "Possível chargeback", não se edita.
+  if (e.source === "disputifier") return <span title="Reembolsado pelo Disputifier (alerta de pré-chargeback)">{refundReasonLabel(e.reason)} · Disputifier</span>;
   const empty = e.source === "shopify" ? "Direto na Shopify — escolher" : "Sem motivo";
   if (!canEdit) return e.reason ? <>{refundReasonLabel(e.reason)}</> : <span className="text-muted-foreground">{e.source === "shopify" ? "Direto na Shopify" : "Sem motivo"}</span>;
   return (

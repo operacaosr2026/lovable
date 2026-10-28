@@ -1,5 +1,15 @@
 // Tipos e textos dos Alertas de chargeback usados no cliente e no servidor.
 
+export const DISPUTIFIER_APP = "3643375";   // source_name das transações de reembolso feitas pelo app
+
+// Reembolso feito pelo Disputifier (alerta de pré-chargeback): transação do app
+// ou nota do alerta ("Ethoca Alert", "cdrn alerts"…). Devolve a rede da nota, se houver.
+export function disputifierRefund(r: any): { network: string | null } | null {
+  const byApp = ((r?.transactions ?? []) as any[]).some((t) => String(t.source_name) === DISPUTIFIER_APP);
+  const network = String(r?.note ?? "").match(/(cdrn|ethoca|rdr)/i)?.[1] ?? null;
+  return byApp || network ? { network } : null;
+}
+
 export const ALERT_STATUSES = ["a_contatar", "contatado", "recuperado", "sem_retorno", "nao_recuperavel"] as const;
 export type AlertStatus = (typeof ALERT_STATUSES)[number];
 

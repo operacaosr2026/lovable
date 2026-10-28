@@ -6,7 +6,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { getZohoAccount, sendZohoMail } from "@/lib/zoho-mail.server";
 import { ensureRecoveryLink, checkRecoveryPayments } from "@/lib/chargeback-recovery.server";
 import {
-  DEFAULT_CHARGEBACK_SETTINGS, dunningVars, renderDunning, dunningTextToHtml,
+  DEFAULT_CHARGEBACK_SETTINGS, disputifierRefund, dunningVars, renderDunning, dunningTextToHtml,
   type AlertRow, type AlertStatus, type ChargebackSettings, type DunningStep,
 } from "@/lib/chargeback-alerts.shared";
 
@@ -23,8 +23,6 @@ import {
 // Identificação (tudo no pedido guardado, raw->refunds): reembolso feito pelo app
 // do Disputifier (transação com source_name do app) ou com a nota do alerta
 // ("Ethoca Alert", "cdrn alerts"…), ou tag CDRN/Ethoca/RDR no pedido.
-
-const DISPUTIFIER_APP = "3643375";   // source_name das transações de reembolso feitas pelo app
 
 // Só as lojas ativas (as que contam na meta do mês).
 export async function alertShopIds(ownerId: string) {
@@ -58,10 +56,9 @@ export async function loadAlerts(ownerId: string, shopIds: string[]): Promise<Al
     const tagNet = String(o.tags ?? "").match(/\b(cdrn|ethoca|rdr)\b/i)?.[1];
     for (const r of (o.refunds ?? []) as any[]) {
       const txs = (r.transactions ?? []) as any[];
-      const note = String(r.note ?? "");
-      const byApp = txs.some((t) => String(t.source_name) === DISPUTIFIER_APP);
-      const noteNet = note.match(/\b(cdrn|ethoca|rdr)\b/i)?.[1];
-      if (!byApp && !noteNet && !tagNet) continue;
+      const dsp = disputifierRefund(r);
+      const noteNet = dsp?.network;
+      if (!dsp && !tagNet) continue;
       const amount = txs.filter((t) => (t.kind ?? "refund") === "refund" && (t.status ?? "success") === "success")
         .reduce((s, t) => s + Number(t.amount ?? 0), 0);
       found.push({ o, refund: r, amount, network: (noteNet ?? tagNet ?? "Alerta").toUpperCase().replace("ETHOCA", "Ethoca") });
