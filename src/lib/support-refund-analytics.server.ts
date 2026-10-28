@@ -57,10 +57,13 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
   const ORDER_COLS = "id,shop_id,order_number,order_date,revenue,refunds:raw->refunds,line_items:raw->line_items";
   const [shopsRes, refundedRes, appReqRes, periodRes, cardOf] = await Promise.all([
     supabaseAdmin.from("shops").select("id,name").in("id", shopIds),
+    // Todo pedido com reembolso registrado — inclusive "paid" com reembolso ainda
+    // pendente na Shopify, feito direto lá (sem pedido no app). Todo pedido vem
+    // com "refunds": [], por isso o filtro é "diferente de vazio".
     selectAll(supabaseAdmin.from("shop_orders").select(ORDER_COLS)
       .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", lookback)
-      .in("shopify_financial_status", ["refunded", "partially_refunded"])),
-    // Reembolso pendente na Shopify deixa o pedido "paid": vem pelo pedido do app.
+      .neq("raw->refunds", "[]")),
+    // Pedido do app aprovado cujo reembolso ainda não chegou no pedido guardado.
     db("support_refund_requests").select("id,order_id,reason,requested_by,created_at,decided_at,refund_id,conversation_id,status")
       .eq("owner_id", ownerId).in("shop_id", shopIds),
     selectAll(supabaseAdmin.from("shop_orders").select("id,shop_id,order_date,revenue,line_items:raw->line_items")
