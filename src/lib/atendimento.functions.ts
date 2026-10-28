@@ -36,8 +36,8 @@ function assertAccess(ctx: Ctx) {
     throw new Error("Sem acesso ao Atendimento");
   }
 }
-// Subabas (Configurações > Membros): at_caixa, at_kpi, at_config.
-function assertSub(ctx: Ctx, section: "at_caixa" | "at_kpi" | "at_config") {
+// Subabas (Configurações > Membros): at_caixa, at_config.
+function assertSub(ctx: Ctx, section: "at_caixa" | "at_config") {
   assertAccess(ctx);
   if (ctx.role !== "admin" && !ctx.permissions.some((p) => p.section === section)) {
     throw new Error("Sem acesso a esta parte do Atendimento");
@@ -238,19 +238,19 @@ export const listSupportConversations = createServerFn({ method: "GET" })
     };
   });
 
-// Aba KPI: números do mês (comparados com o mesmo trecho do mês anterior).
+// KPI do Atendimento (Gerencial): números do mês (comparados com o mesmo trecho do mês anterior).
 export const getSupportKpis = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(d))
   .handler(async ({ data, context }) => {
-    assertSub(context, "at_kpi");
+    if (context.role !== "admin" && !context.permissions.some((p) => p.section === "gerencial")) throw new Error("Sem acesso ao Gerencial");
     const { ownerId } = context;
     // Conversas que ainda não têm loja: tenta descobrir antes de contar.
     try { await assignConversationShops(ownerId); } catch (e) { console.error("assign shops", e); }
     return supportKpisFor(ownerId, data.month);
   });
 
-// KPIs do Atendimento num mês — aba KPI e Gerencial.
+// KPIs do Atendimento num mês — subaba KPI Atendimento e aba Equipe do Gerencial.
 export async function supportKpisFor(ownerId: string, month: string) {
   const range = monthRange(month);
   // Folga de 7 dias depois do fim pra achar respostas que vieram depois.

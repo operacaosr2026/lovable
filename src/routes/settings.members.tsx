@@ -91,7 +91,8 @@ const SECTION_LABELS: Record<Section, string> = {
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
 const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
-const AT_SUBTABS: Section[] = ["at_caixa", "at_aprovacoes", "at_aprovar", "at_imagens", "at_kpi", "at_config"];
+// Aprovações (e KPI) ficam no Gerencial — a permissão Gerencial cobre tudo.
+const AT_SUBTABS: Section[] = ["at_caixa", "at_imagens", "at_config"];
 // Tipos de notificação (aparecem quando "Notificações" está marcado).
 const NT_TYPES: Section[] = ["nt_meta", "nt_shopify", "nt_disputas", "nt_rastreio", "nt_atendimento", "nt_sistema", "nt_tarefas", "nt_vendas", "nt_email", "nt_metas", "nt_lucro", "nt_consultor", "nt_trocas"];
 const NT_HINTS: Partial<Record<Section, string>> = {

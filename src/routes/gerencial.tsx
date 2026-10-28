@@ -10,15 +10,15 @@ import { requireAuth } from "@/lib/route-guards";
 import { isoTodayUS } from "@/lib/timezone";
 import { getGerencial } from "@/lib/gerencial.functions";
 import { listSupportApprovals } from "@/lib/support-approvals.functions";
-import { useMyAccess } from "@/hooks/useMyAccess";
-import { useAuth } from "@/lib/auth";
 import { SupportApprovalsView } from "@/components/atendimento/SupportApprovalsView";
 import { SupportRefundAnalytics } from "@/components/atendimento/SupportRefundAnalytics";
+import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
-// mais as Aprovações de troca/reembolso (fila e análise), que vieram do Atendimento.
+// mais o KPI do Atendimento e as Aprovações de troca/reembolso (fila e análise),
+// que vieram do Atendimento.
 // ?tab=aprovacoes / ?tab=reembolsos abre direto nelas (links das notificações).
-const TAB_KEYS = ["resultado", "perdas", "entrega", "equipe", "alertas", "aprovacoes", "reembolsos"] as const;
+const TAB_KEYS = ["resultado", "perdas", "entrega", "equipe", "kpi", "alertas", "aprovacoes", "reembolsos"] as const;
 type Tab = (typeof TAB_KEYS)[number];
 
 export const Route = createFileRoute("/gerencial")({
@@ -47,7 +47,7 @@ function lastMonths(n: number) {
 }
 
 const TABS: [Tab, string][] = [
-  ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Entrega"], ["equipe", "Equipe"], ["alertas", "Alertas"],
+  ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Entrega"], ["equipe", "Equipe"], ["kpi", "KPI Atendimento"], ["alertas", "Alertas"],
   ["aprovacoes", "Fila de aprovação"], ["reembolsos", "Análise de reembolsos"],
 ];
 const APPROVAL_TABS: Tab[] = ["aprovacoes", "reembolsos"];
@@ -59,10 +59,6 @@ function GerencialPage() {
   const navigate = Route.useNavigate();
   const tab: Tab = search.tab ?? "resultado";
   const setTab = (t: Tab) => navigate({ search: t === "resultado" ? {} : { tab: t }, replace: true });
-  // Aprovações: dono/admin, ou quem tem "Aprovações (ver a fila)" ou "Pode aprovar".
-  const { canAccessSection, ownerId } = useMyAccess();
-  const { user } = useAuth();
-  const approver = (!!user && user.id === ownerId) || canAccessSection("at_aprovacoes") || canAccessSection("at_aprovar");
   const approvalsTab = APPROVAL_TABS.includes(tab);
 
   const fn = useServerFn(getGerencial);
@@ -70,7 +66,7 @@ function GerencialPage() {
   const d = q.data as Data | undefined;
   // Número na aba da fila (mesma consulta da tela).
   const approvalsFn = useServerFn(listSupportApprovals);
-  const approvals = useQuery({ queryKey: ["support-approvals"], queryFn: () => approvalsFn(), refetchInterval: 60_000, enabled: approver });
+  const approvals = useQuery({ queryKey: ["support-approvals"], queryFn: () => approvalsFn(), refetchInterval: 60_000 });
   const approvalsOpen = ((approvals.data?.items ?? []) as { status: string }[]).filter((i) => i.status === "pendente" || i.status === "erro").length;
   // Conversa do cliente: abre no Atendimento.
   const openConversation = (id: string) => navigate({ to: "/atendimento", search: { c: id } as any });
@@ -88,7 +84,7 @@ function GerencialPage() {
       } />
       <div className="space-y-4 pb-8">
         <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
-          {TABS.filter(([k]) => approver || !APPROVAL_TABS.includes(k)).map(([k, label]) => (
+          {TABS.map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               {label}
@@ -101,7 +97,8 @@ function GerencialPage() {
             </button>
           ))}
         </div>
-        {tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
+        {tab === "kpi" ? <SupportKpisView month={month} />
+          : tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
           : tab === "reembolsos" ? <SupportRefundAnalytics onOpenConversation={openConversation} />
           : q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>

@@ -17,13 +17,12 @@ export function assertSupportAccess(ctx: SupportCtx) {
 
 const has = (ctx: SupportCtx, section: string) => ctx.permissions.some((p) => p.section === section);
 
-// Quem aprova: dono e admins, ou membro com "Pode aprovar trocas e reembolsos"
-// (Configurações › Membros › Atendimento).
+// Aprovações ficam no Gerencial: quem tem a permissão Gerencial vê a fila e a
+// análise e aprova/recusa (o que pedir já sai aprovado). Dono e admins também.
 export const isApprover = (ctx: SupportCtx) =>
-  ctx.userId === ctx.ownerId || ctx.role === "admin" || (has(ctx, "atendimento") && has(ctx, "at_aprovar"));
+  ctx.userId === ctx.ownerId || ctx.role === "admin" || has(ctx, "gerencial");
 
-// Quem vê a aba Aprovações: quem aprova, ou membro com "Aprovações (ver a fila)".
-export const canSeeApprovals = (ctx: SupportCtx) => isApprover(ctx) || (has(ctx, "atendimento") && has(ctx, "at_aprovacoes"));
+export const canSeeApprovals = isApprover;
 
 export async function loadSupportOrder(ownerId: string, orderId: string) {
   const { data: o } = await supabaseAdmin.from("shop_orders")
