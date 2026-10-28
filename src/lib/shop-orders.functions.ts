@@ -2222,27 +2222,29 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     }
 
     // Current period
+    // Faturamento = bruto (o que foi vendido); reembolsos e chargebacks saem só do
+    // lucro — igual ao Dashboard e ao Gerencial.
     const ordersRevenue = orders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
-    const faturamento  = ordersRevenue - reembolsos - chargebacks;
+    const faturamento  = ordersRevenue;
     const pedidos      = orders.length;
     const unidades     = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0);
     const custoTotal   = custoProduto + taxas + anuncios;
-    const lucro        = faturamento - custoProduto - taxas - anuncios;
+    const lucro        = faturamento - reembolsos - chargebacks - custoProduto - taxas - anuncios;
     const margem       = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
     const ticketMedio  = pedidos > 0 ? faturamento / pedidos : 0;
     const cpa          = anuncios > 0 && pedidos > 0 ? anuncios / pedidos : 0;
     const roas         = anuncios > 0 ? faturamento / anuncios : 0;
-    const roi          = anuncios > 0 ? ((faturamento - custoProduto - taxas - anuncios) / anuncios) * 100 : 0;
+    const roi          = anuncios > 0 ? (lucro / anuncios) * 100 : 0;
 
     // Previous period (for deltas)
     const prevOrdersRevenue = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
-    const prevFaturamento = prevOrdersRevenue - prevReembolsos - prevChargebacks;
+    const prevFaturamento = prevOrdersRevenue;
     const prevPedidos     = prevOrders.length;
     const prevUnidades    = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
     const prevCusto       = prevOrders.reduce((s, o) => s + orderCost(o), 0);
     const prevCustoTotal  = prevCusto + prevTaxas + prevAnuncios;
-    const prevLucro       = prevFaturamento - prevCusto - prevTaxas - prevAnuncios;
+    const prevLucro       = prevFaturamento - prevReembolsos - prevChargebacks - prevCusto - prevTaxas - prevAnuncios;
     const prevMargem      = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
     const prevTicket      = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
     const prevCpa         = prevAnuncios > 0 && prevPedidos > 0 ? prevAnuncios / prevPedidos : 0;
@@ -2282,11 +2284,11 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         const dayAnuncios = adsByDate.get(date) ?? 0;
         const dayReembolsos = refundsByDate.get(date) ?? 0;
         const dayChargebacks = chargebacksByDate.get(date) ?? 0;
-        const dayFaturamento = v.faturamento - dayReembolsos - dayChargebacks;
+        const dayLiquido = v.faturamento - dayReembolsos - dayChargebacks;
         return {
           date: date.slice(5).replace("-", "/"), // MM/DD → DD/MM display
-          faturamento: Math.round(dayFaturamento * 100) / 100,
-          lucro: Math.round((dayFaturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          faturamento: Math.round(v.faturamento * 100) / 100,
+          lucro: Math.round((dayLiquido - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
           // Linha "Ads" do gráfico Evolução (antes não vinha e a linha ficava vazia).
           anuncios: Math.round(dayAnuncios * 100) / 100,

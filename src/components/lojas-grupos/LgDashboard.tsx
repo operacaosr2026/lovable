@@ -681,12 +681,12 @@ export function LgDashboard({
         <KpiCard highlighted highlightedVariant={(m?.lucro ?? 0) < 0 ? "destructive" : "success"} loading={isLoading}
           icon={<DollarSign className="size-4" />}
           label="Lucro" value={fmt(m?.lucro ?? 0)} delta={m?.lucroDelta ?? 0}
-          tooltip="Faturamento líquido − custo − taxas − anúncios"
+          tooltip="Faturamento − reembolsos − chargebacks − custo − taxas − anúncios"
         />
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="primary"
           label="Faturamento" value={fmt(m?.faturamento ?? 0)} delta={m?.faturamentoDelta ?? 0}
-          tooltip="Receita de pedidos descontados reembolsos e chargebacks (o total do mês é dividido igual entre os dias)"
+          tooltip="Receita dos pedidos (bruto). Reembolsos e chargebacks saem do lucro (o total do mês é dividido igual entre os dias)"
           onClick={isConsolidated ? () => openBreakdown("faturamento", "Faturamento") : undefined}
         />
         <KpiCard loading={isLoading}
