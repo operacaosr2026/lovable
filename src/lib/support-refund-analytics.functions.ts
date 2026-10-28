@@ -96,6 +96,12 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
     }
 
     // Por dia do pedido: o gráfico e as minilinhas dos cartões (valor, taxa, pendente, dias até o reembolso).
+    const refDay = new Map<string, { amount: number; count: number }>();
+    for (const e of a.byRefundDate) {
+      const x = refDay.get(e.date) ?? { amount: 0, count: 0 };
+      x.amount += e.amount; x.count++;
+      refDay.set(e.date, x);
+    }
     const daily = new Map<string, { amount: number; count: number; pending: number; days: number[] }>();
     for (let d = data.from; d <= data.to; d = addDaysIso(d, 1)) daily.set(d, { amount: 0, count: 0, pending: 0, days: [] });
     for (const e of a.events) {
@@ -151,6 +157,8 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         const sold = ordersByDate.get(date) ?? 0;
         return {
           date, amount: r2(x.amount), count: x.count, pending: r2(x.pending),
+          // Gráfico "por dia do reembolso": reembolsos feitos neste dia, de qualquer pedido.
+          refAmount: r2(refDay.get(date)?.amount ?? 0), refCount: refDay.get(date)?.count ?? 0,
           // Vendido no dia (data da venda) — linha de pedidos do gráfico por dia.
           sales: r2(a.revenueByDate.get(date) ?? 0), orders: sold,
           // Minilinha da taxa: dos vendidos no dia, quantos tiveram reembolso.

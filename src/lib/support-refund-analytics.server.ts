@@ -50,7 +50,7 @@ async function cardsByShopifyProduct(ownerId: string) {
 
 export async function refundAnalytics(ownerId: string, from: string, to: string) {
   const shopIds = await companyShopIdsForMonth(ownerId, monthStartOf(from));
-  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), ordersByShop: new Map<string, number>(), approvalHours: null as number | null };
+  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], byRefundDate: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), ordersByShop: new Map<string, number>(), approvalHours: null as number | null };
   if (!shopIds.length) return empty;
 
   const lookback = addDaysIso(from, -LOOKBACK_DAYS);
@@ -122,7 +122,8 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       const at = String(rf.created_at ?? rf.processed_at ?? "");
       if (!at) continue;
       const date = isoDateUS(at);
-      if (o.order_date < from || o.order_date > to) continue;
+      const sold = o.order_date >= from && o.order_date <= to;
+      if (!sold && (date < from || date > to)) continue;
       const tx = ((rf.transactions ?? []) as any[]).filter((t) => t.kind === "refund" && (t.status === "success" || t.status === "pending"));
       const amount = tx.reduce((s, t) => s + Number(t.amount ?? 0), 0);
       if (amount <= 0) continue;
@@ -171,7 +172,9 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     }
   }
   all.sort((a, b) => b.at.localeCompare(a.at));
-  const events = all;
+  const events = all.filter((e) => e.orderDate >= from && e.orderDate <= to);
+  // Só pro gráfico "por dia do reembolso": reembolsos feitos no período, de qualquer pedido.
+  const byRefundDate = all.filter((e) => e.date >= from && e.date <= to);
 
   // Tempo da solicitação até a decisão (pedidos do app decididos no período).
   const decided = requests.filter((r) => r.decided_at && r.status === "aprovado" && isoDateUS(r.decided_at) >= from && isoDateUS(r.decided_at) <= to);
@@ -180,7 +183,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     : null;
 
   return {
-    from, to, events, orderDates: ((periodRes.data ?? []) as any[]).map((o) => o.order_date as string),
+    from, to, events, byRefundDate, orderDates: ((periodRes.data ?? []) as any[]).map((o) => o.order_date as string),
     revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, ordersByShop, revenueByDate, approvalHours,
     shops: shopIds.map((id) => ({ id, name: shopName.get(id) ?? "—" })),
   };

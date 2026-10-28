@@ -199,12 +199,21 @@ function Card({ icon: Icon, title, hint, children, right }: { icon: any; title: 
 // ─── Por dia ──────────────────────────────────────────────────────────────────
 
 // Pedidos vendidos (linha) e reembolsos (barra) por dia, em quantidade — mesma escala.
+// A barra vai pelo dia do pedido (quantos dos vendidos no dia tiveram reembolso)
+// ou pelo dia do reembolso (quantos a Shopify registrou no dia). Só muda o gráfico.
 function Daily({ d, controls }: { d: Data; controls: React.ReactNode }) {
-  const data = d.daily.map((x) => ({ ...x, label: dm(x.date) }));
-  const max = Math.max(0, ...data.map((x) => x.count));
+  const [by, setBy] = useState<"venda" | "reembolso">("venda");
+  const data = d.daily.map((x) => ({ ...x, label: dm(x.date), bar: by === "venda" ? x.count : x.refCount, barAmount: by === "venda" ? x.amount : x.refAmount }));
+  const max = Math.max(0, ...data.map((x) => x.bar));
   return (
-    <Card icon={BarChart3} title="Pedidos e reembolsos por dia" hint="Por dia do pedido: pedidos vendidos (linha) e quantos deles tiveram reembolso (barra)" right={controls}>
-      <div className="flex items-center gap-4 text-[11px] text-muted-foreground mb-2">
+    <Card icon={BarChart3} title="Pedidos e reembolsos por dia" hint={by === "venda" ? "Por dia da venda: pedidos vendidos (linha) e quantos deles tiveram reembolso (barra)" : "Pedidos vendidos por dia (linha) e reembolsos feitos em cada dia, de qualquer pedido (barra) — horário de Nova York"} right={controls}>
+      <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground mb-2">
+        <div className="inline-flex rounded-lg border border-border p-0.5">
+          {([["venda", "Por dia da venda"], ["reembolso", "Por dia do reembolso"]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setBy(k)}
+              className={`h-7 px-2.5 rounded-md text-[11px] font-medium ${by === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{l}</button>
+          ))}
+        </div>
         <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded-full bg-muted-foreground" />Pedidos vendidos</span>
         <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-primary" />Reembolsos</span>
       </div>
@@ -222,12 +231,12 @@ function Daily({ d, controls }: { d: Data; controls: React.ReactNode }) {
                   <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs shadow-lg space-y-0.5">
                     <p className="font-semibold">{p.label}</p>
                     <p className="flex items-center gap-1.5"><span className="h-0.5 w-3 rounded-full bg-muted-foreground" />{p.orders} pedido{p.orders === 1 ? "" : "s"} vendido{p.orders === 1 ? "" : "s"} · {usd(p.sales)}</p>
-                    <p className="flex items-center gap-1.5"><span className="size-2 rounded-sm bg-primary" />{p.count} reembolso{p.count === 1 ? "" : "s"} · {usd(p.amount)}</p>
+                    <p className="flex items-center gap-1.5"><span className="size-2 rounded-sm bg-primary" />{p.bar} reembolso{p.bar === 1 ? "" : "s"} · {usd(p.barAmount)}</p>
                   </div>
                 );
               }} />
-            <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false}>
-              {data.map((x) => <Cell key={x.date} fill="var(--color-primary)" fillOpacity={x.count === max && max > 0 ? 1 : 0.7} />)}
+            <Bar dataKey="bar" radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false}>
+              {data.map((x) => <Cell key={x.date} fill="var(--color-primary)" fillOpacity={x.bar === max && max > 0 ? 1 : 0.7} />)}
             </Bar>
             <Line dataKey="orders" type="monotone" stroke="var(--color-muted-foreground)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
           </ComposedChart>
