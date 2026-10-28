@@ -230,14 +230,6 @@ function Alerts({ d }: { d: Data }) {
   const groups = (["critico", "atencao"] as const).map((lv) => [lv, d.alerts.filter((a) => a.level === lv)] as const).filter(([, l]) => l.length);
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm font-semibold">{d.alerts.length} {d.alerts.length === 1 ? "ponto pedindo" : "pontos pedindo"} decisão</p>
-        {groups.map(([lv, l]) => (
-          <span key={lv} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${LEVEL[lv].icon}`}>
-            <span className={`size-1.5 rounded-full ${LEVEL[lv].bar}`} />{l.length} {LEVEL[lv].label.toLowerCase()}{l.length === 1 ? "" : "s"}
-          </span>
-        ))}
-      </div>
       {groups.map(([lv, list]) => (
         <div key={lv}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{LEVEL[lv].label}</p>
