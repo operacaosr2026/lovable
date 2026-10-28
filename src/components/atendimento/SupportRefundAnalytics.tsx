@@ -19,13 +19,14 @@ import { formatMoney, fullTime } from "./utils";
 // que foi reembolsado direto na Shopify ("fora do app"). Limites do alerta de
 // reembolso alto em "Alertas" (support_refund_alerts).
 
-const PERIODS = [["7d", "Últimos 7 dias"], ["30d", "Últimos 30 dias"], ["mes", "Este mês"], ["mes_passado", "Mês passado"], ["90d", "Últimos 90 dias"]] as const;
+const PERIODS = [["7d", "Últimos 7 dias"], ["30d", "Últimos 30 dias"], ["mes", "Este mês"], ["mes_passado", "Mês passado"], ["60d", "Últimos 60 dias"], ["90d", "Últimos 90 dias"]] as const;
 type Period = (typeof PERIODS)[number][0];
 
 function rangeOf(p: Period) {
   const today = isoTodayUS();
   if (p === "7d") return { from: addDaysIso(today, -6), to: today };
   if (p === "30d") return { from: addDaysIso(today, -29), to: today };
+  if (p === "60d") return { from: addDaysIso(today, -59), to: today };
   if (p === "90d") return { from: addDaysIso(today, -89), to: today };
   const start = `${today.slice(0, 7)}-01`;
   if (p === "mes") return { from: start, to: today };
