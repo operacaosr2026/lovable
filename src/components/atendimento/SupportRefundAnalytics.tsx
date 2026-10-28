@@ -502,13 +502,8 @@ function AlertsDialog({ open, onClose, d }: { open: boolean; onClose: () => void
         </label>
         <div className="space-y-4">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Produto com reembolso alto</p>
+          {/* Janela, mínimo vendido e dias de pendente ficam no que está salvo (padrão 30 dias, 5 un., 3 dias). */}
           {field("Limite da taxa", "Avisa quando os já reembolsados ÷ vendidos passar disso (pedido recente ainda pode ser reembolsado, então só sobe)", "product_rate_limit", "%", 0.5)}
-          <div className="grid grid-cols-2 gap-3">
-            {field("Vendas dos últimos", "Pedidos vendidos nesses dias", "window_days", "dias")}
-            {field("Mínimo vendido", "Na janela, pra não avisar com 1 de 2", "product_min_sold", "un.")}
-          </div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-1">Reembolso parado na Shopify</p>
-          {field("Pendente há mais de", "A Shopify ainda não concluiu a devolução", "pending_days", "dias")}
         </div>
         {ro ? <p className="text-[11px] text-muted-foreground">Só quem pode aprovar reembolsos muda os limites.</p> : (
           <div className="flex justify-end gap-2 pt-1">
