@@ -245,38 +245,43 @@ export const getSupportKpis = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     assertSub(context, "at_kpi");
     const { ownerId } = context;
-    const range = monthRange(data.month);
     // Conversas que ainda não têm loja: tenta descobrir antes de contar.
     try { await assignConversationShops(ownerId); } catch (e) { console.error("assign shops", e); }
-    // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
-    const until = new Date(new Date(range.to).getTime() + 7 * 86_400_000).toISOString();
-    const [msgs, convs, shops, settings, activeShops, isNotice] = await Promise.all([
-      selectAll<KpiMessage & { subject: string | null }>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at,subject")
-        .eq("owner_id", ownerId).gte("sent_at", range.prevFrom).lte("sent_at", until)),
-      selectAll<KpiConversation & { customer_email: string }>(supabaseAdmin.from("support_conversations")
-        .select("id,customer_email,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
-        .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
-      supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
-      supabaseAdmin.from("support_settings").select(`tags,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", ownerId).maybeSingle(),
-      // Lojas dos grupos ativos: aparecem na tabela por loja mesmo zeradas.
-      companyShopIdsForMonth(ownerId, `${data.month}-01`).catch(() => [] as string[]),
-      loadNoticeMatcher(ownerId),
-    ]);
-    if (msgs.error) throw new Error(msgs.error.message);
-    if (convs.error) throw new Error(convs.error.message);
-    const { messages: kpiMsgs, conversations: kpiConvs } = withoutNotices(msgs.data, convs.data, isNotice);
-    // Efeito no dinheiro (contato → banco, contatos por 100 pedidos, recontato); não derruba a tela se falhar.
-    const extra = await supportExtraKpis(ownerId, range, activeShops).catch((e) => { console.error("support extra kpis", e); return null; });
-    return {
-      extra,
-      ...computeSupportKpis(kpiMsgs, kpiConvs, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data), activeShops),
-      partial: range.partial,
-      goals: {
-        firstResponseMin: settings.data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,
-        resolutionMin: settings.data?.goal_resolution_min ?? DEFAULT_GOALS.resolutionMin,
-      },
-    };
+    return supportKpisFor(ownerId, data.month);
   });
+
+// KPIs do Atendimento num mês — aba KPI e Gerencial.
+export async function supportKpisFor(ownerId: string, month: string) {
+  const range = monthRange(month);
+  // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
+  const until = new Date(new Date(range.to).getTime() + 7 * 86_400_000).toISOString();
+  const [msgs, convs, shops, settings, activeShops, isNotice] = await Promise.all([
+    selectAll<KpiMessage & { subject: string | null }>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at,subject")
+      .eq("owner_id", ownerId).gte("sent_at", range.prevFrom).lte("sent_at", until)),
+    selectAll<KpiConversation & { customer_email: string }>(supabaseAdmin.from("support_conversations")
+      .select("id,customer_email,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
+      .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
+    supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
+    supabaseAdmin.from("support_settings").select(`tags,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", ownerId).maybeSingle(),
+    // Lojas dos grupos ativos: aparecem na tabela por loja mesmo zeradas.
+    companyShopIdsForMonth(ownerId, `${month}-01`).catch(() => [] as string[]),
+    loadNoticeMatcher(ownerId),
+  ]);
+  if (msgs.error) throw new Error(msgs.error.message);
+  if (convs.error) throw new Error(convs.error.message);
+  const { messages: kpiMsgs, conversations: kpiConvs } = withoutNotices(msgs.data, convs.data, isNotice);
+  // Efeito no dinheiro (contato → banco, contatos por 100 pedidos, recontato); não derruba a tela se falhar.
+  const extra = await supportExtraKpis(ownerId, range, activeShops).catch((e) => { console.error("support extra kpis", e); return null; });
+  return {
+    extra,
+    ...computeSupportKpis(kpiMsgs, kpiConvs, shops.data ?? [], settings.data?.tags ?? [...DEFAULT_TAGS], range, toBusinessHours(settings.data), activeShops),
+    partial: range.partial,
+    goals: {
+      firstResponseMin: settings.data?.goal_first_response_min ?? DEFAULT_GOALS.firstResponseMin,
+      resolutionMin: settings.data?.goal_resolution_min ?? DEFAULT_GOALS.resolutionMin,
+    },
+  };
+}
 
 // Lojas do workspace (seletor de loja no painel do cliente).
 export const listSupportShops = createServerFn({ method: "GET" })

@@ -130,6 +130,8 @@ async function computeAccumulatedLucro(
   // Projeção da meta: lucro até ontem (dias fechados) + média dos últimos 3 dias
   // fechados × dias que faltam, contando hoje (o parcial de hoje não entra).
   return {
+    // Partes do lucro (Gerencial mostra a conta aberta).
+    faturamentoBruto: ordersRevenue, reembolsos, chargebacks, custo, anuncios, taxas,
     lucro, pedidos: orders.length, chartData, mediaUltimos3, mediaGeral, cpa, lucroOntem, pedidosOntem,
     lucroFechado: Math.round(lucroFechado * 100) / 100, hojeEmAndamento,
   };
