@@ -389,16 +389,17 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
       }>
       {rows.length === 0 ? <Empty /> : (
         <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-          <table className="w-full text-xs min-w-[820px]">
+          <table className="w-full text-xs min-w-[880px]">
             <thead className="sticky top-0 bg-card">
               <tr className="text-[11px] text-muted-foreground">
-                {["Data", "Pedido", "Loja", "Produto", "Valor", "Status", "Motivo", ""].map((h) => <th key={h} className="text-left font-medium pb-2 pr-3">{h}</th>)}
+                {["Reembolso", "Pedido em", "Pedido", "Loja", "Produto", "Valor", "Status", "Motivo", ""].map((h) => <th key={h} className="text-left font-medium pb-2 pr-3">{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.map((e) => (
                 <tr key={e.key} className="border-t border-border">
                   <td className="py-2.5 pr-3 whitespace-nowrap" title={fullTime(e.at)}>{dm(e.date)}</td>
+                  <td className="pr-3 whitespace-nowrap text-muted-foreground">{dm(e.orderDate)}</td>
                   <td className="pr-3 font-medium whitespace-nowrap">{e.orderNumber ?? "—"}</td>
                   <td className="pr-3 whitespace-nowrap max-w-[140px] truncate">{e.shop}</td>
                   <td className="pr-3 max-w-[220px] truncate" title={e.product}>{e.product || "—"}</td>
