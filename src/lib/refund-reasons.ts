@@ -7,6 +7,8 @@ export const REFUND_REASONS = [
   { key: "defeito", label: "Defeito / qualidade" },
   { key: "nao_chegou", label: "Não chegou / extraviado" },
   { key: "alfandega", label: "Retido na alfândega" },
+  { key: "demora_entrega", label: "Demora na entrega" },
+  { key: "chargeback", label: "Possível chargeback" },
   { key: "arrependimento", label: "Arrependimento / desistiu" },
   { key: "outro", label: "Outro" },
 ] as const;
