@@ -51,7 +51,7 @@ type Tone = keyof typeof TONE;
 type Data = Awaited<ReturnType<typeof getRefundAnalytics>>;
 
 export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversation: (id: string) => void }) {
-  const [period, setPeriod] = useState<Period>("30d");
+  const [period, setPeriod] = useState<Period>("60d");
   const range = useMemo(() => rangeOf(period), [period]);
   const fn = useSupportFn(getRefundAnalytics, "getRefundAnalytics");
   const q = useQuery({ queryKey: ["refund-analytics", range.from, range.to], queryFn: () => fn({ data: range }), staleTime: 5 * 60_000 });
@@ -64,7 +64,7 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
   return (
     <div className="space-y-4 pb-8">
       <Kpis d={d} />
-      <Basis d={d} />
+      <Basis />
       <Daily d={d} controls={
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => setAlertsOpen(true)}
@@ -96,18 +96,11 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
 
 // ─── Cartões ──────────────────────────────────────────────────────────────────
 
-// Qual data cada número usa, e se a safra ainda está "verde".
-function Basis({ d }: { d: Data }) {
-  const k = d.kpis;
+// Qual data os números usam.
+function Basis() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border bg-card px-4 py-2.5 text-[11px] text-muted-foreground">
-      <span><span className="font-semibold text-foreground">Taxas, grupo e produtos:</span> pela data da venda — pedidos vendidos no período e todos os reembolsos deles até hoje.</span>
-      <span><span className="font-semibold text-foreground">Valores, gráfico e lista:</span> pela data do reembolso — o dinheiro que saiu no período.</span>
-      {k.youngShare >= 0.15 && (
-        <span className="inline-flex items-center gap-1 text-amber-600">
-          <Hourglass className="size-3" /> {pct(k.youngShare, 0)} dos pedidos do período têm menos de {k.maturityDays} dias — a taxa ainda pode subir.
-        </span>
-      )}
+    <div className="rounded-xl border border-border bg-card px-4 py-2.5 text-[11px] text-muted-foreground">
+      <span className="font-semibold text-foreground">Tudo pela data do reembolso:</span> reembolsos feitos no período. Taxa = pedidos com reembolso no período ÷ pedidos vendidos no período.
     </div>
   );
 }
@@ -134,7 +127,7 @@ function Kpis({ d }: { d: Data }) {
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
         sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} comparable={d.prev.comparable} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)} na mesma altura</> : "sem base no período anterior"}</>} />
+        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)}</> : "sem base no período anterior"}</>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
@@ -280,7 +273,7 @@ function Reasons({ d }: { d: Data }) {
 
 function Groups({ d }: { d: Data }) {
   return (
-    <Card icon={Layers} title="Por grupo" hint="Pedidos vendidos no período: taxa = pedidos com reembolso até hoje ÷ pedidos do grupo">
+    <Card icon={Layers} title="Por grupo" hint="Reembolsos no período: taxa = pedidos com reembolso ÷ pedidos vendidos pelo grupo">
       {d.byGroup.length === 0 ? <Empty /> : (
         <table className="w-full text-xs">
           <thead>
@@ -319,7 +312,7 @@ function Products({ d }: { d: Data }) {
   const over = (p: Data["byProduct"][number]) => st.enabled && p.rate != null && p.sold >= st.product_min_sold && p.rate * 100 > st.product_rate_limit;
   const maxRate = Math.max(0, ...d.byProduct.map((p) => p.rate ?? 0));
   return (
-    <Card icon={Tag} title="Por produto" hint="Pedidos vendidos no período: unidades já reembolsadas ÷ vendidas. Em vermelho: acima do limite do alerta.">
+    <Card icon={Tag} title="Por produto" hint="Unidades reembolsadas no período ÷ vendidas no período. Em vermelho: acima do limite do alerta.">
       {d.byProduct.length === 0 ? <Empty /> : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[680px]">

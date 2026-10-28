@@ -8,13 +8,10 @@ import { refundReasonLabel } from "@/lib/refund-reasons";
 import { disputifierRefund } from "@/lib/chargeback-alerts.shared";
 
 // Análise de reembolsos (Atendimento › Aprovações › Análise) e o alerta de
-// reembolso alto. Duas visões de propósito:
-//  - events (data do reembolso): dinheiro que saiu no período — valor, gráfico,
-//    pendente e lista.
-//  - cohort (data da venda, "safra"): pedidos vendidos no período e todos os
-//    reembolsos deles até hoje — taxas (geral, produto, grupo) e o alerta.
-//    Reembolso chega ~3 semanas depois da compra; misturar reembolso de um mês
-//    com venda de outro distorcia a taxa. Fonte: os reembolsos que a Shopify registrou no pedido
+// reembolso alto. Tudo pela data do reembolso (events): valor, gráfico, lista,
+// motivo, grupo, produto e as taxas (reembolsos do período ÷ vendidos no
+// período). Reembolso chega ~3 semanas depois da compra, por isso o padrão da
+// tela é 60 dias — pega a venda e o reembolso dela quase sempre. Fonte: os reembolsos que a Shopify registrou no pedido
 // (raw.refunds) — feitos pelo app ou direto na Shopify —, cruzados com o pedido
 // do app (support_refund_requests: motivo, quem pediu, tempo de aprovação).
 // Lojas: as dos grupos ativos (mesma regra do Dashboard e das Metas). Data do
@@ -53,7 +50,7 @@ async function cardsByShopifyProduct(ownerId: string) {
 
 export async function refundAnalytics(ownerId: string, from: string, to: string) {
   const shopIds = await companyShopIdsForMonth(ownerId, monthStartOf(from));
-  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], cohort: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), ordersByShop: new Map<string, number>(), approvalHours: null as number | null };
+  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), ordersByShop: new Map<string, number>(), approvalHours: null as number | null };
   if (!shopIds.length) return empty;
 
   const lookback = addDaysIso(from, -LOOKBACK_DAYS);
@@ -125,9 +122,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       const at = String(rf.created_at ?? rf.processed_at ?? "");
       if (!at) continue;
       const date = isoDateUS(at);
-      const inCash = date >= from && date <= to;
-      const inCohort = o.order_date >= from && o.order_date <= to;
-      if (!inCash && !inCohort) continue;
+      if (date < from || date > to) continue;
       const tx = ((rf.transactions ?? []) as any[]).filter((t) => t.kind === "refund" && (t.status === "success" || t.status === "pending"));
       const amount = tx.reduce((s, t) => s + Number(t.amount ?? 0), 0);
       if (amount <= 0) continue;
@@ -176,8 +171,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     }
   }
   all.sort((a, b) => b.at.localeCompare(a.at));
-  const events = all.filter((e) => e.date >= from && e.date <= to);
-  const cohort = all.filter((e) => e.orderDate >= from && e.orderDate <= to);
+  const events = all;
 
   // Tempo da solicitação até a decisão (pedidos do app decididos no período).
   const decided = requests.filter((r) => r.decided_at && r.status === "aprovado" && isoDateUS(r.decided_at) >= from && isoDateUS(r.decided_at) <= to);
@@ -186,16 +180,16 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     : null;
 
   return {
-    from, to, events, cohort, orderDates: ((periodRes.data ?? []) as any[]).map((o) => o.order_date as string),
+    from, to, events, orderDates: ((periodRes.data ?? []) as any[]).map((o) => o.order_date as string),
     revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, ordersByShop, revenueByDate, approvalHours,
     shops: shopIds.map((id) => ({ id, name: shopName.get(id) ?? "—" })),
   };
 }
 
-// Por produto, pela safra: dos vendidos no período, quantos já foram reembolsados.
+// Por produto: unidades reembolsadas no período ÷ vendidas no período.
 export function productBreakdown(a: Awaited<ReturnType<typeof refundAnalytics>>) {
   const by = new Map<string, { units: number; amount: number; reasons: Map<string, number> }>();
-  for (const e of a.cohort) {
+  for (const e of a.events) {
     for (const p of e.products) {
       const x = by.get(p.key) ?? { units: 0, amount: 0, reasons: new Map() };
       x.units += p.units;
