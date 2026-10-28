@@ -133,8 +133,8 @@ function Kpis({ d }: { d: Data }) {
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
         sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} /></>} />
-      <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateRevenue)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>das vendas do período · {pct(k.rateOrders)} dos pedidos · antes {pct(d.prev.rateRevenue)} na mesma altura</>} />
+      <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
+        sub={<>dos pedidos do período · {pct(k.rateRevenue)} do faturamento · antes {pct(d.prev.rateOrders)} na mesma altura</>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
@@ -275,7 +275,7 @@ function Reasons({ d }: { d: Data }) {
 
 function Groups({ d }: { d: Data }) {
   return (
-    <Card icon={Layers} title="Por grupo" hint="Pedidos vendidos no período: reembolsado até hoje ÷ faturamento das lojas do grupo">
+    <Card icon={Layers} title="Por grupo" hint="Pedidos vendidos no período: taxa = pedidos com reembolso até hoje ÷ pedidos do grupo">
       {d.byGroup.length === 0 ? <Empty /> : (
         <table className="w-full text-xs">
           <thead>

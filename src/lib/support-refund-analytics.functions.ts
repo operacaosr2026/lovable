@@ -82,8 +82,16 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
       return [...m].map(([key, x]) => ({ key, count: x.count, amount: r2(x.amount) })).sort((p, q) => q.amount - p.amount);
     };
 
-    const cohortByDate = new Map<string, number>();
-    for (const e of a.cohort) cohortByDate.set(e.orderDate, (cohortByDate.get(e.orderDate) ?? 0) + e.amount);
+    // Taxa por pedido: pedidos com reembolso ÷ pedidos vendidos (por dia e por grupo).
+    const ordersByDate = new Map<string, number>();
+    for (const d of a.orderDates) ordersByDate.set(d, (ordersByDate.get(d) ?? 0) + 1);
+    const refundedByDate = new Map<string, Set<string>>();
+    const refundedByGroup = new Map<string, Set<string>>();
+    for (const e of a.cohort) {
+      refundedByDate.set(e.orderDate, (refundedByDate.get(e.orderDate) ?? new Set()).add(e.orderId));
+      const g = groupOf.get(e.shopId) ?? `loja:${e.shopId}`;
+      refundedByGroup.set(g, (refundedByGroup.get(g) ?? new Set()).add(e.orderId));
+    }
 
     // Por dia: o gráfico e as minilinhas dos cartões (valor, taxa, pendente, dias até o reembolso).
     const daily = new Map<string, { amount: number; count: number; pending: number; days: number[] }>();
@@ -117,15 +125,15 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         const rev = shopIds.reduce((s, id) => s + (a.revenueByShop.get(id) ?? 0), 0);
         const orders = shopIds.reduce((s, id) => s + (a.ordersByShop.get(id) ?? 0), 0);
         const name = card?.name ?? a.shops.find((s) => s.id === x.key.slice(5))?.name ?? "—";
-        return { ...x, name, shops: shopIds.length, orders, revenue: r2(rev), rate: rev > 0 ? x.amount / rev : null };
+        return { ...x, name, shops: shopIds.length, orders, revenue: r2(rev), rate: orders > 0 ? (refundedByGroup.get(x.key)?.size ?? 0) / orders : null };
       }),
       byProduct: productBreakdown(a).slice(0, 30),
       daily: [...daily].map(([date, x]) => {
-        const rev = a.revenueByDate.get(date) ?? 0;
+        const sold = ordersByDate.get(date) ?? 0;
         return {
           date, amount: r2(x.amount), count: x.count, pending: r2(x.pending),
-          // Minilinha da taxa: pela safra (reembolsos dos pedidos vendidos neste dia).
-          rate: rev > 0 ? (cohortByDate.get(date) ?? 0) / rev : null,
+          // Minilinha da taxa: pela safra (pedidos vendidos neste dia que tiveram reembolso).
+          rate: sold > 0 ? (refundedByDate.get(date)?.size ?? 0) / sold : null,
           avgDays: x.days.length ? x.days.reduce((s, v) => s + v, 0) / x.days.length : null,
         };
       }),
