@@ -813,7 +813,6 @@ function Dashboard() {
   const toggleSemCb = () => setSemCb((v) => { try { localStorage.setItem("dash-lucro-sem-cb", v ? "0" : "1"); } catch { /* sem storage */ } return !v; });
   const lucroChart = useMemo(() => chartData.map((d) => ({ ...d, lucroSemCb: d.lucro + (d.chargebacks ?? 0) })), [chartData]);
   const lucroShown = semCb ? (totals.lucroSemCb ?? totals.lucro + (totals.chargebacks ?? 0)) : totals.lucro;
-  const fatShown = semCb ? totals.faturamento + (totals.chargebacks ?? 0) : totals.faturamento;
   const shopBreakdown: ShopBreakdownRow[] = (data as any)?.shopBreakdown ?? [];
   const productBreakdown: DashboardProductRow[] = (data as any)?.productBreakdown ?? [];
 
@@ -916,9 +915,9 @@ function Dashboard() {
             </button>
           }
           stats={[
-            { label: "Margem de lucro", value: fmtPct(fatShown > 0 ? lucroShown / fatShown : 0) },
+            { label: "Margem de lucro", value: fmtPct(totals.faturamento > 0 ? lucroShown / totals.faturamento : 0) },
             { label: "Média diária", value: fmtMoney(lucroShown / nDias) },
-            // Já descontados do faturamento e do lucro.
+            // Descontados do lucro (o faturamento é o bruto).
             { label: "Reembolsos", value: fmtMoney(totals.reembolsos ?? 0) },
             { label: "Chargebacks", value: fmtMoney(totals.chargebacks ?? 0) },
           ]}

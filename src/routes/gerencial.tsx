@@ -316,7 +316,7 @@ function Money({ d, vs }: { d: Data; vs: string }) {
           <p className="text-xs text-muted-foreground mt-1">Margem {pct(a.margem)} · {prev}: {usd(p?.lucro)} ({pct(p?.margem)})</p>
         </div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:min-w-[280px]">
-          <MiniStat label="Vendas" value={<span className="inline-flex items-center gap-1.5">{usd(a.faturamento)} <Delta cur={a.faturamento} prev={p?.faturamento} label={vs} /></span>} />
+          <MiniStat label="Faturamento" value={<span className="inline-flex items-center gap-1.5">{usd(a.faturamento)} <Delta cur={a.faturamento} prev={p?.faturamento} label={vs} /></span>} />
           <MiniStat label="Pedidos" value={num(a.pedidos)} sub={p ? `${prev}: ${num(p.pedidos)}` : undefined} />
           <MiniStat label="Ticket médio" value={usd(a.pedidos ? a.faturamento / a.pedidos : null)} />
           <MiniStat label="Anúncio por pedido" value={usd(a.cpa)} sub={p?.cpa != null ? `${prev}: ${usd(p.cpa)}` : undefined} />

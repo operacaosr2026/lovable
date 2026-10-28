@@ -809,17 +809,21 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     const prevTotalEstornosByShop = new Map([...estornoStats].map(([id, st]) => [id, st.prevEstornos]));
 
     // ── Totais globais (soma de todas as lojas dos grupos ativos) + delta ──
-    let faturamento = 0, custoProduto = 0, taxas = 0;
-    let prevFaturamento = 0, prevCustoProduto = 0, prevTaxas = 0;
+    // Faturamento = bruto (o que foi vendido). Reembolsos e chargebacks saem só
+    // do lucro (liquido = bruto − reembolsos − chargebacks).
+    let faturamento = 0, liquido = 0, custoProduto = 0, taxas = 0;
+    let prevFaturamento = 0, prevLiquido = 0, prevCustoProduto = 0, prevTaxas = 0;
     const anuncios = adsRes.reduce((s, r) => s + r.amount, 0);
     const prevAnuncios = prevAdsRes.reduce((s, r) => s + r.amount, 0);
     let totalPedidosEstorno = 0, totalEstornosEstorno = 0;
     let prevTotalPedidosEstorno = 0, prevTotalEstornosEstorno = 0;
     for (const id of shopIds) {
-      faturamento += (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
+      faturamento += revenueByShop.get(id) ?? 0;
+      liquido += (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
       custoProduto += custoByShop.get(id) ?? 0;
       taxas += feesByShop.get(id) ?? 0;
-      prevFaturamento += (prevRevenueByShop.get(id) ?? 0) - (prevReembolsosByShop.get(id) ?? 0) - (prevChargebacksByShop.get(id) ?? 0);
+      prevFaturamento += prevRevenueByShop.get(id) ?? 0;
+      prevLiquido += (prevRevenueByShop.get(id) ?? 0) - (prevReembolsosByShop.get(id) ?? 0) - (prevChargebacksByShop.get(id) ?? 0);
       prevCustoProduto += prevCustoByShop.get(id) ?? 0;
       prevTaxas += prevFeesByShop.get(id) ?? 0;
       totalPedidosEstorno += totalOrdersByShop.get(id) ?? 0;
@@ -827,8 +831,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       prevTotalPedidosEstorno += prevTotalOrdersByShop.get(id) ?? 0;
       prevTotalEstornosEstorno += prevTotalEstornosByShop.get(id) ?? 0;
     }
-    const lucro = profit({ faturamento, custoProduto, taxas, anuncios });
-    const prevLucro = profit({ faturamento: prevFaturamento, custoProduto: prevCustoProduto, taxas: prevTaxas, anuncios: prevAnuncios });
+    const lucro = profit({ faturamento: liquido, custoProduto, taxas, anuncios });
+    const prevLucro = profit({ faturamento: prevLiquido, custoProduto: prevCustoProduto, taxas: prevTaxas, anuncios: prevAnuncios });
     const chargebacks = shopIds.reduce((s, id) => s + (chargebacksByShop.get(id) ?? 0), 0);
     const prevChargebacks = shopIds.reduce((s, id) => s + (prevChargebacksByShop.get(id) ?? 0), 0);
     const taxaEstorno = totalPedidosEstorno > 0 ? totalEstornosEstorno / totalPedidosEstorno : 0;
@@ -847,13 +851,13 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
         const dayAnuncios = adsByDate.get(date) ?? 0;
         const dayReembolsos = refundsByDate.get(date) ?? 0;
         const dayChargebacks = chargebacksByDate.get(date) ?? 0;
-        const dayFaturamento = v.faturamento - dayReembolsos - dayChargebacks;
+        const dayLiquido = v.faturamento - dayReembolsos - dayChargebacks;
         return {
           date: `${date.slice(8, 10)}/${date.slice(5, 7)}`, // YYYY-MM-DD → DD/MM
-          faturamento: Math.round(dayFaturamento * 100) / 100,
+          faturamento: Math.round(v.faturamento * 100) / 100,
           anuncios: Math.round(dayAnuncios * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
-          lucro: Math.round((dayFaturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          lucro: Math.round((dayLiquido - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
           chargebacks: Math.round(dayChargebacks * 100) / 100,
         };
       });
@@ -865,7 +869,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       return {
         shop_id: sid,
         shop_name: shopNameById.get(sid) ?? sid,
-        faturamento: (revenueByShop.get(sid) ?? 0) - (reembolsosByShop.get(sid) ?? 0) - (chargebacksByShop.get(sid) ?? 0),
+        faturamento: revenueByShop.get(sid) ?? 0,
         taxaEstorno: totalPedidos > 0 ? totalEstornos / totalPedidos : 0,
         totalPedidos,
         totalEstornos,
@@ -881,7 +885,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
         // Pontos percentuais, não delta relativo — cair de 2% pra 1% é "-1 p.p.", não "-50%".
         taxaEstorno,   taxaEstornoDeltaPP: Math.round((taxaEstorno - prevTaxaEstorno) * 1000) / 10,
         pedidos,       pedidosDelta:       dashboardDelta(pedidos, prevPedidos),
-        // Já descontados do faturamento (e do lucro) acima — o card do Lucro mostra quanto foi.
+        // Descontados do lucro (não do faturamento) — o card do Lucro mostra quanto foi.
         reembolsos:  shopIds.reduce((s, id) => s + (reembolsosByShop.get(id) ?? 0), 0),
         chargebacks,
         // Chave "sem chargebacks" do card do Lucro: o mesmo lucro somando de volta os chargebacks.
