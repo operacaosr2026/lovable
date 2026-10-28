@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, CartesianGrid, Cell, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   ArrowDown, ArrowUp, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
   Layers, Search, Tag, Undo2,
@@ -204,54 +204,39 @@ function Card({ icon: Icon, title, hint, children, right }: { icon: any; title: 
 
 // ─── Por dia ──────────────────────────────────────────────────────────────────
 
-const axisMoney = (v: number) => `US$ ${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
-
-// Vendas e reembolsos em dois gráficos (cada um na sua escala), mesmo eixo de dias.
+// Pedidos vendidos (linha) e reembolsos (barra) por dia, em quantidade — mesma escala.
 function Daily({ d, controls }: { d: Data; controls: React.ReactNode }) {
   const data = d.daily.map((x) => ({ ...x, label: dm(x.date) }));
-  const max = Math.max(0, ...data.map((x) => x.amount));
-  const xAxis = <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} interval="preserveStartEnd" minTickGap={18} />;
-  const yAxis = <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} tickFormatter={axisMoney} width={72} />;
-  const tip = (
-    <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.6 }}
-      content={({ active, payload }) => {
-        if (!active || !payload?.length) return null;
-        const p = payload[0].payload as (typeof data)[number];
-        return (
-          <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs shadow-lg space-y-0.5">
-            <p className="font-semibold">{p.label}</p>
-            <p className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-muted-foreground/50" />Vendido: {usd(p.sales)} · {p.orders} pedido{p.orders === 1 ? "" : "s"}</p>
-            <p className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary" />Reembolsado: {usd(p.amount)} · {p.count} reembolso{p.count === 1 ? "" : "s"}</p>
-          </div>
-        );
-      }} />
-  );
+  const max = Math.max(0, ...data.map((x) => x.count));
   return (
-    <Card icon={BarChart3} title="Vendas e reembolsos por dia" hint="Vendido pela data do pedido; reembolsado pelo dia em que a Shopify registrou o reembolso (horário de Nova York)" right={controls}>
-      <p className="text-[11px] font-medium text-muted-foreground mb-1">Vendido</p>
-      <div className="h-32">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} syncId="refund-daily" margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis dataKey="label" hide />
-            {yAxis}
-            {tip}
-            <Bar dataKey="sales" radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} fill="var(--color-muted-foreground)" fillOpacity={0.35} />
-          </BarChart>
-        </ResponsiveContainer>
+    <Card icon={BarChart3} title="Pedidos e reembolsos por dia" hint="Pedidos pela data da venda; reembolsos pelo dia em que a Shopify registrou (horário de Nova York)" right={controls}>
+      <div className="flex items-center gap-4 text-[11px] text-muted-foreground mb-2">
+        <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded-full bg-muted-foreground" />Pedidos vendidos</span>
+        <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-primary" />Reembolsos</span>
       </div>
-      <p className="text-[11px] font-medium text-muted-foreground mt-3 mb-1">Reembolsado</p>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} syncId="refund-daily" margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
+          <ComposedChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
-            {xAxis}
-            {yAxis}
-            {tip}
-            <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false}>
-              {data.map((x) => <Cell key={x.date} fill="var(--color-primary)" fillOpacity={x.amount === max && max > 0 ? 1 : 0.7} />)}
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} interval="preserveStartEnd" minTickGap={18} />
+            <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} allowDecimals={false} width={32} />
+            <Tooltip cursor={{ fill: "var(--color-muted)", opacity: 0.6 }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const p = payload[0].payload as (typeof data)[number];
+                return (
+                  <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs shadow-lg space-y-0.5">
+                    <p className="font-semibold">{p.label}</p>
+                    <p className="flex items-center gap-1.5"><span className="h-0.5 w-3 rounded-full bg-muted-foreground" />{p.orders} pedido{p.orders === 1 ? "" : "s"} vendido{p.orders === 1 ? "" : "s"} · {usd(p.sales)}</p>
+                    <p className="flex items-center gap-1.5"><span className="size-2 rounded-sm bg-primary" />{p.count} reembolso{p.count === 1 ? "" : "s"} · {usd(p.amount)}</p>
+                  </div>
+                );
+              }} />
+            <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false}>
+              {data.map((x) => <Cell key={x.date} fill="var(--color-primary)" fillOpacity={x.count === max && max > 0 ? 1 : 0.7} />)}
             </Bar>
-          </BarChart>
+            <Line dataKey="orders" type="monotone" stroke="var(--color-muted-foreground)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </Card>
