@@ -84,7 +84,6 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         const rev = a.revenueByShop.get(x.key) ?? 0;
         return { ...x, name: a.shops.find((s) => s.id === x.key)?.name ?? "—", revenue: r2(rev), rate: rev > 0 ? x.amount / rev : null };
       }),
-      byPerson: group((e) => (e.requestedByName ?? "Fora do app (Shopify)")),
       byProduct: productBreakdown(a).slice(0, 30),
       daily: [...daily].map(([date, x]) => {
         const rev = a.revenueByDate.get(date) ?? 0;

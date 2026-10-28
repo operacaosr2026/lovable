@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   ArrowDown, ArrowUp, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
-  Search, Store, Tag, Undo2, Users,
+  Search, Store, Tag, Undo2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
@@ -86,7 +86,6 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
         <Shops d={d} />
       </div>
       <Products d={d} />
-      <People d={d} />
       <Events d={d} onOpenConversation={onOpenConversation} />
       <AlertsDialog open={alertsOpen} onClose={() => setAlertsOpen(false)} d={d} />
     </div>
@@ -284,17 +283,6 @@ function Shops({ d }: { d: Data }) {
           </tbody>
         </table>
       )}
-    </Card>
-  );
-}
-
-function People({ d }: { d: Data }) {
-  const max = Math.max(0, ...d.byPerson.map((r) => r.amount));
-  return (
-    <Card icon={Users} title="Quem pediu" hint="Reembolso feito direto na Shopify aparece como fora do app">
-      {d.byPerson.length === 0 ? <Empty /> : d.byPerson.map((r) => (
-        <HBar key={r.key} label={r.key} value={r.amount} max={max} amount={usd(r.amount)} extra={`${r.count}`} />
-      ))}
     </Card>
   );
 }
