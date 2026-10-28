@@ -83,7 +83,7 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
           </label>
         </div>
       } />
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <Reasons d={d} />
         <Groups d={d} />
         <Months d={d} />
@@ -258,11 +258,13 @@ function Track({ value, max, danger }: { value: number; max: number; danger?: bo
 
 function HBar({ label, value, max, amount, extra, title }: { label: string; value: number; max: number; amount: string; extra: string; title?: string }) {
   return (
-    <div className="grid grid-cols-[minmax(0,170px)_1fr_6rem_4rem] items-center gap-4 py-2 text-xs" title={title}>
-      <span className="truncate">{label}</span>
+    <div className="py-1.5 text-xs" title={title}>
+      <div className="flex items-center gap-3 mb-1">
+        <span className="truncate flex-1 min-w-0">{label}</span>
+        <span className="whitespace-nowrap font-semibold">{amount}</span>
+        <span className="w-14 text-right whitespace-nowrap text-muted-foreground">{extra}</span>
+      </div>
       <Track value={value} max={max} />
-      <span className="text-right whitespace-nowrap font-semibold">{amount}</span>
-      <span className="text-right whitespace-nowrap text-muted-foreground">{extra}</span>
     </div>
   );
 }
