@@ -427,7 +427,8 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
   );
 }
 
-// Motivo na lista: quem aprova escolhe/corrige (feito direto na Shopify também).
+// Motivo na lista: quem aprova escolhe o que está sem motivo (feito direto na
+// Shopify também). Depois de escolhido, fica fixo.
 function ReasonCell({ e, canEdit }: { e: Data["events"][number]; canEdit: boolean }) {
   const qc = useQueryClient();
   const fn = useSupportFn(setRefundEventReason, "setRefundEventReason");
@@ -443,12 +444,13 @@ function ReasonCell({ e, canEdit }: { e: Data["events"][number]; canEdit: boolea
   // Disputifier: sempre "Possível chargeback", não se edita.
   if (e.source === "disputifier") return <span title="Reembolsado pelo Disputifier (alerta de pré-chargeback)">{refundReasonLabel(e.reason)} · Disputifier</span>;
   const empty = e.source === "shopify" ? "Direto na Shopify — escolher" : "Sem motivo";
-  if (!canEdit) return e.reason ? <>{refundReasonLabel(e.reason)}</> : <span className="text-muted-foreground">{e.source === "shopify" ? "Direto na Shopify" : "Sem motivo"}</span>;
+  if (e.reason) return <>{refundReasonLabel(e.reason)}</>;
+  if (!canEdit) return <span className="text-muted-foreground">{e.source === "shopify" ? "Direto na Shopify" : "Sem motivo"}</span>;
   return (
     <div className="flex items-center gap-1.5">
-      <select value={e.reason ?? ""} disabled={save.isPending} onChange={(ev) => ev.target.value && save.mutate(ev.target.value)}
-        className={`h-7 max-w-[200px] rounded-md border bg-background px-1.5 text-xs outline-none focus:border-primary ${e.reason ? "border-transparent hover:border-border" : "border-amber-500/40 text-muted-foreground"}`}>
-        {!e.reason && <option value="">{empty}</option>}
+      <select value="" disabled={save.isPending} onChange={(ev) => ev.target.value && save.mutate(ev.target.value)}
+        className="h-7 max-w-[200px] rounded-md border border-amber-500/40 bg-background px-1.5 text-xs text-muted-foreground outline-none focus:border-primary">
+        <option value="">{empty}</option>
         {REFUND_REASONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
       </select>
       {save.isPending && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
