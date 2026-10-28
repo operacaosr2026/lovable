@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   ArrowDown, ArrowUp, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
-  Search, Store, Tag, Undo2,
+  Layers, Search, Tag, Undo2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
@@ -83,7 +83,7 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
       } />
       <div className="grid gap-4 xl:grid-cols-2">
         <Reasons d={d} />
-        <Shops d={d} />
+        <Groups d={d} />
       </div>
       <Products d={d} />
       <Events d={d} onOpenConversation={onOpenConversation} />
@@ -255,29 +255,31 @@ function Reasons({ d }: { d: Data }) {
   );
 }
 
-function Shops({ d }: { d: Data }) {
-  const maxRate = Math.max(0, ...d.byShop.map((s) => s.rate ?? 0));
+function Groups({ d }: { d: Data }) {
   return (
-    <Card icon={Store} title="Por loja" hint="Taxa = reembolsado ÷ faturamento da loja no período">
-      {d.byShop.length === 0 ? <Empty /> : (
+    <Card icon={Layers} title="Por grupo" hint="Taxa = reembolsado ÷ faturamento das lojas do grupo no período">
+      {d.byGroup.length === 0 ? <Empty /> : (
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[11px] text-muted-foreground">
-              <th className="text-left font-medium pb-2">Loja</th>
-              <th className="text-right font-medium pb-2">Qtd</th>
+              <th className="text-left font-medium pb-2">Grupo</th>
+              <th className="text-right font-medium pb-2">Reembolsos</th>
               <th className="text-right font-medium pb-2">Valor</th>
+              <th className="text-right font-medium pb-2">Faturamento</th>
               <th className="text-right font-medium pb-2">Taxa</th>
-              <th className="w-24 sm:w-32 pb-2" />
             </tr>
           </thead>
           <tbody>
-            {d.byShop.map((s) => (
-              <tr key={s.key} className="border-t border-border">
-                <td className="py-2.5 pr-2 truncate max-w-[180px]">{s.name}</td>
-                <td className="text-right">{s.count}</td>
-                <td className="text-right font-semibold whitespace-nowrap pl-3">{usd(s.amount)}</td>
-                <td className="text-right pl-3">{pct(s.rate)}</td>
-                <td className="pl-4"><Track value={s.rate ?? 0} max={maxRate} /></td>
+            {d.byGroup.map((g) => (
+              <tr key={g.key} className="border-t border-border">
+                <td className="py-2.5 pr-2">
+                  <p className="font-medium truncate max-w-[200px]">{g.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{g.shops} loja{g.shops === 1 ? "" : "s"}</p>
+                </td>
+                <td className="text-right">{g.count}</td>
+                <td className="text-right font-semibold whitespace-nowrap pl-3">{usd(g.amount)}</td>
+                <td className="text-right whitespace-nowrap pl-3 text-muted-foreground">{usd(g.revenue)}</td>
+                <td className="text-right pl-3 font-semibold">{pct(g.rate)}</td>
               </tr>
             ))}
           </tbody>

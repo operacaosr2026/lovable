@@ -27,11 +27,26 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
     // Período anterior do mesmo tamanho, pra comparar.
     const len = daysBetween(data.from, data.to) + 1;
     const prevTo = addDaysIso(data.from, -1), prevFrom = addDaysIso(prevTo, -(len - 1));
-    const [a, prev, settings] = await Promise.all([
+    const [a, prev, settings, cardLinks] = await Promise.all([
       refundAnalytics(ctx.ownerId, data.from, data.to),
       refundAnalytics(ctx.ownerId, prevFrom, prevTo),
       getRefundAlertSettings(ctx.ownerId),
+      supabaseAdmin.from("lg_card_shops").select("card_id,shop_id,lg_cards!inner(user_id,name,status)")
+        .eq("lg_cards.user_id", ctx.ownerId).neq("lg_cards.status", "arquivado"),
     ]);
+
+    // Grupo (card de Lojas e Grupos) de cada loja — é o grupo que roda, não a
+    // loja. Loja em mais de um grupo conta no de mais lojas.
+    const cardShops = new Map<string, { name: string; shops: Set<string> }>();
+    for (const l of (cardLinks.data ?? []) as any[]) {
+      const c = cardShops.get(l.card_id) ?? { name: l.lg_cards?.name ?? "Grupo", shops: new Set<string>() };
+      c.shops.add(l.shop_id);
+      cardShops.set(l.card_id, c);
+    }
+    const groupOf = new Map<string, string>();
+    for (const [id, c] of [...cardShops].sort(([, x], [, y]) => x.shops.size - y.shops.size)) {
+      for (const s of c.shops) groupOf.set(s, id);   // o maior grupo, por último, fica
+    }
 
     const sum = (ev: typeof a.events) => r2(ev.reduce((s, e) => s + e.amount, 0));
     const kpis = (x: typeof a) => {
@@ -81,9 +96,12 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
       },
       prev: kpis(prev),
       byReason: group((e) => (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) as string),
-      byShop: group((e) => e.shopId).map((x) => {
-        const rev = a.revenueByShop.get(x.key) ?? 0;
-        return { ...x, name: a.shops.find((s) => s.id === x.key)?.name ?? "—", revenue: r2(rev), rate: rev > 0 ? x.amount / rev : null };
+      byGroup: group((e) => groupOf.get(e.shopId) ?? `loja:${e.shopId}`).map((x) => {
+        const card = cardShops.get(x.key);
+        const shopIds = card ? [...card.shops].filter((s) => groupOf.get(s) === x.key) : [x.key.slice(5)];
+        const rev = shopIds.reduce((s, id) => s + (a.revenueByShop.get(id) ?? 0), 0);
+        const name = card?.name ?? a.shops.find((s) => s.id === x.key.slice(5))?.name ?? "—";
+        return { ...x, name, shops: shopIds.length, revenue: r2(rev), rate: rev > 0 ? x.amount / rev : null };
       }),
       byProduct: productBreakdown(a).slice(0, 30),
       daily: [...daily].map(([date, x]) => {
