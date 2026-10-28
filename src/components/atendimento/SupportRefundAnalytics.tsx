@@ -249,11 +249,11 @@ function Track({ value, max, danger }: { value: number; max: number; danger?: bo
 
 function HBar({ label, value, max, amount, extra, title }: { label: string; value: number; max: number; amount: string; extra: string; title?: string }) {
   return (
-    <div className="grid grid-cols-[minmax(0,170px)_1fr_auto_auto] items-center gap-4 py-2 text-xs" title={title}>
+    <div className="grid grid-cols-[minmax(0,170px)_1fr_6rem_4rem] items-center gap-4 py-2 text-xs" title={title}>
       <span className="truncate">{label}</span>
       <Track value={value} max={max} />
       <span className="text-right whitespace-nowrap font-semibold">{amount}</span>
-      <span className="w-16 text-right whitespace-nowrap text-muted-foreground">{extra}</span>
+      <span className="text-right whitespace-nowrap text-muted-foreground">{extra}</span>
     </div>
   );
 }
