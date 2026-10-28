@@ -21,7 +21,7 @@ export const getIntelOrders = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ numbers: z.array(z.string().max(40)).max(60) }).parse(d))
   .handler(async ({ context, data }): Promise<IntelOrder[]> => {
-    if (context.role !== "admin" && !context.permissions.some((p: any) => p.section === "consultor")) {
+    if (context.role !== "admin" && !context.permissions.some((p: any) => p.section === "consultor" || p.section === "gerencial")) {
       throw new Error("Sem acesso à Inteligência");
     }
     const wanted = new Set(data.numbers.map((n) => (n.startsWith("#") ? n : `#${n}`)));

@@ -123,7 +123,7 @@ const SUB_HINTS: Partial<Record<Section, string>> = {
 const SUBTABS: Partial<Record<Section, Section[]>> = { banco_lojas: BL_SUBTABS, academia: AC_SUBTABS, lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "gerencial", "caixa", "banco_lojas", "produtos", "concorrentes", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "avisos_clientes", "consultor", "academia", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "gerencial", "caixa", "banco_lojas", "produtos", "concorrentes", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "avisos_clientes", "academia", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>

@@ -34,7 +34,7 @@ const prevMonthOf = (monthStart: string) => {
 };
 
 export type GerencialAlert = {
-  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento";
+  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia";
   level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
 };
 
@@ -53,7 +53,7 @@ export const getGerencial = createServerFn({ method: "GET" })
 
     const [shopIds, prevShopIds] = await Promise.all([companyShopIdsForMonth(ownerId, from), companyShopIdsForMonth(ownerId, prevFrom)]);
     const empty = { data: [] as any[] };
-    const [lucro, lucroPrev, goals, refunds, refundsPrev, cardsRes, disputesRes, openDisputesRes, ordersRes, tasksRes, alertSettings, support] = await Promise.all([
+    const [lucro, lucroPrev, goals, refunds, refundsPrev, cardsRes, disputesRes, openDisputesRes, ordersRes, tasksRes, alertSettings, intelRes, support] = await Promise.all([
       shopIds.length ? computeAccumulatedLucroServer(supabaseAdmin, ownerId, shopIds, from, to) : null,
       prevShopIds.length ? computeAccumulatedLucroServer(supabaseAdmin, ownerId, prevShopIds, prevFrom, prevTo) : null,
       listCompanyGoalsFor(ownerId).catch(() => []),
@@ -76,6 +76,9 @@ export const getGerencial = createServerFn({ method: "GET" })
         : empty,
       selectAll<any>(supabaseAdmin.from("tasks").select("id,title,status,due_date,assignee_id,completed_at").eq("user_id", ownerId)),
       getRefundAlertSettings(ownerId),
+      // Dicas da Inteligência (análise mais recente) ainda sem decisão.
+      supabaseAdmin.from("consultant_reports").select("id,result,tips_status").eq("user_id", ownerId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supportKpisFor(ownerId, data.month).catch((e) => { console.error("gerencial support", e); return null; }),
     ]);
 
@@ -246,6 +249,23 @@ export const getGerencial = createServerFn({ method: "GET" })
       alerts.push({ kind: "atendimento", level: "atencao", title: "Cliente sem resposta há mais de 36h", link: "/atendimento", action: "Abrir Atendimento",
         detail: "Cliente esperando é o caminho mais curto pro chargeback.",
         metric: String(n), metricLabel: pl(n, "conversa", "conversas") });
+    }
+
+    // Inteligência: cada dica sem decisão vira um alerta (crítico/alto = crítico).
+    const PRIO = { critico: 0, alto: 1, medio: 2, baixo: 3, oportunidade: 4 } as Record<string, number>;
+    const intel = intelRes.data as any;
+    const tipsStatus = (intel?.tips_status ?? {}) as Record<string, unknown>;
+    const tips = ((intel?.result?.dicas ?? []) as any[]).filter((_, i) => !tipsStatus[String(i)])
+      .sort((x, y) => (PRIO[x.prioridade ?? "medio"] ?? 2) - (PRIO[y.prioridade ?? "medio"] ?? 2));
+    for (const t of tips) {
+      const valor = Number(t.valor_envolvido ?? 0);
+      alerts.push({
+        kind: "inteligencia", level: t.prioridade === "critico" || t.prioridade === "alto" ? "critico" : "atencao",
+        title: String(t.titulo ?? "Dica da Inteligência"), detail: String(t.frase ?? t.evidencia_principal ?? ""),
+        link: "/inteligencia", action: "Ver análise",
+        metric: valor > 0 ? usd(valor) : t.prioridade === "oportunidade" ? "Oportunidade" : "Dica",
+        metricLabel: valor > 0 ? (t.valor_rotulo ?? (t.valor_tipo === "estimado" ? "estimado" : "envolvido")) : `Inteligência${t.categoria ? ` · ${t.categoria}` : ""}`,
+      });
     }
 
     return {

@@ -14,8 +14,9 @@ export type ConsultantReport = {
   result: ConsultantResult; tipsStatus: Record<string, { status: TipStatus; at: string }>; facts: Record<string, any>;
 };
 
+// Gerencial também: as dicas aparecem nos Alertas do Gerencial e abrem aqui.
 function assertAccess(context: any) {
-  if (context.role !== "admin" && !context.permissions.some((p: any) => p.section === "consultor")) {
+  if (context.role !== "admin" && !context.permissions.some((p: any) => p.section === "consultor" || p.section === "gerencial")) {
     throw new Error("Sem acesso ao Consultor");
   }
 }

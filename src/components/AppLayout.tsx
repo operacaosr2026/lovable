@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Briefcase,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  Brain, GraduationCap, Send, Swords,
+  GraduationCap, Send, Swords,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -39,7 +39,6 @@ export const navItems: NavItem[] = [
   { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks" },
   { to: "/notificacoes", label: "Notificações", icon: Send, section: "avisos_clientes" },
-  { to: "/inteligencia", label: "Inteligência", icon: Brain, section: "consultor" },
   { to: "/academia", label: "Academia", icon: GraduationCap, section: "academia" },
 ];
 
@@ -72,7 +71,6 @@ const ALL_PAGES = [
   { to: "/atendimento", label: "Atendimento", icon: Headphones },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert },
   { to: "/notificacoes", label: "Notificações", icon: Send },
-  { to: "/inteligencia", label: "Inteligência", icon: Brain },
   { to: "/academia", label: "Academia", icon: GraduationCap },
   { to: "/gratitude", label: "Gratidão", icon: Heart },
   { to: "/settings/members", label: "Membros", icon: Users },
@@ -286,7 +284,6 @@ export function AppLayout() {
     "/tarefas": badges.data?.tarefas,
     "/atendimento": badges.data?.atendimento,
     "/chargebacks": badges.data?.chargebacks,
-    "/inteligencia": badges.data?.inteligencia,
   };
 
   const visibleNavItems = navItems.filter((item) => !item.section || canAccessSection(item.section));
