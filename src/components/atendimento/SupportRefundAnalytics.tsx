@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDown, ArrowUp, Bell, Clock, Hourglass, Loader2, MessageSquare, Package, Percent, Search, Timer, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Bell, Clock, Hourglass, Loader2, MessageSquare, Package, Percent, Search, Undo2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { getRefundAnalytics, saveRefundAlertSettings } from "@/lib/support-refund-analytics.functions";
@@ -104,7 +104,7 @@ function Delta({ cur, prev, invert = true }: { cur: number; prev: number; invert
 function Kpis({ d }: { d: Data }) {
   const k = d.kpis;
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <Kpi icon={Undo2} label="Reembolsado" value={usd(k.total)}
         sub={<><span className="text-muted-foreground font-normal">{k.count} reembolso{k.count === 1 ? "" : "s"} · </span><Delta cur={k.total} prev={d.prev.total} /></>} />
       <Kpi icon={Percent} label="Taxa de reembolso" value={pct(k.rateRevenue)}
@@ -113,8 +113,6 @@ function Kpis({ d }: { d: Data }) {
         sub={<span className="text-muted-foreground font-normal">{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</span>} />
       <Kpi icon={Clock} label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
         sub={<span className="text-muted-foreground font-normal">média entre o pedido e o reembolso</span>} />
-      <Kpi icon={Timer} label="Tempo de aprovação" value={k.approvalHours == null ? "—" : k.approvalHours < 48 ? `${k.approvalHours.toFixed(1).replace(".", ",")}h` : `${(k.approvalHours / 24).toFixed(1).replace(".", ",")} dias`}
-        sub={<span className="text-muted-foreground font-normal">do pedido da equipe à aprovação</span>} />
     </div>
   );
 }
