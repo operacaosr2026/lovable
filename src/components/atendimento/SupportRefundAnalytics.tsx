@@ -126,29 +126,45 @@ function Kpis({ d }: { d: Data }) {
   );
 }
 
+// Minilinha suave: média dos dias em ~8 blocos (dia a dia fica serrilhado).
+function smooth(points: { v: number | null }[], buckets = 8) {
+  const size = Math.max(1, Math.ceil(points.length / buckets));
+  const out: { v: number }[] = [];
+  for (let i = 0; i < points.length; i += size) {
+    const vals = points.slice(i, i + size).map((p) => p.v).filter((v): v is number => v != null);
+    out.push({ v: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0 });
+  }
+  return out;
+}
+
 function Kpi({ icon: Icon, tone, label, value, sub, spark, sparkTone }: {
   icon: any; tone: Tone; label: string; value: string; sub: React.ReactNode; spark: { v: number | null }[]; sparkTone?: Tone;
 }) {
-  const hasSpark = spark.filter((p) => p.v != null && p.v > 0).length >= 2;
+  const line = smooth(spark);
+  const hasSpark = line.length >= 2 && line.some((p) => p.v > 0);
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 flex items-start gap-3">
-      <span className={`size-11 shrink-0 rounded-xl grid place-items-center ${TONE[tone]}`}><Icon className="size-5" /></span>
+    <div className="rounded-2xl border border-border bg-card p-4 flex items-start gap-3 min-w-0">
+      <span className={`size-10 shrink-0 rounded-xl grid place-items-center ${TONE[tone]}`}><Icon className="size-5" /></span>
       <div className="min-w-0 flex-1">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold tracking-tight leading-tight">{value}</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{sub}</p>
-      </div>
-      {/* Tendência no período (decorativa — os números estão no gráfico e nas tabelas). */}
-      {hasSpark && (
-        <div className={`w-24 h-10 shrink-0 ${TONE[sparkTone ?? tone].split(" ").find((c) => c.startsWith("text-"))}`} aria-hidden>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={spark} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
-              <YAxis hide domain={["dataMin", "dataMax"]} />
-              <Line type="monotone" dataKey="v" stroke="currentColor" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted-foreground truncate">{label}</p>
+            <p className="text-xl font-semibold tracking-tight leading-tight whitespace-nowrap">{value}</p>
+          </div>
+          {/* Tendência no período (decorativa — os números estão no gráfico e nas tabelas). */}
+          {hasSpark && (
+            <div className={`w-20 h-9 shrink-0 ${TONE[sparkTone ?? tone].split(" ").find((c) => c.startsWith("text-"))}`} aria-hidden>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={line} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
+                  <YAxis hide domain={["dataMin", "dataMax"]} />
+                  <Line type="monotone" dataKey="v" stroke="currentColor" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
-      )}
+        <p className="mt-1 text-[11px] text-muted-foreground truncate">{sub}</p>
+      </div>
     </div>
   );
 }
