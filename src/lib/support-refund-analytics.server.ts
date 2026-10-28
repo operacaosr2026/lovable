@@ -53,7 +53,7 @@ async function cardsByShopifyProduct(ownerId: string) {
 
 export async function refundAnalytics(ownerId: string, from: string, to: string) {
   const shopIds = await companyShopIdsForMonth(ownerId, monthStartOf(from));
-  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], cohort: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), approvalHours: null as number | null };
+  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], cohort: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), ordersByShop: new Map<string, number>(), approvalHours: null as number | null };
   if (!shopIds.length) return empty;
 
   const lookback = addDaysIso(from, -LOOKBACK_DAYS);
@@ -96,12 +96,14 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
   // Vendidos no período (pra taxa por produto) e faturamento por loja.
   const sold = new Map<string, number>();
   const revenueByShop = new Map<string, number>();
+  const ordersByShop = new Map<string, number>();
   const revenueByDate = new Map<string, number>();
   let revenue = 0;
   for (const o of (periodRes.data ?? []) as any[]) {
     revenue += Number(o.revenue ?? 0);
     revenueByDate.set(o.order_date, (revenueByDate.get(o.order_date) ?? 0) + Number(o.revenue ?? 0));
     revenueByShop.set(o.shop_id, (revenueByShop.get(o.shop_id) ?? 0) + Number(o.revenue ?? 0));
+    ordersByShop.set(o.shop_id, (ordersByShop.get(o.shop_id) ?? 0) + 1);
     for (const li of (o.line_items ?? []) as LineItem[]) {
       const k = productOf(li);
       sold.set(k, (sold.get(k) ?? 0) + Number(li.quantity ?? 1));
@@ -185,7 +187,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
 
   return {
     from, to, events, cohort, orderDates: ((periodRes.data ?? []) as any[]).map((o) => o.order_date as string),
-    revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, revenueByDate, approvalHours,
+    revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, ordersByShop, revenueByDate, approvalHours,
     shops: shopIds.map((id) => ({ id, name: shopName.get(id) ?? "—" })),
   };
 }

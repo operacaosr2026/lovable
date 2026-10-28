@@ -280,7 +280,8 @@ function Groups({ d }: { d: Data }) {
           <thead>
             <tr className="text-[11px] text-muted-foreground">
               <th className="text-left font-medium pb-2">Grupo</th>
-              <th className="text-right font-medium pb-2">Reembolsos</th>
+              <th className="text-right font-medium pb-2">Pedidos</th>
+              <th className="text-right font-medium pb-2 pl-3">Reembolsos</th>
               <th className="text-right font-medium pb-2">Valor</th>
               <th className="text-right font-medium pb-2">Faturamento</th>
               <th className="text-right font-medium pb-2">Taxa</th>
@@ -293,7 +294,8 @@ function Groups({ d }: { d: Data }) {
                   <p className="font-medium truncate max-w-[200px]">{g.name}</p>
                   <p className="text-[11px] text-muted-foreground">{g.shops} loja{g.shops === 1 ? "" : "s"}</p>
                 </td>
-                <td className="text-right">{g.count}</td>
+                <td className="text-right">{g.orders.toLocaleString("pt-BR")}</td>
+                <td className="text-right pl-3">{g.count}</td>
                 <td className="text-right font-semibold whitespace-nowrap pl-3">{usd(g.amount)}</td>
                 <td className="text-right whitespace-nowrap pl-3 text-muted-foreground">{usd(g.revenue)}</td>
                 <td className="text-right pl-3 font-semibold">{pct(g.rate)}</td>
