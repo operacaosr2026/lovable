@@ -258,12 +258,12 @@ function HBar({ label, value, max, amount, extra, title }: { label: string; valu
 }
 
 function Reasons({ d }: { d: Data }) {
-  const max = Math.max(0, ...d.byReason.map((r) => r.amount));
+  // Barra = parte do total (a mesma % da direita).
   const total = d.kpis.total;
   return (
     <Card icon={Box} title="Por motivo" hint="Reembolsos feitos no período (data do reembolso)">
       {d.byReason.length === 0 ? <Empty /> : d.byReason.map((r) => (
-        <HBar key={r.key} label={reasonName(r.key)} value={r.amount} max={max} amount={usd(r.amount)}
+        <HBar key={r.key} label={reasonName(r.key)} value={r.amount} max={total} amount={usd(r.amount)}
           extra={`${r.count} · ${pct(total ? r.amount / total : 0, 0)}`}
           title={`${reasonName(r.key)}: ${usd(r.amount)} em ${r.count} reembolso(s)`} />
       ))}
