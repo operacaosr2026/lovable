@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -44,6 +44,18 @@ function productSummary(o: any) {
   if (!titles.length) return null;
   const unique = Array.from(new Set(titles));
   return unique.length > 1 ? `${unique[0]} +${unique.length - 1}` : unique[0];
+}
+
+// Busca: nº do pedido, produto, cliente (nome/e-mail/destinatário) e rastreio.
+function orderMatches(o: any, term: string) {
+  const raw = o.raw ?? {};
+  const hay = [
+    o.order_number, o.tracking_code, raw.email, raw.customer?.email,
+    [raw.customer?.first_name, raw.customer?.last_name].filter(Boolean).join(" "),
+    raw.shipping_address?.name,
+    ...((raw.line_items ?? []) as any[]).map((li) => `${li.title ?? li.name ?? ""} ${li.variant_title ?? ""} ${li.sku ?? ""}`),
+  ].filter(Boolean).join(" ").toLowerCase().replace(/#/g, "");
+  return term.split(/\s+/).every((w) => hay.includes(w));
 }
 
 function orderTags(o: any): string[] {
@@ -89,6 +101,8 @@ export function LgOrders({
     return { from: addD(today, -29), to: today };
   })();
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
+  const [search, setSearch]       = useState("");
+  const term = search.trim().toLowerCase().replace(/#/g, "");
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
   const [payDate, setPayDate]     = useState(() => isoTodayUS());
@@ -193,7 +207,8 @@ export function LgOrders({
     }
   };
 
-  const allOrders = (ordersQuery.data ?? []) as any[];
+  const loadedOrders = (ordersQuery.data ?? []) as any[];
+  const allOrders = useMemo(() => term ? loadedOrders.filter((o) => orderMatches(o, term)) : loadedOrders, [loadedOrders, term]);
 
   const shopNames: Record<string, string> = {};
   const shopPaymentDays: Record<string, number> = {};
@@ -257,8 +272,9 @@ export function LgOrders({
   const filteredGroups = useMemo(() =>
     // A pagar: dias não pagos e parciais. Pagos: dias com algo já pago (parcial
     // aparece nos dois). Todos: tudo.
-    groups.filter((g) => payFilter === "todos" ? true : payFilter === "pagos" ? g.dayStatus !== "pendente" : g.dayStatus !== "pago"),
-  [groups, payFilter]);
+    // Buscando: pago ou não, mostra o que achou.
+    groups.filter((g) => term || payFilter === "todos" ? true : payFilter === "pagos" ? g.dayStatus !== "pendente" : g.dayStatus !== "pago"),
+  [groups, payFilter, term]);
 
   const toggleDay = (date: string, checked: boolean) => {
     const group = groups.find((g) => g.date === date);
@@ -471,6 +487,17 @@ export function LgOrders({
             </button>
           ))}
         </div>
+        <div className="relative w-full sm:w-64">
+          <Search className="size-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pedido, produto, cliente ou rastreio…"
+            className="h-8 pl-8 pr-7 text-xs" />
+          {search && (
+            <button type="button" onClick={() => setSearch("")} aria-label="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
         <div className="flex-1" />
         <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)}>
           <Settings2 className="size-4" /> Configurações
@@ -517,7 +544,8 @@ export function LgOrders({
 
         {!loading && filteredGroups.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            {groups.length === 0 ? "Nenhum pedido no período selecionado."
+            {term ? `Nenhum pedido com "${search.trim()}" no período — aumente o período pra procurar mais pra trás.`
+              : groups.length === 0 ? "Nenhum pedido no período selecionado."
               : payFilter === "pagos" ? "Nenhum pedido pago no período — aumente o período pra ver o histórico."
               : "Todos os pedidos do período estão pagos. Veja em \"Pagos\"."}
           </div>
@@ -537,7 +565,7 @@ export function LgOrders({
         </div>
 
         {filteredGroups.map((group, i) => {
-          const isOpen = expanded.has(group.date);
+          const isOpen = expanded.has(group.date) || !!term;
           const d      = localDate(group.date);
           const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
           const dayMonth = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
