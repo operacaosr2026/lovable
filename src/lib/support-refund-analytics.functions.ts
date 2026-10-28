@@ -133,6 +133,8 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         const sold = ordersByDate.get(date) ?? 0;
         return {
           date, amount: r2(x.amount), count: x.count, pending: r2(x.pending),
+          // Vendido no dia (data da venda) — gráfico de vendas em cima do de reembolsos.
+          sales: r2(a.revenueByDate.get(date) ?? 0), orders: sold,
           // Minilinha da taxa: pela safra (pedidos vendidos neste dia que tiveram reembolso).
           rate: sold > 0 ? (refundedByDate.get(date)?.size ?? 0) / sold : null,
           avgDays: x.days.length ? x.days.reduce((s, v) => s + v, 0) / x.days.length : null,
