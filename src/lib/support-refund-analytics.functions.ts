@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { canSeeApprovals, isApprover, type SupportCtx as Ctx } from "@/lib/support-approval.server";
 import { checkRefundAlerts, getRefundAlertSettings, productBreakdown, refundAnalytics } from "@/lib/support-refund-analytics.server";
 import { addDaysIso } from "@/lib/timezone";
+import { REFUND_REASON_KEYS } from "@/lib/refund-reasons";
 
 // Atendimento › Aprovações › Análise de reembolsos. Vê quem vê as Aprovações;
 // os limites do alerta, quem aprova.
@@ -114,5 +115,26 @@ export const saveRefundAlertSettings = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     // Aplica na hora (abre/fecha os avisos com o limite novo).
     await checkRefundAlerts(ctx.ownerId, true).catch(() => null);
+    return { ok: true };
+  });
+
+// Motivo de um reembolso da lista: do app, corrige o pedido; feito direto na
+// Shopify, guarda em support_refund_reasons. Quem aprova.
+export const setRefundEventReason = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    orderId: z.string().uuid(), refundId: z.string().min(1).max(40), requestId: z.string().uuid().nullable(), reason: z.enum(REFUND_REASON_KEYS),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as Ctx;
+    if (!isApprover(ctx)) throw new Error("Sem permissão para mudar o motivo");
+    const db = (t: string) => (supabaseAdmin as any).from(t);
+    const { error } = data.requestId
+      ? await db("support_refund_requests").update({ reason: data.reason }).eq("id", data.requestId).eq("owner_id", ctx.ownerId)
+      : await db("support_refund_reasons").upsert({
+          owner_id: ctx.ownerId, order_id: data.orderId, refund_id: data.refundId, reason: data.reason,
+          set_by: ctx.userId, updated_at: new Date().toISOString(),
+        }, { onConflict: "owner_id,order_id,refund_id" });
+    if (error) throw new Error(error.message);
     return { ok: true };
   });

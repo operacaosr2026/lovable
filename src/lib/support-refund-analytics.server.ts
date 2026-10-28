@@ -21,7 +21,7 @@ const LOOKBACK_DAYS = 240;   // reembolso de pedido de até ~8 meses antes
 type LineItem = { product_id?: number | string | null; title?: string; name?: string; variant_title?: string | null; quantity?: number; price?: string | number };
 
 export type RefundEvent = {
-  key: string; orderId: string; orderNumber: string | null; shopId: string; shop: string;
+  key: string; orderId: string; refundId: string; requestId: string | null; orderNumber: string | null; shopId: string; shop: string;
   date: string; at: string; orderDate: string; amount: number; status: "concluido" | "pendente";
   pendingDays: number | null; reason: string | null; source: "app" | "shopify";
   requestedBy: string | null; requestedByName: string | null; conversationId: string | null;
@@ -101,6 +101,10 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     }
   }
 
+  // Motivo escolhido na lista pros reembolsos feitos direto na Shopify.
+  const { data: manual } = await db("support_refund_reasons").select("order_id,refund_id,reason").eq("owner_id", ownerId);
+  const manualReason = new Map(((manual ?? []) as any[]).map((m) => [`${m.order_id}:${m.refund_id}`, m.reason as string]));
+
   const reqByOrder = new Map<string, any[]>();
   for (const r of requests) reqByOrder.set(r.order_id, [...(reqByOrder.get(r.order_id) ?? []), r]);
   const names = await personNames(requests.map((r) => r.requested_by));
@@ -148,10 +152,10 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       const req = list.find((q) => q.refund_id && String(q.refund_id).endsWith(`/${rf.id}`))
         ?? list.filter((q) => q.status === "aprovado").sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at)))[0] ?? null;
       events.push({
-        key: `${o.id}:${rf.id}`, orderId: o.id, orderNumber: o.order_number, shopId: o.shop_id, shop: shopName.get(o.shop_id) ?? "—",
+        key: `${o.id}:${rf.id}`, orderId: o.id, refundId: String(rf.id), requestId: req?.id ?? null, orderNumber: o.order_number, shopId: o.shop_id, shop: shopName.get(o.shop_id) ?? "—",
         date, at, orderDate: o.order_date, amount: r2(amount), status: pending ? "pendente" : "concluido",
         pendingDays: pending ? Math.floor((now - new Date(at).getTime()) / 86_400_000) : null,
-        reason: req?.reason ?? null, source: req ? "app" : "shopify",
+        reason: req?.reason ?? manualReason.get(`${o.id}:${rf.id}`) ?? null, source: req ? "app" : "shopify",
         requestedBy: req?.requested_by ?? null, requestedByName: req ? names.get(req.requested_by) ?? "Equipe" : null,
         conversationId: req?.conversation_id ?? null,
         products: [...prods].map(([k, p]) => ({ key: k, name: products.get(k)?.name ?? k, units: p.units, amount: r2(p.amount) })),

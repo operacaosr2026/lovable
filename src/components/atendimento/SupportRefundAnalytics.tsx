@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { getRefundAnalytics, saveRefundAlertSettings } from "@/lib/support-refund-analytics.functions";
+import { getRefundAnalytics, saveRefundAlertSettings, setRefundEventReason } from "@/lib/support-refund-analytics.functions";
 import { REFUND_REASONS, refundReasonLabel } from "@/lib/refund-reasons";
 import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { useSupportFn } from "./demo";
@@ -349,7 +349,7 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
   const rows = d.events.filter((e) =>
     (!status || e.status === status)
     && (!reason || (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) === reason)
-    && (!term || [e.orderNumber, e.shop, e.product, e.requestedByName].some((v) => v && norm(v).includes(norm(term)))));
+    && (!term || [e.orderNumber, e.shop, e.product].some((v) => v && norm(v).includes(norm(term)))));
   return (
     <Card icon={List} title={`Reembolsos (${d.events.length})`} hint="Todos os reembolsos do período, do mais recente pro mais antigo"
       right={
@@ -374,7 +374,7 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
           <table className="w-full text-xs min-w-[820px]">
             <thead className="sticky top-0 bg-card">
               <tr className="text-[11px] text-muted-foreground">
-                {["Data", "Pedido", "Loja", "Produto", "Valor", "Status", "Motivo", "Pedido por", ""].map((h) => <th key={h} className="text-left font-medium pb-2 pr-3">{h}</th>)}
+                {["Data", "Pedido", "Loja", "Produto", "Valor", "Status", "Motivo", ""].map((h) => <th key={h} className="text-left font-medium pb-2 pr-3">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -390,8 +390,7 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
                       ? <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">Pendente{e.pendingDays ? ` há ${e.pendingDays}d` : ""}</span>
                       : <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">Concluído</span>}
                   </td>
-                  <td className="pr-3 whitespace-nowrap">{e.source === "shopify" ? <span className="text-muted-foreground">Direto na Shopify</span> : refundReasonLabel(e.reason)}</td>
-                  <td className="pr-3 whitespace-nowrap">{e.requestedByName ?? <span className="text-muted-foreground">Fora do app</span>}</td>
+                  <td className="pr-3 whitespace-nowrap"><ReasonCell e={e} canEdit={d.canEdit} /></td>
                   <td className="text-right">
                     {e.conversationId && (
                       <button onClick={() => onOpenConversation(e.conversationId!)} title="Abrir conversa" className="text-muted-foreground hover:text-primary">
@@ -406,6 +405,33 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
         </div>
       )}
     </Card>
+  );
+}
+
+// Motivo na lista: quem aprova escolhe/corrige (feito direto na Shopify também).
+function ReasonCell({ e, canEdit }: { e: Data["events"][number]; canEdit: boolean }) {
+  const qc = useQueryClient();
+  const fn = useSupportFn(setRefundEventReason, "setRefundEventReason");
+  const save = useMutation({
+    mutationFn: (reason: string) => fn({ data: { orderId: e.orderId, refundId: e.refundId, requestId: e.requestId, reason } }),
+    onSuccess: () => {
+      toast.success("Motivo salvo");
+      qc.invalidateQueries({ queryKey: ["refund-analytics"] });
+      qc.invalidateQueries({ queryKey: ["support-approvals"] });
+    },
+    onError: (err: any) => toast.error(err.message ?? "Erro"),
+  });
+  const empty = e.source === "shopify" ? "Direto na Shopify — escolher" : "Sem motivo";
+  if (!canEdit) return e.reason ? <>{refundReasonLabel(e.reason)}</> : <span className="text-muted-foreground">{e.source === "shopify" ? "Direto na Shopify" : "Sem motivo"}</span>;
+  return (
+    <div className="flex items-center gap-1.5">
+      <select value={e.reason ?? ""} disabled={save.isPending} onChange={(ev) => ev.target.value && save.mutate(ev.target.value)}
+        className={`h-7 max-w-[200px] rounded-md border bg-background px-1.5 text-xs outline-none focus:border-primary ${e.reason ? "border-transparent hover:border-border" : "border-amber-500/40 text-muted-foreground"}`}>
+        {!e.reason && <option value="">{empty}</option>}
+        {REFUND_REASONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+      </select>
+      {save.isPending && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+    </div>
   );
 }
 
