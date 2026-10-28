@@ -219,7 +219,7 @@ export function productBreakdown(a: Awaited<ReturnType<typeof refundAnalytics>>)
 // ─── Alerta de reembolso alto / pendente (sino) ───────────────────────────────
 
 export const REFUND_ALERT_DEFAULTS = { enabled: true, product_rate_limit: 10, product_min_sold: 5, window_days: 30, pending_days: 3 };
-export const ANALYSIS_LINK = "/atendimento?v=reembolsos";
+export const ANALYSIS_LINK = "/gerencial?tab=reembolsos";
 
 export async function getRefundAlertSettings(ownerId: string) {
   const { data } = await db("support_refund_alerts").select("enabled,product_rate_limit,product_min_sold,window_days,pending_days,last_checked_at")

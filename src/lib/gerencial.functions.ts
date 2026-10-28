@@ -216,13 +216,13 @@ export const getGerencial = createServerFn({ method: "GET" })
     if (alertSettings.enabled) {
       const over = products.filter((p) => p.rate != null && p.sold >= alertSettings.product_min_sold && p.rate * 100 > alertSettings.product_rate_limit);
       if (over.length) {
-        alerts.push({ level: "atencao", title: `${over.length} produto${over.length === 1 ? "" : "s"} com reembolso acima de ${alertSettings.product_rate_limit}%`, link: "/atendimento?v=aprovacoes",
+        alerts.push({ level: "atencao", title: `${over.length} produto${over.length === 1 ? "" : "s"} com reembolso acima de ${alertSettings.product_rate_limit}%`, link: "/gerencial?tab=reembolsos",
           detail: over.slice(0, 3).map((p) => `${p.name} (${Math.round((p.rate ?? 0) * 100)}%)`).join(", ") });
       }
     }
     const stuck = [...refunds.events, ...refundsPrev.events].filter((e) => e.status === "pendente" && (e.pendingDays ?? 0) >= alertSettings.pending_days);
     if (stuck.length) {
-      alerts.push({ level: "atencao", title: `${stuck.length} reembolso${stuck.length === 1 ? "" : "s"} parado${stuck.length === 1 ? "" : "s"} na Shopify há ${alertSettings.pending_days}+ dias`, link: "/atendimento?v=aprovacoes",
+      alerts.push({ level: "atencao", title: `${stuck.length} reembolso${stuck.length === 1 ? "" : "s"} parado${stuck.length === 1 ? "" : "s"} na Shopify há ${alertSettings.pending_days}+ dias`, link: "/gerencial?tab=reembolsos",
         detail: `${usd(sum(stuck))} ainda não concluído${stuck.length === 1 ? "" : "s"}.` });
     }
     if (entrega.atencao) {

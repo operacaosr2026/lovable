@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -9,10 +9,22 @@ import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { isoTodayUS } from "@/lib/timezone";
 import { getGerencial } from "@/lib/gerencial.functions";
+import { listSupportApprovals } from "@/lib/support-approvals.functions";
+import { useMyAccess } from "@/hooks/useMyAccess";
+import { useAuth } from "@/lib/auth";
+import { SupportApprovalsView } from "@/components/atendimento/SupportApprovalsView";
+import { SupportRefundAnalytics } from "@/components/atendimento/SupportRefundAnalytics";
 
-// Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts).
+// Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
+// mais as Aprovações de troca/reembolso (fila e análise), que vieram do Atendimento.
+// ?tab=aprovacoes / ?tab=reembolsos abre direto nelas (links das notificações).
+const TAB_KEYS = ["resultado", "perdas", "entrega", "equipe", "alertas", "aprovacoes", "reembolsos"] as const;
+type Tab = (typeof TAB_KEYS)[number];
+
 export const Route = createFileRoute("/gerencial")({
   beforeLoad: requireAuth,
+  validateSearch: (s: Record<string, unknown>): { tab?: Tab } =>
+    TAB_KEYS.includes(s.tab as Tab) ? { tab: s.tab as Tab } : {},
   head: () => ({ meta: [{ title: "Gerencial — SRX Growth" }] }),
   component: GerencialPage,
 });
@@ -34,22 +46,38 @@ function lastMonths(n: number) {
   return out;
 }
 
-const TABS = [
+const TABS: [Tab, string][] = [
   ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Entrega"], ["equipe", "Equipe"], ["alertas", "Alertas"],
-] as const;
-type Tab = (typeof TABS)[number][0];
+  ["aprovacoes", "Fila de aprovação"], ["reembolsos", "Análise de reembolsos"],
+];
+const APPROVAL_TABS: Tab[] = ["aprovacoes", "reembolsos"];
 
 function GerencialPage() {
   const months = useMemo(() => lastMonths(6), []);
   const [month, setMonth] = useState(months[0]);
-  const [tab, setTab] = useState<Tab>("resultado");
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const tab: Tab = search.tab ?? "resultado";
+  const setTab = (t: Tab) => navigate({ search: t === "resultado" ? {} : { tab: t }, replace: true });
+  // Aprovações: dono/admin, ou quem tem "Aprovações (ver a fila)" ou "Pode aprovar".
+  const { canAccessSection, ownerId } = useMyAccess();
+  const { user } = useAuth();
+  const approver = (!!user && user.id === ownerId) || canAccessSection("at_aprovacoes") || canAccessSection("at_aprovar");
+  const approvalsTab = APPROVAL_TABS.includes(tab);
+
   const fn = useServerFn(getGerencial);
   const q = useQuery({ queryKey: ["gerencial", month], queryFn: () => fn({ data: { month } }), staleTime: 5 * 60_000 });
   const d = q.data as Data | undefined;
+  // Número na aba da fila (mesma consulta da tela).
+  const approvalsFn = useServerFn(listSupportApprovals);
+  const approvals = useQuery({ queryKey: ["support-approvals"], queryFn: () => approvalsFn(), refetchInterval: 60_000, enabled: approver });
+  const approvalsOpen = ((approvals.data?.items ?? []) as { status: string }[]).filter((i) => i.status === "pendente" || i.status === "erro").length;
+  // Conversa do cliente: abre no Atendimento.
+  const openConversation = (id: string) => navigate({ to: "/atendimento", search: { c: id } as any });
 
   return (
     <PageShell>
-      <PageHeader title="Gerencial" actions={
+      <PageHeader title="Gerencial" actions={!approvalsTab &&
         <label className="relative">
           <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <select value={month} onChange={(e) => setMonth(e.target.value)}
@@ -58,28 +86,31 @@ function GerencialPage() {
           </select>
         </label>
       } />
-      {q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
-        : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
-        : (
-          <div className="space-y-4 pb-8">
-            <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
-              {TABS.map(([k, label]) => (
-                <button key={k} onClick={() => setTab(k)}
-                  className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                  {label}
-                  {k === "alertas" && d.alerts.length > 0 && (
-                    <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] grid place-items-center text-white ${d.alerts.some((a) => a.level === "critico") ? "bg-rose-500" : "bg-amber-500"}`}>{d.alerts.length}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-            {tab === "resultado" && <Resultado d={d} />}
-            {tab === "perdas" && <Perdas d={d} />}
-            {tab === "entrega" && <Entrega d={d} />}
-            {tab === "equipe" && <Equipe d={d} />}
-            {tab === "alertas" && <Alerts d={d} />}
-          </div>
-        )}
+      <div className="space-y-4 pb-8">
+        <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
+          {TABS.filter(([k]) => approver || !APPROVAL_TABS.includes(k)).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              {label}
+              {k === "alertas" && !!d?.alerts.length && (
+                <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] grid place-items-center text-white ${d.alerts.some((a) => a.level === "critico") ? "bg-rose-500" : "bg-amber-500"}`}>{d.alerts.length}</span>
+              )}
+              {k === "aprovacoes" && approvalsOpen > 0 && (
+                <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold grid place-items-center">{approvalsOpen}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
+          : tab === "reembolsos" ? <SupportRefundAnalytics onOpenConversation={openConversation} />
+          : q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
+          : tab === "resultado" ? <Resultado d={d} />
+          : tab === "perdas" ? <Perdas d={d} />
+          : tab === "entrega" ? <Entrega d={d} />
+          : tab === "equipe" ? <Equipe d={d} />
+          : <Alerts d={d} />}
+      </div>
     </PageShell>
   );
 }
@@ -136,6 +167,7 @@ const Empty = ({ text = "Nada no período." }: { text?: string }) => <p classNam
 // ─── Alertas ─────────────────────────────────────────────────────────────────
 
 function Alerts({ d }: { d: Data }) {
+  const navigate = useNavigate();
   if (!d.alerts.length) {
     return (
       <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
@@ -147,14 +179,14 @@ function Alerts({ d }: { d: Data }) {
     <section>
       <div className="grid gap-2 md:grid-cols-2">
         {d.alerts.map((a, i) => (
-          <Link key={i} to={a.link as any}
-            className={`rounded-2xl border p-3 flex gap-3 hover:shadow-sm transition ${a.level === "critico" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+          <button key={i} onClick={() => navigate({ href: a.link })}
+            className={`text-left rounded-2xl border p-3 flex gap-3 hover:shadow-sm transition ${a.level === "critico" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
             <AlertTriangle className={`size-4 mt-0.5 shrink-0 ${a.level === "critico" ? "text-rose-600" : "text-amber-500"}`} />
             <div className="min-w-0">
               <p className="text-sm font-semibold">{a.title}</p>
               <p className="text-xs text-muted-foreground">{a.detail}</p>
             </div>
-          </Link>
+          </button>
         ))}
       </div>
     </section>
