@@ -8,10 +8,10 @@ import { refundReasonLabel } from "@/lib/refund-reasons";
 import { disputifierRefund } from "@/lib/chargeback-alerts.shared";
 
 // Análise de reembolsos (Atendimento › Aprovações › Análise) e o alerta de
-// reembolso alto. Tudo pela data do reembolso (events): valor, gráfico, lista,
-// motivo, grupo, produto e as taxas (reembolsos do período ÷ vendidos no
-// período). Reembolso chega ~3 semanas depois da compra, por isso o padrão da
-// tela é 60 dias — pega a venda e o reembolso dela quase sempre. Fonte: os reembolsos que a Shopify registrou no pedido
+// reembolso alto. Tudo pela data do PEDIDO (events): os pedidos vendidos no
+// período e todos os reembolsos deles até hoje, mesmo os feitos depois — pedido
+// de 25/09 reembolsado em 28/10 conta em setembro. Valor, gráfico, lista,
+// motivo, grupo, produto e as taxas (pedidos com reembolso ÷ vendidos). Fonte: os reembolsos que a Shopify registrou no pedido
 // (raw.refunds) — feitos pelo app ou direto na Shopify —, cruzados com o pedido
 // do app (support_refund_requests: motivo, quem pediu, tempo de aprovação).
 // Lojas: as dos grupos ativos (mesma regra do Dashboard e das Metas). Data do
@@ -122,7 +122,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       const at = String(rf.created_at ?? rf.processed_at ?? "");
       if (!at) continue;
       const date = isoDateUS(at);
-      if (date < from || date > to) continue;
+      if (o.order_date < from || o.order_date > to) continue;
       const tx = ((rf.transactions ?? []) as any[]).filter((t) => t.kind === "refund" && (t.status === "success" || t.status === "pending"));
       const amount = tx.reduce((s, t) => s + Number(t.amount ?? 0), 0);
       if (amount <= 0) continue;

@@ -86,6 +86,7 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
       <div className="grid gap-4 xl:grid-cols-2">
         <Reasons d={d} />
         <Groups d={d} />
+        <Months d={d} />
       </div>
       <Products d={d} />
       <Events d={d} onOpenConversation={onOpenConversation} />
@@ -100,7 +101,7 @@ export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversat
 function Basis() {
   return (
     <div className="rounded-xl border border-border bg-card px-4 py-2.5 text-[11px] text-muted-foreground">
-      <span className="font-semibold text-foreground">Tudo pela data do reembolso:</span> reembolsos feitos no período. Taxa = pedidos com reembolso no período ÷ pedidos vendidos no período.
+      <span className="font-semibold text-foreground">Tudo pela data do pedido:</span> pedidos vendidos no período e todos os reembolsos deles, mesmo os feitos depois (pedido de 25/09 reembolsado em 28/10 conta em setembro). Taxa = pedidos com reembolso ÷ pedidos vendidos. Pedido recente ainda pode ser reembolsado, então o período atual só sobe.
     </div>
   );
 }
@@ -127,7 +128,7 @@ function Kpis({ d }: { d: Data }) {
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
         sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} comparable={d.prev.comparable} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)}</> : "sem base no período anterior"}</>} />
+        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)} na mesma altura</> : "sem base no período anterior"}</>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
@@ -202,7 +203,7 @@ function Daily({ d, controls }: { d: Data; controls: React.ReactNode }) {
   const data = d.daily.map((x) => ({ ...x, label: dm(x.date) }));
   const max = Math.max(0, ...data.map((x) => x.count));
   return (
-    <Card icon={BarChart3} title="Pedidos e reembolsos por dia" hint="Pedidos pela data da venda; reembolsos pelo dia em que a Shopify registrou (horário de Nova York)" right={controls}>
+    <Card icon={BarChart3} title="Pedidos e reembolsos por dia" hint="Por dia do pedido: pedidos vendidos (linha) e quantos deles tiveram reembolso (barra)" right={controls}>
       <div className="flex items-center gap-4 text-[11px] text-muted-foreground mb-2">
         <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded-full bg-muted-foreground" />Pedidos vendidos</span>
         <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-primary" />Reembolsos</span>
@@ -261,7 +262,7 @@ function Reasons({ d }: { d: Data }) {
   // Barra = parte do total (a mesma % da direita).
   const total = d.kpis.total;
   return (
-    <Card icon={Box} title="Por motivo" hint="Reembolsos feitos no período (data do reembolso)">
+    <Card icon={Box} title="Por motivo" hint="Reembolsos dos pedidos vendidos no período">
       {d.byReason.length === 0 ? <Empty /> : d.byReason.map((r) => (
         <HBar key={r.key} label={reasonName(r.key)} value={r.amount} max={total} amount={usd(r.amount)}
           extra={`${r.count} · ${pct(total ? r.amount / total : 0, 0)}`}
@@ -271,9 +272,46 @@ function Reasons({ d }: { d: Data }) {
   );
 }
 
+const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+// Taxa de cada mês só com os pedidos vendidos nele (e todos os reembolsos deles).
+function Months({ d }: { d: Data }) {
+  return (
+    <Card icon={CalendarDays} title="Por mês de venda" hint="Pedidos vendidos no mês e os reembolsos deles, mesmo os feitos depois">
+      {d.byMonth.length === 0 ? <Empty /> : (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[11px] text-muted-foreground">
+              <th className="text-left font-medium pb-2">Mês</th>
+              <th className="text-center font-medium pb-2">Pedidos</th>
+              <th className="text-center font-medium pb-2 pl-3">Com reembolso</th>
+              <th className="text-center font-medium pb-2">Valor</th>
+              <th className="text-center font-medium pb-2">Taxa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.byMonth.map((m) => (
+              <tr key={m.month} className="border-t border-border">
+                <td className="py-2.5 pr-2">
+                  <p className="font-medium">{MONTHS[Number(m.month.slice(5, 7)) - 1]}/{m.month.slice(2, 4)}</p>
+                  {m.current && <p className="text-[11px] text-amber-600">em andamento — ainda sobe</p>}
+                </td>
+                <td className="text-center">{m.orders.toLocaleString("pt-BR")}</td>
+                <td className="text-center pl-3">{m.refundedOrders}</td>
+                <td className="text-center font-semibold whitespace-nowrap pl-3">{usd(m.amount)}</td>
+                <td className="text-center pl-3 font-semibold">{pct(m.rate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
 function Groups({ d }: { d: Data }) {
   return (
-    <Card icon={Layers} title="Por grupo" hint="Reembolsos no período: taxa = pedidos com reembolso ÷ pedidos vendidos pelo grupo">
+    <Card icon={Layers} title="Por grupo" hint="Pedidos vendidos no período: taxa = pedidos com reembolso ÷ pedidos do grupo">
       {d.byGroup.length === 0 ? <Empty /> : (
         <table className="w-full text-xs">
           <thead>
@@ -312,7 +350,7 @@ function Products({ d }: { d: Data }) {
   const over = (p: Data["byProduct"][number]) => st.enabled && p.rate != null && p.sold >= st.product_min_sold && p.rate * 100 > st.product_rate_limit;
   const maxRate = Math.max(0, ...d.byProduct.map((p) => p.rate ?? 0));
   return (
-    <Card icon={Tag} title="Por produto" hint="Unidades reembolsadas no período ÷ vendidas no período. Em vermelho: acima do limite do alerta.">
+    <Card icon={Tag} title="Por produto" hint="Pedidos vendidos no período: unidades reembolsadas ÷ vendidas. Em vermelho: acima do limite do alerta.">
       {d.byProduct.length === 0 ? <Empty /> : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[680px]">
@@ -369,7 +407,7 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
     && (!reason || (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) === reason)
     && (!term || [e.orderNumber, e.shop, e.product].some((v) => v && norm(v).includes(norm(term)))));
   return (
-    <Card icon={List} title={`Reembolsos (${d.events.length})`} hint="Todos os reembolsos do período, do mais recente pro mais antigo"
+    <Card icon={List} title={`Reembolsos (${d.events.length})`} hint="Reembolsos dos pedidos vendidos no período, do mais recente pro mais antigo"
       right={
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
