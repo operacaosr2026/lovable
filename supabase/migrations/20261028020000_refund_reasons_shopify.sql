@@ -10,3 +10,7 @@ CREATE TABLE IF NOT EXISTS public.support_refund_reasons (
   PRIMARY KEY (owner_id, order_id, refund_id)
 );
 ALTER TABLE public.support_refund_reasons ENABLE ROW LEVEL SECURITY;
+
+-- Alerta de produto passa a olhar a safra de vendas (pedidos vendidos na janela
+-- e os reembolsos deles até hoje): janela padrão de 30 dias, não 7.
+ALTER TABLE public.support_refund_alerts ALTER COLUMN window_days SET DEFAULT 30;

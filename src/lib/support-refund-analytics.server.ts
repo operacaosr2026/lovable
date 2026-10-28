@@ -7,7 +7,13 @@ import { raiseNotification, resolveNotification } from "@/lib/notifications.serv
 import { refundReasonLabel } from "@/lib/refund-reasons";
 
 // Análise de reembolsos (Atendimento › Aprovações › Análise) e o alerta de
-// reembolso alto. Fonte: os reembolsos que a Shopify registrou no pedido
+// reembolso alto. Duas visões de propósito:
+//  - events (data do reembolso): dinheiro que saiu no período — valor, gráfico,
+//    pendente e lista.
+//  - cohort (data da venda, "safra"): pedidos vendidos no período e todos os
+//    reembolsos deles até hoje — taxas (geral, produto, grupo) e o alerta.
+//    Reembolso chega ~3 semanas depois da compra; misturar reembolso de um mês
+//    com venda de outro distorcia a taxa. Fonte: os reembolsos que a Shopify registrou no pedido
 // (raw.refunds) — feitos pelo app ou direto na Shopify —, cruzados com o pedido
 // do app (support_refund_requests: motivo, quem pediu, tempo de aprovação).
 // Lojas: as dos grupos ativos (mesma regra do Dashboard e das Metas). Data do
@@ -46,7 +52,7 @@ async function cardsByShopifyProduct(ownerId: string) {
 
 export async function refundAnalytics(ownerId: string, from: string, to: string) {
   const shopIds = await companyShopIdsForMonth(ownerId, monthStartOf(from));
-  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), approvalHours: null as number | null };
+  const empty = { from, to, shops: [] as { id: string; name: string }[], revenueByDate: new Map<string, number>(), events: [] as RefundEvent[], cohort: [] as RefundEvent[], orderDates: [] as string[], revenue: 0, orders: 0, sold: new Map<string, number>(), products: new Map<string, { name: string; image: string | null }>(), revenueByShop: new Map<string, number>(), approvalHours: null as number | null };
   if (!shopIds.length) return empty;
 
   const lookback = addDaysIso(from, -LOOKBACK_DAYS);
@@ -110,13 +116,15 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
   const names = await personNames(requests.map((r) => r.requested_by));
 
   const now = Date.now();
-  const events: RefundEvent[] = [];
+  const all: RefundEvent[] = [];
   for (const o of orders.values()) {
     for (const rf of (o.refunds ?? []) as any[]) {
       const at = String(rf.created_at ?? rf.processed_at ?? "");
       if (!at) continue;
       const date = isoDateUS(at);
-      if (date < from || date > to) continue;
+      const inCash = date >= from && date <= to;
+      const inCohort = o.order_date >= from && o.order_date <= to;
+      if (!inCash && !inCohort) continue;
       const tx = ((rf.transactions ?? []) as any[]).filter((t) => t.kind === "refund" && (t.status === "success" || t.status === "pending"));
       const amount = tx.reduce((s, t) => s + Number(t.amount ?? 0), 0);
       if (amount <= 0) continue;
@@ -151,7 +159,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       const list = reqByOrder.get(o.id) ?? [];
       const req = list.find((q) => q.refund_id && String(q.refund_id).endsWith(`/${rf.id}`))
         ?? list.filter((q) => q.status === "aprovado").sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at)))[0] ?? null;
-      events.push({
+      all.push({
         key: `${o.id}:${rf.id}`, orderId: o.id, refundId: String(rf.id), requestId: req?.id ?? null, orderNumber: o.order_number, shopId: o.shop_id, shop: shopName.get(o.shop_id) ?? "—",
         date, at, orderDate: o.order_date, amount: r2(amount), status: pending ? "pendente" : "concluido",
         pendingDays: pending ? Math.floor((now - new Date(at).getTime()) / 86_400_000) : null,
@@ -162,7 +170,9 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
       });
     }
   }
-  events.sort((a, b) => b.at.localeCompare(a.at));
+  all.sort((a, b) => b.at.localeCompare(a.at));
+  const events = all.filter((e) => e.date >= from && e.date <= to);
+  const cohort = all.filter((e) => e.orderDate >= from && e.orderDate <= to);
 
   // Tempo da solicitação até a decisão (pedidos do app decididos no período).
   const decided = requests.filter((r) => r.decided_at && r.status === "aprovado" && isoDateUS(r.decided_at) >= from && isoDateUS(r.decided_at) <= to);
@@ -171,15 +181,16 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
     : null;
 
   return {
-    from, to, events, revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, revenueByDate, approvalHours,
+    from, to, events, cohort, orderDates: ((periodRes.data ?? []) as any[]).map((o) => o.order_date as string),
+    revenue, orders: (periodRes.data ?? []).length, sold, products, revenueByShop, revenueByDate, approvalHours,
     shops: shopIds.map((id) => ({ id, name: shopName.get(id) ?? "—" })),
   };
 }
 
-// Por produto: unidades e valor reembolsados × vendidos no período.
+// Por produto, pela safra: dos vendidos no período, quantos já foram reembolsados.
 export function productBreakdown(a: Awaited<ReturnType<typeof refundAnalytics>>) {
   const by = new Map<string, { units: number; amount: number; reasons: Map<string, number> }>();
-  for (const e of a.events) {
+  for (const e of a.cohort) {
     for (const p of e.products) {
       const x = by.get(p.key) ?? { units: 0, amount: 0, reasons: new Map() };
       x.units += p.units;
@@ -202,7 +213,7 @@ export function productBreakdown(a: Awaited<ReturnType<typeof refundAnalytics>>)
 
 // ─── Alerta de reembolso alto / pendente (sino) ───────────────────────────────
 
-export const REFUND_ALERT_DEFAULTS = { enabled: true, product_rate_limit: 10, product_min_sold: 5, window_days: 7, pending_days: 3 };
+export const REFUND_ALERT_DEFAULTS = { enabled: true, product_rate_limit: 10, product_min_sold: 5, window_days: 30, pending_days: 3 };
 export const ANALYSIS_LINK = "/atendimento?v=reembolsos";
 
 export async function getRefundAlertSettings(ownerId: string) {
@@ -223,15 +234,17 @@ export async function checkRefundAlerts(ownerId: string, force = false) {
   const want = new Map<string, { title: string; body: string }>();
   if (st.enabled) {
     const today = isoTodayUS();
+    // Safra das vendas da janela, com os reembolsos até agora. Pedido recente
+    // ainda pode ser reembolsado, então a taxa só sobe: passou do limite já é real.
     const a = await refundAnalytics(ownerId, addDaysIso(today, -(st.window_days - 1)), today);
     for (const p of productBreakdown(a)) {
       if (p.rate == null || p.sold < st.product_min_sold || p.rate * 100 <= st.product_rate_limit) continue;
       want.set(`refund_rate:${p.key}`.slice(0, 160), {
-        title: `Reembolso alto: ${p.name} — ${Math.round(p.rate * 100)}% em ${st.window_days} dia${st.window_days === 1 ? "" : "s"}`,
-        body: `${p.units} de ${p.sold} vendidos reembolsados (limite ${st.product_rate_limit}%)${p.topReason ? `. Motivo mais comum: ${refundReasonLabel(p.topReason)}` : ""}.`,
+        title: `Reembolso alto: ${p.name} — ${Math.round(p.rate * 100)}% das vendas dos últimos ${st.window_days} dia${st.window_days === 1 ? "" : "s"}`,
+        body: `${p.units} de ${p.sold} vendidos já reembolsados (limite ${st.product_rate_limit}%; ainda pode subir — tem pedido recente)${p.topReason ? `. Motivo mais comum: ${refundReasonLabel(p.topReason)}` : ""}.`,
       });
     }
-    // Pendentes: olha os últimos 60 dias.
+    // Pendentes: reembolsos feitos nos últimos 60 dias.
     const recent = await refundAnalytics(ownerId, addDaysIso(today, -60), today);
     const stuck = recent.events.filter((e) => e.status === "pendente" && (e.pendingDays ?? 0) >= st.pending_days);
     if (stuck.length) {

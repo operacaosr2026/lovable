@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { canSeeApprovals, isApprover, type SupportCtx as Ctx } from "@/lib/support-approval.server";
 import { checkRefundAlerts, getRefundAlertSettings, productBreakdown, refundAnalytics } from "@/lib/support-refund-analytics.server";
-import { addDaysIso } from "@/lib/timezone";
+import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { REFUND_REASON_KEYS } from "@/lib/refund-reasons";
 
 // Atendimento › Aprovações › Análise de reembolsos. Vê quem vê as Aprovações;
@@ -12,6 +12,8 @@ import { REFUND_REASON_KEYS } from "@/lib/refund-reasons";
 
 const ISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const r2 = (n: number) => Math.round(n * 100) / 100;
+// Pedido com menos disso ainda costuma ser reembolsado (média ~24 dias).
+const MATURITY_DAYS = 30;
 const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T00:00:00Z`).getTime() - new Date(`${a}T00:00:00Z`).getTime()) / 86_400_000);
 
 function assertSee(ctx: Ctx) {
@@ -49,21 +51,29 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
     }
 
     const sum = (ev: typeof a.events) => r2(ev.reduce((s, e) => s + e.amount, 0));
-    const kpis = (x: typeof a) => {
-      const total = sum(x.events);
-      const ordersRefunded = new Set(x.events.map((e) => e.orderId)).size;
+    // Taxa pela safra: reembolsos dos pedidos vendidos no período ÷ vendas do período.
+    const rates = (x: typeof a, cohort: typeof a.cohort) => {
+      const amount = sum(cohort);
+      const ordersRefunded = new Set(cohort.map((e) => e.orderId)).size;
       return {
-        total, count: x.events.length, ordersRefunded,
-        rateRevenue: x.revenue > 0 ? total / x.revenue : null,
+        cohortAmount: amount, ordersRefunded,
+        rateRevenue: x.revenue > 0 ? amount / x.revenue : null,
         rateOrders: x.orders > 0 ? ordersRefunded / x.orders : null,
       };
     };
+    // Período anterior "na mesma altura": só os reembolsos que ele já tinha
+    // tido o mesmo número de dias depois (senão a safra antiga, já madura,
+    // sempre pareceria pior que a atual).
+    const today = isoTodayUS();
+    const cutoff = addDaysIso(today, -len);
+    const prevRates = rates(prev, prev.cohort.filter((e) => e.date <= cutoff));
+    const young = a.orderDates.filter((d) => daysBetween(d, today) < MATURITY_DAYS).length;
     const pending = a.events.filter((e) => e.status === "pendente");
     const daysToRefund = a.events.map((e) => daysBetween(e.orderDate, e.date)).filter((d) => d >= 0);
 
-    const group = <K extends string>(keyOf: (e: (typeof a.events)[number]) => K) => {
+    const group = <K extends string>(list: typeof a.events, keyOf: (e: (typeof a.events)[number]) => K) => {
       const m = new Map<K, { count: number; amount: number }>();
-      for (const e of a.events) {
+      for (const e of list) {
         const k = keyOf(e);
         const x = m.get(k) ?? { count: 0, amount: 0 };
         x.count++; x.amount += e.amount;
@@ -71,6 +81,9 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
       }
       return [...m].map(([key, x]) => ({ key, count: x.count, amount: r2(x.amount) })).sort((p, q) => q.amount - p.amount);
     };
+
+    const cohortByDate = new Map<string, number>();
+    for (const e of a.cohort) cohortByDate.set(e.orderDate, (cohortByDate.get(e.orderDate) ?? 0) + e.amount);
 
     // Por dia: o gráfico e as minilinhas dos cartões (valor, taxa, pendente, dias até o reembolso).
     const daily = new Map<string, { amount: number; count: number; pending: number; days: number[] }>();
@@ -89,14 +102,16 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
       settings: { enabled: settings.enabled, product_rate_limit: settings.product_rate_limit, product_min_sold: settings.product_min_sold, window_days: settings.window_days, pending_days: settings.pending_days },
       prevRange: { from: prevFrom, to: prevTo },
       kpis: {
-        ...kpis(a), revenue: r2(a.revenue), orders: a.orders,
+        total: sum(a.events), count: a.events.length,
+        ...rates(a, a.cohort), revenue: r2(a.revenue), orders: a.orders,
+        youngShare: a.orders > 0 ? young / a.orders : 0, maturityDays: MATURITY_DAYS,
         pendingCount: pending.length, pendingAmount: sum(pending),
         avgDaysToRefund: daysToRefund.length ? daysToRefund.reduce((s, d) => s + d, 0) / daysToRefund.length : null,
         approvalHours: a.approvalHours,
       },
-      prev: kpis(prev),
-      byReason: group((e) => (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) as string),
-      byGroup: group((e) => groupOf.get(e.shopId) ?? `loja:${e.shopId}`).map((x) => {
+      prev: { total: sum(prev.events), ...prevRates },
+      byReason: group(a.events, (e) => (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) as string),
+      byGroup: group(a.cohort, (e) => groupOf.get(e.shopId) ?? `loja:${e.shopId}`).map((x) => {
         const card = cardShops.get(x.key);
         const shopIds = card ? [...card.shops].filter((s) => groupOf.get(s) === x.key) : [x.key.slice(5)];
         const rev = shopIds.reduce((s, id) => s + (a.revenueByShop.get(id) ?? 0), 0);
@@ -108,7 +123,8 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         const rev = a.revenueByDate.get(date) ?? 0;
         return {
           date, amount: r2(x.amount), count: x.count, pending: r2(x.pending),
-          rate: rev > 0 ? x.amount / rev : null,
+          // Minilinha da taxa: pela safra (reembolsos dos pedidos vendidos neste dia).
+          rate: rev > 0 ? (cohortByDate.get(date) ?? 0) / rev : null,
           avgDays: x.days.length ? x.days.reduce((s, v) => s + v, 0) / x.days.length : null,
         };
       }),
