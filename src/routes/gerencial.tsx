@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, Loader2, Package,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, Loader2, Package, ShieldAlert, Target, TrendingUp, Truck, Undo2,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -18,7 +18,7 @@ import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 // mais o KPI do Atendimento e as Aprovações de troca/reembolso (fila e análise),
 // que vieram do Atendimento.
 // ?tab=aprovacoes / ?tab=reembolsos abre direto nelas (links das notificações).
-const TAB_KEYS = ["resultado", "perdas", "entrega", "equipe", "kpi", "alertas", "aprovacoes", "reembolsos"] as const;
+const TAB_KEYS = ["alertas", "resultado", "aprovacoes", "reembolsos", "kpi"] as const;
 type Tab = (typeof TAB_KEYS)[number];
 
 export const Route = createFileRoute("/gerencial")({
@@ -36,7 +36,6 @@ const monthName = (m: string) => `${MONTHS[Number(m.slice(5, 7)) - 1]}/${m.slice
 const usd = (v: number | null | undefined) => (v == null ? "—" : `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const pct = (v: number | null | undefined, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d).replace(".", ",")}%`);
 const num = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR"));
-const mins = (m: number | null | undefined) => (m == null ? "—" : m < 60 ? `${m} min` : `${(m / 60).toFixed(1).replace(".", ",")} h`);
 
 function lastMonths(n: number) {
   const today = isoTodayUS();
@@ -47,8 +46,8 @@ function lastMonths(n: number) {
 }
 
 const TABS: [Tab, string][] = [
-  ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Entrega"], ["equipe", "Equipe"], ["kpi", "KPI Atendimento"], ["alertas", "Alertas"],
-  ["aprovacoes", "Fila de aprovação"], ["reembolsos", "Análise de reembolsos"],
+  ["alertas", "Alertas"], ["resultado", "Resultado"], ["aprovacoes", "Fila de aprovação"],
+  ["reembolsos", "Análise de reembolsos"], ["kpi", "KPI Atendimento"],
 ];
 const APPROVAL_TABS: Tab[] = ["aprovacoes", "reembolsos"];
 
@@ -57,8 +56,8 @@ function GerencialPage() {
   const [month, setMonth] = useState(months[0]);
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const tab: Tab = search.tab ?? "resultado";
-  const setTab = (t: Tab) => navigate({ search: t === "resultado" ? {} : { tab: t }, replace: true });
+  const tab: Tab = search.tab ?? "alertas";
+  const setTab = (t: Tab) => navigate({ search: t === "alertas" ? {} : { tab: t }, replace: true });
   const approvalsTab = APPROVAL_TABS.includes(tab);
 
   const fn = useServerFn(getGerencial);
@@ -102,11 +101,8 @@ function GerencialPage() {
           : tab === "reembolsos" ? <SupportRefundAnalytics onOpenConversation={openConversation} />
           : q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
-          : tab === "resultado" ? <Resultado d={d} />
-          : tab === "perdas" ? <Perdas d={d} />
-          : tab === "entrega" ? <Entrega d={d} />
-          : tab === "equipe" ? <Equipe d={d} />
-          : <Alerts d={d} />}
+          : tab === "alertas" ? <Alerts d={d} />
+          : <Resultado d={d} />}
       </div>
     </PageShell>
   );
@@ -114,51 +110,92 @@ function GerencialPage() {
 
 // ─── Peças ────────────────────────────────────────────────────────────────────
 
-function Card({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
+function Panel({ icon: Icon, title, right, children, className = "" }: { icon?: any; title?: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-border bg-card p-4 min-w-0 ${className}`}>
-      {title && <p className="text-sm font-semibold mb-3">{title}</p>}
+    <div className={`rounded-3xl border border-border bg-card p-5 min-w-0 ${className}`}>
+      {title && (
+        <div className="flex items-center gap-2.5 mb-4">
+          {Icon && <span className="size-8 rounded-xl grid place-items-center bg-primary/10 text-primary"><Icon className="size-4" /></span>}
+          <p className="text-sm font-semibold">{title}</p>
+          <div className="ml-auto">{right}</div>
+        </div>
+      )}
       {children}
     </div>
   );
 }
 
-// Subiu/caiu vs. o mês anterior. lowerIsBetter: reembolso, chargeback, tempo.
-function Delta({ cur, prev, lowerIsBetter, current }: { cur: number | null | undefined; prev: number | null | undefined; lowerIsBetter?: boolean; current?: boolean }) {
+// Subiu/caiu vs. o mês anterior. lowerIsBetter: reembolso.
+function Delta({ cur, prev, lowerIsBetter, label }: { cur: number | null | undefined; prev: number | null | undefined; lowerIsBetter?: boolean; label?: string }) {
   if (cur == null || !prev) return null;
   const p = Math.round(((cur - prev) / Math.abs(prev)) * 100);
   if (!Number.isFinite(p)) return null;
   const good = lowerIsBetter ? p <= 0 : p >= 0;
   return (
-    <span title={current ? "Mês em andamento contra o mês anterior inteiro" : "Contra o mês anterior"}
-      className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${good ? "text-emerald-600" : "text-rose-600"}`}>
+    <span title={label} className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${good ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>
       {p <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(p)}%
     </span>
   );
 }
 
-function Stat({ label, value, sub, delta, tone }: { label: string; value: string; sub?: React.ReactNode; delta?: React.ReactNode; tone?: "bad" | "good" }) {
+// Barra empilhada (2px entre as partes) com legenda: cor, rótulo, valor e %.
+type Seg = { key: string; label: string; value: number; color: string; hint?: string };
+function StackBar({ segs, total, money = true }: { segs: Seg[]; total: number; money?: boolean }) {
+  const fmt = (v: number) => (money ? usd(v) : num(v));
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 min-w-0">
-      <p className="text-xs text-muted-foreground truncate">{label}</p>
-      <div className="flex items-baseline gap-2">
-        <p className={`text-xl font-semibold tracking-tight whitespace-nowrap ${tone === "bad" ? "text-rose-600" : tone === "good" ? "text-emerald-600" : ""}`}>{value}</p>
-        {delta}
+    <div>
+      <div className="flex h-3.5 gap-0.5 rounded-full overflow-hidden bg-muted">
+        {segs.filter((x) => x.value > 0).map((x) => (
+          <div key={x.key} className={x.color} style={{ width: `${total > 0 ? (x.value / total) * 100 : 0}%` }}
+            title={`${x.label}: ${fmt(x.value)} (${pct(total ? x.value / total : 0, 0)})`} />
+        ))}
       </div>
-      {sub && <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 mt-4">
+        {segs.map((x) => (
+          <div key={x.key} className="min-w-0" title={x.hint}>
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className={`size-2 rounded-full shrink-0 ${x.color}`} /><span className="truncate">{x.label}</span>
+            </div>
+            <p className="text-sm font-semibold whitespace-nowrap">
+              {fmt(x.value)}
+              <span className="ml-1 text-[11px] font-normal text-muted-foreground">{pct(total ? x.value / total : 0, 0)}</span>
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function Bar({ value, max }: { value: number; max: number }) {
+// Anel de progresso da meta.
+function Ring({ value, tone }: { value: number; tone: string }) {
+  const r = 52, c = 2 * Math.PI * r, v = Math.max(0, Math.min(1, value));
   return (
-    <div className="h-2 rounded-full bg-muted overflow-hidden">
-      <div className="h-full rounded-full bg-primary" style={{ width: `${max > 0 ? Math.max(2, Math.min(100, (value / max) * 100)) : 0}%` }} />
+    <svg viewBox="0 0 120 120" className="size-32 -rotate-90" aria-hidden>
+      <circle cx="60" cy="60" r={r} fill="none" strokeWidth="10" className="stroke-muted" />
+      <circle cx="60" cy="60" r={r} fill="none" strokeWidth="10" strokeLinecap="round" className={tone} strokeDasharray={`${c * v} ${c}`} />
+    </svg>
+  );
+}
+
+function MiniStat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+      <div className="text-base font-semibold whitespace-nowrap">{value}</div>
+      {sub && <p className="text-[11px] text-muted-foreground truncate">{sub}</p>}
     </div>
   );
 }
 
-const th = "text-[11px] text-muted-foreground font-medium pb-2";
+function MiniBar({ value, max, color = "bg-primary" }: { value: number; max: number; color?: string }) {
+  return (
+    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+      <div className={`h-full rounded-full ${color}`} style={{ width: `${max > 0 ? Math.max(3, Math.min(100, (value / max) * 100)) : 0}%` }} />
+    </div>
+  );
+}
+
 const Empty = ({ text = "Nada no período." }: { text?: string }) => <p className="text-xs text-muted-foreground py-3 text-center">{text}</p>;
 
 // ─── Alertas ─────────────────────────────────────────────────────────────────
@@ -173,178 +210,238 @@ function Alerts({ d }: { d: Data }) {
     );
   }
   return (
-    <section>
-      <div className="grid gap-2 md:grid-cols-2">
-        {d.alerts.map((a, i) => (
-          <button key={i} onClick={() => navigate({ href: a.link })}
-            className={`text-left rounded-2xl border p-3 flex gap-3 hover:shadow-sm transition ${a.level === "critico" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
-            <AlertTriangle className={`size-4 mt-0.5 shrink-0 ${a.level === "critico" ? "text-rose-600" : "text-amber-500"}`} />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">{a.title}</p>
-              <p className="text-xs text-muted-foreground">{a.detail}</p>
-            </div>
-          </button>
-        ))}
-      </div>
-    </section>
+    <div className="grid gap-2 md:grid-cols-2">
+      {d.alerts.map((a, i) => (
+        <button key={i} onClick={() => navigate({ href: a.link })}
+          className={`text-left rounded-2xl border p-3 flex gap-3 hover:shadow-sm transition ${a.level === "critico" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+          <AlertTriangle className={`size-4 mt-0.5 shrink-0 ${a.level === "critico" ? "text-rose-600" : "text-amber-500"}`} />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{a.title}</p>
+            <p className="text-xs text-muted-foreground">{a.detail}</p>
+          </div>
+        </button>
+      ))}
+    </div>
   );
 }
 
 // ─── Resultado do mês ────────────────────────────────────────────────────────
+// Cada número uma vez: lucro e para onde foram as vendas (mesma conta de Metas),
+// meta, depois da venda (taxa de reembolso pela data do pedido + chargebacks),
+// produtos que mais custam e entrega. Atendimento fica na subaba KPI Atendimento.
 
 function Resultado({ d }: { d: Data }) {
-  const a = d.resultado.atual, p = d.resultado.anterior, m = d.resultado.meta;
-  const prevLabel = monthName(d.prevMonth);
-  const steps = a ? [
-    ["Vendas", a.faturamento, false], ["Reembolsos", a.reembolsos, true], ["Chargebacks", a.chargebacks, true],
-    ["Custo dos produtos", a.custo, true], ["Anúncios", a.anuncios, true], ["Taxas Shopify", a.taxas, true],
-  ] as const : [];
+  const prev = monthName(d.prevMonth);
+  const vs = d.current ? `Mês em andamento contra ${prev} inteiro` : `Contra ${prev}`;
   return (
-    <section>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
-        <Stat label="Vendas" value={usd(a?.faturamento)} delta={<Delta cur={a?.faturamento} prev={p?.faturamento} current={d.current} />}
-          sub={<>{num(a?.pedidos)} pedidos · {prevLabel}: {usd(p?.faturamento)}</>} />
-        <Stat label="Lucro" value={usd(a?.lucro)} tone={a && a.lucro < 0 ? "bad" : undefined} delta={<Delta cur={a?.lucro} prev={p?.lucro} current={d.current} />}
-          sub={<>{prevLabel}: {usd(p?.lucro)}</>} />
-        <Stat label="Margem" value={pct(a?.margem)} sub={<>lucro ÷ vendas · {prevLabel}: {pct(p?.margem)}</>} />
-        <Stat label="Meta" value={m ? pct(m.realizado != null && m.meta ? m.realizado / m.meta : null, 0) : "Sem meta"}
-          tone={m?.status === "batida" ? "good" : m?.status === "nao_batida" ? "bad" : undefined}
-          sub={m ? <>{usd(m.realizado)} de {usd(m.meta)}{m.projecao != null && <> · projeção {usd(m.projecao)}</>}</> : <Link to="/metas" className="text-primary">definir em Metas</Link>} />
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Money d={d} vs={vs} />
+        <Meta meta={d.resultado.meta} current={d.current} />
       </div>
-      <div className="grid gap-3 xl:grid-cols-2">
-        <Card title="Conta do lucro">
-          {!a ? <Empty /> : (
-            <div className="space-y-1.5 text-xs">
-              {steps.map(([label, v, minus]) => (
-                <div key={label} className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">{minus ? "− " : ""}{label}</span>
-                  <span className="font-medium whitespace-nowrap">{usd(v)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between gap-3 border-t border-border pt-1.5 text-sm">
-                <span className="font-semibold">= Lucro</span>
-                <span className={`font-semibold ${a.lucro < 0 ? "text-rose-600" : ""}`}>{usd(a.lucro)}</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground pt-1">Anúncio por pedido: {usd(a.cpa)}. Mesma conta de Metas e Dashboard (reembolso pela data em que foi feito).</p>
-            </div>
-          )}
-        </Card>
-        <Card title="Por grupo">
-          {!d.resultado.byGroup.length ? <Empty text="Nenhum grupo ativo." /> : (
-            <table className="w-full text-xs">
-              <thead><tr><th className={`${th} text-left`}>Grupo</th><th className={`${th} text-right`}>Vendas</th><th className={`${th} text-right`}>Lucro</th><th className={`${th} text-right`}>Margem</th></tr></thead>
-              <tbody>
-                {d.resultado.byGroup.map((g) => (
-                  <tr key={g.id} className="border-t border-border">
-                    <td className="py-2 pr-2">
-                      <Link to="/shops/lojas-grupos/$cardId" params={{ cardId: g.id }} search={{ tab: "dashboard" as const }} className="font-medium hover:text-primary">{g.name}</Link>
-                      <p className="text-[11px] text-muted-foreground">{g.shops} loja{g.shops === 1 ? "" : "s"} · {num(g.pedidos)} pedidos</p>
-                    </td>
-                    <td className="text-right whitespace-nowrap">{usd(g.faturamento)}</td>
-                    <td className={`text-right whitespace-nowrap font-semibold ${g.lucro < 0 ? "text-rose-600" : ""}`}>{usd(g.lucro)}</td>
-                    <td className="text-right">{pct(g.margem)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <PosVenda d={d} vs={vs} />
+        <Produtos d={d} />
+        <Entrega d={d} />
       </div>
-    </section>
+      {d.resultado.byGroup.length > 1 && <Grupos d={d} />}
+    </div>
   );
 }
 
-// ─── Quanto se perde depois da venda ─────────────────────────────────────────
-
-function Perdas({ d }: { d: Data }) {
-  const x = d.perdas;
-  const prevLabel = monthName(d.prevMonth);
-  const maxReason = Math.max(0, ...x.topMotivos.map((r) => r.amount));
+function Money({ d, vs }: { d: Data; vs: string }) {
+  const a = d.resultado.atual, p = d.resultado.anterior;
+  const prev = monthName(d.prevMonth);
+  if (!a) return <Panel className="xl:col-span-2"><Empty /></Panel>;
+  const segs: Seg[] = [
+    { key: "custo", label: "Custo dos produtos", value: a.custo, color: "bg-slate-400" },
+    { key: "anuncios", label: "Anúncios", value: a.anuncios, color: "bg-sky-500" },
+    { key: "reembolsos", label: "Reembolsos", value: a.reembolsos, color: "bg-amber-500", hint: "Pela data em que o reembolso foi feito (mesma conta de Metas)" },
+    { key: "chargebacks", label: "Chargebacks", value: a.chargebacks, color: "bg-rose-400" },
+    { key: "taxas", label: "Taxas Shopify", value: a.taxas, color: "bg-violet-400" },
+    { key: "lucro", label: a.lucro >= 0 ? "Lucro" : "Prejuízo", value: Math.abs(a.lucro), color: a.lucro >= 0 ? "bg-emerald-500" : "bg-rose-700" },
+  ];
+  // Com prejuízo, os gastos passam das vendas: a barra vai até o total dos gastos.
+  const total = a.lucro >= 0 ? a.faturamento : a.faturamento - a.lucro;
   return (
-    <section>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
-        <Stat label="Total perdido" value={usd(x.total)} delta={<Delta cur={x.total} prev={x.totalPrev} lowerIsBetter current={d.current} />}
-          sub={<>{pct(x.faturamento ? x.total / x.faturamento : null)} das vendas · reembolsos + chargebacks perdidos + taxas</>} />
-        <Stat label="Reembolsos" value={usd(x.reembolsos.valor)} delta={<Delta cur={x.reembolsos.taxa} prev={x.reembolsosPrev.taxa} lowerIsBetter current={d.current} />}
-          sub={<>{x.reembolsos.pedidos} pedidos · {pct(x.reembolsos.taxa)} dos vendidos · {prevLabel}: {pct(x.reembolsosPrev.taxa)}</>} />
-        <Stat label="Chargebacks abertos no mês" value={num(x.chargebacks.abertos)} delta={<Delta cur={x.chargebacks.abertos} prev={x.chargebacksPrev.abertos} lowerIsBetter current={d.current} />}
-          sub={<>{x.chargebacks.perdidos} perdidos ({usd(x.chargebacks.valorPerdido)}) · {x.chargebacks.ganhos} ganhos · {x.chargebacks.emAndamento} em andamento</>} />
-        <Stat label="Evitados" value={num(x.chargebacks.evitados + x.disputifier.count)}
-          sub={<>{x.disputifier.count} pelo Disputifier ({usd(x.disputifier.valor)} devolvidos) · taxas Shopify {usd(x.taxas)}</>} />
+    <div className="xl:col-span-2 rounded-3xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-6 min-w-0">
+      <div className="flex flex-wrap items-start gap-6">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><TrendingUp className="size-3.5" /> Lucro de {monthName(d.month)}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <p className={`text-4xl font-semibold tracking-tight ${a.lucro < 0 ? "text-rose-600" : ""}`}>{usd(a.lucro)}</p>
+            <Delta cur={a.lucro} prev={p?.lucro} label={vs} />
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">Margem {pct(a.margem)} · {prev}: {usd(p?.lucro)} ({pct(p?.margem)})</p>
+        </div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:min-w-[280px]">
+          <MiniStat label="Vendas" value={<span className="inline-flex items-center gap-1.5">{usd(a.faturamento)} <Delta cur={a.faturamento} prev={p?.faturamento} label={vs} /></span>} />
+          <MiniStat label="Pedidos" value={num(a.pedidos)} sub={p ? `${prev}: ${num(p.pedidos)}` : undefined} />
+          <MiniStat label="Ticket médio" value={usd(a.pedidos ? a.faturamento / a.pedidos : null)} />
+          <MiniStat label="Anúncio por pedido" value={usd(a.cpa)} sub={p?.cpa != null ? `${prev}: ${usd(p.cpa)}` : undefined} />
+        </div>
       </div>
-      <div className="grid gap-3 xl:grid-cols-2">
-        <Card title="Motivos que mais custam">
-          {!x.topMotivos.length ? <Empty /> : x.topMotivos.map((r) => (
-            <div key={r.key} className="py-1.5 text-xs">
-              <div className="flex items-center gap-3 mb-1">
-                <span className="truncate flex-1 min-w-0">{r.label}</span>
-                <span className="font-semibold whitespace-nowrap">{usd(r.amount)}</span>
-                <span className="w-8 text-right text-muted-foreground">{r.count}</span>
-              </div>
-              <Bar value={r.amount} max={maxReason} />
+      <div className="mt-6">
+        <p className="text-xs font-semibold mb-2">Para onde foram as vendas</p>
+        <StackBar segs={segs} total={total} />
+      </div>
+    </div>
+  );
+}
+
+function Meta({ meta: m, current }: { meta: Data["resultado"]["meta"]; current: boolean }) {
+  if (!m) {
+    return (
+      <Panel icon={Target} title="Meta do mês">
+        <div className="py-8 text-center text-sm text-muted-foreground">Sem meta pra este mês. <Link to="/metas" className="text-primary font-medium">Definir em Metas</Link></div>
+      </Panel>
+    );
+  }
+  const done = m.realizado != null && m.meta ? m.realizado / m.meta : 0;
+  const onPace = m.projecao != null && m.projecao >= m.meta;
+  const ok = m.status === "batida" || (current && onPace);
+  const label = m.status === "batida" ? "Batida" : m.status === "nao_batida" ? "Não batida" : onPace ? "No ritmo de bater" : "Abaixo do ritmo";
+  return (
+    <Panel icon={Target} title="Meta do mês" right={
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ok ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>{label}</span>
+    }>
+      <div className="flex items-center gap-5">
+        <div className="relative shrink-0">
+          <Ring value={done} tone={ok ? "stroke-emerald-500" : "stroke-primary"} />
+          <div className="absolute inset-0 grid place-items-center text-center">
+            <div>
+              <p className={`text-2xl font-semibold ${done < 0 ? "text-rose-600" : ""}`}>{pct(done, 0)}</p>
+              <p className="text-[10px] text-muted-foreground">da meta</p>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-3 min-w-0">
+          <MiniStat label="Realizado" value={usd(m.realizado)} />
+          <MiniStat label="Meta" value={usd(m.meta)} />
+          {current && m.projecao != null && (
+            <MiniStat label="Projeção no fim do mês" value={<span className={onPace ? "text-emerald-600" : "text-rose-600"}>{usd(m.projecao)}</span>} />
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function PosVenda({ d, vs }: { d: Data; vs: string }) {
+  const x = d.perdas;
+  const maxReason = Math.max(0, ...x.topMotivos.map((r) => r.amount));
+  const chips = [
+    ["Abertos", x.chargebacks.abertos, ""],
+    ["Perdidos", x.chargebacks.perdidos, "text-rose-600"],
+    ["Ganhos", x.chargebacks.ganhos, "text-emerald-600"],
+    ["Evitados", x.chargebacks.evitados + x.disputifier.count, "text-sky-600"],
+  ] as const;
+  return (
+    <Panel icon={Undo2} title="Depois da venda">
+      <p className="text-[11px] text-muted-foreground">Taxa de reembolso</p>
+      <div className="flex items-center gap-2">
+        <p className="text-3xl font-semibold tracking-tight">{pct(x.reembolsos.taxa)}</p>
+        <Delta cur={x.reembolsos.taxa} prev={x.reembolsosPrev.taxa} lowerIsBetter label={vs} />
+      </div>
+      <p className="text-[11px] text-muted-foreground">{x.reembolsos.pedidos} dos pedidos vendidos no mês tiveram reembolso</p>
+      <div className="mt-4 rounded-2xl bg-muted/50 p-3">
+        <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5 mb-2"><ShieldAlert className="size-3.5" /> Chargebacks abertos no mês</p>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          {chips.map(([l, v, c]) => (
+            <div key={l}>
+              <p className={`text-lg font-semibold ${c}`}>{num(v)}</p>
+              <p className="text-[10px] text-muted-foreground">{l}</p>
             </div>
           ))}
-        </Card>
-        <Card title="Produtos que mais custam">
-          {!x.topProdutos.length ? <Empty /> : (
-            <table className="w-full text-xs">
-              <thead><tr><th className={`${th} text-left`}>Produto</th><th className={`${th} text-right`}>Reembolsado</th><th className={`${th} text-right`}>Unid.</th><th className={`${th} text-right`}>Taxa</th></tr></thead>
-              <tbody>
-                {x.topProdutos.map((p) => (
-                  <tr key={p.name} className="border-t border-border">
-                    <td className="py-2 pr-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {p.image ? <img src={p.image} alt="" className="size-7 rounded-md object-cover shrink-0" /> : <span className="size-7 rounded-md bg-muted grid place-items-center shrink-0"><Package className="size-3.5 text-muted-foreground" /></span>}
-                        <span className="truncate max-w-[200px]" title={p.name}>{p.name}</span>
-                      </div>
-                    </td>
-                    <td className="text-right whitespace-nowrap font-semibold">{usd(p.amount)}</td>
-                    <td className="text-right whitespace-nowrap">{p.units}/{p.sold}</td>
-                    <td className="text-right">{pct(p.rate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
+        </div>
+        {x.disputifier.count > 0 && <p className="text-[10px] text-muted-foreground text-center mt-1.5">{x.disputifier.count} evitados pelo Disputifier</p>}
       </div>
-      <p className="text-[11px] text-muted-foreground mt-2">Reembolsos pela data do pedido (pedidos vendidos no mês e todos os reembolsos deles), igual à Análise de reembolsos. Chargebacks pela data em que abriram.</p>
-    </section>
+      <p className="text-[11px] font-medium text-muted-foreground mt-4 mb-2">Motivos que mais custam</p>
+      {!x.topMotivos.length ? <Empty /> : x.topMotivos.slice(0, 3).map((r) => (
+        <div key={r.key} className="py-1 text-xs">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="truncate flex-1 min-w-0">{r.label}</span>
+            <span className="font-semibold whitespace-nowrap">{usd(r.amount)}</span>
+          </div>
+          <MiniBar value={r.amount} max={maxReason} color="bg-amber-500" />
+        </div>
+      ))}
+    </Panel>
   );
 }
 
-// ─── Fornecedor e entrega ────────────────────────────────────────────────────
+function Produtos({ d }: { d: Data }) {
+  const list = d.perdas.topProdutos;
+  const max = Math.max(0, ...list.map((p) => p.amount));
+  return (
+    <Panel icon={Package} title="Produtos que mais custam">
+      {!list.length ? <Empty /> : (
+        <div className="space-y-3">
+          {list.map((p) => (
+            <div key={p.name} className="flex items-center gap-3">
+              {p.image
+                ? <img src={p.image} alt="" className="size-10 rounded-xl object-cover shrink-0 border border-border" />
+                : <span className="size-10 rounded-xl bg-muted grid place-items-center shrink-0"><Package className="size-4 text-muted-foreground" /></span>}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-medium truncate flex-1" title={p.name}>{p.name}</p>
+                  <p className="text-xs font-semibold whitespace-nowrap">{usd(p.amount)}</p>
+                </div>
+                <MiniBar value={p.amount} max={max} />
+                <p className="text-[10px] text-muted-foreground mt-1">{p.units} de {p.sold} reembolsadas · {pct(p.rate)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
 
 function Entrega({ d }: { d: Data }) {
   const e = d.entrega;
+  const segs: Seg[] = [
+    { key: "ok", label: "Entregues", value: e.entregues, color: "bg-emerald-500" },
+    { key: "transito", label: "A caminho", value: e.emTransito, color: "bg-sky-500" },
+    { key: "sem", label: "Sem envio", value: e.semEnvio, color: "bg-slate-300 dark:bg-slate-600" },
+    { key: "prob", label: "Com problema", value: e.problema, color: "bg-rose-500" },
+  ];
   return (
-    <section>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <Stat label="Da compra à entrega" value={e.diasMedios == null ? "—" : `${e.diasMedios.toFixed(0)} dias`} sub={<>média dos entregues · {pct(e.ate20dias, 0)} em até 20 dias</>} />
-        <Stat label="Entregues" value={`${num(e.entregues)} de ${num(e.pedidos)}`} sub={<>{num(e.emTransito)} a caminho · {num(e.semEnvio)} sem envio</>} />
-        <Stat label="Precisando de atenção" value={num(e.atencao)} tone={e.atencao ? "bad" : undefined} sub={<>parados, atrasados ou com problema</>} />
-        <Stat label="Com problema" value={num(e.problema)} sub={<>problema na entrega ou devolvido</>} />
+    <Panel icon={Truck} title="Entrega dos pedidos do mês" right={e.atencao > 0 && (
+      <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold bg-amber-500/10 text-amber-600">{e.atencao} pedindo atenção</span>
+    )}>
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="rounded-2xl bg-muted/50 p-3">
+          <p className="text-[11px] text-muted-foreground">Da compra à entrega</p>
+          <p className="text-2xl font-semibold">{e.diasMedios == null ? "—" : `${e.diasMedios.toFixed(0)} dias`}</p>
+        </div>
+        <div className="rounded-2xl bg-muted/50 p-3">
+          <p className="text-[11px] text-muted-foreground">Entregues em até 20 dias</p>
+          <p className="text-2xl font-semibold">{pct(e.ate20dias, 0)}</p>
+        </div>
       </div>
-    </section>
+      <StackBar segs={segs} total={e.pedidos} money={false} />
+    </Panel>
   );
 }
 
-// ─── Equipe ──────────────────────────────────────────────────────────────────
-
-function Equipe({ d }: { d: Data }) {
-  const at = d.equipe.atendimento;
+// Só com mais de um grupo (com um, repetiria o lucro do topo).
+function Grupos({ d }: { d: Data }) {
   return (
-    <section>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <Stat label="Conversas no Atendimento" value={num(at?.conversas)} delta={<Delta cur={at?.conversas} prev={at?.conversasPrev} lowerIsBetter />}
-          sub={<>{at?.contatosPor100 != null ? `${String(at.contatosPor100).replace(".", ",")} por 100 pedidos · ` : ""}{num(at?.emAberto)} em aberto</>} />
-        <Stat label="1ª resposta" value={mins(at?.primeiraRespostaMin)} delta={<Delta cur={at?.primeiraRespostaMin} prev={at?.primeiraRespostaPrevMin} lowerIsBetter />}
-          tone={at && at.primeiraRespostaMin != null && at.primeiraRespostaMin > at.metaPrimeiraRespostaMin ? "bad" : undefined}
-          sub={<>meta {mins(at?.metaPrimeiraRespostaMin)} · horário comercial</>} />
-        <Stat label="Resolução" value={mins(at?.resolucaoMin)} tone={at && at.resolucaoMin != null && at.resolucaoMin > at.metaResolucaoMin ? "bad" : undefined}
-          sub={<>meta {mins(at?.metaResolucaoMin)} · {pct(at?.taxaResolucao == null ? null : at.taxaResolucao / 100, 0)} resolvidas</>} />
-        <Stat label="Aprovação de reembolso" value={d.equipe.aprovacaoHoras == null ? "—" : `${d.equipe.aprovacaoHoras.toFixed(1).replace(".", ",")} h`} sub={<>do pedido à decisão, em média</>} />
+    <Panel title="Por grupo">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {d.resultado.byGroup.map((g) => (
+          <Link key={g.id} to="/shops/lojas-grupos/$cardId" params={{ cardId: g.id }} search={{ tab: "dashboard" as const }}
+            className="rounded-2xl border border-border p-4 hover:border-primary/40 transition-colors">
+            <p className="text-sm font-semibold">{g.name}</p>
+            <p className="text-[11px] text-muted-foreground">{g.shops} loja{g.shops === 1 ? "" : "s"} · {num(g.pedidos)} pedidos</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <p className={`text-lg font-semibold ${g.lucro < 0 ? "text-rose-600" : ""}`}>{usd(g.lucro)}</p>
+              <p className="text-xs text-muted-foreground">{pct(g.margem)} de {usd(g.faturamento)}</p>
+            </div>
+          </Link>
+        ))}
       </div>
-    </section>
+    </Panel>
   );
 }

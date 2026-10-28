@@ -12,15 +12,14 @@ import { personNames } from "@/lib/support-approval.server";
 import { needsAttention } from "@/lib/logistics-kpis";
 import { refundReasonLabel } from "@/lib/refund-reasons";
 
-// Gerencial: a operação do mês numa tela só, juntando o que fica espalhado em
-// Metas, Dashboard, Análise de reembolsos, Chargebacks, Rastreamento, KPI do
-// Atendimento e Tarefas — sempre com as mesmas contas dessas telas:
-//  1. Resultado: lucro (mesma conta de Metas/Dashboard), meta e projeção, por grupo.
-//  2. Perdas depois da venda: reembolsos pela data do pedido (= Análise de
-//     reembolsos), chargebacks abertos no mês, taxas da Shopify.
-//  3. Entrega: pedidos vendidos no mês.
-//  4. Equipe: Atendimento (KPI), tarefas, tempo de aprovação de reembolso.
-//  5. Alertas: o que precisa de decisão agora.
+// Gerencial › Resultado e Alertas: a operação do mês, com as mesmas contas de
+// Metas, Dashboard, Análise de reembolsos, Chargebacks e Rastreamento:
+//  - lucro e as partes dele (mesma conta de Metas/Dashboard), meta e projeção, por grupo;
+//  - depois da venda: taxa de reembolso pela data do pedido (= Análise de
+//    reembolsos), chargebacks abertos no mês, motivos e produtos que mais custam;
+//  - entrega dos pedidos vendidos no mês;
+//  - alertas: o que precisa de decisão agora (inclui tarefas atrasadas e
+//    conversas sem resposta, do Atendimento).
 // Mês atual comparado com o mês anterior inteiro (fechado).
 
 type Ctx = { ownerId: string; role: WorkspaceRole; permissions: WorkspacePermission[] };
@@ -62,7 +61,7 @@ export const getGerencial = createServerFn({ method: "GET" })
       shopIds.length
         ? selectAll<any>(supabaseAdmin.from("shop_order_disputes").select("status,amount,initiated_at")
             .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
-            .gte("initiated_at", `${prevFrom}T00:00:00Z`).lte("initiated_at", `${to}T23:59:59Z`))
+            .gte("initiated_at", `${from}T00:00:00Z`).lte("initiated_at", `${to}T23:59:59Z`))
         : empty,
       shopIds.length
         ? supabaseAdmin.from("shop_order_disputes").select("id,amount,evidence_due_by").eq("user_id", ownerId)
@@ -131,16 +130,12 @@ export const getGerencial = createServerFn({ method: "GET" })
       reasons.set(k, x);
     }
     const products = productBreakdown(refunds);
-    const cb = cbStats(from, to), cbPrev = cbStats(prevFrom, prevTo);
+    const cb = cbStats(from, to);
     const rf = refundStats(refunds), rfPrev = refundStats(refundsPrev);
     const perdas = {
       reembolsos: rf, reembolsosPrev: rfPrev,
-      chargebacks: cb, chargebacksPrev: cbPrev,
-      disputifier: { count: disputifier.length, valor: sum(disputifier) },
-      taxas: r2(lucro?.taxas ?? 0),
-      total: r2(rf.valor + cb.valorPerdido + (lucro?.taxas ?? 0)),
-      totalPrev: r2(rfPrev.valor + cbPrev.valorPerdido + (lucroPrev?.taxas ?? 0)),
-      faturamento: r2(refunds.revenue), faturamentoPrev: r2(refundsPrev.revenue),
+      chargebacks: cb,
+      disputifier: { count: disputifier.length },
       topMotivos: [...reasons].map(([k, x]) => ({ key: k, label: k === "fora_app" ? "Direto na Shopify (sem motivo)" : k === "sem" ? "Sem motivo" : refundReasonLabel(k), count: x.count, amount: r2(x.amount) }))
         .sort((a, b) => b.amount - a.amount).slice(0, 5),
       topProdutos: [...products].sort((a, b) => b.amount - a.amount).slice(0, 5)
@@ -245,7 +240,7 @@ export const getGerencial = createServerFn({ method: "GET" })
         meta: goal ? { meta: goal.meta, realizado: goal.realizado, projecao: goal.projecao, status: goal.status } : null,
         byGroup,
       },
-      perdas, entrega, equipe, alerts,
+      perdas, entrega, alerts,
     };
   });
 
