@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import crypto from "crypto";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
@@ -251,7 +251,7 @@ export const getSupportKpis = createServerFn({ method: "GET" })
   });
 
 // KPIs do Atendimento num mês — subaba KPI Atendimento e aba Equipe do Gerencial.
-export async function supportKpisFor(ownerId: string, month: string) {
+export const supportKpisFor = createServerOnlyFn(async (ownerId: string, month: string) => {
   const range = monthRange(month);
   // Folga de 7 dias depois do fim pra achar respostas que vieram depois.
   const until = new Date(new Date(range.to).getTime() + 7 * 86_400_000).toISOString();
@@ -281,7 +281,7 @@ export async function supportKpisFor(ownerId: string, month: string) {
       resolutionMin: settings.data?.goal_resolution_min ?? DEFAULT_GOALS.resolutionMin,
     },
   };
-}
+});
 
 // Lojas do workspace (seletor de loja no painel do cliente).
 export const listSupportShops = createServerFn({ method: "GET" })
