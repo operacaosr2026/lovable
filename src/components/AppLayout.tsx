@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, FolderKanban, Target,
+  LayoutDashboard, FolderKanban, Target, Briefcase,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
   Brain, GraduationCap, Send, Swords,
 } from "lucide-react";
@@ -29,6 +29,7 @@ type NavItem = {
 // Cada aba tem sua permissão (Configurações > Membros); admin vê tudo.
 export const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
+  { to: "/gerencial", label: "Gerencial", icon: Briefcase, section: "gerencial" },
   { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet, section: "caixa" },
   { to: "/metas", label: "Metas", icon: Target, section: "metas" },
   { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
@@ -63,6 +64,7 @@ export const MEMBER_SETTINGS_PAGES: { path: string; section: Section }[] = [
 
 const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/gerencial", label: "Gerencial", icon: Briefcase },
   { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet },
   { to: "/metas", label: "Metas", icon: Target },
   { to: "/projects", label: "Projetos", icon: FolderKanban },

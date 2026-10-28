@@ -12,6 +12,7 @@ export const SECTIONS = [
   "journal",
   "sops",
   "dashboard",
+  "gerencial",
   "metas",
   "tarefas",
   "produtos",
