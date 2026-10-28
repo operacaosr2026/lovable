@@ -84,7 +84,7 @@ export async function checkProfitReports(ownerId: string) {
         const today = isoTodayUS();
         const shops = await companyShopIdsForMonth(ownerId, monthStartOf(today));
         lucroHoje = shops.length
-          ? await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, today, today)
+          ? await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, today, today, { panelRefunds: true })
           : { lucro: 0, pedidos: 0 };
       }
       await emitEvent(ownerId, {

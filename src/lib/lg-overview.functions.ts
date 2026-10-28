@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
-import { getGroupRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { costProductsFor } from "@/lib/product-links.server";
 import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
@@ -20,8 +20,12 @@ function addDays(iso: string, n: number) {
 
 // ─── Accumulated lucro for a date range (usado tanto pra meta ativa quanto histórico) ──
 
+// panelRefunds: reembolsos/chargebacks pela regra dos painéis (dia único =
+// diluído, hoje sem desconto) — o aviso "Lucro do dia" bate com o Dashboard em
+// Hoje. Sem ela (Metas etc.): o valor real que caiu no período.
 async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
+  opts: { panelRefunds?: boolean } = {},
 ) {
   const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
     // Só os produtos do pedido (raw->line_items), não o pedido inteiro da
@@ -40,7 +44,7 @@ async function computeAccumulatedLucro(
     costProductsFor(supabase, ownerId),
     // Reembolsos/chargebacks do banco (getGroupRefundsAndChargebacks) — mesma
     // fonte do Dashboard e do card de Lojas e Grupos, pra "lucro" bater nas telas.
-    getGroupRefundsAndChargebacks(ownerId, shop_ids, start_date, end_date),
+    (opts.panelRefunds ? getPanelRefundsAndChargebacks : getGroupRefundsAndChargebacks)(ownerId, shop_ids, start_date, end_date),
   ]);
 
   const costByShop = new Map<string, number>(
