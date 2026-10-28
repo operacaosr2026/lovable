@@ -125,7 +125,8 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         const rev = shopIds.reduce((s, id) => s + (a.revenueByShop.get(id) ?? 0), 0);
         const orders = shopIds.reduce((s, id) => s + (a.ordersByShop.get(id) ?? 0), 0);
         const name = card?.name ?? a.shops.find((s) => s.id === x.key.slice(5))?.name ?? "—";
-        return { ...x, name, shops: shopIds.length, orders, revenue: r2(rev), rate: orders > 0 ? (refundedByGroup.get(x.key)?.size ?? 0) / orders : null };
+        const refundedOrders = refundedByGroup.get(x.key)?.size ?? 0;
+        return { ...x, name, shops: shopIds.length, orders, refundedOrders, revenue: r2(rev), rate: orders > 0 ? refundedOrders / orders : null };
       }),
       byProduct: productBreakdown(a).slice(0, 30),
       daily: [...daily].map(([date, x]) => {

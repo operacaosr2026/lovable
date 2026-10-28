@@ -134,7 +134,7 @@ function Kpis({ d }: { d: Data }) {
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
         sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>dos pedidos do período · {pct(k.rateRevenue)} do faturamento · antes {pct(d.prev.rateOrders)} na mesma altura</>} />
+        sub={<>dos pedidos do período · antes {pct(d.prev.rateOrders)} na mesma altura</>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
@@ -282,9 +282,8 @@ function Groups({ d }: { d: Data }) {
             <tr className="text-[11px] text-muted-foreground">
               <th className="text-left font-medium pb-2">Grupo</th>
               <th className="text-center font-medium pb-2">Pedidos</th>
-              <th className="text-center font-medium pb-2 pl-3">Reembolsos</th>
+              <th className="text-center font-medium pb-2 pl-3">Com reembolso</th>
               <th className="text-center font-medium pb-2">Valor</th>
-              <th className="text-center font-medium pb-2">Faturamento</th>
               <th className="text-center font-medium pb-2">Taxa</th>
             </tr>
           </thead>
@@ -296,9 +295,8 @@ function Groups({ d }: { d: Data }) {
                   <p className="text-[11px] text-muted-foreground">{g.shops} loja{g.shops === 1 ? "" : "s"}</p>
                 </td>
                 <td className="text-center">{g.orders.toLocaleString("pt-BR")}</td>
-                <td className="text-center pl-3">{g.count}</td>
+                <td className="text-center pl-3">{g.refundedOrders}</td>
                 <td className="text-center font-semibold whitespace-nowrap pl-3">{usd(g.amount)}</td>
-                <td className="text-center whitespace-nowrap pl-3 text-muted-foreground">{usd(g.revenue)}</td>
                 <td className="text-center pl-3 font-semibold">{pct(g.rate)}</td>
               </tr>
             ))}
