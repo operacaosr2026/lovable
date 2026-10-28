@@ -6,7 +6,7 @@ export const DISPUTIFIER_APP = "3643375";   // source_name das transações de r
 // ou nota do alerta ("Ethoca Alert", "cdrn alerts"…). Devolve a rede da nota, se houver.
 export function disputifierRefund(r: any): { network: string | null } | null {
   const byApp = ((r?.transactions ?? []) as any[]).some((t) => String(t.source_name) === DISPUTIFIER_APP);
-  const network = String(r?.note ?? "").match(/(cdrn|ethoca|rdr)/i)?.[1] ?? null;
+  const network = String(r?.note ?? "").match(/\b(cdrn|ethoca|rdr)\b/i)?.[1] ?? null;
   return byApp || network ? { network } : null;
 }
 
