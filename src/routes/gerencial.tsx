@@ -35,7 +35,7 @@ function lastMonths(n: number) {
 }
 
 const TABS = [
-  ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Fornecedor e entrega"], ["equipe", "Equipe"], ["alertas", "Alertas"],
+  ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Entrega"], ["equipe", "Equipe"], ["alertas", "Alertas"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -182,7 +182,7 @@ function Resultado({ d }: { d: Data }) {
           tone={m?.status === "batida" ? "good" : m?.status === "nao_batida" ? "bad" : undefined}
           sub={m ? <>{usd(m.realizado)} de {usd(m.meta)}{m.projecao != null && <> · projeção {usd(m.projecao)}</>}</> : <Link to="/metas" className="text-primary">definir em Metas</Link>} />
       </div>
-      <div className="grid gap-3 xl:grid-cols-3">
+      <div className="grid gap-3 xl:grid-cols-2">
         <Card title="Conta do lucro">
           {!a ? <Empty /> : (
             <div className="space-y-1.5 text-xs">
@@ -219,24 +219,6 @@ function Resultado({ d }: { d: Data }) {
               </tbody>
             </table>
           )}
-        </Card>
-        <Card title="Por loja">
-          {!d.resultado.byShop.length ? <Empty /> : (
-            <table className="w-full text-xs">
-              <thead><tr><th className={`${th} text-left`}>Loja</th><th className={`${th} text-right`}>Pedidos</th><th className={`${th} text-right`}>Vendas</th><th className={`${th} text-right`}>Reembolso</th></tr></thead>
-              <tbody>
-                {d.resultado.byShop.map((s) => (
-                  <tr key={s.id} className="border-t border-border">
-                    <td className="py-2 pr-2 max-w-[140px] truncate" title={s.name}>{s.name}</td>
-                    <td className="text-right">{num(s.pedidos)}</td>
-                    <td className="text-right whitespace-nowrap">{usd(s.faturamento)}</td>
-                    <td className="text-right">{pct(s.taxaReembolso)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <p className="text-[11px] text-muted-foreground pt-2">Lucro só por grupo: o anúncio é do grupo, não da loja.</p>
         </Card>
       </div>
     </section>
@@ -308,37 +290,12 @@ function Entrega({ d }: { d: Data }) {
   const e = d.entrega;
   return (
     <section>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <Stat label="Da compra à entrega" value={e.diasMedios == null ? "—" : `${e.diasMedios.toFixed(0)} dias`} sub={<>média dos entregues · {pct(e.ate20dias, 0)} em até 20 dias</>} />
         <Stat label="Entregues" value={`${num(e.entregues)} de ${num(e.pedidos)}`} sub={<>{num(e.emTransito)} a caminho · {num(e.semEnvio)} sem envio</>} />
         <Stat label="Precisando de atenção" value={num(e.atencao)} tone={e.atencao ? "bad" : undefined} sub={<>parados, atrasados ou com problema</>} />
         <Stat label="Com problema" value={num(e.problema)} sub={<>problema na entrega ou devolvido</>} />
       </div>
-      <Card title="Reembolso por fornecedor (Produto errado e Defeito)">
-        {!d.fornecedores.length ? <Empty /> : (
-          <table className="w-full text-xs">
-            <thead><tr>
-              <th className={`${th} text-left`}>Fornecedor</th><th className={`${th} text-right`}>Vendidas</th>
-              <th className={`${th} text-right`}>Com defeito/erro</th><th className={`${th} text-right`}>Taxa</th><th className={`${th} text-right`}>Valor</th>
-            </tr></thead>
-            <tbody>
-              {d.fornecedores.map((f) => (
-                <tr key={f.name} className="border-t border-border">
-                  <td className="py-2 pr-2">
-                    <p className="font-medium">{f.name}</p>
-                    {f.produtos.length > 0 && <p className="text-[11px] text-muted-foreground truncate max-w-[320px]">{f.produtos.join(", ")}</p>}
-                  </td>
-                  <td className="text-right">{num(f.sold)}</td>
-                  <td className="text-right">{num(f.units)}</td>
-                  <td className="text-right font-semibold">{pct(f.rate)}</td>
-                  <td className="text-right whitespace-nowrap">{usd(f.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <p className="text-[11px] text-muted-foreground pt-2">Fornecedor = campo Fornecedor do produto em Produtos. Unidades vendidas no mês.</p>
-      </Card>
     </section>
   );
 }
@@ -346,10 +303,10 @@ function Entrega({ d }: { d: Data }) {
 // ─── Equipe ──────────────────────────────────────────────────────────────────
 
 function Equipe({ d }: { d: Data }) {
-  const at = d.equipe.atendimento, t = d.equipe.tarefas;
+  const at = d.equipe.atendimento;
   return (
     <section>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <Stat label="Conversas no Atendimento" value={num(at?.conversas)} delta={<Delta cur={at?.conversas} prev={at?.conversasPrev} lowerIsBetter />}
           sub={<>{at?.contatosPor100 != null ? `${String(at.contatosPor100).replace(".", ",")} por 100 pedidos · ` : ""}{num(at?.emAberto)} em aberto</>} />
         <Stat label="1ª resposta" value={mins(at?.primeiraRespostaMin)} delta={<Delta cur={at?.primeiraRespostaMin} prev={at?.primeiraRespostaPrevMin} lowerIsBetter />}
@@ -359,22 +316,6 @@ function Equipe({ d }: { d: Data }) {
           sub={<>meta {mins(at?.metaResolucaoMin)} · {pct(at?.taxaResolucao == null ? null : at.taxaResolucao / 100, 0)} resolvidas</>} />
         <Stat label="Aprovação de reembolso" value={d.equipe.aprovacaoHoras == null ? "—" : `${d.equipe.aprovacaoHoras.toFixed(1).replace(".", ",")} h`} sub={<>do pedido à decisão, em média</>} />
       </div>
-      <Card title={`Tarefas · ${t.atrasadas} atrasada${t.atrasadas === 1 ? "" : "s"} · ${t.concluidas} concluída${t.concluidas === 1 ? "" : "s"} no mês`}>
-        {!t.porPessoa.length ? <Empty /> : (
-          <table className="w-full text-xs">
-            <thead><tr><th className={`${th} text-left`}>Pessoa</th><th className={`${th} text-right`}>Atrasadas</th><th className={`${th} text-right`}>Concluídas no mês</th></tr></thead>
-            <tbody>
-              {t.porPessoa.map((p) => (
-                <tr key={p.name} className="border-t border-border">
-                  <td className="py-2">{p.name}</td>
-                  <td className={`text-right font-semibold ${p.atrasadas ? "text-rose-600" : ""}`}>{p.atrasadas}</td>
-                  <td className="text-right">{p.concluidas}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
     </section>
   );
 }

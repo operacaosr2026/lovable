@@ -18,8 +18,7 @@ import { refundReasonLabel } from "@/lib/refund-reasons";
 //  1. Resultado: lucro (mesma conta de Metas/Dashboard), meta e projeção, por grupo.
 //  2. Perdas depois da venda: reembolsos pela data do pedido (= Análise de
 //     reembolsos), chargebacks abertos no mês, taxas da Shopify.
-//  3. Entrega e fornecedor: pedidos vendidos no mês; reembolso por fornecedor
-//     (motivos Produto errado e Defeito).
+//  3. Entrega: pedidos vendidos no mês.
 //  4. Equipe: Atendimento (KPI), tarefas, tempo de aprovação de reembolso.
 //  5. Alertas: o que precisa de decisão agora.
 // Mês atual comparado com o mês anterior inteiro (fechado).
@@ -34,7 +33,6 @@ const prevMonthOf = (monthStart: string) => {
   d.setUTCMonth(d.getUTCMonth() - 1);
   return d.toISOString().slice(0, 10);
 };
-const SUPPLIER_REASONS = new Set(["produto_errado", "defeito"]);
 
 export type GerencialAlert = { level: "critico" | "atencao"; title: string; detail: string; link: string };
 
@@ -53,7 +51,7 @@ export const getGerencial = createServerFn({ method: "GET" })
 
     const [shopIds, prevShopIds] = await Promise.all([companyShopIdsForMonth(ownerId, from), companyShopIdsForMonth(ownerId, prevFrom)]);
     const empty = { data: [] as any[] };
-    const [lucro, lucroPrev, goals, refunds, refundsPrev, cardsRes, shopsRes, disputesRes, openDisputesRes, ordersRes, tasksRes, productsRes, alertSettings, support] = await Promise.all([
+    const [lucro, lucroPrev, goals, refunds, refundsPrev, cardsRes, disputesRes, openDisputesRes, ordersRes, tasksRes, alertSettings, support] = await Promise.all([
       shopIds.length ? computeAccumulatedLucroServer(supabaseAdmin, ownerId, shopIds, from, to) : null,
       prevShopIds.length ? computeAccumulatedLucroServer(supabaseAdmin, ownerId, prevShopIds, prevFrom, prevTo) : null,
       listCompanyGoalsFor(ownerId).catch(() => []),
@@ -61,7 +59,6 @@ export const getGerencial = createServerFn({ method: "GET" })
       refundAnalytics(ownerId, prevFrom, prevTo),
       supabaseAdmin.from("lg_card_shops").select("card_id,shop_id,lg_cards!inner(user_id,name,status)")
         .eq("lg_cards.user_id", ownerId).eq("lg_cards.status", "ativo"),
-      supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
       shopIds.length
         ? selectAll<any>(supabaseAdmin.from("shop_order_disputes").select("status,amount,initiated_at")
             .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
@@ -76,11 +73,9 @@ export const getGerencial = createServerFn({ method: "GET" })
             .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to))
         : empty,
       selectAll<any>(supabaseAdmin.from("tasks").select("id,title,status,due_date,assignee_id,completed_at").eq("user_id", ownerId)),
-      supabaseAdmin.from("products").select("id,supplier").eq("user_id", ownerId),
       getRefundAlertSettings(ownerId),
       supportKpisFor(ownerId, data.month).catch((e) => { console.error("gerencial support", e); return null; }),
     ]);
-    const shopName = new Map(((shopsRes.data ?? []) as any[]).map((s) => [s.id as string, s.name as string]));
 
     // ── 1. Resultado ─────────────────────────────────────────────────────────
     const goal = (goals as any[]).find((g) => g.month === from) ?? null;
@@ -102,15 +97,6 @@ export const getGerencial = createServerFn({ method: "GET" })
         margem: m.faturamentoBruto > 0 ? m.lucro / m.faturamentoBruto : null, lucro7d: week ? r2(week.lucro) : null,
       };
     }));
-    const ordersByShop = new Map<string, { pedidos: number; faturamento: number }>();
-    for (const [id, n] of refunds.ordersByShop) ordersByShop.set(id, { pedidos: n, faturamento: r2(refunds.revenueByShop.get(id) ?? 0) });
-    const refundedByShop = new Map<string, Set<string>>();
-    for (const e of refunds.events) refundedByShop.set(e.shopId, (refundedByShop.get(e.shopId) ?? new Set()).add(e.orderId));
-    const byShop = shopIds.map((id) => {
-      const x = ordersByShop.get(id) ?? { pedidos: 0, faturamento: 0 };
-      const refunded = refundedByShop.get(id)?.size ?? 0;
-      return { id, name: shopName.get(id) ?? "—", ...x, taxaReembolso: x.pedidos ? refunded / x.pedidos : null };
-    }).sort((a, b) => b.faturamento - a.faturamento);
     const resumo = (l: typeof lucro) => l && ({
       faturamento: r2(l.faturamentoBruto), lucro: r2(l.lucro), pedidos: l.pedidos,
       margem: l.faturamentoBruto > 0 ? l.lucro / l.faturamentoBruto : null,
@@ -161,7 +147,7 @@ export const getGerencial = createServerFn({ method: "GET" })
         .map((p) => ({ name: p.name, image: p.image, amount: p.amount, units: p.units, sold: p.sold, rate: p.rate })),
     };
 
-    // ── 3. Entrega e fornecedor ──────────────────────────────────────────────
+    // ── 3. Entrega ──────────────────────────────────────────────
     const now = Date.now();
     const orders = (ordersRes.data ?? []) as any[];
     const delivered = orders.filter((o) => o.delivery_status === "delivered" && o.delivered_at && !o.kpi_excluded);
@@ -176,26 +162,6 @@ export const getGerencial = createServerFn({ method: "GET" })
       diasMedios: daysToDeliver.length ? daysToDeliver.reduce((s, d) => s + d, 0) / daysToDeliver.length : null,
       ate20dias: daysToDeliver.length ? daysToDeliver.filter((d) => d <= 20).length / daysToDeliver.length : null,
     };
-    // Fornecedor do produto (card de Produtos). Só Produto errado e Defeito — é o que é culpa dele.
-    const supplierOf = new Map(((productsRes.data ?? []) as any[]).map((p) => [`card:${p.id}`, (p.supplier as string | null)?.trim() || null]));
-    const sup = new Map<string, { amount: number; units: number; sold: number; produtos: Set<string> }>();
-    for (const [key, n] of refunds.sold) {
-      const s = supplierOf.get(key) ?? "Sem fornecedor no produto";
-      const x = sup.get(s) ?? { amount: 0, units: 0, sold: 0, produtos: new Set() };
-      x.sold += n; sup.set(s, x);
-    }
-    for (const e of refunds.events) {
-      if (!SUPPLIER_REASONS.has(e.reason ?? "")) continue;
-      for (const p of e.products) {
-        const s = supplierOf.get(p.key) ?? "Sem fornecedor no produto";
-        const x = sup.get(s) ?? { amount: 0, units: 0, sold: 0, produtos: new Set() };
-        x.amount += p.amount; x.units += p.units; x.produtos.add(p.name);
-        sup.set(s, x);
-      }
-    }
-    const fornecedores = [...sup].filter(([, x]) => x.amount > 0 || x.sold > 0)
-      .map(([name, x]) => ({ name, amount: r2(x.amount), units: x.units, sold: x.sold, rate: x.sold ? x.units / x.sold : null, produtos: [...x.produtos].slice(0, 3) }))
-      .sort((a, b) => b.amount - a.amount || b.sold - a.sold);
 
     // ── 4. Equipe ────────────────────────────────────────────────────────────
     const tasks = (tasksRes.data ?? []) as any[];
@@ -277,9 +243,9 @@ export const getGerencial = createServerFn({ method: "GET" })
       resultado: {
         atual: resumo(lucro), anterior: resumo(lucroPrev),
         meta: goal ? { meta: goal.meta, realizado: goal.realizado, projecao: goal.projecao, status: goal.status } : null,
-        byGroup, byShop,
+        byGroup,
       },
-      perdas, entrega, fornecedores, equipe, alerts,
+      perdas, entrega, equipe, alerts,
     };
   });
 
