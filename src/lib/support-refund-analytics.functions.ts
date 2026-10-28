@@ -25,9 +25,11 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
     assertSee(ctx);
-    // Período anterior do mesmo tamanho, pra comparar.
+    // Período anterior pra comparar: começando no dia 1 (Este mês, Mês passado),
+    // o mês anterior inteiro; senão, o mesmo número de dias antes.
     const len = daysBetween(data.from, data.to) + 1;
-    const prevTo = addDaysIso(data.from, -1), prevFrom = addDaysIso(prevTo, -(len - 1));
+    const prevTo = addDaysIso(data.from, -1);
+    const prevFrom = data.from.endsWith("-01") ? `${prevTo.slice(0, 7)}-01` : addDaysIso(prevTo, -(len - 1));
     // Por mês de venda: os últimos 4 meses, cada um só com os próprios pedidos.
     const today = isoTodayUS();
     const monthsFrom = (() => { const d = new Date(`${today.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - 3); return d.toISOString().slice(0, 10); })();
@@ -64,12 +66,9 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         rateOrders: x.orders > 0 ? ordersRefunded / x.orders : null,
       };
     };
-    // Período anterior "na mesma altura": só os reembolsos que ele já tinha
-    // tido o mesmo número de dias depois (senão o período antigo, com mais
-    // tempo pra receber reembolso, sempre pareceria pior que o atual).
-    const cutoff = addDaysIso(data.to, -len);
-    const prevEvents = prev.events.filter((e) => e.date <= cutoff);
-    const prevRates = rates(prev, prevEvents);
+    // Período anterior com todos os reembolsos até hoje (o número "fechado", o
+    // mesmo do Por mês de venda) — o período atual, mais novo, ainda vai subir.
+    const prevRates = rates(prev, prev.events);
     const pending = a.events.filter((e) => e.status === "pendente");
     const daysToRefund = a.events.map((e) => daysBetween(e.orderDate, e.date)).filter((d) => d >= 0);
 
@@ -125,7 +124,7 @@ export const getRefundAnalytics = createServerFn({ method: "GET" })
         approvalHours: a.approvalHours,
       },
       // Período anterior com pouca venda (ex.: lojas começando) não serve de comparação.
-      prev: { total: sum(prevEvents), ...prevRates, orders: prev.orders, comparable: prev.orders >= MIN_PREV_ORDERS },
+      prev: { total: sum(prev.events), ...prevRates, orders: prev.orders, comparable: prev.orders >= MIN_PREV_ORDERS },
       byReason: group(a.events, (e) => (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) as string),
       byGroup: group(a.events, (e) => groupOf.get(e.shopId) ?? `loja:${e.shopId}`).map((x) => {
         const card = cardShops.get(x.key);

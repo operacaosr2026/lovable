@@ -51,7 +51,7 @@ type Tone = keyof typeof TONE;
 type Data = Awaited<ReturnType<typeof getRefundAnalytics>>;
 
 export function SupportRefundAnalytics({ onOpenConversation }: { onOpenConversation: (id: string) => void }) {
-  const [period, setPeriod] = useState<Period>("60d");
+  const [period, setPeriod] = useState<Period>("mes");
   const range = useMemo(() => rangeOf(period), [period]);
   const fn = useSupportFn(getRefundAnalytics, "getRefundAnalytics");
   const q = useQuery({ queryKey: ["refund-analytics", range.from, range.to], queryFn: () => fn({ data: range }), staleTime: 5 * 60_000 });
@@ -128,7 +128,7 @@ function Kpis({ d }: { d: Data }) {
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
         sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} comparable={d.prev.comparable} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)} na mesma altura</> : "sem base no período anterior"}</>} />
+        sub={<>dos pedidos do período · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)}</> : "sem base no período anterior"}</>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
