@@ -73,29 +73,34 @@ function GerencialPage() {
 
   return (
     <PageShell>
-      <PageHeader title="Gerencial" actions={!approvalsTab &&
-        <label className="relative">
-          <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <select value={month} onChange={(e) => setMonth(e.target.value)}
-            className="h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
-            {months.map((m, i) => <option key={m} value={m}>{i === 0 ? `Este mês (${monthName(m)})` : monthName(m)}</option>)}
-          </select>
-        </label>
-      } />
+      <PageHeader title="Gerencial" />
       <div className="space-y-4 pb-8">
-        <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
-          {TABS.map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-              {label}
-              {k === "alertas" && !!d?.alerts.length && (
-                <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] grid place-items-center text-white ${d.alerts.some((a) => a.level === "critico") ? "bg-rose-500" : "bg-amber-500"}`}>{d.alerts.length}</span>
-              )}
-              {k === "aprovacoes" && approvalsOpen > 0 && (
-                <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold grid place-items-center">{approvalsOpen}</span>
-              )}
-            </button>
-          ))}
+        {/* Abas e o mês na mesma linha, com altura fixa: trocar de aba não mexe no layout
+            (a Fila e a Análise de reembolsos têm o filtro delas, então o mês some ali). */}
+        <div className="flex flex-wrap items-center gap-3 min-h-10">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
+            {TABS.map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)}
+                className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                {label}
+                {k === "alertas" && !!d?.alerts.length && (
+                  <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] grid place-items-center text-white ${d.alerts.some((a) => a.level === "critico") ? "bg-rose-500" : "bg-amber-500"}`}>{d.alerts.length}</span>
+                )}
+                {k === "aprovacoes" && approvalsOpen > 0 && (
+                  <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold grid place-items-center">{approvalsOpen}</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {!approvalsTab && (
+            <label className="relative ml-auto">
+              <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <select value={month} onChange={(e) => setMonth(e.target.value)}
+                className="h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
+                {months.map((m, i) => <option key={m} value={m}>{i === 0 ? `Este mês (${monthName(m)})` : monthName(m)}</option>)}
+              </select>
+            </label>
+          )}
         </div>
         {tab === "kpi" ? <SupportKpisView month={month} />
           : tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
