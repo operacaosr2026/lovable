@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CircleAlert, DollarSign, Loader2, Package, ShieldAlert, Truck, Users,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, Loader2, Package,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -34,9 +34,15 @@ function lastMonths(n: number) {
   return out;
 }
 
+const TABS = [
+  ["resultado", "Resultado"], ["perdas", "Perdas"], ["entrega", "Fornecedor e entrega"], ["equipe", "Equipe"], ["alertas", "Alertas"],
+] as const;
+type Tab = (typeof TABS)[number][0];
+
 function GerencialPage() {
   const months = useMemo(() => lastMonths(6), []);
   const [month, setMonth] = useState(months[0]);
+  const [tab, setTab] = useState<Tab>("resultado");
   const fn = useServerFn(getGerencial);
   const q = useQuery({ queryKey: ["gerencial", month], queryFn: () => fn({ data: { month } }), staleTime: 5 * 60_000 });
   const d = q.data as Data | undefined;
@@ -55,12 +61,23 @@ function GerencialPage() {
       {q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
         : (
-          <div className="space-y-6 pb-8">
-            <Alerts d={d} />
-            <Resultado d={d} />
-            <Perdas d={d} />
-            <Entrega d={d} />
-            <Equipe d={d} />
+          <div className="space-y-4 pb-8">
+            <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
+              {TABS.map(([k, label]) => (
+                <button key={k} onClick={() => setTab(k)}
+                  className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                  {label}
+                  {k === "alertas" && d.alerts.length > 0 && (
+                    <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] grid place-items-center text-white ${d.alerts.some((a) => a.level === "critico") ? "bg-rose-500" : "bg-amber-500"}`}>{d.alerts.length}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {tab === "resultado" && <Resultado d={d} />}
+            {tab === "perdas" && <Perdas d={d} />}
+            {tab === "entrega" && <Entrega d={d} />}
+            {tab === "equipe" && <Equipe d={d} />}
+            {tab === "alertas" && <Alerts d={d} />}
           </div>
         )}
     </PageShell>
@@ -68,19 +85,6 @@ function GerencialPage() {
 }
 
 // ─── Peças ────────────────────────────────────────────────────────────────────
-
-function Section({ icon: Icon, n, title, children, right }: { icon: any; n: number; title: string; children: React.ReactNode; right?: React.ReactNode }) {
-  return (
-    <section>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="size-8 rounded-xl grid place-items-center bg-primary/10 text-primary"><Icon className="size-4" /></span>
-        <h2 className="text-base font-semibold"><span className="text-muted-foreground font-normal mr-1">{n}.</span>{title}</h2>
-        <div className="ml-auto">{right}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function Card({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
   return (
@@ -129,7 +133,7 @@ function Bar({ value, max }: { value: number; max: number }) {
 const th = "text-[11px] text-muted-foreground font-medium pb-2";
 const Empty = ({ text = "Nada no período." }: { text?: string }) => <p className="text-xs text-muted-foreground py-3 text-center">{text}</p>;
 
-// ─── 5. Alertas (no topo: é o que precisa de decisão) ────────────────────────
+// ─── Alertas ─────────────────────────────────────────────────────────────────
 
 function Alerts({ d }: { d: Data }) {
   if (!d.alerts.length) {
@@ -140,7 +144,7 @@ function Alerts({ d }: { d: Data }) {
     );
   }
   return (
-    <Section icon={CircleAlert} n={5} title="Alertas do gestor">
+    <section>
       <div className="grid gap-2 md:grid-cols-2">
         {d.alerts.map((a, i) => (
           <Link key={i} to={a.link as any}
@@ -153,11 +157,11 @@ function Alerts({ d }: { d: Data }) {
           </Link>
         ))}
       </div>
-    </Section>
+    </section>
   );
 }
 
-// ─── 1. Resultado do mês ─────────────────────────────────────────────────────
+// ─── Resultado do mês ────────────────────────────────────────────────────────
 
 function Resultado({ d }: { d: Data }) {
   const a = d.resultado.atual, p = d.resultado.anterior, m = d.resultado.meta;
@@ -167,7 +171,7 @@ function Resultado({ d }: { d: Data }) {
     ["Custo dos produtos", a.custo, true], ["Anúncios", a.anuncios, true], ["Taxas Shopify", a.taxas, true],
   ] as const : [];
   return (
-    <Section icon={DollarSign} n={1} title="Resultado do mês">
+    <section>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
         <Stat label="Vendas" value={usd(a?.faturamento)} delta={<Delta cur={a?.faturamento} prev={p?.faturamento} current={d.current} />}
           sub={<>{num(a?.pedidos)} pedidos · {prevLabel}: {usd(p?.faturamento)}</>} />
@@ -235,18 +239,18 @@ function Resultado({ d }: { d: Data }) {
           <p className="text-[11px] text-muted-foreground pt-2">Lucro só por grupo: o anúncio é do grupo, não da loja.</p>
         </Card>
       </div>
-    </Section>
+    </section>
   );
 }
 
-// ─── 2. Quanto se perde depois da venda ──────────────────────────────────────
+// ─── Quanto se perde depois da venda ─────────────────────────────────────────
 
 function Perdas({ d }: { d: Data }) {
   const x = d.perdas;
   const prevLabel = monthName(d.prevMonth);
   const maxReason = Math.max(0, ...x.topMotivos.map((r) => r.amount));
   return (
-    <Section icon={ShieldAlert} n={2} title="Quanto se perde depois da venda">
+    <section>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
         <Stat label="Total perdido" value={usd(x.total)} delta={<Delta cur={x.total} prev={x.totalPrev} lowerIsBetter current={d.current} />}
           sub={<>{pct(x.faturamento ? x.total / x.faturamento : null)} das vendas · reembolsos + chargebacks perdidos + taxas</>} />
@@ -294,16 +298,16 @@ function Perdas({ d }: { d: Data }) {
         </Card>
       </div>
       <p className="text-[11px] text-muted-foreground mt-2">Reembolsos pela data do pedido (pedidos vendidos no mês e todos os reembolsos deles), igual à Análise de reembolsos. Chargebacks pela data em que abriram.</p>
-    </Section>
+    </section>
   );
 }
 
-// ─── 3. Fornecedor e entrega ─────────────────────────────────────────────────
+// ─── Fornecedor e entrega ────────────────────────────────────────────────────
 
 function Entrega({ d }: { d: Data }) {
   const e = d.entrega;
   return (
-    <Section icon={Truck} n={3} title="Fornecedor e entrega">
+    <section>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
         <Stat label="Da compra à entrega" value={e.diasMedios == null ? "—" : `${e.diasMedios.toFixed(0)} dias`} sub={<>média dos entregues · {pct(e.ate20dias, 0)} em até 20 dias</>} />
         <Stat label="Entregues" value={`${num(e.entregues)} de ${num(e.pedidos)}`} sub={<>{num(e.emTransito)} a caminho · {num(e.semEnvio)} sem envio</>} />
@@ -335,16 +339,16 @@ function Entrega({ d }: { d: Data }) {
         )}
         <p className="text-[11px] text-muted-foreground pt-2">Fornecedor = campo Fornecedor do produto em Produtos. Unidades vendidas no mês.</p>
       </Card>
-    </Section>
+    </section>
   );
 }
 
-// ─── 4. Equipe ───────────────────────────────────────────────────────────────
+// ─── Equipe ──────────────────────────────────────────────────────────────────
 
 function Equipe({ d }: { d: Data }) {
   const at = d.equipe.atendimento, t = d.equipe.tarefas;
   return (
-    <Section icon={Users} n={4} title="Equipe">
+    <section>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
         <Stat label="Conversas no Atendimento" value={num(at?.conversas)} delta={<Delta cur={at?.conversas} prev={at?.conversasPrev} lowerIsBetter />}
           sub={<>{at?.contatosPor100 != null ? `${String(at.contatosPor100).replace(".", ",")} por 100 pedidos · ` : ""}{num(at?.emAberto)} em aberto</>} />
@@ -371,6 +375,6 @@ function Equipe({ d }: { d: Data }) {
           </table>
         )}
       </Card>
-    </Section>
+    </section>
   );
 }
