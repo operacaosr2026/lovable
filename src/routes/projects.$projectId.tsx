@@ -48,7 +48,7 @@ function ProjectDetail() {
     return (
       <PageShell>
         <div className="text-sm text-muted-foreground">Projeto não encontrado.</div>
-        <Link to="/projects" className="text-sm text-primary mt-3 inline-block">← Voltar</Link>
+        <Link to="/gerencial" search={{ tab: "projetos" }} className="text-sm text-primary mt-3 inline-block">← Voltar</Link>
       </PageShell>
     );
   }
@@ -59,7 +59,7 @@ function ProjectDetail() {
 
   return (
     <PageShell>
-      <Link to="/projects" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
+      <Link to="/gerencial" search={{ tab: "projetos" }} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="size-4" /> Projetos
       </Link>
 

@@ -1,21 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PageShell } from "@/components/PageHeader";
-import { CompanyGoals } from "@/components/goals/CompanyGoals";
-import { requireAuth } from "@/lib/route-guards";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
+// Metas agora é subaba do Gerencial (components/goals/CompanyGoals.tsx); links
+// antigos (notificações de meta) caem lá.
 export const Route = createFileRoute("/metas")({
-  beforeLoad: requireAuth,
-  head: () => ({ meta: [{ title: "Metas — SRX Growth" }] }),
-  component: MetasPage,
+  beforeLoad: () => { throw redirect({ to: "/gerencial", search: { tab: "metas" } }); },
 });
-
-function MetasPage() {
-  return (
-    <PageShell fit>
-      <div className="mb-4">
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Metas</h1>
-      </div>
-      <CompanyGoals />
-    </PageShell>
-  );
-}

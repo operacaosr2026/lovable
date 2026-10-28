@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, FolderKanban, Target, Briefcase,
+  LayoutDashboard, Briefcase,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
   Brain, GraduationCap, Send, Swords,
 } from "lucide-react";
@@ -31,8 +31,6 @@ export const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
   { to: "/gerencial", label: "Gerencial", icon: Briefcase, section: "gerencial" },
   { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet, section: "caixa" },
-  { to: "/metas", label: "Metas", icon: Target, section: "metas" },
-  { to: "/projects", label: "Projetos", icon: FolderKanban, section: "projects" },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
   { to: "/shops/products", label: "Produtos", icon: Package, section: "produtos" },
   { to: "/concorrentes", label: "Concorrentes", icon: Swords, section: "concorrentes" },
@@ -66,8 +64,6 @@ const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/gerencial", label: "Gerencial", icon: Briefcase },
   { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet },
-  { to: "/metas", label: "Metas", icon: Target },
-  { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
   { to: "/shops/products", label: "Produtos", icon: Package },
   { to: "/concorrentes", label: "Concorrentes", icon: Swords },

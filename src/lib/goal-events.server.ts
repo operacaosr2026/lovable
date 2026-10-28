@@ -33,7 +33,7 @@ export async function checkGoalEvents(ownerId: string) {
   if (acc.lucro >= meta) {
     await emitEvent(ownerId, {
       key: monthKey, title: "🎯 Meta do mês atingida!",
-      body: `Lucro de ${usd(acc.lucro)} — meta de ${usd(meta)}`, link: "/metas",
+      body: `Lucro de ${usd(acc.lucro)} — meta de ${usd(meta)}`, link: "/gerencial?tab=metas",
     });
   }
 }

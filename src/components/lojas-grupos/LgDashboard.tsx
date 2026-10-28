@@ -962,7 +962,7 @@ function MonthGoalCard({ cardId, fmt }: { cardId: string; fmt: (n: number) => st
         <div className="h-16 bg-muted animate-pulse rounded-xl" />
       ) : !g ? (
         <p className="text-xs text-muted-foreground">
-          Nenhuma meta cadastrada para este mês. <Link to="/metas" className="text-primary hover:underline">Definir meta</Link>
+          Nenhuma meta cadastrada para este mês. <Link to="/gerencial" search={{ tab: "metas" }} className="text-primary hover:underline">Definir meta</Link>
         </p>
       ) : (
         <>

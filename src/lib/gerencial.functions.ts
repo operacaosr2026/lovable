@@ -199,7 +199,7 @@ export const getGerencial = createServerFn({ method: "GET" })
     const alerts: GerencialAlert[] = [];
     const pl = (n: number, one: string, many: string) => (n === 1 ? one : many);
     if (current && goal && goal.projecao != null && goal.projecao < goal.meta) {
-      alerts.push({ kind: "meta", level: "critico", title: "Meta do mês em risco", link: "/metas", action: "Ver metas",
+      alerts.push({ kind: "meta", level: "critico", title: "Meta do mês em risco", link: "/gerencial?tab=metas", action: "Ver metas",
         detail: `No ritmo atual o mês fecha abaixo da meta de ${usd(goal.meta)}.`,
         metric: usd(goal.projecao), metricLabel: "projeção do mês" });
     }

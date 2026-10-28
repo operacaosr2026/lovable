@@ -14,12 +14,14 @@ import { listSupportApprovals } from "@/lib/support-approvals.functions";
 import { SupportApprovalsView } from "@/components/atendimento/SupportApprovalsView";
 import { SupportRefundAnalytics } from "@/components/atendimento/SupportRefundAnalytics";
 import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
+import { CompanyGoals } from "@/components/goals/CompanyGoals";
+import { ProjectsBoard } from "@/components/projects/ProjectsBoard";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
-// mais o KPI do Atendimento e as Aprovações de troca/reembolso (fila e análise),
-// que vieram do Atendimento.
+// mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
+// Metas e Projetos, que eram abas próprias.
 // ?tab=aprovacoes / ?tab=reembolsos abre direto nelas (links das notificações).
-const TAB_KEYS = ["alertas", "resultado", "aprovacoes", "reembolsos", "kpi"] as const;
+const TAB_KEYS = ["alertas", "resultado", "aprovacoes", "reembolsos", "kpi", "metas", "projetos"] as const;
 type Tab = (typeof TAB_KEYS)[number];
 
 export const Route = createFileRoute("/gerencial")({
@@ -48,9 +50,10 @@ function lastMonths(n: number) {
 
 const TABS: [Tab, string][] = [
   ["alertas", "Alertas"], ["resultado", "Resultado"], ["aprovacoes", "Fila de aprovação"],
-  ["reembolsos", "Análise de reembolsos"], ["kpi", "KPI Atendimento"],
+  ["reembolsos", "Análise de reembolsos"], ["kpi", "KPI Atendimento"], ["metas", "Metas"], ["projetos", "Projetos"],
 ];
-const APPROVAL_TABS: Tab[] = ["aprovacoes", "reembolsos"];
+// Abas com filtro próprio (o mês do topo some nelas).
+const OWN_FILTER_TABS: Tab[] = ["aprovacoes", "reembolsos", "metas", "projetos"];
 
 function GerencialPage() {
   const months = useMemo(() => lastMonths(6), []);
@@ -59,7 +62,7 @@ function GerencialPage() {
   const navigate = Route.useNavigate();
   const tab: Tab = search.tab ?? "alertas";
   const setTab = (t: Tab) => navigate({ search: t === "alertas" ? {} : { tab: t }, replace: true });
-  const approvalsTab = APPROVAL_TABS.includes(tab);
+  const ownFilter = OWN_FILTER_TABS.includes(tab);
 
   const fn = useServerFn(getGerencial);
   const q = useQuery({ queryKey: ["gerencial", month], queryFn: () => fn({ data: { month } }), staleTime: 5 * 60_000 });
@@ -76,7 +79,7 @@ function GerencialPage() {
       <PageHeader title="Gerencial" />
       <div className="space-y-4 pb-8">
         {/* Abas e o mês na mesma linha, com altura fixa: trocar de aba não mexe no layout
-            (a Fila e a Análise de reembolsos têm o filtro delas, então o mês some ali). */}
+            (Fila, Análise de reembolsos, Metas e Projetos têm o filtro delas, então o mês some ali). */}
         <div className="flex flex-wrap items-center gap-3 min-h-10">
           <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
             {TABS.map(([k, label]) => (
@@ -92,7 +95,7 @@ function GerencialPage() {
               </button>
             ))}
           </div>
-          {!approvalsTab && (
+          {!ownFilter && (
             <label className="relative ml-auto">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={month} onChange={(e) => setMonth(e.target.value)}
@@ -103,6 +106,8 @@ function GerencialPage() {
           )}
         </div>
         {tab === "kpi" ? <SupportKpisView month={month} />
+          : tab === "metas" ? <CompanyGoals />
+          : tab === "projetos" ? <ProjectsBoard />
           : tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
           : tab === "reembolsos" ? <SupportRefundAnalytics onOpenConversation={openConversation} />
           : q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -331,7 +336,7 @@ function Meta({ meta: m, current }: { meta: Data["resultado"]["meta"]; current: 
   if (!m) {
     return (
       <Panel icon={Target} title="Meta do mês">
-        <div className="py-8 text-center text-sm text-muted-foreground">Sem meta pra este mês. <Link to="/metas" className="text-primary font-medium">Definir em Metas</Link></div>
+        <div className="py-8 text-center text-sm text-muted-foreground">Sem meta pra este mês. <Link to="/gerencial" search={{ tab: "metas" }} className="text-primary font-medium">Definir em Metas</Link></div>
       </Panel>
     );
   }
