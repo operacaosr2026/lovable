@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  ArrowDown, ArrowUp, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
   Layers, Search, Tag, Undo2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -273,7 +273,7 @@ function Reasons({ d }: { d: Data }) {
   // Barra = parte do total (a mesma % da direita).
   const total = d.kpis.total;
   return (
-    <Card icon={Box} title="Por motivo" hint="Reembolsos dos pedidos vendidos no período">
+    <Card icon={Box} title="Por motivo">
       {d.byReason.length === 0 ? <Empty /> : d.byReason.map((r) => (
         <HBar key={r.key} label={reasonName(r.key)} value={r.amount} max={total} amount={usd(r.amount)}
           extra={`${r.count} · ${pct(total ? r.amount / total : 0, 0)}`}
@@ -288,14 +288,14 @@ const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "
 // Taxa de cada mês só com os pedidos vendidos nele (e todos os reembolsos deles).
 function Months({ d }: { d: Data }) {
   return (
-    <Card icon={CalendarDays} title="Por mês de venda" hint="Pedidos vendidos no mês e os reembolsos deles, mesmo os feitos depois">
+    <Card icon={CalendarDays} title="Por mês de venda">
       {d.byMonth.length === 0 ? <Empty /> : (
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[11px] text-muted-foreground">
               <th className="text-left font-medium pb-2">Mês</th>
               <th className="text-center font-medium pb-2">Pedidos</th>
-              <th className="text-center font-medium pb-2 pl-3">Com reembolso</th>
+              <th className="text-center font-medium pb-2 pl-3 whitespace-nowrap">Com reembolso</th>
               <th className="text-center font-medium pb-2">Valor</th>
               <th className="text-center font-medium pb-2">Taxa</th>
             </tr>
@@ -304,8 +304,10 @@ function Months({ d }: { d: Data }) {
             {d.byMonth.map((m) => (
               <tr key={m.month} className="border-t border-border">
                 <td className="py-2.5 pr-2">
-                  <p className="font-medium">{MONTHS[Number(m.month.slice(5, 7)) - 1]}/{m.month.slice(2, 4)}</p>
-                  {m.current && <p className="text-[11px] text-amber-600">em andamento — ainda sobe</p>}
+                  <p className="font-medium flex items-center gap-1">
+                    {MONTHS[Number(m.month.slice(5, 7)) - 1]}/{m.month.slice(2, 4)}
+                    {m.current && <AlertTriangle className="size-3.5 text-amber-500" aria-label="Mês em andamento — a taxa ainda sobe"><title>Mês em andamento — a taxa ainda sobe</title></AlertTriangle>}
+                  </p>
                 </td>
                 <td className="text-center">{m.orders.toLocaleString("pt-BR")}</td>
                 <td className="text-center pl-3">{m.refundedOrders}</td>
@@ -322,14 +324,14 @@ function Months({ d }: { d: Data }) {
 
 function Groups({ d }: { d: Data }) {
   return (
-    <Card icon={Layers} title="Por grupo" hint="Pedidos vendidos no período: taxa = pedidos com reembolso ÷ pedidos do grupo">
+    <Card icon={Layers} title="Por grupo">
       {d.byGroup.length === 0 ? <Empty /> : (
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[11px] text-muted-foreground">
               <th className="text-left font-medium pb-2">Grupo</th>
               <th className="text-center font-medium pb-2">Pedidos</th>
-              <th className="text-center font-medium pb-2 pl-3">Com reembolso</th>
+              <th className="text-center font-medium pb-2 pl-3 whitespace-nowrap">Com reembolso</th>
               <th className="text-center font-medium pb-2">Valor</th>
               <th className="text-center font-medium pb-2">Taxa</th>
             </tr>
