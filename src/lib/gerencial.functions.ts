@@ -33,7 +33,10 @@ const prevMonthOf = (monthStart: string) => {
   return d.toISOString().slice(0, 10);
 };
 
-export type GerencialAlert = { level: "critico" | "atencao"; title: string; detail: string; link: string };
+export type GerencialAlert = {
+  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento";
+  level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
+};
 
 export const getGerencial = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -192,45 +195,57 @@ export const getGerencial = createServerFn({ method: "GET" })
     };
 
     // ── 5. Alertas ───────────────────────────────────────────────────────────
+    // metric: o número que resume o alerta (vai em destaque no card).
     const alerts: GerencialAlert[] = [];
+    const pl = (n: number, one: string, many: string) => (n === 1 ? one : many);
     if (current && goal && goal.projecao != null && goal.projecao < goal.meta) {
-      alerts.push({ level: "critico", title: "Meta do mês em risco", link: "/metas",
-        detail: `No ritmo atual o mês fecha em ${usd(goal.projecao)}, abaixo da meta de ${usd(goal.meta)}.` });
+      alerts.push({ kind: "meta", level: "critico", title: "Meta do mês em risco", link: "/metas", action: "Ver metas",
+        detail: `No ritmo atual o mês fecha abaixo da meta de ${usd(goal.meta)}.`,
+        metric: usd(goal.projecao), metricLabel: "projeção do mês" });
     }
     for (const g of byGroup) {
       if (g.lucro7d != null && g.lucro7d < 0) {
-        alerts.push({ level: "critico", title: `${g.name}: prejuízo nos últimos 7 dias`, link: `/shops/lojas-grupos/${g.id}`,
-          detail: `Lucro de ${usd(g.lucro7d)} de ${weekFrom.slice(8)}/${weekFrom.slice(5, 7)} a ${weekTo.slice(8)}/${weekTo.slice(5, 7)}.` });
+        alerts.push({ kind: "prejuizo", level: "critico", title: `${g.name} no prejuízo`, link: `/shops/lojas-grupos/${g.id}`, action: "Abrir grupo",
+          detail: `Lucro de ${weekFrom.slice(8)}/${weekFrom.slice(5, 7)} a ${weekTo.slice(8)}/${weekTo.slice(5, 7)} (últimos 7 dias fechados).`,
+          metric: usd(g.lucro7d), metricLabel: "últimos 7 dias" });
       }
     }
     const dueSoon = ((openDisputesRes.data ?? []) as any[]).filter((d) => d.evidence_due_by && Date.parse(d.evidence_due_by) - now < 3 * DAY);
     if (dueSoon.length) {
-      alerts.push({ level: "critico", title: `${dueSoon.length} chargeback${dueSoon.length === 1 ? "" : "s"} com prazo de resposta em até 3 dias`, link: "/chargebacks",
-        detail: `${usd(dueSoon.reduce((s, d) => s + Number(d.amount ?? 0), 0))} em disputa. Sem resposta, perde automático.` });
+      alerts.push({ kind: "chargeback", level: "critico", title: `${pl(dueSoon.length, "Chargeback", "Chargebacks")} com prazo acabando`, link: "/chargebacks", action: "Responder",
+        detail: `${usd(dueSoon.reduce((s, d) => s + Number(d.amount ?? 0), 0))} em disputa. Sem resposta em até 3 dias, perde automático.`,
+        metric: String(dueSoon.length), metricLabel: pl(dueSoon.length, "disputa", "disputas") });
     }
     if (alertSettings.enabled) {
-      const over = products.filter((p) => p.rate != null && p.sold >= alertSettings.product_min_sold && p.rate * 100 > alertSettings.product_rate_limit);
+      const over = products.filter((p) => p.rate != null && p.sold >= alertSettings.product_min_sold && p.rate * 100 > alertSettings.product_rate_limit)
+        .sort((x, y) => (y.rate ?? 0) - (x.rate ?? 0));
       if (over.length) {
-        alerts.push({ level: "atencao", title: `${over.length} produto${over.length === 1 ? "" : "s"} com reembolso acima de ${alertSettings.product_rate_limit}%`, link: "/gerencial?tab=reembolsos",
-          detail: over.slice(0, 3).map((p) => `${p.name} (${Math.round((p.rate ?? 0) * 100)}%)`).join(", ") });
+        alerts.push({ kind: "produto", level: "atencao", title: `${pl(over.length, "Produto", "Produtos")} com reembolso acima de ${alertSettings.product_rate_limit}%`, link: "/gerencial?tab=reembolsos", action: "Ver análise",
+          detail: over.slice(0, 3).map((p) => `${p.name} (${Math.round((p.rate ?? 0) * 100)}%)`).join(", "),
+          metric: `${Math.round((over[0].rate ?? 0) * 100)}%`, metricLabel: over.length === 1 ? "das vendas" : `pior de ${over.length}` });
       }
     }
     const stuck = [...refunds.events, ...refundsPrev.events].filter((e) => e.status === "pendente" && (e.pendingDays ?? 0) >= alertSettings.pending_days);
     if (stuck.length) {
-      alerts.push({ level: "atencao", title: `${stuck.length} reembolso${stuck.length === 1 ? "" : "s"} parado${stuck.length === 1 ? "" : "s"} na Shopify há ${alertSettings.pending_days}+ dias`, link: "/gerencial?tab=reembolsos",
-        detail: `${usd(sum(stuck))} ainda não concluído${stuck.length === 1 ? "" : "s"}.` });
+      alerts.push({ kind: "reembolso", level: "atencao", title: "Reembolso parado na Shopify", link: "/gerencial?tab=reembolsos", action: "Ver análise",
+        detail: `${usd(sum(stuck))} ainda não concluído há ${alertSettings.pending_days}+ dias.`,
+        metric: String(stuck.length), metricLabel: pl(stuck.length, "reembolso", "reembolsos") });
     }
     if (entrega.atencao) {
-      alerts.push({ level: "atencao", title: `${entrega.atencao} pedido${entrega.atencao === 1 ? "" : "s"} do mês precisando de atenção na entrega`, link: "/shops/lojas-grupos",
-        detail: "Sem envio há mais de 3 dias úteis, parado no rastreio há 5+ dias, com problema ou sem entrega depois de 20 dias." });
+      alerts.push({ kind: "entrega", level: "atencao", title: "Pedidos precisando de atenção na entrega", link: "/shops/lojas-grupos", action: "Ver rastreio",
+        detail: "Sem envio há 3+ dias úteis, parado no rastreio há 5+ dias, com problema ou sem entrega depois de 20 dias.",
+        metric: String(entrega.atencao), metricLabel: `de ${entrega.pedidos} do mês` });
     }
     if (overdue.length) {
-      alerts.push({ level: "atencao", title: `${overdue.length} tarefa${overdue.length === 1 ? "" : "s"} atrasada${overdue.length === 1 ? "" : "s"}`, link: "/tarefas",
-        detail: equipe.tarefas.porPessoa.filter((p) => p.atrasadas).slice(0, 3).map((p) => `${p.name}: ${p.atrasadas}`).join(" · ") });
+      alerts.push({ kind: "tarefa", level: "atencao", title: `${pl(overdue.length, "Tarefa atrasada", "Tarefas atrasadas")}`, link: "/tarefas", action: "Ver tarefas",
+        detail: equipe.tarefas.porPessoa.filter((p) => p.atrasadas).slice(0, 3).map((p) => `${p.name}: ${p.atrasadas}`).join(" · "),
+        metric: String(overdue.length), metricLabel: pl(overdue.length, "tarefa", "tarefas") });
     }
     if (equipe.atendimento?.abertoMais36h) {
-      alerts.push({ level: "atencao", title: `${equipe.atendimento.abertoMais36h} conversa${equipe.atendimento.abertoMais36h === 1 ? "" : "s"} sem resposta há mais de 36h`, link: "/atendimento",
-        detail: "Cliente esperando é o caminho mais curto pro chargeback." });
+      const n = equipe.atendimento.abertoMais36h;
+      alerts.push({ kind: "atendimento", level: "atencao", title: "Cliente sem resposta há mais de 36h", link: "/atendimento", action: "Abrir Atendimento",
+        detail: "Cliente esperando é o caminho mais curto pro chargeback.",
+        metric: String(n), metricLabel: pl(n, "conversa", "conversas") });
     }
 
     return {

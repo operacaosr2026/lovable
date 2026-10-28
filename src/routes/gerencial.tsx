@@ -3,7 +3,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, Loader2, Package, ShieldAlert, Target, TrendingUp, Truck, Undo2,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Loader2, MessageSquare,
+  Package, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -199,27 +200,67 @@ function MiniBar({ value, max, color = "bg-primary" }: { value: number; max: num
 const Empty = ({ text = "Nada no período." }: { text?: string }) => <p className="text-xs text-muted-foreground py-3 text-center">{text}</p>;
 
 // ─── Alertas ─────────────────────────────────────────────────────────────────
+// Críticos primeiro; cada alerta com o número que resume, o porquê e o atalho.
+
+const ALERT_ICON: Record<Data["alerts"][number]["kind"], any> = {
+  meta: Target, prejuizo: TrendingDown, chargeback: ShieldAlert, produto: Package,
+  reembolso: Hourglass, entrega: Truck, tarefa: CheckSquare, atendimento: MessageSquare,
+};
+const LEVEL = {
+  critico: { label: "Crítico", icon: "bg-rose-500/10 text-rose-600", bar: "bg-rose-500", metric: "text-rose-600", btn: "bg-rose-600 text-white hover:bg-rose-700" },
+  atencao: { label: "Atenção", icon: "bg-amber-500/10 text-amber-600", bar: "bg-amber-400", metric: "text-foreground", btn: "bg-muted text-foreground hover:bg-muted/70" },
+} as const;
 
 function Alerts({ d }: { d: Data }) {
   const navigate = useNavigate();
   if (!d.alerts.length) {
     return (
-      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
-        Nada pedindo decisão agora.
+      <div className="rounded-3xl border border-border bg-card py-16 grid place-items-center text-center">
+        <span className="size-12 rounded-2xl grid place-items-center bg-emerald-500/10 text-emerald-600 mb-3"><CircleCheck className="size-6" /></span>
+        <p className="text-sm font-semibold">Tudo em ordem</p>
+        <p className="text-xs text-muted-foreground">Nada pedindo decisão agora.</p>
       </div>
     );
   }
+  const groups = (["critico", "atencao"] as const).map((lv) => [lv, d.alerts.filter((a) => a.level === lv)] as const).filter(([, l]) => l.length);
   return (
-    <div className="grid gap-2 md:grid-cols-2">
-      {d.alerts.map((a, i) => (
-        <button key={i} onClick={() => navigate({ href: a.link })}
-          className={`text-left rounded-2xl border p-3 flex gap-3 hover:shadow-sm transition ${a.level === "critico" ? "border-rose-500/30 bg-rose-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
-          <AlertTriangle className={`size-4 mt-0.5 shrink-0 ${a.level === "critico" ? "text-rose-600" : "text-amber-500"}`} />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">{a.title}</p>
-            <p className="text-xs text-muted-foreground">{a.detail}</p>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm font-semibold">{d.alerts.length} {d.alerts.length === 1 ? "ponto pedindo" : "pontos pedindo"} decisão</p>
+        {groups.map(([lv, l]) => (
+          <span key={lv} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${LEVEL[lv].icon}`}>
+            <span className={`size-1.5 rounded-full ${LEVEL[lv].bar}`} />{l.length} {LEVEL[lv].label.toLowerCase()}{l.length === 1 ? "" : "s"}
+          </span>
+        ))}
+      </div>
+      {groups.map(([lv, list]) => (
+        <div key={lv}>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{LEVEL[lv].label}</p>
+          <div className="space-y-2">
+            {list.map((a, i) => {
+              const Icon = ALERT_ICON[a.kind] ?? AlertTriangle;
+              const st = LEVEL[a.level];
+              return (
+                <div key={i} className="relative overflow-hidden rounded-2xl border border-border bg-card pl-5 pr-4 py-4 flex flex-wrap items-center gap-4">
+                  <span className={`absolute left-0 inset-y-0 w-1 ${st.bar}`} />
+                  <span className={`size-11 shrink-0 rounded-2xl grid place-items-center ${st.icon}`}><Icon className="size-5" /></span>
+                  <div className="min-w-0 flex-1 basis-60">
+                    <p className="text-sm font-semibold">{a.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{a.detail}</p>
+                  </div>
+                  <div className="text-right shrink-0 min-w-[96px]">
+                    <p className={`text-xl font-semibold tracking-tight whitespace-nowrap ${st.metric}`}>{a.metric}</p>
+                    <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
+                  </div>
+                  <button onClick={() => navigate({ href: a.link })}
+                    className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
+                    {a.action} <ChevronRight className="size-3.5" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
-        </button>
+        </div>
       ))}
     </div>
   );
