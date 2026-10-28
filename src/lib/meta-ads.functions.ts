@@ -7,6 +7,7 @@ import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll } from "@/lib/select-all";
 
 import { fetchWithRetry } from "@/lib/http";
+import { metaTokenForAccount } from "@/lib/lg-card-ad-spend.server";
 const META_APP_ID    = process.env["META_APP_ID"]!;
 const SUPABASE_URL   = process.env["SUPABASE_URL"]!;
 const CALLBACK_URI   = `${SUPABASE_URL}/functions/v1/meta-oauth-callback`;
@@ -504,7 +505,9 @@ export const syncMetaAdsSpendForShop = createServerOnlyFn(async (
 // o limite de cobrança; elas vêm das "activities" da conta
 // (ad_account_billing_charge, valor em centavos).
 //
-// Por linha de shop_meta_ad_accounts: billing_started_at é o ponto de partida
+// Contas das lojas (shop_meta_ad_accounts) e contas ligadas só num card de
+// Lojas e Grupos (lg_card_meta_accounts — a cobrança vai pras lojas do card).
+// Conta nas duas segue pela loja. Por linha: billing_started_at é o ponto de partida
 // (conta nova começa do momento em que é vista — o que passou, passou),
 // billing_synced_until a última leitura e billing_seen_tx as cobranças já
 // lançadas. Uma cobrança entra uma vez só: lançamento apagado ou editado no
@@ -550,27 +553,69 @@ async function ensureAdsCategory(ownerId: string, shopId: string) {
   }
 }
 
-export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string) => {
-  const { data: rows } = await supabaseAdmin.from("shop_meta_ad_accounts")
-    .select("id,shop_id,ad_account_id,billing_started_at,billing_synced_until,billing_seen_tx")
-    .eq("user_id", ownerId).eq("enabled", true);
-  const byAccount = new Map<string, any[]>();
-  for (const r of (rows ?? []) as any[]) {
-    if (!byAccount.has(r.ad_account_id)) byAccount.set(r.ad_account_id, []);
-    byAccount.get(r.ad_account_id)!.push(r);
-  }
+type BillingGroup = {
+  adAccountId: string;
+  table: "shop_meta_ad_accounts" | "lg_card_meta_accounts";
+  rows: any[];
+  targets: () => Promise<string[]>;
+  token: () => Promise<string | null>;
+};
 
+async function billingGroups(ownerId: string): Promise<BillingGroup[]> {
+  const BILLING_COLS = "id,ad_account_id,billing_started_at,billing_synced_until,billing_seen_tx";
+  const [{ data: shopRows }, { data: cardRows }] = await Promise.all([
+    supabaseAdmin.from("shop_meta_ad_accounts").select(`${BILLING_COLS},shop_id`).eq("user_id", ownerId).eq("enabled", true),
+    (supabaseAdmin as any).from("lg_card_meta_accounts").select(`${BILLING_COLS},card_id`).eq("user_id", ownerId).eq("enabled", true),
+  ]);
+  const group = (rows: any[]) => {
+    const by = new Map<string, any[]>();
+    for (const r of rows) by.set(r.ad_account_id, [...(by.get(r.ad_account_id) ?? []), r]);
+    return by;
+  };
+  const out: BillingGroup[] = [];
+  const shopAccounts = group((shopRows ?? []) as any[]);
+  for (const [adAccountId, rows] of shopAccounts) {
+    const shopIds = [...new Set(rows.map((r) => r.shop_id as string))];
+    out.push({
+      adAccountId, table: "shop_meta_ad_accounts", rows,
+      targets: () => billingTargetShops(shopIds),
+      token: async () => {
+        const { data: tokens } = await supabaseAdmin.from("shop_meta_tokens")
+          .select("access_token").eq("user_id", ownerId).in("shop_id", shopIds);
+        return ((tokens ?? []) as any[]).find((t) => t.access_token)?.access_token ?? null;
+      },
+    });
+  }
+  // Conta só no card: divide entre as lojas do card (o de mais lojas, se estiver em vários).
+  for (const [adAccountId, rows] of group((cardRows ?? []) as any[])) {
+    if (shopAccounts.has(adAccountId)) continue;
+    out.push({
+      adAccountId, table: "lg_card_meta_accounts", rows,
+      targets: async () => {
+        const { data } = await supabaseAdmin.from("lg_card_shops").select("card_id,shop_id").in("card_id", rows.map((r) => r.card_id));
+        const byCard = new Map<string, string[]>();
+        for (const r of (data ?? []) as any[]) byCard.set(r.card_id, [...(byCard.get(r.card_id) ?? []), r.shop_id]);
+        const best = [...byCard.entries()].sort(([a, sa], [b, sb]) => sb.length - sa.length || a.localeCompare(b))[0];
+        return best ? [...best[1]].sort() : [];
+      },
+      token: () => metaTokenForAccount(ownerId, adAccountId),
+    });
+  }
+  return out;
+}
+
+export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string) => {
   let inserted = 0;
   // Falhas por conta: a rodada segue nas outras e lança no fim (vira aviso no sino).
   const billingErrors: string[] = [];
-  for (const [adAccountId, accRows] of byAccount) {
-    const shopIds = [...new Set(accRows.map((r) => r.shop_id as string))];
+  for (const { adAccountId, table, rows: accRows, targets: targetShops, token } of await billingGroups(ownerId)) {
+    const accountTable = () => (supabaseAdmin as any).from(table);
     const now = new Date().toISOString();
 
     // Primeira vez que a conta é vista: só marca o ponto de partida.
     const starts = accRows.map((r) => r.billing_started_at as string | null).filter(Boolean) as string[];
     if (!starts.length) {
-      await supabaseAdmin.from("shop_meta_ad_accounts")
+      await accountTable()
         .update({ billing_started_at: now, billing_synced_until: now }).in("id", accRows.map((r) => r.id));
       continue;
     }
@@ -578,9 +623,7 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
     const lastRead = accRows.map((r) => r.billing_synced_until as string | null).filter(Boolean).sort()[0] ?? firstSeen;
     const seenTx = new Set(accRows.flatMap((r) => (r.billing_seen_tx ?? []) as string[]));
 
-    const { data: tokens } = await supabaseAdmin.from("shop_meta_tokens")
-      .select("access_token").eq("user_id", ownerId).in("shop_id", shopIds);
-    const accessToken = ((tokens ?? []) as any[]).find((t) => t.access_token)?.access_token;
+    const accessToken = await token();
     if (!accessToken) continue;
 
     // Folga de 6h pra trás: a Meta às vezes publica a activity com atraso.
@@ -614,7 +657,8 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
     if (failed) continue;
 
     if (charges.length) {
-      const targets = await billingTargetShops(shopIds);
+      const targets = await targetShops();
+      if (!targets.length) { billingErrors.push(`${adAccountId}: card sem lojas — cobrança não lançada`); continue; }
       const extIds = charges.flatMap((c) => targets.map((shopId) => `meta_charge_${c.txId}_${shopId}`));
       const { data: existing } = await supabaseAdmin.from("shop_cash_entries")
         .select("mercury_transaction_id").eq("user_id", ownerId).in("mercury_transaction_id", extIds);
@@ -647,7 +691,7 @@ export const syncMetaBillingCharges = createServerOnlyFn(async (ownerId: string)
       }
     }
     const nextSeen = [...seenTx, ...charges.map((c) => c.txId)].slice(-300);
-    await supabaseAdmin.from("shop_meta_ad_accounts")
+    await accountTable()
       .update({ billing_started_at: firstSeen, billing_synced_until: now, billing_seen_tx: nextSeen })
       .in("id", accRows.map((r) => r.id));
   }
