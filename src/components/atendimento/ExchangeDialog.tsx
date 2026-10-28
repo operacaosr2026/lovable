@@ -79,7 +79,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
     },
     onSuccess: (res: any) => {
       if (res.status === "aprovado") toast.success(`Pedido ${res.orderName} gerado`);
-      else toast.success("Troca enviada pra aprovação", { description: "O Sergio recebe o aviso no sino e no celular." });
+      else toast.success("Troca enviada pra aprovação", { description: "Quem aprova recebe o aviso no sino." });
       qc.invalidateQueries({ queryKey: ["exchange-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
       qc.invalidateQueries({ queryKey: ["support-approvals"] });
@@ -181,7 +181,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
 
             <p className="text-[11px] text-muted-foreground">
               Sai de graça (100% de desconto, sem frete) e entra como pago na Shopify.
-              {canApprove ? "" : " Só é gerado depois que o Sergio aprovar."}
+              {canApprove ? "" : " Só é gerado depois que for aprovado."}
             </p>
 
             <button onClick={() => submit.mutate()} disabled={!ready || submit.isPending}

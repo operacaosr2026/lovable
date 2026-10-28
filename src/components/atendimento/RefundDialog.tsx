@@ -8,6 +8,7 @@ import {
   decideRefund, getRefundSetup, previewRefund, requestRefund,
   type RefundLine, type RefundMode,
 } from "@/lib/support-refund.functions";
+import { REFUND_REASONS, refundReasonLabel, type RefundReason } from "@/lib/refund-reasons";
 import { useSupportFn } from "./demo";
 import { formatMoney, fullTime } from "./utils";
 
@@ -42,6 +43,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
   const [notify, setNotify] = useState(true);
   const [charge, setCharge] = useState(false);
   const [note, setNote] = useState("");
+  const [reason, setReason] = useState<RefundReason | null>(null);
 
   const lines: RefundLine[] = useMemo(() => (s?.lines ?? [])
     .filter((l) => (qty[l.id] ?? 0) > 0)
@@ -60,7 +62,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
     : mode === "valor" ? (Number.isFinite(typed) ? typed : 0)
     : (lines.length || shipping) ? (preview.data?.amount ?? 0) : 0;
   const overMax = !!s && amount > s.maxRefundable + 0.001;
-  const ready = !!s && amount > 0 && !overMax && !(mode === "itens" && preview.isFetching);
+  const ready = !!s && amount > 0 && !overMax && !!reason && !(mode === "itens" && preview.isFetching);
   const canApprove = !!s?.canApprove;
 
   const submit = useMutation({
@@ -71,14 +73,14 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
         confirmText: "Reembolsar", variant: "destructive",
       }))) return null;
       return requestFn({ data: {
-        orderId, conversationId, mode, lines: mode === "itens" ? lines : [], includeShipping: mode === "itens" && shipping,
+        orderId, conversationId, mode, reason, lines: mode === "itens" ? lines : [], includeShipping: mode === "itens" && shipping,
         amount: mode === "valor" ? amount : null, notifyCustomer: notify, chargeOnDelivery: mode === "total" && charge, note: note.trim() || null,
       } });
     },
     onSuccess: (res: any) => {
       if (!res) return;
       if (res.status === "aprovado") toast.success(`Reembolso de ${formatMoney(res.amount, res.currency)} feito`);
-      else toast.success("Reembolso enviado pra aprovação", { description: "O Sergio recebe o aviso no sino e no celular." });
+      else toast.success("Reembolso enviado pra aprovação", { description: "Quem aprova recebe o aviso no sino." });
       qc.invalidateQueries({ queryKey: ["refund-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
       qc.invalidateQueries({ queryKey: ["support-approvals"] });
@@ -175,6 +177,18 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
             )}
 
             <div>
+              <p className="text-xs font-semibold mb-1.5">Motivo</p>
+              <div className="flex flex-wrap gap-1.5">
+                {REFUND_REASONS.map((r) => (
+                  <button key={r.key} type="button" onClick={() => setReason(r.key)}
+                    className={`h-7 px-2.5 rounded-lg border text-[11px] font-medium transition-colors ${reason === r.key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
               <p className="text-xs font-semibold mb-1">Observação (opcional)</p>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000}
                 placeholder="Ex.: produto chegou com defeito, cliente mandou foto"
@@ -206,7 +220,8 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
             {overMax && <p className="text-[11px] text-destructive -mt-2">Maior que o disponível ({formatMoney(s.maxRefundable, s.currency)}).</p>}
             {preview.error && <p className="text-[11px] text-destructive -mt-2">{(preview.error as Error).message}</p>}
 
-            {!canApprove && <p className="text-[11px] text-muted-foreground">Só é feito depois que o Sergio aprovar.</p>}
+            {!reason && <p className="text-[11px] text-muted-foreground">Escolha o motivo pra continuar.</p>}
+            {!canApprove && <p className="text-[11px] text-muted-foreground">Só é feito depois que for aprovado.</p>}
             <button onClick={() => submit.mutate()} disabled={!ready || submit.isPending}
               className={`h-9 w-full rounded-lg text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2 ${canApprove ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}>
               {submit.isPending && <Loader2 className="size-4 animate-spin" />}
@@ -238,7 +253,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 export type RefundRequestView = {
-  id: string; order_id: string; mode: RefundMode; line_items: RefundLine[]; include_shipping: boolean;
+  id: string; order_id: string; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean;
   amount: number; currency: string; notify_customer: boolean; charge_on_delivery: boolean; note: string | null; status: string;
   requestedByName: string | null; decidedByName: string | null; decided_at: string | null; reject_reason: string | null;
   refunded_amount: number | null; error: string | null; created_at: string;
@@ -297,6 +312,7 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
         {r.status !== "aprovado" && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${st.cls}`}>{st.label}</span>}
       </div>
       <p className="text-[11px]">{what}{r.charge_on_delivery ? " · cobrar quando entregar" : ""}</p>
+      {r.reason && <p className="text-[11px] text-muted-foreground">Motivo: {refundReasonLabel(r.reason)}</p>}
       <WhoWhen label="Solicitado" name={r.requestedByName ?? "Equipe"} at={r.created_at} />
       {r.status === "aprovado" && r.decided_at && (
         <WhoWhen label="Aprovado" name={r.decidedByName ?? r.requestedByName ?? "Equipe"} at={r.decided_at} />

@@ -12,7 +12,7 @@ import type { ExchangeItem } from "@/lib/support-exchange.functions";
 // tela mostra 7; os 7 de antes servem pra comparar o tempo de análise). Vê quem
 // aprova ou tem "Aprovações (ver a fila)" nas permissões.
 
-const REFUND_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,mode,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at";
+const REFUND_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,mode,reason,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at";
 const EXCHANGE_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,fault,items,note,status,requested_by,decided_by,decided_at,reject_reason,new_order_name,error,created_at";
 const OPEN = ["pendente", "gerando", "erro"];
 

@@ -10,7 +10,7 @@ export const NOTIFICATION_CATEGORIES = [
   { key: "nt_disputas", label: "Disputas", desc: "Chargeback e inquiry aguardando resposta", prefixes: ["dispute:"] },
   { key: "nt_rastreio", label: "Rastreio", desc: "17track com erro ou sem atualizar", prefixes: ["track123:"] },
   { key: "nt_atendimento", label: "Atendimento", desc: "Zoho Mail com erro ou parado", prefixes: ["zoho_mail:"] },
-  { key: "nt_trocas", label: "Trocas e reembolsos", desc: "Troca ou reembolso aguardando aprovação (só o dono recebe no celular) e aprovado ou recusado (só quem pediu)", prefixes: ["troca:", "troca_res:", "reembolso:", "reembolso_res:"] },
+  { key: "nt_trocas", label: "Trocas e reembolsos", desc: "Troca ou reembolso aguardando aprovação (só o dono recebe no celular), aprovado ou recusado (só quem pediu), produto com reembolso acima do limite e reembolso parado na Shopify", prefixes: ["troca:", "troca_res:", "reembolso:", "reembolso_res:", "refund_rate:", "refund_pending:"] },
   { key: "nt_consultor", label: "Inteligência", desc: "Análise semanal da Inteligência com dicas novas", prefixes: ["consultor:"] },
   { key: "nt_sistema", label: "Erros do sistema", desc: "Rotina automática que falhou (sincronização, webhook, job diário, cobrança dos Alertas, IA…)", prefixes: ["system:"] },
 

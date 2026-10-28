@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { getSupportApprovalDetail, listSupportApprovals } from "@/lib/support-approvals.functions";
-import { decideRefund, type RefundLine, type RefundMode } from "@/lib/support-refund.functions";
+import { decideRefund, setRefundReason, type RefundLine, type RefundMode } from "@/lib/support-refund.functions";
+import { REFUND_REASONS, refundReasonLabel } from "@/lib/refund-reasons";
 import { decideExchange, type ExchangeFault, type ExchangeItem } from "@/lib/support-exchange.functions";
 import { useSupportFn } from "./demo";
 import { formatDuration, formatMoney, fullTime } from "./utils";
@@ -26,7 +27,7 @@ type Base = {
   product: { title: string; variant: string | null; image: string | null } | null;
 };
 type RefundItem = Base & {
-  kind: "reembolso"; mode: RefundMode; line_items: RefundLine[]; include_shipping: boolean; amount: number; currency: string;
+  kind: "reembolso"; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean; amount: number; currency: string;
   notify_customer: boolean; charge_on_delivery: boolean; refunded_amount: number | null;
 };
 type ExchangeReq = Base & { kind: "troca"; fault: ExchangeFault; items: ExchangeItem[]; new_order_name: string | null };
@@ -594,6 +595,7 @@ function DetailPanel({ i, canApprove, actions, onClose, onOpenConversation }: {
               {i.kind === "reembolso" ? (
                 <>
                   <Info label="Valor" value={<span className="font-semibold">{formatMoney(i.amount, i.currency)}</span>} />
+                  <Info label="Motivo" value={<ReasonEdit i={i} canEdit={canApprove} />} />
                   <Info label="Devolve" value={refundWhat(i)} />
                   <Info label="Avisa o cliente" value={i.notify_customer ? "Sim (e-mail da Shopify)" : "Não"} />
                   {i.charge_on_delivery && <Info label="Cobrança" value="Cobrar quando entregar" />}
@@ -738,5 +740,24 @@ function Step({ at, title, text, danger }: { at?: string | null; title: string; 
       {at && <p className="text-[10px] text-muted-foreground">{fullTime(at)}</p>}
       {text && <p className="text-[11px] text-muted-foreground mt-0.5">{text}</p>}
     </li>
+  );
+}
+
+// Motivo do reembolso no painel; quem aprova pode corrigir.
+function ReasonEdit({ i, canEdit }: { i: RefundItem; canEdit: boolean }) {
+  const qc = useQueryClient();
+  const fn = useSupportFn(setRefundReason, "setRefundReason");
+  const save = useMutation({
+    mutationFn: (reason: string) => fn({ data: { id: i.id, reason } }),
+    onSuccess: () => { toast.success("Motivo atualizado"); qc.invalidateQueries({ queryKey: ["support-approvals"] }); qc.invalidateQueries({ queryKey: ["refund-analytics"] }); },
+    onError: (e: any) => toast.error(e.message ?? "Erro"),
+  });
+  if (!canEdit) return <>{refundReasonLabel(i.reason)}</>;
+  return (
+    <select value={i.reason ?? ""} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}
+      className="h-7 max-w-full rounded-md border border-border bg-background px-1.5 text-xs outline-none focus:border-primary">
+      {!i.reason && <option value="">Sem motivo</option>}
+      {REFUND_REASONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+    </select>
   );
 }

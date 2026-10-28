@@ -21,6 +21,7 @@ import { businessHoursLabel, currentMonth } from "@/lib/support-kpis";
 import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import { SupportImagesView } from "@/components/atendimento/SupportImagesView";
 import { SupportApprovalsView } from "@/components/atendimento/SupportApprovalsView";
+import { SupportRefundAnalytics } from "@/components/atendimento/SupportRefundAnalytics";
 import { listSupportApprovals } from "@/lib/support-approvals.functions";
 import type { DateRange } from "react-day-picker";
 import { localDateKey } from "@/lib/timezone";
@@ -100,13 +101,17 @@ function Inboxes({ status }: { status: ZohoStatus }) {
   const canView = (v: View) => demo || accessLoading || (v === "aprovacoes" ? approver : canAccessSection(VIEW_SECTION[v]));
   const [view, setViewState] = useState<View>("inbox");
   const setView = (v: View) => setViewState(v);
-  // Notificação de troca/reembolso para aprovar abre /atendimento?v=aprovacoes
-  // (também quando a tela já está aberta).
+  // Aprovações tem duas partes: a fila e a análise de reembolsos.
+  const [approvalsPart, setApprovalsPart] = useState<"fila" | "analise">("fila");
+  // Notificação de troca/reembolso para aprovar abre /atendimento?v=aprovacoes;
+  // o alerta de reembolso alto, ?v=reembolsos (também com a tela já aberta).
   const navigate = useNavigate();
   const href = useRouterState({ select: (s) => s.location.href });
   useEffect(() => {
-    if (new URLSearchParams(href.split("?")[1] ?? "").get("v") !== "aprovacoes") return;
+    const v = new URLSearchParams(href.split("?")[1] ?? "").get("v");
+    if (v !== "aprovacoes" && v !== "reembolsos") return;
     setViewState("aprovacoes");
+    setApprovalsPart(v === "reembolsos" ? "analise" : "fila");
     navigate({ to: "/atendimento", replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [href]);
@@ -423,7 +428,19 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       </div>
 
       {view === "aprovacoes" ? (
-        <SupportApprovalsView onOpenConversation={(id) => { setView("inbox"); setSelectedId(id); }} />
+        <div className="space-y-4">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit">
+            {([["fila", "Fila de aprovação"], ["analise", "Análise de reembolsos"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setApprovalsPart(k)}
+                className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${approvalsPart === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {approvalsPart === "fila"
+            ? <SupportApprovalsView onOpenConversation={(id) => { setView("inbox"); setSelectedId(id); }} />
+            : <SupportRefundAnalytics onOpenConversation={(id) => { setView("inbox"); setSelectedId(id); }} />}
+        </div>
       ) : view === "imagens" ? (
         <SupportImagesView onOpenConversation={(id) => { setView("inbox"); setSelectedId(id); }} />
       ) : view === "kpi" ? (

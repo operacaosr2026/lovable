@@ -4,6 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { shopifyGql } from "@/lib/chargeback-recovery.server";
 import { raiseNotification, resolveNotification } from "@/lib/notifications.server";
+import { REFUND_REASON_KEYS, refundReasonLabel } from "@/lib/refund-reasons";
 import {
   APPROVALS_LINK, assertSupportAccess as assertAccess, customerOf, db, isApprover, loadSupportOrder as loadOrder,
   personName, personNames, tellRequester, type SupportCtx as Ctx,
@@ -120,7 +121,7 @@ export const listRefundRequests = createServerFn({ method: "GET" })
     assertAccess(context as Ctx);
     if (!data.orderIds.length) return { canApprove: isApprover(context as Ctx), requests: [] };
     const { data: rows, error } = await db("support_refund_requests")
-      .select("id,order_id,order_number,mode,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at")
+      .select("id,order_id,order_number,mode,reason,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at")
       .eq("owner_id", context.ownerId).in("order_id", data.orderIds).order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const name = await personNames((rows ?? []).flatMap((r: any) => [r.requested_by, r.decided_by]));
@@ -141,6 +142,7 @@ export const requestRefund = createServerFn({ method: "POST" })
     orderId: z.string().uuid(),
     conversationId: z.string().uuid().nullable(),
     mode: z.enum(REFUND_MODES),
+    reason: z.enum(REFUND_REASON_KEYS),
     lines: LinesInput,
     includeShipping: z.boolean(),
     amount: z.number().positive().max(100_000).nullable(),
@@ -169,7 +171,7 @@ export const requestRefund = createServerFn({ method: "POST" })
     const { data: row, error } = await db("support_refund_requests").insert({
       owner_id: ctx.ownerId, requested_by: ctx.userId, shop_id: o.shop_id, conversation_id: data.conversationId,
       order_id: o.id, order_number: o.order_number, customer_email: customer.email, customer_name: customer.name,
-      mode: data.mode, line_items: data.mode === "itens" ? data.lines : [], include_shipping: data.mode === "itens" && data.includeShipping,
+      mode: data.mode, reason: data.reason, line_items: data.mode === "itens" ? data.lines : [], include_shipping: data.mode === "itens" && data.includeShipping,
       amount, currency: plan.currency, notify_customer: data.notifyCustomer, charge_on_delivery: data.mode === "total" && data.chargeOnDelivery, note: data.note,
     }).select("id").single();
     if (error) throw new Error(error.message);
@@ -186,7 +188,7 @@ export const requestRefund = createServerFn({ method: "POST" })
     await raiseNotification(ctx.ownerId, noticeKey(row.id), {
       level: "warning",
       title: `Reembolso para aprovar — ${o.order_number ?? "pedido"} · ${money(amount, plan.currency)}`,
-      body: `${who} pediu: ${what}.${data.note ? ` Obs.: ${data.note}` : ""}`,
+      body: `${who} pediu: ${what}. Motivo: ${refundReasonLabel(data.reason)}.${data.note ? ` Obs.: ${data.note}` : ""}`,
       link: APPROVALS_LINK,
       targetUserId: ctx.ownerId,
     });
@@ -213,6 +215,18 @@ export const decideRefund = createServerFn({ method: "POST" })
     await resolveNotification(ctx.ownerId, noticeKey(data.id));
     await tellRequester(ctx, "reembolso_res", done[0], `Reembolso recusado — ${done[0].order_number ?? "pedido"}`, data.reason ?? "Sem motivo informado.");
     return { status: "recusado" as const, amount: null };
+  });
+
+// Corrigir o motivo (quem aprova), ex.: os antigos classificados pela observação.
+export const setRefundReason = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid(), reason: z.enum(REFUND_REASON_KEYS) }).parse(d))
+  .handler(async ({ data, context }) => {
+    if (!isApprover(context as Ctx)) throw new Error("Sem permissão para mudar o motivo");
+    const { error } = await db("support_refund_requests").update({ reason: data.reason })
+      .eq("id", data.id).eq("owner_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // Faz o reembolso na Shopify. Trava em "gerando" (dois cliques não reembolsam

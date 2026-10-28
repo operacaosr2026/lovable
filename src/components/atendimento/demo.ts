@@ -406,6 +406,9 @@ const demoApi = {
   previewRefund: async () => ({ amount: 0 }),
   requestRefund: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
   decideRefund: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
+  setRefundReason: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
+  getRefundAnalytics: async () => { throw new Error("Modo demonstração — a análise usa só pedidos de verdade"); },
+  saveRefundAlertSettings: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
   listSupportApprovals: async () => ({ canApprove: false, items: [] }),
   getSupportApprovalDetail: async () => ({ currency: "USD", lines: [], images: [], messages: [] }),
 

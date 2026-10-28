@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshSystemNotifications } from "@/lib/notifications.server";
 import { checkGoalEvents, checkProfitReports } from "@/lib/goal-events.server";
 import { recheckStoreSetups } from "@/lib/store-policies.server";
+import { checkRefundAlerts } from "@/lib/support-refund-analytics.server";
 
 // Disparado a cada 5 min pelo pg_cron (ver *_push_notifications_cron.sql):
 // recalcula os avisos do sino de cada workspace (token da Meta, sync da
@@ -34,6 +35,9 @@ export const Route = createFileRoute("/api/public/hooks/notifications-refresh")(
           catch (e: any) { console.error("notifications-refresh metas", owner, e); out[owner] += ` · metas: ${String(e?.message ?? e).slice(0, 120)}`; }
           try { await checkProfitReports(owner); }
           catch (e: any) { console.error("notifications-refresh lucro", owner, e); out[owner] += ` · lucro: ${String(e?.message ?? e).slice(0, 120)}`; }
+          // Produto com reembolso acima do limite / reembolso parado na Shopify (1x/hora).
+          try { await checkRefundAlerts(owner); }
+          catch (e: any) { console.error("notifications-refresh reembolsos", owner, e); out[owner] += ` · reembolsos: ${String(e?.message ?? e).slice(0, 120)}`; }
           // Loja nova: só as com aviso aberto (some sozinho quando corrigir) e as esperando os 1ºs pedidos.
           try { await recheckStoreSetups(owner); }
           catch (e: any) { console.error("notifications-refresh loja nova", owner, e); out[owner] += ` · loja nova: ${String(e?.message ?? e).slice(0, 120)}`; }
