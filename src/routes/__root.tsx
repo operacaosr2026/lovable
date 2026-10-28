@@ -11,7 +11,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { AppLayout } from "@/components/AppLayout";
-import { ProfitPopup } from "@/components/ProfitPopup";
+import { EntryPopup } from "@/components/EntryPopup";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSettingsProvider } from "@/lib/app-settings";
 import { useLocation, Navigate } from "@tanstack/react-router";
@@ -199,7 +199,7 @@ function AuthGate() {
   return (
     <>
       <AppLayout />
-      <ProfitPopup />
+      <EntryPopup />
     </>
   );
 }

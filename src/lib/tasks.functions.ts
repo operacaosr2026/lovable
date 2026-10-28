@@ -7,6 +7,7 @@ import type { TablesUpdate } from "@/integrations/supabase/types";
 import { broadcast } from "@/lib/realtime.server";
 import { notifyTaskDone } from "@/lib/notifications.server";
 import { emitEvent } from "@/lib/notify.server";
+import { isoTodayUS } from "@/lib/timezone";
 
 // Push "Tarefa criada pra você" — só pra pessoa responsável, e não quando ela
 // mesma criou/atribuiu. Uma vez por tarefa e pessoa. Nunca derruba a tarefa.
@@ -166,4 +167,23 @@ export const deleteTask = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await broadcast(context.ownerId, "tasks");
     return { ok: true };
+  });
+
+// Aviso ao entrar no sistema: tarefas atrasadas (prazo antes de hoje em Nova
+// York, igual à aba Tarefas) não concluídas em que a pessoa é a responsável.
+// Sem acesso à aba Tarefas, nada.
+export const listMyOverdueTasks = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    if (context.role !== "admin" && !context.permissions.some((p) => p.section === "tarefas")) return [];
+    const today = isoTodayUS();
+    const { data, error } = await supabaseAdmin.from("tasks")
+      .select("id,title,priority,due_date,status")
+      .eq("user_id", context.ownerId).eq("assignee_id", context.userId)
+      .neq("status", "concluida").lt("due_date", today)
+      .order("due_date", { ascending: true }).limit(20);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((t) => ({
+      ...t, daysLate: Math.round((new Date(`${today}T00:00:00Z`).getTime() - new Date(`${t.due_date}T00:00:00Z`).getTime()) / 86_400_000),
+    }));
   });
