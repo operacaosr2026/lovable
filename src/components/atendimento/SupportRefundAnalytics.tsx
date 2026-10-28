@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  AlertTriangle, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Box, CalendarDays, Clock, Hourglass, List, Loader2, MessageSquare, Package, Percent,
   Layers, Search, Tag, Undo2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -106,15 +106,27 @@ function Basis() {
   );
 }
 
+// Subiu/caiu em relação ao período anterior (fechado). Menos reembolso = verde.
+function Delta({ cur, prev, comparable, was }: { cur: number; prev: number; comparable: boolean; was: string }) {
+  if (!prev || !comparable) return <span>sem base antes</span>;
+  const p = Math.round(((cur - prev) / prev) * 100);
+  const good = p <= 0;
+  return (
+    <span title={`Período anterior: ${was}`} className={`inline-flex items-center gap-0.5 font-semibold ${good ? "text-emerald-600" : "text-rose-600"}`}>
+      {p <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(p)}% vs. antes
+    </span>
+  );
+}
+
 function Kpis({ d }: { d: Data }) {
   const k = d.kpis;
   const series = (pick: (x: Data["daily"][number]) => number | null) => d.daily.map((x) => ({ v: pick(x) }));
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
-        sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · {d.prev.comparable ? <>antes {usd(d.prev.total)}</> : "sem base antes"}</>} />
+        sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} comparable={d.prev.comparable} was={usd(d.prev.total)} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
-        sub={<>dos pedidos · {d.prev.comparable ? <>antes {pct(d.prev.rateOrders)}</> : "sem base antes"}</>} />
+        sub={<>dos pedidos · <Delta cur={k.rateOrders ?? 0} prev={d.prev.rateOrders ?? 0} comparable={d.prev.comparable} was={pct(d.prev.rateOrders)} /></>} />
       <Kpi icon={Hourglass} tone="amber" label="Pendente na Shopify" value={usd(k.pendingAmount)} spark={series((x) => x.pending)}
         sub={<>{k.pendingCount} reembolso{k.pendingCount === 1 ? "" : "s"} ainda não concluído{k.pendingCount === 1 ? "" : "s"}</>} />
       <Kpi icon={Clock} tone="blue" label="Da compra ao reembolso" value={k.avgDaysToRefund == null ? "—" : `${k.avgDaysToRefund.toFixed(0)} dias`}
