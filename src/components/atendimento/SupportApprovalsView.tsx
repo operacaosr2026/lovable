@@ -9,8 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { getSupportApprovalDetail, listSupportApprovals } from "@/lib/support-approvals.functions";
-import { decideRefund, setRefundReason, type RefundLine, type RefundMode } from "@/lib/support-refund.functions";
-import { REFUND_REASONS, refundReasonLabel } from "@/lib/refund-reasons";
+import { decideRefund, type RefundLine, type RefundMode } from "@/lib/support-refund.functions";
+import { refundReasonLabel } from "@/lib/refund-reasons";
 import { decideExchange, type ExchangeFault, type ExchangeItem } from "@/lib/support-exchange.functions";
 import { useSupportFn } from "./demo";
 import { formatDuration, formatMoney, fullTime } from "./utils";
@@ -112,7 +112,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   // Painel aberto: tabela enxuta (loja embaixo do cliente, sem a coluna Tipo,
   // Recusar no menu) pra caber ao lado sem cortar.
   const compact = !!openItem;
-  const headers = compact ? ["Pedido", "Cliente", "Valor", "Solicitado em", "Status"] : ["Pedido", "Cliente", "Loja", "Tipo", "Valor", "Solicitado em", "Status"];
+  const headers = compact ? ["Pedido", "Cliente", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Cliente", "Loja", "Tipo", "Valor", "Motivo", "Solicitado em", "Status"];
 
   return (
     <div className="space-y-4 pb-6">
@@ -218,6 +218,9 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                         {!compact && <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>}
                         {!compact && <td className="px-3 py-2.5"><KindBadge kind={i.kind} /></td>}
                         <td className="px-3 py-2.5 font-semibold whitespace-nowrap">{i.kind === "reembolso" ? formatMoney(i.amount, i.currency) : "—"}</td>
+                        <td className="px-3 py-2.5 max-w-[160px] truncate text-muted-foreground" title={i.kind === "reembolso" ? refundReasonLabel((i as any).reason) : undefined}>
+                          {i.kind === "reembolso" ? refundReasonLabel((i as any).reason) : "—"}
+                        </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <p>{day(i.created_at)}</p>
                           <p className="text-[11px] text-muted-foreground">há {ago(i.created_at)}</p>
@@ -595,7 +598,8 @@ function DetailPanel({ i, canApprove, actions, onClose, onOpenConversation }: {
               {i.kind === "reembolso" ? (
                 <>
                   <Info label="Valor" value={<span className="font-semibold">{formatMoney(i.amount, i.currency)}</span>} />
-                  <Info label="Motivo" value={<ReasonEdit i={i} canEdit={canApprove} />} />
+                  {/* Motivo vem da criação do reembolso — não se edita aqui. */}
+                  <Info label="Motivo" value={refundReasonLabel(i.reason)} />
                   <Info label="Devolve" value={refundWhat(i)} />
                   <Info label="Avisa o cliente" value={i.notify_customer ? "Sim (e-mail da Shopify)" : "Não"} />
                   {i.charge_on_delivery && <Info label="Cobrança" value="Cobrar quando entregar" />}
@@ -743,21 +747,3 @@ function Step({ at, title, text, danger }: { at?: string | null; title: string; 
   );
 }
 
-// Motivo do reembolso no painel; quem aprova pode corrigir.
-function ReasonEdit({ i, canEdit }: { i: RefundItem; canEdit: boolean }) {
-  const qc = useQueryClient();
-  const fn = useSupportFn(setRefundReason, "setRefundReason");
-  const save = useMutation({
-    mutationFn: (reason: string) => fn({ data: { id: i.id, reason } }),
-    onSuccess: () => { toast.success("Motivo atualizado"); qc.invalidateQueries({ queryKey: ["support-approvals"] }); qc.invalidateQueries({ queryKey: ["refund-analytics"] }); },
-    onError: (e: any) => toast.error(e.message ?? "Erro"),
-  });
-  if (!canEdit) return <>{refundReasonLabel(i.reason)}</>;
-  return (
-    <select value={i.reason ?? ""} disabled={save.isPending} onChange={(e) => save.mutate(e.target.value)}
-      className="h-7 max-w-full rounded-md border border-border bg-background px-1.5 text-xs outline-none focus:border-primary">
-      {!i.reason && <option value="">Sem motivo</option>}
-      {REFUND_REASONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-    </select>
-  );
-}

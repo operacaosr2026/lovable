@@ -223,9 +223,11 @@ export const setRefundReason = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ id: z.string().uuid(), reason: z.enum(REFUND_REASON_KEYS) }).parse(d))
   .handler(async ({ data, context }) => {
     if (!isApprover(context as Ctx)) throw new Error("Sem permissão para mudar o motivo");
-    const { error } = await db("support_refund_requests").update({ reason: data.reason })
-      .eq("id", data.id).eq("owner_id", context.ownerId);
+    // O motivo é escolhido na criação do reembolso: aqui só preenche o que veio sem.
+    const { data: rows, error } = await db("support_refund_requests").update({ reason: data.reason })
+      .eq("id", data.id).eq("owner_id", context.ownerId).is("reason", null).select("id");
     if (error) throw new Error(error.message);
+    if (!rows?.length) throw new Error("O motivo já foi escolhido na criação do reembolso");
     return { ok: true };
   });
 
