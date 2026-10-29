@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -577,6 +577,11 @@ export function LgOrders({
           for (const orders of group.byShop.values()) {
             for (const o of orders) allDayIds.push(o.id);
           }
+          // Reenvio por conta do fornecedor no dia: avisa já na linha fechada.
+          let supplierResends = 0;
+          for (const orders of group.byShop.values()) {
+            for (const o of orders) if (orderTags(o).some((t) => t.toLowerCase() === "reenvio-fornecedor")) supplierResends++;
+          }
           const allDaySelected = allDayIds.length > 0 && allDayIds.every((id) => selected.has(id));
           const someDaySelected = allDayIds.some((id) => selected.has(id));
 
@@ -599,9 +604,17 @@ export function LgOrders({
                   <span className="text-xs text-muted-foreground uppercase">{weekday}</span>
                   <span className="text-sm font-semibold text-foreground">{dayMonth}</span>
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {isConsolidated ? `${group.byShop.size} loja${group.byShop.size !== 1 ? "s" : ""} · ` : ""}
-                  Processar dia {processDates.map(fmtDayMonth).join(", ")}
+                <div className="text-xs text-muted-foreground truncate flex items-center gap-2 min-w-0">
+                  <span className="truncate">
+                    {isConsolidated ? `${group.byShop.size} loja${group.byShop.size !== 1 ? "s" : ""} · ` : ""}
+                    Processar dia {processDates.map(fmtDayMonth).join(", ")}
+                  </span>
+                  {supplierResends > 0 && (
+                    <span className="shrink-0 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-amber-500/10 text-amber-600 border-amber-500/20"
+                      title="Pedidos com a tag reenvio-fornecedor neste dia">
+                      <AlertTriangle className="size-3" /> {supplierResends} reenvio-fornecedor
+                    </span>
+                  )}
                 </div>
                 {/* col Processamento */}
                 <div>
