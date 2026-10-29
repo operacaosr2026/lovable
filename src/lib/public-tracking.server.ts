@@ -81,7 +81,16 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
     ? await supabaseAdmin.from("shop_orders").select(ORDER_COLS).eq("id", tr.order_id).maybeSingle()
     : await supabaseAdmin.from("shop_orders").select(ORDER_COLS)
         .eq("tracking_code", code).order("order_date", { ascending: false }).limit(1).maybeSingle();
-  if (!tr && !order) return { tracking: null };
+  if (!tr && !order) {
+    // Código antigo (trocado na Logística ou na Shopify): mostra o rastreio do
+    // código atual do pedido — o cliente pode ter só o e-mail com o antigo.
+    const { data: moved } = await supabaseAdmin.from("shop_orders").select("tracking_code")
+      .filter("tracking_code_history", "cs", JSON.stringify([{ code }]))
+      .not("tracking_code", "is", null).order("order_date", { ascending: false }).limit(1).maybeSingle();
+    const next = String(moved?.tracking_code ?? "").trim().toUpperCase();
+    if (next && next !== code) return lookupPublicTracking(next);
+    return { tracking: null };
+  }
 
   const o: any = order;
   const status = normalizeStatus(tr?.tracking_status, o?.delivery_status === "delivered");

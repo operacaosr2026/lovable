@@ -690,7 +690,7 @@ const ORDER_LIST_COLUMNS = [
   "id", "user_id", "shop_id", "source", "external_id", "order_number", "created_at_shopify", "order_date",
   "items_count", "revenue", "currency", "payment_status", "payment_batch_id", "paid_at", "shipped_at",
   "delivered_at", "problem_at", "created_at", "updated_at", "connection_id", "carrier", "tracking_code",
-  "tracking_url", "delivery_status", "shopify_financial_status", "logistics_note", "kpi_excluded",
+  "tracking_url", "delivery_status", "shopify_financial_status", "logistics_note", "kpi_excluded", "tracking_code_history",
 ].join(",");
 
 export const listOrders = createServerFn({ method: "GET" })

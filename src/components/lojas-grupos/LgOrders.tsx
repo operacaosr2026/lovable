@@ -46,11 +46,11 @@ function productSummary(o: any) {
   return unique.length > 1 ? `${unique[0]} +${unique.length - 1}` : unique[0];
 }
 
-// Busca: nº do pedido, produto, cliente (nome/e-mail/destinatário) e rastreio.
+// Busca: nº do pedido, produto, cliente (nome/e-mail/destinatário) e rastreio (o atual e os antigos).
 function orderMatches(o: any, term: string) {
   const raw = o.raw ?? {};
   const hay = [
-    o.order_number, o.tracking_code, raw.email, raw.customer?.email,
+    o.order_number, o.tracking_code, ...((o.tracking_code_history ?? []) as any[]).map((h) => h?.code), raw.email, raw.customer?.email,
     [raw.customer?.first_name, raw.customer?.last_name].filter(Boolean).join(" "),
     raw.shipping_address?.name,
     ...((raw.line_items ?? []) as any[]).map((li) => `${li.title ?? li.name ?? ""} ${li.variant_title ?? ""} ${li.sku ?? ""}`),

@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { inBucket, daysSince, attentionReason, needsAttention, computeLogisticsKpis, postingCalendar } from "@/lib/logistics-kpis";
 import { listPostingHolidays } from "@/lib/posting-holidays.functions";
-import { isoTodayUS } from "@/lib/timezone";
+import { formatDateUS, isoTodayUS } from "@/lib/timezone";
 import { notifyOrderCustomers, NOTIFY_TEMPLATE } from "@/lib/atendimento.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
@@ -28,6 +28,17 @@ function addD(iso: string, n: number) {
 function orderLabel(o: any) {
   const n = o.order_number ?? o.id.slice(0, 8);
   return String(n).startsWith("#") ? n : `#${n}`;
+}
+
+// Códigos trocados (à mão ou pela Shopify), mais recente primeiro.
+function previousCodes(o: any): { code: string; until: string }[] {
+  return Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : [];
+}
+
+// Busca: nº do pedido ou código de rastreio (o atual e os antigos).
+function searchMatches(o: any, term: string) {
+  const codes = [o.tracking_code, ...previousCodes(o).map((h) => h.code)].filter(Boolean).map((c) => String(c).toLowerCase());
+  return orderLabel(o).toLowerCase().replace(/^#/, "").includes(term) || codes.some((c) => c.includes(term));
 }
 function orderNum(o: any): number {
   const m = String(o.order_number ?? "").match(/(\d+)/);
@@ -287,7 +298,7 @@ export function LgLogistica({
   // período como se a busca não existisse.
   const searchTerm = search.trim().toLowerCase().replace(/^#/, "");
   const kpiScopedOrders = !searchTerm ? shopScopedOrders
-    : shopScopedOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
+    : shopScopedOrders.filter((o) => searchMatches(o, searchTerm));
   // Mesma conta do Dashboard (ver logistics-kpis.ts).
   const postingCal = postingCalendar(holidays);
   const shared = computeLogisticsKpis(kpiScopedOrders, nowMs, postingCal);
@@ -315,7 +326,7 @@ export function LgLogistica({
     : allOrders.filter((o) => inBucket(o, statusFilter));
   const byShop = shopFilter === "todas" ? byStatus : byStatus.filter((o) => o.shop_id === shopFilter);
   const visibleOrders = !searchTerm ? byShop
-    : allOrders.filter((o) => orderLabel(o).toLowerCase().replace(/^#/, "").includes(searchTerm));
+    : allOrders.filter((o) => searchMatches(o, searchTerm));
   // Sempre por data do pedido, do mais antigo pro mais novo — é o que
   // precisa de ação primeiro.
   const sortedOrders = [...visibleOrders].sort((a, b) => {
@@ -530,7 +541,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar pedido (ex: WV1307)"
+          placeholder="Buscar pedido ou rastreio (ex: WV1307)"
           className="h-8 w-44 text-xs"
         />
         {isConsolidated && (
@@ -667,6 +678,11 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 ) : (
                   <span className="text-muted-foreground/50">—</span>
                 )}
+                {previousCodes(o).map((h) => (
+                  <div key={h.code + h.until} className="text-[10px] text-muted-foreground truncate" title={`Código anterior, trocado em ${formatDateUS(h.until, { day: "2-digit", month: "2-digit" })}`}>
+                    antes: <span className="line-through">{h.code}</span>
+                  </div>
+                ))}
               </div>
               <div>
                 <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
