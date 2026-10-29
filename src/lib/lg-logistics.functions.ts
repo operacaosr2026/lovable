@@ -218,13 +218,13 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
   });
 
 // Trocar o código de rastreio pelo Atendimento (reenvio): troca no envio da
-// Shopify (sem avisar o cliente) e aqui. O pacote novo começa do zero — sai o
+// Shopify (notify: a Shopify manda o e-mail "Shipping update" pro cliente) e aqui. O pacote novo começa do zero — sai o
 // "entregue"/problema do antigo; a Data Postado (1º envio) fica. Histórico do
 // código, Fora do KPI e limpeza do problema vêm do gatilho do banco.
 export const changeTrackingCode = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d: unknown) =>
-    z.object({ order_id: z.string().uuid(), tracking_code: z.string().trim().min(5).max(50).regex(/^[A-Za-z0-9-]+$/) }).parse(d)
+    z.object({ order_id: z.string().uuid(), tracking_code: z.string().trim().min(5).max(50).regex(/^[A-Za-z0-9-]+$/), notify: z.boolean().default(true) }).parse(d)
   )
   .handler(async ({ context, data }: any) => {
     const next = String(data.tracking_code).trim().toUpperCase();
@@ -238,12 +238,12 @@ export const changeTrackingCode = createServerFn({ method: "POST" })
     const url = buildTrackingUrl(integ?.tracking_link_template ?? null, next);
     const raw: any = cur.raw ?? {};
 
-    let shopify: { ok: boolean; reason?: string };
+    let shopify: { ok: boolean; notified?: boolean; reason?: string };
     try {
       const r = await updateFulfillmentTrackingNumber({
-        shopId: cur.shop_id, fulfillments: raw.fulfillments, currentNumber: cur.tracking_code, newNumber: next, url,
+        shopId: cur.shop_id, fulfillments: raw.fulfillments, currentNumber: cur.tracking_code, newNumber: next, url, notify: data.notify,
       });
-      shopify = r.sent ? { ok: true } : { ok: false, reason: r.reason };
+      shopify = r.sent ? { ok: true, notified: data.notify } : { ok: false, reason: r.reason };
       // Mesmo código no envio guardado — o sync não vê diferença com a Shopify.
       if (r.sent && Array.isArray(raw.fulfillments)) {
         raw.fulfillments = raw.fulfillments.map((f: any) => String(f?.id ?? "") === r.fulfillmentId

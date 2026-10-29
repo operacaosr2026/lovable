@@ -6,24 +6,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { changeTrackingCode } from "@/lib/lg-logistics.functions";
 import { useSupportFn } from "./demo";
 
-// Trocar o código de rastreio (reenvio): troca aqui e no envio da Shopify, sem
-// avisar o cliente. O código antigo fica no histórico do pedido.
+// Trocar o código de rastreio (reenvio): troca aqui e no envio da Shopify, e a
+// Shopify avisa o cliente por e-mail (dá pra desmarcar). O código antigo fica
+// no histórico do pedido.
 export function TrackingCodeDialog({ order, open, onClose }: {
   order: { id: string; number: string | null; tracking: string | null }; open: boolean; onClose: () => void;
 }) {
   const qc = useQueryClient();
   const changeFn = useSupportFn(changeTrackingCode, "changeTrackingCode");
   const [code, setCode] = useState("");
+  const [notify, setNotify] = useState(true);
   const next = code.trim().toUpperCase();
   const valid = /^[A-Z0-9-]{5,50}$/.test(next) && next !== String(order.tracking ?? "").toUpperCase();
 
   const submit = useMutation({
-    mutationFn: () => changeFn({ data: { order_id: order.id, tracking_code: next } }),
+    mutationFn: () => changeFn({ data: { order_id: order.id, tracking_code: next, notify } }),
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ["support-customer"] });
       qc.invalidateQueries({ queryKey: ["lg-logistics"] });
-      if (r?.shopify?.ok) toast.success("Código trocado aqui e na Shopify");
-      else toast.warning(`Código trocado aqui, mas a Shopify não atualizou: ${r?.shopify?.reason ?? "erro"}`);
+      if (r?.shopify?.ok) toast.success(r.shopify.notified ? "Código trocado aqui e na Shopify — cliente avisado por e-mail" : "Código trocado aqui e na Shopify");
+      else toast.warning(`Código trocado aqui, mas a Shopify não atualizou${notify ? " (e o cliente não foi avisado)" : ""}: ${r?.shopify?.reason ?? "erro"}`);
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -48,8 +50,12 @@ export function TrackingCodeDialog({ order, open, onClose }: {
               placeholder="Ex: TRF0116720019018"
               className="h-9 w-full rounded-lg border border-border bg-background px-3 font-mono text-sm uppercase outline-none focus:border-primary" />
           </div>
+          <label className="flex items-start gap-2 text-xs cursor-pointer">
+            <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} className="mt-0.5" />
+            <span>Avisar o cliente por e-mail <span className="text-muted-foreground">(a Shopify manda o "Shipping update" com o rastreio novo)</span></span>
+          </label>
           <p className="text-[11px] text-muted-foreground">
-            Troca aqui e no envio da Shopify, sem avisar o cliente. O pedido volta pra pendente envio até o pacote novo andar,
+            Troca aqui e no envio da Shopify. O pedido volta pra pendente envio até o pacote novo andar,
             sai do KPI, e o código antigo fica guardado.
           </p>
           <button onClick={() => submit.mutate()} disabled={!valid || submit.isPending}

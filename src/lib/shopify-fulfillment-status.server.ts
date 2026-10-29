@@ -61,10 +61,11 @@ export async function updateFulfillmentTrackingUrl(opts: {
 }
 
 // Troca o código de rastreio do envio na Shopify (reenvio feito pelo
-// Atendimento) — mesmo envio, código e link novos, sem avisar o cliente. Sem
-// envio com o código atual, usa o envio ativo mais recente.
+// Atendimento) — mesmo envio, código e link novos. notify: a Shopify manda o
+// e-mail "Shipping update" da loja pro cliente com o rastreio novo. Sem envio
+// com o código atual, usa o envio ativo mais recente.
 export async function updateFulfillmentTrackingNumber(opts: {
-  shopId: string; fulfillments: any[] | null | undefined; currentNumber: string | null; newNumber: string; url: string | null;
+  shopId: string; fulfillments: any[] | null | undefined; currentNumber: string | null; newNumber: string; url: string | null; notify: boolean;
 }): Promise<PushResult & { fulfillmentId?: string }> {
   const active = (opts.fulfillments ?? []).filter((f) => String(f?.status ?? "").toLowerCase() !== "cancelled");
   const found = (opts.currentNumber ? findFulfillment(active, opts.currentNumber) : null) ?? (() => {
@@ -73,10 +74,10 @@ export async function updateFulfillmentTrackingNumber(opts: {
     return f && id ? { f, id } : null;
   })();
   if (!found) return { sent: false, reason: "pedido sem envio na Shopify" };
-  const out = await shopifyGql(opts.shopId, `mutation TrackingNumber($id: ID!, $t: FulfillmentTrackingInput!) {
-    fulfillmentTrackingInfoUpdate(fulfillmentId: $id, trackingInfoInput: $t, notifyCustomer: false) { fulfillment { id } userErrors { field message } }
+  const out = await shopifyGql(opts.shopId, `mutation TrackingNumber($id: ID!, $t: FulfillmentTrackingInput!, $notify: Boolean) {
+    fulfillmentTrackingInfoUpdate(fulfillmentId: $id, trackingInfoInput: $t, notifyCustomer: $notify) { fulfillment { id } userErrors { field message } }
   }`, {
-    id: found.id,
+    id: found.id, notify: opts.notify,
     t: { number: opts.newNumber, ...(opts.url ? { url: opts.url } : {}), ...(found.f.tracking_company ? { company: found.f.tracking_company } : {}) },
   });
   const errs = out?.fulfillmentTrackingInfoUpdate?.userErrors ?? [];
