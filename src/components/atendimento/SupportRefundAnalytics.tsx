@@ -417,8 +417,13 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
     (!status || e.status === status)
     && (!reason || (e.reason ?? (e.source === "shopify" ? "fora_app" : "sem")) === reason)
     && (!term || [e.orderNumber, e.shop, e.product].some((v) => v && norm(v).includes(norm(term)))));
+  // Com filtro, o título mostra o que sobrou (quantidade e valor), não o total.
+  const filtered = !!(status || reason || term);
+  const filteredSum = rows.reduce((s, e) => s + Number(e.amount ?? 0), 0);
   return (
-    <Card icon={List} title={`Reembolsos (${d.events.length})`} hint="Reembolsos dos pedidos vendidos no período, do mais recente pro mais antigo"
+    <Card icon={List}
+      title={filtered ? `Reembolsos (${rows.length} de ${d.events.length}) · ${usd(filteredSum)}` : `Reembolsos (${d.events.length})`}
+      hint="Reembolsos dos pedidos vendidos no período, do mais recente pro mais antigo"
       right={
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
