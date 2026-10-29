@@ -688,7 +688,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 )}
                 {previousCodes(o).map((h) => (
                   <div key={h.code + h.until} className="text-[10px] text-muted-foreground truncate" title={`Código anterior, trocado em ${formatDateUS(h.until, { day: "2-digit", month: "2-digit" })}`}>
-                    antes: <span className="line-through">{h.code}</span>
+                    <span className="line-through cursor-text select-all" onClick={(e) => e.stopPropagation()}>{h.code}</span>
                   </div>
                 ))}
               </div>
