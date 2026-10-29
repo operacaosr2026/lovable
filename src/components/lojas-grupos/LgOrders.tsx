@@ -333,24 +333,30 @@ export function LgOrders({
 
   // Texto pro fornecedor: agrupa os pedidos selecionados por loja com o range de números.
   const supplierMessage = useMemo(() => {
-    const byShop = new Map<string, string[]>();
+    const byShop = new Map<string, { labels: string[]; resends: string[] }>();
+    let total = 0;
     for (const group of groups) {
       for (const [shopId, orders] of group.byShop.entries()) {
         for (const o of orders) {
           if (!selected.has(o.id)) continue;
-          if (!byShop.has(shopId)) byShop.set(shopId, []);
-          byShop.get(shopId)!.push(orderLabel(o));
+          if (!byShop.has(shopId)) byShop.set(shopId, { labels: [], resends: [] });
+          const b = byShop.get(shopId)!;
+          b.labels.push(orderLabel(o));
+          if (orderTags(o).some((t) => t.toLowerCase() === "reenvio-fornecedor")) b.resends.push(orderLabel(o));
+          // Mesmo custo da linha do pedido (reenvio-fornecedor já sai $0,00).
+          total += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags, costOpts(o));
         }
       }
     }
     const domains = (domainsQuery.data ?? {}) as Record<string, string | null>;
-    const blocks = Array.from(byShop.entries()).map(([shopId, orderLabels]) => ({
+    const blocks = Array.from(byShop.entries()).map(([shopId, b]) => ({
       shopName: shopNames[shopId] ?? shopId,
       shopDomain: domains[shopId] ?? null,
-      orderLabels,
+      orderLabels: b.labels,
+      supplierResends: b.resends,
     }));
-    return buildSupplierMessage(blocks);
-  }, [selected, groups, domainsQuery.data, shopNames]);
+    return buildSupplierMessage(blocks, fmtMoney(total));
+  }, [selected, groups, domainsQuery.data, shopNames, costProducts, costByShop]);
 
   const copySupplierMessage = async () => {
     if (!supplierMessage) return;

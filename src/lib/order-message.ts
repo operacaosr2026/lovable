@@ -7,9 +7,11 @@ function trailingOrderNumber(label: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[] };
+// supplierResends: pedidos com a tag reenvio-fornecedor (custo $0,00 pra nós —
+// o fornecedor reenvia por conta dele). total: custo de produto já formatado.
+export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; supplierResends?: string[] };
 
-export function buildSupplierMessage(blocks: SupplierMessageBlock[]): string {
+export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: string): string {
   const body = blocks
     .filter((b) => b.orderLabels.length > 0)
     .map((b) => {
@@ -17,10 +19,13 @@ export function buildSupplierMessage(blocks: SupplierMessageBlock[]): string {
       const range = sorted.length > 1 ? `${sorted[0]} a ${sorted[sorted.length - 1]}` : sorted[0];
       const domain = stripMyshopifyDomain(b.shopDomain);
       const header = domain ? `Loja ${domain} - ${b.shopName}` : `Loja ${b.shopName}`;
-      return `${header}\n${range}`;
+      const resends = [...(b.supplierResends ?? [])].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c));
+      const resendLine = resends.length ? `\nReenvio fornecedor (custo $0.00): ${resends.join(", ")}` : "";
+      return `${header}\n${range}${resendLine}`;
     })
     .join("\n\n");
-  return body ? `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:\n\n${body}` : "";
+  if (!body) return "";
+  return `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:\n\n${body}${total ? `\n\nValor total: ${total}` : ""}`;
 }
 
 // Rastreamento: os pedidos selecionados não são sequenciais, então cada um vai
