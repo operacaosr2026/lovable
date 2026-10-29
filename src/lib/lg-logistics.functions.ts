@@ -116,14 +116,17 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     // Rebaixado pra "pendente envio": some a Data Postado junto (senão fica
     // contraditório mostrar uma data de postagem com status "pendente"), e
     // não conta mais no tempo médio de postagem lá embaixo.
+    // Reenvio (código trocado, à mão ou pela Shopify): os prazos de atraso contam
+    // do reenvio, não da compra; a Data Postado continua a do primeiro envio.
+    const history = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
+    const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;
     let shippedAt = o.shipped_at;
     if (status === "shipped" && isInfoReceivedOnly(lastLabelMap.get(o.id))) {
       status = "pending_shipment";
-      shippedAt = null;
+      if (!resentAt) shippedAt = null;
     }
 
-    // Reenvio (código trocado à mão): os prazos de atraso contam do reenvio, não da compra.
-    const clockFrom = o.tracking_code_manual_at ? isoDateUS(o.tracking_code_manual_at) : o.order_date;
+    const clockFrom = resentAt ? isoDateUS(resentAt) : o.order_date;
     let note = o.logistics_note;
     if (status !== "delivered" && status !== "problem" && status !== "returned" && status !== "waiting_customer") {
       const daysSinceOrder = (nowMs - new Date(clockFrom).getTime()) / 86_400_000;
@@ -159,21 +162,19 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
     // Código trocado à mão (pacote reenviado fora da Shopify): marca pro sync do
     // 17track não voltar pro código da Shopify, e refaz o link se ele ainda era o do código antigo.
     let codeChanged = false;
+    const { data: cur } = await supabaseAdmin.from("shop_orders").select("shop_id,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at")
+      .eq("id", order_id).eq("user_id", context.ownerId).maybeSingle();
     if (patch.tracking_code !== undefined) {
-      const { data: cur } = await supabaseAdmin.from("shop_orders").select("shop_id,tracking_code,tracking_url,delivery_status")
-        .eq("id", order_id).eq("user_id", context.ownerId).maybeSingle();
       const next = String(patch.tracking_code ?? "").trim().toUpperCase();
       if (cur && next && next !== String(cur.tracking_code ?? "").trim().toUpperCase()) {
         codeChanged = true;
         patch.tracking_code = next;
         extra.tracking_code_manual_at = new Date().toISOString();
         extra.logistics_note = null; // problema do pacote antigo — o sync preenche de novo se o novo tiver
-        // Pacote novo começa do zero: postagem e problema eram do antigo (o sync
-        // grava a postagem do novo na 1ª movimentação). Se o status escolhido na
-        // tela foi outro, ele vale.
+        // Pacote novo: o problema era do antigo. A Data Postado fica (é a do
+        // primeiro envio); a data do reenvio é a da troca do código.
         if (!patch.delivery_status || patch.delivery_status === cur.delivery_status || patch.delivery_status === "problem") {
           patch.delivery_status = "pending_shipment";
-          extra.shipped_at = null;
           extra.problem_at = null;
         }
         if (!patch.tracking_url || patch.tracking_url === cur.tracking_url) {
@@ -184,9 +185,13 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
         }
       }
     }
-    if (patch.delivery_status === "shipped") extra.shipped_at = isoTodayUS();
-    if (patch.delivery_status === "delivered") extra.delivered_at = isoTodayUS();
-    if (patch.delivery_status === "problem") extra.problem_at = isoTodayUS();
+    // Datas só quando o status muda de fato e ainda não têm valor — salvar a
+    // janela de novo (ex: só pra mexer na obs) regravava a data como hoje.
+    if (patch.delivery_status && patch.delivery_status !== cur?.delivery_status) {
+      if (patch.delivery_status === "shipped" && !cur?.shipped_at) extra.shipped_at = isoTodayUS();
+      if (patch.delivery_status === "delivered" && !cur?.delivered_at) extra.delivered_at = isoTodayUS();
+      if (patch.delivery_status === "problem" && !cur?.problem_at) extra.problem_at = isoTodayUS();
+    }
     const { error } = await supabaseAdmin
       .from("shop_orders")
       .update({ ...patch, ...extra } as any)

@@ -156,7 +156,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   // Não gasta crédito: os antigos já estão cadastrados no 17track.
   const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const { data: orders, error: ordErr } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-    .select("id,user_id,shop_id,order_date,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,tracking_code_manual_at,fulfillments:raw->fulfillments")
+    .select("id,user_id,shop_id,order_date,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,tracking_code_manual_at,tracking_code_history,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))
     .not("tracking_code", "is", null)
     .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
@@ -464,7 +464,10 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   const eventDate = eventDateUS(lastAt) ?? isoTodayUS();
   const postedDate = firstCarrierEventDateUS(timeline);
   const orderUpdate: TablesUpdate<"shop_orders"> = {};
-  if (postedDate && (!o.shipped_at || String(o.shipped_at).slice(0, 10) < postedDate)) orderUpdate.shipped_at = postedDate;
+  // Código trocado (reenvio): a Data Postado é a do primeiro envio — o pacote
+  // novo só preenche se ela estiver vazia, não empurra pra frente.
+  const resent = !!o.tracking_code_manual_at || (Array.isArray(o.tracking_code_history) && o.tracking_code_history.length > 0);
+  if (postedDate && (!o.shipped_at || (!resent && String(o.shipped_at).slice(0, 10) < postedDate))) orderUpdate.shipped_at = postedDate;
   if (target === "delivered") {
     orderUpdate.delivered_at = eventDate;
     orderUpdate.delivery_status = "delivered";
