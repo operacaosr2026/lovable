@@ -635,8 +635,8 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           <div className="text-center leading-tight" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de<br />Reenvio</div>
           <div className="text-center leading-tight">Data<br />Postado</div>
           <div className="text-center">Tempo de entrega</div>
-          <div>Rastreio</div>
-          <div>Status</div>
+          <div className="text-center">Rastreio</div>
+          <div className="text-center">Status</div>
           <div>Obs</div>
           <div className="text-center leading-tight">Aguarda<br />cliente</div>
           <div className="text-center leading-tight" title="Exclui o pedido da contagem dos KPIs acima (ex: problema causado pelo cliente)">Fora do<br />KPI</div>
@@ -672,7 +672,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
               </div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
-              <div className="text-xs truncate">
+              <div className="text-xs truncate text-center">
                 {o.tracking_url ? (
                   <a
                     href={o.tracking_url}
@@ -694,13 +694,13 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                   </div>
                 ))}
               </div>
-              <div>
+              <div className="text-center">
                 <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
                 {attentionReason(o, nowMs) && (
                   <p className="text-[10px] text-rose-600 mt-0.5">{attentionReason(o, nowMs)}</p>
                 )}
                 {o.customer_notified_at && (
-                  <p className="text-[10px] text-success mt-0.5 flex items-center gap-1" title="E-mail &quot;Update on your order&quot; enviado pelo Avisar cliente">
+                  <p className="text-[10px] text-success mt-0.5 flex items-center justify-center gap-1" title="E-mail &quot;Update on your order&quot; enviado pelo Avisar cliente">
                     <Mail className="size-3" /> Avisado {fmtNotified(o.customer_notified_at)}
                   </p>
                 )}
