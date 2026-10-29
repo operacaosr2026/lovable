@@ -632,8 +632,8 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           </div>
           <div>Pedido</div>
           <div className="text-center leading-tight">Data do<br />Pedido</div>
-          <div className="text-center leading-tight" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de<br />Reenvio</div>
           <div className="text-center leading-tight">Data<br />Postado</div>
+          <div className="text-center leading-tight" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de<br />Reenvio</div>
           <div className="text-center">Tempo de entrega</div>
           <div className="text-center">Rastreio</div>
           <div className="text-center">Status</div>
@@ -667,10 +667,10 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 {fmtShortDate(o.order_date)}
                 {o.before_period && <div className="text-[10px] text-amber-600" title="Pedido de antes do período escolhido — continua aqui porque ainda não foi entregue">antes do período</div>}
               </div>
+              <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs text-muted-foreground text-center">
                 {resentAt(o) ? formatDateUS(resentAt(o)!, { day: "2-digit", month: "2-digit" }) : "—"}
               </div>
-              <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
               <div className="text-xs truncate text-center">
                 {o.tracking_url ? (
