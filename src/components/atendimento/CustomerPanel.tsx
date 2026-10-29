@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, Loader2, Package, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
+import { Copy, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
 } from "@/lib/atendimento.functions";
@@ -9,6 +9,7 @@ import { listExchangeRequests } from "@/lib/support-exchange.functions";
 import { ExchangeDialog, ExchangeRequestCard, type ExchangeRequestView } from "./ExchangeDialog";
 import { listRefundRequests } from "@/lib/support-refund.functions";
 import { RefundDialog, RefundRequestCard, type RefundRequestView } from "./RefundDialog";
+import { TrackingCodeDialog } from "./TrackingCodeDialog";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { formatDateUS } from "@/lib/timezone";
@@ -123,6 +124,7 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
     enabled: orderIds.length > 0, staleTime: 30_000,
   });
   const [refundOrder, setRefundOrder] = useState<string | null>(null);
+  const [trackingOrder, setTrackingOrder] = useState<{ id: string; number: string | null; tracking: string | null } | null>(null);
 
   const update = useMutation({
     mutationFn: (patch: { tags?: string[]; note?: string | null; shop_id?: string | null }) => updateFn({ data: { ids: [conversationId!], patch } }),
@@ -235,6 +237,12 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                         ? <a href={o.trackingUrl} target="_blank" rel="noreferrer" className="font-mono text-primary hover:underline truncate">{o.tracking}</a>
                         : <span className="font-mono truncate">{o.tracking}</span>}
                       {o.delivery && <DeliveryBadge status={o.delivery} />}
+                      {!o.cancelled && (
+                        <button onClick={() => setTrackingOrder(o)} title="Trocar código de rastreio (reenvio)"
+                          className="ml-auto shrink-0 size-6 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted">
+                          <Pencil className="size-3" />
+                        </button>
+                      )}
                     </div>
                   )}
                   {o.trackingHistory?.map((h) => (
@@ -270,6 +278,9 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
               ))}
               {exchangeOrder && (
                 <ExchangeDialog orderId={exchangeOrder} conversationId={conversationId} open onClose={() => setExchangeOrder(null)} />
+              )}
+              {trackingOrder && (
+                <TrackingCodeDialog order={trackingOrder} open onClose={() => setTrackingOrder(null)} />
               )}
               {refundOrder && (
                 <RefundDialog orderId={refundOrder} conversationId={conversationId} open onClose={() => setRefundOrder(null)} />

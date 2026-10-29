@@ -60,6 +60,30 @@ export async function updateFulfillmentTrackingUrl(opts: {
   return { sent: true, status: "TRACKING_URL" };
 }
 
+// Troca o código de rastreio do envio na Shopify (reenvio feito pelo
+// Atendimento) — mesmo envio, código e link novos, sem avisar o cliente. Sem
+// envio com o código atual, usa o envio ativo mais recente.
+export async function updateFulfillmentTrackingNumber(opts: {
+  shopId: string; fulfillments: any[] | null | undefined; currentNumber: string | null; newNumber: string; url: string | null;
+}): Promise<PushResult & { fulfillmentId?: string }> {
+  const active = (opts.fulfillments ?? []).filter((f) => String(f?.status ?? "").toLowerCase() !== "cancelled");
+  const found = (opts.currentNumber ? findFulfillment(active, opts.currentNumber) : null) ?? (() => {
+    const f = [...active].sort((a, b) => String(b?.created_at ?? "").localeCompare(String(a?.created_at ?? "")))[0];
+    const id: string | undefined = f?.admin_graphql_api_id ?? (f?.id ? `gid://shopify/Fulfillment/${f.id}` : undefined);
+    return f && id ? { f, id } : null;
+  })();
+  if (!found) return { sent: false, reason: "pedido sem envio na Shopify" };
+  const out = await shopifyGql(opts.shopId, `mutation TrackingNumber($id: ID!, $t: FulfillmentTrackingInput!) {
+    fulfillmentTrackingInfoUpdate(fulfillmentId: $id, trackingInfoInput: $t, notifyCustomer: false) { fulfillment { id } userErrors { field message } }
+  }`, {
+    id: found.id,
+    t: { number: opts.newNumber, ...(opts.url ? { url: opts.url } : {}), ...(found.f.tracking_company ? { company: found.f.tracking_company } : {}) },
+  });
+  const errs = out?.fulfillmentTrackingInfoUpdate?.userErrors ?? [];
+  if (errs.length) return { sent: false, reason: errs.map((e: any) => e.message).join("; ").slice(0, 200) };
+  return { sent: true, status: "TRACKING_NUMBER", fulfillmentId: String(found.f.id ?? "") };
+}
+
 export async function pushFulfillmentStatusToShopify(opts: {
   orderId: string;                 // shop_orders.id
   trackingNumber: string;

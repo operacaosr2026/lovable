@@ -6,6 +6,7 @@ import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoTodayUS, isoDateUS } from "@/lib/timezone";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { firstCarrierEventDateUS } from "@/lib/tracking-rules.server";
+import { updateFulfillmentTrackingNumber } from "@/lib/shopify-fulfillment-status.server";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -214,4 +215,49 @@ export const updateOrderLogistics = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId);
     if (error) throw new Error(error.message);
     return { ok: true, codeChanged };
+  });
+
+// Trocar o código de rastreio pelo Atendimento (reenvio): troca no envio da
+// Shopify (sem avisar o cliente) e aqui. O pacote novo começa do zero — sai o
+// "entregue"/problema do antigo; a Data Postado (1º envio) fica. Histórico do
+// código, Fora do KPI e limpeza do problema vêm do gatilho do banco.
+export const changeTrackingCode = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d: unknown) =>
+    z.object({ order_id: z.string().uuid(), tracking_code: z.string().trim().min(5).max(50).regex(/^[A-Za-z0-9-]+$/) }).parse(d)
+  )
+  .handler(async ({ context, data }: any) => {
+    const next = String(data.tracking_code).trim().toUpperCase();
+    const { data: cur } = await supabaseAdmin.from("shop_orders").select("id,shop_id,tracking_code,raw")
+      .eq("id", data.order_id).eq("user_id", context.ownerId).maybeSingle();
+    if (!cur) throw new Error("Pedido não encontrado");
+    if (String(cur.tracking_code ?? "").trim().toUpperCase() === next) throw new Error("Esse já é o código do pedido");
+
+    const { data: integ } = await supabaseAdmin.from("track123_integrations").select("tracking_link_template")
+      .eq("shop_id", cur.shop_id).eq("provider", "17track").maybeSingle();
+    const url = buildTrackingUrl(integ?.tracking_link_template ?? null, next);
+    const raw: any = cur.raw ?? {};
+
+    let shopify: { ok: boolean; reason?: string };
+    try {
+      const r = await updateFulfillmentTrackingNumber({
+        shopId: cur.shop_id, fulfillments: raw.fulfillments, currentNumber: cur.tracking_code, newNumber: next, url,
+      });
+      shopify = r.sent ? { ok: true } : { ok: false, reason: r.reason };
+      // Mesmo código no envio guardado — o sync não vê diferença com a Shopify.
+      if (r.sent && Array.isArray(raw.fulfillments)) {
+        raw.fulfillments = raw.fulfillments.map((f: any) => String(f?.id ?? "") === r.fulfillmentId
+          ? { ...f, tracking_number: next, tracking_numbers: [next], ...(url ? { tracking_url: url, tracking_urls: [url] } : {}) } : f);
+      }
+    } catch (e: any) {
+      shopify = { ok: false, reason: String(e?.message ?? e).slice(0, 200) };
+    }
+
+    const { error } = await supabaseAdmin.from("shop_orders").update({
+      tracking_code: next, ...(url ? { tracking_url: url } : {}), raw,
+      tracking_code_manual_at: new Date().toISOString(),
+      delivery_status: "pending_shipment", delivered_at: null, problem_at: null, logistics_note: null,
+    } as any).eq("id", cur.id).eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true, tracking_code: next, shopify };
   });

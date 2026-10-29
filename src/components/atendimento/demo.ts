@@ -405,6 +405,7 @@ const demoApi = {
   getRefundSetup: async () => { throw new Error("Modo demonstração — reembolso só com pedidos de verdade"); },
   previewRefund: async () => ({ amount: 0 }),
   requestRefund: async () => { throw new Error("Modo demonstração — nada foi pedido"); },
+  changeTrackingCode: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
   decideRefund: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
   setRefundReason: async () => { throw new Error("Modo demonstração — nada foi alterado"); },
   getRefundAnalytics: async () => { throw new Error("Modo demonstração — a análise usa só pedidos de verdade"); },
