@@ -64,7 +64,7 @@ const LABELS: Record<string, string> = {
   updateCreative: "Editou criativo", updateGratitude: "Editou gratidão", updateKanbanColumn: "Editou coluna de kanban",
   updateLgCard: "Editou grupo", updateLgCardGoal: "Editou meta de grupo", updateLgCardMatriz: "Alterou loja matriz do grupo",
   updateLgCardNote: "Editou nota do Diário", updateLgCardShopConfig: "Alterou prazos da loja no grupo",
-  updateMemberPermissions: "Alterou permissões de membro", updateOrderLogistics: "Editou rastreio de pedido", changeTrackingCode: "Trocou código de rastreio (reenvio)",
+  updateMemberPermissions: "Alterou permissões de membro", dismissGerencialAlert: "Desconsiderou/voltou alerta do Gerencial", updateOrderLogistics: "Editou rastreio de pedido", changeTrackingCode: "Trocou código de rastreio (reenvio)",
   updateProduct: "Editou produto", updateProject: "Editou projeto", updateProjectTask: "Editou tarefa de projeto",
   updateShop: "Editou loja", updateShopRoutine: "Editou rotina de loja", updateShopTask: "Editou tarefa",
   updateSimulatedAdEstimate: "Editou estimativa de anúncio (simulador)", updateSimulatedExpense: "Editou despesa simulada",

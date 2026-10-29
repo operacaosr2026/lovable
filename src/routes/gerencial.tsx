@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AlertTriangle, ArrowDown, ArrowUp, Brain, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Loader2, MessageSquare,
-  Package, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2,
+  Package, RotateCcw, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { isoTodayUS } from "@/lib/timezone";
-import { getGerencial } from "@/lib/gerencial.functions";
+import { dismissGerencialAlert, getGerencial } from "@/lib/gerencial.functions";
 import { listSupportApprovals } from "@/lib/support-approvals.functions";
 import { SupportApprovalsView } from "@/components/atendimento/SupportApprovalsView";
 import { SupportRefundAnalytics } from "@/components/atendimento/SupportRefundAnalytics";
@@ -221,14 +222,52 @@ const LEVEL = {
   atencao: { label: "Atenção", icon: "bg-amber-500/10 text-amber-600", bar: "bg-amber-400", metric: "text-foreground", btn: "bg-muted text-foreground hover:bg-muted/70" },
 } as const;
 
+// Desconsiderar: o alerta sai da lista no mês escolhido (pra toda a equipe) e
+// volta no mês seguinte; os desconsiderados ficam embaixo, com "Voltar".
 function Alerts({ d }: { d: Data }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const dismissFn = useServerFn(dismissGerencialAlert);
+  const [showDismissed, setShowDismissed] = useState(false);
+  const dismiss = useMutation({
+    mutationFn: (v: { key: string; undo?: boolean }) => dismissFn({ data: { month: d.month, ...v } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["gerencial", d.month] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const dismissed = d.dismissedAlerts ?? [];
+  const dismissedList = !!dismissed.length && (
+    <div>
+      <button onClick={() => setShowDismissed((v) => !v)}
+        className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <ChevronRight className={`size-3.5 transition-transform ${showDismissed ? "rotate-90" : ""}`} /> Desconsiderados ({dismissed.length})
+      </button>
+      {showDismissed && (
+        <div className="space-y-2 mt-2">
+          {dismissed.map((a) => (
+            <div key={a.key} className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-muted-foreground">{a.title}</p>
+                <p className="text-xs text-muted-foreground/80 truncate">{a.metric} · {a.metricLabel}</p>
+              </div>
+              <button onClick={() => dismiss.mutate({ key: a.key, undo: true })} disabled={dismiss.isPending}
+                className="shrink-0 h-8 px-3 rounded-lg text-xs font-medium bg-muted hover:bg-muted/70 inline-flex items-center gap-1">
+                <RotateCcw className="size-3.5" /> Voltar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
   if (!d.alerts.length) {
     return (
-      <div className="rounded-3xl border border-border bg-card py-16 grid place-items-center text-center">
-        <span className="size-12 rounded-2xl grid place-items-center bg-emerald-500/10 text-emerald-600 mb-3"><CircleCheck className="size-6" /></span>
-        <p className="text-sm font-semibold">Tudo em ordem</p>
-        <p className="text-xs text-muted-foreground">Nada pedindo decisão agora.</p>
+      <div className="space-y-5">
+        <div className="rounded-3xl border border-border bg-card py-16 grid place-items-center text-center">
+          <span className="size-12 rounded-2xl grid place-items-center bg-emerald-500/10 text-emerald-600 mb-3"><CircleCheck className="size-6" /></span>
+          <p className="text-sm font-semibold">Tudo em ordem</p>
+          <p className="text-xs text-muted-foreground">Nada pedindo decisão agora.</p>
+        </div>
+        {dismissedList}
       </div>
     );
   }
@@ -243,7 +282,7 @@ function Alerts({ d }: { d: Data }) {
               const Icon = ALERT_ICON[a.kind] ?? AlertTriangle;
               const st = LEVEL[a.level];
               return (
-                <div key={i} className="relative overflow-hidden rounded-2xl border border-border bg-card pl-5 pr-4 py-4 flex flex-wrap items-center gap-4">
+                <div key={a.key ?? i} className="relative overflow-hidden rounded-2xl border border-border bg-card pl-5 pr-4 py-4 flex flex-wrap items-center gap-4">
                   <span className={`absolute left-0 inset-y-0 w-1 ${st.bar}`} />
                   <span className={`size-11 shrink-0 rounded-2xl grid place-items-center ${st.icon}`}><Icon className="size-5" /></span>
                   <div className="min-w-0 flex-1 basis-60">
@@ -258,12 +297,18 @@ function Alerts({ d }: { d: Data }) {
                     className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
                     {a.action} <ChevronRight className="size-3.5" />
                   </button>
+                  <button onClick={() => dismiss.mutate({ key: a.key })} disabled={dismiss.isPending}
+                    title="Desconsiderar este alerta neste mês (some pra toda a equipe; dá pra voltar lá embaixo)"
+                    className="shrink-0 size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
+                    <X className="size-4" />
+                  </button>
                 </div>
               );
             })}
           </div>
         </div>
       ))}
+      {dismissedList}
     </div>
   );
 }

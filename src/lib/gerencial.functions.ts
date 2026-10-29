@@ -33,7 +33,10 @@ const prevMonthOf = (monthStart: string) => {
   return d.toISOString().slice(0, 10);
 };
 
+// key: identifica o alerta pra "Desconsiderar" (tabela gerencial_alert_dismissals,
+// vale no mês escolhido pra toda a equipe).
 export type GerencialAlert = {
+  key: string;
   kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia";
   level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
 };
@@ -202,20 +205,20 @@ export const getGerencial = createServerFn({ method: "GET" })
     const alerts: GerencialAlert[] = [];
     const pl = (n: number, one: string, many: string) => (n === 1 ? one : many);
     if (current && goal && goal.projecao != null && goal.projecao < goal.meta) {
-      alerts.push({ kind: "meta", level: "critico", title: "Meta do mês em risco", link: "/gerencial?tab=metas", action: "Ver metas",
+      alerts.push({ key: "meta", kind: "meta", level: "critico", title: "Meta do mês em risco", link: "/gerencial?tab=metas", action: "Ver metas",
         detail: `No ritmo atual o mês fecha abaixo da meta de ${usd(goal.meta)}.`,
         metric: usd(goal.projecao), metricLabel: "projeção do mês" });
     }
     for (const g of byGroup) {
       if (g.lucro7d != null && g.lucro7d < 0) {
-        alerts.push({ kind: "prejuizo", level: "critico", title: `${g.name} no prejuízo`, link: `/shops/lojas-grupos/${g.id}`, action: "Abrir grupo",
+        alerts.push({ key: `prejuizo:${g.id}`, kind: "prejuizo", level: "critico", title: `${g.name} no prejuízo`, link: `/shops/lojas-grupos/${g.id}`, action: "Abrir grupo",
           detail: `Lucro de ${weekFrom.slice(8)}/${weekFrom.slice(5, 7)} a ${weekTo.slice(8)}/${weekTo.slice(5, 7)} (últimos 7 dias fechados).`,
           metric: usd(g.lucro7d), metricLabel: "últimos 7 dias" });
       }
     }
     const dueSoon = ((openDisputesRes.data ?? []) as any[]).filter((d) => d.evidence_due_by && Date.parse(d.evidence_due_by) - now < 3 * DAY);
     if (dueSoon.length) {
-      alerts.push({ kind: "chargeback", level: "critico", title: `${pl(dueSoon.length, "Chargeback", "Chargebacks")} com prazo acabando`, link: "/chargebacks", action: "Responder",
+      alerts.push({ key: "chargeback", kind: "chargeback", level: "critico", title: `${pl(dueSoon.length, "Chargeback", "Chargebacks")} com prazo acabando`, link: "/chargebacks", action: "Responder",
         detail: `${usd(dueSoon.reduce((s, d) => s + Number(d.amount ?? 0), 0))} em disputa. Sem resposta em até 3 dias, perde automático.`,
         metric: String(dueSoon.length), metricLabel: pl(dueSoon.length, "disputa", "disputas") });
     }
@@ -223,30 +226,30 @@ export const getGerencial = createServerFn({ method: "GET" })
       const over = products.filter((p) => p.rate != null && p.sold >= alertSettings.product_min_sold && p.rate * 100 > alertSettings.product_rate_limit)
         .sort((x, y) => (y.rate ?? 0) - (x.rate ?? 0));
       if (over.length) {
-        alerts.push({ kind: "produto", level: "atencao", title: `${pl(over.length, "Produto", "Produtos")} com reembolso acima de ${alertSettings.product_rate_limit}%`, link: "/gerencial?tab=reembolsos", action: "Ver análise",
+        alerts.push({ key: "produto", kind: "produto", level: "atencao", title: `${pl(over.length, "Produto", "Produtos")} com reembolso acima de ${alertSettings.product_rate_limit}%`, link: "/gerencial?tab=reembolsos", action: "Ver análise",
           detail: over.slice(0, 3).map((p) => `${p.name} (${Math.round((p.rate ?? 0) * 100)}%)`).join(", "),
           metric: `${Math.round((over[0].rate ?? 0) * 100)}%`, metricLabel: over.length === 1 ? "das vendas" : `pior de ${over.length}` });
       }
     }
     const stuck = [...refunds.events, ...refundsPrev.events].filter((e) => e.status === "pendente" && (e.pendingDays ?? 0) >= alertSettings.pending_days);
     if (stuck.length) {
-      alerts.push({ kind: "reembolso", level: "atencao", title: "Reembolso parado na Shopify", link: "/gerencial?tab=reembolsos", action: "Ver análise",
+      alerts.push({ key: "reembolso", kind: "reembolso", level: "atencao", title: "Reembolso parado na Shopify", link: "/gerencial?tab=reembolsos", action: "Ver análise",
         detail: `${usd(sum(stuck))} ainda não concluído há ${alertSettings.pending_days}+ dias.`,
         metric: String(stuck.length), metricLabel: pl(stuck.length, "reembolso", "reembolsos") });
     }
     if (entrega.atencao) {
-      alerts.push({ kind: "entrega", level: "atencao", title: "Pedidos precisando de atenção na entrega", link: "/shops/lojas-grupos", action: "Ver rastreio",
+      alerts.push({ key: "entrega", kind: "entrega", level: "atencao", title: "Pedidos precisando de atenção na entrega", link: "/shops/lojas-grupos", action: "Ver rastreio",
         detail: "Sem envio há 3+ dias úteis, parado no rastreio há 5+ dias, com problema ou sem entrega depois de 20 dias.",
         metric: String(entrega.atencao), metricLabel: `de ${entrega.pedidos} do mês` });
     }
     if (overdue.length) {
-      alerts.push({ kind: "tarefa", level: "atencao", title: `${pl(overdue.length, "Tarefa atrasada", "Tarefas atrasadas")}`, link: "/tarefas", action: "Ver tarefas",
+      alerts.push({ key: "tarefa", kind: "tarefa", level: "atencao", title: `${pl(overdue.length, "Tarefa atrasada", "Tarefas atrasadas")}`, link: "/tarefas", action: "Ver tarefas",
         detail: equipe.tarefas.porPessoa.filter((p) => p.atrasadas).slice(0, 3).map((p) => `${p.name}: ${p.atrasadas}`).join(" · "),
         metric: String(overdue.length), metricLabel: pl(overdue.length, "tarefa", "tarefas") });
     }
     if (equipe.atendimento?.abertoMais36h) {
       const n = equipe.atendimento.abertoMais36h;
-      alerts.push({ kind: "atendimento", level: "atencao", title: "Cliente sem resposta há mais de 36h", link: "/atendimento", action: "Abrir Atendimento",
+      alerts.push({ key: "atendimento", kind: "atendimento", level: "atencao", title: "Cliente sem resposta há mais de 36h", link: "/atendimento", action: "Abrir Atendimento",
         detail: "Cliente esperando é o caminho mais curto pro chargeback.",
         metric: String(n), metricLabel: pl(n, "conversa", "conversas") });
     }
@@ -260,13 +263,17 @@ export const getGerencial = createServerFn({ method: "GET" })
     for (const t of tips) {
       const valor = Number(t.valor_envolvido ?? 0);
       alerts.push({
-        kind: "inteligencia", level: t.prioridade === "critico" || t.prioridade === "alto" ? "critico" : "atencao",
+        key: `inteligencia:${String(t.titulo ?? "")}`, kind: "inteligencia", level: t.prioridade === "critico" || t.prioridade === "alto" ? "critico" : "atencao",
         title: String(t.titulo ?? "Dica da Inteligência"), detail: String(t.frase ?? t.evidencia_principal ?? ""),
         link: "/inteligencia", action: "Ver análise",
         metric: valor > 0 ? usd(valor) : t.prioridade === "oportunidade" ? "Oportunidade" : "Dica",
         metricLabel: valor > 0 ? (t.valor_rotulo ?? (t.valor_tipo === "estimado" ? "estimado" : "envolvido")) : `Inteligência${t.categoria ? ` · ${t.categoria}` : ""}`,
       });
     }
+
+    const { data: dismissedRows } = await supabaseAdmin.from("gerencial_alert_dismissals").select("alert_key")
+      .eq("owner_id", ownerId).eq("month", data.month);
+    const dismissedKeys = new Set((dismissedRows ?? []).map((r) => r.alert_key as string));
 
     return {
       month: data.month, from, to, current, prevMonth: prevFrom.slice(0, 7),
@@ -275,8 +282,25 @@ export const getGerencial = createServerFn({ method: "GET" })
         meta: goal ? { meta: goal.meta, realizado: goal.realizado, projecao: goal.projecao, status: goal.status } : null,
         byGroup,
       },
-      perdas, entrega, alerts,
+      perdas, entrega,
+      alerts: alerts.filter((a) => !dismissedKeys.has(a.key)),
+      dismissedAlerts: alerts.filter((a) => dismissedKeys.has(a.key)),
     };
+  });
+
+// Desconsiderar (ou trazer de volta) um alerta no mês.
+export const dismissGerencialAlert = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), key: z.string().min(1).max(300), undo: z.boolean().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as Ctx & { userId: string };
+    if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
+    const q = supabaseAdmin.from("gerencial_alert_dismissals");
+    const { error } = data.undo
+      ? await q.delete().eq("owner_id", ctx.ownerId).eq("month", data.month).eq("alert_key", data.key)
+      : await q.upsert({ owner_id: ctx.ownerId, month: data.month, alert_key: data.key, dismissed_by: ctx.userId, dismissed_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 function usd(v: number) {

@@ -672,6 +672,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      gerencial_alert_dismissals: {
+        Row: {
+          alert_key: string;
+          dismissed_at: string;
+          dismissed_by: string | null;
+          month: string;
+          owner_id: string;
+        };
+        Insert: {
+          alert_key: string;
+          dismissed_at?: string;
+          dismissed_by?: string | null;
+          month: string;
+          owner_id: string;
+        };
+        Update: {
+          alert_key?: string;
+          dismissed_at?: string;
+          dismissed_by?: string | null;
+          month?: string;
+          owner_id?: string;
+        };
+        Relationships: [];
+      };
       gratitude_entries: {
         Row: {
           content: string;
