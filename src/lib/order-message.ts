@@ -8,24 +8,26 @@ function trailingOrderNumber(label: string): number {
 }
 
 // supplierResends: pedidos com a tag reenvio-fornecedor (custo $0,00 pra nós —
-// o fornecedor reenvia por conta dele). total: custo de produto já formatado.
+// o fornecedor reenvia por conta dele) — vão juntos numa Obs. no fim.
+// total: custo de produto já formatado, em negrito (*…*, WhatsApp) no começo.
 export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; supplierResends?: string[] };
 
 export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: string): string {
-  const body = blocks
-    .filter((b) => b.orderLabels.length > 0)
+  const live = blocks.filter((b) => b.orderLabels.length > 0);
+  const body = live
     .map((b) => {
       const sorted = [...b.orderLabels].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c));
       const range = sorted.length > 1 ? `${sorted[0]} a ${sorted[sorted.length - 1]}` : sorted[0];
       const domain = stripMyshopifyDomain(b.shopDomain);
       const header = domain ? `Loja ${domain} - ${b.shopName}` : `Loja ${b.shopName}`;
-      const resends = [...(b.supplierResends ?? [])].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c));
-      const resendLine = resends.length ? `\nReenvio fornecedor (custo $0.00): ${resends.join(", ")}` : "";
-      return `${header}\n${range}${resendLine}`;
+      return `${header}\n${range}`;
     })
     .join("\n\n");
   if (!body) return "";
-  return `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:\n\n${body}${total ? `\n\nValor total: ${total}` : ""}`;
+  const resends = live.flatMap((b) => [...(b.supplierResends ?? [])].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c)));
+  const head = `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:${total ? `\n\n*Valor total: ${total}*` : ""}`;
+  const obs = resends.length ? `\n\nObs.: reenvio fornecedor (custo $0.00): ${resends.join(", ")}` : "";
+  return `${head}\n\n${body}${obs}`;
 }
 
 // Rastreamento: os pedidos selecionados não são sequenciais, então cada um vai
