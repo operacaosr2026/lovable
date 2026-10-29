@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -47,6 +47,30 @@ export const getGerencial = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
     if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
+    return buildGerencial(ctx, data);
+  });
+
+// Críticos do mês atual (menu lateral): guardados em gerencial_alert_cache —
+// a conta é pesada, então refaz no máximo a cada 15 min (ou quando o Gerencial
+// abre). Desconta os desconsiderados na hora.
+export const gerencialCriticalCount = createServerOnlyFn(async (ctx: Ctx): Promise<number> => {
+  const month = isoTodayUS().slice(0, 7);
+  const { data: cache } = await supabaseAdmin.from("gerencial_alert_cache").select("critical_keys,computed_at")
+    .eq("owner_id", ctx.ownerId).eq("month", month).maybeSingle();
+  let keys = (cache?.critical_keys ?? []) as string[];
+  if (!cache || Date.now() - Date.parse(cache.computed_at) > 15 * 60_000) {
+    const g = await buildGerencial(ctx, { month });
+    keys = [...g.alerts, ...g.dismissedAlerts].filter((a) => a.level === "critico").map((a) => a.key);
+  }
+  if (!keys.length) return 0;
+  const { data: dismissed } = await supabaseAdmin.from("gerencial_alert_dismissals").select("alert_key")
+    .eq("owner_id", ctx.ownerId).eq("month", month);
+  const off = new Set((dismissed ?? []).map((r) => r.alert_key as string));
+  return keys.filter((k) => !off.has(k)).length;
+});
+
+const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string }) => {
+  {
     const { ownerId } = ctx;
     const today = isoTodayUS();
     const from = `${data.month}-01`;
@@ -274,6 +298,12 @@ export const getGerencial = createServerFn({ method: "GET" })
     const { data: dismissedRows } = await supabaseAdmin.from("gerencial_alert_dismissals").select("alert_key")
       .eq("owner_id", ownerId).eq("month", data.month);
     const dismissedKeys = new Set((dismissedRows ?? []).map((r) => r.alert_key as string));
+    if (current) {
+      await supabaseAdmin.from("gerencial_alert_cache").upsert({
+        owner_id: ownerId, month: data.month, computed_at: new Date().toISOString(),
+        critical_keys: alerts.filter((a) => a.level === "critico").map((a) => a.key),
+      });
+    }
 
     return {
       month: data.month, from, to, current, prevMonth: prevFrom.slice(0, 7),
@@ -286,7 +316,8 @@ export const getGerencial = createServerFn({ method: "GET" })
       alerts: alerts.filter((a) => !dismissedKeys.has(a.key)),
       dismissedAlerts: alerts.filter((a) => dismissedKeys.has(a.key)),
     };
-  });
+  }
+});
 
 // Desconsiderar (ou trazer de volta) um alerta no mês.
 export const dismissGerencialAlert = createServerFn({ method: "POST" })

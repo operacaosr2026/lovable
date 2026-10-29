@@ -4,16 +4,18 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { isoTodayUS } from "@/lib/timezone";
+import { gerencialCriticalCount } from "@/lib/gerencial.functions";
 
 // Números do menu lateral: tarefas não concluídas, e-mails esperando resposta,
-// chargebacks aguardando resposta (lojas ativas) e dicas em "Agora" na Inteligência.
+// chargebacks aguardando resposta (lojas ativas), dicas em "Agora" na Inteligência
+// e alertas críticos do Gerencial (não desconsiderados).
 // null = a pessoa não tem acesso àquela aba (não mostra o número).
 export const getNavBadges = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     const can = (section: string) => context.role === "admin" || context.permissions.some((p) => p.section === section);
 
-    const [tarefas, atendimento, chargebacks, inteligencia] = await Promise.all([
+    const [tarefas, atendimento, chargebacks, inteligencia, gerencial] = await Promise.all([
       can("tarefas")
         ? supabaseAdmin.from("tasks").select("id", { count: "exact", head: true })
             .eq("user_id", context.ownerId).neq("status", "concluida")
@@ -47,6 +49,9 @@ export const getNavBadges = createServerFn({ method: "GET" })
               return (((data.result as any)?.dicas ?? []) as unknown[]).filter((_, i) => !status[String(i)]).length;
             })
         : null,
+      can("gerencial")
+        ? gerencialCriticalCount(context as any).catch((e) => { console.error("nav gerencial", e); return null; })
+        : null,
     ]);
-    return { tarefas, atendimento, chargebacks, inteligencia };
+    return { tarefas, atendimento, chargebacks, inteligencia, gerencial };
   });

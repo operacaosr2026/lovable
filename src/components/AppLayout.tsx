@@ -284,6 +284,7 @@ export function AppLayout() {
     "/tarefas": badges.data?.tarefas,
     "/atendimento": badges.data?.atendimento,
     "/chargebacks": badges.data?.chargebacks,
+    "/gerencial": badges.data?.gerencial,
   };
 
   const visibleNavItems = navItems.filter((item) => !item.section || canAccessSection(item.section));

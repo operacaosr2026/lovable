@@ -672,6 +672,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      gerencial_alert_cache: {
+        Row: {
+          computed_at: string;
+          critical_keys: string[];
+          month: string;
+          owner_id: string;
+        };
+        Insert: {
+          computed_at?: string;
+          critical_keys?: string[];
+          month: string;
+          owner_id: string;
+        };
+        Update: {
+          computed_at?: string;
+          critical_keys?: string[];
+          month?: string;
+          owner_id?: string;
+        };
+        Relationships: [];
+      };
       gerencial_alert_dismissals: {
         Row: {
           alert_key: string;

@@ -231,7 +231,7 @@ function Alerts({ d }: { d: Data }) {
   const [showDismissed, setShowDismissed] = useState(false);
   const dismiss = useMutation({
     mutationFn: (v: { key: string; undo?: boolean }) => dismissFn({ data: { month: d.month, ...v } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["gerencial", d.month] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["gerencial", d.month] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
   const dismissed = d.dismissedAlerts ?? [];
