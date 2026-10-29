@@ -35,6 +35,12 @@ function previousCodes(o: any): { code: string; until: string }[] {
   return Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : [];
 }
 
+// Data de reenvio: a última troca do código de rastreio (histórico) ou, sem
+// histórico, a troca à mão feita antes dele existir.
+function resentAt(o: any): string | null {
+  return previousCodes(o)[0]?.until ?? o.tracking_code_manual_at ?? null;
+}
+
 // Busca: nº do pedido ou código de rastreio (o atual e os antigos).
 function searchMatches(o: any, term: string) {
   const codes = [o.tracking_code, ...previousCodes(o).map((h) => h.code)].filter(Boolean).map((c) => String(c).toLowerCase());
@@ -613,8 +619,8 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
         )}
 
         {!isLoading && sortedOrders.length > 0 && (
-        <div className="min-w-[990px]">
-        <div className="grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.6fr_64px_64px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
+        <div className="min-w-[1080px]">
+        <div className="grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.6fr_64px_64px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border items-center">
           <div className="flex items-center">
             <input
               type="checkbox"
@@ -626,6 +632,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           </div>
           <div>Pedido</div>
           <div className="text-center">Data do Pedido</div>
+          <div className="text-center" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de Reenvio</div>
           <div className="text-center">Data Postado</div>
           <div className="text-center">Tempo de entrega</div>
           <div>Rastreio</div>
@@ -639,7 +646,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             <div
               key={o.id}
               className={cn(
-                "grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.6fr_64px_64px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
+                "grid grid-cols-[20px_1.2fr_0.9fr_0.9fr_0.9fr_0.8fr_1.1fr_1fr_1.6fr_64px_64px] gap-3 px-4 py-2.5 items-center hover:bg-muted/30 transition-colors cursor-pointer text-sm",
                 i > 0 && "border-t border-border/60",
               )}
               onClick={() => setEditingOrder(o)}
@@ -659,6 +666,9 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
               <div className="text-xs text-muted-foreground text-center">
                 {fmtShortDate(o.order_date)}
                 {o.before_period && <div className="text-[10px] text-amber-600" title="Pedido de antes do período escolhido — continua aqui porque ainda não foi entregue">antes do período</div>}
+              </div>
+              <div className="text-xs text-muted-foreground text-center">
+                {resentAt(o) ? formatDateUS(resentAt(o)!, { day: "2-digit", month: "2-digit" }) : "—"}
               </div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
               <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
@@ -688,11 +698,6 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 <StatusBadge status={o.delivery_status ?? "pending_shipment"} />
                 {attentionReason(o, nowMs) && (
                   <p className="text-[10px] text-rose-600 mt-0.5">{attentionReason(o, nowMs)}</p>
-                )}
-                {o.tracking_code_manual_at && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5" title="Código de rastreio trocado à mão — os prazos contam a partir daqui">
-                    Reenviado {fmtShortDate(o.clock_from)}
-                  </p>
                 )}
                 {o.customer_notified_at && (
                   <p className="text-[10px] text-success mt-0.5 flex items-center gap-1" title="E-mail &quot;Update on your order&quot; enviado pelo Avisar cliente">
