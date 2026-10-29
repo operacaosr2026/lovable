@@ -59,7 +59,7 @@ export function finalTrackingTarget(
 // criada — o pacote ainda não foi postado.
 // "Order received" e "Preparing shipment" também são só aviso (postagem
 // adiantada em 9 pedidos, out/2026).
-const INFO_ONLY_EVENT = /information received|info received|信息已收到|label created|pre-shipment|electronic information|order created|order received|preparing shipment/i;
+const INFO_ONLY_EVENT = /information received|info received|信息已收到|label created|etiqueta de envio|criada da etiqueta|pre-shipment|electronic information|order created|order received|preparing shipment/i;
 
 // Dia (Nova York) da 1ª movimentação real do pacote no histórico — postagem
 // (definição do TM Postagem), pulando "informação eletrônica recebida".

@@ -35,12 +35,6 @@ function previousCodes(o: any): { code: string; until: string }[] {
   return Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : [];
 }
 
-// Data de reenvio: a última troca do código de rastreio (histórico) ou, sem
-// histórico, a troca à mão feita antes dele existir.
-function resentAt(o: any): string | null {
-  return previousCodes(o)[0]?.until ?? o.tracking_code_manual_at ?? null;
-}
-
 // Busca: nº do pedido ou código de rastreio (o atual e os antigos).
 function searchMatches(o: any, term: string) {
   const codes = [o.tracking_code, ...previousCodes(o).map((h) => h.code)].filter(Boolean).map((c) => String(c).toLowerCase());
@@ -633,7 +627,7 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
           <div>Pedido</div>
           <div className="text-center leading-tight">Data do<br />Pedido</div>
           <div className="text-center leading-tight">Data<br />Postado</div>
-          <div className="text-center leading-tight" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de<br />Reenvio</div>
+          <div className="text-center leading-tight" title="1ª movimentação do pacote novo depois da troca do código (sem contar etiqueta criada)">Data de<br />Reenvio</div>
           <div className="text-center">Tempo de entrega</div>
           <div className="text-center">Rastreio</div>
           <div className="text-center">Status</div>
@@ -668,8 +662,12 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
                 {o.before_period && <div className="text-[10px] text-amber-600" title="Pedido de antes do período escolhido — continua aqui porque ainda não foi entregue">antes do período</div>}
               </div>
               <div className="text-xs text-muted-foreground text-center">{fmtShortDate(o.shipped_at)}</div>
+              {/* Data de Reenvio: 1ª movimentação do pacote novo (mesma regra da Data Postado). */}
               <div className="text-xs text-muted-foreground text-center">
-                {resentAt(o) ? formatDateUS(resentAt(o)!, { day: "2-digit", month: "2-digit" }) : "—"}
+                {o.resent_posted_at ? fmtShortDate(o.resent_posted_at)
+                  : o.resent_at ? (
+                    <span className="text-[10px] text-amber-600" title={`Código trocado em ${formatDateUS(o.resent_at, { day: "2-digit", month: "2-digit" })} — o pacote novo ainda não teve movimentação`}>aguardando</span>
+                  ) : "—"}
               </div>
               <div className="text-xs text-muted-foreground text-center">{deliveryTimeLabel(o, nowMs)}</div>
               <div className="text-xs truncate text-center">

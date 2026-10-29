@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoTodayUS, isoDateUS } from "@/lib/timezone";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { firstCarrierEventDateUS } from "@/lib/tracking-rules.server";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -84,6 +85,20 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
       checkedAtMap.set(t.order_id, t.updated_at);
     }
   }
+  // Data de Reenvio: 1ª movimentação do pacote novo (mesma regra da Data
+  // Postado — pula etiqueta criada / informação recebida). Só dos pedidos com
+  // código trocado, e só se o rastreio gravado já é o do código atual.
+  const resentPostedMap = new Map<string, string | null>();
+  const resentRows = (rows ?? []).filter((o: any) => o.tracking_code_manual_at || (Array.isArray(o.tracking_code_history) && o.tracking_code_history.length));
+  if (resentRows.length) {
+    const codeBy = new Map(resentRows.map((o: any) => [o.id, String(o.tracking_code ?? "").trim().toUpperCase()]));
+    const { data: tl } = await selectAllIn<any>(resentRows.map((o: any) => o.id), (ids) => supabaseAdmin
+      .from("shop_order_tracking").select("order_id,tracking_number,timeline").in("order_id", ids));
+    for (const t of tl ?? []) {
+      if (String(t.tracking_number ?? "").trim().toUpperCase() !== codeBy.get(t.order_id)) continue;
+      resentPostedMap.set(t.order_id, firstCarrierEventDateUS(t.timeline as any[]));
+    }
+  }
   // O Shopify já marca "shipped" assim que a etiqueta é criada (tem código de
   // rastreio), mas isso não significa que a transportadora pegou o pacote —
   // enquanto o rastreio real (17track) só mostrar "info recebida", o status
@@ -135,7 +150,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
         if (!note) note = "tempo de entrega demorado";
       }
     }
-    return { ...o, clock_from: clockFrom, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
+    return { ...o, clock_from: clockFrom, resent_at: resentAt, resent_posted_at: resentPostedMap.get(o.id) ?? null, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
   });
 
   return withEffectiveStatus;
