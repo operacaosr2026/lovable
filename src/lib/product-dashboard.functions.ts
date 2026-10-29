@@ -42,6 +42,30 @@ async function tokensByShop(ownerId: string, shopIds: string[]) {
   return new Map(((data ?? []) as any[]).filter((r) => r.access_token).map((r) => [r.shop_id as string, r.access_token as string]));
 }
 
+// Contas de anúncio que o produto pode usar: as da Caixa das lojas e as
+// ligadas nos cards de Lojas & Grupos (sem loja própria — vão pela loja cuja
+// conexão Meta enxerga a conta, a mais recente primeiro).
+async function adAccountOptions(ownerId: string) {
+  const [{ data: shopAccs }, { data: cardAccs }, { data: tokenRows }] = await Promise.all([
+    supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name")
+      .eq("user_id", ownerId).eq("enabled", true).order("created_at", { ascending: true }),
+    supabaseAdmin.from("lg_card_meta_accounts").select("ad_account_id,account_name")
+      .eq("user_id", ownerId).eq("enabled", true).order("created_at", { ascending: true }),
+    supabaseAdmin.from("shop_meta_tokens").select("shop_id,access_token,ad_accounts")
+      .eq("user_id", ownerId).order("updated_at", { ascending: false }),
+  ]);
+  const accounts = new Map<string, { shop_id: string; ad_account_id: string; account_name: string | null }>();
+  for (const a of (shopAccs ?? []) as any[]) if (!accounts.has(a.ad_account_id)) accounts.set(a.ad_account_id, a);
+  const tokens = ((tokenRows ?? []) as any[]).filter((r) => r.access_token);
+  for (const a of (cardAccs ?? []) as any[]) {
+    if (accounts.has(a.ad_account_id)) continue;
+    const t = tokens.find((r) => ((r.ad_accounts ?? []) as any[])
+      .some((x) => x.id === a.ad_account_id || `act_${x.account_id}` === a.ad_account_id));
+    if (t) accounts.set(a.ad_account_id, { shop_id: t.shop_id, ad_account_id: a.ad_account_id, account_name: a.account_name });
+  }
+  return accounts;
+}
+
 // Gasto por dia das campanhas, agrupado por conta de anúncios (uma chamada
 // por conta). Conta que falhar entra em `errors` — o total fica incompleto e a
 // tela avisa.
@@ -342,13 +366,10 @@ export const listProductAdCampaignOptions = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
-    const [{ data: accountRows }, selected] = await Promise.all([
-      supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name")
-        .eq("user_id", ownerId).eq("enabled", true).order("created_at", { ascending: true }),
+    const [accounts, selected] = await Promise.all([
+      adAccountOptions(ownerId),
       loadCampaigns(ownerId, data.product_id),
     ]);
-    const accounts = new Map<string, { shop_id: string; ad_account_id: string; account_name: string | null }>();
-    for (const a of (accountRows ?? []) as any[]) if (!accounts.has(a.ad_account_id)) accounts.set(a.ad_account_id, a);
 
     const selectedOut = selected.map((c) => ({ shop_id: c.shop_id, campaign_id: c.campaign_id, ad_account_id: c.ad_account_id, campaign_name: c.campaign_name }));
     if (!accounts.size) return { accounts: [], selected: selectedOut };
@@ -398,11 +419,15 @@ export const saveProductAdCampaigns = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
-    const shopIds = [...new Set(data.campaigns.map((c) => c.shop_id))];
-    if (shopIds.length) {
-      const { data: own } = await supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id")
-        .eq("user_id", ownerId).in("shop_id", shopIds);
-      const ok = new Set(((own ?? []) as any[]).map((r) => `${r.shop_id}|${r.ad_account_id}`));
+    if (data.campaigns.length) {
+      const [{ data: own }, options] = await Promise.all([
+        supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id").eq("user_id", ownerId),
+        adAccountOptions(ownerId),
+      ]);
+      const ok = new Set([
+        ...((own ?? []) as any[]).map((r) => `${r.shop_id}|${r.ad_account_id}`),
+        ...[...options.values()].map((a) => `${a.shop_id}|${a.ad_account_id}`),
+      ]);
       if (data.campaigns.some((c) => !ok.has(`${c.shop_id}|${c.ad_account_id}`))) throw new Error("Conta de anúncios não encontrada");
     }
     const { error: delErr } = await db("product_ad_campaigns").delete().eq("user_id", ownerId).eq("product_id", data.product_id);
