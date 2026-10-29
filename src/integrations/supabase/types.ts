@@ -3804,6 +3804,7 @@ export type Database = {
           source: string;
           tracking_code: string | null;
           tracking_code_manual_at: string | null;
+          tracking_code_history: Json;
           tracking_url: string | null;
           updated_at: string;
           user_id: string;
@@ -3837,6 +3838,7 @@ export type Database = {
           source?: string;
           tracking_code?: string | null;
           tracking_code_manual_at?: string | null;
+          tracking_code_history?: Json;
           tracking_url?: string | null;
           updated_at?: string;
           user_id: string;
@@ -3870,6 +3872,7 @@ export type Database = {
           source?: string;
           tracking_code?: string | null;
           tracking_code_manual_at?: string | null;
+          tracking_code_history?: Json;
           tracking_url?: string | null;
           updated_at?: string;
           user_id?: string;

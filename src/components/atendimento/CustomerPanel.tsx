@@ -237,6 +237,13 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                       {o.delivery && <DeliveryBadge status={o.delivery} />}
                     </div>
                   )}
+                  {o.trackingHistory?.map((h) => (
+                    <div key={h.code + h.until} className="flex items-center gap-1.5 mt-1 pl-[18px] text-[11px] text-muted-foreground">
+                      <span>antes:</span>
+                      <span className="font-mono line-through truncate">{h.code}</span>
+                      <span className="shrink-0">(até {formatDateUS(h.until, { day: "2-digit", month: "2-digit" })})</span>
+                    </div>
+                  ))}
                   {((exchanges.data?.requests ?? []) as ExchangeRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
                     <ExchangeRequestCard key={r.id} r={r} canApprove={!!exchanges.data?.canApprove} />
                   ))}
