@@ -631,9 +631,9 @@ const fmtNotified = (iso: string) => new Date(iso).toLocaleString("pt-BR", { tim
             />
           </div>
           <div>Pedido</div>
-          <div className="text-center">Data do Pedido</div>
-          <div className="text-center" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de Reenvio</div>
-          <div className="text-center">Data Postado</div>
+          <div className="text-center leading-tight">Data do<br />Pedido</div>
+          <div className="text-center leading-tight" title="Quando o código de rastreio foi trocado (pacote reenviado)">Data de<br />Reenvio</div>
+          <div className="text-center leading-tight">Data<br />Postado</div>
           <div className="text-center">Tempo de entrega</div>
           <div>Rastreio</div>
           <div>Status</div>
