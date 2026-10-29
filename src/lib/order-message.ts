@@ -9,7 +9,7 @@ function trailingOrderNumber(label: string): number {
 
 // supplierResends: pedidos com a tag reenvio-fornecedor (custo $0,00 pra nós —
 // o fornecedor reenvia por conta dele) — vão juntos numa Obs. no fim.
-// total: custo de produto já formatado, em negrito (*…*, WhatsApp) no começo.
+// total: custo de produto já formatado, no começo. Os dois em negrito (*…*, WhatsApp).
 export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; supplierResends?: string[] };
 
 export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: string): string {
@@ -26,7 +26,7 @@ export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: str
   if (!body) return "";
   const resends = live.flatMap((b) => [...(b.supplierResends ?? [])].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c)));
   const head = `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:${total ? `\n\n*Valor total: ${total}*` : ""}`;
-  const obs = resends.length ? `\n\nObs.: reenvio fornecedor (custo $0.00): ${resends.join(", ")}` : "";
+  const obs = resends.length ? `\n\n*Obs.: reenvio fornecedor (custo $0.00): ${resends.join(", ")}*` : "";
   return `${head}\n\n${body}${obs}`;
 }
 
