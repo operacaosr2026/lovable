@@ -262,9 +262,10 @@ export type RefundRequestView = {
 // "Solicitado · Lidianne ......... 23/10/2026, 13:23" numa linha só (nome corta, data não).
 function WhoWhen({ label, name, at }: { label: string; name: string; at: string }) {
   return (
-    <div className="flex items-center gap-2 text-[10px] text-muted-foreground whitespace-nowrap">
-      <span className="truncate min-w-0">{label} · {name}</span>
-      <span className="ml-auto shrink-0">{fullTime(at)}</span>
+    // Cartão estreito (painel do pedido): nome e data quebram linha em vez de cortar.
+    <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+      <span className="min-w-0 break-words">{label} · {name}</span>
+      <span className="ml-auto whitespace-nowrap">{fullTime(at)}</span>
     </div>
   );
 }
@@ -303,13 +304,13 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
     : r.mode === "valor" ? "Valor avulso"
     : r.line_items.map((l) => `${l.quantity}× ${l.title}${l.variant_title ? ` (${l.variant_title})` : ""}`).join(", ") + (r.include_shipping ? " + frete" : "");
   return (
-    <div className="mt-2 rounded-lg border border-dashed border-border p-2.5 space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
+    <div className="mt-2 rounded-lg border border-dashed border-border p-2.5 space-y-1.5 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <p className="text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap">
           <Undo2 className="size-3" /> Reembolso {formatMoney(r.status === "aprovado" && r.refunded_amount != null ? r.refunded_amount : r.amount, r.currency)}
         </p>
         {/* Feito não precisa de etiqueta: a linha "Aprovado por" já diz. */}
-        {r.status !== "aprovado" && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${st.cls}`}>{st.label}</span>}
+        {r.status !== "aprovado" && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${st.cls}`}>{st.label}</span>}
       </div>
       <p className="text-[11px]">{what}{r.charge_on_delivery ? " · cobrar quando entregar" : ""}</p>
       {r.reason && <p className="text-[11px] text-muted-foreground">Motivo: {refundReasonLabel(r.reason)}</p>}
@@ -327,21 +328,21 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
           <div className="space-y-1.5 pt-1">
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo (opcional)" maxLength={500}
               className="w-full h-7 rounded-md border border-border bg-background px-2 text-[11px] outline-none focus:border-primary" />
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               <button onClick={() => decide.mutate(false)} disabled={decide.isPending}
-                className="flex-1 h-7 rounded-md bg-destructive text-destructive-foreground text-[11px] font-medium disabled:opacity-50">Recusar reembolso</button>
+                className="flex-1 min-w-[9rem] h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[11px] font-medium whitespace-nowrap disabled:opacity-50">Recusar reembolso</button>
               <button onClick={() => setRejecting(false)} className="h-7 px-2 rounded-md border border-border text-[11px]">Voltar</button>
             </div>
           </div>
         ) : (
-          <div className="flex gap-1.5 pt-1">
+          <div className="flex flex-wrap gap-1.5 pt-1">
             <button onClick={() => decide.mutate(true)} disabled={decide.isPending}
-              className="flex-1 h-7 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50 flex items-center justify-center gap-1">
+              className="flex-[2] min-w-[9rem] h-7 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium whitespace-nowrap disabled:opacity-50 flex items-center justify-center gap-1">
               {decide.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               {r.status === "erro" ? "Tentar de novo" : "Aprovar e reembolsar"}
             </button>
             <button onClick={() => setRejecting(true)} disabled={decide.isPending}
-              className="h-7 px-2.5 rounded-md border border-border text-[11px] hover:border-destructive hover:text-destructive">Recusar</button>
+              className="flex-1 h-7 px-2.5 rounded-md border border-border text-[11px] whitespace-nowrap hover:border-destructive hover:text-destructive">Recusar</button>
           </div>
         )
       )}
