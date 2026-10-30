@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listOrders, markOrdersPaid, markOrdersShipped, recomputeRange,
-  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts,
+  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts, supplierOrdersTotal,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
 import { orderLineItemsCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
@@ -332,9 +332,9 @@ export function LgOrders({
   }, [selected, groups]);
 
   // Texto pro fornecedor: agrupa os pedidos selecionados por loja com o range de números.
-  const supplierMessage = useMemo(() => {
+  const supplierSelection = useMemo(() => {
     const byShop = new Map<string, { labels: string[]; resends: string[] }>();
-    let total = 0;
+    const orderIds: string[] = [];
     for (const group of groups) {
       for (const [shopId, orders] of group.byShop.entries()) {
         for (const o of orders) {
@@ -343,8 +343,7 @@ export function LgOrders({
           const b = byShop.get(shopId)!;
           b.labels.push(orderLabel(o));
           if (orderTags(o).some((t) => t.toLowerCase() === "reenvio-fornecedor")) b.resends.push(orderLabel(o));
-          // Mesmo custo da linha do pedido (reenvio-fornecedor já sai $0,00).
-          total += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags, costOpts(o));
+          orderIds.push(o.id);
         }
       }
     }
@@ -355,20 +354,26 @@ export function LgOrders({
       orderLabels: b.labels,
       supplierResends: b.resends,
     }));
-    return buildSupplierMessage(blocks, fmtMoney(total));
-  }, [selected, groups, domainsQuery.data, shopNames, costProducts, costByShop]);
+    return { blocks, orderIds };
+  }, [selected, groups, domainsQuery.data, shopNames]);
 
+  // O total vem do servidor, com a mesma conta do lote que vai pro Caixa —
+  // calculado no navegador ele podia sair com o custo padrão da loja em todos
+  // os itens se os custos dos produtos não tivessem carregado ($646 × $631,50).
+  const supplierTotalFn = useServerFn(supplierOrdersTotal);
   const copySupplierMessage = async () => {
-    if (!supplierMessage) return;
-    // Sem os custos dos produtos, o total sairia com o custo padrão da loja em
-    // todos os itens (ex.: $646 em vez dos $631,50 que o lote grava no Caixa).
-    if (!productsQuery.isSuccess) {
-      toast.error(productsQuery.isError ? "Não deu pra carregar os custos dos produtos — tente de novo" : "Carregando custos dos produtos…");
-      if (productsQuery.isError) productsQuery.refetch();
-      return;
-    }
+    const { blocks, orderIds } = supplierSelection;
+    if (orderIds.length === 0) return;
+    const text = supplierTotalFn({ data: { order_ids: orderIds } })
+      .then(({ total }) => buildSupplierMessage(blocks, fmtMoney(total)));
     try {
-      await navigator.clipboard.writeText(supplierMessage);
+      // ClipboardItem com promise: copia depois da resposta do servidor sem
+      // perder o "clique do usuário" que o navegador exige pra copiar.
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })]);
+      } else {
+        await navigator.clipboard.writeText(await text);
+      }
       toast.success("Mensagem copiada");
     } catch {
       toast.error("Não foi possível copiar");

@@ -1725,6 +1725,44 @@ async function nextBatchNumber(context: any, shopId: string): Promise<number> {
   return ((data?.batch_number as number | undefined) ?? 0) + 1;
 }
 
+// Custo de fornecedor dos pedidos de uma loja: produto (card) com o custo da
+// data do pedido; sem card, o custo da loja na data. É o valor que o lote grava
+// no Caixa — a mensagem pro fornecedor usa a mesma conta.
+async function ordersSupplierCost(context: any, shopId: string, orders: any[], products: CostProduct[]): Promise<number> {
+  const { data: settings } = await context.supabase.from("shop_order_settings").select("default_unit_cost")
+    .eq("user_id", context.ownerId).eq("shop_id", shopId).maybeSingle();
+  const defaultCost = Number(settings?.default_unit_cost ?? 0);
+  const costByDate = new Map<string, number>();
+  for (const d of new Set(orders.map((o) => o.order_date as string))) {
+    costByDate.set(d, await unitCostFor(context.supabase, context.ownerId, shopId, d, defaultCost));
+  }
+  let total = 0;
+  for (const o of orders) {
+    const unit = costByDate.get(o.order_date as string) ?? defaultCost;
+    total += orderLineItemsCost(o.line_items, products, unit, o.tags, costOpts(o));
+  }
+  return total;
+}
+
+export const supplierOrdersTotal = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ order_ids: z.array(z.string().uuid()).min(1).max(2000) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: orders, error } = await selectAllIn<any>(data.order_ids, (ids) => context.supabase.from("shop_orders")
+      .select("id,shop_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+      .eq("user_id", context.ownerId).in("id", ids));
+    if (error) throw new Error(error.message);
+    const products = await costProductsFor(context.supabase, context.ownerId);
+    const byShop = new Map<string, any[]>();
+    for (const o of orders ?? []) {
+      if (!byShop.has(o.shop_id)) byShop.set(o.shop_id, []);
+      byShop.get(o.shop_id)!.push(o);
+    }
+    let total = 0;
+    for (const [shopId, list] of byShop) total += await ordersSupplierCost(context, shopId, list, products);
+    return { total: roundCents(total) };
+  });
+
 export const markOrdersPaid = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -1741,27 +1779,12 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!orders || orders.length === 0) throw new Error("Nenhum pedido pendente selecionado");
 
-    // Settings (for default cost)
     const { data: settings } = await context.supabase.from("shop_order_settings").select("*")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).maybeSingle();
-    const defaultCost = Number(settings?.default_unit_cost ?? 0);
-    const products = await costProductsFor(context.supabase, context.ownerId);
-
-    // Compute totals by order_date with the cost in effect
     const dates = Array.from(new Set(orders.map((o) => o.order_date as string)));
-    const costByDate = new Map<string, number>();
-    for (const d of dates) {
-      costByDate.set(d, await unitCostFor(context.supabase, context.ownerId, data.shop_id, d, defaultCost));
-    }
-    let totalItems = 0;
-    let totalAmount = 0;
-    for (const o of orders) {
-      const items = Number(o.items_count ?? 0);
-      totalItems += items;
-      const unit = costByDate.get(o.order_date as string) ?? defaultCost;
-      totalAmount += orderLineItemsCost((o as any).line_items, products, unit, (o as any).tags, costOpts(o as any));
-    }
-    totalAmount = roundCents(totalAmount);
+    const products = await costProductsFor(context.supabase, context.ownerId);
+    let totalItems = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
+    let totalAmount = roundCents(await ordersSupplierCost(context, data.shop_id, orders, products));
 
     await ensureCostCategory(context.supabase, context.ownerId, data.shop_id);
 
