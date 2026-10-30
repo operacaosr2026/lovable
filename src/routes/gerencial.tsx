@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Brain, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Loader2, MessageSquare,
-  Package, RotateCcw, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
+  AlertTriangle, ArrowDown, ArrowUp, Brain, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
+  Package, PackageX, RotateCcw, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -216,6 +216,7 @@ const Empty = ({ text = "Nada no período." }: { text?: string }) => <p classNam
 const ALERT_ICON: Record<Data["alerts"][number]["kind"], any> = {
   meta: Target, prejuizo: TrendingDown, chargeback: ShieldAlert, produto: Package,
   reembolso: Hourglass, entrega: Truck, tarefa: CheckSquare, atendimento: MessageSquare, inteligencia: Brain,
+  alfandega: Landmark, lote: PackageX,
 };
 const LEVEL = {
   critico: { label: "Crítico", icon: "bg-rose-500/10 text-rose-600", bar: "bg-rose-500", metric: "text-rose-600", btn: "bg-rose-600 text-white hover:bg-rose-700" },

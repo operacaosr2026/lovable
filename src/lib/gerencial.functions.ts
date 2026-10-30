@@ -37,7 +37,7 @@ const prevMonthOf = (monthStart: string) => {
 // vale no mês escolhido pra toda a equipe).
 export type GerencialAlert = {
   key: string;
-  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia";
+  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia" | "alfandega" | "lote";
   level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
 };
 
@@ -80,7 +80,7 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
 
     const [shopIds, prevShopIds] = await Promise.all([companyShopIdsForMonth(ownerId, from), companyShopIdsForMonth(ownerId, prevFrom)]);
     const empty = { data: [] as any[] };
-    const [lucro, lucroPrev, goals, refunds, refundsPrev, cardsRes, disputesRes, openDisputesRes, ordersRes, tasksRes, alertSettings, intelRes, support] = await Promise.all([
+    const [lucro, lucroPrev, goals, refunds, refundsPrev, cardsRes, disputesRes, openDisputesRes, ordersRes, tasksRes, alertSettings, intelRes, support, trackingRes] = await Promise.all([
       shopIds.length ? computeAccumulatedLucroServer(supabaseAdmin, ownerId, shopIds, from, to) : null,
       prevShopIds.length ? computeAccumulatedLucroServer(supabaseAdmin, ownerId, prevShopIds, prevFrom, prevTo) : null,
       listCompanyGoalsFor(ownerId).catch(() => []),
@@ -107,6 +107,12 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       supabaseAdmin.from("consultant_reports").select("id,result,tips_status").eq("user_id", ownerId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supportKpisFor(ownerId, data.month).catch((e) => { console.error("gerencial support", e); return null; }),
+      // Avisos de rastreio em aberto (sino): alfândega e lote parado.
+      current
+        ? supabaseAdmin.from("app_notifications").select("key,level,title,body,link").eq("user_id", ownerId)
+            .is("resolved_at", null).or("key.like.track123:alfandega:%,key.like.track123:lote:%")
+            .order("created_at", { ascending: true })
+        : empty,
     ]);
 
     // ── 1. Resultado ─────────────────────────────────────────────────────────
@@ -276,6 +282,18 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       alerts.push({ key: "atendimento", kind: "atendimento", level: "atencao", title: "Cliente sem resposta há mais de 36h", link: "/atendimento", action: "Abrir Atendimento",
         detail: "Cliente esperando é o caminho mais curto pro chargeback.",
         metric: String(n), metricLabel: pl(n, "conversa", "conversas") });
+    }
+
+    // Rastreio: cada aviso aberto de alfândega / lote parado vira um alerta
+    // (alfândega = crítico). Some sozinho quando o aviso resolve no sino.
+    for (const n of (trackingRes.data ?? []) as any[]) {
+      const alfandega = String(n.key).startsWith("track123:alfandega:");
+      const qtd = Number(String(n.title).match(/(\d+)\s+pacote/)?.[1] ?? 0);
+      alerts.push({
+        key: String(n.key), kind: alfandega ? "alfandega" : "lote", level: alfandega || n.level === "error" ? "critico" : "atencao",
+        title: String(n.title), detail: String(n.body ?? ""), link: String(n.link ?? "/shops/lojas-grupos"), action: "Ver rastreio",
+        metric: qtd ? String(qtd) : "—", metricLabel: pl(qtd, "pacote parado", "pacotes parados"),
+      });
     }
 
     // Inteligência: cada dica sem decisão vira um alerta (crítico/alto = crítico).
