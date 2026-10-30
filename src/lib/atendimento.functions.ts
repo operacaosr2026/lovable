@@ -831,7 +831,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
     let orders: any[] = [];
     if (idList.length) {
       const { data: rows, error } = await supabaseAdmin.from("shop_orders")
-        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at")
+        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at")
         .eq("user_id", context.ownerId).in("id", idList)
         .order("created_at_shopify", { ascending: false });
       if (error) throw new Error(error.message);
@@ -872,7 +872,9 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
       stores: [...new Set(orders.map((o) => shopName.get(o.shop_id)).filter(Boolean))] as string[],
       orders: orders.map((o) => ({
         id: o.id, number: o.order_number, date: o.created_at_shopify, revenue: Number(o.revenue ?? 0), currency: o.currency ?? "USD",
-        store: shopName.get(o.shop_id) ?? null, financial: o.shopify_financial_status, delivery: o.delivery_status,
+        store: shopName.get(o.shop_id) ?? null, financial: o.shopify_financial_status,
+        // Mesmo status da aba Rastreamento: entregue/problema gravados pelo sync valem sobre a coluna.
+        delivery: o.delivered_at ? "delivered" : o.problem_at && o.delivery_status !== "waiting_customer" ? "problem" : o.delivery_status,
         tracking: o.tracking_code, trackingUrl: buildTrackingUrl(templateByShop.get(o.shop_id), o.tracking_code) ?? o.tracking_url,
         // Códigos anteriores (trocados à mão ou pela Shopify), mais recente primeiro.
         trackingHistory: (Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : []) as { code: string; until: string }[],

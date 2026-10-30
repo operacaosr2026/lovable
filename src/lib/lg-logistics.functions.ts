@@ -120,9 +120,8 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
   // aqui reconciliamos as duas fontes pra refletir o que já foi detectado.
   // delivered_at/problem_at são sinais fortes: sempre prevalecem sobre um
   // delivery_status desatualizado (ex.: preso em "shipped" desde o envio).
-  // Pedido feito há 25+ dias e ainda não entregue (nem já marcado como problema/
-  // devolvido) é sinal de atraso — sinaliza automaticamente como "problem" e
-  // preenche a obs, sem sobrescrever uma nota que já tenha sido escrita à mão.
+  // Problema (rastreio, sem movimento, 25+ dias) vem gravado do sync do 17track
+  // (problemReason em tracking-rules.server.ts) — a tela não decide sozinha.
   const nowMs = Date.now();
   const withEffectiveStatus = (rows ?? []).map((o: any) => {
     let status = o.delivery_status;
@@ -143,15 +142,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     }
 
     const clockFrom = resentAt ? isoDateUS(resentAt) : o.order_date;
-    let note = o.logistics_note;
-    if (status !== "delivered" && status !== "problem" && status !== "returned" && status !== "waiting_customer") {
-      const daysSinceOrder = (nowMs - new Date(clockFrom).getTime()) / 86_400_000;
-      if (daysSinceOrder >= 25) {
-        status = "problem";
-        if (!note) note = "tempo de entrega demorado";
-      }
-    }
-    return { ...o, clock_from: clockFrom, resent_at: resentAt, resent_posted_at: resentPostedMap.get(o.id) ?? null, delivery_status: status, shipped_at: shippedAt, logistics_note: note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
+    return { ...o, clock_from: clockFrom, resent_at: resentAt, resent_posted_at: resentPostedMap.get(o.id) ?? null, delivery_status: status, shipped_at: shippedAt, logistics_note: o.logistics_note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
   });
 
   return withEffectiveStatus;

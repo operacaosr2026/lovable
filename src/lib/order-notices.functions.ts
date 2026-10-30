@@ -218,7 +218,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
       const shipped = !!o.tracking_code && !/^(pending|info ?received)$/i.test(String(t?.tracking_status ?? "").trim());
       const status: NoticeOrder["status"] = o.delivery_status === "waiting_customer" ? "esperando_cliente"
         : !o.tracking_code ? "sem_envio"
-        : o.problem_at || o.delivery_status === "problem" || /undelivered|exception|expired|alert/i.test(String(t?.tracking_status ?? "")) ? "problema"
+        : o.problem_at || o.delivery_status === "problem" ? "problema"
         : shipped ? "transito" : "sem_envio";
       const d = disputeBy.get(`${o.shop_id}:${o.external_id}`);
       out.push({

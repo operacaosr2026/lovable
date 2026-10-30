@@ -7,6 +7,7 @@ import { lineItemShopifyProductId, matchLineItemProduct, normalizeLineItemTitle 
 import { costProductsFor } from "@/lib/product-links.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoDateUS } from "@/lib/timezone";
+import { CUSTOMS_STUCK_DAYS, customsLabel, isCustomsHold } from "@/lib/tracking-rules.server";
 
 export type NotificationLevel = "info" | "warning" | "error";
 // targetUserId: o push vai só pra essa pessoa (o aviso no sino continua do workspace).
@@ -25,7 +26,6 @@ const ZOHO_STALE_MINUTES = 30;    // cron roda a cada 5 min
 const PRODUCT_MISSING_DAYS = 30;  // vendas olhadas pro aviso "Produto sem card"
 const STALLED_LOT_DAYS = 7;       // aviso "Lote parado": sem evento de rastreio há 7 dias…
 const STALLED_LOT_MIN = 3;        // …em pelo menos 3 pacotes com o mesmo último dia de evento
-const CUSTOMS_STUCK_DAYS = 15;    // aviso "Alfândega": último evento é de alfândega há 15+ dias
 
 // Último evento do rastreio (timeline do 17track: event_time_utc "AAAA-MM-DD HH:MM:SS" em UTC).
 function lastTrackingEvent(timeline: unknown): { ms: number; detail: string } | null {
@@ -37,20 +37,6 @@ function lastTrackingEvent(timeline: unknown): { ms: number; detail: string } | 
     if (Number.isFinite(ms) && (!best || ms > best.ms)) best = { ms, detail: String(e?.event_detail ?? "").trim() };
   }
   return best;
-}
-
-// Evento de pacote retido na alfândega do destino (ainda não liberado).
-const CUSTOMS_HOLD = /customs clearance in progress|under clearance|inbound into customs|started the customs clearance|clearance in progress|customs.*(inspection|exception|abnormal|hold|delay)|clearance.*(exception|abnormal|failed|delay)|海关查验|等待清关|清关异常|目的国清关|进口海关|清关中/i;
-const CUSTOMS_RELEASED = /import released|inbound out of customs|clearance to release|clearance processing completed|released by customs|customs released|海关允许进口|已放行|清关完成/i;
-function isCustomsHold(detail: string) {
-  return CUSTOMS_HOLD.test(detail) && !CUSTOMS_RELEASED.test(detail);
-}
-// Nome legível do evento (o 17track manda muito em chinês).
-function customsLabel(detail: string) {
-  if (/海关查验|inspection/i.test(detail)) return "inspeção da alfândega";
-  if (/清关异常|exception|abnormal|failed/i.test(detail)) return "erro no desembaraço aduaneiro";
-  if (/等待清关|拆板|delay/i.test(detail)) return "aguardando liberação da alfândega";
-  return "desembaraço aduaneiro em andamento";
 }
 
 // Motivos de disputa da Shopify Payments em português.

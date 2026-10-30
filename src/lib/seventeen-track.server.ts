@@ -2,8 +2,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { getPausedShopifyStoreIds } from "@/lib/sync-pause.server";
-import { isoTodayUS } from "@/lib/timezone";
-import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent, labelSaysDelivered } from "@/lib/tracking-rules.server";
+import { isoDateUS, isoTodayUS } from "@/lib/timezone";
+import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent, labelSaysDelivered, problemReason } from "@/lib/tracking-rules.server";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { pushFulfillmentStatusToShopify, updateFulfillmentTrackingUrl } from "@/lib/shopify-fulfillment-status.server";
 import { eventUtcFixed, officialEdd } from "@/lib/tracking-display";
@@ -130,7 +130,7 @@ async function syncableShopIds(shopIds: string[]) {
     .map((s: any) => s.id as string));
 }
 
-export type SeventeenSyncResult = { shops: number; orders: number; registered: number; updated: number; shopifyStatus: number; shopifyLinks: number; errors: string[]; outOfQuota: boolean };
+export type SeventeenSyncResult = { shops: number; orders: number; registered: number; updated: number; shopifyStatus: number; shopifyLinks: number; errors: string[]; outOfQuota: boolean; problems?: { marked: number; cleared: number } };
 
 // pushAll: manda o status pra Shopify de todos (não só dos que mudaram) — usado
 // uma vez ao ligar o envio pra Shopify; a Shopify não repete status que já tem.
@@ -320,6 +320,13 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     if (Date.now() <= deadline) await pushToShopify(o, code(o), item, stored?.tracking_status ?? null, template, opts.pushAll, result);
   }
 
+  // 4. Problema: marca/tira em todos os pedidos em aberto (com ou sem rastreio).
+  try {
+    result.problems = await reconcileProblems(shops.map((s) => s.shop_id), matcherBy);
+  } catch (e: any) {
+    result.errors.push(`problemas: ${String(e?.message ?? e).slice(0, 150)}`);
+  }
+
   // Status por loja (o sino avisa quando para de sincronizar).
   const status = result.errors.length && !result.updated ? "error" : "ok";
   const msg = `17track: ${result.updated} atualizados, ${result.registered} cadastrados agora` +
@@ -422,6 +429,81 @@ export function problemNote(lastLabel: string | null | undefined, status: string
   return "Problema no rastreio";
 }
 
+// Motivo que o próprio sistema escreveu na Obs (pode trocar ou apagar sozinho);
+// texto escrito à mão nunca é mexido.
+const PROBLEM_NOTES = new Set(["Erro no desembaraço aduaneiro", "Apreendido na alfândega", "Endereço incorreto ou incompleto",
+  "Cliente recusou o pacote", "Devolvido ao remetente", "Tentativa de entrega falhou", "Rastreio sem atualização há muito tempo",
+  "Problema no rastreio", "tempo de entrega demorado"]);
+function isAutoProblemNote(note: string | null | undefined) {
+  const t = String(note ?? "").trim();
+  return !t || PROBLEM_NOTES.has(t) || /^(Sem movimento no rastreio|Parado na alfândega|Tempo de entrega demorado)/.test(t);
+}
+
+const STATUS_KEY_BY_LABEL = new Map(Object.entries(STATUS_LABEL).map(([k, v]) => [v, k]));
+
+// Problema do pedido pela regra única (problemReason): marca quem tem motivo e
+// tira de quem não tem mais. Fica de fora: entregue, devolvido, cancelado,
+// "esperando cliente" e problema marcado à mão (delivery_status = problem).
+async function reconcileProblems(shopIds: string[], matcherBy: Map<string, ReturnType<typeof buildRuleMatcher>>) {
+  const out = { marked: 0, cleared: 0 };
+  if (!shopIds.length) return out;
+  const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
+  const { data: orders, error } = await selectAll<any>(supabaseAdmin.from("shop_orders")
+    .select("id,shop_id,order_date,tracking_code,delivery_status,problem_at,logistics_note,tracking_code_manual_at,tracking_code_history")
+    .in("shop_id", shopIds)
+    .is("delivered_at", null)
+    .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned,problem,waiting_customer)")
+    .filter("raw->>cancelled_at", "is", null)
+    .gte("order_date", since));
+  if (error) throw new Error(error.message);
+  if (!orders.length) return out;
+  const { data: tracks, error: tErr } = await selectAllIn<any>(orders.map((o) => o.id), (ids) => supabaseAdmin.from("shop_order_tracking")
+    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label").in("order_id", ids));
+  if (tErr) throw new Error(tErr.message);
+  const trackBy = new Map(tracks.map((t) => [t.order_id, t]));
+  const nowMs = Date.now();
+  const today = isoTodayUS();
+
+  for (const o of orders) {
+    const t = trackBy.get(o.id);
+    // Rastreio gravado de outro código (trocado e ainda não buscado) não vale.
+    const same = !!o.tracking_code && !!t && String(t.tracking_number ?? "").toUpperCase() === String(o.tracking_code).trim().toUpperCase();
+    const statusLabel: string | null = same ? t.tracking_status ?? null : null;
+    const lastLabel: string | null = same ? t.last_event_label ?? null : null;
+    const lastAt: string | null = same ? t.last_event_at ?? null : null;
+    const key = statusLabel ? STATUS_KEY_BY_LABEL.get(statusLabel) ?? statusLabel : null;
+    const match = matcherBy.get(o.shop_id);
+    const target = same && (lastLabel || statusLabel)
+      ? finalTrackingTarget((match?.(lastLabel) ?? match?.(statusLabel)) ?? inferTarget(key, lastLabel), statusLabel, lastLabel, true)
+      : null;
+    if (target === "delivered") continue;   // o sync grava a entrega
+    const history = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
+    const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;
+    const reason = problemReason({
+      nowMs,
+      clockFrom: resentAt ? isoDateUS(resentAt) : String(o.order_date),
+      trackingProblem: target === "problem" ? problemNote(lastLabel, key) : null,
+      shipped: !!lastAt && target !== "pending_shipment" && key !== "InfoReceived" && key !== "NotFound",
+      lastEventAt: lastAt, lastEventLabel: lastLabel,
+    });
+    const autoNote = isAutoProblemNote(o.logistics_note);
+    const patch: TablesUpdate<"shop_orders"> = {};
+    if (reason) {
+      if (!o.problem_at) patch.problem_at = today;
+      if (autoNote && (o.logistics_note ?? "") !== reason) patch.logistics_note = reason;
+    } else if (o.problem_at) {
+      patch.problem_at = null;
+      if (autoNote && o.logistics_note) patch.logistics_note = null;
+    }
+    if (!Object.keys(patch).length) continue;
+    const { error: upErr } = await supabaseAdmin.from("shop_orders").update(patch).eq("id", o.id);
+    if (upErr) throw new Error(upErr.message);
+    if (reason && patch.problem_at) out.marked++;
+    if (!reason) out.cleared++;
+  }
+  return out;
+}
+
 // Compara campo a campo (o jsonb do banco volta com as chaves em outra ordem).
 function sameTimeline(a: any[] | null | undefined, b: any[]) {
   const key = (e: any) => [e?.event_time_utc, e?.event_time, e?.event_detail, e?.event_location].map((v) => v ?? "").join("\u0001");
@@ -471,12 +553,8 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   if (target === "delivered") {
     orderUpdate.delivered_at = eventDate;
     orderUpdate.delivery_status = "delivered";
-  } else if (target === "problem") {
-    if (!o.problem_at) orderUpdate.problem_at = eventDate;
-    // Motivo na Obs da aba Rastreamento — só se estiver vazia (nunca apaga o
-    // que alguém escreveu à mão).
-    if (!String(o.logistics_note ?? "").trim()) orderUpdate.logistics_note = problemNote(lastLabel, status);
   }
+  // Problema (problem_at + motivo na Obs): reconcileProblems, no fim do sync.
   const url = buildTrackingUrl(template, String(o.tracking_code));
   if (url && url !== o.tracking_url) orderUpdate.tracking_url = url;
   // Só manda pro pedido o que mudou.
