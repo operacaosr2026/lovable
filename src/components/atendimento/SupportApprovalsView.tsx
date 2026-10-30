@@ -112,7 +112,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   // Painel aberto: tabela enxuta (loja embaixo do cliente, sem a coluna Tipo,
   // Recusar no menu) pra caber ao lado sem cortar.
   const compact = !!openItem;
-  const headers = compact ? ["Pedido", "Cliente", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Cliente", "Loja", "Tipo", "Valor", "Motivo", "Solicitado em", "Status"];
+  const headers = compact ? ["Pedido", "Loja", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Loja", "Tipo", "Valor", "Motivo", "Solicitado em", "Status"];
 
   return (
     <div className="space-y-4 pb-6">
@@ -211,11 +211,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 max-w-[160px]" title={i.customer_email ?? ""}>
-                          <p className="truncate">{i.customer_name || i.customer_email || "—"}</p>
-                          {compact && <p className="text-[11px] text-muted-foreground truncate">{i.store ?? "—"}</p>}
-                        </td>
-                        {!compact && <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>}
+                        <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>
                         {!compact && <td className="px-3 py-2.5"><KindBadge kind={i.kind} /></td>}
                         <td className="px-3 py-2.5 font-semibold whitespace-nowrap">{i.kind === "reembolso" ? formatMoney(i.amount, i.currency) : "—"}</td>
                         <td className="px-3 py-2.5 max-w-[160px] truncate text-muted-foreground" title={i.kind === "reembolso" ? refundReasonLabel((i as any).reason) : undefined}>
