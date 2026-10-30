@@ -351,7 +351,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
 }) {
   const isIncome = group.kind === "income";
   const isPendingGroup = Boolean(group.pending);
-  const title = group.entries.length > 1
+  const title = group.entries.length > 1 && !group.collapsed
     ? `${group.entries.map((e) => fmtMoney(Number(e.amount))).join(" + ")} = ${fmtMoney(group.total)}`
     : undefined;
   const chipClasses = cn(
