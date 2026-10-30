@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
+import { Copy, Factory, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
 } from "@/lib/atendimento.functions";
@@ -10,6 +11,9 @@ import { ExchangeDialog, ExchangeRequestCard, type ExchangeRequestView } from ".
 import { listRefundRequests } from "@/lib/support-refund.functions";
 import { RefundDialog, RefundRequestCard, type RefundRequestView } from "./RefundDialog";
 import { TrackingCodeDialog } from "./TrackingCodeDialog";
+import { listSupplierRefundsForOrders, type SupplierRefund } from "@/lib/supplier-refund.functions";
+import { SupplierRefundCard, SupplierRefundDialog } from "./SupplierRefund";
+import { useIsDemo } from "./demo";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
 import { formatDateUS } from "@/lib/timezone";
@@ -124,6 +128,15 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
     enabled: orderIds.length > 0, staleTime: 30_000,
   });
   const [refundOrder, setRefundOrder] = useState<string | null>(null);
+  // Reembolso que o fornecedor deve pelo pedido (aba Reembolso). Sem dados no modo de exemplo.
+  const demo = useIsDemo();
+  const supplierFn = useServerFn(listSupplierRefundsForOrders);
+  const supplierRefunds = useQuery({
+    queryKey: ["supplier-refunds-orders", orderIds],
+    queryFn: () => supplierFn({ data: { orderIds } }),
+    enabled: orderIds.length > 0 && !demo, staleTime: 30_000,
+  });
+  const [supplierOrder, setSupplierOrder] = useState<{ id: string; number: string | null } | null>(null);
   const [trackingOrder, setTrackingOrder] = useState<{ id: string; number: string | null; tracking: string | null } | null>(null);
 
   const update = useMutation({
@@ -258,22 +271,40 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                   {((refunds.data?.requests ?? []) as RefundRequestView[]).filter((r) => r.order_id === o.id).map((r) => (
                     <RefundRequestCard key={r.id} r={r} canApprove={!!refunds.data?.canApprove} />
                   ))}
-                  {/* Reembolsado por inteiro (na Shopify ou por um pedido aqui ainda não sincronizado): sem troca nem novo reembolso. */}
-                  {!o.cancelled && o.financial !== "refunded"
-                    && !((refunds.data?.requests ?? []) as RefundRequestView[]).some((r) => r.order_id === o.id && r.mode === "total" && r.status !== "recusado" && r.status !== "erro") && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      <button onClick={() => setExchangeOrder(o.id)}
-                        className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
-                        <Repeat className="size-3" /> Gerar troca
-                      </button>
-                      {o.revenue > 0 && (
-                        <button onClick={() => setRefundOrder(o.id)}
-                          className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
-                          <Undo2 className="size-3" /> Reembolsar
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {((supplierRefunds.data ?? []) as SupplierRefund[]).filter((r) => r.order_id === o.id).map((r) => (
+                    <SupplierRefundCard key={r.id} r={r} />
+                  ))}
+                  {(() => {
+                    // Reembolsado por inteiro (na Shopify ou por um pedido aqui ainda não sincronizado): sem troca nem novo reembolso.
+                    const canAct = !o.cancelled && o.financial !== "refunded"
+                      && !((refunds.data?.requests ?? []) as RefundRequestView[]).some((r) => r.order_id === o.id && r.mode === "total" && r.status !== "recusado" && r.status !== "erro");
+                    // Reembolso do fornecedor vale mesmo com o cliente já reembolsado (é o caso mais comum).
+                    const canSupplier = !demo && supplierRefunds.isSuccess && !(supplierRefunds.data ?? []).some((r) => r.order_id === o.id);
+                    if (!canAct && !canSupplier) return null;
+                    return (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {canAct && (
+                          <button onClick={() => setExchangeOrder(o.id)}
+                            className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
+                            <Repeat className="size-3" /> Gerar troca
+                          </button>
+                        )}
+                        {canAct && o.revenue > 0 && (
+                          <button onClick={() => setRefundOrder(o.id)}
+                            className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
+                            <Undo2 className="size-3" /> Reembolsar
+                          </button>
+                        )}
+                        {canSupplier && (
+                          <button onClick={() => setSupplierOrder({ id: o.id, number: o.number ? (String(o.number).startsWith("#") ? o.number : `#${o.number}`) : null })}
+                            title="O fornecedor tem que devolver o custo deste pedido (vai pra aba Reembolso)"
+                            className="h-7 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center gap-1">
+                            <Factory className="size-3" /> Reembolso fornecedor
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
               {exchangeOrder && (
@@ -284,6 +315,9 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
               )}
               {refundOrder && (
                 <RefundDialog orderId={refundOrder} conversationId={conversationId} open onClose={() => setRefundOrder(null)} />
+              )}
+              {supplierOrder && (
+                <SupplierRefundDialog orderId={supplierOrder.id} orderNumber={supplierOrder.number} conversationId={conversationId} onClose={() => setSupplierOrder(null)} />
               )}
             </div>
           )
