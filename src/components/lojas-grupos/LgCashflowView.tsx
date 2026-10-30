@@ -10,7 +10,7 @@
  *
  * ShopCashflow.tsx NÃO foi modificado.
  */
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, createContext, useContext } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -249,6 +249,10 @@ function EntryChip({
 
 type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[]; pending?: boolean; collapsed?: boolean };
 
+// Clique num grupo de saídas automáticas (Facebook Ads, Fornecedor…) abre a
+// edição do total do grupo.
+const EditGroupContext = createContext<((g: EntryGroup) => void) | null>(null);
+
 // Lançamentos manuais criados com até 1 min de diferença (mesma categoria e
 // descrição, lojas diferentes) = o mesmo lançamento "Todas as lojas".
 const SAME_LAUNCH_MS = 60_000;
@@ -349,6 +353,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
   isConsolidated: boolean;
   todayKey: string;
 }) {
+  const editGroup = useContext(EditGroupContext);
   const isIncome = group.kind === "income";
   const isPendingGroup = Boolean(group.pending);
   const title = group.entries.length > 1 && !group.collapsed
@@ -408,7 +413,8 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
   const allReconciled = reconcilable.length > 0 && reconcilable.every((e) => e.reconciled);
 
   const groupChip = (
-        <button type="button" title={title} className={cn(chipClasses, group.collapsed && "cursor-default")}>
+        <button type="button" title={title} className={chipClasses}
+          onClick={group.collapsed && editGroup ? () => editGroup(group) : undefined}>
           <span className="flex items-center gap-1.5 min-w-0 truncate">
             {reconcilable.length > 0 && (
               <span
@@ -435,7 +441,8 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
         </button>
   );
 
-  // Saída automática do grupo (Facebook Ads, Fornecedor…): só o total, sem lista por loja.
+  // Saída automática do grupo (Facebook Ads, Fornecedor…): só o total, sem lista
+  // por loja; o clique edita o total.
   if (group.collapsed) return groupChip;
 
   return (
@@ -931,6 +938,43 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
   );
 }
 
+// Divide um novo total entre os lançamentos na proporção do valor atual de cada
+// um (todos zerados: em partes iguais), em centavos, sem sobrar centavo.
+function splitAmountProportionally(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (sum === 0) return splitAmountEvenly(total, weights.length);
+  const cents = Math.round(total * 100);
+  const shares = weights.map((w) => Math.floor((cents * w) / sum));
+  let remainder = cents - shares.reduce((s, c) => s + c, 0);
+  for (let i = 0; remainder > 0; i = (i + 1) % shares.length, remainder--) shares[i]++;
+  return shares.map((c) => c / 100);
+}
+
+function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose: () => void; onSave: (total: number) => void }) {
+  const [amount, setAmount] = useState(String(Number(group.total.toFixed(2))));
+  const save = () => {
+    const v = parseFloat(amount);
+    if (isNaN(v) || v < 0) return;
+    onSave(v);
+  };
+  return (
+    <Modal onClose={onClose} title={`Editar ${group.label}`}>
+      <div className="space-y-3">
+        <div><label className="text-xs text-muted-foreground">Valor total</label>
+          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></div>
+        <div className="text-[11px] text-muted-foreground">
+          Soma de {group.entries.length} lançamentos. O novo total é dividido entre eles na proporção atual e fica travado contra o sync.
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-4">
+        <Button variant="outline" onClick={onClose}>Cancelar</Button>
+        <Button onClick={save}>Salvar</Button>
+      </div>
+    </Modal>
+  );
+}
+
 function ManageCategories({ shopId, categories, onClose, onChange }: any) {
   const createFn = useServerFn(createCashCategory);
   const renameFn = useServerFn(renameCashCategory);
@@ -1070,6 +1114,7 @@ export function LgCashflowView({
   const [showPending, setShowPending] = useState(false);
   const [quickAdd,   setQuickAdd]   = useState<{ date: string; kind: "income"|"expense" } | null>(null);
   const [editing,    setEditing]    = useState<DayItem | null>(null);
+  const [editingGroup, setEditingGroup] = useState<EntryGroup | null>(null);
   const [manageCats, setManageCats] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DayItem | null>(null);
 
@@ -1400,6 +1445,7 @@ export function LgCashflowView({
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
   return (
+    <EditGroupContext.Provider value={setEditingGroup}>
     <div className={`space-y-5 ${fill ? "lg:flex-1 lg:min-h-0 lg:flex lg:flex-col" : ""}`}>
       {/* ── 3 KPIs ── */}
       <TooltipProvider delayDuration={150}>
@@ -1644,6 +1690,21 @@ export function LgCashflowView({
           onChange={() => { refreshCats(); refresh(); }}
         />
       )}
+      {editingGroup && (
+        <EditGroupTotal
+          group={editingGroup}
+          onClose={() => setEditingGroup(null)}
+          onSave={(total) => {
+            const entries = editingGroup.entries;
+            const shares = splitAmountProportionally(total, entries.map((e) => Math.round(Number(e.amount) * 100)));
+            entries.forEach((e, i) => {
+              if (Number(e.amount) !== shares[i]) updateMut.mutate({ id: e.id, patch: { amount: shares[i] } });
+            });
+            setEditingGroup(null);
+          }}
+        />
+      )}
     </div>
+    </EditGroupContext.Provider>
   );
 }
