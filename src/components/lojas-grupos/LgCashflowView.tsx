@@ -276,29 +276,32 @@ function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup
 
   const groupConfirmed = (list: DayItem[]): EntryGroup[] => {
     if (list.length === 0) return [];
+    const auto = list.filter((e) => e.source !== "manual");
+    let autoGroups: EntryGroup[];
     if (kind === "income") {
-      return [{
+      // Entradas automáticas (depósitos Shopify): um chip "Vendas" só.
+      autoGroups = auto.length === 0 ? [] : [{
         key: "income",
         label: "Vendas",
         kind,
-        total: list.reduce((s, e) => s + Number(e.amount), 0),
-        entries: list,
+        total: auto.reduce((s, e) => s + Number(e.amount), 0),
+        entries: auto,
       }];
+    } else {
+      // Saídas automáticas (anúncios, fornecedor, taxas…): somadas por categoria.
+      const byCategory = new Map<string, DayItem[]>();
+      for (const e of auto) {
+        const cat = e.category ?? "Saída";
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)!.push(e);
+      }
+      autoGroups = Array.from(byCategory.entries()).map(([cat, entries]) => ({
+        key: cat, label: cat, kind,
+        total: entries.reduce((s, e) => s + Number(e.amount), 0),
+        entries,
+      }));
     }
-    // Saídas automáticas (anúncios, fornecedor, taxas…): somadas por categoria.
-    const auto = list.filter((e) => e.source !== "manual");
-    const byCategory = new Map<string, DayItem[]>();
-    for (const e of auto) {
-      const cat = e.category ?? "Saída";
-      if (!byCategory.has(cat)) byCategory.set(cat, []);
-      byCategory.get(cat)!.push(e);
-    }
-    const autoGroups: EntryGroup[] = Array.from(byCategory.entries()).map(([cat, entries]) => ({
-      key: cat, label: cat, kind,
-      total: entries.reduce((s, e) => s + Number(e.amount), 0),
-      entries,
-    }));
-    // Saídas lançadas à mão: um item por lançamento. "Todas as lojas" grava um
+    // Lançamentos feitos à mão: um item por lançamento. "Todas as lojas" grava um
     // lançamento por loja no mesmo instante — esses viram um item só; dois
     // lançamentos feitos separadamente (800 e depois outro 800) ficam dois.
     const manual = list.filter((e) => e.source === "manual")
