@@ -113,18 +113,16 @@ export function SupplierRefundCard({ r }: { r: SupplierRefund }) {
   );
 }
 
-// Ações da aba Reembolso: OK (com o valor que o fornecedor de fato devolveu),
+// Ações da aba Reembolso: OK num clique (conferido no sistema do fornecedor),
 // desfazer o OK e tirar da lista.
 export function SupplierRefundActions({ r }: { r: SupplierRefund }) {
   const invalidate = useSupplierRefundInvalidate();
   const confirm = useConfirm();
   const confirmFn = useServerFn(confirmSupplierRefund);
   const deleteFn = useServerFn(deleteSupplierRefund);
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(toInput(r.amount));
   const ok = useMutation({
-    mutationFn: (v: { confirmed: boolean; amount?: number }) => confirmFn({ data: { id: r.id, ...v } }),
-    onSuccess: (_d, v) => { toast.success(v.confirmed ? "Reembolso do fornecedor confirmado" : "Voltou pra aguardando"); setEditing(false); invalidate(); },
+    mutationFn: (v: { confirmed: boolean }) => confirmFn({ data: { id: r.id, ...v } }),
+    onSuccess: (_d, v) => { toast.success(v.confirmed ? "Reembolso do fornecedor confirmado" : "Voltou pra aguardando"); invalidate(); },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
   const del = useMutation({
@@ -141,31 +139,11 @@ export function SupplierRefundActions({ r }: { r: SupplierRefund }) {
       </button>
     );
   }
-  if (editing) {
-    const amount = parseMoney(value);
-    return (
-      <div className="flex items-center gap-1.5">
-        <div className="flex items-center gap-1 h-7 w-28 rounded-md border border-border bg-background px-2 focus-within:border-primary">
-          <span className="text-[10px] text-muted-foreground">USD</span>
-          <input autoFocus inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ""))}
-            onKeyDown={(e) => { if (e.key === "Enter" && Number.isFinite(amount)) ok.mutate({ confirmed: true, amount }); if (e.key === "Escape") setEditing(false); }}
-            className="flex-1 min-w-0 bg-transparent text-xs outline-none" />
-        </div>
-        <button onClick={() => ok.mutate({ confirmed: true, amount })} disabled={ok.isPending || !Number.isFinite(amount)}
-          className="h-7 px-2.5 rounded-md bg-emerald-600 text-white text-[11px] font-medium whitespace-nowrap disabled:opacity-50 inline-flex items-center gap-1">
-          {ok.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />} Confirmar
-        </button>
-        <button onClick={() => setEditing(false)} className="size-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground">
-          <X className="size-3.5" />
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="flex items-center gap-1.5">
-      <button onClick={() => setEditing(true)} title="Conferi no sistema do fornecedor: ele reembolsou"
-        className="h-7 px-2.5 rounded-md bg-emerald-600 text-white text-[11px] font-medium whitespace-nowrap inline-flex items-center gap-1 hover:bg-emerald-700">
-        <Check className="size-3" /> Fornecedor reembolsou
+      <button onClick={() => ok.mutate({ confirmed: true })} disabled={ok.isPending} title="Conferi no sistema do fornecedor: ele reembolsou"
+        className="h-7 px-2.5 rounded-md bg-emerald-600 text-white text-[11px] font-medium whitespace-nowrap inline-flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-50">
+        {ok.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />} Fornecedor reembolsou
       </button>
       <button disabled={del.isPending} title="Tirar da lista (marcado por engano)"
         onClick={async () => {
