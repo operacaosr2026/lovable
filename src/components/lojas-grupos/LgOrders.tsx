@@ -360,6 +360,13 @@ export function LgOrders({
 
   const copySupplierMessage = async () => {
     if (!supplierMessage) return;
+    // Sem os custos dos produtos, o total sairia com o custo padrão da loja em
+    // todos os itens (ex.: $646 em vez dos $631,50 que o lote grava no Caixa).
+    if (!productsQuery.isSuccess) {
+      toast.error(productsQuery.isError ? "Não deu pra carregar os custos dos produtos — tente de novo" : "Carregando custos dos produtos…");
+      if (productsQuery.isError) productsQuery.refetch();
+      return;
+    }
     try {
       await navigator.clipboard.writeText(supplierMessage);
       toast.success("Mensagem copiada");
