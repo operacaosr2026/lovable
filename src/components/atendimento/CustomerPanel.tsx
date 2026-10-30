@@ -231,11 +231,15 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                     {/* Status do pagamento ao lado do número; etiquetas embaixo só pro que pede atenção. */}
                     <div className="flex items-center gap-1.5 min-w-0">
                       <p className="text-sm font-semibold whitespace-nowrap">{o.number ? (String(o.number).startsWith("#") ? o.number : `#${o.number}`) : "Pedido"}</p>
-                      {o.financial && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">{FINANCIAL[o.financial] ?? o.financial}</span>}
+                      {o.financial && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${FINANCIAL[o.financial]?.cls ?? "bg-muted text-muted-foreground"}`}>
+                          {FINANCIAL[o.financial]?.label ?? o.financial}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm font-semibold whitespace-nowrap">{formatMoney(o.revenue, o.currency)}</p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{formatDateUS(o.date)}{o.store ? ` · ${o.store}` : ""}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">{formatDateUS(o.date)}{o.store ? ` · ${o.store}` : ""}</p>
                   {(o.cancelled || (o.delivery && !o.tracking) || o.dispute) && <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Cancelado</span>}
                     {o.delivery && !o.tracking && <DeliveryBadge status={o.delivery} />}
@@ -344,9 +348,14 @@ const DELIVERY: Record<string, { label: string; cls: string }> = {
   problem: { label: "Problema", cls: "bg-rose-500/10 text-rose-600" },
   waiting_customer: { label: "Esperando cliente", cls: "bg-violet-500/10 text-violet-600" },
 };
-const FINANCIAL: Record<string, string> = {
-  paid: "Pago", pending: "Pendente", refunded: "Reembolsado", partially_refunded: "Reembolso parcial",
-  voided: "Anulado", authorized: "Autorizado", partially_paid: "Pago parcial",
+const FINANCIAL: Record<string, { label: string; cls: string }> = {
+  paid: { label: "Pago", cls: "bg-emerald-500/10 text-emerald-600" },
+  pending: { label: "Pendente", cls: "bg-amber-500/10 text-amber-600" },
+  authorized: { label: "Autorizado", cls: "bg-amber-500/10 text-amber-600" },
+  partially_paid: { label: "Pago parcial", cls: "bg-amber-500/10 text-amber-600" },
+  partially_refunded: { label: "Reembolso parcial", cls: "bg-amber-500/10 text-amber-600" },
+  refunded: { label: "Reembolsado", cls: "bg-rose-500/10 text-rose-600" },
+  voided: { label: "Anulado", cls: "bg-rose-500/10 text-rose-600" },
 };
 const DISPUTE: Record<string, string> = {
   needs_response: "aguardando resposta", under_review: "em análise", won: "ganho", lost: "perdido",
