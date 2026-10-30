@@ -228,20 +228,23 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
               {customer.data.orders.map((o) => (
                 <div key={o.id} className="rounded-xl border border-border p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">{o.number ? (String(o.number).startsWith("#") ? o.number : `#${o.number}`) : "Pedido"}</p>
-                    <p className="text-sm font-semibold">{formatMoney(o.revenue, o.currency)}</p>
+                    {/* Status do pagamento ao lado do número; etiquetas embaixo só pro que pede atenção. */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="text-sm font-semibold whitespace-nowrap">{o.number ? (String(o.number).startsWith("#") ? o.number : `#${o.number}`) : "Pedido"}</p>
+                      {o.financial && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">{FINANCIAL[o.financial] ?? o.financial}</span>}
+                    </div>
+                    <p className="text-sm font-semibold whitespace-nowrap">{formatMoney(o.revenue, o.currency)}</p>
                   </div>
                   <p className="text-[11px] text-muted-foreground">{formatDateUS(o.date)}{o.store ? ` · ${o.store}` : ""}</p>
-                  <div className="flex flex-wrap gap-1 mt-2">
+                  {(o.cancelled || (o.delivery && !o.tracking) || o.dispute) && <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Cancelado</span>}
-                    {o.financial && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{FINANCIAL[o.financial] ?? o.financial}</span>}
                     {o.delivery && !o.tracking && <DeliveryBadge status={o.delivery} />}
                     {o.dispute && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.dispute.status === "won" ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>
                         {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"} · {DISPUTE[o.dispute.status ?? ""] ?? o.dispute.status}
                       </span>
                     )}
-                  </div>
+                  </div>}
                   {o.tracking && (
                     <div className="flex items-center gap-1.5 mt-2 text-[11px]">
                       <Truck className="size-3 text-muted-foreground shrink-0" />
