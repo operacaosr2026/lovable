@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Check, Loader2, Undo2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,7 +10,9 @@ import {
   type RefundLine, type RefundMode,
 } from "@/lib/support-refund.functions";
 import { REFUND_REASONS, refundReasonLabel, type RefundReason } from "@/lib/refund-reasons";
-import { useSupportFn } from "./demo";
+import { supplierOrdersTotal } from "@/lib/shop-orders.functions";
+import { listSupplierRefundsForOrders, requestSupplierRefund } from "@/lib/supplier-refund.functions";
+import { useIsDemo, useSupportFn } from "./demo";
 import { formatMoney, fullTime } from "./utils";
 
 // Reembolsar: pedido inteiro, itens (com ou sem frete) ou um valor. Vai pra
@@ -45,6 +48,31 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<RefundReason | null>(null);
 
+  // Reembolso do fornecedor junto: marca na aba Reembolso (valor sugerido =
+  // custo do fornecedor do pedido, editável). Some se o pedido já está marcado.
+  const demo = useIsDemo();
+  const supplierListFn = useServerFn(listSupplierRefundsForOrders);
+  const supplierCostFn = useServerFn(supplierOrdersTotal);
+  const supplierRequestFn = useServerFn(requestSupplierRefund);
+  const supplierExisting = useQuery({
+    queryKey: ["supplier-refunds-orders", [orderId]],
+    queryFn: () => supplierListFn({ data: { orderIds: [orderId] } }),
+    enabled: open && !demo, staleTime: 30_000,
+  });
+  const canSupplier = !demo && supplierExisting.isSuccess && supplierExisting.data.length === 0;
+  const [supplier, setSupplier] = useState(false);
+  const [supplierValue, setSupplierValue] = useState("");
+  const supplierCost = useQuery({
+    queryKey: ["supplier-cost", orderId],
+    queryFn: () => supplierCostFn({ data: { order_ids: [orderId] } }),
+    enabled: open && canSupplier && supplier, staleTime: 60_000, retry: false,
+  });
+  useEffect(() => {
+    if (supplierCost.data && !supplierValue) setSupplierValue(supplierCost.data.total.toFixed(2).replace(".", ","));
+  }, [supplierCost.data]);
+  const supplierAmount = Number(supplierValue.replace(",", "."));
+  const supplierReady = !supplier || (supplierValue !== "" && Number.isFinite(supplierAmount) && supplierAmount >= 0);
+
   const lines: RefundLine[] = useMemo(() => (s?.lines ?? [])
     .filter((l) => (qty[l.id] ?? 0) > 0)
     .map((l) => ({ line_item_id: l.id, title: l.title, variant_title: l.variantTitle, quantity: qty[l.id] })), [s, qty]);
@@ -62,7 +90,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
     : mode === "valor" ? (Number.isFinite(typed) ? typed : 0)
     : (lines.length || shipping) ? (preview.data?.amount ?? 0) : 0;
   const overMax = !!s && amount > s.maxRefundable + 0.001;
-  const ready = !!s && amount > 0 && !overMax && !!reason && !(mode === "itens" && preview.isFetching);
+  const ready = !!s && amount > 0 && !overMax && !!reason && supplierReady && !(mode === "itens" && preview.isFetching);
   const canApprove = !!s?.canApprove;
 
   const submit = useMutation({
@@ -72,10 +100,19 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
         description: `O dinheiro volta pro cliente pelo mesmo meio de pagamento do pedido ${s!.orderNumber ?? ""}. Não dá pra desfazer.`,
         confirmText: "Reembolsar", variant: "destructive",
       }))) return null;
-      return requestFn({ data: {
+      const res = await requestFn({ data: {
         orderId, conversationId, mode, reason, lines: mode === "itens" ? lines : [], includeShipping: mode === "itens" && shipping,
         amount: mode === "valor" ? amount : null, notifyCustomer: notify, chargeOnDelivery: mode === "total" && charge, note: note.trim() || null,
       } });
+      if (canSupplier && supplier) {
+        // O reembolso do cliente já foi; se marcar o fornecedor falhar, só avisa.
+        try {
+          await supplierRequestFn({ data: { orderId, conversationId, amount: Math.round(supplierAmount * 100) / 100, note: note.trim() || null } });
+        } catch (e: any) {
+          toast.error("Não marcou o reembolso do fornecedor", { description: e.message });
+        }
+      }
+      return res;
     },
     onSuccess: (res: any) => {
       if (!res) return;
@@ -84,6 +121,8 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
       qc.invalidateQueries({ queryKey: ["refund-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
       qc.invalidateQueries({ queryKey: ["support-approvals"] });
+      qc.invalidateQueries({ queryKey: ["supplier-refunds"] });
+      qc.invalidateQueries({ queryKey: ["supplier-refunds-orders"] });
       onClose();
     },
     onError: (e: any) => toast.error(e.message ?? "Erro ao pedir o reembolso"),
@@ -209,6 +248,32 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
                   <span className="block text-[11px] text-muted-foreground">Entra em Chargebacks › Alertas. Desmarcado, não é cobrado.</span>
                 </span>
               </label>
+            )}
+
+            {canSupplier && (
+              <div>
+                <label className="flex items-start gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={supplier} onChange={(e) => setSupplier(e.target.checked)} className="mt-0.5" />
+                  <span>
+                    Fornecedor tem que reembolsar
+                    <span className="block text-[11px] text-muted-foreground">Entra em Atendimento › Reembolso até alguém conferir no sistema dele.</span>
+                  </span>
+                </label>
+                {supplier && (
+                  <div className="ml-5 mt-1.5">
+                    <div className="flex items-center gap-2 h-8 rounded-lg border border-border bg-background px-3 focus-within:border-primary">
+                      <span className="text-xs text-muted-foreground">USD</span>
+                      <input inputMode="decimal" value={supplierValue}
+                        onChange={(e) => setSupplierValue(e.target.value.replace(/[^\d.,]/g, ""))}
+                        placeholder={supplierCost.isLoading ? "Calculando…" : "0,00"} className="flex-1 bg-transparent text-xs outline-none" />
+                      {supplierCost.isLoading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Valor que o fornecedor deve{supplierCost.data ? ` — custo do produto: ${formatMoney(supplierCost.data.total, "USD")}` : ""}.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">

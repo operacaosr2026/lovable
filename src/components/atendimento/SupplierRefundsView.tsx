@@ -78,7 +78,7 @@ export function SupplierRefundsView({ onOpenConversation }: { onOpenConversation
             <Factory className="size-6 mx-auto text-muted-foreground/60" />
             <p className="text-xs text-muted-foreground mt-2">
               {search ? "Nada encontrado" : tab === "pendente"
-                ? "Nenhum reembolso esperando o fornecedor. Marque pelo pedido no Atendimento (Pedidos › Reembolso fornecedor)."
+                ? "Nenhum reembolso esperando o fornecedor. Marque ao reembolsar o pedido no Atendimento (Reembolsar › Fornecedor tem que reembolsar)."
                 : "Nenhum reembolso do fornecedor confirmado nos últimos 90 dias."}
             </p>
           </div>
