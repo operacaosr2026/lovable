@@ -247,7 +247,7 @@ function EntryChip({
 // (Facebook, Fornecedor, etc.), mostrando a soma. O detalhamento de quais
 // valores compõem a soma aparece no title (tooltip nativo, ao passar o mouse).
 
-type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[]; pending?: boolean };
+type EntryGroup = { key: string; label: string; kind: "income" | "expense"; total: number; entries: DayItem[]; pending?: boolean; collapsed?: boolean };
 
 // Lançamentos manuais criados com até 1 min de diferença (mesma categoria e
 // descrição, lojas diferentes) = o mesmo lançamento "Todas as lojas".
@@ -288,7 +288,8 @@ function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup
         entries: auto,
       }];
     } else {
-      // Saídas automáticas (anúncios, fornecedor, taxas…): somadas por categoria.
+      // Saídas automáticas (anúncios, fornecedor, taxas…): somadas por categoria,
+      // um valor só pro grupo — sem abrir a lista loja a loja.
       const byCategory = new Map<string, DayItem[]>();
       for (const e of auto) {
         const cat = e.category ?? "Saída";
@@ -296,7 +297,7 @@ function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup
         byCategory.get(cat)!.push(e);
       }
       autoGroups = Array.from(byCategory.entries()).map(([cat, entries]) => ({
-        key: cat, label: cat, kind,
+        key: cat, label: cat, kind, collapsed: true,
         total: entries.reduce((s, e) => s + Number(e.amount), 0),
         entries,
       }));
@@ -406,10 +407,8 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
   });
   const allReconciled = reconcilable.length > 0 && reconcilable.every((e) => e.reconciled);
 
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button type="button" title={title} className={chipClasses}>
+  const groupChip = (
+        <button type="button" title={title} className={cn(chipClasses, group.collapsed && "cursor-default")}>
           <span className="flex items-center gap-1.5 min-w-0 truncate">
             {reconcilable.length > 0 && (
               <span
@@ -434,6 +433,15 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
           </span>
           <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
         </button>
+  );
+
+  // Saída automática do grupo (Facebook Ads, Fornecedor…): só o total, sem lista por loja.
+  if (group.collapsed) return groupChip;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {groupChip}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2 space-y-1">
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 mb-1">
