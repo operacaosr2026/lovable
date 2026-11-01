@@ -30,8 +30,9 @@ type RefundItem = Base & {
   kind: "reembolso"; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean; amount: number; currency: string;
   notify_customer: boolean; charge_on_delivery: boolean; refunded_amount: number | null;
 };
-type ExchangeReq = Base & { kind: "troca"; fault: ExchangeFault; items: ExchangeItem[]; new_order_name: string | null };
+type ExchangeReq = Base & { kind: "troca"; fault: ExchangeFault; reason: string | null; items: ExchangeItem[]; new_order_name: string | null };
 type Item = RefundItem | ExchangeReq;
+const exchangeFaultLabel = (f: ExchangeFault) => (f === "empresa" ? "Erro da empresa" : "Erro do fornecedor");
 
 const OPEN = new Set(["pendente", "gerando", "erro"]);
 const DECIDABLE = new Set(["pendente", "erro"]);
@@ -214,8 +215,10 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                         <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>
                         {!compact && <td className="px-3 py-2.5"><KindBadge kind={i.kind} /></td>}
                         <td className="px-3 py-2.5 font-semibold whitespace-nowrap">{i.kind === "reembolso" ? formatMoney(i.amount, i.currency) : "—"}</td>
-                        <td className="px-3 py-2.5 max-w-[160px] truncate text-muted-foreground" title={i.kind === "reembolso" ? refundReasonLabel((i as any).reason) : undefined}>
-                          {i.kind === "reembolso" ? refundReasonLabel((i as any).reason) : "—"}
+                        {/* Troca antiga (sem motivo de lista): mostra de quem foi o erro. */}
+                        <td className="px-3 py-2.5 max-w-[160px] truncate text-muted-foreground"
+                          title={i.kind === "troca" && !i.reason ? exchangeFaultLabel(i.fault) : refundReasonLabel(i.reason)}>
+                          {i.kind === "troca" && !i.reason ? exchangeFaultLabel(i.fault) : refundReasonLabel(i.reason)}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <p>{day(i.created_at)}</p>
@@ -602,6 +605,7 @@ function DetailPanel({ i, canApprove, actions, onClose, onOpenConversation }: {
                 </>
               ) : (
                 <>
+                  {i.reason && <Info label="Motivo" value={refundReasonLabel(i.reason)} />}
                   <Info label="Erro de" value={i.fault === "empresa" ? "Empresa" : "Fornecedor"} />
                   <Info label="Vai enviar" value={i.items.map((x) => `${x.quantity}× ${x.product_title}${x.variant_title ? ` (${x.variant_title})` : ""}`).join(", ")} />
                 </>

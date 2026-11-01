@@ -7,6 +7,7 @@ import {
   decideExchange, getExchangeSetup, requestExchange, searchExchangeProducts,
   EXCHANGE_TAG, type ExchangeFault, type ExchangeItem, type ExchangeProduct,
 } from "@/lib/support-exchange.functions";
+import { REFUND_REASONS, refundReasonLabel, type RefundReason } from "@/lib/refund-reasons";
 import { useSupportFn } from "./demo";
 import { fullTime } from "./utils";
 
@@ -43,6 +44,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
   const [rows, setRows] = useState<Row[]>([]);
   const [fault, setFault] = useState<ExchangeFault | null>(null);
   const [note, setNote] = useState("");
+  const [reason, setReason] = useState<RefundReason | null>(null);
   // Monta os itens uma vez (a consulta pode atualizar sozinha e não pode
   // apagar o que já foi escolhido).
   useEffect(() => {
@@ -62,7 +64,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
 
   const patch = (key: string, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
   const chosen = rows.filter((r) => r.include);
-  const ready = !!fault && chosen.length > 0 && chosen.every((r) => r.product && r.variantId);
+  const ready = !!fault && !!reason && chosen.length > 0 && chosen.every((r) => r.product && r.variantId);
   const canApprove = !!setup.data?.canApprove;
 
   const submit = useMutation({
@@ -75,7 +77,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
           quantity: r.quantity, replaces: r.original,
         };
       });
-      return requestFn({ data: { orderId, conversationId, fault: fault!, items, note: note.trim() || null } });
+      return requestFn({ data: { orderId, conversationId, fault: fault!, reason: reason!, items, note: note.trim() || null } });
     },
     onSuccess: (res: any) => {
       if (res.status === "aprovado") toast.success(`Pedido ${res.orderName} gerado`);
@@ -165,6 +167,19 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
               {fault && <p className="text-[11px] text-muted-foreground mt-1.5">Tag do pedido: <span className="font-mono">{EXCHANGE_TAG[fault]}</span></p>}
             </div>
 
+            {/* Mesma lista do reembolso (refund-reasons.ts). */}
+            <div>
+              <p className="text-xs font-semibold mb-1.5">Motivo</p>
+              <div className="flex flex-wrap gap-1.5">
+                {REFUND_REASONS.map((r) => (
+                  <button key={r.key} type="button" onClick={() => setReason(r.key)}
+                    className={`h-7 px-2.5 rounded-lg border text-[11px] font-medium transition-colors ${reason === r.key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <p className="text-xs font-semibold mb-1">Observação (opcional)</p>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000}
@@ -246,7 +261,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 export type ExchangeRequestView = {
-  id: string; order_id: string; fault: ExchangeFault; items: ExchangeItem[]; note: string | null; status: string;
+  id: string; order_id: string; fault: ExchangeFault; reason?: string | null; items: ExchangeItem[]; note: string | null; status: string;
   requestedByName: string | null; decidedByName: string | null; decided_at: string | null; reject_reason: string | null;
   new_order_name: string | null; error: string | null; created_at: string;
 };
@@ -286,6 +301,7 @@ export function ExchangeRequestCard({ r, canApprove }: { r: ExchangeRequestView;
           {i.replaces && <span className="text-muted-foreground"> — no lugar de {i.replaces}</span>}
         </p>
       ))}
+      {r.reason && <p className="text-[11px] text-muted-foreground">Motivo: {refundReasonLabel(r.reason)}</p>}
       <p className="text-[10px] text-muted-foreground">
         Erro {r.fault === "empresa" ? "da empresa" : "do fornecedor"} · {r.requestedByName ?? "Equipe"} · {fullTime(r.created_at)}
       </p>

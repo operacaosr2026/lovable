@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { REFUND_REASON_KEYS, refundReasonLabel } from "@/lib/refund-reasons";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { shopifyGql } from "@/lib/chargeback-recovery.server";
@@ -98,7 +99,7 @@ export const listExchangeRequests = createServerFn({ method: "GET" })
     assertAccess(context as Ctx);
     if (!data.orderIds.length) return { canApprove: isApprover(context as Ctx), requests: [] };
     const { data: rows, error } = await db("support_exchange_requests")
-      .select("id,order_id,order_number,fault,items,note,status,requested_by,decided_by,decided_at,reject_reason,new_order_name,error,created_at")
+      .select("id,order_id,order_number,fault,reason,items,note,status,requested_by,decided_by,decided_at,reject_reason,new_order_name,error,created_at")
       .eq("owner_id", context.ownerId).in("order_id", data.orderIds).order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const name = await personNames((rows ?? []).flatMap((r: any) => [r.requested_by, r.decided_by]));
@@ -127,6 +128,7 @@ export const requestExchange = createServerFn({ method: "POST" })
     orderId: z.string().uuid(),
     conversationId: z.string().uuid().nullable(),
     fault: z.enum(EXCHANGE_FAULTS),
+    reason: z.enum(REFUND_REASON_KEYS),
     items: z.array(ItemInput).min(1).max(20),
     note: z.string().trim().max(1000).nullable(),
   }).parse(d))
@@ -141,7 +143,7 @@ export const requestExchange = createServerFn({ method: "POST" })
     const { data: row, error } = await db("support_exchange_requests").insert({
       owner_id: ctx.ownerId, requested_by: ctx.userId, shop_id: o.shop_id, conversation_id: data.conversationId,
       order_id: o.id, order_number: o.order_number, customer_email: customer.email,
-      customer_name: customer.name, fault: data.fault, items: data.items, note: data.note,
+      customer_name: customer.name, fault: data.fault, reason: data.reason, items: data.items, note: data.note,
     }).select("id").single();
     if (error) throw new Error(error.message);
 
@@ -155,7 +157,7 @@ export const requestExchange = createServerFn({ method: "POST" })
     await raiseNotification(ctx.ownerId, noticeKey(row.id), {
       level: "warning",
       title: `Troca para aprovar — ${o.order_number ?? "pedido"}`,
-      body: `${who} pediu: ${what}. Erro ${data.fault === "empresa" ? "da empresa" : "do fornecedor"}.${data.note ? ` Obs.: ${data.note}` : ""}`,
+      body: `${who} pediu: ${what}. Motivo: ${refundReasonLabel(data.reason)}. Erro ${data.fault === "empresa" ? "da empresa" : "do fornecedor"}.${data.note ? ` Obs.: ${data.note}` : ""}`,
       link: APPROVALS_LINK,
       targetUserId: ctx.ownerId,
     });
