@@ -13,7 +13,7 @@ import type { ExchangeItem } from "@/lib/support-exchange.functions";
 // aprova ou tem "Aprovações (ver a fila)" nas permissões.
 
 const REFUND_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,mode,reason,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at";
-const EXCHANGE_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,fault,reason,items,note,status,requested_by,decided_by,decided_at,reject_reason,new_order_name,error,created_at";
+const EXCHANGE_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,fault,reason,shipping_address,items,note,status,requested_by,decided_by,decided_at,reject_reason,new_order_name,error,created_at";
 const OPEN = ["pendente", "gerando", "erro"];
 
 function assertSee(ctx: Ctx) {

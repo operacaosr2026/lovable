@@ -46,6 +46,24 @@ function addressLines(a: any): string[] {
   ].filter(Boolean);
 }
 
+// Endereço de entrega da troca (formato do shipping_address da Shopify).
+const AddressInput = z.object({
+  first_name: z.string().trim().max(100).nullable(),
+  last_name: z.string().trim().max(100).nullable(),
+  address1: z.string().trim().min(1).max(200),
+  address2: z.string().trim().max(200).nullable(),
+  city: z.string().trim().min(1).max(100),
+  province_code: z.string().trim().max(10).nullable(),
+  zip: z.string().trim().min(1).max(20),
+  country_code: z.string().trim().length(2),
+  phone: z.string().trim().max(40).nullable(),
+});
+export type ExchangeAddress = z.infer<typeof AddressInput>;
+const addressOf = (a: any): ExchangeAddress | null => a ? {
+  first_name: a.first_name ?? null, last_name: a.last_name ?? null, address1: a.address1 ?? "", address2: a.address2 ?? null,
+  city: a.city ?? "", province_code: a.province_code ?? null, zip: a.zip ?? "", country_code: a.country_code ?? "", phone: a.phone ?? null,
+} : null;
+
 // Itens do pedido com as variantes do produto (pra escolher o tamanho novo).
 export const getExchangeSetup = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -67,6 +85,7 @@ export const getExchangeSetup = createServerFn({ method: "GET" })
       orderNumber: o.order_number,
       store: shop?.name ?? null,
       address: addressLines(o.raw?.shipping_address),
+      addressFields: addressOf(o.raw?.shipping_address),
       canApprove: isApprover(context as Ctx),
       lines: lines.map((l) => ({
         title: l.title as string,
@@ -131,6 +150,8 @@ export const requestExchange = createServerFn({ method: "POST" })
     reason: z.enum(REFUND_REASON_KEYS),
     items: z.array(ItemInput).min(1).max(20),
     note: z.string().trim().max(1000).nullable(),
+    // null = mesmo endereço do pedido.
+    address: AddressInput.nullable().default(null),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
@@ -144,6 +165,7 @@ export const requestExchange = createServerFn({ method: "POST" })
       owner_id: ctx.ownerId, requested_by: ctx.userId, shop_id: o.shop_id, conversation_id: data.conversationId,
       order_id: o.id, order_number: o.order_number, customer_email: customer.email,
       customer_name: customer.name, fault: data.fault, reason: data.reason, items: data.items, note: data.note,
+      shipping_address: data.address,
     }).select("id").single();
     if (error) throw new Error(error.message);
 
@@ -206,12 +228,14 @@ async function generateExchangeOrder(ctx: Ctx, id: string): Promise<{ id: string
     let draftId: string | null = r.draft_order_id;
     if (!draftId) {
       const [approver, requester] = await Promise.all([personName(ctx.userId), personName(r.requested_by)]);
-      const a = raw.shipping_address;
-      const address = a ? {
+      // Endereço alterado na troca vai só na entrega; a cobrança fica a do pedido.
+      const toInput = (a: any) => a ? {
         firstName: a.first_name ?? null, lastName: a.last_name ?? null, address1: a.address1 ?? null, address2: a.address2 ?? null,
         city: a.city ?? null, provinceCode: a.province_code ?? null, zip: a.zip ?? null, countryCode: a.country_code ?? null,
         phone: a.phone ?? null, company: a.company ?? null,
       } : undefined;
+      const original = toInput(raw.shipping_address);
+      const shipTo = r.shipping_address ? toInput({ ...raw.shipping_address, ...r.shipping_address }) : original;
       const items = r.items as ExchangeItem[];
       const out = (await shopifyGql(o.shop_id, `mutation ExchangeDraft($input: DraftOrderInput!) {
         draftOrderCreate(input: $input) { draftOrder { id } userErrors { field message } }
@@ -219,15 +243,15 @@ async function generateExchangeOrder(ctx: Ctx, id: string): Promise<{ id: string
         input: {
           email: raw.email || raw.customer?.email || undefined,
           purchasingEntity: raw.customer?.admin_graphql_api_id ? { customerId: raw.customer.admin_graphql_api_id } : undefined,
-          shippingAddress: address,
-          billingAddress: address,
+          shippingAddress: shipTo,
+          billingAddress: original,
           lineItems: items.map((i) => ({
             variantId: i.variant_id, quantity: i.quantity,
             appliedDiscount: { valueType: "PERCENTAGE", value: 100, title: "Troca" },
           })),
           tags: [EXCHANGE_TAG[r.fault as ExchangeFault]],
           note: `Troca do pedido ${o.order_number ?? ""} (erro ${r.fault === "empresa" ? "da empresa" : "do fornecedor"}). `
-            + `Pedido por ${requester}, aprovado por ${approver} no SRX Growth.${r.note ? ` Obs.: ${r.note}` : ""}`,
+            + `Pedido por ${requester}, aprovado por ${approver} no SRX Growth.${r.shipping_address ? " Endereço de entrega alterado na troca." : ""}${r.note ? ` Obs.: ${r.note}` : ""}`,
           customAttributes: [{ key: "Original order", value: o.order_number ?? String(raw.id ?? "") }],
         },
       }))?.draftOrderCreate;

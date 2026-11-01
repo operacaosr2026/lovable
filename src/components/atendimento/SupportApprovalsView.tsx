@@ -30,7 +30,7 @@ type RefundItem = Base & {
   kind: "reembolso"; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean; amount: number; currency: string;
   notify_customer: boolean; charge_on_delivery: boolean; refunded_amount: number | null;
 };
-type ExchangeReq = Base & { kind: "troca"; fault: ExchangeFault; reason: string | null; items: ExchangeItem[]; new_order_name: string | null };
+type ExchangeReq = Base & { kind: "troca"; fault: ExchangeFault; reason: string | null; shipping_address: Record<string, string | null> | null; items: ExchangeItem[]; new_order_name: string | null };
 type Item = RefundItem | ExchangeReq;
 const exchangeFaultLabel = (f: ExchangeFault) => (f === "empresa" ? "Erro da empresa" : "Erro do fornecedor");
 
@@ -607,6 +607,14 @@ function DetailPanel({ i, canApprove, actions, onClose, onOpenConversation }: {
                 <>
                   {i.reason && <Info label="Motivo" value={refundReasonLabel(i.reason)} />}
                   <Info label="Erro de" value={i.fault === "empresa" ? "Empresa" : "Fornecedor"} />
+                  {i.shipping_address && (
+                    <Info label="Endereço novo" value={[
+                      [i.shipping_address.first_name, i.shipping_address.last_name].filter(Boolean).join(" "),
+                      [i.shipping_address.address1, i.shipping_address.address2].filter(Boolean).join(", "),
+                      [i.shipping_address.city, i.shipping_address.province_code, i.shipping_address.zip].filter(Boolean).join(" "),
+                      i.shipping_address.country_code,
+                    ].filter(Boolean).join(" · ")} />
+                  )}
                   <Info label="Vai enviar" value={i.items.map((x) => `${x.quantity}× ${x.product_title}${x.variant_title ? ` (${x.variant_title})` : ""}`).join(", ")} />
                 </>
               )}

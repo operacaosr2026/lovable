@@ -5,7 +5,7 @@ import { Check, Loader2, Repeat, Search, X } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   decideExchange, getExchangeSetup, requestExchange, searchExchangeProducts,
-  EXCHANGE_TAG, type ExchangeFault, type ExchangeItem, type ExchangeProduct,
+  EXCHANGE_TAG, type ExchangeAddress, type ExchangeFault, type ExchangeItem, type ExchangeProduct,
 } from "@/lib/support-exchange.functions";
 import { REFUND_REASONS, refundReasonLabel, type RefundReason } from "@/lib/refund-reasons";
 import { useSupportFn } from "./demo";
@@ -45,6 +45,9 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
   const [fault, setFault] = useState<ExchangeFault | null>(null);
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<RefundReason | null>(null);
+  // Endereço alterado só pra esta troca (null = o do pedido).
+  const [addr, setAddr] = useState<ExchangeAddress | null>(null);
+  const addrOk = !addr || (!!addr.address1.trim() && !!addr.city.trim() && !!addr.zip.trim() && addr.country_code.trim().length === 2);
   // Monta os itens uma vez (a consulta pode atualizar sozinha e não pode
   // apagar o que já foi escolhido).
   useEffect(() => {
@@ -64,7 +67,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
 
   const patch = (key: string, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
   const chosen = rows.filter((r) => r.include);
-  const ready = !!fault && !!reason && chosen.length > 0 && chosen.every((r) => r.product && r.variantId);
+  const ready = !!fault && !!reason && addrOk && chosen.length > 0 && chosen.every((r) => r.product && r.variantId);
   const canApprove = !!setup.data?.canApprove;
 
   const submit = useMutation({
@@ -77,7 +80,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
           quantity: r.quantity, replaces: r.original,
         };
       });
-      return requestFn({ data: { orderId, conversationId, fault: fault!, reason: reason!, items, note: note.trim() || null } });
+      return requestFn({ data: { orderId, conversationId, fault: fault!, reason: reason!, items, note: note.trim() || null, address: addr } });
     },
     onSuccess: (res: any) => {
       if (res.status === "aprovado") toast.success(`Pedido ${res.orderName} gerado`);
@@ -187,10 +190,37 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
                 className="w-full resize-none rounded-lg border border-border bg-background p-2 text-xs outline-none focus:border-primary" />
             </div>
 
-            {setup.data.address.length > 0 && (
+            {addr ? (
+              <div className="rounded-lg border border-primary/40 p-2.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold">Envio para (endereço novo)</p>
+                  <button type="button" onClick={() => setAddr(null)} className="text-[11px] text-primary hover:underline">Usar o do pedido</button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <AddrInput label="Nome" value={addr.first_name ?? ""} onChange={(v) => setAddr({ ...addr, first_name: v || null })} />
+                  <AddrInput label="Sobrenome" value={addr.last_name ?? ""} onChange={(v) => setAddr({ ...addr, last_name: v || null })} />
+                  <AddrInput label="Endereço" value={addr.address1} onChange={(v) => setAddr({ ...addr, address1: v })} wide />
+                  <AddrInput label="Complemento (apto, suíte…)" value={addr.address2 ?? ""} onChange={(v) => setAddr({ ...addr, address2: v || null })} wide />
+                  <AddrInput label="Cidade" value={addr.city} onChange={(v) => setAddr({ ...addr, city: v })} />
+                  <AddrInput label="Estado (ex.: CO)" value={addr.province_code ?? ""} onChange={(v) => setAddr({ ...addr, province_code: v.toUpperCase() || null })} />
+                  <AddrInput label="CEP / ZIP" value={addr.zip} onChange={(v) => setAddr({ ...addr, zip: v })} />
+                  <AddrInput label="País (ex.: US)" value={addr.country_code} onChange={(v) => setAddr({ ...addr, country_code: v.toUpperCase().slice(0, 2) })} />
+                  <AddrInput label="Telefone" value={addr.phone ?? ""} onChange={(v) => setAddr({ ...addr, phone: v || null })} wide />
+                </div>
+                {!addrOk && <p className="text-[11px] text-destructive">Preencha endereço, cidade, CEP e país (2 letras).</p>}
+              </div>
+            ) : (
               <div className="rounded-lg bg-muted/50 p-2.5 text-[11px] text-muted-foreground">
-                <p className="font-medium text-foreground mb-0.5">Envio para (mesmo endereço do pedido)</p>
-                {setup.data.address.map((l, i) => <p key={i}>{l}</p>)}
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <p className="font-medium text-foreground">Envio para (mesmo endereço do pedido)</p>
+                  <button type="button" className="text-primary hover:underline shrink-0"
+                    onClick={() => setAddr(setup.data!.addressFields ?? {
+                      first_name: null, last_name: null, address1: "", address2: null, city: "", province_code: null, zip: "", country_code: "US", phone: null,
+                    })}>
+                    Alterar
+                  </button>
+                </div>
+                {setup.data.address.length ? setup.data.address.map((l, i) => <p key={i}>{l}</p>) : <p>Pedido sem endereço de entrega.</p>}
               </div>
             )}
 
@@ -334,5 +364,15 @@ export function ExchangeRequestCard({ r, canApprove }: { r: ExchangeRequestView;
         )
       )}
     </div>
+  );
+}
+
+function AddrInput({ label, value, onChange, wide }: { label: string; value: string; onChange: (v: string) => void; wide?: boolean }) {
+  return (
+    <label className={wide ? "col-span-2" : ""}>
+      <span className="block text-[10px] text-muted-foreground mb-0.5">{label}</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} maxLength={200}
+        className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs outline-none focus:border-primary" />
+    </label>
   );
 }
