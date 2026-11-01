@@ -1528,6 +1528,7 @@ export type Database = {
         Row: {
           body: string | null;
           error: string | null;
+          flow_enrollment_id: string | null;
           id: string;
           order_id: string;
           owner_id: string;
@@ -1545,6 +1546,7 @@ export type Database = {
         Insert: {
           body?: string | null;
           error?: string | null;
+          flow_enrollment_id?: string | null;
           id?: string;
           order_id: string;
           owner_id: string;
@@ -1562,6 +1564,7 @@ export type Database = {
         Update: {
           body?: string | null;
           error?: string | null;
+          flow_enrollment_id?: string | null;
           id?: string;
           order_id?: string;
           owner_id?: string;

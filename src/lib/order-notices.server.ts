@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getZohoAccount, sendZohoMail, syncZohoMailbox } from "@/lib/zoho-mail.server";
 import { buildBody } from "@/lib/support-body.server";
 import { NOTICE_INTERVAL_MIN } from "@/lib/order-notices";
+import { flowNoticeBlocked } from "@/lib/email-flows.server";
 
 // Fila da aba Notificações: o cron roda a cada minuto e manda 1 e-mail por
 // workspace quando já passou o intervalo (NOTICE_INTERVAL_MIN) desde o último —
@@ -33,15 +34,17 @@ async function sendNext(ownerId: string): Promise<string> {
   if (last?.sent_at && Date.now() - Date.parse(last.sent_at) < NOTICE_INTERVAL_MS - 10_000) return "aguardando intervalo";
 
   const { data: n } = await supabaseAdmin.from("order_notices")
-    .select("id,order_id,to_email,subject,body,sent_by")
+    .select("id,order_id,to_email,subject,body,sent_by,flow_enrollment_id")
     .eq("owner_id", ownerId).eq("status", "na_fila").order("queued_at").order("id").limit(1).maybeSingle();
   if (!n) return "fila vazia";
 
   // Pedido entregue, cancelado ou reembolsado enquanto esperava: não manda.
+  // E-mail de fluxo segue as regras de saída do próprio fluxo (pode ser pós-entrega).
   const { data: o } = await supabaseAdmin.from("shop_orders")
     .select("delivered_at,delivery_status,shopify_financial_status,cancelled_at:raw->>cancelled_at").eq("id", n.order_id).maybeSingle();
   const why = !o ? "pedido não existe mais"
     : o.cancelled_at ? "pedido cancelado"
+    : n.flow_enrollment_id ? await flowNoticeBlocked(n.flow_enrollment_id)
     : o.delivered_at || o.delivery_status === "delivered" ? "pedido já foi entregue"
     : ["refunded", "partially_refunded", "voided"].includes(String(o.shopify_financial_status)) ? "pedido reembolsado"
     : null;

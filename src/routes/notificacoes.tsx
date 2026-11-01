@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
   Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Store, Tag, ListFilter, ArrowRight,
-  StickyNote, Copy, ListTodo,
+  StickyNote, Copy, ListTodo, Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -24,6 +24,7 @@ import {
 import { NOTICE_STAGES, NOTICE_INTERVAL_MIN, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
 import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 import { createTask, listTaskAssignees } from "@/lib/tasks.functions";
+import { EmailFlowsTab } from "@/components/notificacoes/EmailFlows";
 
 export const Route = createFileRoute("/notificacoes")({
   beforeLoad: requireAuth,
@@ -88,7 +89,44 @@ function supplierMessage(orders: NoticeOrder[]) {
   return [intro, "", ...lines, "", "Pode verificar, por favor? Obrigado!"].join("\n");
 }
 
+// Abas: Avisos de atraso (e-mail manual por pedido) e Fluxos (sequência
+// automática pra um público escolhido por filtro).
+type PageTab = "avisos" | "fluxos";
+
 function NotificacoesPage() {
+  const [tab, setTab] = useState<PageTab>(() => {
+    try { return (localStorage.getItem("notificacoes-tab") as PageTab) === "fluxos" ? "fluxos" : "avisos"; } catch { return "avisos"; }
+  });
+  const pick = (t: PageTab) => {
+    setTab(t);
+    try { localStorage.setItem("notificacoes-tab", t); } catch { /* sem storage */ }
+  };
+  const tabs = (
+    <div className="inline-flex gap-1 p-1 rounded-xl bg-muted">
+      {([["avisos", "Avisos de atraso", Mail], ["fluxos", "Fluxos", Workflow]] as const).map(([k, l, Icon]) => (
+        <button key={k} onClick={() => pick(k)}
+          className={`h-8 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 ${tab === k ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+          <Icon className="size-4" /> {l}
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <PageShell wide>
+      {tab === "avisos" ? <AvisosTab tabs={tabs} /> : (
+        <>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-5">
+            <h1 className="text-2xl font-bold tracking-tight">Notificações</h1>
+            {tabs}
+          </div>
+          <EmailFlowsTab />
+        </>
+      )}
+    </PageShell>
+  );
+}
+
+function AvisosTab({ tabs }: { tabs: ReactNode }) {
   const listFn = useServerFn(listNoticeOrders);
   const tplFn = useServerFn(listNoticeTemplates);
   const queueFn = useServerFn(getNoticeQueue);
@@ -164,10 +202,11 @@ function NotificacoesPage() {
   });
 
   return (
-    <PageShell wide>
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-5">
+    <>
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-5">
         <h1 className="text-2xl font-bold tracking-tight">Notificações</h1>
-        <Button variant="outline" onClick={() => setTemplatesOpen(true)}>
+        {tabs}
+        <Button variant="outline" className="lg:ml-auto" onClick={() => setTemplatesOpen(true)}>
           <FileText className="size-4" /> Mensagens
         </Button>
       </div>
@@ -369,7 +408,7 @@ function NotificacoesPage() {
         onDone={() => setSelected(new Set())} />
       <TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} templates={templates.data ?? []} />
       {taskOpen && <TaskDialog orders={selectedOrders} onClose={() => setTaskOpen(false)} />}
-    </PageShell>
+    </>
   );
 }
 
