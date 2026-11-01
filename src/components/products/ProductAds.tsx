@@ -9,6 +9,7 @@ import {
   createAdForCreative, finishAdPublication, deleteAdPublication, type AdPublicationConfig, type AdMedia,
 } from "@/lib/product-ads.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { STANDARD_URL_TAGS } from "@/lib/utm";
 
 const CTA_LABELS: Record<typeof AD_CTAS[number], string> = {
   SHOP_NOW: "Comprar agora", LEARN_MORE: "Saiba mais", ORDER_NOW: "Peça agora",
@@ -16,8 +17,9 @@ const CTA_LABELS: Record<typeof AD_CTAS[number], string> = {
 };
 const DEFAULTS: Partial<AdPublicationConfig> = {
   structure: "single", cta: "SHOP_NOW", status: "PAUSED", daily_budget: 30,
-  url_tags: "utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}",
+  url_tags: STANDARD_URL_TAGS,
 };
+const OLD_DEFAULT_URL_TAGS = "utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
 
 type Step = { label: string; state: "running" | "ok" | "error" };
 
@@ -59,6 +61,8 @@ export function ProductAds({ productId }: { productId: string }) {
     setCfg({
       ...DEFAULTS,
       ...last,
+      // UTM padrão antiga (sem id) vira o padrão novo; UTM editada à mão fica.
+      url_tags: !last?.url_tags || last.url_tags === OLD_DEFAULT_URL_TAGS ? STANDARD_URL_TAGS : last.url_tags,
       shop_id: acc?.shop_id, ad_account_id: acc?.ad_account_id,
       link: last?.link ?? setup.data.links[0]?.url ?? "",
       campaign_name: "",

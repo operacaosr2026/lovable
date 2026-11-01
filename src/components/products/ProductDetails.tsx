@@ -9,6 +9,8 @@ import { useProductStatuses } from "@/components/products/product-status";
 import { ProductCreatives } from "@/components/products/ProductCreatives";
 import { ProductSales } from "@/components/products/ProductSales";
 import { ProductDiary } from "@/components/products/ProductDiary";
+import { ProductExperiments } from "@/components/products/ProductExperiments";
+import { NamingGenerator } from "@/components/products/Naming";
 import { ProductionTab } from "@/components/shops/StoreProduction";
 import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
 import { ProductPageTab } from "@/components/products/ProductPageTab";
@@ -22,6 +24,7 @@ const GROUPS = [
     tabs: [
       { id: "vendas", label: "Vendas" },
       { id: "diario", label: "Diário" },
+      { id: "testes", label: "Testes" },
       { id: "informacoes", label: "Informações" },
       { id: "concorrentes", label: "Concorrentes" },
     ],
@@ -35,7 +38,7 @@ const GROUPS = [
       { id: "shopify", label: "Publicar nas lojas" },
     ],
   },
-  { id: "anuncios", label: "Anúncios", icon: Megaphone, tabs: [{ id: "anuncios", label: "Anúncios" }] },
+  { id: "anuncios", label: "Anúncios", icon: Megaphone, tabs: [{ id: "anuncios", label: "Criar campanha" }, { id: "nomenclatura", label: "Nomenclatura" }] },
 ] as const;
 
 type TabId = typeof GROUPS[number]["tabs"][number]["id"];
@@ -116,10 +119,12 @@ export function ProductDetails({ productId }: { productId: string }) {
       {tab === "criativos" && <ProductCreatives productId={productId} />}
       {tab === "vendas" && <ProductSales productId={productId} />}
       {tab === "diario" && <ProductDiary productId={productId} />}
+      {tab === "testes" && <ProductExperiments productId={productId} />}
       {tab === "pagina" && <ProductPageTab productId={productId} />}
       {tab === "shopify" && <ProductShopifyTab productId={productId} />}
       {tab === "concorrentes" && <ProductCompetitors productId={productId} />}
       {tab === "anuncios" && <ProductAds productId={productId} />}
+      {tab === "nomenclatura" && <NamingGenerator />}
     </div>
   );
 }
@@ -127,7 +132,7 @@ export function ProductDetails({ productId }: { productId: string }) {
 export function ProductDetailsDialog({ productId, onClose }: { productId: string; onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="w-full max-w-5xl h-[90vh] overflow-y-auto [scrollbar-gutter:stable]">
+      <DialogContent className="w-full max-w-[min(96vw,1400px)] h-[90vh] overflow-y-auto [scrollbar-gutter:stable]">
         <DialogTitle className="sr-only">Produto</DialogTitle>
         <ProductDetails productId={productId} />
       </DialogContent>

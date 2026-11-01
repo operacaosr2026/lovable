@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, Search, Package, X, Upload, LayoutGrid, List, Columns3 } from "lucide-react";
+import { Plus, Search, Package, X, Upload, LayoutGrid, List, Columns3, FlaskConical } from "lucide-react";
 import {
   listProducts, createProduct, updateProduct, deleteProduct,
 } from "@/lib/products.functions";
@@ -13,12 +13,13 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { StatusBadge, useProductStatuses, usd, type ProductStatus } from "@/components/products/product-status";
 import { ProductBoard } from "@/components/products/ProductBoard";
 import { ProductDetailsDialog } from "@/components/products/ProductDetails";
+import { ProductLearnings } from "@/components/products/ProductLearnings";
 
-type ViewMode = "esteira" | "galeria" | "lista";
+type ViewMode = "esteira" | "galeria" | "lista" | "aprendizados";
 
 export const Route = createFileRoute("/shops/products/")({
   validateSearch: (search: Record<string, unknown>) => ({
-    view: (search.view === "lista" || search.view === "galeria" ? search.view : "esteira") as ViewMode,
+    view: (search.view === "lista" || search.view === "galeria" || search.view === "aprendizados" ? search.view : "esteira") as ViewMode,
   }),
   component: ProductsIndex,
 });
@@ -110,10 +111,18 @@ function ProductsIndex() {
           >
             <List className="size-3.5" /> Lista
           </button>
+          <button
+            onClick={() => navigate({ search: { view: "aprendizados" } })}
+            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "aprendizados" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <FlaskConical className="size-3.5" /> Aprendizados
+          </button>
         </div>
       </div>
 
-      {view === "esteira" ? (
+      {view === "aprendizados" ? (
+        <ProductLearnings search={search} onOpen={setViewingId} />
+      ) : view === "esteira" ? (
         <ProductBoard
           products={products}
           visible={matches}

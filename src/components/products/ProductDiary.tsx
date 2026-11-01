@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { History, ImagePlus, Loader2, Lock, Pencil, Plus, Settings2, Target, Trash2, X } from "lucide-react";
+import { FlaskConical, History, ImagePlus, Loader2, Lock, Pencil, Plus, Settings2, Target, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -92,6 +92,21 @@ export function ProductDiary({ productId }: { productId: string }) {
   return (
     <div className="max-w-3xl space-y-4">
       <div className="rounded-xl border border-border bg-gradient-to-b from-muted/50 to-muted/20 p-3.5 space-y-3">
+        {data.runningTests.length > 0 && (
+          <div className="min-w-0">
+            <div className="flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+              <FlaskConical className="size-3" /> Testes no ar
+            </div>
+            <ul className="mt-0.5 space-y-0.5 px-1.5">
+              {data.runningTests.map((t) => (
+                <li key={t.id} className="flex items-baseline gap-1.5 text-[12.5px]">
+                  <span className="min-w-0 truncate text-foreground/90">{t.title}</span>
+                  {t.started_at && <span className="shrink-0 text-[11px] text-muted-foreground">{daysAgoLabel(daysSince(`${t.started_at}T00:00:00`)).replace("há", "no ar há")}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <FocusField value={data.currentTest} onSave={(v) => saveFocus.mutate(v)} />
         <div className="flex items-start gap-1.5 border-t border-border/70 pt-2.5">
           <History className="mt-0.5 size-3 shrink-0 text-muted-foreground" />

@@ -10,6 +10,10 @@ import { linksByProduct } from "@/lib/product-links.server";
 import { comparisonPeriod } from "@/lib/finance-rules";
 import { selectAll } from "@/lib/select-all";
 import { fetchWithRetry } from "@/lib/http";
+import { splitUtm } from "@/lib/utm";
+import { addDaysIso, isoTodayUS } from "@/lib/timezone";
+import { EMPTY_COUNTS, type RawCounts } from "@/lib/experiment-metrics";
+import { parseClarity } from "@/lib/clarity-parse";
 
 // Dashboard da aba Vendas do produto. Independente dos outros: vendas e custo
 // vêm dos pedidos (mesma regra de nome/palavra-chave do Dashboard), e o gasto
@@ -215,43 +219,90 @@ const JOURNEY_QUERY = `query($ids: [ID!]!) {
 }`;
 type Utm = { source: string | null; medium: string | null; campaign: string | null; content: string | null; term: string | null };
 
-async function orderUtms(ownerId: string, orders: { shop_id: string; external_id: string }[]) {
+// Guardadas em shop_order_utms depois da 1ª busca (não mudam). Pedido sem UTM
+// só entra no cache com mais de 3 dias — a jornada pode demorar a ser montada.
+async function orderUtms(ownerId: string, orders: { shop_id: string; external_id: string; date?: string }[]) {
   const utms = new Map<string, Utm>();
   const errors: string[] = [];
   const byShop = new Map<string, string[]>();
   for (const o of orders) byShop.set(o.shop_id, [...(byShop.get(o.shop_id) ?? []), o.external_id]);
   if (!byShop.size) return { utms, errors };
 
+  const cached = new Set<string>();
+  await Promise.all([...byShop.entries()].flatMap(([shopId, ids]) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 300) chunks.push(ids.slice(i, i + 300));
+    return chunks.map(async (chunk) => {
+      const { data } = await db("shop_order_utms").select("external_id,source,medium,campaign,content,term")
+        .eq("shop_id", shopId).in("external_id", chunk);
+      for (const r of data ?? []) {
+        const key = `${shopId}:${r.external_id}`;
+        cached.add(key);
+        if (r.source || r.medium || r.campaign || r.content || r.term) {
+          utms.set(key, { source: r.source, medium: r.medium, campaign: r.campaign, content: r.content, term: r.term });
+        }
+      }
+    });
+  }));
+  const missing = new Map<string, string[]>();
+  for (const [shopId, ids] of byShop) {
+    const m = ids.filter((id) => !cached.has(`${shopId}:${id}`));
+    if (m.length) missing.set(shopId, m);
+  }
+  if (!missing.size) return { utms, errors };
+
   const { data: settings } = await supabaseAdmin.from("shop_order_settings").select("shop_id,shopify_store_id")
-    .eq("user_id", ownerId).in("shop_id", [...byShop.keys()]);
+    .eq("user_id", ownerId).in("shop_id", [...missing.keys()]);
   const storeByShop = new Map(((settings ?? []) as any[]).filter((r) => r.shopify_store_id).map((r) => [r.shop_id as string, r.shopify_store_id as string]));
   const { data: stores } = storeByShop.size
     ? await supabaseAdmin.from("shopify_stores").select("id,shop_domain,access_token").in("id", [...new Set(storeByShop.values())])
     : { data: [] as any[] };
   const storeById = new Map(((stores ?? []) as any[]).map((s) => [s.id as string, s]));
+  const dateOf = new Map(orders.map((o) => [`${o.shop_id}:${o.external_id}`, o.date]));
+  const oldEnough = addDaysIso(isoTodayUS(), -3);
+  const toCache: Database["public"]["Tables"]["shop_order_utms"]["Insert"][] = [];
 
-  await Promise.all([...byShop.entries()].map(async ([shopId, ids]) => {
+  await Promise.all([...missing.entries()].map(async ([shopId, ids]) => {
     const store = storeById.get(storeByShop.get(shopId) ?? "");
     if (!store?.access_token) { errors.push("Loja sem Shopify conectada"); return; }
-    try {
-      for (let i = 0; i < ids.length; i += 50) {
-        const res = await fetchWithRetry(`https://${store.shop_domain}/admin/api/2026-07/graphql.json`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": store.access_token },
-          body: JSON.stringify({ query: JOURNEY_QUERY, variables: { ids: ids.slice(i, i + 50).map((id) => `gid://shopify/Order/${id}`) } }),
-        });
-        const json: any = await res.json();
-        if (!res.ok || json.errors) throw new Error(json?.errors ? JSON.stringify(json.errors).slice(0, 200) : `Falha (${res.status})`);
-        for (const n of (json.data?.nodes ?? []) as any[]) {
-          const j = n?.customerJourneySummary;
-          const u = j?.lastVisit?.utmParameters?.content ? j.lastVisit.utmParameters : j?.firstVisit?.utmParameters;
-          if (n?.legacyResourceId && u) utms.set(`${shopId}:${n.legacyResourceId}`, u);
-        }
+    const batches: string[][] = [];
+    for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
+    // Até 4 lotes ao mesmo tempo por loja (limite da API da Shopify).
+    for (let i = 0; i < batches.length; i += 4) {
+      try {
+        await Promise.all(batches.slice(i, i + 4).map(async (batch) => {
+          const res = await fetchWithRetry(`https://${store.shop_domain}/admin/api/2026-07/graphql.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": store.access_token },
+            body: JSON.stringify({ query: JOURNEY_QUERY, variables: { ids: batch.map((id) => `gid://shopify/Order/${id}`) } }),
+          });
+          const json: any = await res.json();
+          if (!res.ok || json.errors) throw new Error(json?.errors ? JSON.stringify(json.errors).slice(0, 200) : `Falha (${res.status})`);
+          const found = new Set<string>();
+          for (const n of (json.data?.nodes ?? []) as any[]) {
+            const j = n?.customerJourneySummary;
+            const u = j?.lastVisit?.utmParameters?.content ? j.lastVisit.utmParameters : j?.firstVisit?.utmParameters;
+            if (n?.legacyResourceId && u) {
+              const id = String(n.legacyResourceId);
+              found.add(id);
+              utms.set(`${shopId}:${id}`, u);
+              toCache.push({ shop_id: shopId, external_id: id, source: u.source, medium: u.medium, campaign: u.campaign, content: u.content, term: u.term });
+            }
+          }
+          for (const id of batch) {
+            const d = dateOf.get(`${shopId}:${id}`);
+            if (!found.has(id) && d && d < oldEnough) toCache.push({ shop_id: shopId, external_id: id });
+          }
+        }));
+      } catch (e: any) {
+        errors.push(`${store.shop_domain}: ${String(e?.message ?? e)}`);
+        break;
       }
-    } catch (e: any) {
-      errors.push(`${store.shop_domain}: ${String(e?.message ?? e)}`);
     }
   }));
+  for (let i = 0; i < toCache.length; i += 500) {
+    await db("shop_order_utms").upsert(toCache.slice(i, i + 500), { onConflict: "shop_id,external_id" });
+  }
   return { utms, errors };
 }
 
@@ -313,10 +364,10 @@ export const getProductCreatives = createServerFn({ method: "GET" })
     const catalog = costProducts as (CostProduct & { id: string; shopify_product_ids: string[] })[];
     const myCost = catalog.find((p) => p.id === data.product_id);
 
-    const sales: { shop_id: string; external_id: string; faturamento: number; custo: number; unidades: number }[] = [];
+    const sales: { shop_id: string; external_id: string; date: string; faturamento: number; custo: number; unidades: number }[] = [];
     for (const o of (ordersRes.data ?? []) as any[]) {
       const m = productOrderTotals(o, catalog, data.product_id, myCost);
-      if (m) sales.push({ shop_id: o.shop_id, external_id: String(o.external_id), ...m });
+      if (m) sales.push({ shop_id: o.shop_id, external_id: String(o.external_id), date: String(o.order_date).slice(0, 10), ...m });
     }
 
     const [journey, meta] = await Promise.all([
@@ -330,8 +381,10 @@ export const getProductCreatives = createServerFn({ method: "GET" })
 
     for (const s of sales) {
       const u = journey.utms.get(`${s.shop_id}:${s.external_id}`);
-      const adId = u?.content?.trim() || null;
-      const medium = u?.medium?.trim() || null;
+      // Padrão novo "nome|id"; no antigo o content já era o id (ou um nome digitado).
+      const content = splitUtm(u?.content);
+      const adId = content.id ?? (content.name || null);
+      const medium = splitUtm(u?.medium).name || null;
       const key = adId ? `ad:${adId}` : medium ? `utm:${medium}` : "none";
       const r = row(key, () => ({
         key, ad_id: adId, utm_medium: medium, pedidos: 0, unidades: 0, faturamento: 0, custo: 0, gasto: 0,
@@ -554,4 +607,176 @@ export const removeProductFunnelPage = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId).eq("product_id", data.product_id).eq("pagefly_page_id", data.pagefly_page_id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// ── Métricas do teste (Inteligência › Testes) ──
+
+// Contagens brutas por dia (e por conjunto, se pedido); as taxas (CPM, CTR,
+// CPA...) são calculadas na tela a partir delas, pra linha de total sair certa.
+export type ExperimentRaw = RawCounts & { date: string; group: string; group_name: string };
+
+// A Meta repete o mesmo evento em vários action_types; pega o primeiro que vier.
+const ACTION_KEYS = {
+  lpv: ["landing_page_view", "omni_landing_page_view"],
+  ic: ["offsite_conversion.fb_pixel_initiate_checkout", "initiate_checkout", "omni_initiated_checkout"],
+  purchase: ["offsite_conversion.fb_pixel_purchase", "purchase", "omni_purchase"],
+};
+const actionCount = (actions: any[] | undefined, keys: string[]) => {
+  for (const k of keys) {
+    const a = (actions ?? []).find((x) => x?.action_type === k);
+    if (a) return Number(a.value ?? 0);
+  }
+  return 0;
+};
+const sameName = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+const nyDate = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(iso));
+
+export const getExperimentMetrics = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ experiment_id: z.string().uuid(), from: ISO, to: ISO, level: z.enum(["campaign", "adset"]) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { ownerId } = context;
+    const { data: exp } = await db("experiments").select("product_id,campaign_id,campaign_name")
+      .eq("id", data.experiment_id).eq("user_id", ownerId).maybeSingle();
+    if (!exp) throw new Error("Teste não encontrado");
+    if (!exp.campaign_id) return { configured: false as const };
+
+    const campaign = (await loadCampaigns(ownerId, exp.product_id)).find((c) => c.campaign_id === exp.campaign_id);
+    if (!campaign) throw new Error("A campanha do teste não está mais ligada ao produto (Inteligência › Vendas)");
+
+    const errors: string[] = [];
+    const rows = new Map<string, ExperimentRaw>();
+    const row = (date: string, group: string, group_name: string) => {
+      const key = `${date}|${group}`;
+      const r = rows.get(key) ?? { ...EMPTY_COUNTS, date, group, group_name };
+      rows.set(key, r);
+      return r;
+    };
+    const adsets = new Map<string, string>();   // id → nome (pra casar UTM antiga, só com nome)
+    let metaCampaignName: string | null = null;
+
+    // Meta, Shopify, Clarity e Diário são buscados ao mesmo tempo; o casamento
+    // da Shopify e do Clarity com os conjuntos vem depois (precisa dos nomes da Meta).
+    const metaTask = async () => {
+    const token = (await tokensByShop(ownerId, [campaign.shop_id])).get(campaign.shop_id);
+    if (!token) errors.push("Meta desconectada da loja da campanha");
+    else {
+      const timeRange = encodeURIComponent(JSON.stringify({ since: data.from, until: data.to }));
+      let url: string | null = `${GRAPH}/${campaign.campaign_id}/insights?level=${data.level}&fields=campaign_name,adset_id,adset_name,spend,impressions,inline_link_clicks,actions&time_increment=1&time_range=${timeRange}&limit=500&access_token=${encodeURIComponent(token)}`;
+      try {
+        while (url) {
+          const r = await fetchWithRetry(url);
+          const json: any = await r.json();
+          if (!r.ok || json.error) throw new Error(json?.error?.message || `Falha (${r.status})`);
+          for (const d of (json.data ?? []) as any[]) {
+            metaCampaignName = d.campaign_name ?? metaCampaignName;
+            const group = data.level === "adset" ? String(d.adset_id) : "all";
+            if (data.level === "adset") adsets.set(group, d.adset_name ?? group);
+            const x = row(d.date_start, group, data.level === "adset" ? d.adset_name ?? group : "Campanha");
+            x.spend += Number(d.spend ?? 0);
+            x.impressions += Number(d.impressions ?? 0);
+            x.clicks += Number(d.inline_link_clicks ?? 0);
+            x.lpv += actionCount(d.actions, ACTION_KEYS.lpv);
+            x.ic += actionCount(d.actions, ACTION_KEYS.ic);
+            x.purchases_meta += actionCount(d.actions, ACTION_KEYS.purchase);
+          }
+          url = json.paging?.next ?? null;
+        }
+      } catch (e: any) {
+        errors.push(`Meta: ${String(e?.message ?? e)}`);
+      }
+    }
+    };
+
+    // Shopify: pedidos do produto cuja UTM é desta campanha. Padrão novo casa
+    // pelo id; UTM antiga (só nome) casa pelo nome atual ou o guardado.
+    const shopifyTask = async () => {
+    const [ordersRes, costProducts] = await Promise.all([
+      selectAll(supabaseAdmin.from("shop_orders")
+        .select("shop_id,external_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+        .eq("user_id", ownerId).gte("order_date", data.from).lte("order_date", data.to)),
+      costProductsFor(supabaseAdmin, ownerId),
+    ]);
+    const catalog = costProducts as (CostProduct & { id: string; shopify_product_ids: string[] })[];
+    const myCost = catalog.find((p) => p.id === exp.product_id);
+    const sales: { shop_id: string; external_id: string; date: string; faturamento: number }[] = [];
+    for (const o of (ordersRes.data ?? []) as any[]) {
+      const m = productOrderTotals(o, catalog, exp.product_id, myCost);
+      if (m) sales.push({ shop_id: o.shop_id, external_id: String(o.external_id), date: String(o.order_date).slice(0, 10), faturamento: m.faturamento });
+    }
+    return { sales, journey: await orderUtms(ownerId, sales) };
+    };
+
+    // Diário: registros do tipo "Alteração" no período, marcados na tabela.
+    const changesTask = async () => {
+      const { data: sys } = await db("product_diary_note_types").select("id").eq("user_id", ownerId).eq("is_system", true).maybeSingle();
+      if (!sys) return [];
+      const { data: entries } = await db("product_diary_entries").select("content,created_at").eq("user_id", ownerId).eq("product_id", exp.product_id)
+        .eq("note_type_id", sys.id).gte("created_at", `${data.from}T00:00:00-06:00`).lte("created_at", `${data.to}T23:59:59-03:00`)
+        .order("created_at", { ascending: true });
+      return (entries ?? []).map((e) => ({ date: nyDate(e.created_at), content: e.content })).filter((e) => e.date >= data.from && e.date <= data.to);
+    };
+
+    // Clarity: projeto do produto. Campaign = utm_campaign, Medium = utm_medium
+    // (conjunto); filtra pela campanha do teste.
+    const [, { sales, journey }, { data: snaps }, changes] = await Promise.all([
+      metaTask(),
+      shopifyTask(),
+      db("clarity_snapshots").select("day,partial,raw").eq("user_id", ownerId).eq("product_id", exp.product_id).gte("day", data.from).lte("day", data.to),
+      changesTask(),
+    ]);
+
+    errors.push(...journey.errors.map((e) => `Shopify: ${e}`));
+    for (const s of sales) {
+      const u = journey.utms.get(`${s.shop_id}:${s.external_id}`);
+      if (!u) continue;
+      const c = splitUtm(u.campaign);
+      const isCampaign = c.id ? c.id === campaign.campaign_id : sameName(c.name, metaCampaignName) || sameName(c.name, exp.campaign_name);
+      if (!isCampaign) continue;
+      let group = "all", groupName = "Campanha";
+      if (data.level === "adset") {
+        const m = splitUtm(u.medium);
+        const id = m.id ?? [...adsets].find(([, name]) => sameName(name, m.name))?.[0];
+        group = id ?? "?";
+        groupName = id ? adsets.get(id) ?? m.name : "Conjunto não identificado";
+      }
+      const x = row(s.date, group, groupName);
+      x.purchases_shop += 1;
+      x.revenue += s.faturamento;
+    }
+
+    const partialDays = new Set<string>();
+    for (const snap of snaps ?? []) {
+      for (const c of parseClarity(snap.raw)) {
+        const camp = splitUtm(c.campaign);
+        const isCampaign = camp.id ? camp.id === campaign.campaign_id : sameName(camp.name, metaCampaignName) || sameName(camp.name, exp.campaign_name);
+        if (!isCampaign || c.sessions <= 0) continue;
+        let group = "all", groupName = "Campanha";
+        if (data.level === "adset") {
+          const m = splitUtm(c.medium);
+          const id = m.id ?? [...adsets].find(([, name]) => sameName(name, m.name))?.[0];
+          group = id ?? "?";
+          groupName = id ? adsets.get(id) ?? m.name : "Conjunto não identificado";
+        }
+        if (snap.partial) partialDays.add(snap.day);
+        const x = row(String(snap.day), group, groupName);
+        const n = c.sessions;
+        x.c_sessions += n;
+        if (c.time !== null) { x.c_time += c.time * n; x.c_time_n += n; }
+        if (c.scroll !== null) { x.c_scroll += c.scroll * n; x.c_scroll_n += n; }
+        if (c.quickback !== null) { x.c_quickback += c.quickback * n; x.c_quickback_n += n; }
+        if (c.rage !== null) { x.c_rage += c.rage * n; x.c_rage_n += n; }
+        if (c.dead !== null) { x.c_dead += c.dead * n; x.c_dead_n += n; }
+        if (c.errors !== null) { x.c_errors += c.errors * n; x.c_errors_n += n; }
+      }
+    }
+
+    return {
+      configured: true as const,
+      campaign_name: metaCampaignName ?? exp.campaign_name ?? campaign.campaign_id,
+      errors,
+      rows: [...rows.values()].map((r) => ({ ...r, spend: round2(r.spend), revenue: round2(r.revenue) })),
+      changes,
+      partialDays: [...partialDays],
+    };
   });

@@ -60,6 +60,7 @@ import { Route as ShopsProductsProductIdRouteImport } from "./routes/shops.produ
 import { Route as ShopsSopsIndexRouteImport } from "./routes/shops.sops.index";
 import { Route as ShopsSopsProcessIdRouteImport } from "./routes/shops.sops.$processId";
 import { Route as ApiPublicHooksCaixaSnapshotRouteImport } from "./routes/api/public/hooks/caixa-snapshot";
+import { Route as ApiPublicHooksClarityDailyRouteImport } from "./routes/api/public/hooks/clarity-daily";
 import { Route as ApiPublicHooksConsultantWeeklyRouteImport } from "./routes/api/public/hooks/consultant-weekly";
 import { Route as ApiPublicHooksEstornoDailyRouteImport } from "./routes/api/public/hooks/estorno-daily";
 import { Route as ApiPublicHooksNotificationsRefreshRouteImport } from "./routes/api/public/hooks/notifications-refresh";
@@ -329,6 +330,12 @@ const ApiPublicHooksCaixaSnapshotRoute =
     path: "/api/public/hooks/caixa-snapshot",
     getParentRoute: () => rootRouteImport,
   } as any);
+const ApiPublicHooksClarityDailyRoute =
+  ApiPublicHooksClarityDailyRouteImport.update({
+    id: "/api/public/hooks/clarity-daily",
+    path: "/api/public/hooks/clarity-daily",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const ApiPublicHooksConsultantWeeklyRoute =
   ApiPublicHooksConsultantWeeklyRouteImport.update({
     id: "/api/public/hooks/consultant-weekly",
@@ -441,6 +448,7 @@ export interface FileRoutesByFullPath {
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/clarity-daily": typeof ApiPublicHooksClarityDailyRoute;
   "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
@@ -497,6 +505,7 @@ export interface FileRoutesByTo {
   "/shops/products": typeof ShopsProductsIndexRoute;
   "/shops/sops": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/clarity-daily": typeof ApiPublicHooksClarityDailyRoute;
   "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
@@ -561,6 +570,7 @@ export interface FileRoutesById {
   "/shops/products/": typeof ShopsProductsIndexRoute;
   "/shops/sops/": typeof ShopsSopsIndexRoute;
   "/api/public/hooks/caixa-snapshot": typeof ApiPublicHooksCaixaSnapshotRoute;
+  "/api/public/hooks/clarity-daily": typeof ApiPublicHooksClarityDailyRoute;
   "/api/public/hooks/consultant-weekly": typeof ApiPublicHooksConsultantWeeklyRoute;
   "/api/public/hooks/estorno-daily": typeof ApiPublicHooksEstornoDailyRoute;
   "/api/public/hooks/notifications-refresh": typeof ApiPublicHooksNotificationsRefreshRoute;
@@ -626,6 +636,7 @@ export interface FileRouteTypes {
     | "/shops/products/"
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/clarity-daily"
     | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
@@ -682,6 +693,7 @@ export interface FileRouteTypes {
     | "/shops/products"
     | "/shops/sops"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/clarity-daily"
     | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
@@ -745,6 +757,7 @@ export interface FileRouteTypes {
     | "/shops/products/"
     | "/shops/sops/"
     | "/api/public/hooks/caixa-snapshot"
+    | "/api/public/hooks/clarity-daily"
     | "/api/public/hooks/consultant-weekly"
     | "/api/public/hooks/estorno-daily"
     | "/api/public/hooks/notifications-refresh"
@@ -784,6 +797,7 @@ export interface RootRouteChildren {
   ApiPublicRecentDeliveriesRoute: typeof ApiPublicRecentDeliveriesRoute;
   ApiPublicTrackRoute: typeof ApiPublicTrackRoute;
   ApiPublicHooksCaixaSnapshotRoute: typeof ApiPublicHooksCaixaSnapshotRoute;
+  ApiPublicHooksClarityDailyRoute: typeof ApiPublicHooksClarityDailyRoute;
   ApiPublicHooksConsultantWeeklyRoute: typeof ApiPublicHooksConsultantWeeklyRoute;
   ApiPublicHooksEstornoDailyRoute: typeof ApiPublicHooksEstornoDailyRoute;
   ApiPublicHooksNotificationsRefreshRoute: typeof ApiPublicHooksNotificationsRefreshRoute;
@@ -1155,6 +1169,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ApiPublicHooksCaixaSnapshotRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/api/public/hooks/clarity-daily": {
+      id: "/api/public/hooks/clarity-daily";
+      path: "/api/public/hooks/clarity-daily";
+      fullPath: "/api/public/hooks/clarity-daily";
+      preLoaderRoute: typeof ApiPublicHooksClarityDailyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/api/public/hooks/consultant-weekly": {
       id: "/api/public/hooks/consultant-weekly";
       path: "/api/public/hooks/consultant-weekly";
@@ -1371,6 +1392,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicRecentDeliveriesRoute: ApiPublicRecentDeliveriesRoute,
   ApiPublicTrackRoute: ApiPublicTrackRoute,
   ApiPublicHooksCaixaSnapshotRoute: ApiPublicHooksCaixaSnapshotRoute,
+  ApiPublicHooksClarityDailyRoute: ApiPublicHooksClarityDailyRoute,
   ApiPublicHooksConsultantWeeklyRoute: ApiPublicHooksConsultantWeeklyRoute,
   ApiPublicHooksEstornoDailyRoute: ApiPublicHooksEstornoDailyRoute,
   ApiPublicHooksNotificationsRefreshRoute:

@@ -1736,6 +1736,230 @@ export type Database = {
           },
         ];
       };
+      clarity_calls: {
+        Row: {
+          called_at: string;
+          id: string;
+          kind: string;
+          ok: boolean;
+          product_id: string;
+          user_id: string;
+        };
+        Insert: {
+          called_at?: string;
+          id?: string;
+          kind: string;
+          ok: boolean;
+          product_id: string;
+          user_id: string;
+        };
+        Update: {
+          called_at?: string;
+          id?: string;
+          kind?: string;
+          ok?: boolean;
+          product_id?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      clarity_connections: {
+        Row: {
+          created_at: string;
+          last_error: string | null;
+          last_fetch_at: string | null;
+          product_id: string;
+          token: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          last_error?: string | null;
+          last_fetch_at?: string | null;
+          product_id: string;
+          token: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          last_error?: string | null;
+          last_fetch_at?: string | null;
+          product_id?: string;
+          token?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      clarity_snapshots: {
+        Row: {
+          day: string;
+          fetched_at: string;
+          id: string;
+          partial: boolean;
+          raw: Json;
+          product_id: string;
+          user_id: string;
+        };
+        Insert: {
+          day: string;
+          fetched_at?: string;
+          id?: string;
+          partial?: boolean;
+          raw: Json;
+          product_id: string;
+          user_id: string;
+        };
+        Update: {
+          day?: string;
+          fetched_at?: string;
+          id?: string;
+          partial?: boolean;
+          raw?: Json;
+          product_id?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      shop_order_utms: {
+        Row: {
+          campaign: string | null;
+          content: string | null;
+          external_id: string;
+          fetched_at: string;
+          medium: string | null;
+          shop_id: string;
+          source: string | null;
+          term: string | null;
+        };
+        Insert: {
+          campaign?: string | null;
+          content?: string | null;
+          external_id: string;
+          fetched_at?: string;
+          medium?: string | null;
+          shop_id: string;
+          source?: string | null;
+          term?: string | null;
+        };
+        Update: {
+          campaign?: string | null;
+          content?: string | null;
+          external_id?: string;
+          fetched_at?: string;
+          medium?: string | null;
+          shop_id?: string;
+          source?: string | null;
+          term?: string | null;
+        };
+        Relationships: [];
+      };
+      experiments: {
+        Row: {
+          baseline: Json;
+          budget: number | null;
+          campaign_id: string | null;
+          campaign_name: string | null;
+          control: string;
+          created_at: string;
+          ended_at: string | null;
+          hypothesis: string;
+          id: string;
+          kind: string;
+          learning: string;
+          metric: string;
+          product_id: string;
+          result: string | null;
+          shop_id: string | null;
+          started_at: string | null;
+          status: string;
+          stop_rule: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+          variant: string;
+        };
+        Insert: {
+          baseline?: Json;
+          budget?: number | null;
+          campaign_id?: string | null;
+          campaign_name?: string | null;
+          control?: string;
+          created_at?: string;
+          ended_at?: string | null;
+          hypothesis?: string;
+          id?: string;
+          kind: string;
+          learning?: string;
+          metric?: string;
+          product_id: string;
+          result?: string | null;
+          shop_id?: string | null;
+          started_at?: string | null;
+          status?: string;
+          stop_rule?: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+          variant?: string;
+        };
+        Update: {
+          baseline?: Json;
+          budget?: number | null;
+          campaign_id?: string | null;
+          campaign_name?: string | null;
+          control?: string;
+          created_at?: string;
+          ended_at?: string | null;
+          hypothesis?: string;
+          id?: string;
+          kind?: string;
+          learning?: string;
+          metric?: string;
+          product_id?: string;
+          result?: string | null;
+          shop_id?: string | null;
+          started_at?: string | null;
+          status?: string;
+          stop_rule?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+          variant?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "experiments_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      naming_templates: {
+        Row: {
+          levels: Json;
+          separator: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          levels?: Json;
+          separator?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          levels?: Json;
+          separator?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       product_competitors: {
         Row: {
           created_at: string;
@@ -1743,7 +1967,7 @@ export type Database = {
           id: string;
           name: string;
           position: number;
-          product_id: string;
+          product_id: string | null;
           updated_at: string;
           user_id: string;
           values: Json;
@@ -1754,7 +1978,7 @@ export type Database = {
           id?: string;
           name?: string;
           position?: number;
-          product_id: string;
+          product_id?: string | null;
           updated_at?: string;
           user_id: string;
           values?: Json;
@@ -1765,7 +1989,7 @@ export type Database = {
           id?: string;
           name?: string;
           position?: number;
-          product_id?: string;
+          product_id?: string | null;
           updated_at?: string;
           user_id?: string;
           values?: Json;

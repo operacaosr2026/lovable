@@ -43,17 +43,21 @@ export const getProductDiary = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
-    const [noteTypes, entries, focus] = await Promise.all([
+    const [noteTypes, entries, focus, running] = await Promise.all([
       loadNoteTypes(ownerId),
       db("product_diary_entries").select("id,note_type_id,author_id,content,image_urls,created_at,edited_at")
         .eq("user_id", ownerId).eq("product_id", data.product_id).order("created_at", { ascending: false }),
       db("product_diary_focus").select("current_test").eq("product_id", data.product_id).maybeSingle(),
+      db("experiments").select("id,title,started_at").eq("user_id", ownerId).eq("product_id", data.product_id)
+        .eq("status", "running").order("started_at", { ascending: true }),
     ]);
     if (entries.error) throw new Error(entries.error.message);
     return {
       noteTypes,
       entries: (entries.data ?? []) as DiaryEntry[],
       currentTest: (focus.data?.current_test ?? null) as string | null,
+      // Testes no ar (aba Testes); a tabela pode ainda não existir se a migração não rodou.
+      runningTests: (running.error ? [] : running.data ?? []) as { id: string; title: string; started_at: string | null }[],
     };
   });
 
