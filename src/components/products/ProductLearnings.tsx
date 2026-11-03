@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { FlaskConical, Loader2, Package, Search } from "lucide-react";
-import { KINDS, KIND_LABEL, RESULT_LABEL, listLearnings, type Kind, type Result } from "@/lib/experiments.functions";
-import { RESULT_CLS, fmtDate } from "@/components/products/ProductExperiments";
+import { KINDS, KIND_LABEL, listLearnings, type Kind } from "@/lib/experiments.functions";
+import { STATUS_STYLE, findStatus, fmtDate } from "@/components/products/ProductCampaigns";
 
-// Página Produtos › Aprendizados: testes concluídos de todos os produtos.
+// Página Produtos › Aprendizados: campanhas de todos os produtos com o
+// aprendizado escrito.
 
 const inputCls = "h-9 px-3 rounded-lg bg-surface border border-border text-sm outline-none";
 
@@ -13,15 +14,16 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
   const getFn = useServerFn(listLearnings);
   const { data, isLoading, error } = useQuery({ queryKey: ["learnings"], queryFn: () => getFn() });
   const [kind, setKind] = useState<Kind | "">("");
-  const [result, setResult] = useState<Result | "">("");
+  const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
 
-  const all = data ?? [];
+  const all = data?.items ?? [];
+  const statuses = data?.statuses ?? [];
   const filtered = useMemo(() => {
     const term = `${search} ${q}`.trim().toLowerCase();
-    return all.filter((e) => (!kind || e.kind === kind) && (!result || e.result === result)
+    return all.filter((e) => (!kind || e.kind === kind) && (!status || e.status === status)
       && (!term || [e.title, e.hypothesis, e.learning, e.variant, e.product?.name ?? ""].some((s) => s.toLowerCase().includes(term))));
-  }, [all, kind, result, search, q]);
+  }, [all, kind, status, search, q]);
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
   if (error) return <p className="text-sm text-destructive">{(error as Error).message}</p>;
@@ -30,14 +32,14 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
       <div className="rounded-2xl border border-dashed border-border py-14 flex flex-col items-center text-center">
         <div className="size-12 rounded-2xl bg-primary/10 text-primary grid place-items-center mb-3"><FlaskConical className="size-5" /></div>
         <p className="text-sm font-medium">Nenhum aprendizado ainda</p>
-        <p className="text-xs text-muted-foreground mt-1 max-w-sm">Abra um produto, vá em Inteligência › Testes e conclua um teste com resultado. Ele aparece aqui.</p>
+        <p className="text-xs text-muted-foreground mt-1 max-w-sm">Abra um produto, vá em Inteligência › Campanhas e escreva "O que você aprendeu" numa campanha. Ela aparece aqui.</p>
       </div>
     );
   }
 
   const summary = KINDS.map((k) => {
     const list = all.filter((e) => e.kind === k);
-    return { kind: k, total: list.length, won: list.filter((e) => e.result === "won").length };
+    return { kind: k, total: list.length };
   }).filter((s) => s.total > 0);
 
   return (
@@ -47,7 +49,7 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
           <button key={s.kind} onClick={() => setKind(kind === s.kind ? "" : s.kind)}
             className={`premium-card px-3 py-2 text-left ${kind === s.kind ? "border-primary/50" : ""}`}>
             <p className="text-[11px] text-muted-foreground">{KIND_LABEL[s.kind]}</p>
-            <p className="text-sm font-semibold tabular-nums">{s.won} de {s.total} <span className="text-xs font-normal text-muted-foreground">validados</span></p>
+            <p className="text-sm font-semibold tabular-nums">{s.total} <span className="text-xs font-normal text-muted-foreground">{s.total === 1 ? "aprendizado" : "aprendizados"}</span></p>
           </button>
         ))}
       </div>
@@ -60,10 +62,12 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
           <option value="">Todos os tipos</option>
           {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
         </select>
-        <select value={result} onChange={(e) => setResult(e.target.value as Result | "")} aria-label="Resultado" className={inputCls}>
-          <option value="">Todos os resultados</option>
-          {(["won", "tie", "lost"] as Result[]).map((r) => <option key={r} value={r}>{RESULT_LABEL[r]}</option>)}
-        </select>
+        {statuses.length > 1 && (
+          <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status" className={inputCls}>
+            <option value="">Todos os status</option>
+            {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
         <span className="text-xs text-muted-foreground tabular-nums">{filtered.length} de {all.length}</span>
       </div>
       <div className="flex flex-col gap-2">
@@ -77,7 +81,7 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
             )}
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-md ${RESULT_CLS[e.result!]}`}>{RESULT_LABEL[e.result!]}</span>
+                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-md ${STATUS_STYLE[findStatus(statuses, e.status).color].pill}`}>{findStatus(statuses, e.status).name}</span>
                 <p className="text-sm font-medium flex-1 min-w-0">{e.title}</p>
                 <span className="text-[11px] text-muted-foreground">{KIND_LABEL[e.kind]}{e.product ? ` · ${e.product.name}` : ""}{e.ended_at ? ` · ${fmtDate(e.ended_at)}` : ""}</span>
               </div>

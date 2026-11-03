@@ -4,14 +4,16 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 
-// Aba Diário do produto. Tipos de nota são do workspace; "Alteração" é fixo
+// Diário do produto e diário de cada campanha (aba Campanhas). Registro com
+// experiment_id é da campanha; o diário do produto mostra todos, com a
+// campanha marcada. Tipos de nota são do workspace; "Alteração" é fixo
 // (is_system) e alimenta "Última alteração" no topo do diário.
 
 export const DIARY_COLORS = ["gray", "blue", "amber", "purple", "green", "red"] as const;
 export type DiaryColor = (typeof DIARY_COLORS)[number];
 export type DiaryNoteType = { id: string; name: string; color: DiaryColor; position: number; is_system: boolean };
 export type DiaryEntry = {
-  id: string; note_type_id: string | null; author_id: string | null; content: string;
+  id: string; experiment_id: string | null; note_type_id: string | null; author_id: string | null; content: string;
   image_urls: string[]; created_at: string; edited_at: string | null;
 };
 
@@ -21,6 +23,15 @@ const ImageUrls = z.array(z.string().url().max(4000)).max(20);
 async function assertProduct(ownerId: string, productId: string) {
   const { data } = await supabaseAdmin.from("products").select("id").eq("id", productId).eq("user_id", ownerId).maybeSingle();
   if (!data) throw new Error("Produto não encontrado");
+}
+
+// A campanha tem que ser do mesmo produto (e do mesmo dono).
+async function assertExperiment(ownerId: string, productId: string | null, id: string | null | undefined) {
+  if (!id) return;
+  let q = db("experiments").select("id").eq("id", id).eq("user_id", ownerId);
+  if (productId) q = q.eq("product_id", productId);
+  const { data } = await q.maybeSingle();
+  if (!data) throw new Error("Campanha não encontrada");
 }
 
 async function loadNoteTypes(ownerId: string): Promise<DiaryNoteType[]> {
@@ -39,25 +50,29 @@ async function loadNoteTypes(ownerId: string): Promise<DiaryNoteType[]> {
 
 export const getProductDiary = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ product_id: z.string().uuid() }).parse(d))
+  .inputValidator((d) => z.object({ product_id: z.string().uuid(), experiment_id: z.string().uuid().nullable().optional() }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
-    const [noteTypes, entries, focus, running] = await Promise.all([
+    let entriesQ = db("product_diary_entries").select("id,experiment_id,note_type_id,author_id,content,image_urls,created_at,edited_at")
+      .eq("user_id", ownerId).eq("product_id", data.product_id);
+    if (data.experiment_id) entriesQ = entriesQ.eq("experiment_id", data.experiment_id);
+    const [noteTypes, entries, focus, campaigns] = await Promise.all([
       loadNoteTypes(ownerId),
-      db("product_diary_entries").select("id,note_type_id,author_id,content,image_urls,created_at,edited_at")
-        .eq("user_id", ownerId).eq("product_id", data.product_id).order("created_at", { ascending: false }),
+      entriesQ.order("created_at", { ascending: false }),
       db("product_diary_focus").select("current_test").eq("product_id", data.product_id).maybeSingle(),
-      db("experiments").select("id,title,started_at").eq("user_id", ownerId).eq("product_id", data.product_id)
-        .eq("status", "running").order("started_at", { ascending: true }),
+      db("experiments").select("id,title,started_at,ended_at").eq("user_id", ownerId).eq("product_id", data.product_id)
+        .order("started_at", { ascending: true, nullsFirst: false }),
     ]);
     if (entries.error) throw new Error(entries.error.message);
+    const list = (campaigns.data ?? []) as { id: string; title: string; started_at: string | null; ended_at: string | null }[];
     return {
       noteTypes,
       entries: (entries.data ?? []) as DiaryEntry[],
       currentTest: (focus.data?.current_test ?? null) as string | null,
-      // Testes no ar (aba Testes); a tabela pode ainda não existir se a migração não rodou.
-      runningTests: (running.error ? [] : running.data ?? []) as { id: string; title: string; started_at: string | null }[],
+      campaigns: list.map(({ id, title }) => ({ id, title })),
+      // No ar: tem data de início e ainda não tem data de fim.
+      runningTests: list.filter((c) => c.started_at && !c.ended_at).map(({ id, title, started_at }) => ({ id, title, started_at })),
     };
   });
 
@@ -84,6 +99,7 @@ export const addProductDiaryEntry = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     product_id: z.string().uuid(),
+    experiment_id: z.string().uuid().nullable(),
     content: z.string().trim().min(1).max(10000),
     note_type_id: z.string().uuid().nullable(),
     image_urls: ImageUrls,
@@ -91,6 +107,7 @@ export const addProductDiaryEntry = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertProduct(context.ownerId, data.product_id);
     await assertNoteType(context.ownerId, data.note_type_id);
+    await assertExperiment(context.ownerId, data.product_id, data.experiment_id);
     const { error } = await db("product_diary_entries").insert({ ...data, user_id: context.ownerId, author_id: context.userId });
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -102,12 +119,18 @@ export const updateProductDiaryEntry = createServerFn({ method: "POST" })
     id: z.string().uuid(),
     content: z.string().trim().min(1).max(10000).optional(),
     note_type_id: z.string().uuid().nullable().optional(),
+    experiment_id: z.string().uuid().nullable().optional(),
     image_urls: ImageUrls.optional(),
     created_at: z.string().datetime({ offset: true }).optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { id, ...patch } = data;
     await assertNoteType(context.ownerId, patch.note_type_id);
+    if (patch.experiment_id) {
+      const { data: entry } = await db("product_diary_entries").select("product_id").eq("id", id).eq("user_id", context.ownerId).maybeSingle();
+      if (!entry) throw new Error("Registro não encontrado");
+      await assertExperiment(context.ownerId, entry.product_id, patch.experiment_id);
+    }
     const { error } = await db("product_diary_entries")
       .update({ ...patch, ...(patch.content !== undefined || patch.image_urls !== undefined ? { edited_at: new Date().toISOString() } : {}) })
       .eq("id", id).eq("user_id", context.ownerId);

@@ -8,8 +8,7 @@ import { getProduct, updateProduct, saveProductPricing } from "@/lib/products.fu
 import { useProductStatuses } from "@/components/products/product-status";
 import { ProductCreatives } from "@/components/products/ProductCreatives";
 import { ProductSales } from "@/components/products/ProductSales";
-import { ProductDiary } from "@/components/products/ProductDiary";
-import { ProductExperiments } from "@/components/products/ProductExperiments";
+import { ProductCampaigns } from "@/components/products/ProductCampaigns";
 import { NamingGenerator } from "@/components/products/Naming";
 import { ProductionTab } from "@/components/shops/StoreProduction";
 import { ProductShopifyTab } from "@/components/products/ProductShopifyTab";
@@ -23,8 +22,7 @@ const GROUPS = [
     id: "inteligencia", label: "Inteligência", icon: Brain,
     tabs: [
       { id: "vendas", label: "Vendas" },
-      { id: "diario", label: "Diário" },
-      { id: "testes", label: "Testes" },
+      { id: "campanhas", label: "Campanhas" },
       { id: "informacoes", label: "Informações" },
       { id: "concorrentes", label: "Concorrentes" },
     ],
@@ -118,8 +116,7 @@ export function ProductDetails({ productId }: { productId: string }) {
       {tab === "tarefas" && <ProductionTab kind="product" targetId={productId} section="tasks" />}
       {tab === "criativos" && <ProductCreatives productId={productId} />}
       {tab === "vendas" && <ProductSales productId={productId} />}
-      {tab === "diario" && <ProductDiary productId={productId} />}
-      {tab === "testes" && <ProductExperiments productId={productId} />}
+      {tab === "campanhas" && <ProductCampaigns productId={productId} />}
       {tab === "pagina" && <ProductPageTab productId={productId} />}
       {tab === "shopify" && <ProductShopifyTab productId={productId} />}
       {tab === "concorrentes" && <ProductCompetitors productId={productId} />}

@@ -7,7 +7,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { fetchProductClarityNow, getProductClarity, saveProductClarityToken } from "@/lib/clarity.functions";
 import { formatDateTimeUS } from "@/lib/timezone";
 
-// Clarity do produto (um projeto por produto), no topo da aba Testes. Token:
+// Clarity do produto (um projeto por produto), no topo da aba Campanhas. Token:
 // Clarity › Settings › Data Export › Generate new API token.
 
 const inputCls = "h-8 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";

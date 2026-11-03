@@ -609,7 +609,7 @@ export const removeProductFunnelPage = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// ── Métricas do teste (Inteligência › Testes) ──
+// ── Métricas da campanha (Inteligência › Campanhas) ──
 
 // Contagens brutas por dia (e por conjunto, se pedido); as taxas (CPM, CTR,
 // CPA...) são calculadas na tela a partir delas, pra linha de total sair certa.
@@ -638,11 +638,11 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
     const { ownerId } = context;
     const { data: exp } = await db("experiments").select("product_id,campaign_id,campaign_name")
       .eq("id", data.experiment_id).eq("user_id", ownerId).maybeSingle();
-    if (!exp) throw new Error("Teste não encontrado");
+    if (!exp) throw new Error("Campanha não encontrada");
     if (!exp.campaign_id) return { configured: false as const };
 
     const campaign = (await loadCampaigns(ownerId, exp.product_id)).find((c) => c.campaign_id === exp.campaign_id);
-    if (!campaign) throw new Error("A campanha do teste não está mais ligada ao produto (Inteligência › Vendas)");
+    if (!campaign) throw new Error("A campanha da Meta não está mais ligada ao produto (Inteligência › Vendas)");
 
     const errors: string[] = [];
     const rows = new Map<string, ExperimentRaw>();
@@ -707,12 +707,13 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
     return { sales, journey: await orderUtms(ownerId, sales) };
     };
 
-    // Diário: registros do tipo "Alteração" no período, marcados na tabela.
+    // Diário: registros do tipo "Alteração" no período (do produto ou desta
+    // campanha; os de outras campanhas não), marcados na tabela.
     const changesTask = async () => {
       const { data: sys } = await db("product_diary_note_types").select("id").eq("user_id", ownerId).eq("is_system", true).maybeSingle();
       if (!sys) return [];
       const { data: entries } = await db("product_diary_entries").select("content,created_at").eq("user_id", ownerId).eq("product_id", exp.product_id)
-        .eq("note_type_id", sys.id).gte("created_at", `${data.from}T00:00:00-06:00`).lte("created_at", `${data.to}T23:59:59-03:00`)
+        .eq("note_type_id", sys.id).or(`experiment_id.is.null,experiment_id.eq.${data.experiment_id}`).gte("created_at", `${data.from}T00:00:00-06:00`).lte("created_at", `${data.to}T23:59:59-03:00`)
         .order("created_at", { ascending: true });
       return (entries ?? []).map((e) => ({ date: nyDate(e.created_at), content: e.content })).filter((e) => e.date >= data.from && e.date <= data.to);
     };

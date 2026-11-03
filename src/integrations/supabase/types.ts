@@ -1859,6 +1859,81 @@ export type Database = {
         };
         Relationships: [];
       };
+      campaign_summary_templates: {
+        Row: {
+          fields: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          fields?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          fields?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      campaign_status_templates: {
+        Row: {
+          statuses: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          statuses?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          statuses?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      test_pipeline_templates: {
+        Row: {
+          items: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          items?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          items?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      product_test_pipeline_checks: {
+        Row: {
+          checked_at: string;
+          item_id: string;
+          product_id: string;
+          user_id: string;
+        };
+        Insert: {
+          checked_at?: string;
+          item_id: string;
+          product_id: string;
+          user_id: string;
+        };
+        Update: {
+          checked_at?: string;
+          item_id?: string;
+          product_id?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       experiments: {
         Row: {
           baseline: Json;
@@ -1879,6 +1954,8 @@ export type Database = {
           started_at: string | null;
           status: string;
           stop_rule: string;
+          summary: Json;
+          tags: string[];
           title: string;
           updated_at: string;
           user_id: string;
@@ -1903,6 +1980,8 @@ export type Database = {
           started_at?: string | null;
           status?: string;
           stop_rule?: string;
+          summary?: Json;
+          tags?: string[];
           title: string;
           updated_at?: string;
           user_id: string;
@@ -1927,6 +2006,8 @@ export type Database = {
           started_at?: string | null;
           status?: string;
           stop_rule?: string;
+          summary?: Json;
+          tags?: string[];
           title?: string;
           updated_at?: string;
           user_id?: string;
@@ -2113,6 +2194,7 @@ export type Database = {
           content: string;
           created_at: string;
           edited_at: string | null;
+          experiment_id: string | null;
           id: string;
           image_urls: Json;
           note_type_id: string | null;
@@ -2124,6 +2206,7 @@ export type Database = {
           content: string;
           created_at?: string;
           edited_at?: string | null;
+          experiment_id?: string | null;
           id?: string;
           image_urls?: Json;
           note_type_id?: string | null;
@@ -2135,6 +2218,7 @@ export type Database = {
           content?: string;
           created_at?: string;
           edited_at?: string | null;
+          experiment_id?: string | null;
           id?: string;
           image_urls?: Json;
           note_type_id?: string | null;

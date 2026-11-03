@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { FlaskConical, History, ImagePlus, Loader2, Lock, Pencil, Plus, Settings2, Target, Trash2, X } from "lucide-react";
+import { FlaskConical, History, ImagePlus, Loader2, Lock, Megaphone, Pencil, Plus, Settings2, Target, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +16,8 @@ import {
 // Diário do produto — mesma ideia do diário de campanha do Scalemoon: teste
 // atual + última alteração no topo, filtro por tipo de nota, linha do tempo
 // editável (texto, data, tipo, imagens) e "+ Adicionar registro" no fim.
+// Com experimentId é o diário interno de uma campanha (aba Campanhas): só os
+// registros dela. Sem ele é o do produto: mostra todos, com a campanha marcada.
 
 const COLOR: Record<DiaryColor, { label: string; dot: string; badge: string }> = {
   gray: { label: "Cinza", dot: "bg-slate-400", badge: "bg-slate-500/10 text-slate-600 dark:text-slate-300" },
@@ -26,6 +28,8 @@ const COLOR: Record<DiaryColor, { label: string; dot: string; badge: string }> =
   red: { label: "Vermelho", dot: "bg-rose-500", badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
 };
 const NO_TYPE = "__none";
+const PRODUCT_ONLY = "__product";
+type Campaign = { id: string; title: string };
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
@@ -50,39 +54,44 @@ const toLocalInput = (iso: string) => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 };
 
-export function ProductDiary({ productId }: { productId: string }) {
+export function ProductDiary({ productId, experimentId = null }: { productId: string; experimentId?: string | null }) {
   const qc = useQueryClient();
-  const QK = ["product-diary", productId];
+  const QK = ["product-diary", productId, experimentId ?? "all"];
+  const inCampaign = !!experimentId;
   const getFn = useServerFn(getProductDiary);
   const focusFn = useServerFn(saveProductDiaryFocus);
   const addFn = useServerFn(addProductDiaryEntry);
   const updateFn = useServerFn(updateProductDiaryEntry);
   const deleteFn = useServerFn(deleteProductDiaryEntry);
   const [filters, setFilters] = useState<string[]>([]);
+  const [campaignFilter, setCampaignFilter] = useState("");
   const [managing, setManaging] = useState(false);
 
-  const { data, isLoading, error } = useQuery({ queryKey: QK, queryFn: () => getFn({ data: { product_id: productId } }) });
-  const refresh = () => qc.invalidateQueries({ queryKey: QK });
+  const { data, isLoading, error } = useQuery({ queryKey: QK, queryFn: () => getFn({ data: { product_id: productId, experiment_id: experimentId } }) });
+  // Prefixo: atualiza o diário do produto e os das campanhas juntos.
+  const refresh = () => qc.invalidateQueries({ queryKey: ["product-diary", productId] });
   const onError = (e: any) => toast.error(e.message);
 
   const saveFocus = useMutation({ mutationFn: (v: string | null) => focusFn({ data: { product_id: productId, current_test: v } }), onSuccess: refresh, onError });
   const add = useMutation({
-    mutationFn: (v: { content: string; note_type_id: string | null; image_urls: string[] }) => addFn({ data: { product_id: productId, ...v } }),
+    mutationFn: (v: { content: string; note_type_id: string | null; image_urls: string[]; experiment_id: string | null }) => addFn({ data: { product_id: productId, ...v } }),
     onSuccess: refresh, onError,
   });
   const update = useMutation({
-    mutationFn: (v: { id: string; content?: string; note_type_id?: string | null; image_urls?: string[]; created_at?: string }) => updateFn({ data: v }),
+    mutationFn: (v: { id: string; content?: string; note_type_id?: string | null; experiment_id?: string | null; image_urls?: string[]; created_at?: string }) => updateFn({ data: v }),
     onSuccess: refresh, onError,
   });
   const remove = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh, onError });
 
   const noteTypes = data?.noteTypes ?? [];
   const entries = data?.entries ?? [];
+  const campaigns = data?.campaigns ?? [];
   const systemType = noteTypes.find((t) => t.is_system);
   const lastChange = systemType ? entries.find((e) => e.note_type_id === systemType.id) : undefined;
   const filtered = useMemo(
-    () => (filters.length === 0 ? entries : entries.filter((e) => filters.includes(e.note_type_id ?? NO_TYPE))),
-    [entries, filters],
+    () => entries.filter((e) => (filters.length === 0 || filters.includes(e.note_type_id ?? NO_TYPE))
+      && (!campaignFilter || (campaignFilter === PRODUCT_ONLY ? !e.experiment_id : e.experiment_id === campaignFilter))),
+    [entries, filters, campaignFilter],
   );
   const toggle = (id: string) => setFilters((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
 
@@ -92,10 +101,10 @@ export function ProductDiary({ productId }: { productId: string }) {
   return (
     <div className="max-w-3xl space-y-4">
       <div className="rounded-xl border border-border bg-gradient-to-b from-muted/50 to-muted/20 p-3.5 space-y-3">
-        {data.runningTests.length > 0 && (
+        {!inCampaign && data.runningTests.length > 0 && (
           <div className="min-w-0">
             <div className="flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
-              <FlaskConical className="size-3" /> Testes no ar
+              <FlaskConical className="size-3" /> Campanhas no ar
             </div>
             <ul className="mt-0.5 space-y-0.5 px-1.5">
               {data.runningTests.map((t) => (
@@ -107,8 +116,8 @@ export function ProductDiary({ productId }: { productId: string }) {
             </ul>
           </div>
         )}
-        <FocusField value={data.currentTest} onSave={(v) => saveFocus.mutate(v)} />
-        <div className="flex items-start gap-1.5 border-t border-border/70 pt-2.5">
+        {!inCampaign && <FocusField value={data.currentTest} onSave={(v) => saveFocus.mutate(v)} />}
+        <div className={`flex items-start gap-1.5 ${inCampaign ? "" : "border-t border-border/70 pt-2.5"}`}>
           <History className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
@@ -137,12 +146,21 @@ export function ProductDiary({ productId }: { productId: string }) {
         {noteTypes.map((t) => (
           <Chip key={t.id} active={filters.includes(t.id)} onClick={() => toggle(t.id)} activeCls={COLOR[t.color].badge} dot={COLOR[t.color].dot}>{t.name}</Chip>
         ))}
-        <button onClick={() => setManaging(true)} title="Tipos de nota" className="ml-auto size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground">
+        {!inCampaign && campaigns.length > 0 && (
+          <select value={campaignFilter} onChange={(e) => setCampaignFilter(e.target.value)} title="Filtrar por campanha"
+            className="ml-auto h-7 max-w-[200px] px-2 rounded-md border border-border bg-background text-[12px] outline-none cursor-pointer">
+            <option value="">Produto e campanhas</option>
+            <option value={PRODUCT_ONLY}>Só do produto</option>
+            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+        )}
+        <button onClick={() => setManaging(true)} title="Tipos de nota" className={`${!inCampaign && campaigns.length > 0 ? "" : "ml-auto"} size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground`}>
           <Settings2 className="size-3.5" />
         </button>
       </div>
 
-      <EntryForm productId={productId} noteTypes={noteTypes} pending={add.isPending} onSubmit={(v) => add.mutate(v)} />
+      <EntryForm productId={productId} noteTypes={noteTypes} campaigns={inCampaign ? null : campaigns} pending={add.isPending}
+        onSubmit={(v) => add.mutate({ ...v, experiment_id: experimentId ?? v.experiment_id })} />
 
       {filtered.length === 0 ? (
         <p className="py-6 text-center text-[13px] text-muted-foreground">{entries.length ? "Nenhum registro com esse filtro." : "Nenhum registro ainda."}</p>
@@ -154,6 +172,7 @@ export function ProductDiary({ productId }: { productId: string }) {
               entry={e}
               productId={productId}
               noteTypes={noteTypes}
+              campaigns={inCampaign ? null : campaigns}
               onUpdate={(patch) => update.mutate({ id: e.id, ...patch })}
               onDelete={() => remove.mutate(e.id)}
             />
@@ -295,21 +314,37 @@ function TypeSelect({ noteTypes, value, onChange }: { noteTypes: DiaryNoteType[]
   );
 }
 
+// Diário do produto: o registro pode ser do produto ou de uma campanha.
+function CampaignSelect({ campaigns, value, onChange }: { campaigns: Campaign[]; value: string | null; onChange: (v: string | null) => void }) {
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value || null)}
+      title="Do produto ou de uma campanha"
+      className="h-7 max-w-[180px] px-2 rounded-md border border-border bg-background text-[12px] outline-none cursor-pointer"
+    >
+      <option value="">Produto</option>
+      {campaigns.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+    </select>
+  );
+}
+
 // ── Novo registro ──
 
-function EntryForm({ productId, noteTypes, pending, onSubmit }: {
-  productId: string; noteTypes: DiaryNoteType[]; pending: boolean;
-  onSubmit: (v: { content: string; note_type_id: string | null; image_urls: string[] }) => void;
+function EntryForm({ productId, noteTypes, campaigns, pending, onSubmit }: {
+  productId: string; noteTypes: DiaryNoteType[]; campaigns: Campaign[] | null; pending: boolean;
+  onSubmit: (v: { content: string; note_type_id: string | null; image_urls: string[]; experiment_id: string | null }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [typeId, setTypeId] = useState<string | null>(null);
+  const [campaignId, setCampaignId] = useState<string | null>(null);
   const img = useImageUploads(productId);
-  const close = () => { setValue(""); setTypeId(null); img.setUrls([]); setOpen(false); };
+  const close = () => { setValue(""); setTypeId(null); setCampaignId(null); img.setUrls([]); setOpen(false); };
   const submit = () => {
     const v = value.trim();
     if (!v || img.uploading) return;
-    onSubmit({ content: v, note_type_id: typeId, image_urls: img.urls });
+    onSubmit({ content: v, note_type_id: typeId, image_urls: img.urls, experiment_id: campaignId });
     close();
   };
 
@@ -340,6 +375,7 @@ function EntryForm({ productId, noteTypes, pending, onSubmit }: {
         <div className="flex items-center gap-1">
           <ImageButton uploading={img.uploading} onFiles={img.addFiles} />
           <TypeSelect noteTypes={noteTypes} value={typeId} onChange={setTypeId} />
+          {campaigns && campaigns.length > 0 && <CampaignSelect campaigns={campaigns} value={campaignId} onChange={setCampaignId} />}
         </div>
         <div className="flex gap-1.5">
           <button onClick={close} className="h-7 px-3 rounded-md text-[12.5px] hover:bg-muted">Cancelar</button>
@@ -353,9 +389,9 @@ function EntryForm({ productId, noteTypes, pending, onSubmit }: {
 
 // ── Registro ──
 
-function EntryItem({ entry, productId, noteTypes, onUpdate, onDelete }: {
-  entry: DiaryEntry; productId: string; noteTypes: DiaryNoteType[];
-  onUpdate: (patch: { content?: string; note_type_id?: string | null; image_urls?: string[]; created_at?: string }) => void;
+function EntryItem({ entry, productId, noteTypes, campaigns, onUpdate, onDelete }: {
+  entry: DiaryEntry; productId: string; noteTypes: DiaryNoteType[]; campaigns: Campaign[] | null;
+  onUpdate: (patch: { content?: string; note_type_id?: string | null; experiment_id?: string | null; image_urls?: string[]; created_at?: string }) => void;
   onDelete: () => void;
 }) {
   const confirm = useConfirm();
@@ -363,11 +399,13 @@ function EntryItem({ entry, productId, noteTypes, onUpdate, onDelete }: {
   const [value, setValue] = useState(entry.content);
   const [when, setWhen] = useState(toLocalInput(entry.created_at));
   const [typeId, setTypeId] = useState(entry.note_type_id);
+  const [campaignId, setCampaignId] = useState(entry.experiment_id);
   const img = useImageUploads(productId, entry.image_urls);
   const type = noteTypes.find((t) => t.id === entry.note_type_id);
+  const campaign = campaigns?.find((c) => c.id === entry.experiment_id);
 
   const startEdit = () => {
-    setValue(entry.content); setWhen(toLocalInput(entry.created_at)); setTypeId(entry.note_type_id); img.setUrls(entry.image_urls);
+    setValue(entry.content); setWhen(toLocalInput(entry.created_at)); setTypeId(entry.note_type_id); setCampaignId(entry.experiment_id); img.setUrls(entry.image_urls);
     setEditing(true);
   };
   const submit = () => {
@@ -376,6 +414,7 @@ function EntryItem({ entry, productId, noteTypes, onUpdate, onDelete }: {
     if (v && v !== entry.content) patch.content = v;
     if (JSON.stringify(img.urls) !== JSON.stringify(entry.image_urls)) patch.image_urls = img.urls;
     if (typeId !== entry.note_type_id) patch.note_type_id = typeId;
+    if (campaigns && campaignId !== entry.experiment_id) patch.experiment_id = campaignId;
     if (when && when !== toLocalInput(entry.created_at)) patch.created_at = new Date(when).toISOString();
     if (Object.keys(patch).length) onUpdate(patch);
     setEditing(false);
@@ -419,6 +458,7 @@ function EntryItem({ entry, productId, noteTypes, onUpdate, onDelete }: {
             <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)}
               className="h-7 px-1.5 rounded-md border border-border bg-background text-[11.5px] text-muted-foreground outline-none" />
             <TypeSelect noteTypes={noteTypes} value={typeId} onChange={setTypeId} />
+            {campaigns && campaigns.length > 0 && <CampaignSelect campaigns={campaigns} value={campaignId} onChange={setCampaignId} />}
             <div className="ml-auto flex gap-1.5">
               <button onClick={() => setEditing(false)} className="h-7 px-3 rounded-md text-[12px] hover:bg-muted">Cancelar</button>
               <button onClick={submit} disabled={img.uploading} className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-50">Salvar</button>
@@ -427,7 +467,16 @@ function EntryItem({ entry, productId, noteTypes, onUpdate, onDelete }: {
         </div>
       ) : (
         <div className="mt-0.5 space-y-1.5">
-          {type && <span className={`inline-block rounded px-1.5 py-px text-[10.5px] ${COLOR[type.color].badge}`}>{type.name}</span>}
+          {(type || campaign) && (
+            <div className="flex flex-wrap items-center gap-1">
+              {type && <span className={`inline-block rounded px-1.5 py-px text-[10.5px] ${COLOR[type.color].badge}`}>{type.name}</span>}
+              {campaign && (
+                <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-px text-[10.5px] text-muted-foreground" title="Registro da campanha">
+                  <Megaphone className="size-2.5" /> {campaign.title}
+                </span>
+              )}
+            </div>
+          )}
           <p className="text-[13px] leading-snug text-foreground/90 whitespace-pre-wrap">{entry.content}</p>
           <ImageList urls={entry.image_urls} />
         </div>

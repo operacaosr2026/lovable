@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Layers, Package, ShoppingBag, Store, Swords, Tags } from "lucide-react";
+import { Layers, ListChecks, Megaphone, Package, ShoppingBag, Store, Swords, Tags } from "lucide-react";
 import { ProductionTemplates } from "@/components/shops/ProductionTemplates";
 import { VariantTemplates } from "@/components/products/VariantTemplates";
 import { CompetitorTemplates } from "@/components/products/ProductCompetitors";
 import { RecsTemplate } from "@/components/products/RecsTemplate";
 import { NamingTemplateEditor } from "@/components/products/Naming";
+import { CampaignTemplateEditor } from "@/components/products/CampaignTemplate";
+import { TestPipelineTemplateEditor } from "@/components/products/ProductTestPipeline";
 
-type Tipo = "lojas" | "produtos" | "variantes" | "concorrentes" | "recomendados" | "nomenclatura";
-const TIPOS: Tipo[] = ["lojas", "produtos", "variantes", "concorrentes", "recomendados", "nomenclatura"];
+type Tipo = "lojas" | "produtos" | "variantes" | "concorrentes" | "recomendados" | "nomenclatura" | "campanhas" | "esteira";
+const TIPOS: Tipo[] = ["lojas", "produtos", "variantes", "concorrentes", "recomendados", "nomenclatura", "campanhas", "esteira"];
 
 export const Route = createFileRoute("/settings/templates")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -23,6 +25,8 @@ const TABS: { id: Tipo; label: string; icon: typeof Store }[] = [
   { id: "concorrentes", label: "Concorrentes", icon: Swords },
   { id: "recomendados", label: "Recomendados", icon: ShoppingBag },
   { id: "nomenclatura", label: "Nomenclatura", icon: Tags },
+  { id: "campanhas", label: "Campanhas", icon: Megaphone },
+  { id: "esteira", label: "Esteira de testes", icon: ListChecks },
 ];
 
 function TemplatesPage() {
@@ -52,6 +56,8 @@ function TemplatesPage() {
         : tipo === "concorrentes" ? <CompetitorTemplates />
         : tipo === "recomendados" ? <RecsTemplate />
         : tipo === "nomenclatura" ? <NamingTemplateEditor />
+        : tipo === "campanhas" ? <CampaignTemplateEditor />
+        : tipo === "esteira" ? <TestPipelineTemplateEditor />
         : <ProductionTemplates key={tipo} kind={tipo === "produtos" ? "product" : "store"} />}
     </div>
   );

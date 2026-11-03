@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { CLARITY_DAILY_LIMIT, callsUsedToday, fetchClarityForProduct } from "@/lib/clarity.server";
 
-// Clarity do produto (barra no topo de Inteligência › Testes): token, buscas
+// Clarity do produto (barra no topo de Inteligência › Campanhas): token, buscas
 // restantes no dia e "Buscar agora". O token nunca volta pro navegador.
 
 export type ClarityStatus = {

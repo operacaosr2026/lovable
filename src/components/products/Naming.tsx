@@ -173,7 +173,7 @@ export function NamingTemplateEditor() {
 }
 
 // Opções separadas por vírgula; o texto fica livre enquanto digita.
-function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+export function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [text, setText] = useState(value.join(", "));
   return (
     <input value={text} placeholder="Opções (opcional), separadas por vírgula"
