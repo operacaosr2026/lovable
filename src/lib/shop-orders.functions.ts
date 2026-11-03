@@ -2259,6 +2259,9 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const cpa          = anuncios > 0 && pedidos > 0 ? anuncios / pedidos : 0;
     const roas         = anuncios > 0 ? faturamento / anuncios : 0;
     const roi          = anuncios > 0 ? (lucro / anuncios) * 100 : 0;
+    // Botão "sem custos adicionais" do Dashboard: lucro antes de reembolsos e chargebacks.
+    const lucroSemCa   = lucro + reembolsos + chargebacks;
+    const margemSemCa  = faturamento > 0 ? (lucroSemCa / faturamento) * 100 : 0;
 
     // Previous period (for deltas)
     const prevOrdersRevenue = prevOrders.reduce((s, o) => s + Number(o.revenue ?? 0), 0);
@@ -2269,6 +2272,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const prevCustoTotal  = prevCusto + prevTaxas + prevAnuncios;
     const prevLucro       = prevFaturamento - prevReembolsos - prevChargebacks - prevCusto - prevTaxas - prevAnuncios;
     const prevMargem      = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
+    const prevLucroSemCa  = prevLucro + prevReembolsos + prevChargebacks;
+    const prevMargemSemCa = prevFaturamento > 0 ? (prevLucroSemCa / prevFaturamento) * 100 : 0;
     const prevTicket      = prevPedidos > 0 ? prevFaturamento / prevPedidos : 0;
     const prevCpa         = prevAnuncios > 0 && prevPedidos > 0 ? prevAnuncios / prevPedidos : 0;
     const prevRoas        = prevAnuncios > 0 ? prevFaturamento / prevAnuncios : 0;
@@ -2312,6 +2317,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
           date: date.slice(5).replace("-", "/"), // MM/DD → DD/MM display
           faturamento: Math.round(v.faturamento * 100) / 100,
           lucro: Math.round((dayLiquido - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          lucroSemCa: Math.round((v.faturamento - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
           // Linha "Ads" do gráfico Evolução (antes não vinha e a linha ficava vazia).
           anuncios: Math.round(dayAnuncios * 100) / 100,
@@ -2363,6 +2369,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         roas,              roasDelta:         delta(roas, prevRoas),
         roi,
         margem,            margemDelta:       delta(margem, prevMargem),
+        lucroSemCa,        lucroSemCaDelta:   delta(lucroSemCa, prevLucroSemCa),
+        margemSemCa,       margemSemCaDelta:  delta(margemSemCa, prevMargemSemCa),
         pedidos,           pedidosDelta:      delta(pedidos, prevPedidos),
         unidades,          unidadesDelta:     delta(unidades, prevUnidades),
         ticketMedio,       ticketMedioDelta:  delta(ticketMedio, prevTicket),

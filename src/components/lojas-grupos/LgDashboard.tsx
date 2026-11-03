@@ -514,7 +514,21 @@ export function LgDashboard({
     refetchIntervalInBackground: false,
     enabled: isToday,
   });
-  const chartData = isToday ? (chartQueryData?.chartData ?? []) : (data?.chartData ?? []);
+  // Lucro sem custos adicionais (reembolsos e chargebacks): troca o card do
+  // Lucro, a Margem e a linha do gráfico. Fica lembrado neste navegador.
+  const [semCa, setSemCa] = useState(false);
+  useEffect(() => {
+    try { if (localStorage.getItem("lg-dashboard-sem-ca") === "1") setSemCa(true); } catch { /* sem storage */ }
+  }, []);
+  const toggleSemCa = () => setSemCa((v) => {
+    try { localStorage.setItem("lg-dashboard-sem-ca", v ? "0" : "1"); } catch { /* sem storage */ }
+    return !v;
+  });
+  const rawChartData = isToday ? (chartQueryData?.chartData ?? []) : (data?.chartData ?? []);
+  const chartData = useMemo(
+    () => semCa ? rawChartData.map((d: any) => ({ ...d, lucro: d.lucroSemCa ?? d.lucro })) : rawChartData,
+    [semCa, rawChartData],
+  );
   const chartLoading = isToday ? chartQueryLoading : isLoading;
 
   // Faturamento por hora do dia (0h-23h): sempre olha o mês corrente inteiro,
@@ -593,6 +607,7 @@ export function LgDashboard({
   // refresh manual.
 
   const m   = data?.metrics;
+  const lucroShown = semCa ? m?.lucroSemCa : m?.lucro;
   const fmt = (n: number) => fmtCurrency(n, currency, currencyRate);
 
   const openBreakdown = (metric: NonNullable<typeof breakdown>["metric"], label: string) => {
@@ -678,10 +693,22 @@ export function LgDashboard({
 
       {/* ── KPI row 1 ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard highlighted highlightedVariant={(m?.lucro ?? 0) < 0 ? "destructive" : "success"} loading={isLoading}
+        <KpiCard highlighted highlightedVariant={(lucroShown ?? 0) < 0 ? "destructive" : "success"} loading={isLoading}
           icon={<DollarSign className="size-4" />}
-          label="Lucro" value={fmt(m?.lucro ?? 0)} delta={m?.lucroDelta ?? 0}
-          tooltip="Faturamento − reembolsos − chargebacks − custo − taxas − anúncios"
+          label={semCa ? "Lucro sem reemb./CB" : "Lucro"} value={fmt(lucroShown ?? 0)}
+          delta={(semCa ? m?.lucroSemCaDelta : m?.lucroDelta) ?? 0}
+          tooltip={semCa
+            ? "Faturamento − custo − taxas − anúncios (sem descontar reembolsos e chargebacks)"
+            : "Faturamento − reembolsos − chargebacks − custo − taxas − anúncios"}
+          badge={
+            <button type="button" onClick={(e) => { e.stopPropagation(); toggleSemCa(); }}
+              title={semCa ? "Voltar a descontar reembolsos e chargebacks" : "Ver o lucro sem reembolsos e chargebacks"}
+              className={`text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors ${
+                semCa ? "bg-white text-neutral-900 border-white" : "bg-white/15 text-white border-white/30 hover:bg-white/25"
+              }`}>
+              {semCa ? "Com reemb./CB" : "Sem reemb./CB"}
+            </button>
+          }
         />
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="primary"
@@ -714,8 +741,9 @@ export function LgDashboard({
         </div>
         <KpiCard loading={isLoading}
           icon={<Percent className="size-4" />} iconColor="primary"
-          label="Margem" value={`${(m?.margem ?? 0).toFixed(1)}%`} delta={m?.margemDelta ?? 0}
-          tooltip="Lucro ÷ Faturamento × 100"
+          label="Margem" value={`${((semCa ? m?.margemSemCa : m?.margem) ?? 0).toFixed(1)}%`}
+          delta={(semCa ? m?.margemSemCaDelta : m?.margemDelta) ?? 0}
+          tooltip={semCa ? "Lucro sem reembolsos/chargebacks ÷ Faturamento × 100" : "Lucro ÷ Faturamento × 100"}
         />
       </div>
 
