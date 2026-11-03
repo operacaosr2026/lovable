@@ -13,6 +13,7 @@ import { decideRefund, type RefundLine, type RefundMode } from "@/lib/support-re
 import { refundReasonLabel } from "@/lib/refund-reasons";
 import { decideExchange, type ExchangeFault, type ExchangeItem } from "@/lib/support-exchange.functions";
 import { useSupportFn } from "./demo";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { formatDuration, formatMoney, fullTime } from "./utils";
 
 // Atendimento › Aprovações (gestor): todas as trocas e reembolsos pedidos pela
@@ -71,6 +72,9 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
   const actions = useApprovalActions();
+  // Celular: a tabela não cabe — sempre em cartões.
+  const isMobile = useIsMobile();
+  const view = isMobile ? "grade" : layout;
 
   const all = (list.data?.items ?? []) as Item[];
   const canApprove = !!list.data?.canApprove;
@@ -123,20 +127,22 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
         <div className="flex flex-wrap items-center gap-2">
           {([["todos", "Todos"], ["reembolso", "Reembolsos"], ["troca", "Trocas"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setKind(k)}
-              className={`h-9 px-4 rounded-xl text-xs font-semibold border transition-colors ${kind === k ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:border-primary/40"}`}>
+              className={`flex-1 sm:flex-none h-9 px-3 sm:px-4 rounded-xl text-xs font-semibold border transition-colors ${kind === k ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:border-primary/40"}`}>
               {label} ({openCount(k)})
             </button>
           ))}
-          <div className="flex-1" />
+          <div className="hidden sm:block flex-1" />
           <div className="relative w-full sm:w-56">
             <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pedido, cliente ou loja…"
               className="w-full h-9 pl-8 pr-3 rounded-xl bg-card border border-border text-xs outline-none focus:border-primary" />
           </div>
-          <Select value={store} onChange={setStore} options={[["", "Todas as lojas"], ...stores.map((s) => [s, s] as [string, string])]} />
-          <Select value={status} onChange={(v) => setStatus(v as StatusFilter)} options={STATUS_FILTERS} />
-          <Select value={sort} onChange={(v) => setSort(v as Sort)} options={SORTS} />
-          <div className="flex items-center rounded-xl border border-border bg-card p-0.5">
+          <div className="grid grid-cols-3 sm:flex gap-2 w-full sm:w-auto">
+            <Select value={store} onChange={setStore} options={[["", "Todas as lojas"], ...stores.map((s) => [s, s] as [string, string])]} />
+            <Select value={status} onChange={(v) => setStatus(v as StatusFilter)} options={STATUS_FILTERS} />
+            <Select value={sort} onChange={(v) => setSort(v as Sort)} options={SORTS} />
+          </div>
+          <div className="hidden md:flex items-center rounded-xl border border-border bg-card p-0.5">
             {([["lista", List], ["grade", LayoutGrid]] as const).map(([k, Icon]) => (
               <button key={k} onClick={() => setLayout(k)} title={k === "lista" ? "Lista" : "Grade"}
                 className={`size-8 rounded-lg grid place-items-center ${layout === k ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
@@ -173,7 +179,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
           </div>
         ) : (
           <div className="rounded-2xl border border-border bg-card overflow-hidden">
-            {layout === "lista" ? (
+            {view === "lista" ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -277,7 +283,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                 ))}
                 <PageBtn disabled={page >= pages - 1} onClick={() => setPage(page + 1)}><ChevronRight className="size-3.5" /></PageBtn>
               </div>
-              <label className="flex items-center gap-2">Itens por página
+              <label className="hidden sm:flex items-center gap-2">Itens por página
                 <select value={perPage} onChange={(e) => setPerPage(Number(e.target.value))}
                   className="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground outline-none">
                   {[10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
@@ -321,14 +327,14 @@ function Kpis({ all }: { all: Item[] }) {
 
   return (
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-      <Kpi icon={Clock} tone="amber" label="Aguardando aprovação" value={String(waiting.length)}
-        sub={<>{sum(refunds)} <span className="text-muted-foreground font-normal">em reembolsos</span></>} />
+      <Kpi icon={Clock} tone="amber" label={<>Aguardando<span className="hidden sm:inline"> aprovação</span></>} value={String(waiting.length)}
+        sub={<>{sum(refunds)} <span className="text-muted-foreground font-normal hidden sm:inline">em reembolsos</span></>} />
       <Kpi icon={Undo2} tone="rose" label="Reembolsos" value={String(refunds.length)} sub={sum(refunds)} />
       <Kpi icon={Repeat} tone="blue" label="Trocas" value={String(exchanges.length)}
         sub={<span className="font-normal text-muted-foreground">{items} {items === 1 ? "item" : "itens"} pra reenviar</span>} />
-      <Kpi icon={Clock} tone="emerald" label="Tempo médio de análise" value={cur == null ? "—" : formatDuration(cur)}
+      <Kpi icon={Clock} tone="emerald" label={<>Tempo<span className="hidden sm:inline"> médio</span> de análise</>} value={cur == null ? "—" : formatDuration(cur)}
         sub={delta == null ? <span className="font-normal text-muted-foreground">últimos 7 dias</span> : (
-          <span className={`flex items-center gap-1 ${delta <= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+          <span className={`flex flex-wrap items-center gap-x-1 ${delta <= 0 ? "text-emerald-600" : "text-rose-600"}`}>
             {delta <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(delta)}%
             <span className="font-normal text-muted-foreground">vs. semana anterior</span>
           </span>
@@ -344,15 +350,15 @@ const TONES = {
   emerald: "from-emerald-500/10 text-emerald-600 bg-emerald-500/15",
 } as const;
 
-function Kpi({ icon: Icon, tone, label, value, sub }: { icon: any; tone: keyof typeof TONES; label: string; value: string; sub: React.ReactNode }) {
+function Kpi({ icon: Icon, tone, label, value, sub }: { icon: any; tone: keyof typeof TONES; label: React.ReactNode; value: string; sub: React.ReactNode }) {
   const [grad, text, bg] = TONES[tone].split(" ");
   return (
-    <div className={`rounded-2xl border border-border bg-gradient-to-br ${grad} to-card p-4 flex items-start gap-3`}>
-      <span className={`size-10 shrink-0 rounded-full grid place-items-center ${bg} ${text}`}><Icon className="size-5" /></span>
-      <div className="min-w-0">
-        <p className="text-xs font-medium">{label}</p>
-        <p className="text-2xl font-semibold tracking-tight leading-tight">{value}</p>
-        <div className="text-xs font-semibold truncate">{sub}</div>
+    <div className={`rounded-2xl border border-border bg-gradient-to-br ${grad} to-card p-3.5 sm:p-4 flex flex-col sm:flex-row items-start gap-2 sm:gap-3`}>
+      <span className={`size-8 sm:size-10 shrink-0 rounded-full grid place-items-center ${bg} ${text}`}><Icon className="size-4 sm:size-5" /></span>
+      <div className="min-w-0 w-full">
+        <p className="text-xs font-medium truncate">{label}</p>
+        <p className="text-xl sm:text-2xl font-semibold tracking-tight leading-tight">{value}</p>
+        <div className="text-[11px] sm:text-xs font-semibold leading-snug sm:truncate">{sub}</div>
       </div>
     </div>
   );
@@ -363,7 +369,7 @@ function Kpi({ icon: Icon, tone, label, value, sub }: { icon: any; tone: keyof t
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: readonly (readonly [string, string])[] }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="h-9 rounded-xl border border-border bg-card px-3 text-xs outline-none focus:border-primary max-w-[180px]">
+      className="h-9 min-w-0 w-full sm:w-auto rounded-xl border border-border bg-card px-2.5 sm:px-3 text-xs outline-none focus:border-primary sm:max-w-[180px]">
       {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
     </select>
   );

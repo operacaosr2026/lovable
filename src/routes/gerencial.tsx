@@ -83,7 +83,7 @@ function GerencialPage() {
         {/* Abas e o mês na mesma linha, com altura fixa: trocar de aba não mexe no layout
             (Fila, Análise de reembolsos, Metas e Projetos têm o filtro delas, então o mês some ali). */}
         <div className="flex flex-wrap items-center gap-3 min-h-10">
-          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {TABS.map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)}
                 className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -98,10 +98,10 @@ function GerencialPage() {
             ))}
           </div>
           {!ownFilter && (
-            <label className="relative ml-auto">
+            <label className="relative w-full sm:w-auto sm:ml-auto">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={month} onChange={(e) => setMonth(e.target.value)}
-                className="h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
+                className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
                 {months.map((m, i) => <option key={m} value={m}>{i === 0 ? `Este mês (${monthName(m)})` : monthName(m)}</option>)}
               </select>
             </label>
@@ -125,7 +125,7 @@ function GerencialPage() {
 
 function Panel({ icon: Icon, title, right, children, className = "" }: { icon?: any; title?: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-3xl border border-border bg-card p-5 min-w-0 ${className}`}>
+    <div className={`rounded-2xl sm:rounded-3xl border border-border bg-card p-4 sm:p-5 min-w-0 ${className}`}>
       {title && (
         <div className="flex items-center gap-2.5 mb-4">
           {Icon && <span className="size-8 rounded-xl grid place-items-center bg-primary/10 text-primary"><Icon className="size-4" /></span>}
@@ -367,9 +367,9 @@ function Money({ d, vs }: { d: Data; vs: string }) {
   // Com prejuízo, os gastos passam das vendas: a barra vai até o total dos gastos.
   const total = a.lucro >= 0 ? a.faturamento : a.faturamento - a.lucro;
   return (
-    <div className="xl:col-span-2 rounded-3xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-6 min-w-0">
-      <div className="flex flex-wrap items-start gap-6">
-        <div className="min-w-0 flex-1">
+    <div className="xl:col-span-2 rounded-2xl sm:rounded-3xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-4 sm:p-6 min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-start gap-5 sm:gap-6">
+        <div className="min-w-0 sm:flex-1">
           <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><TrendingUp className="size-3.5" /> Lucro de {monthName(d.month)}</p>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <p className={`text-3xl sm:text-4xl font-semibold tracking-tight ${a.lucro < 0 ? "text-rose-600" : ""}`}>{usd(a.lucro)}</p>
@@ -377,14 +377,14 @@ function Money({ d, vs }: { d: Data; vs: string }) {
           </div>
           <p className="text-xs text-muted-foreground mt-1">Margem {pct(a.margem)} · {prev}: {usd(p?.lucro)} ({pct(p?.margem)})</p>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-3 w-full sm:w-auto sm:min-w-[280px]">
+        <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-3 pt-4 sm:pt-0 border-t sm:border-0 border-border/60 sm:min-w-[280px]">
           <MiniStat label="Faturamento" value={<span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">{usd(a.faturamento)} <Delta cur={a.faturamento} prev={p?.faturamento} label={vs} /></span>} />
           <MiniStat label="Pedidos" value={num(a.pedidos)} sub={p ? `${prev}: ${num(p.pedidos)}` : undefined} />
           <MiniStat label="Ticket médio" value={usd(a.pedidos ? a.faturamento / a.pedidos : null)} />
           <MiniStat label="Anúncio por pedido" value={usd(a.cpa)} sub={p?.cpa != null ? `${prev}: ${usd(p.cpa)}` : undefined} />
         </div>
       </div>
-      <div className="mt-6">
+      <div className="mt-5 sm:mt-6">
         <p className="text-xs font-semibold mb-2">Para onde foram as vendas</p>
         <StackBar segs={segs} total={total} />
       </div>

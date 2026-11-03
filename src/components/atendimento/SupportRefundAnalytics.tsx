@@ -122,7 +122,7 @@ function Kpis({ d }: { d: Data }) {
   const k = d.kpis;
   const series = (pick: (x: Data["daily"][number]) => number | null) => d.daily.map((x) => ({ v: pick(x) }));
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
       <Kpi icon={Undo2} tone="violet" label="Reembolsado" value={usd(k.total)} spark={series((x) => x.amount)}
         sub={<>{k.count} reembolso{k.count === 1 ? "" : "s"} · <Delta cur={k.total} prev={d.prev.total} comparable={d.prev.comparable} was={usd(d.prev.total)} /></>} />
       <Kpi icon={Percent} tone="slate" label="Taxa de reembolso" value={pct(k.rateOrders)} spark={series((x) => x.rate)} sparkTone="violet"
@@ -152,17 +152,17 @@ function Kpi({ icon: Icon, tone, label, value, sub, spark, sparkTone }: {
   const line = smooth(spark);
   const hasSpark = line.length >= 2 && line.some((p) => p.v > 0);
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 flex items-start gap-3 min-w-0">
-      <span className={`size-10 shrink-0 rounded-xl grid place-items-center ${TONE[tone]}`}><Icon className="size-5" /></span>
+    <div className="rounded-2xl border border-border bg-card p-3.5 sm:p-4 flex flex-col sm:flex-row items-start gap-2 sm:gap-3 min-w-0">
+      <span className={`size-8 sm:size-10 shrink-0 rounded-xl grid place-items-center ${TONE[tone]}`}><Icon className="size-4 sm:size-5" /></span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground truncate">{label}</p>
-            <p className="text-xl font-semibold tracking-tight leading-tight whitespace-nowrap">{value}</p>
+            <p className="text-lg sm:text-xl font-semibold tracking-tight leading-tight whitespace-nowrap">{value}</p>
           </div>
           {/* Tendência no período (decorativa — os números estão no gráfico e nas tabelas). */}
           {hasSpark && (
-            <div className={`w-20 h-9 shrink-0 ${TONE[sparkTone ?? tone].split(" ").find((c) => c.startsWith("text-"))}`} aria-hidden>
+            <div className={`hidden sm:block w-20 h-9 shrink-0 ${TONE[sparkTone ?? tone].split(" ").find((c) => c.startsWith("text-"))}`} aria-hidden>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={line} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
                   <YAxis hide domain={["dataMin", "dataMax"]} />
@@ -172,7 +172,7 @@ function Kpi({ icon: Icon, tone, label, value, sub, spark, sparkTone }: {
             </div>
           )}
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground truncate">{sub}</p>
+        <p className="mt-1 text-[11px] leading-snug text-muted-foreground sm:truncate">{sub}</p>
       </div>
     </div>
   );
@@ -182,12 +182,12 @@ function Card({ icon: Icon, title, hint, children, right }: { icon: any; title: 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-start gap-3 mb-4">
-        <span className={`size-10 shrink-0 rounded-xl grid place-items-center ${TONE.violet}`}><Icon className="size-5" /></span>
-        <div className="min-w-0 flex-1">
+        <span className={`size-9 sm:size-10 shrink-0 rounded-xl grid place-items-center ${TONE.violet}`}><Icon className="size-4 sm:size-5" /></span>
+        <div className="min-w-0 flex-1 basis-56">
           <p className="text-base font-semibold">{title}</p>
           {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
         </div>
-        {right}
+        {right && <div className="w-full sm:w-auto">{right}</div>}
       </div>
       {children}
     </div>
@@ -430,10 +430,10 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
       hint="Reembolsos dos pedidos vendidos no período, do mais recente pro mais antigo"
       right={
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="size-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Pedido, loja, produto…"
-              className="h-9 w-48 pl-8 pr-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary" />
+              className="h-9 w-full sm:w-48 pl-8 pr-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary" />
           </div>
           <select value={status} onChange={(e) => setStatus(e.target.value as any)} className="h-9 rounded-xl border border-border bg-background px-2 text-xs">
             <option value="">Todos os status</option><option value="pendente">Pendente na Shopify</option><option value="concluido">Concluído</option>
