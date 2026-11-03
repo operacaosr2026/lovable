@@ -4,11 +4,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, Columns3, Loader2, Megaphone, Pencil, Settings2, StickyNote } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AutoTextarea } from "@/components/shops/StoreProduction";
 import { getExperimentMetrics, type ExperimentRaw } from "@/lib/product-dashboard.functions";
-import { KIND_LABEL, METRIC_LABEL, updateExperiment, type CampaignStatus, type Experiment } from "@/lib/experiments.functions";
+import { METRIC_LABEL, kindName, updateExperiment, type CampaignKind, type CampaignStatus, type Experiment } from "@/lib/experiments.functions";
 import { getCampaignTemplate, type SummaryField } from "@/lib/campaign-template.functions";
 import {
   METRIC_DEFS, SOURCE_LABEL, compareToBase, deriveMetrics, fmtMetric, sumCounts,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/experiment-metrics";
 import { STATUS_STYLE, TagsPopover, daysLive, findStatus, fmtDate } from "@/components/products/ProductCampaigns";
 import { ProductDiary } from "@/components/products/ProductDiary";
+import { CampaignTemplateEditor } from "@/components/products/CampaignTemplate";
 
 // Janela da campanha (aba Campanhas do produto): Resumo (campos do template +
 // o que está testando), Métricas (dia a dia da campanha da Meta, linhas =
@@ -24,6 +25,7 @@ import { ProductDiary } from "@/components/products/ProductDiary";
 
 const inputCls = "h-9 px-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
 const COLS_KEY = "experiment-columns-v2";
+const ACTIVE_ONLY_KEY = "experiment-adsets-active-only";
 const MAX_DAYS = 92;
 const AVAILABLE = METRIC_DEFS;
 // Do Clarity, só as 3 principais aparecem de início; o resto fica em Colunas.
@@ -48,8 +50,8 @@ function loadCols(): string[] {
 type Tab = "resumo" | "metricas" | "diario";
 const TABS: [Tab, string][] = [["resumo", "Resumo"], ["metricas", "Métricas"], ["diario", "Diário"]];
 
-export function CampaignView({ experiment, statuses, productId, allTags, onEdit, onTags, onClose }: {
-  experiment: Experiment; statuses: CampaignStatus[]; productId: string; allTags: string[]; onEdit: () => void; onTags: (tags: string[]) => void; onClose: () => void;
+export function CampaignView({ experiment, statuses, kinds, productId, allTags, onEdit, onTags, onClose }: {
+  experiment: Experiment; statuses: CampaignStatus[]; kinds: CampaignKind[]; productId: string; allTags: string[]; onEdit: () => void; onTags: (tags: string[]) => void; onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("resumo");
   const days = daysLive(experiment);
@@ -82,7 +84,7 @@ export function CampaignView({ experiment, statuses, productId, allTags, onEdit,
           ))}
         </div>
 
-        {tab === "resumo" && <CampaignSummary experiment={experiment} productId={productId} onEdit={onEdit} />}
+        {tab === "resumo" && <CampaignSummary experiment={experiment} kinds={kinds} productId={productId} onEdit={onEdit} />}
         {tab === "metricas" && <CampaignMetrics experiment={experiment} />}
         {tab === "diario" && <div className="pt-4"><ProductDiary productId={productId} experimentId={experiment.id} /></div>}
         </div>
@@ -93,7 +95,8 @@ export function CampaignView({ experiment, statuses, productId, allTags, onEdit,
 
 // ── Resumo ──
 
-function CampaignSummary({ experiment, productId, onEdit }: { experiment: Experiment; productId: string; onEdit: () => void }) {
+function CampaignSummary({ experiment, kinds, productId, onEdit }: { experiment: Experiment; kinds: CampaignKind[]; productId: string; onEdit: () => void }) {
+  const [editingFields, setEditingFields] = useState(false);
   const qc = useQueryClient();
   const tplFn = useServerFn(getCampaignTemplate);
   const updateFn = useServerFn(updateExperiment);
@@ -110,7 +113,7 @@ function CampaignSummary({ experiment, productId, onEdit }: { experiment: Experi
   };
   const e = experiment;
   const testing: [string, string][] = ([
-    ["O que está testando", KIND_LABEL[e.kind]],
+    ["O que está testando", kindName(kinds, e.kind)],
     ["Hipótese", e.hypothesis],
     ["Controle → variação", e.control || e.variant ? `${e.control || "Atual"} → ${e.variant || "Variação"}` : ""],
     ["Métrica que decide", METRIC_LABEL[e.metric]],
@@ -124,15 +127,15 @@ function CampaignSummary({ experiment, productId, onEdit }: { experiment: Experi
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-sm font-semibold">Resumo</h3>
           {save.isPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-          <Link to="/settings/templates" search={{ tipo: "campanhas" }} title="Editar os campos (Configurações › Templates › Campanhas)"
+          <button onClick={() => setEditingFields(true)} title="Editar os campos do Resumo (valem para todas as campanhas)"
             className="ml-auto size-7 rounded-md grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground">
             <Settings2 className="size-3.5" />
-          </Link>
+          </button>
         </div>
         {isLoading ? (
           <div className="flex justify-center py-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
         ) : !fields?.length ? (
-          <p className="text-sm text-muted-foreground">Nenhum campo no template. Crie em Configurações › Templates › Campanhas.</p>
+          <p className="text-sm text-muted-foreground">Nenhum campo no Resumo. <button onClick={() => setEditingFields(true)} className="text-primary hover:underline">Criar campos</button></p>
         ) : (
           <div className="divide-y divide-border/60">
             {fields.map((fld) => (
@@ -141,6 +144,18 @@ function CampaignSummary({ experiment, productId, onEdit }: { experiment: Experi
           </div>
         )}
       </section>
+
+      {editingFields && (
+        <Dialog open onOpenChange={(o) => { if (!o) setEditingFields(false); }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle>Campos do Resumo</DialogTitle></DialogHeader>
+            <p className="text-xs text-muted-foreground -mt-2">
+              Valem para todas as campanhas. Também dá pra editar em <Link to="/settings/templates" search={{ tipo: "campanhas" }} className="text-primary hover:underline">Configurações › Templates › Campanhas</Link>.
+            </p>
+            <CampaignTemplateEditor onSaved={() => setEditingFields(false)} />
+          </DialogContent>
+        </Dialog>
+      )}
 
       <div className="space-y-4">
         <section className="rounded-xl border border-border p-4">
@@ -226,6 +241,14 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
     return () => clearTimeout(t);
   }, [draftFrom, draftTo]);
   const [level, setLevel] = useState<"campaign" | "adset">("campaign");
+  const [activeOnly, setActiveOnly] = useState(() => {
+    try { return localStorage.getItem(ACTIVE_ONLY_KEY) === "1"; } catch { return false; }
+  });
+  const toggleActiveOnly = () => {
+    const next = !activeOnly;
+    setActiveOnly(next);
+    try { localStorage.setItem(ACTIVE_ONLY_KEY, next ? "1" : "0"); } catch { /* ignora */ }
+  };
   const [cols, setCols] = useState<string[]>(loadCols);
 
   const rangeOk = from <= to && daysBetween(from, to) < MAX_DAYS;
@@ -262,9 +285,11 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
       byGroup.set(r.group, g);
     }
     if (!byGroup.size) byGroup.set("all", { name: "Campanha", rows: new Map() });
+    const active = data.level === "adset" && activeOnly && data.activeAdsets ? new Set(data.activeAdsets) : null;
     return [...byGroup.entries()].map(([id, g]) => ({ id, ...g }))
+      .filter((g) => !active || active.has(g.id))
       .sort((a, b) => (a.id === "?" ? 1 : b.id === "?" ? -1 : a.name.localeCompare(b.name)));
-  }, [data]);
+  }, [data, activeOnly]);
 
   const changesByDate = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -297,6 +322,12 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
               </button>
             ))}
           </div>
+          {level === "adset" && (
+            <label className={`h-9 px-3 rounded-lg border text-sm flex items-center gap-1.5 cursor-pointer ${activeOnly ? "border-primary/50 bg-primary/5" : "border-border hover:bg-muted"}`}
+              title={data?.configured && data.level === "adset" && !data.activeAdsets ? "Não deu pra ler o status dos conjuntos na Meta agora" : "Mostrar só os conjuntos que estão rodando agora"}>
+              <input type="checkbox" checked={activeOnly} onChange={toggleActiveOnly} /> Só ativos
+            </label>
+          )}
           <Popover>
             <PopoverTrigger asChild>
               <button className="h-9 px-3 rounded-lg border border-border text-sm flex items-center gap-1.5 hover:bg-muted">
@@ -332,6 +363,7 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
                 {data.errors.map((e, i) => <p key={i} className="flex items-start gap-1.5"><AlertTriangle className="size-3.5 shrink-0 mt-px" /> {e}</p>)}
               </div>
             )}
+            {groups.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Nenhum conjunto ativo com dados no período.</p>}
             {groups.map((g) => (
               <MetricsTable key={g.id} title={level === "adset" ? g.name : null} dates={dates} rows={g.rows}
                 shown={shown} sources={sources} changes={changesByDate} partialDays={partialDays} baseline={hasBase ? experiment.baseline : null} />

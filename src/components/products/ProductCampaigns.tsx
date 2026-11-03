@@ -1,15 +1,19 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import {
+  DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Loader2, Megaphone, MoreHorizontal, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, GripVertical, Loader2, Megaphone, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  KINDS, KIND_LABEL, METRICS, METRIC_LABEL, STATUS_COLORS,
-  createExperiment, deleteExperiment, listProductExperiments, saveCampaignStatuses, updateExperiment,
-  type CampaignStatus, type Experiment, type Kind, type Metric, type StatusColor,
+  METRICS, METRIC_LABEL, STATUS_COLORS,
+  createExperiment, deleteExperiment, listProductExperiments, saveCampaignKinds, saveCampaignStatuses, updateExperiment,
+  kindName, type CampaignKind, type CampaignStatus, type Experiment, type Metric, type StatusColor,
 } from "@/lib/experiments.functions";
 import { CampaignView } from "@/components/products/CampaignView";
 import { ProductDiary } from "@/components/products/ProductDiary";
@@ -19,6 +23,7 @@ import { BASELINE_METRICS, FORMAT_UNIT, SOURCE_LABEL, type MetricSource } from "
 
 // Aba Inteligência › Campanhas do produto (substitui Diário e Testes): listas
 // por status (editáveis no ⋯ ao lado do nome), como no ClickUp, com tags e busca.
+// Arrastar a linha pra outra lista muda o status.
 // Cada campanha é ligada a uma campanha da Meta e tem resumo, métricas e
 // diário próprios (CampaignView). O Diário do produto fica na outra chave e
 // mostra os registros do produto e de todas as campanhas.
@@ -110,15 +115,26 @@ function CampaignLists({ productId }: { productId: string }) {
   const [q, setQ] = useState("");
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [dragId, setDragId] = useState<string | null>(null);
+  // Arrasto só começa depois de mexer 5px: clique simples continua abrindo a campanha.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  // Soltar no mesmo lugar dispara um clique; ele não deve abrir a campanha.
+  const draggedAt = useRef(0);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: QK });
     qc.invalidateQueries({ queryKey: ["product-diary", productId] });
     qc.invalidateQueries({ queryKey: ["learnings"] });
   };
+  type Data = Awaited<ReturnType<typeof getFn>>;
+  // Muda na tela na hora; o servidor confirma depois (e se recusar, volta).
   const patch = useMutation({
     mutationFn: (v: { id: string; status?: string; tags?: string[] }) => updateFn({ data: v }),
-    onSuccess: refresh,
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: QK });
+      qc.setQueryData<Data>(QK, (d) => d && { ...d, experiments: d.experiments.map((e) => (e.id === v.id ? { ...e, ...v } : e)) });
+    },
+    onSettled: refresh,
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -140,6 +156,13 @@ function CampaignLists({ productId }: { productId: string }) {
   const changeStatus = (e: Experiment, status: string) => {
     if (status !== e.status) patch.mutate({ id: e.id, status });
   };
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragId(null);
+    draggedAt.current = Date.now();
+    const e = experiments.find((x) => x.id === active.id);
+    if (e && over) changeStatus(e, String(over.id));
+  };
+  const dragging = dragId ? experiments.find((e) => e.id === dragId) : undefined;
   // Campanha em status excluído (até o servidor mover) fica no primeiro.
   const listOf = (st: CampaignStatus, i: number) => filtered.filter((e) => e.status === st.id || (i === 0 && !statuses.some((s) => s.id === e.status)));
   const viewing = viewingId ? experiments.find((e) => e.id === viewingId) : undefined;
@@ -167,13 +190,15 @@ function CampaignLists({ productId }: { productId: string }) {
         </button>
       </div>
 
+      <DndContext sensors={sensors} collisionDetection={pointerWithin}
+        onDragStart={({ active }) => setDragId(String(active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
       <div className="space-y-5">
         {statuses.map((st, i) => {
           const status = st.id;
           const items = sortIn(listOf(st, i));
           const isCollapsed = collapsed.includes(status);
           return (
-            <section key={status}>
+            <StatusDrop key={status} id={status} dragging={!!dragging && dragging.status !== status}>
               <div className="flex items-center gap-2 mb-1.5">
                 <button onClick={() => setCollapsed((c) => (isCollapsed ? c.filter((x) => x !== status) : [...c, status]))}
                   className="size-6 rounded-md grid place-items-center text-muted-foreground hover:bg-muted" title={isCollapsed ? "Abrir" : "Recolher"}>
@@ -189,8 +214,8 @@ function CampaignLists({ productId }: { productId: string }) {
                     <span className="pl-6">Nome</span><span>Campanha Meta</span><span>Tags</span><span>Início</span><span>Dias</span>
                   </div>
                   {items.map((e) => (
-                    <CampaignRow key={e.id} e={e} statuses={statuses} allTags={data.allTags}
-                      onOpen={() => setViewingId(e.id)} onStatus={(s) => changeStatus(e, s)} onTags={(tags) => patch.mutate({ id: e.id, tags })} />
+                    <CampaignRow key={e.id} e={e} statuses={statuses} kinds={data.kinds} allTags={data.allTags}
+                      onOpen={() => { if (Date.now() - draggedAt.current > 250) setViewingId(e.id); }} onStatus={(s) => changeStatus(e, s)} onTags={(tags) => patch.mutate({ id: e.id, tags })} />
                   ))}
                   <button onClick={() => setEditing({ status })}
                     className="w-full flex items-center gap-1.5 px-3 h-9 text-[13px] text-muted-foreground hover:bg-muted/50 hover:text-foreground">
@@ -198,39 +223,61 @@ function CampaignLists({ productId }: { productId: string }) {
                   </button>
                 </div>
               )}
-            </section>
+            </StatusDrop>
           );
         })}
       </div>
-      <p className="text-[11px] text-muted-foreground mt-3">Ao preencher a data de início de uma campanha, um registro entra sozinho no diário dela, nessa data.</p>
+      <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" }}>
+        {dragging && (
+          <div className="rounded-lg border border-primary/40 bg-background shadow-xl px-3 py-2 flex items-center gap-2 text-sm font-medium cursor-grabbing max-w-md rotate-[0.6deg]">
+            <span className={`size-3 rounded-full border-2 shrink-0 ${STATUS_STYLE[findStatus(statuses, dragging.status).color].dot}`} />
+            <span className="truncate">{dragging.title}</span>
+          </div>
+        )}
+      </DragOverlay>
+      </DndContext>
+      <p className="text-[11px] text-muted-foreground mt-3">Arraste uma campanha para outra lista para mudar o status. Ao preencher a data de início, um registro entra sozinho no diário dela, nessa data.</p>
 
       {viewing && (
-        <CampaignView experiment={viewing} statuses={statuses} productId={productId} allTags={data.allTags}
+        <CampaignView experiment={viewing} statuses={statuses} kinds={data.kinds} productId={productId} allTags={data.allTags}
           onEdit={() => setEditing(viewing)} onTags={(tags) => patch.mutate({ id: viewing.id, tags })} onClose={() => setViewingId(null)} />
       )}
       {editing && (
-        <CampaignDialog key={"id" in editing ? editing.id : "new"} productId={productId} initial={editing} statuses={statuses} shops={data.shops} campaigns={data.campaigns}
+        <CampaignDialog key={"id" in editing ? editing.id : "new"} productId={productId} initial={editing} statuses={statuses} kinds={data.kinds} shops={data.shops} campaigns={data.campaigns}
           allTags={data.allTags} onSaved={(row, created) => { refresh(); if (created) setViewingId(row.id); }} onClose={() => setEditing(null)} />
       )}
     </div>
   );
 }
 
-function CampaignRow({ e, statuses, allTags, onOpen, onStatus, onTags }: {
-  e: Experiment; statuses: CampaignStatus[]; allTags: string[]; onOpen: () => void; onStatus: (s: string) => void; onTags: (tags: string[]) => void;
+// Lista de um status: recebe a campanha arrastada (a lista inteira, até recolhida).
+function StatusDrop({ id, dragging, children }: { id: string; dragging: boolean; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <section ref={setNodeRef}
+      className={`rounded-xl -m-1.5 p-1.5 transition-colors ${dragging && isOver ? "bg-primary/10 ring-2 ring-primary/40" : dragging ? "ring-1 ring-dashed ring-border" : ""}`}>
+      {children}
+    </section>
+  );
+}
+
+function CampaignRow({ e, statuses, kinds, allTags, onOpen, onStatus, onTags }: {
+  e: Experiment; statuses: CampaignStatus[]; kinds: CampaignKind[]; allTags: string[]; onOpen: () => void; onStatus: (s: string) => void; onTags: (tags: string[]) => void;
 }) {
   const days = daysLive(e);
+  const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: e.id });
   return (
-    <div onClick={onOpen}
-      className="grid grid-cols-[minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_220px_200px_80px_56px] gap-3 px-3 py-2 items-center border-b border-border/60 cursor-pointer hover:bg-muted/40">
-      <div className="flex items-center gap-2 min-w-0">
-        <StatusMenu status={e.status} statuses={statuses} onChange={onStatus} />
+    <div ref={setNodeRef} {...attributes} {...listeners} onClick={onOpen} title={kindName(kinds, e.kind)}
+      className={`group grid grid-cols-[minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_220px_200px_80px_56px] gap-3 px-3 py-2 items-center border-b border-border/60 cursor-pointer hover:bg-muted/40 touch-none select-none ${isDragging ? "opacity-30" : ""}`}>
+      <div className="flex items-center gap-2 min-w-0 relative">
+        <GripVertical className="size-3.5 absolute -left-3.5 text-muted-foreground/60 opacity-0 group-hover:opacity-100 cursor-grab" />
+        <span onPointerDown={(ev) => ev.stopPropagation()} className="contents"><StatusMenu status={e.status} statuses={statuses} onChange={onStatus} /></span>
         <span className="text-sm font-medium truncate" title={e.title}>{e.title}</span>
       </div>
       <span className="hidden md:flex items-center gap-1 text-[12.5px] text-muted-foreground min-w-0">
         {e.campaign_name ? <><Megaphone className="size-3 shrink-0" /><span className="truncate" title={e.campaign_name}>{e.campaign_name}</span></> : <span className="text-muted-foreground/50">—</span>}
       </span>
-      <div className="hidden md:block min-w-0" onClick={(ev) => ev.stopPropagation()}>
+      <div className="hidden md:block min-w-0" onClick={(ev) => ev.stopPropagation()} onPointerDown={(ev) => ev.stopPropagation()}>
         <TagsPopover tags={e.tags} allTags={allTags} onChange={onTags} />
       </div>
       <span className="hidden md:block text-[12.5px] text-muted-foreground tabular-nums">{e.started_at ? fmtDate(e.started_at) : "—"}</span>
@@ -388,13 +435,13 @@ function TagInput({ value, allTags, onChange, autoFocus }: { value: string[]; al
 }
 
 type Form = {
-  campaign_id: string | null; baseline: Record<string, string>; tags: string[]; kind: Kind; title: string; hypothesis: string; control: string; variant: string; shop_id: string | null;
+  campaign_id: string | null; baseline: Record<string, string>; tags: string[]; kind: string; title: string; hypothesis: string; control: string; variant: string; shop_id: string | null;
   metric: Metric; stop_rule: string; budget: string; status: string; learning: string;
   started_at: string; ended_at: string;
 };
 
-function CampaignDialog({ productId, initial, statuses, shops, campaigns, allTags, onSaved, onClose }: {
-  productId: string; initial: Editing; statuses: CampaignStatus[]; shops: Opt[]; campaigns: Opt[]; allTags: string[];
+function CampaignDialog({ productId, initial, statuses, kinds, shops, campaigns, allTags, onSaved, onClose }: {
+  productId: string; initial: Editing; statuses: CampaignStatus[]; kinds: CampaignKind[]; shops: Opt[]; campaigns: Opt[]; allTags: string[];
   onSaved: (row: Experiment, created: boolean) => void; onClose: () => void;
 }) {
   const confirm = useConfirm();
@@ -406,7 +453,7 @@ function CampaignDialog({ productId, initial, statuses, shops, campaigns, allTag
     ...existing, budget: existing.budget?.toString() ?? "", started_at: existing.started_at ?? "", ended_at: existing.ended_at ?? "",
     baseline: Object.fromEntries(Object.entries(existing.baseline ?? {}).map(([k, v]) => [k, String(v)])),
   } : {
-    campaign_id: null, baseline: {}, tags: [], kind: "creative", title: "", hypothesis: "", control: "", variant: "", shop_id: null, metric: "cpa",
+    campaign_id: null, baseline: {}, tags: [], kind: kinds[0]?.id ?? "other", title: "", hypothesis: "", control: "", variant: "", shop_id: null, metric: "cpa",
     stop_rule: "", budget: "", status: initial.status, learning: "", started_at: "", ended_at: "",
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -475,9 +522,13 @@ function CampaignDialog({ productId, initial, statuses, shops, campaigns, allTag
             </select>
           </Field>
           <Field label="O que está testando">
-            <select value={f.kind} onChange={(e) => set("kind", e.target.value as Kind)} className={`${inputCls} w-full`}>
-              {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <select value={f.kind} onChange={(e) => set("kind", e.target.value)} className={`${inputCls} w-full min-w-0`}>
+                {!kinds.some((k) => k.id === f.kind) && <option value={f.kind}>— (opção excluída)</option>}
+                {kinds.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+              </select>
+              <KindEditor kinds={kinds} productId={productId} onCreated={(id) => set("kind", id)} />
+            </div>
           </Field>
           <Field label="Hipótese" full>
             <textarea rows={2} value={f.hypothesis} onChange={(e) => set("hypothesis", e.target.value)} placeholder="Ex.: vídeo curto vai baixar o custo por compra" className={`${areaCls} w-full`} />
@@ -564,6 +615,76 @@ function CampaignDialog({ productId, initial, statuses, shops, campaigns, allTag
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Botão ao lado de "O que está testando": adicionar, renomear e excluir
+// opções. Vale para todas as campanhas.
+function KindEditor({ kinds, productId, onCreated }: { kinds: CampaignKind[]; productId: string; onCreated: (id: string) => void }) {
+  const qc = useQueryClient();
+  const saveFn = useServerFn(saveCampaignKinds);
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<CampaignKind[]>(kinds);
+  const [text, setText] = useState("");
+  const save = useMutation({
+    mutationFn: (next: CampaignKind[]) => saveFn({ data: { kinds: next.map((k) => ({ ...k, name: k.name.trim() })) } }),
+    onSuccess: () => {
+      toast.success("Opções salvas");
+      setOpen(false);
+      const added = list.find((k) => !kinds.some((o) => o.id === k.id));
+      if (added) onCreated(added.id);
+      qc.invalidateQueries({ queryKey: ["product-experiments", productId] });
+      qc.invalidateQueries({ queryKey: ["learnings"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const add = () => {
+    const name = text.trim().slice(0, 40);
+    if (name) setList((l) => [...l, { id: `k${Date.now().toString(36)}`, name }]);
+    setText("");
+  };
+  const canSave = list.length > 0 && list.every((k) => k.name.trim());
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) { setList(kinds); setText(""); } }}>
+      <PopoverTrigger asChild>
+        <button type="button" title="Editar opções" className="size-9 shrink-0 rounded-lg border border-border grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground">
+          <Pencil className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-3">
+        <p className="text-sm font-semibold">O que está testando</p>
+        <p className="text-[11px] text-muted-foreground mb-2">Opções para todas as campanhas.</p>
+        <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          {list.map((k, i) => (
+            <div key={k.id} className="flex items-center gap-1.5">
+              <input value={k.name} maxLength={40} onChange={(e) => setList((l) => l.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                className={`${inputCls} h-8 flex-1 min-w-0 ${k.name.trim() ? "" : "border-destructive"}`} />
+              <button type="button" disabled={list.length === 1} onClick={() => setList((l) => l.filter((_, j) => j !== i))} title="Excluir opção"
+                className="size-7 grid place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30">
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 mt-2">
+          <input value={text} maxLength={40} onChange={(e) => setText(e.target.value)} placeholder="Nova opção"
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+            className={`${inputCls} h-8 flex-1 min-w-0`} />
+          <button type="button" onClick={add} disabled={!text.trim() || list.length >= 40} title="Adicionar"
+            className="size-8 grid place-items-center rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-40">
+            <Plus className="size-3.5" />
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-2">Excluir não muda as campanhas que já usam a opção.</p>
+        <div className="flex justify-end gap-2 mt-3">
+          <button type="button" onClick={() => setOpen(false)} className="h-8 px-3 rounded-lg border border-border text-sm hover:bg-muted">Cancelar</button>
+          <button type="button" disabled={!canSave || save.isPending} onClick={() => save.mutate(list)}
+            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
+            {save.isPending && <Loader2 className="size-3.5 animate-spin" />} Salvar
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -10,18 +10,21 @@ import { BASELINE_KEYS } from "@/lib/experiment-metrics";
 // escrita (tipo criado se faltar); as que têm aprendizado escrito formam a
 // visão Aprendizados da página Produtos.
 
-export const KINDS = ["creative", "campaign", "placement", "page", "offer", "other"] as const;
 export const METRICS = ["cpa", "roas", "ctr", "cvr", "aov", "other"] as const;
 export const STATUS_COLORS = ["slate", "sky", "violet", "amber", "orange", "emerald", "rose"] as const;
 
-export type Kind = (typeof KINDS)[number];
 export type Metric = (typeof METRICS)[number];
 export type StatusColor = (typeof STATUS_COLORS)[number];
 export type CampaignStatus = { id: string; name: string; color: StatusColor };
+// Opção de "O que está testando" (editável no formulário da campanha).
+export type CampaignKind = { id: string; name: string };
 
-export const KIND_LABEL: Record<Kind, string> = {
-  creative: "Criativo", campaign: "Tipo de campanha", placement: "Posicionamento", page: "Página", offer: "Oferta / preço", other: "Outro",
-};
+// Os ids são os das campanhas criadas antes das opções editáveis.
+export const DEFAULT_KINDS: CampaignKind[] = [
+  { id: "creative", name: "Criativo" }, { id: "campaign", name: "Tipo de campanha" }, { id: "placement", name: "Posicionamento" },
+  { id: "page", name: "Página" }, { id: "offer", name: "Oferta / preço" }, { id: "other", name: "Outro" },
+];
+export const kindName = (kinds: CampaignKind[], id: string) => kinds.find((k) => k.id === id)?.name ?? "—";
 export const METRIC_LABEL: Record<Metric, string> = {
   cpa: "Custo por compra (CPA)", roas: "ROAS", ctr: "CTR", cvr: "Conversão da página", aov: "Ticket médio", other: "Outra",
 };
@@ -34,7 +37,7 @@ export const DEFAULT_STATUSES: CampaignStatus[] = [
 
 export type Experiment = {
   id: string; product_id: string; shop_id: string | null; campaign_id: string | null; campaign_name: string | null;
-  baseline: Record<string, number>; tags: string[]; summary: Record<string, string | boolean>; kind: Kind; title: string; hypothesis: string;
+  baseline: Record<string, number>; tags: string[]; summary: Record<string, string | boolean>; kind: string; title: string; hypothesis: string;
   control: string; variant: string; metric: Metric; stop_rule: string; budget: number | null;
   status: string; learning: string; started_at: string | null; ended_at: string | null;
   created_at: string; updated_at: string;
@@ -49,7 +52,7 @@ const Fields = z.object({
   baseline: z.record(z.enum(BASELINE_KEYS as [string, ...string[]]), z.number().finite()),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).transform((t) => [...new Set(t)]),
   summary: z.record(z.string().max(60), z.union([z.string().max(4000), z.boolean()])),
-  kind: z.enum(KINDS),
+  kind: z.string().min(1).max(40),
   title: z.string().trim().min(1).max(160),
   hypothesis: z.string().trim().max(2000),
   control: z.string().trim().max(1000),
@@ -91,6 +94,13 @@ async function loadStatuses(ownerId: string): Promise<CampaignStatus[]> {
   return list.length ? list.map(({ id, name, color }) => ({ id, name, color })) : DEFAULT_STATUSES;
 }
 
+async function loadKinds(ownerId: string): Promise<CampaignKind[]> {
+  const { data, error } = await supabaseAdmin.from("campaign_kind_templates").select("kinds").eq("user_id", ownerId).maybeSingle();
+  if (error) throw new Error(error.message);
+  const list = (data?.kinds ?? []) as CampaignKind[];
+  return list.length ? list : DEFAULT_KINDS;
+}
+
 function assertStatus(statuses: CampaignStatus[], id: string | undefined) {
   if (id !== undefined && !statuses.some((s) => s.id === id)) throw new Error("Status não existe mais; recarregue a página");
 }
@@ -109,9 +119,9 @@ async function diaryTypeId(ownerId: string, name: string, color: string) {
   return created?.id ?? null;
 }
 
-function startNote(e: Experiment) {
+function startNote(e: Experiment, kinds: CampaignKind[]) {
   return [
-    `${START_PREFIX}${e.title} (${KIND_LABEL[e.kind]})`,
+    `${START_PREFIX}${e.title} (${kindName(kinds, e.kind)})`,
     e.hypothesis && `Hipótese: ${e.hypothesis}`,
     (e.control || e.variant) && `${e.control || "Atual"} → ${e.variant || "Variação"}`,
     `Métrica: ${METRIC_LABEL[e.metric]}`,
@@ -138,10 +148,10 @@ async function syncStartNote(ownerId: string, userId: string, e: Experiment, pre
       await supabaseAdmin.from("product_diary_entries").update({ created_at }).eq("id", existing.id);
       return;
     }
-    const note_type_id = await diaryTypeId(ownerId, "Teste", "purple");
+    const [note_type_id, kinds] = await Promise.all([diaryTypeId(ownerId, "Teste", "purple"), loadKinds(ownerId)]);
     await supabaseAdmin.from("product_diary_entries").insert({
       user_id: ownerId, product_id: e.product_id, experiment_id: e.id, author_id: userId, note_type_id,
-      content: startNote(e).slice(0, 10000), created_at,
+      content: startNote(e, kinds).slice(0, 10000), created_at,
     });
   } catch (err) {
     console.error("[experiments] diário:", err);
@@ -156,18 +166,20 @@ export const listProductExperiments = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
     await assertProduct(ownerId, data.product_id);
-    const [rows, shops, campaigns, tagRows, statuses] = await Promise.all([
+    const [rows, shops, campaigns, tagRows, statuses, kinds] = await Promise.all([
       supabaseAdmin.from("experiments").select(COLS).eq("user_id", ownerId).eq("product_id", data.product_id).order("created_at", { ascending: false }),
       supabaseAdmin.from("shopify_stores").select("id,name,shop_domain").eq("user_id", ownerId).eq("is_placeholder", false).order("name"),
       supabaseAdmin.from("product_ad_campaigns").select("campaign_id,campaign_name").eq("user_id", ownerId).eq("product_id", data.product_id),
       // Tags usadas em qualquer produto, pra sugerir ao digitar.
       supabaseAdmin.from("experiments").select("tags").eq("user_id", ownerId).filter("tags", "neq", "{}"),
       loadStatuses(ownerId),
+      loadKinds(ownerId),
     ]);
     if (rows.error) throw new Error(rows.error.message);
     if (shops.error) throw new Error(shops.error.message);
     return {
       statuses,
+      kinds,
       experiments: (rows.data ?? []) as Experiment[],
       shops: (shops.data ?? []).map((s) => ({ id: s.id, name: s.name || s.shop_domain || "Loja" })),
       campaigns: (campaigns.data ?? []).map((c) => ({ id: c.campaign_id, name: c.campaign_name || c.campaign_id })),
@@ -248,14 +260,33 @@ export const saveCampaignStatuses = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ── O que está testando ──
+
+// Opção excluída não muda as campanhas que já a usam (aparecem com "—").
+export const saveCampaignKinds = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    kinds: z.array(z.object({ id: z.string().regex(/^[a-z0-9_-]{1,40}$/), name: z.string().trim().min(1).max(40) })).min(1).max(40),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    if (new Set(data.kinds.map((k) => k.id)).size !== data.kinds.length) throw new Error("Opção repetida");
+    const { error } = await supabaseAdmin.from("campaign_kind_templates").upsert(
+      { user_id: context.ownerId, kinds: data.kinds, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 // ── Aprendizados (todos os produtos) ──
 
 export const listLearnings = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
     const { ownerId } = context;
-    const [statuses, { data, error }] = await Promise.all([
+    const [statuses, kinds, { data, error }] = await Promise.all([
       loadStatuses(ownerId),
+      loadKinds(ownerId),
       supabaseAdmin.from("experiments").select(COLS).eq("user_id", ownerId).neq("learning", "")
         .order("ended_at", { ascending: false, nullsFirst: false }).order("updated_at", { ascending: false }),
     ]);
@@ -265,5 +296,5 @@ export const listLearnings = createServerFn({ method: "GET" })
       ? await supabaseAdmin.from("products").select("id,name,main_image_url").eq("user_id", ownerId).in("id", ids)
       : { data: [] };
     const byId = new Map((products ?? []).map((p) => [p.id, p]));
-    return { statuses, items: (data ?? []).map((r) => ({ ...r, product: byId.get(r.product_id) ?? null })) as Learning[] };
+    return { statuses, kinds, items: (data ?? []).map((r) => ({ ...r, product: byId.get(r.product_id) ?? null })) as Learning[] };
   });

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { FlaskConical, Loader2, Package, Search } from "lucide-react";
-import { KINDS, KIND_LABEL, listLearnings, type Kind } from "@/lib/experiments.functions";
+import { kindName, listLearnings } from "@/lib/experiments.functions";
 import { STATUS_STYLE, findStatus, fmtDate } from "@/components/products/ProductCampaigns";
 
 // Página Produtos › Aprendizados: campanhas de todos os produtos com o
@@ -13,12 +13,13 @@ const inputCls = "h-9 px-3 rounded-lg bg-surface border border-border text-sm ou
 export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (productId: string) => void }) {
   const getFn = useServerFn(listLearnings);
   const { data, isLoading, error } = useQuery({ queryKey: ["learnings"], queryFn: () => getFn() });
-  const [kind, setKind] = useState<Kind | "">("");
+  const [kind, setKind] = useState("");
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
 
   const all = data?.items ?? [];
   const statuses = data?.statuses ?? [];
+  const kinds = data?.kinds ?? [];
   const filtered = useMemo(() => {
     const term = `${search} ${q}`.trim().toLowerCase();
     return all.filter((e) => (!kind || e.kind === kind) && (!status || e.status === status)
@@ -37,9 +38,9 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
     );
   }
 
-  const summary = KINDS.map((k) => {
-    const list = all.filter((e) => e.kind === k);
-    return { kind: k, total: list.length };
+  const summary = kinds.map((k) => {
+    const list = all.filter((e) => e.kind === k.id);
+    return { kind: k.id, total: list.length };
   }).filter((s) => s.total > 0);
 
   return (
@@ -48,7 +49,7 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
         {summary.map((s) => (
           <button key={s.kind} onClick={() => setKind(kind === s.kind ? "" : s.kind)}
             className={`premium-card px-3 py-2 text-left ${kind === s.kind ? "border-primary/50" : ""}`}>
-            <p className="text-[11px] text-muted-foreground">{KIND_LABEL[s.kind]}</p>
+            <p className="text-[11px] text-muted-foreground">{kindName(kinds, s.kind)}</p>
             <p className="text-sm font-semibold tabular-nums">{s.total} <span className="text-xs font-normal text-muted-foreground">{s.total === 1 ? "aprendizado" : "aprendizados"}</span></p>
           </button>
         ))}
@@ -58,9 +59,9 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
           <Search className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar no aprendizado, hipótese ou variação" className={`${inputCls} w-full pl-8`} />
         </div>
-        <select value={kind} onChange={(e) => setKind(e.target.value as Kind | "")} aria-label="Tipo" className={inputCls}>
+        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Tipo" className={inputCls}>
           <option value="">Todos os tipos</option>
-          {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+          {kinds.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
         {statuses.length > 1 && (
           <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status" className={inputCls}>
@@ -83,7 +84,7 @@ export function ProductLearnings({ search, onOpen }: { search: string; onOpen: (
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-md ${STATUS_STYLE[findStatus(statuses, e.status).color].pill}`}>{findStatus(statuses, e.status).name}</span>
                 <p className="text-sm font-medium flex-1 min-w-0">{e.title}</p>
-                <span className="text-[11px] text-muted-foreground">{KIND_LABEL[e.kind]}{e.product ? ` · ${e.product.name}` : ""}{e.ended_at ? ` · ${fmtDate(e.ended_at)}` : ""}</span>
+                <span className="text-[11px] text-muted-foreground">{kindName(kinds, e.kind)}{e.product ? ` · ${e.product.name}` : ""}{e.ended_at ? ` · ${fmtDate(e.ended_at)}` : ""}</span>
               </div>
               {(e.control || e.variant) && <p className="text-xs text-muted-foreground mt-1">{e.control || "Atual"} → {e.variant || "Variação"}</p>}
               {e.learning && <p className="text-sm mt-1 whitespace-pre-wrap">{e.learning}</p>}

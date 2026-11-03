@@ -653,6 +653,7 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
       return r;
     };
     const adsets = new Map<string, string>();   // id → nome (pra casar UTM antiga, só com nome)
+    let activeAdsets: string[] | null = null;   // conjuntos rodando agora (filtro "Só ativos")
     let metaCampaignName: string | null = null;
 
     // Meta, Shopify, Clarity e Diário são buscados ao mesmo tempo; o casamento
@@ -661,6 +662,23 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
     const token = (await tokensByShop(ownerId, [campaign.shop_id])).get(campaign.shop_id);
     if (!token) errors.push("Meta desconectada da loja da campanha");
     else {
+      // Status de entrega atual dos conjuntos; falha aqui só desliga o filtro.
+      const statusTask = data.level !== "adset" ? null : (async () => {
+        try {
+          const ids: string[] = [];
+          let next: string | null = `${GRAPH}/${campaign.campaign_id}/adsets?fields=id,effective_status&limit=500&access_token=${encodeURIComponent(token)}`;
+          while (next) {
+            const r = await fetchWithRetry(next);
+            const json: any = await r.json();
+            if (!r.ok || json.error) throw new Error(json?.error?.message || `Falha (${r.status})`);
+            for (const a of (json.data ?? []) as any[]) if (a.effective_status === "ACTIVE") ids.push(String(a.id));
+            next = json.paging?.next ?? null;
+          }
+          activeAdsets = ids;
+        } catch (e) {
+          console.error("[experiment-metrics] status dos conjuntos:", e);
+        }
+      })();
       const timeRange = encodeURIComponent(JSON.stringify({ since: data.from, until: data.to }));
       let url: string | null = `${GRAPH}/${campaign.campaign_id}/insights?level=${data.level}&fields=campaign_name,adset_id,adset_name,spend,impressions,inline_link_clicks,actions&time_increment=1&time_range=${timeRange}&limit=500&access_token=${encodeURIComponent(token)}`;
       try {
@@ -685,6 +703,7 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
       } catch (e: any) {
         errors.push(`Meta: ${String(e?.message ?? e)}`);
       }
+      await statusTask;
     }
     };
 
@@ -779,5 +798,6 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
       rows: [...rows.values()].map((r) => ({ ...r, spend: round2(r.spend), revenue: round2(r.revenue) })),
       changes,
       partialDays: [...partialDays],
+      activeAdsets: activeAdsets as string[] | null,
     };
   });

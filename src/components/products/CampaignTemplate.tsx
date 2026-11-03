@@ -15,7 +15,7 @@ import { OptionsInput } from "@/components/products/Naming";
 const QK = ["campaign-template"];
 const inputCls = "h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
 
-export function CampaignTemplateEditor() {
+export function CampaignTemplateEditor({ onSaved }: { onSaved?: () => void } = {}) {
   const qc = useQueryClient();
   const getFn = useServerFn(getCampaignTemplate);
   const saveFn = useServerFn(saveCampaignTemplate);
@@ -25,7 +25,7 @@ export function CampaignTemplateEditor() {
 
   const save = useMutation({
     mutationFn: (f: SummaryField[]) => saveFn({ data: { fields: f } }),
-    onSuccess: () => { toast.success("Template salvo"); qc.invalidateQueries({ queryKey: QK }); },
+    onSuccess: () => { toast.success("Template salvo"); qc.invalidateQueries({ queryKey: QK }); onSaved?.(); },
     onError: (e: any) => toast.error(e.message),
   });
 

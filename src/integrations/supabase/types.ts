@@ -1895,6 +1895,24 @@ export type Database = {
         };
         Relationships: [];
       };
+      campaign_kind_templates: {
+        Row: {
+          kinds: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          kinds?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          kinds?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       test_pipeline_templates: {
         Row: {
           items: Json;
