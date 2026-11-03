@@ -288,7 +288,8 @@ function Months({ d }: { d: Data }) {
   return (
     <Card icon={CalendarDays} title="Por mês de venda">
       {d.byMonth.length === 0 ? <Empty /> : (
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto -mx-1 px-1">
+        <table className="w-full text-xs min-w-[340px]">
           <thead>
             <tr className="text-[11px] text-muted-foreground">
               <th className="text-left font-medium pb-2">Mês</th>
@@ -315,6 +316,7 @@ function Months({ d }: { d: Data }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );
@@ -324,7 +326,8 @@ function Groups({ d }: { d: Data }) {
   return (
     <Card icon={Layers} title="Por grupo">
       {d.byGroup.length === 0 ? <Empty /> : (
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto -mx-1 px-1">
+        <table className="w-full text-xs min-w-[340px]">
           <thead>
             <tr className="text-[11px] text-muted-foreground">
               <th className="text-left font-medium pb-2">Grupo</th>
@@ -349,6 +352,7 @@ function Groups({ d }: { d: Data }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );

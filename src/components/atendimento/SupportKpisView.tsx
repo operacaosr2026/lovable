@@ -243,7 +243,7 @@ function TagsCard({ k, className }: { k: Kpis | undefined; className: string }) 
               const color = none ? "var(--c-none)" : slot(i);
               const d = pctDelta(t.count, t.prevCount);
               return (
-                <div key={t.tag} className="grid grid-cols-[minmax(0,1fr)_32px_44px_minmax(0,1.2fr)_52px] items-center gap-2.5 text-xs"
+                <div key={t.tag} className="grid grid-cols-[minmax(0,1fr)_32px_44px_52px] sm:grid-cols-[minmax(0,1fr)_32px_44px_minmax(0,1.2fr)_52px] items-center gap-2.5 text-xs"
                   title={`${t.tag}: ${t.count} conversa${t.count === 1 ? "" : "s"} (${t.pct}%) · mês anterior: ${t.prevCount}`}>
                   <span className="flex items-center gap-2 min-w-0">
                     <span className="size-2.5 rounded-full shrink-0" style={{ background: color }} />
@@ -251,7 +251,7 @@ function TagsCard({ k, className }: { k: Kpis | undefined; className: string }) 
                   </span>
                   <span className="text-right font-semibold tabular-nums">{int(t.count)}</span>
                   <span className="text-right text-muted-foreground tabular-nums">{t.pct.toLocaleString("pt-BR")}%</span>
-                  <span className="h-2.5 rounded-full bg-muted overflow-hidden">
+                  <span className="hidden sm:block h-2.5 rounded-full bg-muted overflow-hidden">
                     <span className="block h-full rounded-full" style={{ width: `${(t.count / max) * 100}%`, background: color }} />
                   </span>
                   <DeltaBadge value={d} />
@@ -261,14 +261,14 @@ function TagsCard({ k, className }: { k: Kpis | undefined; className: string }) 
           </div>
 
           <div className="mt-4 rounded-xl bg-muted/50 p-3 flex items-center gap-3">
-            <div className="size-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Tag className="size-[18px]" /></div>
+            <div className="hidden sm:grid size-10 rounded-xl bg-primary/10 text-primary place-items-center shrink-0"><Tag className="size-[18px]" /></div>
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-semibold text-muted-foreground mb-1">Resumo das conversas</p>
-              <div className="grid grid-cols-[1fr_1fr_1.2fr_auto] items-end gap-3">
+              <div className="grid grid-cols-3 sm:grid-cols-[1fr_1fr_1.2fr_auto] items-end gap-3">
                 <SummaryItem value={int(stats.summary.withTag)} label="Com tag" />
                 <SummaryItem value={int(stats.summary.withoutTag)} label="Sem tag" />
                 <SummaryItem value={stats.summary.classifiedPct == null ? "—" : `${stats.summary.classifiedPct.toLocaleString("pt-BR")}%`} label="Classificadas" />
-                <div className="text-right">
+                <div className="col-span-3 sm:col-span-1 flex sm:block items-center gap-2 sm:text-right">
                   <DeltaBadge value={classifiedDelta} unit=" p.p." />
                   <p className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">vs mês anterior</p>
                 </div>

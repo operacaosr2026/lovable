@@ -39,6 +39,8 @@ export type GerencialAlert = {
   key: string;
   kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia" | "alfandega" | "lote";
   level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
+  /** Dica da Inteligência: índice dela na análise — "Ver análise" abre a gaveta ali mesmo. */
+  tipIndex?: number;
 };
 
 export const getGerencial = createServerFn({ method: "GET" })
@@ -300,14 +302,14 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
     const PRIO = { critico: 0, alto: 1, medio: 2, baixo: 3, oportunidade: 4 } as Record<string, number>;
     const intel = intelRes.data as any;
     const tipsStatus = (intel?.tips_status ?? {}) as Record<string, unknown>;
-    const tips = ((intel?.result?.dicas ?? []) as any[]).filter((_, i) => !tipsStatus[String(i)])
+    const tips = ((intel?.result?.dicas ?? []) as any[]).map((t, i) => ({ ...t, _index: i })).filter((t) => !tipsStatus[String(t._index)])
       .sort((x, y) => (PRIO[x.prioridade ?? "medio"] ?? 2) - (PRIO[y.prioridade ?? "medio"] ?? 2));
     for (const t of tips) {
       const valor = Number(t.valor_envolvido ?? 0);
       alerts.push({
         key: `inteligencia:${String(t.titulo ?? "")}`, kind: "inteligencia", level: t.prioridade === "critico" || t.prioridade === "alto" ? "critico" : "atencao",
         title: String(t.titulo ?? "Dica da Inteligência"), detail: String(t.frase ?? t.evidencia_principal ?? ""),
-        link: "/inteligencia", action: "Ver análise",
+        link: `/inteligencia?dica=${t._index}`, action: "Ver análise", tipIndex: t._index,
         metric: valor > 0 ? usd(valor) : t.prioridade === "oportunidade" ? "Oportunidade" : "Dica",
         metricLabel: valor > 0 ? (t.valor_rotulo ?? (t.valor_tipo === "estimado" ? "estimado" : "envolvido")) : `Inteligência${t.categoria ? ` · ${t.categoria}` : ""}`,
       });

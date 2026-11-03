@@ -17,6 +17,7 @@ import { SupportRefundAnalytics } from "@/components/atendimento/SupportRefundAn
 import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import { CompanyGoals } from "@/components/goals/CompanyGoals";
 import { ProjectsBoard } from "@/components/projects/ProjectsBoard";
+import { IntelTipSheet } from "@/components/inteligencia/Inteligencia";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
@@ -100,7 +101,7 @@ function GerencialPage() {
             <label className="relative ml-auto">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={month} onChange={(e) => setMonth(e.target.value)}
-                className="h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
+                className="h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
                 {months.map((m, i) => <option key={m} value={m}>{i === 0 ? `Este mês (${monthName(m)})` : monthName(m)}</option>)}
               </select>
             </label>
@@ -230,6 +231,8 @@ function Alerts({ d }: { d: Data }) {
   const qc = useQueryClient();
   const dismissFn = useServerFn(dismissGerencialAlert);
   const [showDismissed, setShowDismissed] = useState(false);
+  // Dica da Inteligência aberta na gaveta (índice na análise).
+  const [tipOpen, setTipOpen] = useState<number | null>(null);
   const dismiss = useMutation({
     mutationFn: (v: { key: string; undo?: boolean }) => dismissFn({ data: { month: d.month, ...v } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["gerencial", d.month] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); },
@@ -283,26 +286,36 @@ function Alerts({ d }: { d: Data }) {
               const Icon = ALERT_ICON[a.kind] ?? AlertTriangle;
               const st = LEVEL[a.level];
               return (
-                <div key={a.key ?? i} className="relative overflow-hidden rounded-2xl border border-border bg-card pl-5 pr-4 py-4 flex flex-wrap items-center gap-4">
+                // Celular: ícone + texto + X em cima; valor e botão embaixo (alinhados ao texto).
+                <div key={a.key ?? i} className="relative overflow-hidden rounded-2xl border border-border bg-card pl-5 pr-3 sm:pr-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                   <span className={`absolute left-0 inset-y-0 w-1 ${st.bar}`} />
-                  <span className={`size-11 shrink-0 rounded-2xl grid place-items-center ${st.icon}`}><Icon className="size-5" /></span>
-                  <div className="min-w-0 flex-1 basis-60">
-                    <p className="text-sm font-semibold">{a.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{a.detail}</p>
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                    <span className={`size-9 sm:size-11 shrink-0 rounded-xl sm:rounded-2xl grid place-items-center ${st.icon}`}><Icon className="size-4 sm:size-5" /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">{a.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{a.detail}</p>
+                    </div>
+                    <button onClick={() => dismiss.mutate({ key: a.key })} disabled={dismiss.isPending}
+                      title="Desconsiderar este alerta neste mês (some pra toda a equipe; dá pra voltar lá embaixo)"
+                      className="sm:hidden shrink-0 size-8 -mt-1 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
+                      <X className="size-4" />
+                    </button>
                   </div>
-                  <div className="text-right shrink-0 min-w-[96px]">
-                    <p className={`text-xl font-semibold tracking-tight whitespace-nowrap ${st.metric}`}>{a.metric}</p>
-                    <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
+                  <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pl-12 sm:pl-0">
+                    <div className="sm:text-right min-w-0 sm:min-w-[96px]">
+                      <p className={`text-lg sm:text-xl font-semibold tracking-tight whitespace-nowrap ${st.metric}`}>{a.metric}</p>
+                      <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
+                    </div>
+                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : navigate({ href: a.link })}
+                      className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
+                      {a.action} <ChevronRight className="size-3.5" />
+                    </button>
+                    <button onClick={() => dismiss.mutate({ key: a.key })} disabled={dismiss.isPending}
+                      title="Desconsiderar este alerta neste mês (some pra toda a equipe; dá pra voltar lá embaixo)"
+                      className="hidden sm:grid shrink-0 size-8 rounded-lg place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
+                      <X className="size-4" />
+                    </button>
                   </div>
-                  <button onClick={() => navigate({ href: a.link })}
-                    className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
-                    {a.action} <ChevronRight className="size-3.5" />
-                  </button>
-                  <button onClick={() => dismiss.mutate({ key: a.key })} disabled={dismiss.isPending}
-                    title="Desconsiderar este alerta neste mês (some pra toda a equipe; dá pra voltar lá embaixo)"
-                    className="shrink-0 size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted">
-                    <X className="size-4" />
-                  </button>
                 </div>
               );
             })}
@@ -310,6 +323,7 @@ function Alerts({ d }: { d: Data }) {
         </div>
       ))}
       {dismissedList}
+      {tipOpen != null && <IntelTipSheet index={tipOpen} onClose={() => setTipOpen(null)} />}
     </div>
   );
 }
@@ -358,13 +372,13 @@ function Money({ d, vs }: { d: Data; vs: string }) {
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><TrendingUp className="size-3.5" /> Lucro de {monthName(d.month)}</p>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <p className={`text-4xl font-semibold tracking-tight ${a.lucro < 0 ? "text-rose-600" : ""}`}>{usd(a.lucro)}</p>
+            <p className={`text-3xl sm:text-4xl font-semibold tracking-tight ${a.lucro < 0 ? "text-rose-600" : ""}`}>{usd(a.lucro)}</p>
             <Delta cur={a.lucro} prev={p?.lucro} label={vs} />
           </div>
           <p className="text-xs text-muted-foreground mt-1">Margem {pct(a.margem)} · {prev}: {usd(p?.lucro)} ({pct(p?.margem)})</p>
         </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:min-w-[280px]">
-          <MiniStat label="Faturamento" value={<span className="inline-flex items-center gap-1.5">{usd(a.faturamento)} <Delta cur={a.faturamento} prev={p?.faturamento} label={vs} /></span>} />
+        <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-3 w-full sm:w-auto sm:min-w-[280px]">
+          <MiniStat label="Faturamento" value={<span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">{usd(a.faturamento)} <Delta cur={a.faturamento} prev={p?.faturamento} label={vs} /></span>} />
           <MiniStat label="Pedidos" value={num(a.pedidos)} sub={p ? `${prev}: ${num(p.pedidos)}` : undefined} />
           <MiniStat label="Ticket médio" value={usd(a.pedidos ? a.faturamento / a.pedidos : null)} />
           <MiniStat label="Anúncio por pedido" value={usd(a.cpa)} sub={p?.cpa != null ? `${prev}: ${usd(p.cpa)}` : undefined} />
