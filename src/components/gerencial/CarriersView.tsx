@@ -113,7 +113,7 @@ function LineTip({ active, payload, label }: any) {
 export function CarriersView({ period }: { period: string }) {
   const days = CARRIER_PERIODS.find(([k]) => k === period)?.[2] ?? null;
   const fn = useServerFn(getCarrierStats);
-  const q = useQuery({ queryKey: ["carrier-stats-v2", days], queryFn: () => fn({ data: { days } }), staleTime: 10 * 60_000 });
+  const q = useQuery({ queryKey: ["carrier-stats-v2", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const d = q.data;
 
   // Tags: só entre as com amostra (10+ entregues / 10+ que passaram pela
