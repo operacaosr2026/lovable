@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { AlertTriangle, ArrowDown, ArrowUp, Boxes, CalendarDays, Clock, Info, Loader2, RefreshCw, TrendingUp, Truck } from "lucide-react";
@@ -152,6 +153,14 @@ export function CarriersView({ period }: { period: string }) {
 
   return (
     <div className="space-y-4">
+      {d.semRegra > 0 && (
+        <Link to="/settings/rastreamento" search={{ tab: "textos", filtro: "sem_regra" }}
+          className="flex items-center gap-2.5 rounded-2xl border border-rose-500/30 bg-rose-500/5 px-4 py-3 text-sm hover:bg-rose-500/10 transition-colors">
+          <AlertTriangle className="size-4 text-rose-600 shrink-0" />
+          <span className="min-w-0"><b>{d.semRegra} texto{d.semRegra > 1 ? "s" : ""} do rastreio sem fase.</b> Nenhuma regra reconhece — os números podem sair errados até você escolher a fase.</span>
+          <span className="ml-auto shrink-0 text-xs font-semibold text-rose-600 whitespace-nowrap">Classificar →</span>
+        </Link>
+      )}
       {d.totals && <Kpis t={d.totals} p={d.prevTotals} />}
 
       <div className="rounded-2xl sm:rounded-3xl border border-border bg-card p-4 sm:p-5 min-w-0">

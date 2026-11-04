@@ -6181,6 +6181,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      tracking_phase_overrides: {
+        Row: {
+          example_text: string;
+          id: string;
+          phase: string;
+          text_key: string;
+          updated_at: string | null;
+          user_id: string;
+        };
+        Insert: {
+          example_text?: string;
+          id?: string;
+          phase: string;
+          text_key: string;
+          updated_at?: string | null;
+          user_id: string;
+        };
+        Update: {
+          example_text?: string;
+          id?: string;
+          phase?: string;
+          text_key?: string;
+          updated_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       training_lessons: {
         Row: {
           content: Json;

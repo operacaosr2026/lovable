@@ -3,15 +3,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { ArrowRight, Check, Clock, EyeOff, Languages, Loader2, PackageCheck, Replace, Search, Truck, Undo2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Clock, EyeOff, Languages, Loader2, PackageCheck, Replace, Search, Truck, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   TRACKING_BRAND, HIDDEN_WORDS, CN_HIDDEN, CN_US_PHRASES, CN_NEUTRAL, LOCAL_TRANSIT, EVENT_REWRITES, cleanEventText,
 } from "@/lib/tracking-display";
-import { listTrackingTexts, saveTrackingTextOverride, type TrackingTextRow } from "@/lib/tracking-texts.functions";
+import { listTrackingTexts, saveTrackingPhase, saveTrackingTextOverride, type TrackingTextRow } from "@/lib/tracking-texts.functions";
+import { PHASES, phaseLabel, type Phase } from "@/lib/tracking-phases";
 
+// ?tab=textos&filtro=sem_regra abre direto os textos sem fase (link do
+// Gerencial › Transportadoras).
 export const Route = createFileRoute("/settings/rastreamento")({
+  validateSearch: (s: Record<string, unknown>): { tab?: "regras" | "textos"; filtro?: "sem_regra" } => ({
+    ...(s.tab === "textos" || s.tab === "regras" ? { tab: s.tab } : {}),
+    ...(s.filtro === "sem_regra" ? { filtro: "sem_regra" as const } : {}),
+  }),
   component: RastreamentoPage,
 });
 
@@ -60,7 +67,8 @@ const TABS = [
 type Tab = (typeof TABS)[number]["id"];
 
 function RastreamentoPage() {
-  const [tab, setTab] = useState<Tab>("regras");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState<Tab>(search.tab ?? "regras");
   return (
     <div className="p-6 md:p-10 max-w-5xl mx-auto pb-20 space-y-6">
       <header>
@@ -82,28 +90,34 @@ function RastreamentoPage() {
         ))}
       </div>
 
-      {tab === "regras" ? <RegrasTab /> : <TextosTab />}
+      {tab === "regras" ? <RegrasTab /> : <TextosTab initialFiltro={search.filtro} />}
     </div>
   );
 }
 
-type Filtro = "todos" | "escondidos" | "como_vem" | "trocados";
+type Filtro = "todos" | "sem_regra" | "escondidos" | "como_vem" | "trocados";
 const FILTROS: { id: Filtro; label: string }[] = [
   { id: "todos", label: "Todos" },
+  { id: "sem_regra", label: "Sem fase (erro)" },
   { id: "escondidos", label: `Viram “${LOCAL_TRANSIT}”` },
   { id: "como_vem", label: "Aparecem como vêm" },
   { id: "trocados", label: "Trocados por você" },
 ];
 
-function TextosTab() {
+// Texto sem fase: nenhuma regra reconhece e ninguém escolheu ainda.
+const semFase = (r: TrackingTextRow) => !r.phaseOverride && !r.phaseAuto;
+
+function TextosTab({ initialFiltro }: { initialFiltro?: Filtro }) {
   const listFn = useServerFn(listTrackingTexts);
   const q = useQuery({ queryKey: ["tracking-texts"], queryFn: () => listFn(), staleTime: 60_000 });
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [filtro, setFiltro] = useState<Filtro>(initialFiltro ?? "todos");
+  const erros = (q.data ?? []).filter(semFase).length;
   const rows = useMemo(() => {
     const b = busca.trim().toLowerCase();
     return (q.data ?? []).filter((r) => {
       if (b && !`${r.example} ${r.rule ?? ""} ${r.override ?? ""}`.toLowerCase().includes(b)) return false;
+      if (filtro === "sem_regra") return semFase(r);
       if (filtro === "escondidos") return r.generic && !r.override;
       if (filtro === "como_vem") return !r.generic && !r.override && r.rule != null && r.rule.toLowerCase() === cleanEventText(r.example).toLowerCase();
       if (filtro === "trocados") return !!r.override;
@@ -114,10 +128,19 @@ function TextosTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Cada texto que a transportadora mandou nos rastreios dos últimos 60 dias e o que o cliente vê hoje na
+        Cada texto que a transportadora mandou nos rastreios dos últimos 180 dias e o que o cliente vê hoje na
         página de rastreio. Pra trocar, escreva o texto novo e salve — vale na hora pra todos os pedidos com esse
         texto (números como datas e horários não importam). O local continua o que vem.
+        A <b>Fase</b> diz como o texto entra na conta do Gerencial › Transportadoras (postagem, chegada nos EUA,
+        alfândega, entrega); dá pra trocar no seletor.
       </p>
+      {erros > 0 && (
+        <button type="button" onClick={() => setFiltro("sem_regra")}
+          className="w-full text-left rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm flex items-center gap-2.5">
+          <AlertTriangle className="size-4 text-destructive shrink-0" />
+          <span><b>{erros} texto{erros > 1 ? "s" : ""} sem fase.</b> Nenhuma regra reconhece — escolha a fase de cada um pra entrar certo na conta das transportadoras.</span>
+        </button>
+      )}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="size-4 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -129,7 +152,7 @@ function TextosTab() {
               className={`px-2.5 py-1.5 rounded-md text-xs border transition-colors ${
                 filtro === f.id ? "bg-primary/10 border-primary/30 text-foreground" : "border-border text-muted-foreground hover:text-foreground"
               }`}>
-              {f.label}
+              {f.label}{f.id === "sem_regra" && erros > 0 ? ` (${erros})` : ""}
             </button>
           ))}
         </div>
@@ -141,8 +164,8 @@ function TextosTab() {
         <div className="premium-card p-6 text-sm text-destructive">{(q.error as Error).message}</div>
       ) : (
         <div className="premium-card divide-y divide-border">
-          <div className="hidden md:grid grid-cols-[1fr_1fr_1.1fr] gap-4 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-            <span>Texto que vem</span><span>Cliente vê hoje</span><span>Trocar por</span>
+          <div className="hidden md:grid grid-cols-[1fr_1fr_1.1fr_0.8fr] gap-4 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span>Texto que vem</span><span>Cliente vê hoje</span><span>Trocar por</span><span>Fase</span>
           </div>
           {rows.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">Nenhum texto.</p>}
           {rows.slice(0, 300).map((r) => <TextoRow key={r.key} row={r} />)}
@@ -166,7 +189,7 @@ function TextoRow({ row }: { row: TrackingTextRow }) {
   const dirty = text.trim() !== (row.override ?? "");
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.1fr] gap-2 md:gap-4 px-4 py-3 text-sm">
+    <div className={`grid grid-cols-1 md:grid-cols-[1fr_1fr_1.1fr_0.8fr] gap-2 md:gap-4 px-4 py-3 text-sm ${semFase(row) ? "bg-destructive/5" : ""}`}>
       <div className="min-w-0">
         <p className="break-words">{row.example}</p>
         <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -199,6 +222,34 @@ function TextoRow({ row }: { row: TrackingTextRow }) {
           </Button>
         )}
       </form>
+      <PhaseSelect row={row} />
+    </div>
+  );
+}
+
+// Fase do texto na conta das transportadoras: regra automática ou escolhida.
+function PhaseSelect({ row }: { row: TrackingTextRow }) {
+  const qc = useQueryClient();
+  const saveFn = useServerFn(saveTrackingPhase);
+  const save = useMutation({
+    mutationFn: (phase: Phase | null) => saveFn({ data: { example: row.example, phase } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tracking-texts"] });
+      qc.invalidateQueries({ predicate: (x) => String(x.queryKey[0]).startsWith("carrier-stats") });
+      toast.success("Fase salva");
+    },
+    onError: (e: any) => toast.error(e.message ?? "Falha ao salvar"),
+  });
+  const value = row.phaseOverride ?? "";
+  return (
+    <div className="min-w-0">
+      <select value={value} disabled={save.isPending}
+        onChange={(e) => save.mutate((e.target.value || null) as Phase | null)}
+        className={`w-full h-8 rounded-md border bg-card px-2 text-xs outline-none focus:border-primary ${semFase(row) ? "border-destructive/50 text-destructive" : "border-border"}`}>
+        <option value="">{row.phaseAuto ? `Regra: ${phaseLabel(row.phaseAuto)}` : "Sem regra — escolha"}</option>
+        {PHASES.map((p) => <option key={p.key} value={p.key} title={p.hint}>{p.label}</option>)}
+      </select>
+      {row.phaseOverride && <p className="text-[11px] text-primary mt-0.5">escolhida por você</p>}
     </div>
   );
 }

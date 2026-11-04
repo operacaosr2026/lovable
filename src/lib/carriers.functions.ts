@@ -4,6 +4,7 @@ import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } fro
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAllIn } from "@/lib/select-all";
 import { addDaysIso, isoTodayUS } from "@/lib/timezone";
+import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { aggregate, avg, carrierLabel, CARRIERS, median, type CarrierRow, type CarrierTotals } from "@/lib/carrier-stats";
 
 // Gerencial › Transportadoras: busca os pedidos/rastreios das lojas da coluna
@@ -23,7 +24,7 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const from = data.days ? addDaysIso(today, -data.days + 1) : null;
     // Período anterior do mesmo tamanho (pras setas dos cards). "Tudo" não compara.
     const prevFrom = data.days && from ? addDaysIso(from, -data.days) : null;
-    const empty = { rows: [] as CarrierRow[], months: [] as string[], from, semCodigo: 0, totals: null as CarrierTotals | null, prevTotals: null as CarrierTotals | null };
+    const empty = { rows: [] as CarrierRow[], months: [] as string[], from, semCodigo: 0, totals: null as CarrierTotals | null, prevTotals: null as CarrierTotals | null, semRegra: 0 };
 
     // Lojas ativas = as da coluna "Ativas" do Banco de Lojas (mesma regra de
     // product-links). Hold, Cemitério etc. e loja sem Shopify ligada não entram.
@@ -62,9 +63,13 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const trackByOrder = new Map<string, any>();
     for (const t of tracks) trackByOrder.set(String(t.order_id), t);
 
+    // Fase escolhida na mão (Configurações › Rastreamento › Textos) por cima das regras.
+    const { data: phaseRows, error: phaseErr } = await supabaseAdmin.from("tracking_phase_overrides").select("text_key,phase").eq("user_id", ownerId);
+    if (phaseErr && phaseErr.code !== "42P01" && phaseErr.code !== "PGRST205") throw new Error(phaseErr.message);
+    const phaseOf = phaseResolver(new Map((phaseRows ?? []).map((r: any) => [r.text_key as string, r.phase as Phase])));
     const now = Date.now();
-    const { acc, monthsSet, totals } = aggregate(withCode, trackByOrder, now);
-    const prevTotals = prevWithCode.length ? aggregate(prevWithCode, trackByOrder, now).totals : null;
+    const { acc, monthsSet, totals, unknown } = aggregate(withCode, trackByOrder, now, phaseOf);
+    const prevTotals = prevWithCode.length ? aggregate(prevWithCode, trackByOrder, now, phaseOf).totals : null;
 
     const months = [...monthsSet].sort().slice(-6);
     const order = [...CARRIERS.map((c) => c.key), "OUTRAS"];
@@ -78,7 +83,7 @@ export const getCarrierStats = createServerFn({ method: "GET" })
         porMes: months.map((m) => { const l = a.porMes.get(m) ?? []; return { month: m, dias: avg(l), n: l.length }; }),
       }))
       .sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key));
-    return { rows, months, from, semCodigo, totals: totals as CarrierTotals | null, prevTotals };
+    return { rows, months, from, semCodigo, totals: totals as CarrierTotals | null, prevTotals, semRegra: unknown.size };
   });
 
 export type { CarrierRow, CarrierTotals };

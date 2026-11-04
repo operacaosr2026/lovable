@@ -1,4 +1,6 @@
 import { PROBLEM_LATE_DAYS } from "@/lib/tracking-rules.server";
+import { eventTextKey } from "@/lib/tracking-display";
+import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 
 // Gerencial › Transportadoras: prazo e alfândega por transportadora, pelos
 // eventos do rastreio (17track) dos pedidos das lojas da coluna "Ativas" do
@@ -15,11 +17,14 @@ import { PROBLEM_LATE_DAYS } from "@/lib/tracking-rules.server";
 //    da entrada (triagem nos EUA, saiu pra entrega…). Problema = mais de
 //    CUSTOMS_SLOW_DAYS lá dentro — continua contando depois que o pacote anda
 //    (ficou preso demais); "parado agora" = entrou há mais que isso e não saiu.
+// Fase de cada texto: tracking-phases.ts (regras + escolha na mão).
 // Período pela data do pedido. Pedido com código mas sem eventos conta em
 // "sem rastreio" (não entra nos prazos).
 
 export const CUSTOMS_SLOW_DAYS = 5;
 const DAY = 86_400_000;
+// Fases que tiram o pacote da alfândega (sem regra conta como movimento).
+const LEAVES_CUSTOMS = new Set<Phase | null>(["alfandega_saida", "movimento", "entregue", null]);
 
 export const CARRIERS: { key: string; label: string; re: RegExp }[] = [
   { key: "ZS", label: "China Post (ZS)", re: /^ZS/i },
@@ -31,19 +36,6 @@ export const CARRIERS: { key: string; label: string; re: RegExp }[] = [
 ];
 const carrierOf = (code: string) => CARRIERS.find((c) => c.re.test(code))?.key ?? "OUTRAS";
 export const carrierLabel = (key: string) => CARRIERS.find((c) => c.key === key)?.label ?? "Outras";
-
-// Aviso de informação (não é o pacote andando).
-const INFO_ONLY = /information (received|sent|has been)|info received|info sent|order info|order information|order (created|received)|label (created|prepared)|electronic (cargo )?information|cargo information|shipment information|pre-?shipment|preparing shipment|awaiting item|预报|订单信息|电子信息/i;
-// Evento sem texto de verdade ("(中文:)", vazio, só pontuação).
-const JUNK = (d: string) => !/[a-z一-鿿]/i.test(d.replace(/中文/g, ""));
-const US_ARRIVAL = /arrived at destination airport|shipment arrived at airport|international flight has arrived|destination hub|clearance (is )?in progress|under clearance|started the customs clearance|inbound into customs|import released|抵达【US】|到达【美国】海关|目的国|目的地转运|到达寄达地|到达目的地|进口海关/i;
-const NOT_US_ARRIVAL = /投递局|post office|delivery station/i;
-const DELIVERED = /^delivered\b|has been delivered|已妥投|delivered,/i;
-const NOT_DELIVERED = /delivered to/i;
-// Alfândega do destino: entrada, liberação e o que ainda é "dentro" dela.
-const CUSTOMS_IN = /clearance (is )?in progress|under clearance|inbound into customs|started the customs clearance|等待清关|到达【美国】海关|送交境外进口海关|进口海关/i;
-const CUSTOMS_OUT = /clearance (processing )?completed|clearance to release|import released|out of customs|customs released|released by customs(?! at origin)|清关完成|海关放行|已放行/i;
-const CUSTOMS_STILL = /customs|clearance|清关|海关|airport|flight|航班|飞机|抵达|arrived at destination/i;
 
 type Ev = { ts: number; d: string };
 export function parseEvents(timeline: unknown): Ev[] {
@@ -91,7 +83,9 @@ export type CarrierTotals = {
   alfPassou: number; alfProblema: number;
 };
 
-export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: number) {
+// unknown: textos sem regra (chave → exemplo e quantas vezes apareceu).
+export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: number, phaseOf = phaseResolver(),
+  unknown = new Map<string, { example: string; count: number }>()) {
   const acc = new Map<string, Acc>();
   const monthsSet = new Set<string>();
   for (const o of orders) {
@@ -105,9 +99,17 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     if (!evs.length) continue;
     a.comRastreio++;
 
-    const post = firstTs(evs, (d) => !INFO_ONLY.test(d) && !JUNK(d));
-    const us = firstTs(evs, (d) => US_ARRIVAL.test(d) && !NOT_US_ARRIVAL.test(d));
-    const deliv = firstTs(evs, (d) => DELIVERED.test(d) && !NOT_DELIVERED.test(d));
+    const ph = (d: string) => phaseOf(d);
+    for (const e of evs) {
+      if (ph(e.d) != null) continue;
+      const k = eventTextKey(e.d);
+      if (!k) continue;
+      const u = unknown.get(k);
+      if (u) u.count++; else unknown.set(k, { example: e.d, count: 1 });
+    }
+    const post = firstTs(evs, (d) => ph(d) !== "aviso");
+    const us = firstTs(evs, (d) => ph(d) === "chegada_eua" || ph(d) === "alfandega_entrada");
+    const deliv = firstTs(evs, (d) => ph(d) === "entregue");
     const delivered = deliv != null || /^delivered$/i.test(String(t?.tracking_status ?? ""));
     if (delivered) a.entregues++;
     else {
@@ -125,14 +127,12 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
       list.push(dias);
       a.porMes.set(m, list);
     }
-    const cin = firstTs(evs, (d) => CUSTOMS_IN.test(d));
+    const cin = firstTs(evs, (d) => ph(d) === "alfandega_entrada");
     if (cin != null) {
       a.alfPassou++;
       // Saída: liberação ou o 1º movimento depois da entrada (o que vier antes).
-      const after = evs.filter((e) => e.ts > cin);
-      const release = firstTs(after, (d) => CUSTOMS_OUT.test(d));
-      const moved = firstTs(after, (d) => !CUSTOMS_STILL.test(d) && !INFO_ONLY.test(d) && !JUNK(d));
-      const cout = release != null && moved != null ? Math.min(release, moved) : release ?? moved;
+      // Texto sem regra conta como movimento (igual antes de ter as fases).
+      const cout = firstTs(evs.filter((e) => e.ts > cin), (d) => LEAVES_CUSTOMS.has(ph(d)));
       if (cout != null) {
         if (cout - cin > CUSTOMS_SLOW_DAYS * DAY) a.alfProblema++;
       } else if (now - cin > CUSTOMS_SLOW_DAYS * DAY) {
@@ -151,6 +151,6 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     alfPassou: all.reduce((x, a) => x + a.alfPassou, 0),
     alfProblema: all.reduce((x, a) => x + a.alfProblema, 0),
   };
-  return { acc, monthsSet, totals };
+  return { acc, monthsSet, totals, unknown };
 }
 
