@@ -27,9 +27,30 @@ export function CarriersView({ period }: { period: string }) {
   const q = useQuery({ queryKey: ["carrier-stats", days], queryFn: () => fn({ data: { days } }), staleTime: 10 * 60_000 });
   const d = q.data;
 
-  // Mais rápida até a entrega (com pelo menos 10 entregas) fica em destaque.
-  const fastest = d?.rows.filter((r) => r.nEntrega >= 10 && r.postagemEntrega != null)
-    .sort((a, b) => (a.postagemEntrega ?? 0) - (b.postagemEntrega ?? 0))[0]?.key;
+  // Tags: só entre as com amostra (10+ entregues / 10+ que passaram pela
+  // alfândega). Empate em problemas: fica a com mais pacotes.
+  const tags = new Map<string, { label: string; cls: string }[]>();
+  const tag = (key: string | undefined, label: string, cls: string) => {
+    if (!key) return;
+    tags.set(key, [...(tags.get(key) ?? []), { label, cls }]);
+  };
+  const GOOD = "bg-emerald-500/10 text-emerald-600", BAD = "bg-rose-500/10 text-rose-600";
+  const bySpeed = (d?.rows ?? []).filter((r) => r.nEntrega >= 10 && r.postagemEntrega != null)
+    .sort((a, b) => (a.postagemEntrega ?? 0) - (b.postagemEntrega ?? 0));
+  if (bySpeed.length >= 2) {
+    tag(bySpeed[0].key, "mais rápida", GOOD);
+    tag(bySpeed[bySpeed.length - 1].key, "mais lenta", BAD);
+  }
+  const rate = (r: CarrierRow) => r.alfProblema / r.alfPassou;
+  const byCustoms = (d?.rows ?? []).filter((r) => r.alfPassou >= 10);
+  if (byCustoms.length >= 2) {
+    const most = [...byCustoms].sort((a, b) => rate(b) - rate(a) || b.alfPassou - a.alfPassou)[0];
+    const least = [...byCustoms].sort((a, b) => rate(a) - rate(b) || b.alfPassou - a.alfPassou)[0];
+    if (rate(most) > rate(least)) {
+      tag(most.key, "mais problemas", BAD);
+      tag(least.key, "menos problemas", GOOD);
+    }
+  }
   const semRastreio = d?.rows.reduce((s, r) => s + (r.pedidos - r.comRastreio), 0) ?? 0;
 
   return (
@@ -62,7 +83,9 @@ export function CarriersView({ period }: { period: string }) {
                         <tr key={r.key} className="border-b border-border/60 last:border-0">
                           <td className="py-2.5 pr-3 font-medium whitespace-nowrap">
                             {r.label}
-                            {r.key === fastest && <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-600">mais rápida</span>}
+                            {(tags.get(r.key) ?? []).map((t) => (
+                              <span key={t.label} className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${t.cls}`}>{t.label}</span>
+                            ))}
                           </td>
                           <td className="py-2.5 pr-3 text-right tabular-nums" title={r.pedidos > r.comRastreio ? `${r.pedidos - r.comRastreio} sem eventos no rastreio` : undefined}>
                             {r.pedidos.toLocaleString("pt-BR")}
