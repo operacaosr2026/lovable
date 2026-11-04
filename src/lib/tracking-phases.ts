@@ -37,7 +37,8 @@ const DELIVERED = /^delivered\b|has been delivered|已妥投|delivered,/i;
 // "Delivered, Parcel Locker -> …delivered to a parcel locker" é entrega.
 const NOT_DELIVERED = /^delivered to\b|original sender|returned to sender/i;
 const CUSTOMS_OUT = /clearance (processing )?completed|clearance to release|import released|out of customs|customs released|released by customs(?! at origin)|清关完成|海关放行|已放行/i;
-const CUSTOMS_IN = /clearance (is )?in progress|under clearance|inbound into customs|started the customs clearance|等待清关|到达【美国】海关|送交境外进口海关|进口海关/i;
+// Inspeção/erro na alfândega (海关查验, 清关异常) também é "dentro da alfândega".
+const CUSTOMS_IN = /clearance (is )?in progress|under clearance|inbound into customs|started the customs clearance|customs inspection|clearance (exception|delay|abnormal)|海关查验|查验|清关异常|等待清关|到达【美国】海关|送交境外进口海关|进口海关/i;
 const US_ARRIVAL = /arrived at destination airport|shipment arrived at airport|international flight has arrived|destination hub|import released|抵达【US】|目的国|目的地转运|到达寄达地|到达目的地/i;
 const NOT_US_ARRIVAL = /投递局|post office|delivery station/i;
 const FLIGHT = /customs|clearance|export|airport|flight|airline|航班|飞机|航空|海关|清关|启运/i;
