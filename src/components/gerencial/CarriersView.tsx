@@ -113,7 +113,7 @@ function LineTip({ active, payload, label }: any) {
 export function CarriersView({ period }: { period: string }) {
   const days = CARRIER_PERIODS.find(([k]) => k === period)?.[2] ?? null;
   const fn = useServerFn(getCarrierStats);
-  const q = useQuery({ queryKey: ["carrier-stats-v2", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["carrier-stats-v3", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const d = q.data;
 
   // Tags: só entre as com amostra (10+ entregues / 10+ que passaram pela
@@ -201,6 +201,7 @@ export function CarriersView({ period }: { period: string }) {
                           <>
                             <span className={`font-semibold ${tone.text}`}>{pct(alf)}</span>
                             <span className="ml-1 text-[11px] text-muted-foreground">({r.alfProblema} de {r.alfPassou})</span>
+                            {r.alfParado > 0 && <span className="ml-1.5 text-[10px] font-semibold text-rose-600">{r.alfParado} parado{r.alfParado > 1 ? "s" : ""} agora</span>}
                             <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
                               <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${alf ? Math.max(4, Math.min(100, alf * 200)) : 4}%` }} />
                             </div>
@@ -294,8 +295,8 @@ export function CarriersView({ period }: { period: string }) {
       <div className="flex gap-2 text-[11px] text-muted-foreground">
         <Info className="size-3.5 shrink-0 mt-0.5" />
         <p>
-          Pedidos das lojas da coluna Ativas do Banco de Lojas, pela data do pedido{days ? "; as setas comparam com o período anterior do mesmo tamanho" : ""}. Postagem = 1º evento real do rastreio (sem o "informação recebida"). Chegada nos EUA = 1º evento de chegada no destino.
-          Problema na alfândega = mais de 3 dias entre entrar e sair da alfândega (ou parado lá há mais de 3 dias sem entregar), sobre os que passaram por ela.
+          Pedidos das lojas da coluna Ativas do Banco de Lojas, pela data do pedido{days ? "; as setas comparam com o período anterior do mesmo tamanho" : ""}. Postagem = 1º evento físico do rastreio (aviso de informação não conta). Chegada nos EUA = 1º evento de chegada no aeroporto/hub de destino ou na alfândega dos EUA (agência de entrega não conta).
+          Problema na alfândega = ficou mais de 5 dias na alfândega dos EUA (entrada até a liberação ou o 1º movimento depois dela), sobre os que entraram nela; continua contando depois que o pacote anda. "Parado agora" = entrou há mais de 5 dias e ainda não saiu.
           {semRastreio > 0 && <> {semRastreio} pedido{semRastreio > 1 ? "s" : ""} com código mas sem eventos no rastreio não entram nos prazos.</>}
           {d.semCodigo > 0 && <> {d.semCodigo} pedido{d.semCodigo > 1 ? "s" : ""} sem código de rastreio ficam de fora.</>}
         </p>
