@@ -7,7 +7,8 @@ import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { PROBLEM_LATE_DAYS } from "@/lib/tracking-rules.server";
 
 // Gerencial › Transportadoras: prazo e alfândega por transportadora, pelos
-// eventos do rastreio (17track) dos pedidos das lojas ativas.
+// eventos do rastreio (17track) dos pedidos das lojas da coluna "Ativas" do
+// Banco de Lojas.
 //  - transportadora: pelo prefixo do código (ZS, TRF, JCZ, JXC…, LZ, YTTG);
 //  - postagem: 1º evento real (sem o "informação recebida" / etiqueta criada);
 //  - chegada nos EUA: 1º evento de chegada no destino (mesmo critério da página
@@ -22,8 +23,6 @@ type Ctx = { ownerId: string; role: WorkspaceRole; permissions: WorkspacePermiss
 const canView = (c: Ctx) => c.role === "admin" || c.permissions.some((p) => p.section === "gerencial");
 
 export const CUSTOMS_SLOW_DAYS = 3;
-// Mesma janela de cadastro do sync do 17track (seventeen-track.server.ts).
-const REGISTER_DAYS = 60;
 const DAY = 86_400_000;
 
 const CARRIERS: { key: string; label: string; re: RegExp }[] = [
@@ -159,9 +158,22 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const prevFrom = data.days && from ? addDaysIso(from, -data.days) : null;
     const empty = { rows: [] as CarrierRow[], months: [] as string[], from, semCodigo: 0, totals: null as CarrierTotals | null, prevTotals: null as CarrierTotals | null };
 
-    const { data: shops, error: shopsErr } = await supabaseAdmin.from("shops").select("id,status,archived").eq("user_id", ownerId);
-    if (shopsErr) throw new Error(shopsErr.message);
-    const shopIds = (shops ?? []).filter((s: any) => s.status === "ativa" && !s.archived).map((s: any) => s.id as string);
+    // Lojas ativas = as da coluna "Ativas" do Banco de Lojas (mesma regra de
+    // product-links). Hold, Cemitério etc. e loja sem Shopify ligada não entram.
+    const { data: columns, error: colsErr } = await supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId);
+    if (colsErr) throw new Error(colsErr.message);
+    const activeCols = (columns ?? []).filter((c: any) => /^ativ/i.test(String(c.name).trim())).map((c: any) => c.id as string);
+    let shopIds: string[] = [];
+    if (activeCols.length) {
+      const { data: stores, error: storesErr } = await supabaseAdmin.from("shopify_stores").select("id").eq("user_id", ownerId).in("board_column_id", activeCols);
+      if (storesErr) throw new Error(storesErr.message);
+      const storeIds = (stores ?? []).map((x: any) => x.id as string);
+      if (storeIds.length) {
+        const { data: shops, error: shopsErr } = await supabaseAdmin.from("shops").select("id,archived").eq("user_id", ownerId).in("shopify_store_id", storeIds);
+        if (shopsErr) throw new Error(shopsErr.message);
+        shopIds = (shops ?? []).filter((x: any) => !x.archived).map((x: any) => x.id as string);
+      }
+    }
     if (!shopIds.length) return empty;
 
     const { data: orders, error: ordersErr } = await selectAllIn<any>(shopIds, (ids) => {
@@ -183,15 +195,9 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const trackByOrder = new Map<string, any>();
     for (const t of tracks) trackByOrder.set(String(t.order_id), t);
 
-    // Pedido sem nenhum evento e com mais de REGISTER_DAYS: é de quando a loja
-    // estava parada (o sync do 17track só cadastra pedido com até 60 dias) —
-    // não entra em nada, nem como "sem rastreio".
-    const registerSince = addDaysIso(today, -REGISTER_DAYS);
-    const counts = (o: any) => String(o.order_date).slice(0, 10) >= registerSince || parseEvents(trackByOrder.get(String(o.id))?.timeline).length > 0;
     const now = Date.now();
-    const { acc, monthsSet, totals } = aggregate(withCode.filter(counts), trackByOrder, now);
-    const prevCounted = prevWithCode.filter(counts);
-    const prevTotals = prevCounted.length ? aggregate(prevCounted, trackByOrder, now).totals : null;
+    const { acc, monthsSet, totals } = aggregate(withCode, trackByOrder, now);
+    const prevTotals = prevWithCode.length ? aggregate(prevWithCode, trackByOrder, now).totals : null;
 
     const months = [...monthsSet].sort().slice(-6);
     const order = [...CARRIERS.map((c) => c.key), "OUTRAS"];

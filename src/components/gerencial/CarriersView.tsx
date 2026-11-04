@@ -294,7 +294,7 @@ export function CarriersView({ period }: { period: string }) {
       <div className="flex gap-2 text-[11px] text-muted-foreground">
         <Info className="size-3.5 shrink-0 mt-0.5" />
         <p>
-          Pedidos das lojas ativas, pela data do pedido{days ? "; as setas comparam com o período anterior do mesmo tamanho" : ""}. Postagem = 1º evento real do rastreio (sem o "informação recebida"). Chegada nos EUA = 1º evento de chegada no destino.
+          Pedidos das lojas da coluna Ativas do Banco de Lojas, pela data do pedido{days ? "; as setas comparam com o período anterior do mesmo tamanho" : ""}. Postagem = 1º evento real do rastreio (sem o "informação recebida"). Chegada nos EUA = 1º evento de chegada no destino.
           Problema na alfândega = mais de 3 dias entre entrar e sair da alfândega (ou parado lá há mais de 3 dias sem entregar), sobre os que passaram por ela.
           {semRastreio > 0 && <> {semRastreio} pedido{semRastreio > 1 ? "s" : ""} com código mas sem eventos no rastreio não entram nos prazos.</>}
           {d.semCodigo > 0 && <> {d.semCodigo} pedido{d.semCodigo > 1 ? "s" : ""} sem código de rastreio ficam de fora.</>}
