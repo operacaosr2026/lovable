@@ -199,11 +199,11 @@ export function CarriersView({ period }: { period: string }) {
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold whitespace-nowrap" title={`${r.nEua} pedidos com o evento de chegada`}>
                         {dias(r.postagemEua)}
-                        {r.nEua > 0 && r.nEua < 10 && <Sub>só {r.nEua}</Sub>}
+                        {r.nEua > 0 && r.nEua < 10 && <Sub tone="text-amber-600">média de só {r.nEua} pedido{r.nEua > 1 ? "s" : ""}</Sub>}
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold whitespace-nowrap" title={r.medianaEntrega != null ? `Mediana: ${dias(r.medianaEntrega)} · ${r.nEntrega} entregues` : undefined}>
                         {dias(r.postagemEntrega)}
-                        {r.nEntrega > 0 && r.nEntrega < 10 && <Sub>só {r.nEntrega}</Sub>}
+                        {r.nEntrega > 0 && r.nEntrega < 10 && <Sub tone="text-amber-600">média de só {r.nEntrega} pedido{r.nEntrega > 1 ? "s" : ""}</Sub>}
                       </td>
                       <td className="py-2.5 px-3 tabular-nums whitespace-nowrap">
                         {r.alfPassou ? (
