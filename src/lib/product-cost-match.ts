@@ -63,6 +63,12 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
   return total;
 }
 
+// Algum item cobrado do pedido não achou o Card de Produto e caiu no custo padrão da loja.
+export function orderUsesDefaultCost(rawLineItems: any[] | undefined, products: CostProduct[], tags?: string | null, opts: OrderCostOpts = {}): boolean {
+  if (isSupplierFree(tags)) return false;
+  return (rawLineItems ?? []).some((li) => lineItemCostQty(li, opts.hasTracking) > 0 && matchLineItemCost(li, products, opts.date) == null);
+}
+
 // Quantidade de itens do pedido com a mesma regra do custo (item removido não conta).
 export function orderItemsQty(rawLineItems: any[] | undefined, hasTracking = false): number {
   return (rawLineItems ?? []).reduce((s, li) => s + lineItemCostQty(li, hasTracking), 0);

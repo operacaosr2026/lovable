@@ -6,7 +6,7 @@ import {
   getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts, supplierOrdersTotal,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
-import { orderLineItemsCost, orderItemsQty, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
+import { orderLineItemsCost, orderItemsQty, orderUsesDefaultCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
@@ -697,6 +697,13 @@ export function LgOrders({
                                       <span key={t} className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-sky-500/10 text-sky-600 border-sky-500/20 align-middle">{t}</span>
                                     ))}
                                   </>
+                                )}
+                                {/* Item sem Card de Produto ligado: custo saiu do padrão da loja. */}
+                                {productsQuery.isSuccess && orderUsesDefaultCost(o.raw?.line_items, costProducts, o.raw?.tags, costOpts(o)) && (
+                                  <span
+                                    title="Algum item não está ligado a um Card de Produto — o custo usa o custo padrão da loja (Configurações)."
+                                    className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-amber-500/10 text-amber-600 border-amber-500/20 align-middle"
+                                  >Custo padrão</span>
                                 )}
                               </p>
                               {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
