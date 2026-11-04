@@ -82,6 +82,67 @@ export type CarrierRow = {
   alfPassou: number; alfProblema: number;
   porMes: { month: string; dias: number | null; n: number }[];
 };
+// Soma de todas as transportadoras (cards do topo).
+export type CarrierTotals = {
+  pedidos: number; entregues: number; emTransito: number;
+  postagemEua: number | null; postagemEntrega: number | null;
+  alfPassou: number; alfProblema: number;
+};
+
+function aggregate(orders: any[], trackByOrder: Map<string, any>, now: number) {
+  const acc = new Map<string, Acc>();
+  const monthsSet = new Set<string>();
+  for (const o of orders) {
+    const t = trackByOrder.get(String(o.id));
+    const code = String(t?.tracking_number || o.tracking_code).trim();
+    const key = carrierOf(code);
+    const a = acc.get(key) ?? newAcc();
+    acc.set(key, a);
+    a.pedidos++;
+    const evs = parseEvents(t?.timeline);
+    if (!evs.length) continue;
+    a.comRastreio++;
+
+    const post = firstTs(evs, (d) => !INFO_ONLY.test(d));
+    const us = firstTs(evs, (d) => US_ARRIVAL.test(d));
+    const deliv = firstTs(evs, (d) => DELIVERED.test(d) && !NOT_DELIVERED.test(d));
+    const delivered = deliv != null || /^delivered$/i.test(String(t?.tracking_status ?? ""));
+    if (delivered) a.entregues++;
+    else {
+      a.emTransito++;
+      const start = Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`);
+      if (Number.isFinite(start) && now - start >= PROBLEM_LATE_DAYS * DAY) a.atrasados++;
+    }
+    if (post != null && us != null && us > post) a.eua.push((us - post) / DAY);
+    if (post != null && deliv != null && deliv > post) {
+      const dias = (deliv - post) / DAY;
+      a.entrega.push(dias);
+      const m = String(o.order_date).slice(0, 7);
+      monthsSet.add(m);
+      const list = a.porMes.get(m) ?? [];
+      list.push(dias);
+      a.porMes.set(m, list);
+    }
+    if (evs.some((e) => CUSTOMS_ANY.test(e.d))) {
+      a.alfPassou++;
+      const cin = firstTs(evs, (d) => CUSTOMS_IN.test(d));
+      const cout = cin == null ? null : evs.filter((e) => e.ts >= cin && CUSTOMS_OUT.test(e.d)).reduce<number | null>((m, e) => (m == null || e.ts < m ? e.ts : m), null);
+      const slow = cin != null && (cout != null ? cout - cin > CUSTOMS_SLOW_DAYS * DAY : !delivered && now - cin > CUSTOMS_SLOW_DAYS * DAY);
+      if (slow) a.alfProblema++;
+    }
+  }
+  const all = [...acc.values()];
+  const totals: CarrierTotals = {
+    pedidos: all.reduce((x, a) => x + a.pedidos, 0),
+    entregues: all.reduce((x, a) => x + a.entregues, 0),
+    emTransito: all.reduce((x, a) => x + a.emTransito, 0),
+    postagemEua: avg(all.flatMap((a) => a.eua)),
+    postagemEntrega: avg(all.flatMap((a) => a.entrega)),
+    alfPassou: all.reduce((x, a) => x + a.alfPassou, 0),
+    alfProblema: all.reduce((x, a) => x + a.alfProblema, 0),
+  };
+  return { acc, monthsSet, totals };
+}
 
 export const getCarrierStats = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -92,69 +153,37 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const { ownerId } = ctx;
     const today = isoTodayUS();
     const from = data.days ? addDaysIso(today, -data.days + 1) : null;
+    // Período anterior do mesmo tamanho (pras setas dos cards). "Tudo" não compara.
+    const prevFrom = data.days && from ? addDaysIso(from, -data.days) : null;
+    const empty = { rows: [] as CarrierRow[], months: [] as string[], from, semCodigo: 0, totals: null as CarrierTotals | null, prevTotals: null as CarrierTotals | null };
 
     const { data: shops, error: shopsErr } = await supabaseAdmin.from("shops").select("id,status,archived").eq("user_id", ownerId);
     if (shopsErr) throw new Error(shopsErr.message);
     const shopIds = (shops ?? []).filter((s: any) => s.status === "ativa" && !s.archived).map((s: any) => s.id as string);
-    if (!shopIds.length) return { rows: [] as CarrierRow[], months: [] as string[], from, semCodigo: 0 };
+    if (!shopIds.length) return empty;
 
     const { data: orders, error: ordersErr } = await selectAllIn<any>(shopIds, (ids) => {
       let q = supabaseAdmin.from("shop_orders").select("id,order_date,tracking_code").eq("user_id", ownerId).in("shop_id", ids);
-      if (from) q = q.gte("order_date", from);
+      if (prevFrom ?? from) q = q.gte("order_date", (prevFrom ?? from)!);
       return q;
     });
     if (ordersErr) throw new Error(ordersErr.message);
-    const withCode = orders.filter((o) => String(o.tracking_code ?? "").trim());
-    const semCodigo = orders.length - withCode.length;
+    const inPeriod = (o: any) => !from || String(o.order_date).slice(0, 10) >= from;
+    const cur = orders.filter(inPeriod);
+    const prev = prevFrom ? orders.filter((o) => !inPeriod(o)) : [];
+    const hasCode = (o: any) => !!String(o.tracking_code ?? "").trim();
+    const withCode = cur.filter(hasCode), prevWithCode = prev.filter(hasCode);
+    const semCodigo = cur.length - withCode.length;
 
-    const { data: tracks, error: tracksErr } = await selectAllIn<any>(withCode.map((o) => o.id as string), (ids) =>
+    const { data: tracks, error: tracksErr } = await selectAllIn<any>([...withCode, ...prevWithCode].map((o) => o.id as string), (ids) =>
       supabaseAdmin.from("shop_order_tracking").select("id,order_id,tracking_number,tracking_status,timeline").in("order_id", ids));
     if (tracksErr) throw new Error(tracksErr.message);
     const trackByOrder = new Map<string, any>();
     for (const t of tracks) trackByOrder.set(String(t.order_id), t);
 
     const now = Date.now();
-    const acc = new Map<string, Acc>();
-    const monthsSet = new Set<string>();
-    for (const o of withCode) {
-      const t = trackByOrder.get(String(o.id));
-      const code = String(t?.tracking_number || o.tracking_code).trim();
-      const key = carrierOf(code);
-      const a = acc.get(key) ?? newAcc();
-      acc.set(key, a);
-      a.pedidos++;
-      const evs = parseEvents(t?.timeline);
-      if (!evs.length) continue;
-      a.comRastreio++;
-
-      const post = firstTs(evs, (d) => !INFO_ONLY.test(d));
-      const us = firstTs(evs, (d) => US_ARRIVAL.test(d));
-      const deliv = firstTs(evs, (d) => DELIVERED.test(d) && !NOT_DELIVERED.test(d));
-      const delivered = deliv != null || /^delivered$/i.test(String(t?.tracking_status ?? ""));
-      if (delivered) a.entregues++;
-      else {
-        a.emTransito++;
-        const start = Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`);
-        if (Number.isFinite(start) && now - start >= PROBLEM_LATE_DAYS * DAY) a.atrasados++;
-      }
-      if (post != null && us != null && us > post) a.eua.push((us - post) / DAY);
-      if (post != null && deliv != null && deliv > post) {
-        const dias = (deliv - post) / DAY;
-        a.entrega.push(dias);
-        const m = String(o.order_date).slice(0, 7);
-        monthsSet.add(m);
-        const list = a.porMes.get(m) ?? [];
-        list.push(dias);
-        a.porMes.set(m, list);
-      }
-      if (evs.some((e) => CUSTOMS_ANY.test(e.d))) {
-        a.alfPassou++;
-        const cin = firstTs(evs, (d) => CUSTOMS_IN.test(d));
-        const cout = cin == null ? null : evs.filter((e) => e.ts >= cin && CUSTOMS_OUT.test(e.d)).reduce<number | null>((m, e) => (m == null || e.ts < m ? e.ts : m), null);
-        const slow = cin != null && (cout != null ? cout - cin > CUSTOMS_SLOW_DAYS * DAY : !delivered && now - cin > CUSTOMS_SLOW_DAYS * DAY);
-        if (slow) a.alfProblema++;
-      }
-    }
+    const { acc, monthsSet, totals } = aggregate(withCode, trackByOrder, now);
+    const prevTotals = prevWithCode.length ? aggregate(prevWithCode, trackByOrder, now).totals : null;
 
     const months = [...monthsSet].sort().slice(-6);
     const order = [...CARRIERS.map((c) => c.key), "OUTRAS"];
@@ -168,5 +197,5 @@ export const getCarrierStats = createServerFn({ method: "GET" })
         porMes: months.map((m) => { const l = a.porMes.get(m) ?? []; return { month: m, dias: avg(l), n: l.length }; }),
       }))
       .sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key));
-    return { rows, months, from, semCodigo };
+    return { rows, months, from, semCodigo, totals: totals as CarrierTotals | null, prevTotals };
   });

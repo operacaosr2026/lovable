@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Brain, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Brain, ClipboardList, Headphones, Layers, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
   Package, PackageX, RotateCcw, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
@@ -51,9 +51,10 @@ function lastMonths(n: number) {
   return out;
 }
 
-const TABS: [Tab, string][] = [
-  ["alertas", "Alertas"], ["transportadoras", "Transportadoras"], ["resultado", "Resultado"], ["aprovacoes", "Fila de aprovação"],
-  ["reembolsos", "Análise de reembolsos"], ["kpi", "KPI Atendimento"], ["metas", "Metas"], ["projetos", "Projetos"],
+const TABS: [Tab, string, any][] = [
+  ["alertas", "Alertas", Bell], ["transportadoras", "Transportadoras", Truck], ["resultado", "Resultado", BarChart3],
+  ["aprovacoes", "Fila de aprovação", ClipboardList], ["reembolsos", "Análise de reembolsos", Undo2],
+  ["kpi", "KPI Atendimento", Headphones], ["metas", "Metas", Target], ["projetos", "Projetos", Layers],
 ];
 // Abas com filtro próprio (o mês do topo some nelas).
 const OWN_FILTER_TABS: Tab[] = ["aprovacoes", "reembolsos", "metas", "projetos"];
@@ -87,9 +88,10 @@ function GerencialPage() {
             (Fila, Análise de reembolsos, Metas e Projetos têm o filtro delas, então o mês some ali). */}
         <div className="flex flex-wrap items-center gap-3 min-h-10">
           <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {TABS.map(([k, label]) => (
+            {TABS.map(([k, label, Icon]) => (
               <button key={k} onClick={() => setTab(k)}
-                className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                <Icon className="size-3.5" />
                 {label}
                 {k === "alertas" && !!d?.alerts.length && (
                   <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] grid place-items-center text-white ${d.alerts.some((a) => a.level === "critico") ? "bg-rose-500" : "bg-amber-500"}`}>{d.alerts.length}</span>
