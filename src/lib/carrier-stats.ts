@@ -105,6 +105,11 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
       const b = acc.get(k) ?? newAcc();
       acc.set(k, b);
       b.reenviados++;
+      // Reenvio = pacote travado na alfândega (confirmado pela operação em
+      // 04/11/2026 pros 32 reenvios até então): conta como problema na
+      // alfândega da transportadora do pacote descartado.
+      b.alfPassou++;
+      b.alfProblema++;
     }
     // Reenviado: o relógio do "atrasado" conta da troca (igual ao resto do sistema).
     const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;

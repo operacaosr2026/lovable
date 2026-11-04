@@ -308,7 +308,7 @@ export function CarriersView({ period }: { period: string }) {
         <Info className="size-3.5 shrink-0 mt-0.5" />
         <p>
           Pedidos das lojas da coluna Ativas do Banco de Lojas, pela data do pedido{days ? "; as setas comparam com o período anterior do mesmo tamanho" : ""}. Postagem = 1º evento físico do rastreio (aviso de informação não conta). Chegada nos EUA = 1º evento de chegada no aeroporto/hub de destino ou na alfândega dos EUA (agência de entrega não conta).
-          Reenviados = pacotes descartados e trocados por outro código, na transportadora do pacote antigo (o atrasado de um pedido reenviado conta da troca). Problema na alfândega = ficou mais de 5 dias na alfândega dos EUA (entrada até a liberação ou o 1º movimento depois dela), sobre os que entraram nela; continua contando depois que o pacote anda. "Parado agora" = entrou há mais de 5 dias e ainda não saiu.
+          Reenviados = pacotes descartados e trocados por outro código (travados na alfândega), na transportadora do pacote antigo — contam também no problema na alfândega dela; o atrasado de um pedido reenviado conta da troca. Problema na alfândega = ficou mais de 5 dias na alfândega dos EUA (entrada até a liberação ou o 1º movimento depois dela), sobre os que entraram nela; continua contando depois que o pacote anda. "Parado agora" = entrou há mais de 5 dias e ainda não saiu.
           {semRastreio > 0 && <> {semRastreio} pedido{semRastreio > 1 ? "s" : ""} com código mas sem eventos no rastreio não entram nos prazos.</>}
           {d.semCodigo > 0 && <> {d.semCodigo} pedido{d.semCodigo > 1 ? "s" : ""} sem código de rastreio ficam de fora.</>}
         </p>
