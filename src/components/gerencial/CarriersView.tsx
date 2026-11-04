@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarDays, Info, Loader2, Truck } from "lucide-react";
+import { Info, Loader2, Truck } from "lucide-react";
 import { getCarrierStats, type CarrierRow } from "@/lib/carriers.functions";
 
 // Gerencial › Transportadoras: prazo e alfândega de cada transportadora (conta
-// em carriers.functions.ts). Período pela data do pedido.
+// em carriers.functions.ts). Período pela data do pedido — o filtro fica no
+// canto do Gerencial, como o mês das outras abas.
 
-const PERIODS: [string, string, number | null][] = [
+export const CARRIER_PERIODS: [string, string, number | null][] = [
   ["30", "Últimos 30 dias", 30], ["90", "Últimos 90 dias", 90], ["180", "Últimos 180 dias", 180], ["all", "Tudo", null],
 ];
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -21,9 +21,8 @@ function alfTone(r: CarrierRow) {
   return p >= 0.05 ? "text-rose-600 font-semibold" : p >= 0.02 ? "text-amber-600 font-semibold" : "text-emerald-600";
 }
 
-export function CarriersView() {
-  const [period, setPeriod] = useState("all");
-  const days = PERIODS.find(([k]) => k === period)?.[2] ?? null;
+export function CarriersView({ period }: { period: string }) {
+  const days = CARRIER_PERIODS.find(([k]) => k === period)?.[2] ?? null;
   const fn = useServerFn(getCarrierStats);
   const q = useQuery({ queryKey: ["carrier-stats", days], queryFn: () => fn({ data: { days } }), staleTime: 10 * 60_000 });
   const d = q.data;
@@ -35,17 +34,6 @@ export function CarriersView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="relative w-full sm:w-auto">
-          <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <select value={period} onChange={(e) => setPeriod(e.target.value)}
-            className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary">
-            {PERIODS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
-        </label>
-        <p className="text-[11px] text-muted-foreground">Pedidos das lojas ativas, pela data do pedido.</p>
-      </div>
-
       {q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
         : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
         : (
@@ -136,7 +124,7 @@ export function CarriersView() {
             <div className="flex gap-2 text-[11px] text-muted-foreground">
               <Info className="size-3.5 shrink-0 mt-0.5" />
               <p>
-                Postagem = 1º evento real do rastreio (sem o "informação recebida"). Chegada nos EUA = 1º evento de chegada no destino.
+                Pedidos das lojas ativas, pela data do pedido. Postagem = 1º evento real do rastreio (sem o "informação recebida"). Chegada nos EUA = 1º evento de chegada no destino.
                 Problema na alfândega = mais de 3 dias entre entrar e sair da alfândega (ou parado lá há mais de 3 dias sem entregar), sobre os que passaram por ela.
                 {semRastreio > 0 && <> {semRastreio} pedido{semRastreio > 1 ? "s" : ""} com código mas sem eventos no rastreio não entram nos prazos.</>}
                 {d.semCodigo > 0 && <> {d.semCodigo} pedido{d.semCodigo > 1 ? "s" : ""} sem código de rastreio ficam de fora.</>}

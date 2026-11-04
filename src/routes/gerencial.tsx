@@ -18,7 +18,7 @@ import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import { CompanyGoals } from "@/components/goals/CompanyGoals";
 import { ProjectsBoard } from "@/components/projects/ProjectsBoard";
 import { IntelTipSheet } from "@/components/inteligencia/Inteligencia";
-import { CarriersView } from "@/components/gerencial/CarriersView";
+import { CarriersView, CARRIER_PERIODS } from "@/components/gerencial/CarriersView";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
@@ -56,11 +56,13 @@ const TABS: [Tab, string][] = [
   ["reembolsos", "Análise de reembolsos"], ["kpi", "KPI Atendimento"], ["metas", "Metas"], ["projetos", "Projetos"],
 ];
 // Abas com filtro próprio (o mês do topo some nelas).
-const OWN_FILTER_TABS: Tab[] = ["transportadoras", "aprovacoes", "reembolsos", "metas", "projetos"];
+const OWN_FILTER_TABS: Tab[] = ["aprovacoes", "reembolsos", "metas", "projetos"];
 
 function GerencialPage() {
   const months = useMemo(() => lastMonths(6), []);
   const [month, setMonth] = useState(months[0]);
+  // Transportadoras: período (data do pedido) no lugar do mês, no mesmo canto.
+  const [carrierPeriod, setCarrierPeriod] = useState("all");
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const tab: Tab = search.tab ?? "alertas";
@@ -98,7 +100,15 @@ function GerencialPage() {
               </button>
             ))}
           </div>
-          {!ownFilter && (
+          {tab === "transportadoras" ? (
+            <label className="relative w-full sm:w-auto sm:ml-auto">
+              <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <select value={carrierPeriod} onChange={(e) => setCarrierPeriod(e.target.value)}
+                className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary">
+                {CARRIER_PERIODS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+            </label>
+          ) : !ownFilter && (
             <label className="relative w-full sm:w-auto sm:ml-auto">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={month} onChange={(e) => setMonth(e.target.value)}
@@ -113,7 +123,7 @@ function GerencialPage() {
           : tab === "projetos" ? <ProjectsBoard />
           : tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
           : tab === "reembolsos" ? <SupportRefundAnalytics onOpenConversation={openConversation} />
-          : tab === "transportadoras" ? <CarriersView />
+          : tab === "transportadoras" ? <CarriersView period={carrierPeriod} />
           : q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
           : tab === "alertas" ? <Alerts d={d} />
