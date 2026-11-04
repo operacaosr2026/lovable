@@ -22,6 +22,8 @@ type Ctx = { ownerId: string; role: WorkspaceRole; permissions: WorkspacePermiss
 const canView = (c: Ctx) => c.role === "admin" || c.permissions.some((p) => p.section === "gerencial");
 
 export const CUSTOMS_SLOW_DAYS = 3;
+// Mesma janela de cadastro do sync do 17track (seventeen-track.server.ts).
+const REGISTER_DAYS = 60;
 const DAY = 86_400_000;
 
 const CARRIERS: { key: string; label: string; re: RegExp }[] = [
@@ -181,9 +183,15 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const trackByOrder = new Map<string, any>();
     for (const t of tracks) trackByOrder.set(String(t.order_id), t);
 
+    // Pedido sem nenhum evento e com mais de REGISTER_DAYS: é de quando a loja
+    // estava parada (o sync do 17track só cadastra pedido com até 60 dias) —
+    // não entra em nada, nem como "sem rastreio".
+    const registerSince = addDaysIso(today, -REGISTER_DAYS);
+    const counts = (o: any) => String(o.order_date).slice(0, 10) >= registerSince || parseEvents(trackByOrder.get(String(o.id))?.timeline).length > 0;
     const now = Date.now();
-    const { acc, monthsSet, totals } = aggregate(withCode, trackByOrder, now);
-    const prevTotals = prevWithCode.length ? aggregate(prevWithCode, trackByOrder, now).totals : null;
+    const { acc, monthsSet, totals } = aggregate(withCode.filter(counts), trackByOrder, now);
+    const prevCounted = prevWithCode.filter(counts);
+    const prevTotals = prevCounted.length ? aggregate(prevCounted, trackByOrder, now).totals : null;
 
     const months = [...monthsSet].sort().slice(-6);
     const order = [...CARRIERS.map((c) => c.key), "OUTRAS"];
