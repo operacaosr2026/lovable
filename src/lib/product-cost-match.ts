@@ -63,6 +63,11 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
   return total;
 }
 
+// Quantidade de itens do pedido com a mesma regra do custo (item removido não conta).
+export function orderItemsQty(rawLineItems: any[] | undefined, hasTracking = false): number {
+  return (rawLineItems ?? []).reduce((s, li) => s + lineItemCostQty(li, hasTracking), 0);
+}
+
 // Opções a partir de uma linha de shop_orders (order_date + tracking_code no select).
 export const costOpts = (o: { order_date?: string | null; tracking_code?: string | null }): OrderCostOpts =>
   ({ date: o.order_date ?? null, hasTracking: !!o.tracking_code });

@@ -6,7 +6,7 @@ import {
   getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts, supplierOrdersTotal,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
-import { orderLineItemsCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
+import { orderLineItemsCost, orderItemsQty, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
@@ -249,7 +249,7 @@ export function LgOrders({
       if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;
       d.totalOrders++;
-      d.totalItems += Number(o.items_count ?? 0);
+      d.totalItems += o.raw?.line_items?.length ? orderItemsQty(o.raw.line_items, !!o.tracking_code) : Number(o.items_count ?? 0);
       d.totalCost  += orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags, costOpts(o));
       const st = o.payment_status as string;
       if (st === "paid" || st === "shipped") d.paidCount++;
@@ -701,7 +701,7 @@ export function LgOrders({
                               </p>
                               {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
                             </div>
-                            <div className="text-xs text-muted-foreground">{o.items_count ?? 0} itens</div>
+                            {(() => { const n = o.raw?.line_items?.length ? orderItemsQty(o.raw.line_items, !!o.tracking_code) : Number(o.items_count ?? 0); return <div className="text-xs text-muted-foreground">{n} {n === 1 ? "item" : "itens"}</div>; })()}
                             {/* col Processamento */}
                             <div>
                               <span className={cn(
