@@ -727,7 +727,14 @@ export const listOrders = createServerFn({ method: "GET" })
       raw: {
         financial_status: raw_financial_status ?? null,
         tags: tags ?? null,
-        line_items: ((line_items ?? []) as any[]).map((li) => ({ title: li?.title ?? null, name: li?.name ?? null, quantity: li?.quantity ?? 0 })),
+        // Inclui o que orderLineItemsCost usa (produto ligado ao card, item
+        // removido, enviado) — sem isso o custo da tela saía diferente do
+        // total copiado pro fornecedor ($494 × $450).
+        line_items: ((line_items ?? []) as any[]).map((li) => ({
+          title: li?.title ?? null, name: li?.name ?? null, quantity: li?.quantity ?? 0,
+          product_id: li?.product_id ?? null, current_quantity: li?.current_quantity ?? null,
+          fulfillment_status: li?.fulfillment_status ?? null, fulfillable_quantity: li?.fulfillable_quantity ?? null,
+        })),
       },
     }));
   });
