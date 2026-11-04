@@ -57,10 +57,10 @@ const firstTs = (evs: Ev[], ok: (d: string) => boolean) => {
 
 type Acc = {
   pedidos: number; comRastreio: number; entregues: number; emTransito: number; atrasados: number;
-  eua: number[]; entrega: number[]; alfPassou: number; alfProblema: number; alfParado: number;
+  eua: number[]; entrega: number[]; alfPassou: number; alfProblema: number; alfParado: number; reenviados: number;
   porMes: Map<string, number[]>;
 };
-const newAcc = (): Acc => ({ pedidos: 0, comRastreio: 0, entregues: 0, emTransito: 0, atrasados: 0, eua: [], entrega: [], alfPassou: 0, alfProblema: 0, alfParado: 0, porMes: new Map() });
+const newAcc = (): Acc => ({ pedidos: 0, comRastreio: 0, entregues: 0, emTransito: 0, atrasados: 0, eua: [], entrega: [], alfPassou: 0, alfProblema: 0, alfParado: 0, reenviados: 0, porMes: new Map() });
 export const avg = (a: number[]) => (a.length ? Math.round((a.reduce((s, v) => s + v, 0) / a.length) * 10) / 10 : null);
 export const median = (a: number[]) => {
   if (!a.length) return null;
@@ -73,14 +73,14 @@ export type CarrierRow = {
   pedidos: number; comRastreio: number; entregues: number; emTransito: number; atrasados: number;
   postagemEua: number | null; nEua: number;
   postagemEntrega: number | null; medianaEntrega: number | null; nEntrega: number;
-  alfPassou: number; alfProblema: number; alfParado: number;
+  alfPassou: number; alfProblema: number; alfParado: number; reenviados: number;
   porMes: { month: string; dias: number | null; n: number }[];
 };
 // Soma de todas as transportadoras (cards do topo).
 export type CarrierTotals = {
   pedidos: number; entregues: number; emTransito: number;
   postagemEua: number | null; postagemEntrega: number | null;
-  alfPassou: number; alfProblema: number;
+  alfPassou: number; alfProblema: number; reenviados: number;
 };
 
 // unknown: textos sem regra (chave → exemplo e quantas vezes apareceu).
@@ -95,6 +95,19 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     const a = acc.get(key) ?? newAcc();
     acc.set(key, a);
     a.pedidos++;
+    // Pacotes descartados (código trocado): contam como reenvio contra a
+    // transportadora do código antigo.
+    const history: { code?: string; until?: string }[] = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
+    for (const h of history) {
+      const old = String(h?.code ?? "").trim();
+      if (!old || old.toUpperCase() === code.toUpperCase()) continue;
+      const k = carrierOf(old);
+      const b = acc.get(k) ?? newAcc();
+      acc.set(k, b);
+      b.reenviados++;
+    }
+    // Reenviado: o relógio do "atrasado" conta da troca (igual ao resto do sistema).
+    const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;
     const evs = parseEvents(t?.timeline);
     if (!evs.length) continue;
     a.comRastreio++;
@@ -114,7 +127,7 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     if (delivered) a.entregues++;
     else {
       a.emTransito++;
-      const start = Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`);
+      const start = resentAt ? Date.parse(resentAt) : Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`);
       if (Number.isFinite(start) && now - start >= PROBLEM_LATE_DAYS * DAY) a.atrasados++;
     }
     if (post != null && us != null && us > post) a.eua.push((us - post) / DAY);
@@ -150,6 +163,7 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     postagemEntrega: avg(all.flatMap((a) => a.entrega)),
     alfPassou: all.reduce((x, a) => x + a.alfPassou, 0),
     alfProblema: all.reduce((x, a) => x + a.alfProblema, 0),
+    reenviados: all.reduce((x, a) => x + a.reenviados, 0),
   };
   return { acc, monthsSet, totals, unknown };
 }

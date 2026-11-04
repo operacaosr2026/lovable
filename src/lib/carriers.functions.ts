@@ -45,7 +45,7 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     if (!shopIds.length) return empty;
 
     const { data: orders, error: ordersErr } = await selectAllIn<any>(shopIds, (ids) => {
-      let q = supabaseAdmin.from("shop_orders").select("id,order_date,tracking_code").eq("user_id", ownerId).in("shop_id", ids);
+      let q = supabaseAdmin.from("shop_orders").select("id,order_date,tracking_code,tracking_code_history,tracking_code_manual_at").eq("user_id", ownerId).in("shop_id", ids);
       if (prevFrom ?? from) q = q.gte("order_date", (prevFrom ?? from)!);
       return q;
     });
@@ -79,7 +79,7 @@ export const getCarrierStats = createServerFn({ method: "GET" })
         pedidos: a.pedidos, comRastreio: a.comRastreio, entregues: a.entregues, emTransito: a.emTransito, atrasados: a.atrasados,
         postagemEua: avg(a.eua), nEua: a.eua.length,
         postagemEntrega: avg(a.entrega), medianaEntrega: median(a.entrega), nEntrega: a.entrega.length,
-        alfPassou: a.alfPassou, alfProblema: a.alfProblema, alfParado: a.alfParado,
+        alfPassou: a.alfPassou, alfProblema: a.alfProblema, alfParado: a.alfParado, reenviados: a.reenviados,
         porMes: months.map((m) => { const l = a.porMes.get(m) ?? []; return { month: m, dias: avg(l), n: l.length }; }),
       }))
       .sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key));
