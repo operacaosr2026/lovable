@@ -57,10 +57,10 @@ const firstTs = (evs: Ev[], ok: (d: string) => boolean) => {
 
 type Acc = {
   pedidos: number; comRastreio: number; entregues: number; emTransito: number; atrasados: number;
-  eua: number[]; entrega: number[]; alfPassou: number; alfProblema: number; alfParado: number; reenviados: number;
+  eua: number[]; entrega: number[]; alfPassou: number; alfProblema: number; alfParado: number; reenviados: number; ultimoEnvio: string | null; envios7d: number;
   porMes: Map<string, number[]>;
 };
-const newAcc = (): Acc => ({ pedidos: 0, comRastreio: 0, entregues: 0, emTransito: 0, atrasados: 0, eua: [], entrega: [], alfPassou: 0, alfProblema: 0, alfParado: 0, reenviados: 0, porMes: new Map() });
+const newAcc = (): Acc => ({ pedidos: 0, comRastreio: 0, entregues: 0, emTransito: 0, atrasados: 0, eua: [], entrega: [], alfPassou: 0, alfProblema: 0, alfParado: 0, reenviados: 0, ultimoEnvio: null, envios7d: 0, porMes: new Map() });
 export const avg = (a: number[]) => (a.length ? Math.round((a.reduce((s, v) => s + v, 0) / a.length) * 10) / 10 : null);
 export const median = (a: number[]) => {
   if (!a.length) return null;
@@ -74,6 +74,10 @@ export type CarrierRow = {
   postagemEua: number | null; nEua: number;
   postagemEntrega: number | null; medianaEntrega: number | null; nEntrega: number;
   alfPassou: number; alfProblema: number; alfParado: number; reenviados: number;
+  /** Data (YYYY-MM-DD) do último pedido novo enviado por ela (reenvio não conta). */
+  ultimoEnvio: string | null;
+  /** Pedidos novos nos últimos 7 dias. */
+  envios7d: number;
   porMes: { month: string; dias: number | null; n: number }[];
 };
 // Soma de todas as transportadoras (cards do topo).
@@ -113,6 +117,13 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     }
     // Reenviado: o relógio do "atrasado" conta da troca (igual ao resto do sistema).
     const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;
+    // Último envio = último pedido novo pelo código dela (reenvio não conta:
+    // lote de reenvio não quer dizer que ela é a transportadora da vez).
+    if (!resentAt) {
+      const sentOn = String(o.order_date).slice(0, 10);
+      if (!a.ultimoEnvio || sentOn > a.ultimoEnvio) a.ultimoEnvio = sentOn;
+      if (now - Date.parse(`${sentOn}T12:00:00Z`) <= 7 * DAY) a.envios7d++;
+    }
     const evs = parseEvents(t?.timeline);
     if (!evs.length) continue;
     a.comRastreio++;

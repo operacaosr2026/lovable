@@ -79,7 +79,7 @@ export const getCarrierStats = createServerFn({ method: "GET" })
         pedidos: a.pedidos, comRastreio: a.comRastreio, entregues: a.entregues, emTransito: a.emTransito, atrasados: a.atrasados,
         postagemEua: avg(a.eua), nEua: a.eua.length,
         postagemEntrega: avg(a.entrega), medianaEntrega: median(a.entrega), nEntrega: a.entrega.length,
-        alfPassou: a.alfPassou, alfProblema: a.alfProblema, alfParado: a.alfParado, reenviados: a.reenviados,
+        alfPassou: a.alfPassou, alfProblema: a.alfProblema, alfParado: a.alfParado, reenviados: a.reenviados, ultimoEnvio: a.ultimoEnvio, envios7d: a.envios7d,
         porMes: months.map((m) => { const l = a.porMes.get(m) ?? []; return { month: m, dias: avg(l), n: l.length }; }),
       }))
       .sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key));

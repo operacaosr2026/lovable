@@ -84,12 +84,28 @@ function Kpis({ t, p }: { t: CarrierTotals; p: CarrierTotals | null }) {
   );
 }
 
+// "Em uso": teve pedido novo pelo código dela nos últimos 7 dias (reenvio não conta).
+const IN_USE_DAYS = 7;
+const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const daysAgo = (iso: string) => Math.floor((Date.now() - Date.parse(`${iso}T12:00:00Z`)) / 86_400_000);
+
 function CarrierName({ r, tags }: { r: CarrierRow; tags: { label: string; cls: string }[] }) {
   const c = colorOf(r.key);
+  const inUse = !!r.ultimoEnvio && daysAgo(r.ultimoEnvio) <= IN_USE_DAYS;
   return (
     <div className="flex items-center gap-2.5 min-w-0">
       <span className={`size-8 shrink-0 rounded-lg grid place-items-center text-[10px] font-bold ${c.badge}`}>{c.short}</span>
-      <span className="font-medium whitespace-nowrap">{r.label}</span>
+      <span className="min-w-0">
+        <span className="font-medium whitespace-nowrap flex items-center gap-1.5">
+          {r.label}
+          {inUse && <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-primary/10 text-primary"><span className="size-1.5 rounded-full bg-primary animate-pulse" />Em uso</span>}
+        </span>
+        {r.ultimoEnvio && (
+          <span className="block text-[10px] text-muted-foreground whitespace-nowrap">
+            {inUse ? `${r.envios7d} envio${r.envios7d > 1 ? "s" : ""} nos últimos 7 dias · último ${ddmm(r.ultimoEnvio)}` : `sem envio desde ${ddmm(r.ultimoEnvio)}`}
+          </span>
+        )}
+      </span>
       {tags.map((t) => <span key={t.label} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${t.cls}`}>{t.label}</span>)}
     </div>
   );
@@ -114,7 +130,7 @@ function LineTip({ active, payload, label }: any) {
 export function CarriersView({ period }: { period: string }) {
   const days = CARRIER_PERIODS.find(([k]) => k === period)?.[2] ?? null;
   const fn = useServerFn(getCarrierStats);
-  const q = useQuery({ queryKey: ["carrier-stats-v4", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["carrier-stats-v5", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const d = q.data;
 
   // Tags: só entre as com amostra (10+ entregues / 10+ que passaram pela
