@@ -18,12 +18,13 @@ import { SupportKpisView } from "@/components/atendimento/SupportKpisView";
 import { CompanyGoals } from "@/components/goals/CompanyGoals";
 import { ProjectsBoard } from "@/components/projects/ProjectsBoard";
 import { IntelTipSheet } from "@/components/inteligencia/Inteligencia";
+import { CarriersView } from "@/components/gerencial/CarriersView";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
-// Metas e Projetos, que eram abas próprias.
+// Metas e Projetos, que eram abas próprias, e Transportadoras (prazo/alfândega).
 // ?tab=aprovacoes / ?tab=reembolsos abre direto nelas (links das notificações).
-const TAB_KEYS = ["alertas", "resultado", "aprovacoes", "reembolsos", "kpi", "metas", "projetos"] as const;
+const TAB_KEYS = ["alertas", "transportadoras", "resultado", "aprovacoes", "reembolsos", "kpi", "metas", "projetos"] as const;
 type Tab = (typeof TAB_KEYS)[number];
 
 export const Route = createFileRoute("/gerencial")({
@@ -51,11 +52,11 @@ function lastMonths(n: number) {
 }
 
 const TABS: [Tab, string][] = [
-  ["alertas", "Alertas"], ["resultado", "Resultado"], ["aprovacoes", "Fila de aprovação"],
+  ["alertas", "Alertas"], ["transportadoras", "Transportadoras"], ["resultado", "Resultado"], ["aprovacoes", "Fila de aprovação"],
   ["reembolsos", "Análise de reembolsos"], ["kpi", "KPI Atendimento"], ["metas", "Metas"], ["projetos", "Projetos"],
 ];
 // Abas com filtro próprio (o mês do topo some nelas).
-const OWN_FILTER_TABS: Tab[] = ["aprovacoes", "reembolsos", "metas", "projetos"];
+const OWN_FILTER_TABS: Tab[] = ["transportadoras", "aprovacoes", "reembolsos", "metas", "projetos"];
 
 function GerencialPage() {
   const months = useMemo(() => lastMonths(6), []);
@@ -112,6 +113,7 @@ function GerencialPage() {
           : tab === "projetos" ? <ProjectsBoard />
           : tab === "aprovacoes" ? <SupportApprovalsView onOpenConversation={openConversation} />
           : tab === "reembolsos" ? <SupportRefundAnalytics onOpenConversation={openConversation} />
+          : tab === "transportadoras" ? <CarriersView />
           : q.isLoading ? <div className="py-20 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
           : q.isError || !d ? <div className="py-20 text-center text-sm text-destructive">{(q.error as any)?.message ?? "Erro"}</div>
           : tab === "alertas" ? <Alerts d={d} />
