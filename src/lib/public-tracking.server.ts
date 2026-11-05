@@ -108,12 +108,18 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
       status,
       steps,
       currentStep: current,
-      events: sanitizeEvents(all, await loadTrackingTextOverrides(o?.user_id)),
+      // Sem a cidade/hub de cada evento (pedido do usuário em 05/11/2026): o cliente
+      // via o pacote passar por "Melrose Park, IL" etc. e estranhava. A localidade
+      // segue sendo usada por dentro (fases, eventos repetidos) — só não sai daqui.
+      events: withoutLocation(sanitizeEvents(all, await loadTrackingTextOverrides(o?.user_id))),
       destination: destinationOf(o),
       edd: officialEdd(tr ? { source: tr.edd_source, from: tr.edd_from, to: tr.edd_to } : null),
     },
   };
 }
+
+const withoutLocation = (evs: DisplayEvent[]): DisplayEvent[] =>
+  evs.map((e) => ({ ...e, location: null, ...(e.more ? { more: withoutLocation(e.more) } : {}) }));
 
 // Limite de tentativas das rotas públicas, por IP: `max` por `windowMin`.
 // Busca por pedido + contato (sem login): sem isso dava pra testar números de
