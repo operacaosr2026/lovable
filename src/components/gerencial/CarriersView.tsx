@@ -207,7 +207,10 @@ export function CarriersView({ period }: { period: string }) {
                         {int(r.pedidos)}
                         {r.pedidos > r.comRastreio && <Sub>{r.pedidos - r.comRastreio} sem rastreio</Sub>}
                       </td>
-                      <td className="py-2.5 px-3 text-center tabular-nums font-semibold">{int(r.entregues)}</td>
+                      <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
+                        {int(r.entregues)}
+                        {r.pedidos > 0 && <Sub>{pct(r.entregues / r.pedidos)} dos pedidos</Sub>}
+                      </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
                         {int(r.emTransito)}
                         {r.atrasados > 0 && <Sub tone="text-rose-600">{r.atrasados} atrasado{r.atrasados > 1 ? "s" : ""}</Sub>}
