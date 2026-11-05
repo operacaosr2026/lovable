@@ -250,7 +250,7 @@ function Alerts({ d }: { d: Data }) {
   const [tipOpen, setTipOpen] = useState<number | null>(null);
   // Alerta de rastreio (entrega / lote parado / alfândega) aberto na gaveta.
   const [ordersOpen, setOrdersOpen] = useState<{ key: string; title: string; detail: string } | null>(null);
-  const opensOrders = (a: Data["alerts"][number]) => a.kind === "entrega" || a.kind === "lote" || a.kind === "alfandega";
+  const opensOrders = (a: Data["alerts"][number]) => a.key === "entrega" || a.key.startsWith("track123:") || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase");
   const dismiss = useMutation({
     mutationFn: (v: { key: string; undo?: boolean }) => dismissFn({ data: { month: d.month, ...v } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["gerencial", d.month] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); },

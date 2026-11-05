@@ -11,6 +11,7 @@ import { supportKpisFor } from "@/lib/atendimento.functions";
 import { personNames } from "@/lib/support-approval.server";
 import { needsAttention } from "@/lib/logistics-kpis";
 import { refundReasonLabel } from "@/lib/refund-reasons";
+import { HANDOFF_DAYS, NOT_POSTED_DAYS, situationCarrierLabel, trackingSituations } from "@/lib/tracking-situations.server";
 
 // Gerencial › Resultado e Alertas: a operação do mês, com as mesmas contas de
 // Metas, Dashboard, Análise de reembolsos, Chargebacks e Rastreamento:
@@ -269,10 +270,46 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
         detail: `${usd(sum(stuck))} ainda não concluído há ${alertSettings.pending_days}+ dias.`,
         metric: String(stuck.length), metricLabel: pl(stuck.length, "reembolso", "reembolsos") });
     }
-    if (entrega.atencao) {
-      alerts.push({ key: "entrega", kind: "entrega", level: "atencao", title: "Pedidos precisando de atenção na entrega", link: "/shops/lojas-grupos", action: "Ver rastreio",
-        detail: "Sem envio há 3+ dias úteis, parado no rastreio há 5+ dias, com problema ou sem entrega depois de 20 dias.",
-        metric: String(entrega.atencao), metricLabel: `de ${entrega.pedidos} do mês` });
+    // Rastreio: todo pedido em aberto (até 180 dias), não só os do mês.
+    const sit = await trackingSituations(ownerId, shopIds, now);
+    if (sit.reenvioEntregue.length) {
+      const n = sit.reenvioEntregue.length;
+      alerts.push({ key: "rastreio:reenvio_entregue", kind: "entrega", level: "critico", title: `${pl(n, "Reenvio", "Reenvios")} que talvez não precisava`, link: "", action: "Ver rastreio",
+        detail: `O pacote antigo foi entregue e o reenvio ainda não: ${sit.reenvioEntregue.map((o) => o.order_number).join(", ")}. Veja se dá pra cancelar o reenvio.`,
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    if (sit.cliente.length) {
+      const n = sit.cliente.length;
+      alerts.push({ key: "rastreio:cliente", kind: "entrega", level: "critico", title: "Endereço errado, devolvido ou falha na entrega", link: "", action: "Ver rastreio",
+        detail: `${sit.cliente.map((o) => o.order_number).join(", ")}. Fale com o cliente (confirmar endereço) ou decida o reenvio antes de virar chargeback.`,
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    for (const [carrier, list] of [...sit.naoPostado.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      const n = list.length;
+      const oldest = list.map((o) => o._events[0]?.ts ?? now).reduce((m, v) => Math.min(m, v), now);
+      const dias = Math.floor((now - oldest) / DAY);
+      alerts.push({ key: `rastreio:nao_postado:${carrier}`, kind: "lote", level: dias >= 10 ? "critico" : "atencao",
+        title: `${situationCarrierLabel(carrier)}: ${pl(n, "pacote não postado", "pacotes não postados")}`, link: "", action: "Ver rastreio",
+        detail: `Código gerado e só o aviso de etiqueta há ${NOT_POSTED_DAYS}+ dias (o mais antigo há ${dias} dias) — o fornecedor não despachou. Cobre o fornecedor.`,
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    if (sit.repassado.length) {
+      const n = sit.repassado.length;
+      alerts.push({ key: "rastreio:repassado", kind: "lote", level: "atencao", title: "Repassado à transportadora local e parou", link: "", action: "Ver rastreio",
+        detail: `"Delivered to local carrier" há ${HANDOFF_DAYS}+ dias sem outro evento. O pacote está com a transportadora dos EUA — peça o código local ao fornecedor.`,
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    if (sit.entrega.length) {
+      const n = sit.entrega.length;
+      alerts.push({ key: "entrega", kind: "entrega", level: "atencao", title: "Pedidos precisando de atenção na entrega", link: "", action: "Ver rastreio",
+        detail: "Sem envio há 3+ dias úteis, parado no rastreio há 5+ dias, com problema ou sem entrega depois de 20 dias — todos os pedidos em aberto, não só os do mês.",
+        metric: String(n), metricLabel: "em aberto" });
+    }
+    if (sit.semFase.length) {
+      const n = sit.semFase.length;
+      alerts.push({ key: "rastreio:sem_fase", kind: "lote", level: "atencao", title: `${pl(n, "Texto", "Textos")} de rastreio sem fase`, link: "/settings/rastreamento?tab=textos&filtro=sem_regra", action: "Classificar",
+        detail: `Nenhuma regra reconhece (ex.: "${sit.semFase[0].example.slice(0, 60)}"). Até escolher a fase, prazos e alfândega das transportadoras podem sair errados.`,
+        metric: String(n), metricLabel: pl(n, "texto", "textos") });
     }
     if (overdue.length) {
       alerts.push({ key: "tarefa", kind: "tarefa", level: "atencao", title: `${pl(overdue.length, "Tarefa atrasada", "Tarefas atrasadas")}`, link: "/tarefas", action: "Ver tarefas",
@@ -288,8 +325,13 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
 
     // Rastreio: cada aviso aberto de alfândega / lote parado vira um alerta
     // (alfândega = crítico). Some sozinho quando o aviso resolve no sino.
+    // Lote parado em que todo pedido já está numa situação específica (ex.: não
+    // postado) não repete o mesmo problema em outro alerta.
+    const specificNums = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
     for (const n of (trackingRes.data ?? []) as any[]) {
       const alfandega = String(n.key).startsWith("track123:alfandega:");
+      const nums = String(n.body ?? "").match(/#[A-Za-z0-9-]+/g) ?? [];
+      if (!alfandega && nums.length && nums.every((x) => specificNums.has(x))) continue;
       const qtd = Number(String(n.title).match(/(\d+)\s+pacote/)?.[1] ?? 0);
       alerts.push({
         key: String(n.key), kind: alfandega ? "alfandega" : "lote", level: alfandega || n.level === "error" ? "critico" : "atencao",

@@ -3,9 +3,9 @@ import { z } from "zod";
 import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
-import { companyShopIdsForMonth, monthEndOf } from "@/lib/company-goals.server";
-import { attentionReason, needsAttention } from "@/lib/logistics-kpis";
-import { isoTodayUS } from "@/lib/timezone";
+import { companyShopIdsForMonth } from "@/lib/company-goals.server";
+import { attentionReason } from "@/lib/logistics-kpis";
+import { trackingSituations } from "@/lib/tracking-situations.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { autoPhase, phaseLabel } from "@/lib/tracking-phases";
@@ -62,17 +62,16 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     // Pedidos do alerta: entrega = os do mês que precisam de atenção (mesma
     // conta do alerta); lote/alfândega = os números listados no aviso.
     let orders: any[] = [];
-    if (data.key === "entrega") {
-      const from = `${data.month}-01`;
-      const today = isoTodayUS();
-      const to = monthEndOf(from) < today ? monthEndOf(from) : today;
-      const shopIds = await companyShopIdsForMonth(ownerId, from);
-      if (shopIds.length) {
-        const r = await selectAll<any>(supabaseAdmin.from("shop_orders").select(sel)
-          .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to));
-        if (r.error) throw new Error(r.error.message);
-        orders = r.data.filter((o) => needsAttention(o, now));
-      }
+    const situation = data.key === "entrega" || data.key.startsWith("rastreio:");
+    if (situation) {
+      // Mesma conta dos alertas (tracking-situations.server.ts).
+      const sit = await trackingSituations(ownerId, await companyShopIdsForMonth(ownerId, `${data.month}-01`), now);
+      orders = data.key === "entrega" ? sit.entrega
+        : data.key === "rastreio:cliente" ? sit.cliente
+        : data.key === "rastreio:repassado" ? sit.repassado
+        : data.key === "rastreio:reenvio_entregue" ? sit.reenvioEntregue
+        : data.key.startsWith("rastreio:nao_postado:") ? (sit.naoPostado.get(data.key.slice("rastreio:nao_postado:".length)) ?? [])
+        : [];
     } else if (data.key.startsWith("track123:lote:") || data.key.startsWith("track123:alfandega:")) {
       const { data: n, error } = await supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).eq("key", data.key).maybeSingle();
       if (error) throw new Error(error.message);
@@ -107,10 +106,15 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       const lastText = last?.d ?? t?.last_event_label ?? null;
       const daysStopped = lastAt ? Math.floor((now - Date.parse(lastAt)) / DAY) : null;
       const history = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
-      const reason = data.key === "entrega"
+      const reason = data.key === "rastreio:nao_postado" || data.key.startsWith("rastreio:nao_postado:")
+        ? `Só aviso de etiqueta há ${daysStopped ?? "?"}d — não postado`
+        : data.key === "rastreio:reenvio_entregue" ? "Pacote antigo entregue"
+        : data.key === "rastreio:repassado" ? `Com a transportadora local há ${daysStopped ?? "?"}d`
+        : data.key === "rastreio:cliente" ? "Endereço / devolução / falha na entrega"
+        : data.key === "entrega"
         ? (o.delivery_status === "problem" ? "Marcado como problema"
           : (o.delivery_status ?? "pending_shipment") === "pending_shipment" ? "Sem envio há mais de 3 dias úteis"
-          : attentionReason({ ...o, last_event_at: t?.last_event_at }, now) ?? STATUS[o.delivery_status] ?? "")
+          : attentionReason({ ...o, last_event_at: t?.last_event_at, clock_from: o.clock_from ?? null }, now) ?? STATUS[o.delivery_status] ?? "")
         : daysStopped != null ? `${daysStopped}d sem movimento` : "Sem movimento";
       return {
         id: o.id, number: String(o.order_number ?? o.id.slice(0, 8)), shop: shopName.get(o.shop_id) ?? "",

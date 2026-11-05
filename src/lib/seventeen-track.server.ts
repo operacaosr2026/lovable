@@ -345,6 +345,17 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     result.errors.push(`problemas: ${String(e?.message ?? e).slice(0, 150)}`);
   }
 
+  // 5. Pacote antigo de reenvio: continua acompanhando até 60 dias da troca
+  // (código já cadastrado, sem crédito) — se ele for entregue, o Gerencial
+  // avisa que o reenvio talvez não precisava.
+  if (Date.now() <= deadline) {
+    try {
+      await refreshReplacedPackages(shops.map((s) => s.shop_id));
+    } catch (e: any) {
+      result.errors.push(`pacotes trocados: ${String(e?.message ?? e).slice(0, 150)}`);
+    }
+  }
+
   // Status por loja (o sino avisa quando para de sincronizar).
   const status = result.errors.length && !result.updated ? "error" : "ok";
   const msg = `17track: ${result.updated} atualizados, ${result.registered} cadastrados agora` +
@@ -411,6 +422,30 @@ function applyExtraItem(x: ExtraPackage, item: any): boolean {
 
 // Shopify: troca o link do envio desse código e manda o status quando muda
 // (erro aqui não para o sync).
+async function refreshReplacedPackages(shopIds: string[]) {
+  if (!shopIds.length) return;
+  const since = Date.now() - 60 * 86_400_000;
+  const { data: rows, error } = await selectAll<any>(supabaseAdmin.from("shop_order_tracking")
+    .select("id,replaced_packages").in("shop_id", shopIds).neq("replaced_packages", "[]"));
+  if (error) throw new Error(error.message);
+  const pending = (p: any) => !/^delivered/i.test(String(p?.tracking_status ?? "")) && Date.parse(String(p?.replaced_at ?? "")) >= since;
+  const numbers = [...new Set(rows.flatMap((r) => (r.replaced_packages as any[]).filter(pending).map((p) => String(p.number).toUpperCase())))];
+  if (!numbers.length) return;
+  const got = await fetchRegisteredTimelines(numbers);
+  for (const r of rows) {
+    let changed = false;
+    const list = (r.replaced_packages as any[]).map((p) => {
+      const g = pending(p) ? got.get(String(p.number).toUpperCase()) : undefined;
+      if (!g?.timeline.length || (g.timeline.length === (p.timeline?.length ?? 0) && g.status === p.tracking_status)) return p;
+      changed = true;
+      const last = g.timeline[0];
+      return { ...p, tracking_status: g.status, timeline: g.timeline, last_event_label: last?.event_detail ?? null,
+        last_event_at: last?.event_time_utc ? `${last.event_time_utc}+00` : null, refreshed_at: new Date().toISOString() };
+    });
+    if (changed) await supabaseAdmin.from("shop_order_tracking").update({ replaced_packages: list as any }).eq("id", r.id);
+  }
+}
+
 async function pushToShopify(o: any, number: string, item: any, previousLabel: string | null, template: string | null, pushAll: boolean | undefined, result: SeventeenSyncResult) {
   try {
     const url = buildTrackingUrl(template, number);
