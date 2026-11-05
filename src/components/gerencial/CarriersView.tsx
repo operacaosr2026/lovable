@@ -4,6 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { AlertTriangle, ArrowDown, ArrowUp, Boxes, CalendarDays, Clock, Info, Loader2, RefreshCw, TrendingUp, Truck } from "lucide-react";
 import { getCarrierStats, type CarrierRow, type CarrierTotals } from "@/lib/carriers.functions";
+import { colorOf } from "./carrier-colors";
+import { LocalTrackingCard } from "./LocalTrackingCard";
 
 // Gerencial › Transportadoras: prazo e alfândega de cada transportadora (conta
 // em carriers.functions.ts). Período pela data do pedido — o filtro fica no
@@ -22,17 +24,6 @@ const rateOf = (a: number, b: number) => (b ? a / b : null);
 const pct = (v: number | null) => (v == null ? "–" : `${dec(v * 100)}%`);
 const AXIS = { fill: "var(--color-muted-foreground)", fontSize: 11 };
 
-// Cor de cada transportadora (selo da tabela e linha do gráfico).
-const CARRIER_COLOR: Record<string, { hex: string; badge: string; short: string }> = {
-  ZS: { hex: "#10b981", badge: "bg-emerald-500/10 text-emerald-600", short: "ZS" },
-  TRF: { hex: "#3b82f6", badge: "bg-blue-500/10 text-blue-600", short: "TRF" },
-  JCZ: { hex: "#8b5cf6", badge: "bg-violet-500/10 text-violet-600", short: "JC" },
-  JXCZ: { hex: "#f97316", badge: "bg-orange-500/10 text-orange-600", short: "SH" },
-  LZ: { hex: "#d946ef", badge: "bg-fuchsia-500/10 text-fuchsia-600", short: "LZ" },
-  YTTG: { hex: "#0ea5e9", badge: "bg-sky-500/10 text-sky-600", short: "YT" },
-  OUTRAS: { hex: "#94a3b8", badge: "bg-muted text-muted-foreground", short: "?" },
-};
-const colorOf = (key: string) => CARRIER_COLOR[key] ?? CARRIER_COLOR.OUTRAS;
 
 function alfTone(rate: number | null) {
   if (rate == null) return { text: "text-muted-foreground", bar: "bg-muted-foreground/40" };
@@ -320,6 +311,8 @@ export function CarriersView({ period }: { period: string }) {
           </div>
         </div>
       )}
+
+      <LocalTrackingCard days={days} />
 
       <div className="flex gap-2 text-[11px] text-muted-foreground">
         <Info className="size-3.5 shrink-0 mt-0.5" />

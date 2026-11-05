@@ -329,6 +329,12 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
         detail: "Cadastrado no 17track há 3+ dias e nenhum evento — código errado, transportadora não reconhecida ou o 17track não acha. Confira o código.",
         metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
     }
+    if (sit.localNova.length) {
+      const n = sit.localNova.length;
+      alerts.push({ key: "fora:local", kind: "sistema", level: "atencao", title: "Transportadora local não reconhecida", link: "", action: "Ver pedidos",
+        detail: `Repassado à transportadora local dos EUA e os eventos não batem com nenhuma conhecida (${sit.localNova.slice(0, 5).map((o) => o.order_number).join(", ")}). Fica como "Não reconhecida" no Rastreamento local — me mande um código pra cadastrar.`,
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
     if (sit.statusDiverge.length) {
       const n = sit.statusDiverge.length;
       alerts.push({ key: "fora:status", kind: "sistema", level: "atencao", title: "Rastreio diz entregue e o pedido não", link: "", action: "Ver pedidos",

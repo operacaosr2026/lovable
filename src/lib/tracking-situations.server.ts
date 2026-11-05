@@ -4,6 +4,7 @@ import { needsAttention } from "@/lib/logistics-kpis";
 import { eventTextKey } from "@/lib/tracking-display";
 import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
+import { localLegOf } from "@/lib/local-carriers";
 
 // Situações de rastreio que viram alerta no Gerencial (e a lista de pedidos da
 // gaveta "Ver rastreio"). Olha TODO pedido em aberto das lojas (até 180 dias),
@@ -39,12 +40,13 @@ export type Situations = {
   transportadoraNova: Map<string, SituationOrder[]>; // prefixo do código → pedidos
   semEvento: SituationOrder[];        // cadastrado no 17track há 3+ dias e nenhum evento
   statusDiverge: SituationOrder[];    // rastreio diz entregue e o pedido não (1+ dia)
+  localNova: SituationOrder[];        // repassado à transportadora local e os eventos não batem com nenhuma conhecida
 };
 
 const isDelivered = (o: any) => o.delivery_status === "delivered";
 
 export async function trackingSituations(ownerId: string, shopIds: string[], nowMs = Date.now()): Promise<Situations> {
-  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [] };
+  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [] };
   if (!shopIds.length) return empty;
   const since = new Date(nowMs - WINDOW_DAYS * DAY).toISOString().slice(0, 10);
   const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at";
@@ -62,7 +64,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   const phaseOf = phaseResolver(new Map(((phaseRows.data ?? []) as any[]).map((r) => [r.text_key as string, r.phase as Phase])));
 
   const tracks = await selectAllIn<any>(open.map((o) => o.id as string), (c) => supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,timeline,replaced_packages,registered_17track_at").in("order_id", c));
+    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,timeline,replaced_packages,registered_17track_at,local_tracking_number").in("order_id", c));
   if (tracks.error) throw new Error(tracks.error.message);
   const trackBy = new Map(tracks.data.map((t) => [String(t.order_id), t]));
 
@@ -101,6 +103,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
     if (code && !evs.length && t?.registered_17track_at && nowMs - Date.parse(t.registered_17track_at) >= 3 * DAY) out.semEvento.push(row);
     const delivEv = evs.find((e) => phaseOf(e.d) === "entregue");
     if (delivEv && nowMs - delivEv.ts >= DAY) out.statusDiverge.push(row);
+    if (localLegOf(evs, t?.local_tracking_number ?? null, (d) => phaseOf(d) === "entregue")?.key === "NAO_RECONHECIDA") out.localNova.push(row);
     // Reenvio: pacote antigo entregue e o novo ainda não.
     const replaced: any[] = Array.isArray(t?.replaced_packages) ? t.replaced_packages : [];
     if (!isDelivered(o) && replaced.some((p) => parseEvents(p?.timeline).some((e) => phaseOf(e.d) === "entregue"))) out.reenvioEntregue.push(row);

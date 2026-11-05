@@ -74,6 +74,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key.startsWith("fora:transportadora:") ? (sit.transportadoraNova.get(data.key.slice("fora:transportadora:".length)) ?? [])
         : data.key === "fora:sem_evento" ? sit.semEvento
         : data.key === "fora:status" ? sit.statusDiverge
+        : data.key === "fora:local" ? sit.localNova
         : [];
     } else if (data.key.startsWith("track123:lote:") || data.key.startsWith("track123:alfandega:")) {
       const { data: n, error } = await supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).eq("key", data.key).maybeSingle();
@@ -116,6 +117,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "rastreio:cliente" ? "Endereço / devolução / falha na entrega"
         : data.key.startsWith("fora:transportadora:") ? "Código de transportadora não cadastrada"
         : data.key === "fora:sem_evento" ? "Cadastrado no 17track sem nenhum evento"
+        : data.key === "fora:local" ? "Transportadora local não reconhecida"
         : data.key === "fora:status" ? `Rastreio entregue, pedido como "${STATUS[o.delivery_status ?? "pending_shipment"] ?? o.delivery_status}"`
         : data.key === "entrega"
         ? (o.delivery_status === "problem" ? "Marcado como problema"

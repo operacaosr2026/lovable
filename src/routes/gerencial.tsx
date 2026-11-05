@@ -251,7 +251,7 @@ function Alerts({ d }: { d: Data }) {
   // Alerta de rastreio (entrega / lote parado / alfândega) aberto na gaveta.
   const [ordersOpen, setOrdersOpen] = useState<{ key: string; title: string; detail: string } | null>(null);
   const opensOrders = (a: Data["alerts"][number]) => a.key === "entrega" || a.key.startsWith("track123:alfandega:") || a.key.startsWith("track123:lote:")
-    || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase") || /^fora:(transportadora:|sem_evento|status)/.test(a.key);
+    || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase") || /^fora:(transportadora:|sem_evento|status|local$)/.test(a.key);
   // Link de fora do sistema (ex.: cobrança da Meta) abre em outra aba.
   const go = (href: string) => (/^https?:\/\//.test(href) ? window.open(href, "_blank", "noopener") : navigate({ href }));
   const dismiss = useMutation({

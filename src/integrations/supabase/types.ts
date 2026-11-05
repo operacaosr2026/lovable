@@ -4078,6 +4078,7 @@ export type Database = {
           edd_to: string | null;
           extra_packages: Json;
           replaced_packages: Json;
+          local_tracking_number: string | null;
           id: string;
           last_event_at: string | null;
           last_event_label: string | null;
@@ -4102,6 +4103,7 @@ export type Database = {
           edd_to?: string | null;
           extra_packages?: Json;
           replaced_packages?: Json;
+          local_tracking_number?: string | null;
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;
@@ -4126,6 +4128,7 @@ export type Database = {
           edd_to?: string | null;
           extra_packages?: Json;
           replaced_packages?: Json;
+          local_tracking_number?: string | null;
           id?: string;
           last_event_at?: string | null;
           last_event_label?: string | null;

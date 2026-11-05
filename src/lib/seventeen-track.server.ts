@@ -86,14 +86,23 @@ function toTimeline(item: any) {
 // Rastreio de códigos já cadastrados (sem gastar crédito: só o /register gasta).
 // Usado pra recuperar a timeline de pacote descartado (replaced_packages).
 export async function fetchRegisteredTimelines(numbers: string[]) {
-  const out = new Map<string, { status: string | null; timeline: ReturnType<typeof toTimeline> }>();
+  const out = new Map<string, { status: string | null; timeline: ReturnType<typeof toTimeline>; localNumber: string | null }>();
   for (let i = 0; i < numbers.length; i += 40) {
     const data = await call17("/gettrackinfo", numbers.slice(i, i + 40).map((number) => ({ number })));
     for (const item of data?.accepted ?? []) {
-      out.set(String(item.number).toUpperCase(), { status: item?.track_info?.latest_status?.status ?? null, timeline: toTimeline(item) });
+      out.set(String(item.number).toUpperCase(), { status: item?.track_info?.latest_status?.status ?? null, timeline: toTimeline(item), localNumber: localNumberOf(item) });
     }
   }
   return out;
+}
+
+// Código da transportadora local dos EUA (misc_info.local_number). Quando ela
+// não tem código próprio o 17track devolve o nosso de volta — aí não vale.
+// Vem na USPS e no YunTu (TRF0… / TYHZ…); GOFO e as sem nome não mandam.
+export function localNumberOf(item: any): string | null {
+  const own = String(item?.number ?? "").trim().toUpperCase();
+  const local = String(item?.track_info?.misc_info?.local_number ?? "").trim().toUpperCase();
+  return local && local !== own && local.length >= 8 ? local : null;
 }
 
 function eddOf(item: any) {
@@ -182,7 +191,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   if (!orders.length) return result;
 
   const { data: tracks } = await selectAllIn<any>(orders.map((o: any) => o.id), (ids) => supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,carrier,edd_from,edd_to,edd_source,registered_17track_at,timeline,extra_packages").in("order_id", ids));
+    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,carrier,edd_from,edd_to,edd_source,registered_17track_at,timeline,extra_packages,local_tracking_number").in("order_id", ids));
   const trackBy = new Map((tracks ?? []).map((t: any) => [t.order_id, t]));
   const code = (o: any) => String(o.tracking_code).trim().toUpperCase();
   // Código trocado à mão na aba Rastreamento: os envios da Shopify de antes da
@@ -619,7 +628,11 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
   // transportadora): não regrava — o sync roda de 30 em 30 min pra ~250 pedidos.
   const trackingNumber = String(o.tracking_code).trim().toUpperCase();
   const carrier = carriers.join(" → ") || null;
+  // Código local (USPS): o 17track às vezes deixa de mandar — não apaga o que já veio.
+  const sameCode = String(stored?.tracking_number ?? "").toUpperCase() === trackingNumber;
+  const localNumber = localNumberOf(item) ?? (sameCode ? stored?.local_tracking_number ?? null : null);
   const sameTracking = stored
+    && (stored.local_tracking_number ?? null) === localNumber
     && String(stored.tracking_number ?? "").toUpperCase() === trackingNumber
     && (stored.tracking_status ?? null) === statusLabel
     && (stored.last_event_at ? new Date(stored.last_event_at).getTime() : null) === (lastAt ? new Date(lastAt).getTime() : null)
@@ -638,6 +651,7 @@ async function applyItem(o: any, item: any, stored: any, template: string | null
       last_event_at: lastAt,
       last_event_label: lastLabel,
       timeline,
+      local_tracking_number: localNumber,
     }, { onConflict: "order_id" }),
     Object.keys(orderUpdate).length ? supabaseAdmin.from("shop_orders").update(orderUpdate).eq("id", o.id) : Promise.resolve(),
   ]);
