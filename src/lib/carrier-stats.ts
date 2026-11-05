@@ -34,7 +34,7 @@ export const CARRIERS: { key: string; label: string; re: RegExp }[] = [
   { key: "LZ", label: "LZ", re: /^LZ/i },
   { key: "YTTG", label: "YTTG", re: /^YTTG/i },
 ];
-const carrierOf = (code: string) => CARRIERS.find((c) => c.re.test(code))?.key ?? "OUTRAS";
+export const carrierOf = (code: string) => CARRIERS.find((c) => c.re.test(code))?.key ?? "OUTRAS";
 export const carrierLabel = (key: string) => CARRIERS.find((c) => c.key === key)?.label ?? "Outras";
 
 type Ev = { ts: number; d: string };

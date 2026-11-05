@@ -19,6 +19,7 @@ import { CompanyGoals } from "@/components/goals/CompanyGoals";
 import { ProjectsBoard } from "@/components/projects/ProjectsBoard";
 import { IntelTipSheet } from "@/components/inteligencia/Inteligencia";
 import { CarriersView, CARRIER_PERIODS } from "@/components/gerencial/CarriersView";
+import { AlertOrdersSheet } from "@/components/gerencial/AlertOrdersSheet";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
@@ -247,6 +248,9 @@ function Alerts({ d }: { d: Data }) {
   const [showDismissed, setShowDismissed] = useState(false);
   // Dica da Inteligência aberta na gaveta (índice na análise).
   const [tipOpen, setTipOpen] = useState<number | null>(null);
+  // Alerta de rastreio (entrega / lote parado / alfândega) aberto na gaveta.
+  const [ordersOpen, setOrdersOpen] = useState<{ key: string; title: string; detail: string } | null>(null);
+  const opensOrders = (a: Data["alerts"][number]) => a.kind === "entrega" || a.kind === "lote" || a.kind === "alfandega";
   const dismiss = useMutation({
     mutationFn: (v: { key: string; undo?: boolean }) => dismissFn({ data: { month: d.month, ...v } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["gerencial", d.month] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); },
@@ -320,7 +324,7 @@ function Alerts({ d }: { d: Data }) {
                       <p className={`text-lg sm:text-xl font-semibold tracking-tight whitespace-nowrap ${st.metric}`}>{a.metric}</p>
                       <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
                     </div>
-                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : navigate({ href: a.link })}
+                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : opensOrders(a) ? setOrdersOpen(a) : navigate({ href: a.link })}
                       className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
                       {a.action} <ChevronRight className="size-3.5" />
                     </button>
@@ -338,6 +342,7 @@ function Alerts({ d }: { d: Data }) {
       ))}
       {dismissedList}
       {tipOpen != null && <IntelTipSheet index={tipOpen} onClose={() => setTipOpen(null)} />}
+      {ordersOpen && <AlertOrdersSheet alert={ordersOpen} month={d.month} onClose={() => setOrdersOpen(null)} />}
     </div>
   );
 }
