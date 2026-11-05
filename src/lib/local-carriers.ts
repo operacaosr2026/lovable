@@ -40,14 +40,22 @@ const uspsCore = (n: string) => n.match(USPS_NUMBER)?.[1] ?? null;
 
 export type LocalLeg = { key: LocalCarrierKey; startTs: number; deliveredTs: number | null };
 
-// evs: eventos do pacote (qualquer ordem). isDelivered: fase "entregue".
-export function localLegOf(evs: { ts: number; d: string }[], localNumber: string | null, isDelivered: (d: string) => boolean): LocalLeg | null {
+const US_SIDE = new Set<string>(["chegada_eua", "alfandega_entrada", "alfandega_saida"]);
+
+// evs: eventos do pacote (qualquer ordem). phaseOf: fase de cada texto
+// (tracking-phases). Sem o evento de repasse, o trecho local começa depois da
+// chegada nos EUA / alfândega — a "Sem nome" cria eventos "(中文:…)" ainda na
+// China (Xangai, antes do voo) e o pacote parecia já estar com ela (#L4-1527).
+// Sem chegada reconhecida, só vale GOFO/USPS (nunca aparecem na origem).
+export function localLegOf(evs: { ts: number; d: string }[], localNumber: string | null, phaseOf: (d: string) => string | null): LocalLeg | null {
   const asc = [...evs].sort((a, b) => a.ts - b.ts);
   const h = asc.findIndex((e) => HANDOFF.test(e.d));
-  const leg = h >= 0 ? asc.slice(h + 1) : asc;
-  const deliv = leg.find((e) => isDelivered(e.d));
+  const us = h >= 0 ? h : asc.findIndex((e) => US_SIDE.has(phaseOf(e.d) ?? ""));
+  const leg = h >= 0 ? asc.slice(h + 1) : us >= 0 ? asc.slice(us + 1) : asc;
+  const deliv = leg.find((e) => phaseOf(e.d) === "entregue");
   const deliveredTs = deliv ? deliv.ts : null;
   for (const [key, re] of SIGS) {
+    if (key === "SEM_NOME" && h < 0 && us < 0) continue;
     const first = leg.find((e) => re.test(e.d));
     if (first) return { key, startTs: h >= 0 ? asc[h].ts : first.ts, deliveredTs };
   }

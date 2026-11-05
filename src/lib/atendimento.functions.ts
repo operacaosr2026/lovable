@@ -872,7 +872,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
     for (const t of (tracks ?? []) as any[]) {
       const o = orders.find((x) => x.id === t.order_id);
       if (!o || String(t.tracking_number ?? "").toUpperCase() !== String(o.tracking_code ?? "").trim().toUpperCase()) continue;
-      const leg = localLegOf(parseEvents(t.timeline), t.local_tracking_number ?? null, (d) => phaseOf(d) === "entregue");
+      const leg = localLegOf(parseEvents(t.timeline), t.local_tracking_number ?? null, phaseOf);
       if (!leg && !t.local_tracking_number) continue;
       const n: string | null = t.local_tracking_number ?? null;
       localBy.set(o.id, { label: leg ? localCarrierLabel(leg.key) : "Transportadora local", number: n ? localNumberDisplay(n) : null, url: localTrackingUrl(n) });

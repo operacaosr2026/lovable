@@ -103,7 +103,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
     if (code && !evs.length && t?.registered_17track_at && nowMs - Date.parse(t.registered_17track_at) >= 3 * DAY) out.semEvento.push(row);
     const delivEv = evs.find((e) => phaseOf(e.d) === "entregue");
     if (delivEv && nowMs - delivEv.ts >= DAY) out.statusDiverge.push(row);
-    if (localLegOf(evs, t?.local_tracking_number ?? null, (d) => phaseOf(d) === "entregue")?.key === "NAO_RECONHECIDA") out.localNova.push(row);
+    if (localLegOf(evs, t?.local_tracking_number ?? null, phaseOf)?.key === "NAO_RECONHECIDA") out.localNova.push(row);
     // Reenvio: pacote antigo entregue e o novo ainda não.
     const replaced: any[] = Array.isArray(t?.replaced_packages) ? t.replaced_packages : [];
     if (!isDelivered(o) && replaced.some((p) => parseEvents(p?.timeline).some((e) => phaseOf(e.d) === "entregue"))) out.reenvioEntregue.push(row);

@@ -6,6 +6,7 @@ import { selectAllIn } from "@/lib/select-all";
 import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { aggregate, avg, carrierLabel, carrierOf, CARRIERS, median, parseEvents, type CarrierRow, type CarrierTotals } from "@/lib/carrier-stats";
+import { rawEvents, sanitizeEvents } from "@/lib/tracking-display";
 import { LOCAL_CARRIERS, localLegOf, localTrackingUrl, type LocalCarrierKey } from "@/lib/local-carriers";
 
 // Gerencial › Transportadoras: busca os pedidos/rastreios das lojas da coluna
@@ -132,7 +133,6 @@ export const getLocalTracking = createServerFn({ method: "GET" })
     if (tErr) throw new Error(tErr.message);
     const trackBy = new Map(tracks.map((t) => [String(t.order_id), t]));
     const phaseOf = await phaseOfOwner(ownerId);
-    const isDelivered = (d: string) => phaseOf(d) === "entregue";
     const now = Date.now();
     const DAY = 86_400_000;
 
@@ -144,7 +144,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
       if (!t || String(t.tracking_number ?? "").toUpperCase() !== code) continue;
       const evs = parseEvents(t.timeline);
       const localNumber: string | null = t.local_tracking_number ?? null;
-      const leg = localLegOf(evs, localNumber, isDelivered);
+      const leg = localLegOf(evs, localNumber, phaseOf);
       if (!leg) continue;
       const delivered = leg.deliveredTs != null || o.delivery_status === "delivered";
       const lastTs = t.last_event_at ? Date.parse(t.last_event_at) : null;
@@ -154,7 +154,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
         id: o.id, order_number: o.order_number, order_date: String(o.order_date).slice(0, 10), carrier: carrierOf(code), carrier_label: carrierLabel(carrierOf(code)), local: leg.key,
         tracking_code: code, tracking_url: o.tracking_url ?? null, local_number: localNumber, local_url: localTrackingUrl(localNumber),
         status, start_at: new Date(leg.startTs).toISOString(), delivered_at: leg.deliveredTs != null ? new Date(leg.deliveredTs).toISOString() : null,
-        last_at: t.last_event_at ?? null, last_label: t.last_event_label ?? null, dias: Math.max(0, (end - leg.startTs) / DAY),
+        last_at: t.last_event_at ?? null, last_label: sanitizeEvents(rawEvents(t.timeline))[0]?.description ?? t.last_event_label ?? null, dias: Math.max(0, (end - leg.startTs) / DAY),
       });
     }
 
