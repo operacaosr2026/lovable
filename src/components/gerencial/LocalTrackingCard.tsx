@@ -23,8 +23,7 @@ const Sub = ({ children, tone = "text-muted-foreground" }: { children: React.Rea
 
 const LOCAL_TONE: Record<string, string> = {
   USPS: "bg-blue-500/10 text-blue-600", GOFO: "bg-emerald-500/10 text-emerald-600",
-  LOCAL_A: "bg-amber-500/10 text-amber-600", LOCAL_B: "bg-violet-500/10 text-violet-600",
-  LOCAL_CN: "bg-sky-500/10 text-sky-600", NAO_RECONHECIDA: "bg-rose-500/10 text-rose-600", AGUARDANDO: "bg-muted text-muted-foreground",
+  SEM_NOME: "bg-amber-500/10 text-amber-600", NAO_RECONHECIDA: "bg-rose-500/10 text-rose-600", AGUARDANDO: "bg-muted text-muted-foreground",
 };
 const STATUS_TABS = [["aberto", "Em aberto"], ["parado", "Parados"], ["entregue", "Entregues"], ["todos", "Todos"]] as const;
 type StatusTab = (typeof STATUS_TABS)[number][0];
@@ -40,7 +39,7 @@ function OriginBadge({ k, label }: { k: string; label: string }) {
 
 export function LocalTrackingCard({ days }: { days: number | null }) {
   const fn = useServerFn(getLocalTracking);
-  const q = useQuery({ queryKey: ["local-tracking-v1", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["local-tracking-v2", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const [local, setLocal] = useState<string | null>(null);
   const [tab, setTab] = useState<StatusTab>("aberto");
   const [search, setSearch] = useState("");
@@ -198,7 +197,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
             )}
           </div>
           <p className="mt-3 text-[11px] text-muted-foreground">
-            Código local: USPS e o repasse do YunTu pra Transfly vêm pelo 17track; o da GOFO (GFUS…) vem do site dela. As sem nome não têm — o código delas só o fornecedor tem. As sem nome não se identificam no rastreio; dá pra descobrir pondo um código delas no site da transportadora.
+            Código local: USPS e o repasse do YunTu pra Transfly vêm pelo 17track; o da GOFO (GFUS…) vem do site dela. “Sem nome” não aparece no rastreio (nem o nome nem o código) — só o fornecedor sabe.
           </p>
         </>
       )}

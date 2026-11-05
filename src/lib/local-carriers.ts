@@ -5,9 +5,10 @@
 //    o código local (misc_info.local_number do 17track) vem na USPS e no YunTu
 //    (TRF0… da Transfly ou TYHZ…); o da GOFO (GFUS…) vem do site dela
 //    (gofo.server.ts); as sem nome não têm;
-//  - Local A: eventos traduzidos "(中文:…)" (Linden NJ, Montebello CA) — sem nome;
-//  - Local B: "Parcel received by in JFK01/ORD/NJC…" — sem nome;
-//  - Rastreio em chinês: trecho dos EUA do ZS/China Post ("【US …】") — sem nome;
+//  - Sem nome (juntas, a pedido do usuário em 05/11/2026 — o rastreio não diz
+//    quem é): eventos traduzidos "(中文:…)" (Linden NJ, Montebello CA);
+//    "Parcel received by in JFK01/ORD/NJC…"; trecho dos EUA do ZS/China Post
+//    em chinês ("【US …】");
 //  - "Delivered to local carrier" e nenhum evento depois: aguardando o 1º evento;
 //  - repassado, com eventos depois e nenhum padrão acima: não reconhecida (avisar).
 // Início do trecho local = evento de repasse, ou o 1º evento com o padrão.
@@ -15,9 +16,7 @@
 export const LOCAL_CARRIERS = [
   { key: "USPS", label: "USPS" },
   { key: "GOFO", label: "GOFO Express" },
-  { key: "LOCAL_A", label: "Sem nome A", hint: "eventos “(中文:…)”, Linden NJ / Montebello CA" },
-  { key: "LOCAL_B", label: "Sem nome B", hint: "“Parcel received by in JFK01/ORD/NJC”" },
-  { key: "LOCAL_CN", label: "Sem nome (em chinês)", hint: "trecho dos EUA do China Post em chinês" },
+  { key: "SEM_NOME", label: "Sem nome", hint: "a transportadora não aparece no rastreio" },
   { key: "NAO_RECONHECIDA", label: "Não reconhecida", hint: "repassado, mas os eventos não batem com nenhuma conhecida" },
   { key: "AGUARDANDO", label: "Aguardando 1º evento", hint: "“Delivered to local carrier” e nada depois" },
 ] as const;
@@ -30,10 +29,10 @@ export const GOFO_EVENT = /GOFO|949 688-6032/i;
 const SIGS: [LocalCarrierKey, RegExp][] = [
   ["GOFO", GOFO_EVENT],
   ["USPS", /\bUSPS\b|POST OFFICE/i],
-  ["LOCAL_B", /^Parcel (received by|departed from facility|is out for delivery|has been delivered)/i],
-  ["LOCAL_A", /\(中文:\s*[^)\s]|^Delivered\. Position:/i],   // "(中文:)" vazio é lixo, não conta
+  ["SEM_NOME", /^Parcel (received by|departed from facility|is out for delivery|has been delivered)/i],
+  ["SEM_NOME", /\(中文:\s*[^)\s]|^Delivered\. Position:/i],   // "(中文:)" vazio é lixo, não conta
   // Centro de distribuição / entrega nos EUA (alfândega "邮件到达【美国】海关" não conta).
-  ["LOCAL_CN", /(处理中心|投递|妥投)【(US|美国)|【(US|美国)[^】]*】\s*(已妥投|出门投递|投递)/],
+  ["SEM_NOME", /(处理中心|投递|妥投)【(US|美国)|【(US|美国)[^】]*】\s*(已妥投|出门投递|投递)/],
 ];
 // USPS: 92…–95… (22+ dígitos), às vezes com "420"+CEP na frente (código de 30).
 const USPS_NUMBER = /^(?:420\d{5}(?:\d{4})?)?(9[2-5]\d{18,24})$/;
