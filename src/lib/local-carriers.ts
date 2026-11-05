@@ -3,7 +3,8 @@
 //  - GOFO: "GOFO" no texto ou o telefone dela (+1 949 688-6032);
 //  - USPS: "USPS" / "POST OFFICE", ou código local no formato USPS (92…–95…);
 //    o código local (misc_info.local_number do 17track) vem na USPS e no YunTu
-//    (TRF0… da Transfly ou TYHZ…); GOFO e as sem nome não mandam;
+//    (TRF0… da Transfly ou TYHZ…); o da GOFO (GFUS…) vem do site dela
+//    (gofo.server.ts); as sem nome não têm;
 //  - Local A: eventos traduzidos "(中文:…)" (Linden NJ, Montebello CA) — sem nome;
 //  - Local B: "Parcel received by in JFK01/ORD/NJC…" — sem nome;
 //  - Rastreio em chinês: trecho dos EUA do ZS/China Post ("【US …】") — sem nome;
@@ -25,8 +26,9 @@ export const localCarrierLabel = (k: string) => LOCAL_CARRIERS.find((c) => c.key
 export const localCarrierHint = (k: string) => (LOCAL_CARRIERS.find((c) => c.key === k) as any)?.hint as string | undefined;
 
 export const HANDOFF = /^delivered to (local )?carrier|handed over to (the )?(local|last[- ]mile)/i;
+export const GOFO_EVENT = /GOFO|949 688-6032/i;
 const SIGS: [LocalCarrierKey, RegExp][] = [
-  ["GOFO", /GOFO|949 688-6032/i],
+  ["GOFO", GOFO_EVENT],
   ["USPS", /\bUSPS\b|POST OFFICE/i],
   ["LOCAL_B", /^Parcel (received by|departed from facility|is out for delivery|has been delivered)/i],
   ["LOCAL_A", /\(中文:\s*[^)\s]|^Delivered\. Position:/i],   // "(中文:)" vazio é lixo, não conta
@@ -55,12 +57,13 @@ export function localLegOf(evs: { ts: number; d: string }[], localNumber: string
   return { key: leg.length ? "NAO_RECONHECIDA" : "AGUARDANDO", startTs: asc[h].ts, deliveredTs };
 }
 
-// Link do código local: USPS direto no site deles; Transfly (YunTu repassa pra
-// ela) pelo 17track. Outro formato: sem link, só o código.
+// Link do código local: USPS e GOFO direto no site delas; Transfly (YunTu
+// repassa pra ela) pelo 17track. Outro formato: sem link, só o código.
 export function localTrackingUrl(n: string | null | undefined): string | null {
   if (!n) return null;
   const usps = uspsCore(n);
   if (usps) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${usps}`;
+  if (/^GFUS/i.test(n)) return `https://www.gofo.com/us/track?searchID=${encodeURIComponent(n)}`;
   return `https://t.17track.net/en#nums=${encodeURIComponent(n)}`;
 }
 export const localNumberDisplay = (n: string) => uspsCore(n) ?? n;

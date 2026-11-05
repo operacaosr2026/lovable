@@ -7,6 +7,8 @@ import { eventDateUS, finalTrackingTarget, firstCarrierEventDateUS, isOlderEvent
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import { pushFulfillmentStatusToShopify, updateFulfillmentTrackingUrl } from "@/lib/shopify-fulfillment-status.server";
 import { eventUtcFixed, officialEdd } from "@/lib/tracking-display";
+import { fetchGofoWaybills } from "@/lib/gofo.server";
+import { GOFO_EVENT } from "@/lib/local-carriers";
 
 // Rastreio pelo 17track (substituiu o Track123 em out/2026). Uma conta só pra
 // todas as lojas (SEVENTEEN_TRACK_API_KEY); a tabela track123_integrations
@@ -98,7 +100,7 @@ export async function fetchRegisteredTimelines(numbers: string[]) {
 
 // Código da transportadora local dos EUA (misc_info.local_number). Quando ela
 // não tem código próprio o 17track devolve o nosso de volta — aí não vale.
-// Vem na USPS e no YunTu (TRF0… / TYHZ…); GOFO e as sem nome não mandam.
+// Vem na USPS e no YunTu (TRF0… / TYHZ…); o da GOFO vem do site dela (3b).
 export function localNumberOf(item: any): string | null {
   const own = String(item?.number ?? "").trim().toUpperCase();
   const local = String(item?.track_info?.misc_info?.local_number ?? "").trim().toUpperCase();
@@ -157,6 +159,7 @@ export type SeventeenSyncResult = { shops: number; orders: number; registered: n
 // pushAll: manda o status pra Shopify de todos (não só dos que mudaram) — usado
 // uma vez ao ligar o envio pra Shopify; a Shopify não repete status que já tem.
 export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?: string[]; pushAll?: boolean } = {}): Promise<SeventeenSyncResult> {
+  const gofoPending: { orderId: string; number: string }[] = [];
   const deadline = opts.deadline ?? Date.now() + 240_000;
   const result: SeventeenSyncResult = { shops: 0, orders: 0, registered: 0, updated: 0, shopifyStatus: 0, shopifyLinks: 0, errors: [], outOfQuota: false };
 
@@ -345,6 +348,23 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
       continue;
     }
     if (Date.now() <= deadline) await pushToShopify(o, code(o), item, stored?.tracking_status ?? null, template, opts.pushAll, result);
+    // Com a GOFO e sem o número dela ainda: busca no fim (lote só).
+    if (!stored?.local_tracking_number && !localNumberOf(item) && toTimeline(item).some((e) => GOFO_EVENT.test(e.event_detail))) gofoPending.push({ orderId: o.id, number: code(o) });
+  }
+
+  // 3b. Número da GOFO (GFUS…) dos pacotes que estão/estiveram com ela.
+  if (gofoPending.length && Date.now() <= deadline) {
+    try {
+      const got = await fetchGofoWaybills(gofoPending.map((p) => p.number));
+      for (const p of gofoPending) {
+        const w = got.get(p.number);
+        if (!w) continue;
+        const { error } = await supabaseAdmin.from("shop_order_tracking").update({ local_tracking_number: w }).eq("order_id", p.orderId);
+        if (error) result.errors.push(`${p.number} (número GOFO): ${error.message.slice(0, 120)}`);
+      }
+    } catch (e: any) {
+      result.errors.push(`número GOFO: ${String(e?.message ?? e).slice(0, 150)}`);
+    }
   }
 
   // 4. Problema: marca/tira em todos os pedidos em aberto (com ou sem rastreio).

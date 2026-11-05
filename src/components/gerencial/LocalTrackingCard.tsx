@@ -10,7 +10,7 @@ import { colorOf } from "./carrier-colors";
 
 // Gerencial › Transportadoras › Rastreamento local: quem faz a última milha nos
 // EUA (regras em local-carriers.ts) e o código dela quando o 17track manda
-// (USPS; YunTu repassa pra Transfly). Resumo por transportadora local + lista
+// (USPS; YunTu repassa pra Transfly) ou do site da GOFO. Resumo por transportadora local + lista
 // dos pedidos (clicar numa linha filtra a lista).
 
 const dec = (v: number) => v.toFixed(1).replace(".", ",").replace(/,0$/, "");
@@ -198,7 +198,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
             )}
           </div>
           <p className="mt-3 text-[11px] text-muted-foreground">
-            O código local só vem quando a transportadora tem código próprio no 17track (USPS, e o repasse do YunTu pra Transfly). GOFO e as sem nome não mandam — o código delas só o fornecedor tem. As sem nome não se identificam no rastreio; dá pra descobrir pondo um código delas no site da transportadora.
+            Código local: USPS e o repasse do YunTu pra Transfly vêm pelo 17track; o da GOFO (GFUS…) vem do site dela. As sem nome não têm — o código delas só o fornecedor tem. As sem nome não se identificam no rastreio; dá pra descobrir pondo um código delas no site da transportadora.
           </p>
         </>
       )}
