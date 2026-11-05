@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, Factory, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
+import { Copy, ExternalLink, Factory, MapPin, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
@@ -262,6 +262,22 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                           <Pencil className="size-3" />
                         </button>
                       )}
+                    </div>
+                  )}
+                  {o.tracking && o.local && (
+                    // Transportadora local dos EUA (última milha) e o código dela, quando o 17track manda.
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px] min-w-0">
+                      <MapPin className="size-3 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground shrink-0">{o.local.label}:</span>
+                      {o.local.number ? (
+                        <>
+                          {o.local.url
+                            ? <a href={o.local.url} target="_blank" rel="noreferrer" className="font-mono text-primary hover:underline truncate inline-flex items-center gap-1">{o.local.number}<ExternalLink className="size-2.5 shrink-0" /></a>
+                            : <span className="font-mono truncate">{o.local.number}</span>}
+                          <button onClick={() => { navigator.clipboard.writeText(o.local!.number!); toast.success("Código local copiado"); }} title="Copiar"
+                            className="shrink-0 text-muted-foreground hover:text-foreground"><Copy className="size-3" /></button>
+                        </>
+                      ) : <span className="text-muted-foreground italic">sem código local</span>}
                     </div>
                   )}
                   {o.trackingHistory?.map((h) => (

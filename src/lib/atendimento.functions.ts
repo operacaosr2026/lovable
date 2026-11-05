@@ -5,6 +5,9 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
+import { parseEvents } from "@/lib/carrier-stats";
+import { phaseResolver } from "@/lib/tracking-phases";
+import { localCarrierLabel, localLegOf, localNumberDisplay, localTrackingUrl } from "@/lib/local-carriers";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { orderNumberVariants, orderNumbersInText } from "@/lib/order-numbers";
 import { US_TIME_ZONE } from "@/lib/timezone";
@@ -859,6 +862,21 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
       const key = `${d.shop_id}:${d.order_external_id}`;
       if (!disputeBy.has(key)) disputeBy.set(key, { type: d.type, status: d.status });
     }
+    // Transportadora local dos EUA e o código dela (mesma regra do Gerencial ›
+    // Transportadoras › Rastreamento local) — rastreio gravado de outro código não vale.
+    const { data: tracks } = orders.length
+      ? await supabaseAdmin.from("shop_order_tracking").select("order_id,tracking_number,timeline,local_tracking_number").in("order_id", orders.map((o) => o.id))
+      : { data: [] as any[] };
+    const phaseOf = phaseResolver();
+    const localBy = new Map<string, { label: string; number: string | null; url: string | null }>();
+    for (const t of (tracks ?? []) as any[]) {
+      const o = orders.find((x) => x.id === t.order_id);
+      if (!o || String(t.tracking_number ?? "").toUpperCase() !== String(o.tracking_code ?? "").trim().toUpperCase()) continue;
+      const leg = localLegOf(parseEvents(t.timeline), t.local_tracking_number ?? null, (d) => phaseOf(d) === "entregue");
+      if (!leg && !t.local_tracking_number) continue;
+      const n: string | null = t.local_tracking_number ?? null;
+      localBy.set(o.id, { label: leg ? localCarrierLabel(leg.key) : "Transportadora local", number: n ? localNumberDisplay(n) : null, url: localTrackingUrl(n) });
+    }
     const valid = orders.filter((o) => !o.cancelled_at);
     const totals: Record<string, number> = {};
     for (const o of valid) totals[o.currency ?? "USD"] = (totals[o.currency ?? "USD"] ?? 0) + Number(o.revenue ?? 0);
@@ -878,6 +896,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
         tracking: o.tracking_code, trackingUrl: buildTrackingUrl(templateByShop.get(o.shop_id), o.tracking_code) ?? o.tracking_url,
         // Códigos anteriores (trocados à mão ou pela Shopify), mais recente primeiro.
         trackingHistory: (Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : []) as { code: string; until: string }[],
+        local: localBy.get(o.id) ?? null,
         carrier: o.carrier, cancelled: !!o.cancelled_at,
         dispute: disputeBy.get(`${o.shop_id}:${o.external_id}`) ?? null,
       })),
