@@ -309,7 +309,8 @@ function RegrasTab() {
         desc="O sync roda 2x por hora (:07 e :37).">
         <Rules items={[
           "Pedido em aberto (sem entregue ou cancelado) é acompanhado até 180 dias.",
-          "Só pedido com até 60 dias gasta crédito ao cadastrar o código (1 crédito por código, uma vez só).",
+          "Só pedido com até 60 dias gasta crédito ao cadastrar o código (1 crédito por código, uma vez só) — exceto pedido com o código trocado nos últimos 60 dias (reenvio), que cadastra o código novo.",
+          "Código trocado: o código antigo fica no histórico do pedido e o rastreio do pacote antigo é guardado (conta no motivo do reenvio em Gerencial › Transportadoras).",
           "Envio cancelado ou código trocado na Shopify: passa a seguir o envio ativo mais recente (o primeiro pacote foi descartado).",
           "Evento mais antigo que o já gravado (chegou fora de ordem) não volta o status.",
           "Postagem (TM Postagem) = 1ª movimentação real do pacote, pulando “informação eletrônica recebida / etiqueta criada”. Conta só dias úteis (aba Feriados).",

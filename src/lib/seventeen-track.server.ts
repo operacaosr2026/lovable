@@ -226,7 +226,12 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
   type Reg = { o: any; number: string; extra: boolean };
   const toRegister: Reg[] = [];
   for (const o of orders) {
-    if (String(o.order_date) < registerSince && !o.tracking_code_manual_at) continue;
+    // Pedido velho com o código trocado há pouco (reenvio, na mão ou pela
+    // Shopify) também cadastra: senão o pacote novo nunca é acompanhado e o
+    // rastreio antigo não vai pra replaced_packages.
+    const history: any[] = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
+    const recentSwap = String(history[history.length - 1]?.until ?? "").slice(0, 10) >= registerSince;
+    if (String(o.order_date) < registerSince && !o.tracking_code_manual_at && !recentSwap) continue;
     const t = trackBy.get(o.id);
     if (!t?.registered_17track_at || String(t.tracking_number ?? "").toUpperCase() !== code(o)) toRegister.push({ o, number: code(o), extra: false });
     for (const x of extrasBy.get(o.id) ?? []) if (!x.registered_17track_at) toRegister.push({ o, number: x.number, extra: true });
