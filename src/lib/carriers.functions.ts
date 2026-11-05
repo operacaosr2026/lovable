@@ -98,7 +98,7 @@ export type { CarrierRow, CarrierTotals };
 // EUA (local-carriers.ts) e o código dela quando o 17track manda (só USPS).
 const LOCAL_STALE_DAYS = 4;   // mesmo prazo do alerta "repassado e parado"
 export type LocalOrder = {
-  id: string; order_number: string; order_date: string; carrier: string; local: LocalCarrierKey;
+  id: string; order_number: string; order_date: string; carrier: string; carrier_label: string; local: LocalCarrierKey;
   tracking_code: string; tracking_url: string | null; local_number: string | null; local_url: string | null;
   status: "entregue" | "andamento" | "parado"; start_at: string; delivered_at: string | null;
   last_at: string | null; last_label: string | null; dias: number;
@@ -151,7 +151,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
       const status = delivered ? "entregue" : lastTs != null && now - lastTs >= LOCAL_STALE_DAYS * DAY ? "parado" : "andamento";
       const end = leg.deliveredTs ?? (delivered ? lastTs ?? now : now);
       out.push({
-        id: o.id, order_number: o.order_number, order_date: String(o.order_date).slice(0, 10), carrier: carrierOf(code), local: leg.key,
+        id: o.id, order_number: o.order_number, order_date: String(o.order_date).slice(0, 10), carrier: carrierOf(code), carrier_label: carrierLabel(carrierOf(code)), local: leg.key,
         tracking_code: code, tracking_url: o.tracking_url ?? null, local_number: localNumber, local_url: localTrackingUrl(localNumber),
         status, start_at: new Date(leg.startTs).toISOString(), delivered_at: leg.deliveredTs != null ? new Date(leg.deliveredTs).toISOString() : null,
         last_at: t.last_event_at ?? null, last_label: t.last_event_label ?? null, dias: Math.max(0, (end - leg.startTs) / DAY),

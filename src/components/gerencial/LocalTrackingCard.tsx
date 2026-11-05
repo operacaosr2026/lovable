@@ -4,7 +4,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Copy, ExternalLink, Loader2, MapPin, Search, X } from "lucide-react";
 import { getLocalTracking } from "@/lib/carriers.functions";
-import { carrierLabel } from "@/lib/carrier-stats";
 import { localCarrierLabel, localNumberDisplay } from "@/lib/local-carriers";
 import { formatDateTimeUS } from "@/lib/timezone";
 import { colorOf } from "./carrier-colors";
@@ -34,9 +33,9 @@ const PAGE = 50;
 function LocalBadge({ k }: { k: string }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${LOCAL_TONE[k] ?? LOCAL_TONE.AGUARDANDO}`}>{localCarrierLabel(k)}</span>;
 }
-function OriginBadge({ k }: { k: string }) {
+function OriginBadge({ k, label }: { k: string; label: string }) {
   const c = colorOf(k);
-  return <span className={`inline-grid place-items-center size-6 rounded-md text-[9px] font-bold shrink-0 ${c.badge}`} title={carrierLabel(k)}>{c.short}</span>;
+  return <span className={`inline-grid place-items-center size-6 rounded-md text-[9px] font-bold shrink-0 ${c.badge}`} title={label}>{c.short}</span>;
 }
 
 export function LocalTrackingCard({ days }: { days: number | null }) {
@@ -108,7 +107,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                       <td className="py-2.5 px-3">
                         <div className="flex flex-wrap gap-1.5">
                           {r.origem.map((o) => (
-                            <span key={o.key} className="inline-flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground"><OriginBadge k={o.key} />{o.n}</span>
+                            <span key={o.key} className="inline-flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground"><OriginBadge k={o.key} label={o.label} />{o.n}</span>
                           ))}
                         </div>
                       </td>
@@ -160,7 +159,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                       </td>
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-2">
-                          <OriginBadge k={o.carrier} />
+                          <OriginBadge k={o.carrier} label={o.carrier_label} />
                           {o.tracking_url
                             ? <a href={o.tracking_url} target="_blank" rel="noreferrer" className="font-mono text-xs hover:underline">{o.tracking_code}</a>
                             : <span className="font-mono text-xs">{o.tracking_code}</span>}
