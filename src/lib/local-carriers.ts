@@ -9,7 +9,8 @@
 //    quem é): eventos traduzidos "(中文:…)" (Linden NJ, Montebello CA);
 //    "Parcel received by in JFK01/ORD/NJC…"; trecho dos EUA do ZS/China Post
 //    em chinês ("【US …】");
-//  - "Delivered to local carrier" e nenhum evento depois: aguardando o 1º evento;
+//  - "Delivered to local carrier", liberado na alfândega ou "In transit to local
+//    Post Office" (JCEX) e nenhum evento da local: aguardando transportadora local;
 //  - repassado, com eventos depois e nenhum padrão acima: não reconhecida (avisar).
 // Início do trecho local = evento de repasse, ou o 1º evento com o padrão.
 
@@ -18,7 +19,7 @@ export const LOCAL_CARRIERS = [
   { key: "GOFO", label: "GOFO Express" },
   { key: "SEM_NOME", label: "Sem nome", hint: "a transportadora não aparece no rastreio" },
   { key: "NAO_RECONHECIDA", label: "Não reconhecida", hint: "repassado, mas os eventos não batem com nenhuma conhecida" },
-  { key: "AGUARDANDO", label: "Aguardando 1º evento", hint: "“Delivered to local carrier” e nada depois" },
+  { key: "AGUARDANDO", label: "Aguardando transportadora local", hint: "liberado na alfândega / repassado, sem evento dela ainda" },
 ] as const;
 export type LocalCarrierKey = (typeof LOCAL_CARRIERS)[number]["key"];
 export const localCarrierLabel = (k: string) => LOCAL_CARRIERS.find((c) => c.key === k)?.label ?? k;
@@ -43,6 +44,10 @@ const uspsCore = (n: string) => n.match(USPS_NUMBER)?.[1] ?? null;
 export type LocalLeg = { key: LocalCarrierKey; startTs: number; deliveredTs: number | null };
 
 const US_SIDE = new Set<string>(["chegada_eua", "alfandega_entrada", "alfandega_saida"]);
+// JCEX avisa que vai repassar ("In transit to local Post Office") — ainda não
+// está com a local. ("In transit to local facility" do YunTu sai com o pacote
+// ainda na China: não conta.)
+const PRE_LOCAL = /^in transit to local post office/i;
 const PRE_INFO = /pre-?shipment|label (created|prepared)|awaiting item|shipment information received|electronic (cargo )?information/i;
 
 // evs: eventos do pacote (qualquer ordem). phaseOf: fase de cada texto
@@ -66,7 +71,19 @@ export function localLegOf(evs: { ts: number; d: string }[], localNumber: string
   }
   // Número USPS sozinho não prova nada: o 17track já manda reservado com o
   // pacote ainda na alfândega (#L6-1005). Só com evento da USPS (acima).
-  if (h < 0) return null;
+  if (h < 0) {
+    // Liberado na alfândega (ou JCEX avisando o repasse) e nenhum evento da
+    // transportadora local ainda: aguardando — pedido do usuário em 05/11/2026.
+    // Entregue sem evento reconhecido fica de fora (não dá pra dizer quem foi).
+    // Liberação só depois da chegada nos EUA ("Export customs clearance" é a da
+    // China); e se o último evento é alfândega de novo (inspeção, "in progress"),
+    // está preso lá — não aguardando a local.
+    if (us < 0 || asc.some((e) => phaseOf(e.d) === "entregue")) return null;
+    const pre = asc.findIndex((e, i) => i > us && (PRE_LOCAL.test(e.d) || phaseOf(e.d) === "alfandega_saida"));
+    const lastPhase = phaseOf(asc[asc.length - 1].d);
+    if (pre < 0 || lastPhase === "alfandega_entrada" || lastPhase === "chegada_eua") return null;
+    return { key: "AGUARDANDO", startTs: asc[pre].ts, deliveredTs: null };
+  }
   return { key: leg.length ? "NAO_RECONHECIDA" : "AGUARDANDO", startTs: asc[h].ts, deliveredTs };
 }
 
