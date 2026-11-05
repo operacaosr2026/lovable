@@ -36,6 +36,12 @@ const prevMonthOf = (monthStart: string) => {
 
 // Avisos do sino que são "algo fora do combinado no sistema" e vão pros Alertas.
 // (Aprovação de troca/reembolso e chargeback têm lugar próprio — não entram.)
+// Pagamento ao fornecedor só é marcado no sistema (lotes) a partir de 01/09/2026:
+// os pedidos de 23–31/08 foram pagos por fora (confirmado pela operação em
+// 05/11/2026) e não entram no alerta de "despachado sem pagamento".
+const SUPPLIER_PAYMENT_TRACKED_SINCE = "2026-09-01";
+const SUPPLIER_PAYMENT_GRACE_DAYS = 15;
+
 const SYSTEM_NOTICE_PREFIXES = ["meta_token:", "meta_payment:", "meta_account:", "shopify_sync:", "shopify_access:", "zoho_mail:", "system:", "product_missing:", "stuck:", "cron:"];
 
 // key: identifica o alerta pra "Desconsiderar" (tabela gerencial_alert_dismissals,
@@ -328,6 +334,21 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       alerts.push({ key: "fora:status", kind: "sistema", level: "atencao", title: "Rastreio diz entregue e o pedido não", link: "", action: "Ver pedidos",
         detail: `O rastreio tem evento de entrega há 1+ dia e o pedido não está como entregue (${sit.statusDiverge.slice(0, 5).map((o) => o.order_number).join(", ")}). Status marcado à mão ou regra de entrega não reconheceu.`,
         metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    if (current && shopIds.length) {
+      // Despachado sem pagamento ao fornecedor: tem rastreio, o cliente pagou e o
+      // pedido não entrou em nenhum lote de pagamento depois de 15 dias.
+      const { data: unpaid } = await supabaseAdmin.from("shop_orders").select("order_number,shopify_financial_status,cancelled:raw->>cancelled_at")
+        .eq("user_id", ownerId).in("shop_id", shopIds).eq("payment_status", "pending").not("tracking_code", "is", null).neq("tracking_code", "")
+        .gte("order_date", SUPPLIER_PAYMENT_TRACKED_SINCE).lte("order_date", addDaysIso(today, -SUPPLIER_PAYMENT_GRACE_DAYS));
+      // Reembolsado inteiro ou cancelado sai (pode nem ter ido pro fornecedor).
+      const list = ((unpaid ?? []) as any[]).filter((o) => !o.cancelled && !["refunded", "voided"].includes(String(o.shopify_financial_status ?? "")));
+      if (list.length) {
+        alerts.push({ key: `fora:sem_pagamento:${list.map((o) => o.order_number).sort().join(",")}`.slice(0, 200), kind: "sistema", level: "atencao",
+          title: `${pl(list.length, "Pedido despachado", "Pedidos despachados")} sem pagamento ao fornecedor marcado`, link: "/shops/lojas-grupos", action: "Acertar",
+          detail: `${list.map((o) => o.order_number).join(", ")} — tem rastreio há ${SUPPLIER_PAYMENT_GRACE_DAYS}+ dias e não está em nenhum lote de pagamento. Se já pagou, marque no lote do fornecedor; se não, é conta em aberto.`,
+          metric: String(list.length), metricLabel: pl(list.length, "pedido", "pedidos") });
+      }
     }
     if (current) {
       // Loja ativa num lugar e não no outro: coluna "Ativas" do Banco de Lojas ×
