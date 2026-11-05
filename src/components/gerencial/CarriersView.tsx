@@ -209,7 +209,7 @@ export function CarriersView({ period }: { period: string }) {
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
                         {int(r.entregues)}
-                        {r.pedidos > 0 && <Sub>{pct(r.entregues / r.pedidos)} dos pedidos</Sub>}
+                        {r.pedidos > 0 && <Sub>{pct(r.entregues / r.pedidos)}</Sub>}
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
                         {int(r.emTransito)}
@@ -217,7 +217,7 @@ export function CarriersView({ period }: { period: string }) {
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
                         {r.reenviados ? <span className="text-rose-600">{int(r.reenviados)}</span> : <span className="text-muted-foreground">0</span>}
-                        {r.reenviados > 0 && r.pedidos > 0 && <Sub>{pct(r.reenviados / r.pedidos)} dos pedidos</Sub>}
+                        {r.reenviados > 0 && r.pedidos > 0 && <Sub>{pct(r.reenviados / r.pedidos)}</Sub>}
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold whitespace-nowrap" title={`${r.nEua} pedidos com o evento de chegada`}>
                         {dias(r.postagemEua)}

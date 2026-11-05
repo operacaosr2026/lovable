@@ -99,21 +99,28 @@ export function aggregate(orders: any[], trackByOrder: Map<string, any>, now: nu
     const a = acc.get(key) ?? newAcc();
     acc.set(key, a);
     a.pedidos++;
-    // Pacotes descartados (código trocado): contam como reenvio contra a
-    // transportadora do código antigo.
+    // Pacotes descartados (código trocado), contra a transportadora do código
+    // antigo. Com o rastreio do pacote antigo guardado (replaced_packages), o
+    // motivo vem dele: entregue mesmo assim não conta; preso na alfândega conta
+    // reenvio + alfândega; outro motivo (nunca postado, sumiu) só reenvio. Sem o
+    // rastreio: reenvio + alfândega (a operação confirmou que foi alfândega).
     const history: { code?: string; until?: string }[] = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
+    const replaced: any[] = Array.isArray(t?.replaced_packages) ? t.replaced_packages : [];
     for (const h of history) {
       const old = String(h?.code ?? "").trim();
       if (!old || old.toUpperCase() === code.toUpperCase()) continue;
       const k = carrierOf(old);
       const b = acc.get(k) ?? newAcc();
       acc.set(k, b);
+      const oldEvs = parseEvents(replaced.find((p) => String(p?.number ?? "").toUpperCase() === old.toUpperCase())?.timeline);
+      if (!oldEvs.length) { b.reenviados++; b.alfPassou++; b.alfProblema++; continue; }
+      if (oldEvs.some((e) => phaseOf(e.d) === "entregue")) continue;
       b.reenviados++;
-      // Reenvio = pacote travado na alfândega (confirmado pela operação em
-      // 04/11/2026 pros 32 reenvios até então): conta como problema na
-      // alfândega da transportadora do pacote descartado.
+      const oin = firstTs(oldEvs, (d) => phaseOf(d) === "alfandega_entrada");
+      if (oin == null) continue;
       b.alfPassou++;
-      b.alfProblema++;
+      const oout = firstTs(oldEvs.filter((e) => e.ts > oin), (d) => LEAVES_CUSTOMS.has(phaseOf(d)));
+      if (oout == null || oout - oin > CUSTOMS_SLOW_DAYS * DAY) b.alfProblema++;
     }
     // Reenviado: o relógio do "atrasado" conta da troca (igual ao resto do sistema).
     const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;

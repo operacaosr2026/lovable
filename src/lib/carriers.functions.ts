@@ -58,7 +58,7 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     const semCodigo = cur.length - withCode.length;
 
     const { data: tracks, error: tracksErr } = await selectAllIn<any>([...withCode, ...prevWithCode].map((o) => o.id as string), (ids) =>
-      supabaseAdmin.from("shop_order_tracking").select("id,order_id,tracking_number,tracking_status,timeline").in("order_id", ids));
+      supabaseAdmin.from("shop_order_tracking").select("id,order_id,tracking_number,tracking_status,timeline,replaced_packages").in("order_id", ids));
     if (tracksErr) throw new Error(tracksErr.message);
     const trackByOrder = new Map<string, any>();
     for (const t of tracks) trackByOrder.set(String(t.order_id), t);
