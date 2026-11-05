@@ -108,18 +108,27 @@ export async function lookupPublicTracking(rawCode: string): Promise<{ tracking:
       status,
       steps,
       currentStep: current,
-      // Sem a cidade/hub de cada evento (pedido do usuário em 05/11/2026): o cliente
-      // via o pacote passar por "Melrose Park, IL" etc. e estranhava. A localidade
-      // segue sendo usada por dentro (fases, eventos repetidos) — só não sai daqui.
-      events: withoutLocation(sanitizeEvents(all, await loadTrackingTextOverrides(o?.user_id))),
+      // Cidade do evento só na reta final — no mesmo estado do endereço de entrega
+      // (pedido do usuário em 05/11/2026). Antes disso o cliente via "Los Angeles"
+      // e "Melrose Park, IL" (sistema central da GOFO, por onde passa quase tudo)
+      // e desconfiava. A localidade segue sendo usada por dentro (fases, repetidos).
+      events: onlyDestinationState(sanitizeEvents(all, await loadTrackingTextOverrides(o?.user_id)), o?.province ?? null),
       destination: destinationOf(o),
       edd: officialEdd(tr ? { source: tr.edd_source, from: tr.edd_from, to: tr.edd_to } : null),
     },
   };
 }
 
-const withoutLocation = (evs: DisplayEvent[]): DisplayEvent[] =>
-  evs.map((e) => ({ ...e, location: null, ...(e.more ? { more: withoutLocation(e.more) } : {}) }));
+// Local já vem tratado ("San Diego, CA"); sem estado (ex.: "Los Angeles") ou
+// pedido sem estado de entrega: não mostra.
+function onlyDestinationState(evs: DisplayEvent[], destState: string | null): DisplayEvent[] {
+  const dest = String(destState ?? "").trim().toUpperCase();
+  const keep = (loc: string | null) => {
+    const st = (loc ?? "").match(/,\s*([A-Z]{2})\b/)?.[1];
+    return dest && st === dest ? loc : null;
+  };
+  return evs.map((e) => ({ ...e, location: keep(e.location), ...(e.more ? { more: onlyDestinationState(e.more, destState) } : {}) }));
+}
 
 // Limite de tentativas das rotas públicas, por IP: `max` por `windowMin`.
 // Busca por pedido + contato (sem login): sem isso dava pra testar números de
