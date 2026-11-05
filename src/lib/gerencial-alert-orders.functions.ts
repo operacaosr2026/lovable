@@ -62,7 +62,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     // Pedidos do alerta: entrega = os do mês que precisam de atenção (mesma
     // conta do alerta); lote/alfândega = os números listados no aviso.
     let orders: any[] = [];
-    const situation = data.key === "entrega" || data.key.startsWith("rastreio:");
+    const situation = data.key === "entrega" || data.key.startsWith("rastreio:") || data.key.startsWith("fora:");
     if (situation) {
       // Mesma conta dos alertas (tracking-situations.server.ts).
       const sit = await trackingSituations(ownerId, await companyShopIdsForMonth(ownerId, `${data.month}-01`), now);
@@ -71,6 +71,9 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "rastreio:repassado" ? sit.repassado
         : data.key === "rastreio:reenvio_entregue" ? sit.reenvioEntregue
         : data.key.startsWith("rastreio:nao_postado:") ? (sit.naoPostado.get(data.key.slice("rastreio:nao_postado:".length)) ?? [])
+        : data.key.startsWith("fora:transportadora:") ? (sit.transportadoraNova.get(data.key.slice("fora:transportadora:".length)) ?? [])
+        : data.key === "fora:sem_evento" ? sit.semEvento
+        : data.key === "fora:status" ? sit.statusDiverge
         : [];
     } else if (data.key.startsWith("track123:lote:") || data.key.startsWith("track123:alfandega:")) {
       const { data: n, error } = await supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).eq("key", data.key).maybeSingle();
@@ -111,6 +114,9 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "rastreio:reenvio_entregue" ? "Pacote antigo entregue"
         : data.key === "rastreio:repassado" ? `Com a transportadora local há ${daysStopped ?? "?"}d`
         : data.key === "rastreio:cliente" ? "Endereço / devolução / falha na entrega"
+        : data.key.startsWith("fora:transportadora:") ? "Código de transportadora não cadastrada"
+        : data.key === "fora:sem_evento" ? "Cadastrado no 17track sem nenhum evento"
+        : data.key === "fora:status" ? `Rastreio entregue, pedido como "${STATUS[o.delivery_status ?? "pending_shipment"] ?? o.delivery_status}"`
         : data.key === "entrega"
         ? (o.delivery_status === "problem" ? "Marcado como problema"
           : (o.delivery_status ?? "pending_shipment") === "pending_shipment" ? "Sem envio há mais de 3 dias úteis"

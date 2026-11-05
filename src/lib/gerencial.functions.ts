@@ -34,11 +34,15 @@ const prevMonthOf = (monthStart: string) => {
   return d.toISOString().slice(0, 10);
 };
 
+// Avisos do sino que são "algo fora do combinado no sistema" e vão pros Alertas.
+// (Aprovação de troca/reembolso e chargeback têm lugar próprio — não entram.)
+const SYSTEM_NOTICE_PREFIXES = ["meta_token:", "meta_payment:", "meta_account:", "shopify_sync:", "shopify_access:", "zoho_mail:", "system:", "product_missing:", "stuck:", "cron:"];
+
 // key: identifica o alerta pra "Desconsiderar" (tabela gerencial_alert_dismissals,
 // vale no mês escolhido pra toda a equipe).
 export type GerencialAlert = {
   key: string;
-  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia" | "alfandega" | "lote";
+  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia" | "alfandega" | "lote" | "sistema";
   level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
   /** Dica da Inteligência: índice dela na análise — "Ver análise" abre a gaveta ali mesmo. */
   tipIndex?: number;
@@ -110,10 +114,12 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       supabaseAdmin.from("consultant_reports").select("id,result,tips_status").eq("user_id", ownerId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supportKpisFor(ownerId, data.month).catch((e) => { console.error("gerencial support", e); return null; }),
-      // Avisos de rastreio em aberto (sino): alfândega e lote parado.
+      // Avisos em aberto do sino: rastreio (alfândega, lote parado) e os de
+      // sistema (integração caída, produto sem cadastro, rotina parada…).
       current
         ? supabaseAdmin.from("app_notifications").select("key,level,title,body,link").eq("user_id", ownerId)
-            .is("resolved_at", null).or("key.like.track123:alfandega:%,key.like.track123:lote:%")
+            .is("resolved_at", null).in("level", ["error", "warning"])
+            .or(["track123:", ...SYSTEM_NOTICE_PREFIXES].map((p) => `key.like.${p}%`).join(","))
             .order("created_at", { ascending: true })
         : empty,
     ]);
@@ -305,6 +311,51 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
         detail: "Sem envio há 3+ dias úteis, parado no rastreio há 5+ dias, com problema ou sem entrega depois de 20 dias — todos os pedidos em aberto, não só os do mês.",
         metric: String(n), metricLabel: "em aberto" });
     }
+    // Fora do combinado: o sistema caiu num padrão e alguém precisa acertar.
+    for (const [pfx, list] of sit.transportadoraNova) {
+      alerts.push({ key: `fora:transportadora:${pfx}`, kind: "sistema", level: "atencao", title: `Transportadora não cadastrada: códigos ${pfx}…`, link: "", action: "Ver pedidos",
+        detail: `${list.length} pedido(s) com código que não é de nenhuma transportadora conhecida (${list.slice(0, 5).map((o) => o.order_number).join(", ")}). Hoje caem em "Outras" na aba Transportadoras — me peça pra cadastrar.`,
+        metric: String(list.length), metricLabel: pl(list.length, "pedido", "pedidos") });
+    }
+    if (sit.semEvento.length) {
+      const n = sit.semEvento.length;
+      alerts.push({ key: "fora:sem_evento", kind: "sistema", level: "atencao", title: "Rastreio cadastrado que não traz nenhum evento", link: "", action: "Ver pedidos",
+        detail: "Cadastrado no 17track há 3+ dias e nenhum evento — código errado, transportadora não reconhecida ou o 17track não acha. Confira o código.",
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    if (sit.statusDiverge.length) {
+      const n = sit.statusDiverge.length;
+      alerts.push({ key: "fora:status", kind: "sistema", level: "atencao", title: "Rastreio diz entregue e o pedido não", link: "", action: "Ver pedidos",
+        detail: `O rastreio tem evento de entrega há 1+ dia e o pedido não está como entregue (${sit.statusDiverge.slice(0, 5).map((o) => o.order_number).join(", ")}). Status marcado à mão ou regra de entrega não reconheceu.`,
+        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+    }
+    if (current) {
+      // Loja ativa num lugar e não no outro: coluna "Ativas" do Banco de Lojas ×
+      // cards ativos de Lojas e Grupos (cada tela conta uma). Só loja com pedido
+      // nos últimos 60 dias (a Matriz, sem pedido, não aparece).
+      const [cols, sales] = await Promise.all([
+        supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId),
+        supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).gte("order_date", addDaysIso(today, -60)).limit(5000),
+      ]);
+      const activeCols = (cols.data ?? []).filter((c: any) => /^ativ/i.test(String(c.name).trim())).map((c: any) => c.id);
+      const { data: boardShops } = activeCols.length
+        ? await supabaseAdmin.from("shops").select("id,name,shopify_stores!inner(board_column_id)").eq("user_id", ownerId).eq("archived", false).in("shopify_stores.board_column_id", activeCols)
+        : { data: [] as any[] };
+      const selling = new Set((sales.data ?? []).map((r: any) => r.shop_id as string));
+      const board = new Map(((boardShops ?? []) as any[]).map((r) => [r.id as string, r.name as string]));
+      const cardSet = new Set(shopIds);
+      const { data: cardNames } = cardSet.size ? await supabaseAdmin.from("shops").select("id,name").in("id", [...cardSet]) : { data: [] as any[] };
+      const onlyBoard = [...board].filter(([id]) => !cardSet.has(id) && selling.has(id)).map(([, n]) => n);
+      const onlyCard = ((cardNames ?? []) as any[]).filter((r) => !board.has(r.id) && selling.has(r.id)).map((r) => r.name as string);
+      if (onlyBoard.length || onlyCard.length) {
+        alerts.push({ key: `fora:lojas:${[...onlyBoard, ...onlyCard].sort().join("|")}`.slice(0, 200), kind: "sistema", level: "atencao",
+          title: "Loja ativa num lugar e não no outro", link: "/shops/banco-de-lojas", action: "Acertar",
+          detail: [onlyBoard.length ? `Na coluna Ativas do Banco de Lojas, mas fora de card ativo em Lojas e Grupos: ${onlyBoard.join(", ")}.` : "",
+            onlyCard.length ? `Em card ativo de Lojas e Grupos, mas fora da coluna Ativas: ${onlyCard.join(", ")}.` : "",
+            "Resultado/Metas contam pelos cards; Transportadoras e Produtos pela coluna Ativas."].filter(Boolean).join(" "),
+          metric: String(onlyBoard.length + onlyCard.length), metricLabel: "loja(s)" });
+      }
+    }
     if (sit.semFase.length) {
       const n = sit.semFase.length;
       alerts.push({ key: "rastreio:sem_fase", kind: "lote", level: "atencao", title: `${pl(n, "Texto", "Textos")} de rastreio sem fase`, link: "/settings/rastreamento?tab=textos&filtro=sem_regra", action: "Classificar",
@@ -329,7 +380,15 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
     // postado) não repete o mesmo problema em outro alerta.
     const specificNums = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
     for (const n of (trackingRes.data ?? []) as any[]) {
-      const alfandega = String(n.key).startsWith("track123:alfandega:");
+      const k = String(n.key);
+      // Sistema: integração caída, produto sem cadastro, rotina parada, sync do
+      // rastreio com erro (track123:<loja>)…
+      if (!k.startsWith("track123:alfandega:") && !k.startsWith("track123:lote:")) {
+        alerts.push({ key: k, kind: "sistema", level: n.level === "error" ? "critico" : "atencao", title: String(n.title),
+          detail: String(n.body ?? ""), link: String(n.link ?? "/notificacoes"), action: "Acertar", metric: "", metricLabel: "" });
+        continue;
+      }
+      const alfandega = k.startsWith("track123:alfandega:");
       const nums = String(n.body ?? "").match(/#[A-Za-z0-9-]+/g) ?? [];
       if (!alfandega && nums.length && nums.every((x) => specificNums.has(x))) continue;
       const qtd = Number(String(n.title).match(/(\d+)\s+pacote/)?.[1] ?? 0);

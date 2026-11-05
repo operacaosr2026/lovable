@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Brain, ClipboardList, Headphones, Layers, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
-  Package, PackageX, RotateCcw, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
+  Package, PackageX, RotateCcw, Wrench, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -232,7 +232,7 @@ const Empty = ({ text = "Nada no período." }: { text?: string }) => <p classNam
 const ALERT_ICON: Record<Data["alerts"][number]["kind"], any> = {
   meta: Target, prejuizo: TrendingDown, chargeback: ShieldAlert, produto: Package,
   reembolso: Hourglass, entrega: Truck, tarefa: CheckSquare, atendimento: MessageSquare, inteligencia: Brain,
-  alfandega: Landmark, lote: PackageX,
+  alfandega: Landmark, lote: PackageX, sistema: Wrench,
 };
 const LEVEL = {
   critico: { label: "Crítico", icon: "bg-rose-500/10 text-rose-600", bar: "bg-rose-500", metric: "text-rose-600", btn: "bg-rose-600 text-white hover:bg-rose-700" },
@@ -250,7 +250,10 @@ function Alerts({ d }: { d: Data }) {
   const [tipOpen, setTipOpen] = useState<number | null>(null);
   // Alerta de rastreio (entrega / lote parado / alfândega) aberto na gaveta.
   const [ordersOpen, setOrdersOpen] = useState<{ key: string; title: string; detail: string } | null>(null);
-  const opensOrders = (a: Data["alerts"][number]) => a.key === "entrega" || a.key.startsWith("track123:") || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase");
+  const opensOrders = (a: Data["alerts"][number]) => a.key === "entrega" || a.key.startsWith("track123:alfandega:") || a.key.startsWith("track123:lote:")
+    || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase") || /^fora:(transportadora:|sem_evento|status)/.test(a.key);
+  // Link de fora do sistema (ex.: cobrança da Meta) abre em outra aba.
+  const go = (href: string) => (/^https?:\/\//.test(href) ? window.open(href, "_blank", "noopener") : navigate({ href }));
   const dismiss = useMutation({
     mutationFn: (v: { key: string; undo?: boolean }) => dismissFn({ data: { month: d.month, ...v } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["gerencial", d.month] }); qc.invalidateQueries({ queryKey: ["nav-badges"] }); },
@@ -324,7 +327,7 @@ function Alerts({ d }: { d: Data }) {
                       <p className={`text-lg sm:text-xl font-semibold tracking-tight whitespace-nowrap ${st.metric}`}>{a.metric}</p>
                       <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
                     </div>
-                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : opensOrders(a) ? setOrdersOpen(a) : navigate({ href: a.link })}
+                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : opensOrders(a) ? setOrdersOpen(a) : go(a.link)}
                       className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
                       {a.action} <ChevronRight className="size-3.5" />
                     </button>

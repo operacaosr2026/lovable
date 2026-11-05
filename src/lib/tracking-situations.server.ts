@@ -35,12 +35,16 @@ export type Situations = {
   repassado: SituationOrder[];
   reenvioEntregue: SituationOrder[];
   semFase: { key: string; example: string; count: number }[];
+  // Fora do combinado (o sistema caiu num padrão — precisa de alguém acertar):
+  transportadoraNova: Map<string, SituationOrder[]>; // prefixo do código → pedidos
+  semEvento: SituationOrder[];        // cadastrado no 17track há 3+ dias e nenhum evento
+  statusDiverge: SituationOrder[];    // rastreio diz entregue e o pedido não (1+ dia)
 };
 
 const isDelivered = (o: any) => o.delivery_status === "delivered";
 
 export async function trackingSituations(ownerId: string, shopIds: string[], nowMs = Date.now()): Promise<Situations> {
-  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [] };
+  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [] };
   if (!shopIds.length) return empty;
   const since = new Date(nowMs - WINDOW_DAYS * DAY).toISOString().slice(0, 10);
   const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at";
@@ -58,11 +62,11 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   const phaseOf = phaseResolver(new Map(((phaseRows.data ?? []) as any[]).map((r) => [r.text_key as string, r.phase as Phase])));
 
   const tracks = await selectAllIn<any>(open.map((o) => o.id as string), (c) => supabaseAdmin.from("shop_order_tracking")
-    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,timeline,replaced_packages").in("order_id", c));
+    .select("order_id,tracking_number,tracking_status,last_event_at,last_event_label,timeline,replaced_packages,registered_17track_at").in("order_id", c));
   if (tracks.error) throw new Error(tracks.error.message);
   const trackBy = new Map(tracks.data.map((t) => [String(t.order_id), t]));
 
-  const out: Situations = { ...empty, naoPostado: new Map() };
+  const out: Situations = { ...empty, naoPostado: new Map(), transportadoraNova: new Map() };
   const unknown = new Map<string, { example: string; count: number }>();
   for (const o of open) {
     const t = trackBy.get(String(o.id));
@@ -89,6 +93,14 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
     }
     if (last && (CUSTOMER_ISSUE.test(last.d) || /^(undelivered|exception)/i.test(String(t?.tracking_status ?? "")) && CUSTOMER_ISSUE.test(evs.slice(0, 3).map((e) => e.d).join(" ")))) out.cliente.push(row);
     else if (last && HANDOFF.test(last.d) && nowMs - last.ts >= HANDOFF_DAYS * DAY) out.repassado.push(row);
+    // Fora do combinado.
+    if (code && carrierOf(code) === "OUTRAS") {
+      const pfx = code.toUpperCase().match(/^[A-Z]+/)?.[0] ?? code.slice(0, 4).toUpperCase();
+      out.transportadoraNova.set(pfx, [...(out.transportadoraNova.get(pfx) ?? []), row]);
+    }
+    if (code && !evs.length && t?.registered_17track_at && nowMs - Date.parse(t.registered_17track_at) >= 3 * DAY) out.semEvento.push(row);
+    const delivEv = evs.find((e) => phaseOf(e.d) === "entregue");
+    if (delivEv && nowMs - delivEv.ts >= DAY) out.statusDiverge.push(row);
     // Reenvio: pacote antigo entregue e o novo ainda não.
     const replaced: any[] = Array.isArray(t?.replaced_packages) ? t.replaced_packages : [];
     if (!isDelivered(o) && replaced.some((p) => parseEvents(p?.timeline).some((e) => phaseOf(e.d) === "entregue"))) out.reenvioEntregue.push(row);
