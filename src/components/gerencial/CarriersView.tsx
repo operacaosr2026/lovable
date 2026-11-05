@@ -85,13 +85,11 @@ function Kpis({ t, p }: { t: CarrierTotals; p: CarrierTotals | null }) {
 }
 
 // "Em uso": teve pedido novo pelo código dela nos últimos 7 dias (reenvio não conta).
-const IN_USE_DAYS = 7;
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
-const daysAgo = (iso: string) => Math.floor((Date.now() - Date.parse(`${iso}T12:00:00Z`)) / 86_400_000);
 
 function CarrierName({ r, tags }: { r: CarrierRow; tags: { label: string; cls: string }[] }) {
   const c = colorOf(r.key);
-  const inUse = !!r.ultimoEnvio && daysAgo(r.ultimoEnvio) <= IN_USE_DAYS;
+  const inUse = r.envios7d > 0; // mesma conta do "X envios nos últimos 7 dias"
   return (
     <div className="flex items-center gap-2.5 min-w-0">
       <span className={`size-8 shrink-0 rounded-lg grid place-items-center text-[10px] font-bold ${c.badge}`}>{c.short}</span>

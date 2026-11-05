@@ -83,6 +83,19 @@ function toTimeline(item: any) {
   })).filter((e) => e.event_detail).sort((a, b) => (b.event_time_utc ?? "").localeCompare(a.event_time_utc ?? ""));
 }
 
+// Rastreio de códigos já cadastrados (sem gastar crédito: só o /register gasta).
+// Usado pra recuperar a timeline de pacote descartado (replaced_packages).
+export async function fetchRegisteredTimelines(numbers: string[]) {
+  const out = new Map<string, { status: string | null; timeline: ReturnType<typeof toTimeline> }>();
+  for (let i = 0; i < numbers.length; i += 40) {
+    const data = await call17("/gettrackinfo", numbers.slice(i, i + 40).map((number) => ({ number })));
+    for (const item of data?.accepted ?? []) {
+      out.set(String(item.number).toUpperCase(), { status: item?.track_info?.latest_status?.status ?? null, timeline: toTimeline(item) });
+    }
+  }
+  return out;
+}
+
 function eddOf(item: any) {
   const e = item?.track_info?.time_metrics?.estimated_delivery_date;
   const day = (v: any) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
