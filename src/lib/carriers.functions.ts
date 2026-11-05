@@ -7,7 +7,7 @@ import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { aggregate, avg, carrierLabel, carrierOf, CARRIERS, median, parseEvents, type CarrierRow, type CarrierTotals } from "@/lib/carrier-stats";
 import { rawEvents, sanitizeEvents } from "@/lib/tracking-display";
-import { LOCAL_CARRIERS, localLegOf, localTrackingUrl, type LocalCarrierKey } from "@/lib/local-carriers";
+import { LOCAL_CARRIERS, localLegOf, localNumberOrZero, localTrackingUrl, type LocalCarrierKey } from "@/lib/local-carriers";
 
 // Gerencial › Transportadoras: busca os pedidos/rastreios das lojas da coluna
 // "Ativas" do Banco de Lojas e faz a conta de carrier-stats.ts (regras lá).
@@ -152,7 +152,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
       const end = leg.deliveredTs ?? (delivered ? lastTs ?? now : now);
       out.push({
         id: o.id, order_number: o.order_number, order_date: String(o.order_date).slice(0, 10), carrier: carrierOf(code), carrier_label: carrierLabel(carrierOf(code)), local: leg.key,
-        tracking_code: code, tracking_url: o.tracking_url ?? null, local_number: localNumber, local_url: localTrackingUrl(localNumber),
+        tracking_code: code, tracking_url: o.tracking_url ?? null, local_number: localNumberOrZero(leg.key, localNumber, delivered), local_url: localTrackingUrl(localNumber),
         status, start_at: new Date(leg.startTs).toISOString(), delivered_at: leg.deliveredTs != null ? new Date(leg.deliveredTs).toISOString() : null,
         last_at: t.last_event_at ?? null, last_label: sanitizeEvents(rawEvents(t.timeline))[0]?.description ?? t.last_event_label ?? null, dias: Math.max(0, (end - leg.startTs) / DAY),
       });

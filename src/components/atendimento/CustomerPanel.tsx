@@ -274,8 +274,8 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                           {o.local.url
                             ? <a href={o.local.url} target="_blank" rel="noreferrer" className="font-mono text-primary hover:underline truncate inline-flex items-center gap-1">{o.local.number}<ExternalLink className="size-2.5 shrink-0" /></a>
                             : <span className="font-mono truncate">{o.local.number}</span>}
-                          <button onClick={() => { navigator.clipboard.writeText(o.local!.number!); toast.success("Código local copiado"); }} title="Copiar"
-                            className="shrink-0 text-muted-foreground hover:text-foreground"><Copy className="size-3" /></button>
+                          {o.local.number !== "0" && <button onClick={() => { navigator.clipboard.writeText(o.local!.number!); toast.success("Código local copiado"); }} title="Copiar"
+                            className="shrink-0 text-muted-foreground hover:text-foreground"><Copy className="size-3" /></button>}
                         </>
                       ) : <span className="text-muted-foreground italic">sem código local</span>}
                     </div>

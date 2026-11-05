@@ -39,7 +39,7 @@ function OriginBadge({ k, label }: { k: string; label: string }) {
 
 export function LocalTrackingCard({ days }: { days: number | null }) {
   const fn = useServerFn(getLocalTracking);
-  const q = useQuery({ queryKey: ["local-tracking-v2", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["local-tracking-v3", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const [local, setLocal] = useState<string | null>(null);
   const [tab, setTab] = useState<StatusTab>("aberto");
   const [search, setSearch] = useState("");
@@ -171,7 +171,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                             {o.local_url
                               ? <a href={o.local_url} target="_blank" rel="noreferrer" className="font-mono text-xs text-primary hover:underline inline-flex items-center gap-1">{localNumberDisplay(o.local_number)}<ExternalLink className="size-3" /></a>
                               : <span className="font-mono text-xs">{o.local_number}</span>}
-                            <button onClick={() => copy(localNumberDisplay(o.local_number!))} className="text-muted-foreground hover:text-foreground" title="Copiar"><Copy className="size-3" /></button>
+                            {o.local_number !== "0" && <button onClick={() => copy(localNumberDisplay(o.local_number!))} className="text-muted-foreground hover:text-foreground" title="Copiar"><Copy className="size-3" /></button>}
                           </span>
                         ) : <span className="text-[11px] text-muted-foreground">não informado</span>}
                       </td>

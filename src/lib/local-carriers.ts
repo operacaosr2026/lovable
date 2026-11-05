@@ -74,3 +74,11 @@ export function localTrackingUrl(n: string | null | undefined): string | null {
   return `https://t.17track.net/en#nums=${encodeURIComponent(n)}`;
 }
 export const localNumberDisplay = (n: string) => uspsCore(n) ?? n;
+
+// Já entregue e sem o código (pedido antigo do Track123, nunca cadastrado no
+// 17track; ou transportadora que não manda): conta como código "0" — pedido do
+// usuário em 05/11/2026, pra não parecer que falta algo. Só USPS/GOFO (as que
+// têm código); só na tela, não grava — o sync segue buscando o real.
+export const DELIVERED_NO_CODE = "0";
+export const localNumberOrZero = (key: string | null | undefined, n: string | null, delivered: boolean) =>
+  n ?? (delivered && (key === "USPS" || key === "GOFO") ? DELIVERED_NO_CODE : null);
