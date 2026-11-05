@@ -1,7 +1,7 @@
 // Transportadora local dos EUA (última milha) de cada pacote, pelo jeito dos
 // eventos do rastreio — o 17track não manda o nome dela. Regras:
 //  - GOFO: "GOFO" no texto ou o telefone dela (+1 949 688-6032);
-//  - USPS: "USPS" / "POST OFFICE", ou código local no formato USPS (92…–95…);
+//  - USPS: "USPS" / "Arrived at Post Office", ou código local no formato USPS (92…–95…);
 //    o código local (misc_info.local_number do 17track) vem na USPS e no YunTu
 //    (TRF0… da Transfly ou TYHZ…); o da GOFO (GFUS…) vem do site dela
 //    (gofo.server.ts); as sem nome não têm;
@@ -28,7 +28,9 @@ export const HANDOFF = /^delivered to (local )?carrier|handed over to (the )?(lo
 export const GOFO_EVENT = /GOFO|949 688-6032/i;
 const SIGS: [LocalCarrierKey, RegExp][] = [
   ["GOFO", GOFO_EVENT],
-  ["USPS", /\bUSPS\b|POST OFFICE/i],
+  // "In transit to local Post Office" é da JCEX antes de repassar (vem antes da
+  // GOFO também) — não é USPS.
+  ["USPS", /\bUSPS\b|(arrived at|picked up at) post office/i],
   ["SEM_NOME", /^Parcel (received by|departed from facility|is out for delivery|has been delivered)/i],
   ["SEM_NOME", /\(中文:\s*[^)\s]|^Delivered\. Position:/i],   // "(中文:)" vazio é lixo, não conta
   // Centro de distribuição / entrega nos EUA (alfândega "邮件到达【美国】海关" não conta).

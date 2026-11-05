@@ -39,7 +39,7 @@ function OriginBadge({ k, label }: { k: string; label: string }) {
 
 export function LocalTrackingCard({ days }: { days: number | null }) {
   const fn = useServerFn(getLocalTracking);
-  const q = useQuery({ queryKey: ["local-tracking-v3", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["local-tracking-v4", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const [local, setLocal] = useState<string | null>(null);
   const [tab, setTab] = useState<StatusTab>("aberto");
   const [search, setSearch] = useState("");
