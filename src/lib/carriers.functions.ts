@@ -7,7 +7,7 @@ import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { aggregate, avg, carrierLabel, carrierOf, CARRIERS, median, parseEvents, type CarrierRow, type CarrierTotals } from "@/lib/carrier-stats";
 import { rawEvents, sanitizeEvents } from "@/lib/tracking-display";
-import { LOCAL_CARRIERS, localLegOf, localNumberOrZero, localTrackingUrl, type LocalCarrierKey } from "@/lib/local-carriers";
+import { LOCAL_CARRIERS, localLegOf, transitStage, localNumberOrZero, localTrackingUrl, type LocalCarrierKey } from "@/lib/local-carriers";
 
 // Gerencial › Transportadoras: busca os pedidos/rastreios das lojas da coluna
 // "Ativas" do Banco de Lojas e faz a conta de carrier-stats.ts (regras lá).
@@ -103,6 +103,7 @@ export type LocalOrder = {
   tracking_code: string; tracking_url: string | null; local_number: string | null; local_url: string | null;
   status: "entregue" | "andamento" | "parado"; start_at: string; delivered_at: string | null;
   last_at: string | null; last_label: string | null; dias: number;
+  etapa: string | null;   // só na linha "Aguardando": onde o pacote está
 };
 export type LocalRow = {
   key: LocalCarrierKey; label: string; hint?: string; pacotes: number; entregues: number; andamento: number; parados: number;
@@ -140,21 +141,28 @@ export const getLocalTracking = createServerFn({ method: "GET" })
     for (const o of live) {
       const t = trackBy.get(String(o.id));
       const code = String(o.tracking_code).trim().toUpperCase();
-      // Rastreio gravado de outro código (trocado e ainda não buscado) não vale.
-      if (!t || String(t.tracking_number ?? "").toUpperCase() !== code) continue;
-      const evs = parseEvents(t.timeline);
-      const localNumber: string | null = t.local_tracking_number ?? null;
-      const leg = localLegOf(evs, localNumber, phaseOf);
-      if (!leg) continue;
+      // Rastreio gravado de outro código (trocado e ainda não buscado): sem eventos.
+      const same = !!t && String(t.tracking_number ?? "").toUpperCase() === code;
+      const evs = same ? parseEvents(t.timeline) : [];
+      const localNumber: string | null = same ? t.local_tracking_number ?? null : null;
+      const found = localLegOf(evs, localNumber, phaseOf);
+      const deliveredEv = evs.some((e) => phaseOf(e.d) === "entregue");
+      // Em trânsito e ainda não está com a transportadora local (na China, no voo,
+      // na alfândega…): também entra em "Aguardando" — pedido do usuário em 05/11/2026.
+      const waiting = !found && !deliveredEv && o.delivery_status !== "delivered";
+      if (!found && !waiting) continue;
+      const leg = found ?? { key: "AGUARDANDO" as const, startTs: Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`), deliveredTs: null };
+      const etapa = leg.key === "AGUARDANDO" ? transitStage(evs, found, phaseOf) : null;
       const delivered = leg.deliveredTs != null || o.delivery_status === "delivered";
-      const lastTs = t.last_event_at ? Date.parse(t.last_event_at) : null;
+      const lastTs = same && t.last_event_at ? Date.parse(t.last_event_at) : null;
       const status = delivered ? "entregue" : lastTs != null && now - lastTs >= LOCAL_STALE_DAYS * DAY ? "parado" : "andamento";
       const end = leg.deliveredTs ?? (delivered ? lastTs ?? now : now);
       out.push({
         id: o.id, order_number: o.order_number, order_date: String(o.order_date).slice(0, 10), carrier: carrierOf(code), carrier_label: carrierLabel(carrierOf(code)), local: leg.key,
         tracking_code: code, tracking_url: o.tracking_url ?? null, local_number: localNumberOrZero(leg.key, localNumber, delivered), local_url: localTrackingUrl(localNumber),
         status, start_at: new Date(leg.startTs).toISOString(), delivered_at: leg.deliveredTs != null ? new Date(leg.deliveredTs).toISOString() : null,
-        last_at: t.last_event_at ?? null, last_label: sanitizeEvents(rawEvents(t.timeline))[0]?.description ?? t.last_event_label ?? null, dias: Math.max(0, (end - leg.startTs) / DAY),
+        last_at: same ? t.last_event_at ?? null : null, last_label: same ? sanitizeEvents(rawEvents(t.timeline))[0]?.description ?? t.last_event_label ?? null : null,
+        dias: Math.max(0, (end - leg.startTs) / DAY), etapa,
       });
     }
 

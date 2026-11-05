@@ -19,7 +19,7 @@ export const LOCAL_CARRIERS = [
   { key: "GOFO", label: "GOFO Express" },
   { key: "SEM_NOME", label: "Sem nome", hint: "a transportadora não aparece no rastreio" },
   { key: "NAO_RECONHECIDA", label: "Não reconhecida", hint: "repassado, mas os eventos não batem com nenhuma conhecida" },
-  { key: "AGUARDANDO", label: "Aguardando transportadora local", hint: "liberado na alfândega / repassado, sem evento dela ainda" },
+  { key: "AGUARDANDO", label: "Aguardando transportadora local", hint: "em trânsito e ainda não está com ela — a etapa aparece em cada pedido" },
 ] as const;
 export type LocalCarrierKey = (typeof LOCAL_CARRIERS)[number]["key"];
 export const localCarrierLabel = (k: string) => LOCAL_CARRIERS.find((c) => c.key === k)?.label ?? k;
@@ -85,6 +85,19 @@ export function localLegOf(evs: { ts: number; d: string }[], localNumber: string
     return { key: "AGUARDANDO", startTs: asc[pre].ts, deliveredTs: null };
   }
   return { key: leg.length ? "NAO_RECONHECIDA" : "AGUARDANDO", startTs: asc[h].ts, deliveredTs };
+}
+
+// Etapa de quem ainda não está com a transportadora local (linha "Aguardando"):
+// mais adiantada que o rastreio mostra. leg = localLegOf (AGUARDANDO = liberado
+// na alfândega dos EUA ou repassado sem evento da local).
+export function transitStage(evs: { ts: number; d: string }[], leg: LocalLeg | null, phaseOf: (d: string) => string | null): string {
+  if (leg?.key === "AGUARDANDO") return evs.some((e) => HANDOFF.test(e.d)) ? "Repassado, sem evento dela" : "Liberado na alfândega dos EUA";
+  if (!evs.length) return "Sem evento no rastreio";
+  const phases = new Set(evs.map((e) => phaseOf(e.d)));
+  if (phases.has("chegada_eua") || phases.has("alfandega_entrada")) return "Nos EUA, na alfândega";
+  if (phases.has("voo")) return "No voo pros EUA";
+  if (phases.has("movimento")) return "Postado, a caminho dos EUA";
+  return "Não postado (só etiqueta)";
 }
 
 // Link do código local: USPS e GOFO direto no site delas; Transfly (YunTu
