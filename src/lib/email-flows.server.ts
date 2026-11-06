@@ -85,7 +85,7 @@ async function orderStates(ownerId: string, orders: any[]) {
       : o.problem_at || o.delivery_status === "problem" ? "problema"
       : /^(pending|info ?received)$/i.test(ts.trim()) ? "sem_envio" : "transito";
     out.set(o.id, {
-      delivery, deliveredAt, cancelled: !!o.cancelled_at, financial: o.shopify_financial_status ?? null,
+      delivery, deliveredAt, cancelled: !!o.cancelled_at || o.delivery_status === "shipment_cancelled", financial: o.shopify_financial_status ?? null,
       dispute: disputed.has(`${o.shop_id}:${o.external_id}`),
       lastInboundAt: inbound.get(emailOf(o)) ?? null,
       trackingUrl: buildTrackingUrl(linkTemplate.get(o.shop_id) as string | undefined, o.tracking_code) ?? o.tracking_url ?? null,

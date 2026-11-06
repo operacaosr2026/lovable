@@ -57,7 +57,8 @@ export function businessDaysBetween(fromIso: string, toIso: string, cal?: Postin
 const DELIVERY_ALERT_DAYS = 20;
 export function attentionReason(o: any, nowMs: number): string | null {
   const status = o.delivery_status ?? "pending_shipment";
-  if (status === "waiting_customer") return null;
+  // Esperando cliente / envio cancelado (não vai ser entregue): fora do radar.
+  if (status === "waiting_customer" || status === "shipment_cancelled") return null;
   if (status === "shipped" || status === "in_transit") {
     // last_event_at (17track) reflete o último evento real de rastreio; sem
     // integração ativa, cai pra shipped_at (data da postagem) como referência.
@@ -137,7 +138,7 @@ const dayOf = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : nu
 // data de postagem, mas o rastreio só mostra "info recebida" → hoje conta como
 // pendente de envio; nos dias anteriores também).
 const STATUS_RANK: Record<string, number> = {
-  pending_shipment: 0, shipped: 1, in_transit: 1, waiting_customer: 1, problem: 2, returned: 2, delivered: 3,
+  pending_shipment: 0, shipped: 1, in_transit: 1, waiting_customer: 1, problem: 2, returned: 2, delivered: 3, shipment_cancelled: 3,
 };
 
 export type LogisticsTrendPoint = {

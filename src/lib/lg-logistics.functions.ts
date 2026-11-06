@@ -58,7 +58,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
       .lt("order_date", data.from)
       .gte("order_date", floor)
       .is("delivered_at", null)
-      .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
+      .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned,shipment_cancelled)")
       .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
       .filter("raw->>cancelled_at", "is", null)
       .order("order_date", { ascending: false }));

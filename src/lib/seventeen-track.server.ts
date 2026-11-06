@@ -184,7 +184,7 @@ export async function runSeventeenTrackSync(opts: { deadline?: number; shopIds?:
     .select("id,user_id,shop_id,order_date,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,tracking_code_manual_at,tracking_code_history,fulfillments:raw->fulfillments")
     .in("shop_id", shops.map((s) => s.shop_id))
     .not("tracking_code", "is", null)
-    .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
+    .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned,shipment_cancelled)")
     .is("delivered_at", null)
     .or("shopify_financial_status.is.null,shopify_financial_status.neq.voided")
     .filter("raw->>cancelled_at", "is", null)
@@ -534,7 +534,7 @@ async function reconcileProblems(shopIds: string[], matcherBy: Map<string, Retur
     .select("id,shop_id,order_date,tracking_code,delivery_status,problem_at,logistics_note,tracking_code_manual_at,tracking_code_history")
     .in("shop_id", shopIds)
     .is("delivered_at", null)
-    .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned,problem,waiting_customer)")
+    .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned,problem,waiting_customer,shipment_cancelled)")
     .filter("raw->>cancelled_at", "is", null)
     .gte("order_date", since));
   if (error) throw new Error(error.message);

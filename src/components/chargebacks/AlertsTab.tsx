@@ -37,7 +37,7 @@ const STATUS: Record<AlertStatus, { label: string; cls: string }> = {
 };
 const DELIVERY: Record<string, string> = {
   pending_shipment: "Aguardando envio", shipped: "Em trânsito", in_transit: "Em trânsito", delivered: "Entregue",
-  returned: "Devolvido", problem: "Problema", waiting_customer: "Esperando cliente",
+  returned: "Devolvido", problem: "Problema", waiting_customer: "Esperando cliente", shipment_cancelled: "Envio cancelado",
 };
 
 // Cor do selo de cada tipo de alerta (lista e legenda), pra bater o olho e saber.

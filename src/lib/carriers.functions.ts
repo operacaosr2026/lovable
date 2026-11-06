@@ -54,7 +54,8 @@ export const getCarrierStats = createServerFn({ method: "GET" })
     if (!shopIds.length) return empty;
 
     const { data: orders, error: ordersErr } = await selectAllIn<any>(shopIds, (ids) => {
-      let q = supabaseAdmin.from("shop_orders").select("id,order_date,tracking_code,tracking_code_history,tracking_code_manual_at").eq("user_id", ownerId).in("shop_id", ids);
+      let q = supabaseAdmin.from("shop_orders").select("id,order_date,tracking_code,tracking_code_history,tracking_code_manual_at").eq("user_id", ownerId).in("shop_id", ids)
+        .or("delivery_status.is.null,delivery_status.neq.shipment_cancelled");   // envio cancelado: fora
       if (prevFrom ?? from) q = q.gte("order_date", (prevFrom ?? from)!);
       return q;
     });
@@ -124,7 +125,8 @@ export const getLocalTracking = createServerFn({ method: "GET" })
 
     const { data: orders, error } = await selectAllIn<any>(shopIds, (ids) => {
       let q = supabaseAdmin.from("shop_orders").select("id,order_number,order_date,tracking_code,tracking_url,delivery_status,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at")
-        .eq("user_id", ownerId).in("shop_id", ids).not("tracking_code", "is", null);
+        .eq("user_id", ownerId).in("shop_id", ids).not("tracking_code", "is", null)
+        .or("delivery_status.is.null,delivery_status.neq.shipment_cancelled");   // envio cancelado: fora
       if (from) q = q.gte("order_date", from);
       return q;
     });

@@ -76,7 +76,7 @@ const riskTitle = (r: ChargebackRow) =>
 
 const DELIVERY: Record<string, string> = {
   pending_shipment: "Aguardando envio", shipped: "Em trânsito", in_transit: "Em trânsito", delivered: "Entregue",
-  returned: "Devolvido", problem: "Problema no rastreio", waiting_customer: "Esperando cliente",
+  returned: "Devolvido", problem: "Problema no rastreio", waiting_customer: "Esperando cliente", shipment_cancelled: "Envio cancelado",
 };
 // Pedido sem dados: antigo demais pra Shopify liberar (falta read_all_orders) ou sem pedido.
 const noOrderLabel = (r: ChargebackRow) => (r.orderSource === "sem_acesso" ? "Pedido antigo (sem acesso)" : "Sem dados do pedido");

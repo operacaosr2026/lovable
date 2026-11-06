@@ -165,7 +165,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
       .lte("order_date", day(NOTICE_MIN_DAYS))
       .gte("order_date", day(NOTICE_MAX_DAYS))
       .is("delivered_at", null)
-      .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned)")
+      .or("delivery_status.is.null,delivery_status.not.in.(delivered,returned,shipment_cancelled)")
       .or("shopify_financial_status.is.null,shopify_financial_status.not.in.(refunded,partially_refunded,voided)")
       .filter("raw->>cancelled_at", "is", null));
     if (error) throw new Error(error.message);

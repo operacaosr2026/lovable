@@ -21,7 +21,7 @@ const DAY = 86_400_000;
 
 const STATUS: Record<string, string> = {
   pending_shipment: "Aguardando envio", shipped: "Em trânsito", in_transit: "Em trânsito", delivered: "Entregue",
-  problem: "Problema", returned: "Devolvido", waiting_customer: "Esperando cliente",
+  problem: "Problema", returned: "Devolvido", waiting_customer: "Esperando cliente", shipment_cancelled: "Envio cancelado",
 };
 
 export type AlertOrder = {

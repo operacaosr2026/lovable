@@ -75,6 +75,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   returned:         { label: "Devolvido",          color: "rose",    icon: AlertTriangle },
   problem:          { label: "Problema",           color: "rose",    icon: AlertTriangle },
   waiting_customer: { label: "Esperando cliente",  color: "violet",  icon: Hourglass },
+  // Não vai ser entregue (ex.: reenvio cancelado) — sai do acompanhamento.
+  shipment_cancelled: { label: "Envio cancelado", color: "gray",    icon: Package },
 };
 
 function StatusBadge({ status }: { status: string }) {

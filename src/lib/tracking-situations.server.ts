@@ -52,7 +52,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at";
   const [openRes, phaseRows, notices] = await Promise.all([
     selectAll<any>(supabaseAdmin.from("shop_orders").select(sel).eq("user_id", ownerId).in("shop_id", shopIds)
-      .gte("order_date", since).or("delivery_status.is.null,delivery_status.not.in.(delivered,waiting_customer)")),
+      .gte("order_date", since).or("delivery_status.is.null,delivery_status.not.in.(delivered,waiting_customer,shipment_cancelled)")),
     supabaseAdmin.from("tracking_phase_overrides").select("text_key,phase").eq("user_id", ownerId),
     // Avisos abertos de alfândega / lote parado (já viram alerta próprio).
     supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).is("resolved_at", null)

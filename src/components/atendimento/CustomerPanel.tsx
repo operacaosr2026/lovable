@@ -363,6 +363,7 @@ const DELIVERY: Record<string, { label: string; cls: string }> = {
   returned: { label: "Devolvido", cls: "bg-rose-500/10 text-rose-600" },
   problem: { label: "Problema", cls: "bg-rose-500/10 text-rose-600" },
   waiting_customer: { label: "Esperando cliente", cls: "bg-violet-500/10 text-violet-600" },
+  shipment_cancelled: { label: "Envio cancelado", cls: "bg-muted text-muted-foreground" },
 };
 const FINANCIAL: Record<string, { label: string; cls: string }> = {
   paid: { label: "Pago", cls: "bg-emerald-500/10 text-emerald-600" },
