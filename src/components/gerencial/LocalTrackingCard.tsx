@@ -28,6 +28,13 @@ const LOCAL_TONE: Record<string, string> = {
 const STATUS_TABS = [["aberto", "Em aberto"], ["parado", "Parados"], ["entregue", "Entregues"], ["todos", "Todos"]] as const;
 type StatusTab = (typeof STATUS_TABS)[number][0];
 const PAGE = 50;
+// "Dias no local" conta desde que entrou na transportadora; o parado conta do
+// último evento (#L3-1116: 12 dias na USPS, parado há 7).
+const stoppedText = (lastAt: string | null) => {
+  if (!lastAt) return "parado";
+  const d = Math.floor((Date.now() - Date.parse(lastAt)) / 86_400_000);
+  return `parado há ${d} dia${d === 1 ? "" : "s"}`;
+};
 
 function LocalBadge({ k }: { k: string }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${LOCAL_TONE[k] ?? LOCAL_TONE.AGUARDANDO}`}>{localCarrierLabel(k)}</span>;
@@ -185,7 +192,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                       <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap">
                         <span className={`font-semibold ${o.status === "parado" ? "text-rose-600" : ""}`}>{dec(o.dias)}</span>
                         <Sub tone={o.status === "parado" ? "text-rose-600" : o.status === "entregue" ? "text-emerald-600" : "text-muted-foreground"}>
-                          {o.status === "parado" ? "parado" : o.status === "entregue" ? "entregue" : "em andamento"}
+                          {o.status === "parado" ? stoppedText(o.last_at) : o.status === "entregue" ? "entregue" : "em andamento"}
                         </Sub>
                       </td>
                     </tr>
