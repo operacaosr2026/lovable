@@ -106,6 +106,7 @@ export function localTrackingUrl(n: string | null | undefined): string | null {
   if (!n) return null;
   const usps = uspsCore(n);
   if (usps) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${usps}`;
+  if (UPU_NUMBER.test(n)) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${n}`;
   if (/^GFUS/i.test(n)) return `https://www.gofo.com/us/track?searchID=${encodeURIComponent(n)}`;
   return `https://t.17track.net/en#nums=${encodeURIComponent(n)}`;
 }
@@ -116,5 +117,11 @@ export const localNumberDisplay = (n: string) => uspsCore(n) ?? n;
 // usuário em 05/11/2026, pra não parecer que falta algo. Só USPS/GOFO (as que
 // têm código); só na tela, não grava — o sync segue buscando o real.
 export const DELIVERED_NO_CODE = "0";
+// Código no padrão dos Correios internacionais (UPU: LZ479461926CN): a USPS
+// rastreia com o mesmo número — o local é o próprio código (#L3-1116, LZ).
+const UPU_NUMBER = /^[A-Z]{2}\d{9}[A-Z]{2}$/;
+export const effectiveLocalNumber = (key: string | null | undefined, stored: string | null, ownCode: string) =>
+  stored ?? (key === "USPS" && UPU_NUMBER.test(ownCode.trim().toUpperCase()) ? ownCode.trim().toUpperCase() : null);
+
 export const localNumberOrZero = (key: string | null | undefined, n: string | null, delivered: boolean) =>
   n ?? (delivered && (key === "USPS" || key === "GOFO") ? DELIVERED_NO_CODE : null);

@@ -7,7 +7,7 @@ import { selectAll } from "@/lib/select-all";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { parseEvents } from "@/lib/carrier-stats";
 import { phaseResolver } from "@/lib/tracking-phases";
-import { localCarrierLabel, localLegOf, localNumberDisplay, localNumberOrZero, localTrackingUrl } from "@/lib/local-carriers";
+import { effectiveLocalNumber, localCarrierLabel, localLegOf, localNumberDisplay, localNumberOrZero, localTrackingUrl } from "@/lib/local-carriers";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { orderNumberVariants, orderNumbersInText } from "@/lib/order-numbers";
 import { US_TIME_ZONE } from "@/lib/timezone";
@@ -874,7 +874,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
       if (!o || String(t.tracking_number ?? "").toUpperCase() !== String(o.tracking_code ?? "").trim().toUpperCase()) continue;
       const leg = localLegOf(parseEvents(t.timeline), t.local_tracking_number ?? null, phaseOf);
       if (!leg && !t.local_tracking_number) continue;
-      const n: string | null = t.local_tracking_number ?? null;
+      const n: string | null = effectiveLocalNumber(leg?.key, t.local_tracking_number ?? null, String(o.tracking_code ?? ""));
       const delivered = leg?.deliveredTs != null || o.delivery_status === "delivered" || !!o.delivered_at;
       const shown = localNumberOrZero(leg?.key, n ? localNumberDisplay(n) : null, delivered);
       localBy.set(o.id, { label: leg ? localCarrierLabel(leg.key) : "Transportadora local", number: shown, url: localTrackingUrl(n) });
