@@ -345,6 +345,29 @@ function groupDayItems(items: DayItem[], kind: "income" | "expense"): EntryGroup
   return [...groupConfirmed(confirmed), ...pendingGroup];
 }
 
+// Cobranças da Meta no cartão: cada uma vira um lançamento por loja com a mesma
+// descrição ("Cobrança Meta Ads act_X — $286.00 dividido entre 7 lojas") e a
+// mesma importação. Junta de volta por cobrança, na ordem em que entraram.
+function metaCharges(group: EntryGroup) {
+  const by = new Map<string, DayItem[]>();
+  for (const e of group.entries) {
+    const k = `${e.description ?? ""}|${e.created_at ?? ""}`;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k)!.push(e);
+  }
+  return [...by.entries()].map(([key, entries]) => {
+    const desc = entries[0].description ?? "";
+    const total = entries.reduce((s, e) => s + Number(e.amount), 0);
+    const full = desc.match(/\$\s?([\d.,]+)/)?.[1];
+    return {
+      key, entries, total,
+      chargeLabel: full ? `$${full}` : fmtMoney(total),
+      account: desc.match(/act_(\d+)/)?.[1] ?? null,
+      at: entries[0].created_at ?? "",
+    };
+  }).sort((a, b) => a.at.localeCompare(b.at));
+}
+
 function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, todayKey }: {
   group: EntryGroup;
   onEdit: (e: DayItem) => void;
@@ -441,8 +464,60 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
         </button>
   );
 
-  // Saída automática do grupo (Facebook Ads, Fornecedor…): só o total, sem lista
-  // por loja; o clique edita o total.
+  // Facebook Ads: total por fora; dentro, uma linha por cobrança do cartão (cada
+  // cobrança é dividida entre as lojas — 7 lançamentos com a mesma descrição e
+  // importação). Clique na cobrança edita ela (valor + Balance) — pedido do
+  // usuário em 06/11/2026: "mostrava cobrança por cobrança".
+  if (group.collapsed && group.entries.every((e) => e.auto_kind === "meta_billing_charge")) {
+    const charges = metaCharges(group);
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className={chipClasses}>
+            <span className="flex items-center gap-1.5 min-w-0 truncate">
+              <span className="truncate">{group.label}</span>
+              {group.entries.some((x) => x.via_balance) && <BalanceTag />}
+            </span>
+            <span className="font-semibold tabular-nums shrink-0">-{fmtMoney(group.total)}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-72 p-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 mb-1">
+            {group.label} · {charges.length} cobrança{charges.length === 1 ? "" : "s"}
+          </div>
+          {charges.map((c) => {
+            const rec = c.entries.filter((e) => !e.virtual && e.date <= todayKey);
+            const allRec = rec.length > 0 && rec.every((e) => e.reconciled);
+            return (
+              <button key={c.key} type="button"
+                onClick={() => editGroup?.({ key: c.key, label: `${group.label} · cobrança ${c.chargeLabel}`, kind: group.kind, total: c.total, entries: c.entries, collapsed: true })}
+                className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-left">
+                <span className="flex items-center gap-1.5 min-w-0 truncate text-muted-foreground">
+                  {rec.length > 0 && (
+                    <span role="checkbox" aria-checked={allRec} title={allRec ? "Conciliado" : "Marcar como conciliado"}
+                      onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); for (const e of rec) if (Boolean(e.reconciled) === allRec) onToggleReconciled(e); }}
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      className={cn("shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                        allRec ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current")}>
+                      {allRec && <Check className="size-2.5" />}
+                    </span>
+                  )}
+                  <span className="truncate">
+                    Cobrança {c.chargeLabel}{c.account ? <span className="opacity-70"> · conta …{c.account.slice(-4)}</span> : null}
+                  </span>
+                  {c.entries.every((e) => e.via_balance) && <BalanceTag />}
+                </span>
+                <span className="font-semibold tabular-nums shrink-0">-{fmtMoney(c.total)}</span>
+              </button>
+            );
+          })}
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  // Saída automática do grupo (Fornecedor…): só o total, sem lista por loja; o
+  // clique edita o total.
   if (group.collapsed) return groupChip;
 
   return (
