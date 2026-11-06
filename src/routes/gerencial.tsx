@@ -328,7 +328,7 @@ function Alerts({ d }: { d: Data }) {
                       <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
                     </div>
                     <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : opensOrders(a) ? setOrdersOpen(a) : go(a.link)}
-                      className={`shrink-0 h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 transition-colors ${st.btn}`}>
+                      className={`shrink-0 h-9 w-[140px] px-3 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors ${st.btn}`}>
                       {a.action} <ChevronRight className="size-3.5" />
                     </button>
                     <button onClick={() => dismiss.mutate({ key: a.key })} disabled={dismiss.isPending}
