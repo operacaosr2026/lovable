@@ -93,7 +93,9 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                         {r.hint && <Sub>{r.hint}</Sub>}
                       </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">{int(r.pacotes)}</td>
-                      <td className="py-2.5 px-3 text-center tabular-nums font-semibold">{int(r.entregues)}<Sub>{pct(r.entregues / r.pacotes)}</Sub></td>
+                      <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
+                        {r.key === "AGUARDANDO" ? <span className="text-muted-foreground">–</span> : <>{int(r.entregues)}<Sub>{pct(r.entregues / r.pacotes)}</Sub></>}
+                      </td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">{int(r.andamento)}</td>
                       <td className="py-2.5 px-3 text-center tabular-nums font-semibold">
                         {r.parados ? <span className="text-rose-600">{int(r.parados)}</span> : <span className="text-muted-foreground">0</span>}
