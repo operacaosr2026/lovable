@@ -39,7 +39,7 @@ function OriginBadge({ k, label }: { k: string; label: string }) {
 
 export function LocalTrackingCard({ days }: { days: number | null }) {
   const fn = useServerFn(getLocalTracking);
-  const q = useQuery({ queryKey: ["local-tracking-v7", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["local-tracking-v8", days], queryFn: () => fn({ data: { days } }), staleTime: 60_000 });
   const [local, setLocal] = useState<string | null>(null);
   const [tab, setTab] = useState<StatusTab>("aberto");
   const [search, setSearch] = useState("");
@@ -146,7 +146,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                     <th className="py-2 px-3 font-medium text-left">Transportadora local</th>
                     <th className="py-2 px-3 font-medium text-left">Código local</th>
                     <th className="py-2 px-3 font-medium text-left">Último evento</th>
-                    <th className="py-2 px-3 font-medium text-right rounded-r-xl" title="Desde o repasse; nos entregues, até a entrega; em Aguardando, desde a liberação/repasse ou o pedido">Dias no local</th>
+                    <th className="py-2 px-3 font-medium text-right rounded-r-xl" title="Desde o repasse; nos entregues, até a entrega; em Aguardando, desde a liberação/repasse, a troca do código (reenvio) ou o pedido">Dias no local</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,6 +155,7 @@ export function LocalTrackingCard({ days }: { days: number | null }) {
                       <td className="py-2 px-3 whitespace-nowrap">
                         <span className="font-medium">{o.order_number}</span>
                         <Sub>{ddmm(o.order_date)}</Sub>
+                        {o.reenvio && <Sub tone="text-amber-600">reenviado {ddmm(o.reenvio)}</Sub>}
                       </td>
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-2">

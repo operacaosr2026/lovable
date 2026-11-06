@@ -104,6 +104,7 @@ export type LocalOrder = {
   status: "entregue" | "andamento" | "parado"; start_at: string; delivered_at: string | null;
   last_at: string | null; last_label: string | null; dias: number;
   etapa: string | null;   // só na linha "Aguardando": onde o pacote está
+  reenvio: string | null; // data da troca do código (reenvio) — o pedido aparece pelo código novo
 };
 export type LocalRow = {
   key: LocalCarrierKey; label: string; hint?: string; pacotes: number; entregues: number; andamento: number; parados: number;
@@ -122,7 +123,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
     if (!shopIds.length) return { rows: [] as LocalRow[], orders: [] as LocalOrder[] };
 
     const { data: orders, error } = await selectAllIn<any>(shopIds, (ids) => {
-      let q = supabaseAdmin.from("shop_orders").select("id,order_number,order_date,tracking_code,tracking_url,delivery_status,cancelled:raw->>cancelled_at")
+      let q = supabaseAdmin.from("shop_orders").select("id,order_number,order_date,tracking_code,tracking_url,delivery_status,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at")
         .eq("user_id", ownerId).in("shop_id", ids).not("tracking_code", "is", null);
       if (from) q = q.gte("order_date", from);
       return q;
@@ -151,7 +152,11 @@ export const getLocalTracking = createServerFn({ method: "GET" })
       // na alfândega…): também entra em "Aguardando" — pedido do usuário em 05/11/2026.
       const waiting = !found && !deliveredEv && o.delivery_status !== "delivered";
       if (!found && !waiting) continue;
-      const leg = found ?? { key: "AGUARDANDO" as const, startTs: Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`), deliveredTs: null };
+      // Reenvio: aparece pelo código novo e o relógio conta da troca (igual ao resto do sistema).
+      const hist: any[] = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
+      const resentAt: string | null = hist[hist.length - 1]?.until ?? o.tracking_code_manual_at ?? null;
+      const clockFrom = resentAt ? Date.parse(resentAt) : Date.parse(`${String(o.order_date).slice(0, 10)}T12:00:00Z`);
+      const leg = found ?? { key: "AGUARDANDO" as const, startTs: clockFrom, deliveredTs: null };
       const etapa = leg.key === "AGUARDANDO" ? transitStage(evs, found, phaseOf) : null;
       const delivered = leg.deliveredTs != null || o.delivery_status === "delivered";
       const lastTs = same && t.last_event_at ? Date.parse(t.last_event_at) : null;
@@ -162,7 +167,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
         tracking_code: code, tracking_url: o.tracking_url ?? null, local_number: localNumberOrZero(leg.key, localNumber, delivered), local_url: localTrackingUrl(localNumber),
         status, start_at: new Date(leg.startTs).toISOString(), delivered_at: leg.deliveredTs != null ? new Date(leg.deliveredTs).toISOString() : null,
         last_at: same ? t.last_event_at ?? null : null, last_label: same ? sanitizeEvents(rawEvents(t.timeline))[0]?.description ?? t.last_event_label ?? null : null,
-        dias: Math.max(0, (end - leg.startTs) / DAY), etapa,
+        dias: Math.max(0, (end - leg.startTs) / DAY), etapa, reenvio: resentAt ? String(resentAt).slice(0, 10) : null,
       });
     }
 
