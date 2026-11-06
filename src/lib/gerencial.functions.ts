@@ -347,13 +347,18 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
         detail: `${sit.cliente.map((o) => o.order_number).join(", ")}. Fale com o cliente (confirmar endereço) ou decida o reenvio antes de virar chargeback.`,
         metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
     }
-    for (const [carrier, list] of [...sit.naoPostado.entries()].sort((a, b) => b[1].length - a[1].length)) {
-      const n = list.length;
-      const oldest = list.map((o) => o._events[0]?.ts ?? now).reduce((m, v) => Math.min(m, v), now);
+    // Não postados: um alerta só, todas as transportadoras juntas (pedido do
+    // usuário em 06/11/2026 — "é tudo não postado"); a divisão fica na gaveta.
+    const naoPostados = [...sit.naoPostado.values()].flat();
+    if (naoPostados.length) {
+      const n = naoPostados.length;
+      const oldest = naoPostados.map((o) => o._events[0]?.ts ?? now).reduce((m, v) => Math.min(m, v), now);
       const dias = Math.floor((now - oldest) / DAY);
-      alerts.push({ key: `rastreio:nao_postado:${carrier}`, kind: "lote", level: dias >= 10 ? "critico" : "atencao",
-        title: `${situationCarrierLabel(carrier)}: ${pl(n, "pacote não postado", "pacotes não postados")}`, link: "", action: "Ver rastreio",
-        detail: `Código gerado e só o aviso de etiqueta há ${NOT_POSTED_DAYS}+ dias (o mais antigo há ${dias} dias) — o fornecedor não despachou. Cobre o fornecedor.`,
+      const porTransp = [...sit.naoPostado.entries()].sort((a, b) => b[1].length - a[1].length)
+        .map(([c, l]) => `${situationCarrierLabel(c)} ${l.length}`).join(", ");
+      alerts.push({ key: "rastreio:nao_postado", kind: "lote", level: dias >= 10 ? "critico" : "atencao",
+        title: pl(n, "Pacote não postado", "Pacotes não postados"), link: "", action: "Ver rastreio",
+        detail: `Código gerado e só o aviso de etiqueta há ${NOT_POSTED_DAYS}+ dias (o mais antigo há ${dias} dias) — o fornecedor não despachou. Cobre o fornecedor. ${porTransp}.`,
         metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
     }
     if (sit.repassado.length) {

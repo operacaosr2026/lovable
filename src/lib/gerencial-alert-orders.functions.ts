@@ -82,6 +82,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "rastreio:cliente" ? sit.cliente
         : data.key === "rastreio:repassado" ? sit.repassado
         : data.key === "rastreio:reenvio_entregue" ? sit.reenvioEntregue
+        : data.key === "rastreio:nao_postado" ? [...sit.naoPostado.values()].flat()
         : data.key.startsWith("rastreio:nao_postado:") ? (sit.naoPostado.get(data.key.slice("rastreio:nao_postado:".length)) ?? [])
         : data.key.startsWith("fora:transportadora:") ? (sit.transportadoraNova.get(data.key.slice("fora:transportadora:".length)) ?? [])
         : data.key === "fora:sem_evento" ? sit.semEvento

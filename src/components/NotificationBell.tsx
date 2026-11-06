@@ -6,6 +6,7 @@ import { Bell, AlertCircle, AlertTriangle, Info, X, CheckCheck, Plus, Check, Loa
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { listNotifications, dismissNotification, dismissAllNotifications, createTaskFromNotification } from "@/lib/notifications.functions";
+import { listTaskAssignees } from "@/lib/tasks.functions";
 
 type Notification = {
   id: string;
@@ -66,11 +67,17 @@ export function NotificationBell({ className = "" }: { className?: string }) {
   });
 
   // Notificação → tarefa, já preenchida (ver createTaskFromNotification).
+  // "Criar tarefa" pergunta pra quem é antes de criar.
+  const assigneesFn = useServerFn(listTaskAssignees);
+  const [picking, setPicking] = useState<string | null>(null);
+  const [assignee, setAssignee] = useState("");
+  const assignees = useQuery({ queryKey: ["task-assignees"], queryFn: () => assigneesFn(), staleTime: 5 * 60_000, enabled: !!picking });
   const toTask = useMutation({
-    mutationFn: (id: string) => toTaskFn({ data: { id } }),
+    mutationFn: (v: { id: string; assignee_id: string | null }) => toTaskFn({ data: v }),
     onSuccess: (r) => {
+      setPicking(null); setAssignee("");
       // Com a tarefa criada, o aviso sai do sino.
-      qc.setQueryData<Notification[]>(["notifications"], (prev) => (prev ?? []).filter((n) => n.id !== toTask.variables));
+      qc.setQueryData<Notification[]>(["notifications"], (prev) => (prev ?? []).filter((n) => n.id !== toTask.variables?.id));
       qc.invalidateQueries({ queryKey: ["notifications"] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       toast.success(r.created ? "Tarefa criada" : "Essa notificação já está em Tarefas", {
@@ -156,13 +163,27 @@ export function NotificationBell({ className = "" }: { className?: string }) {
                       >
                         <Check className="size-3" /> Tarefa criada
                       </button>
+                    ) : picking === n.id ? (
+                      <div className="flex items-center gap-1 bg-card rounded-md shadow-sm">
+                        <select autoFocus value={assignee} onChange={(e) => setAssignee(e.target.value)}
+                          className="h-6 max-w-[130px] rounded-md border border-border bg-card px-1.5 text-[10px] outline-none focus:border-primary">
+                          <option value="">Pra quem?</option>
+                          {(assignees.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                        <button onClick={() => toTask.mutate({ id: n.id, assignee_id: assignee })} disabled={!assignee || toTask.isPending}
+                          className="h-6 px-2 rounded-md text-[10px] font-semibold text-primary-foreground bg-primary flex items-center gap-1 disabled:opacity-50">
+                          {toTask.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />} Criar
+                        </button>
+                        <button onClick={() => { setPicking(null); setAssignee(""); }} title="Cancelar"
+                          className="size-6 rounded-md grid place-items-center text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+                      </div>
                     ) : (
                       <button
-                        onClick={() => toTask.mutate(n.id)}
+                        onClick={() => { setPicking(n.id); setAssignee(""); }}
                         disabled={toTask.isPending}
                         className="h-6 px-2 rounded-md text-[10px] font-semibold text-primary bg-primary/10 flex items-center gap-1 hover:bg-primary/15 disabled:opacity-60"
                       >
-                        {toTask.isPending && toTask.variables === n.id ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                        <Plus className="size-3" />
                         Criar tarefa
                       </button>
                     )}

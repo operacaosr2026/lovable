@@ -115,9 +115,19 @@ const AREA_BY_PREFIX: [string, string][] = [
 // clicou como responsável.
 export const createTaskFromNotification = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid(), assignee_id: z.string().uuid().nullable().optional() }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId, userId } = context;
+    // Responsável escolhido no sino (pergunta "pra quem?"); sem escolha = quem clicou.
+    let assigneeId: string | null = userId;
+    if (data.assignee_id !== undefined) {
+      assigneeId = data.assignee_id;
+      if (assigneeId) {
+        const { data: members } = await supabaseAdmin.from("workspace_members").select("member_id").eq("owner_id", ownerId);
+        const ok = [ownerId, ...((members ?? []) as any[]).map((m) => m.member_id as string)].includes(assigneeId);
+        if (!ok) throw new Error("Responsável não faz parte deste workspace.");
+      }
+    }
     const { data: n, error } = await supabaseAdmin.from("app_notifications")
       .select("key,level,title,body").eq("user_id", ownerId).eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
@@ -151,7 +161,7 @@ export const createTaskFromNotification = createServerFn({ method: "POST" })
     const { data: task, error: insErr } = await supabaseAdmin.from("tasks").insert({
       user_id: ownerId,
       created_by: userId,
-      assignee_id: userId,
+      assignee_id: assigneeId,
       title: n.title.slice(0, 200),
       description: n.body,
       area,
