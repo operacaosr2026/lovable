@@ -110,6 +110,13 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   }
   // "Atenção na entrega" fica só com o que não caiu numa situação mais específica
 // nem num aviso de alfândega/lote parado.
+  // Reenvio com o pacote antigo entregue: a decisão é cancelar o reenvio — não
+  // repete em "não postado" (#L2-1245 aparecia nos dois).
+  const resentDelivered = new Set(out.reenvioEntregue.map((o) => o.id));
+  for (const [k, list] of [...out.naoPostado]) {
+    const rest = list.filter((o) => !resentDelivered.has(o.id));
+    if (rest.length) out.naoPostado.set(k, rest); else out.naoPostado.delete(k);
+  }
   const specific = new Set([...out.cliente, ...out.repassado, ...out.reenvioEntregue, ...[...out.naoPostado.values()].flat()].map((o) => o.id));
   out.entrega = out.entrega.filter((o) => !specific.has(o.id) && !noticeNums.has(String(o.order_number)));
   out.semFase = [...unknown.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count);

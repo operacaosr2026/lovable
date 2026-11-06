@@ -471,11 +471,18 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       }
       const alfandega = k.startsWith("track123:alfandega:");
       const nums = String(n.body ?? "").match(/#[A-Za-z0-9-]+/g) ?? [];
-      if (!alfandega && nums.length && nums.every((x) => specificNums.has(x))) continue;
-      const qtd = Number(String(n.title).match(/(\d+)\s+pacote/)?.[1] ?? 0);
+      // Lote parado: só os pedidos que não estão num alerta mais específico (não
+      // postado, endereço, repassado, reenvio) — antes 3 de 4 se repetiam.
+      const rest = alfandega ? nums : nums.filter((x) => !specificNums.has(x));
+      if (!alfandega && nums.length && !rest.length) continue;
+      const qtd = alfandega || !nums.length ? Number(String(n.title).match(/(\d+)\s+pacote/)?.[1] ?? 0) : rest.length;
+      const title = alfandega || rest.length === nums.length ? String(n.title)
+        : String(n.title).replace(/\d+\s+pacotes?/, `${qtd} ${qtd === 1 ? "pacote" : "pacotes"}`);
+      const detail = alfandega || rest.length === nums.length ? String(n.body ?? "")
+        : `Pedidos: ${rest.join(", ")}. ${String(n.body ?? "").replace(/^Pedidos:[^.]*\.\s*/, "")} (Os outros do lote já estão em outro alerta.)`;
       alerts.push({
         key: String(n.key), kind: alfandega ? "alfandega" : "lote", level: alfandega || n.level === "error" ? "critico" : "atencao",
-        title: String(n.title), detail: String(n.body ?? ""), link: String(n.link ?? "/shops/lojas-grupos"), action: "Ver rastreio",
+        title, detail, link: String(n.link ?? "/shops/lojas-grupos"), action: "Ver rastreio",
         metric: qtd ? String(qtd) : "—", metricLabel: pl(qtd, "pacote parado", "pacotes parados"),
       });
     }

@@ -91,7 +91,15 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     } else if (data.key.startsWith("track123:lote:") || data.key.startsWith("track123:alfandega:")) {
       const { data: n, error } = await supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).eq("key", data.key).maybeSingle();
       if (error) throw new Error(error.message);
-      const nums = [...new Set(String(n?.body ?? "").match(/#[A-Za-z0-9-]+/g) ?? [])];
+      let nums = [...new Set(String(n?.body ?? "").match(/#[A-Za-z0-9-]+/g) ?? [])];
+      // Lote parado: sem os pedidos que já estão num alerta mais específico
+      // (mesma regra do Gerencial).
+      if (data.key.startsWith("track123:lote:") && nums.length) {
+        const sit = await trackingSituations(ownerId, await companyShopIdsForMonth(ownerId, `${data.month}-01`), now);
+        const specific = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
+        const rest = nums.filter((x) => !specific.has(x));
+        if (rest.length) nums = rest;
+      }
       if (nums.length) {
         const r = await selectAllIn<any>(nums, (c) => supabaseAdmin.from("shop_orders").select(sel).eq("user_id", ownerId).in("order_number", c));
         if (r.error) throw new Error(r.error.message);
