@@ -950,12 +950,16 @@ function splitAmountProportionally(total: number, weights: number[]): number[] {
   return shares.map((c) => c / 100);
 }
 
-function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose: () => void; onSave: (total: number) => void }) {
+function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose: () => void; onSave: (total: number, viaBalance: boolean) => void }) {
   const [amount, setAmount] = useState(String(Number(group.total.toFixed(2))));
+  // Balance vale pro grupo todo: marcado só se todos já estão; alguns marcados avisa.
+  const balanceCount = group.entries.filter((e) => e.via_balance).length;
+  const [viaBalance, setViaBalance] = useState(balanceCount === group.entries.length && balanceCount > 0);
+  const isIncome = group.entries[0]?.kind === "income";
   const save = () => {
     const v = parseFloat(amount);
     if (isNaN(v) || v < 0) return;
-    onSave(v);
+    onSave(v, viaBalance);
   };
   return (
     <Modal onClose={onClose} title={`Editar ${group.label}`}>
@@ -966,6 +970,13 @@ function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose
         <div className="text-[11px] text-muted-foreground">
           Soma de {group.entries.length} lançamentos. O novo total é dividido entre eles na proporção atual e fica travado contra o sync.
         </div>
+        <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
+          <input type="checkbox" checked={viaBalance} onChange={(e) => setViaBalance(e.target.checked)} className="size-3.5 accent-primary" />
+          <span>{isIncome ? "Entrou no Shopify Balance" : "Pago com o Shopify Balance"}</span>
+          {balanceCount > 0 && balanceCount < group.entries.length && (
+            <span className="ml-auto text-[10px] text-amber-600">hoje {balanceCount} de {group.entries.length} marcados</span>
+          )}
+        </label>
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
@@ -1694,11 +1705,14 @@ export function LgCashflowView({
         <EditGroupTotal
           group={editingGroup}
           onClose={() => setEditingGroup(null)}
-          onSave={(total) => {
+          onSave={(total, viaBalance) => {
             const entries = editingGroup.entries;
             const shares = splitAmountProportionally(total, entries.map((e) => Math.round(Number(e.amount) * 100)));
             entries.forEach((e, i) => {
-              if (Number(e.amount) !== shares[i]) updateMut.mutate({ id: e.id, patch: { amount: shares[i] } });
+              const patch: Record<string, unknown> = {};
+              if (Number(e.amount) !== shares[i]) patch.amount = shares[i];
+              if (Boolean(e.via_balance) !== viaBalance) patch.via_balance = viaBalance;
+              if (Object.keys(patch).length) updateMut.mutate({ id: e.id, patch });
             });
             setEditingGroup(null);
           }}
