@@ -9,6 +9,7 @@ import { trackingSituations } from "@/lib/tracking-situations.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { autoPhase, phaseLabel } from "@/lib/tracking-phases";
+import { rawEvents, sanitizeEvents } from "@/lib/tracking-display";
 
 // Gerencial › Alertas › "Ver rastreio": os pedidos por trás do alerta de entrega,
 // lote parado ou alfândega, com o que foi analisado (transportadora, onde
@@ -125,6 +126,10 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       const last = evs[0];
       const lastAt = last ? new Date(last.ts).toISOString() : (t?.last_event_at ?? null);
       const lastText = last?.d ?? t?.last_event_label ?? null;
+      // Texto pra mostrar (e pra mensagem do fornecedor): traduzido como na página
+      // do cliente — nada em chinês. A fase continua pelo texto original.
+      const shown = sanitizeEvents(rawEvents(t?.timeline));
+      const lastShown = shown[0]?.description ?? (lastText && !/[一-鿿]/.test(lastText) ? lastText : null);
       const daysStopped = lastAt ? Math.floor((now - Date.parse(lastAt)) / DAY) : null;
       const history = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
       const reason = data.key === "rastreio:nao_postado" || data.key.startsWith("rastreio:nao_postado:")
@@ -146,9 +151,9 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         orderDate: String(o.order_date).slice(0, 10), status: STATUS[o.delivery_status ?? "pending_shipment"] ?? String(o.delivery_status),
         carrier: code ? carrierLabel(carrierOf(code)) : "—", code,
         trackingLink: buildTrackingUrl(template.get(o.shop_id), code) ?? o.tracking_url ?? null,
-        reason, lastEvent: lastText, lastEventAt: lastAt, daysStopped,
+        reason, lastEvent: lastShown, lastEventAt: shown[0]?.at ?? lastAt, daysStopped,
         phase: phaseText(lastText),
-        events: evs.slice(0, 6).map((e) => ({ at: new Date(e.ts).toISOString(), text: e.d })),
+        events: shown.slice(0, 6).filter((e) => e.at).map((e) => ({ at: e.at!, text: e.description })),
         notifiedAt: o.customer_notified_at ?? null,
         resent: history.length > 0 || !!o.tracking_code_manual_at,
         shopDomain: shopDomain.get(o.shop_id) ?? null,

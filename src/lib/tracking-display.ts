@@ -132,7 +132,12 @@ export function usPlace(loc: string | null | undefined): { isUS: boolean; displa
 // de movimentação dentro dos EUA são traduzidas; o resto (alfândega, aeroporto,
 // partida, qualquer coisa na China) continua escondido.
 export const CN_HIDDEN = /海关|清关|机场|航班|启运|出口|进口|中国|国际|抵达|离开.*国|直封|交航|运抵/;
+// Devolução ao remetente vem antes de "签收" (o texto diz "寄件人签收" = assinado
+// pelo remetente) — virava "entregue"/sumia e o último evento ficava "Out for
+// delivery" (#L1-1261, 30/10/2026).
+const CN_RETURNED = /退回|退还|退件|寄件人签收/;
 export const CN_US_PHRASES: [RegExp, string][] = [
+  [CN_RETURNED, "Returned to sender"],
   [/投递失败|未妥投|无法投递|投递不成功/, "Delivery attempted"],
   [/妥投|已签收|签收/, "Delivered"],
   [/(派送|投递)中|正在(派送|投递)|安排投递|开始投递|出门投递/, "Out for delivery"],
@@ -148,6 +153,8 @@ export const CN_US_PHRASES: [RegExp, string][] = [
 // seguidas (186 de 1.144 rastreios em 16/10/2026). Vale depois da tradução dos
 // eventos nos EUA (translateUsEvent); local só nos EUA. O 1º que casar.
 export const CN_NEUTRAL: [RegExp, string][] = [
+  [CN_RETURNED, "Returned to sender"],
+  [/投递失败|未妥投|无法投递|投递不成功/, "Delivery attempted"],
   [/目的国清关完成|寄达地海关允许进口|进口海关.*放行/, "Processing complete – released for delivery"],
   [/清关异常/, "Shipment being processed – no action needed"],
   [/已妥投|妥投/, "Delivered"],
