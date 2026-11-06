@@ -468,6 +468,21 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
         <PopoverTrigger asChild>
           <button type="button" className={chipClasses}>
             <span className="flex items-center gap-1.5 min-w-0 truncate">
+              {/* Concilia todas as cobranças do dia de uma vez (por dentro, uma a uma). */}
+              {reconcilable.length > 0 && (
+                <span role="checkbox" aria-checked={allReconciled}
+                  title={allReconciled ? "Conciliado" : "Marcar todas as cobranças como conciliadas"}
+                  onClick={(ev) => {
+                    ev.stopPropagation(); ev.preventDefault();
+                    const target = !allReconciled;
+                    for (const e of reconcilable) if (Boolean(e.reconciled) !== target) onToggleReconciled(e);
+                  }}
+                  onPointerDown={(ev) => { ev.stopPropagation(); ev.preventDefault(); }}
+                  className={cn("shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                    allReconciled ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current")}>
+                  {allReconciled && <Check className="size-2.5" />}
+                </span>
+              )}
               <span className="truncate">{group.label}</span>
               {group.entries.some((x) => x.via_balance) && <BalanceTag />}
             </span>
