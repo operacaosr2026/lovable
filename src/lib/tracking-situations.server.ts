@@ -56,7 +56,9 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
     supabaseAdmin.from("tracking_phase_overrides").select("text_key,phase").eq("user_id", ownerId),
     // Avisos abertos de alfândega / lote parado (já viram alerta próprio).
     supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).is("resolved_at", null)
-      .or("key.like.track123:alfandega:%,key.like.track123:lote:%"),
+      // Só alfândega: o "lote parado" não vira alerta próprio — os pedidos dele
+      // ficam em "atenção na entrega" (pedido do usuário em 06/11/2026).
+      .like("key", "track123:alfandega:%"),
   ]);
   const noticeNums = new Set(((notices.data ?? []) as any[]).flatMap((n) => String(n.body ?? "").match(/#[A-Za-z0-9-]+/g) ?? []));
   if (openRes.error) throw new Error(openRes.error.message);

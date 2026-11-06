@@ -421,9 +421,17 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
         supabaseAdmin.from("shop_orders").select("shop_id").eq("user_id", ownerId).gte("order_date", addDaysIso(today, -60)).limit(5000),
       ]);
       const activeCols = (cols.data ?? []).filter((c: any) => /^ativ/i.test(String(c.name).trim())).map((c: any) => c.id);
-      const { data: boardShops } = activeCols.length
-        ? await supabaseAdmin.from("shops").select("id,name,shopify_stores!inner(board_column_id)").eq("user_id", ownerId).eq("archived", false).in("shopify_stores.board_column_id", activeCols)
-        : { data: [] as any[] };
+      // Duas etapas: shops não tem relação declarada com shopify_stores — o join
+      // embutido falhava calado e todas as lojas apareciam "fora da coluna Ativas".
+      const { data: activeStores, error: storesErr } = activeCols.length
+        ? await supabaseAdmin.from("shopify_stores").select("id").eq("user_id", ownerId).in("board_column_id", activeCols)
+        : { data: [] as any[], error: null };
+      if (storesErr) throw new Error(storesErr.message);
+      const storeIds = ((activeStores ?? []) as any[]).map((s) => s.id as string);
+      const { data: boardShops, error: boardErr } = storeIds.length
+        ? await supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId).eq("archived", false).in("shopify_store_id", storeIds)
+        : { data: [] as any[], error: null };
+      if (boardErr) throw new Error(boardErr.message);
       const selling = new Set((sales.data ?? []).map((r: any) => r.shop_id as string));
       const board = new Map(((boardShops ?? []) as any[]).map((r) => [r.id as string, r.name as string]));
       const cardSet = new Set(shopIds);
@@ -467,6 +475,8 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       const k = String(n.key);
       // Sistema: integração caída, produto sem cadastro, rotina parada, sync do
       // rastreio com erro (track123:<loja>)…
+      // Lote parado = pacote parado no rastreio: já está em "atenção na entrega".
+      if (k.startsWith("track123:lote:")) continue;
       if (!k.startsWith("track123:alfandega:") && !k.startsWith("track123:lote:")) {
         noticeCtx ??= await noticeContext(ownerId);
         if (noticeOfInactiveStore(k, noticeCtx)) continue;
