@@ -48,3 +48,52 @@ export function buildTrackingMessage(blocks: TrackingMessageBlock[]): string {
     .join("\n\n");
   return body ? `Verificar os pedidos abaixo, por favor:\n\n${body}` : "";
 }
+
+// Gerencial › Alertas › gaveta: mensagem pro fornecedor (WhatsApp) cobrando o
+// que está acontecendo com os pedidos do alerta — o pedido do topo muda conforme
+// o tipo do alerta; cada pedido numa linha com código e situação.
+export type AlertSupplierLine = {
+  number: string; shop: string; shopDomain: string | null; code: string | null; reason: string;
+  lastEvent: string | null; lastEventAt: string | null; daysStopped: number | null;
+  oldCode: string | null; oldDeliveredAt: string | null;
+};
+const ddmmMsg = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+
+function alertSupplierHead(key: string): string {
+  if (key === "rastreio:reenvio_entregue") return "Os pedidos abaixo foram reenviados, mas o pacote antigo já foi entregue ao cliente. Favor *cancelar o reenvio*:";
+  if (key.startsWith("rastreio:nao_postado")) return "Os pedidos abaixo estão com etiqueta gerada mas *ainda não foram postados*. Favor despachar com urgência:";
+  if (key === "rastreio:repassado") return "Os pedidos abaixo foram repassados à transportadora local dos EUA e estão *sem movimento*. Favor verificar e passar o código de rastreio local:";
+  if (key === "rastreio:cliente") return "Os pedidos abaixo tiveram *problema na entrega* (endereço / devolução / falha). Favor verificar com a transportadora:";
+  if (key.startsWith("track123:alfandega:")) return "Os pacotes abaixo estão *parados na alfândega dos EUA*. Favor verificar com a transportadora e dar retorno:";
+  if (key.startsWith("track123:lote:")) return "Os pacotes abaixo estão *parados* (mesmo lote). Favor verificar com a transportadora e dar retorno:";
+  if (key === "fora:sem_evento") return "Os códigos abaixo *não mostram nenhuma movimentação* no rastreio. Favor conferir se o código está certo:";
+  return "Verificar os pedidos abaixo, por favor:";
+}
+
+export function buildAlertSupplierMessage(key: string, orders: AlertSupplierLine[]): string {
+  if (!orders.length) return "";
+  const byShop = new Map<string, AlertSupplierLine[]>();
+  for (const o of orders) {
+    const k = `${o.shopDomain ?? ""}|${o.shop}`;
+    if (!byShop.has(k)) byShop.set(k, []);
+    byShop.get(k)!.push(o);
+  }
+  const line = (o: AlertSupplierLine) => {
+    if (key === "rastreio:reenvio_entregue") {
+      const old = o.oldCode ? `antigo ${o.oldCode} entregue${o.oldDeliveredAt ? ` em ${ddmmMsg(o.oldDeliveredAt)}` : ""}` : "pacote antigo entregue";
+      return `${o.number} - reenvio ${o.code ?? "sem código"} - ${old}`;
+    }
+    const last = o.lastEvent ? ` (último: ${o.lastEvent}${o.lastEventAt ? ` em ${ddmmMsg(o.lastEventAt)}` : ""})` : "";
+    return `${o.number} - ${o.code ?? "sem rastreio"} - ${o.reason}${last}`;
+  };
+  const body = [...byShop.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "pt-BR", { numeric: true }))
+    .map(([, list]) => {
+      const domain = stripMyshopifyDomain(list[0].shopDomain);
+      const header = domain ? `Loja ${domain} - ${list[0].shop}` : `Loja ${list[0].shop}`;
+      const sorted = [...list].sort((a, c) => trailingOrderNumber(a.number) - trailingOrderNumber(c.number));
+      return `${header}\n${sorted.map(line).join("\n")}`;
+    })
+    .join("\n\n");
+  return `${alertSupplierHead(key)}\n\n${body}`;
+}

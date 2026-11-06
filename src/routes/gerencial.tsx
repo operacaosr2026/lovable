@@ -345,7 +345,8 @@ function Alerts({ d }: { d: Data }) {
       ))}
       {dismissedList}
       {tipOpen != null && <IntelTipSheet index={tipOpen} onClose={() => setTipOpen(null)} />}
-      {ordersOpen && <AlertOrdersSheet alert={ordersOpen} month={d.month} onClose={() => setOrdersOpen(null)} />}
+      {ordersOpen && <AlertOrdersSheet alert={ordersOpen} month={d.month} onClose={() => setOrdersOpen(null)}
+        onDismiss={() => { dismiss.mutate({ key: ordersOpen.key }); setOrdersOpen(null); }} />}
     </div>
   );
 }

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { BellRing, CheckCircle2, ChevronDown, ExternalLink, Loader2, Mail, RotateCcw } from "lucide-react";
+import { BellRing, CheckCircle2, ChevronDown, Copy, EyeOff, ExternalLink, Loader2, Mail, MessageCircle, RotateCcw } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { getAlertOrders, type AlertOrder } from "@/lib/gerencial-alert-orders.functions";
 import { listNoticeTemplates, queueOrderNotices } from "@/lib/order-notices.functions";
+import { buildAlertSupplierMessage } from "@/lib/order-message";
 
 // Gerencial › Alertas › "Ver rastreio": gaveta com os pedidos do alerta
 // (entrega / lote parado / alfândega), o resumo do que foi analisado e a ação
@@ -17,7 +18,10 @@ const ddmmhm = (iso: string) => {
   return d.toLocaleString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
 
-export function AlertOrdersSheet({ alert, month, onClose }: { alert: { key: string; title: string; detail: string }; month: string; onClose: () => void }) {
+export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
+  alert: { key: string; title: string; detail: string }; month: string; onClose: () => void;
+  onDismiss?: () => void;   // "Desconsiderar" sem sair da gaveta (some pra equipe no mês)
+}) {
   const qc = useQueryClient();
   const fn = useServerFn(getAlertOrders);
   const q = useQuery({ queryKey: ["alert-orders", alert.key, month], queryFn: () => fn({ data: { key: alert.key, month } }) });
@@ -48,13 +52,30 @@ export function AlertOrdersSheet({ alert, month, onClose }: { alert: { key: stri
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Mensagem pro fornecedor (WhatsApp): os selecionados; nenhum selecionado = todos.
+  const [showMsg, setShowMsg] = useState(false);
+  const msgOrders = sel.size ? orders.filter((o) => sel.has(o.id)) : orders;
+  const supplierMsg = useMemo(() => buildAlertSupplierMessage(alert.key, msgOrders), [alert.key, msgOrders]);
+  const copyMsg = async () => {
+    try { await navigator.clipboard.writeText(supplierMsg); toast.success("Mensagem copiada — é só colar no WhatsApp do fornecedor"); }
+    catch { toast.error("Não foi possível copiar"); }
+  };
+
   return (
     <Sheet open onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-0">
         <div className="p-5 sm:p-6 space-y-5">
-          <div className="pr-6">
-            <SheetTitle className="text-base">{alert.title}</SheetTitle>
-            <SheetDescription className="text-xs mt-1">{alert.detail}</SheetDescription>
+          <div className="pr-6 flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <SheetTitle className="text-base">{alert.title}</SheetTitle>
+              <SheetDescription className="text-xs mt-1">{alert.detail}</SheetDescription>
+            </div>
+            {onDismiss && (
+              <button onClick={onDismiss} title="Desconsiderar este alerta neste mês (some pra toda a equipe; dá pra voltar lá embaixo)"
+                className="shrink-0 h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1.5">
+                <EyeOff className="size-3.5" /> Descartar
+              </button>
+            )}
           </div>
 
           {q.isLoading ? <div className="py-16 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -92,6 +113,24 @@ export function AlertOrdersSheet({ alert, month, onClose }: { alert: { key: stri
                     </div>
                   )}
                   <p className="text-[11px] text-muted-foreground">Já vem marcado quem ainda não foi avisado. Vai pela fila de Notificações (e-mail da loja, com o link de rastreio).</p>
+                </div>
+
+                {/* Cobrar o fornecedor (WhatsApp) */}
+                <div className="rounded-2xl border border-border p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold flex items-center gap-2 mr-auto"><MessageCircle className="size-4 text-emerald-600" /> Cobrar o fornecedor</p>
+                    <button onClick={() => setShowMsg((v) => !v)} className="h-9 px-3 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:text-foreground">
+                      {showMsg ? "Esconder" : "Ver mensagem"}
+                    </button>
+                    <button onClick={copyMsg} disabled={!supplierMsg}
+                      className="h-9 px-4 rounded-xl bg-emerald-600 text-white text-sm font-semibold inline-flex items-center gap-1.5 disabled:opacity-50">
+                      <Copy className="size-4" /> Copiar mensagem
+                    </button>
+                  </div>
+                  {showMsg && <pre className="whitespace-pre-wrap break-words rounded-xl bg-muted/50 p-3 text-xs font-sans">{supplierMsg}</pre>}
+                  <p className="text-[11px] text-muted-foreground">
+                    {sel.size ? `Com os ${msgOrders.length} pedido${msgOrders.length === 1 ? "" : "s"} selecionado${msgOrders.length === 1 ? "" : "s"}.` : `Com todos os ${orders.length} pedidos (nenhum selecionado).`} Cada pedido vai com o código e o que está acontecendo.
+                  </p>
                 </div>
 
                 {/* Pedidos */}

@@ -32,6 +32,9 @@ export type AlertOrder = {
   events: { at: string; text: string }[]; // últimos eventos, mais novo primeiro
   notifiedAt: string | null;      // cliente avisado (Notificações)
   resent: boolean;                // código já trocado antes
+  shopDomain: string | null;      // xxx.myshopify.com (mensagem pro fornecedor)
+  oldCode: string | null;         // reenvio: código do pacote antigo
+  oldDeliveredAt: string | null;  // reenvio: quando o pacote antigo foi entregue
 };
 // Fase do último evento em palavras de operação (o "aviso" = nunca foi postado).
 function phaseText(last: string | null): string {
@@ -43,6 +46,14 @@ function phaseText(last: string | null): string {
   if (p === "voo") return "Voo / aeroporto";
   if (p === "movimento") return "Em movimento (parou)";
   return phaseLabel(p);
+}
+// Reenvio: quando o pacote antigo (replaced_packages) foi entregue, se foi.
+function oldDelivered(replaced: unknown): string | null {
+  for (const p of (Array.isArray(replaced) ? replaced : []) as any[]) {
+    const d = parseEvents(p?.timeline).filter((e) => autoPhase(e.d) === "entregue").sort((a, b) => a.ts - b.ts)[0];
+    if (d) return new Date(d.ts).toISOString();
+  }
+  return null;
 }
 export type AlertAnalysis = { label: string; value: string }[];
 
@@ -93,13 +104,19 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     const ids = orders.map((o) => o.id as string);
     const shopIds = [...new Set(orders.map((o) => o.shop_id as string))];
     const [tracks, shops, integs] = await Promise.all([
-      selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking").select("order_id,tracking_number,last_event_at,last_event_label,timeline").in("order_id", c)),
-      supabaseAdmin.from("shops").select("id,name").in("id", shopIds),
+      selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking").select("order_id,tracking_number,last_event_at,last_event_label,timeline,replaced_packages").in("order_id", c)),
+      supabaseAdmin.from("shops").select("id,name,shopify_store_id").in("id", shopIds),
       supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds),
     ]);
     const trackBy = new Map(tracks.data.map((t) => [String(t.order_id), t]));
     const shopName = new Map((shops.data ?? []).map((s: any) => [s.id as string, s.name as string]));
     const template = new Map((integs.data ?? []).map((i: any) => [i.shop_id as string, i.tracking_link_template as string | null]));
+    const storeIds = (shops.data ?? []).map((s: any) => s.shopify_store_id).filter(Boolean) as string[];
+    const { data: stores } = storeIds.length
+      ? await supabaseAdmin.from("shopify_stores").select("id,shop_domain").in("id", storeIds)
+      : { data: [] as any[] };
+    const domainByStore = new Map((stores ?? []).map((s: any) => [s.id as string, s.shop_domain as string | null]));
+    const shopDomain = new Map((shops.data ?? []).map((s: any) => [s.id as string, domainByStore.get(s.shopify_store_id) ?? null]));
 
     const out: AlertOrder[] = orders.map((o) => {
       const t = trackBy.get(String(o.id));
@@ -134,6 +151,9 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         events: evs.slice(0, 6).map((e) => ({ at: new Date(e.ts).toISOString(), text: e.d })),
         notifiedAt: o.customer_notified_at ?? null,
         resent: history.length > 0 || !!o.tracking_code_manual_at,
+        shopDomain: shopDomain.get(o.shop_id) ?? null,
+        oldCode: history.length ? String(history[history.length - 1]?.code ?? "") || null : null,
+        oldDeliveredAt: oldDelivered(t?.replaced_packages),
       };
     }).sort((a, b) => (b.daysStopped ?? -1) - (a.daysStopped ?? -1));
 
