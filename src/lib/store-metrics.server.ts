@@ -107,6 +107,10 @@ export async function runStoreMetricsDaily() {
         await clearSystemError(s.user_id, `job:store_metrics:${s.id}`);
       } catch (e) {
         console.error("store-metrics-daily fail", s.id, e);
+        // Loja pausada (Hold/Cemitério): o saldo é só "se der" — loja fechada na
+        // Shopify (402 Unavailable Shop, ex.: Serafinie) não vira aviso: só as
+        // ativas importam no Gerencial.
+        if (paused.has(s.id)) { await clearSystemError(s.user_id, `job:store_metrics:${s.id}`); return; }
         await reportSystemError(s.user_id, `job:store_metrics:${s.id}`, "Números do Banco de Lojas não atualizaram (saldo / pedidos por dia)", e);
       }
     }));

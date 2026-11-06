@@ -44,6 +44,57 @@ const SUPPLIER_PAYMENT_GRACE_DAYS = 15;
 
 const SYSTEM_NOTICE_PREFIXES = ["meta_token:", "meta_payment:", "meta_account:", "meta_campaign:", "shopify_sync:", "shopify_access:", "zoho_mail:", "system:", "product_missing:", "stuck:", "cron:"];
 
+// "Acertar" dos avisos de sistema: pra onde ir quando o aviso não traz link
+// (antes caía em /notificacoes — e-mails de cliente, nada a ver). E aviso de
+// loja fora da coluna Ativas do Banco de Lojas não entra (ex.: Walktowave no
+// Hold, Serafinie no Cemitério — o aviso nunca fecha porque a loja não sincroniza).
+type NoticeCtx = { cardByShop: Map<string, string>; shopByStore: Map<string, string>; activeShops: Set<string>; activeStores: Set<string>; knownShops: Set<string>; knownStores: Set<string> };
+async function noticeContext(ownerId: string): Promise<NoticeCtx> {
+  const [links, shops, cols] = await Promise.all([
+    supabaseAdmin.from("lg_card_shops").select("card_id,shop_id,lg_cards!inner(user_id,status)").eq("lg_cards.user_id", ownerId),
+    supabaseAdmin.from("shops").select("id,shopify_store_id").eq("user_id", ownerId),
+    supabaseAdmin.from("store_board_columns").select("id,name").eq("user_id", ownerId),
+  ]);
+  const activeCols = ((cols.data ?? []) as any[]).filter((c) => /^ativ/i.test(String(c.name).trim())).map((c) => c.id as string);
+  const { data: stores } = await supabaseAdmin.from("shopify_stores").select("id,board_column_id").eq("user_id", ownerId);
+  const activeStores = new Set(((stores ?? []) as any[]).filter((s) => activeCols.includes(s.board_column_id)).map((s) => s.id as string));
+  const shopByStore = new Map<string, string>();
+  const activeShops = new Set<string>();
+  for (const s of (shops.data ?? []) as any[]) {
+    if (s.shopify_store_id) shopByStore.set(s.shopify_store_id, s.id);
+    if (s.shopify_store_id && activeStores.has(s.shopify_store_id)) activeShops.add(s.id);
+  }
+  const cardByShop = new Map<string, string>();
+  for (const l of (links.data ?? []) as any[]) if (!cardByShop.has(l.shop_id) || l.lg_cards?.status === "ativo") cardByShop.set(l.shop_id, l.card_id);
+  return { cardByShop, shopByStore, activeShops, activeStores, knownShops: new Set(((shops.data ?? []) as any[]).map((s) => s.id)), knownStores: new Set(((stores ?? []) as any[]).map((s) => s.id)) };
+}
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+// Aviso de loja que não está em Ativas: fora do Gerencial.
+function noticeOfInactiveStore(key: string, c: NoticeCtx) {
+  return (key.match(UUID_RE) ?? []).some((id) => (c.knownStores.has(id) && !c.activeStores.has(id)) || (c.knownShops.has(id) && !c.activeShops.has(id)));
+}
+function noticeLink(key: string, link: string | null, c: NoticeCtx): string {
+  if (link) return link;
+  const ids = key.match(UUID_RE) ?? [];
+  const shop = ids.map((id) => (c.knownShops.has(id) ? id : c.shopByStore.get(id))).find(Boolean) ?? null;
+  const card = ids.find((id) => !c.knownShops.has(id) && !c.knownStores.has(id) && [...c.cardByShop.values()].includes(id))
+    ?? (shop ? c.cardByShop.get(shop) : undefined);
+  const cardTab = (tab: string) => (card ? `/shops/lojas-grupos/${card}?tab=${tab}` : "/shops/lojas-grupos");
+  if (/^system:(meta_billing|meta_spend|card_meta_spend)/.test(key)) return card ? cardTab("integracoes") : `/shops/lojas-grupos/${[...new Set(c.cardByShop.values())][0] ?? ""}?tab=integracoes`;
+  if (/^system:(orders_sync|shop_sync|fees|webhook_order|webhook_dispute)/.test(key) || key.startsWith("shopify_sync:")) return card ? cardTab("integracoes") : "/settings/integracoes";
+  if (key.startsWith("shopify_access:")) return "/settings/integracoes";
+  if (/^system:(cost_forecast|job:caixa)/.test(key)) return card ? cardTab("caixa") : "/shops/caixa";
+  if (/^system:job:(store_metrics|estorno)/.test(key)) return "/shops/banco-de-lojas";
+  if (key.startsWith("system:job:goals")) return "/metas";
+  if (key.startsWith("system:job:consultant")) return "/inteligencia";
+  if (key.startsWith("system:seventeen_track")) return "/settings/rastreamento";
+  if (/^system:(alerts_round|alerts_errors)/.test(key)) return "/chargebacks";
+  if (/^system:(zoho|support)/.test(key) || key.startsWith("zoho_mail:")) return "/atendimento";
+  if (key.startsWith("system:sync_budget")) return "/settings/integracoes";
+  if (key.startsWith("product_missing:")) return "/shops/products";
+  return "/settings/integracoes";
+}
+
 // key: identifica o alerta pra "Desconsiderar" (tabela gerencial_alert_dismissals,
 // vale no mês escolhido pra toda a equipe).
 export type GerencialAlert = {
@@ -406,13 +457,16 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
     // Lote parado em que todo pedido já está numa situação específica (ex.: não
     // postado) não repete o mesmo problema em outro alerta.
     const specificNums = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
+    let noticeCtx: NoticeCtx | null = null;
     for (const n of (trackingRes.data ?? []) as any[]) {
       const k = String(n.key);
       // Sistema: integração caída, produto sem cadastro, rotina parada, sync do
       // rastreio com erro (track123:<loja>)…
       if (!k.startsWith("track123:alfandega:") && !k.startsWith("track123:lote:")) {
+        noticeCtx ??= await noticeContext(ownerId);
+        if (noticeOfInactiveStore(k, noticeCtx)) continue;
         alerts.push({ key: k, kind: "sistema", level: n.level === "error" ? "critico" : "atencao", title: String(n.title),
-          detail: String(n.body ?? ""), link: String(n.link ?? "/notificacoes"), action: "Acertar", metric: "", metricLabel: "" });
+          detail: String(n.body ?? ""), link: noticeLink(k, n.link ?? null, noticeCtx), action: "Acertar", metric: "", metricLabel: "" });
         continue;
       }
       const alfandega = k.startsWith("track123:alfandega:");

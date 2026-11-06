@@ -573,7 +573,12 @@ async function billingGroups(ownerId: string): Promise<BillingGroup[]> {
     return by;
   };
   const out: BillingGroup[] = [];
-  const shopAccounts = group((shopRows ?? []) as any[]);
+  // Só lojas de grupo ativo: conta de loja do Cemitério (ex.: Serafinie, token
+  // invalidado) dava erro todo dia no aviso "Cobranças … não entraram no Caixa".
+  const { data: activeLinks } = await supabaseAdmin.from("lg_card_shops")
+    .select("shop_id,lg_cards!inner(user_id,status)").eq("lg_cards.user_id", ownerId).eq("lg_cards.status", "ativo");
+  const activeShop = new Set(((activeLinks ?? []) as any[]).map((r) => r.shop_id as string));
+  const shopAccounts = group(((shopRows ?? []) as any[]).filter((r) => activeShop.has(r.shop_id)));
   for (const [adAccountId, rows] of shopAccounts) {
     const shopIds = [...new Set(rows.map((r) => r.shop_id as string))];
     out.push({
