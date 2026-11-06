@@ -356,15 +356,8 @@ function metaCharges(group: EntryGroup) {
     by.get(k)!.push(e);
   }
   return [...by.entries()].map(([key, entries]) => {
-    const desc = entries[0].description ?? "";
     const total = entries.reduce((s, e) => s + Number(e.amount), 0);
-    const full = desc.match(/\$\s?([\d.,]+)/)?.[1];
-    return {
-      key, entries, total,
-      chargeLabel: full ? `$${full}` : fmtMoney(total),
-      account: desc.match(/act_(\d+)/)?.[1] ?? null,
-      at: entries[0].created_at ?? "",
-    };
+    return { key, entries, total, at: entries[0].created_at ?? "" };
   }).sort((a, b) => a.at.localeCompare(b.at));
 }
 
@@ -490,7 +483,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
             const allRec = rec.length > 0 && rec.every((e) => e.reconciled);
             return (
               <button key={c.key} type="button"
-                onClick={() => editGroup?.({ key: c.key, label: `${group.label} · cobrança ${c.chargeLabel}`, kind: group.kind, total: c.total, entries: c.entries, collapsed: true })}
+                onClick={() => editGroup?.({ key: c.key, label: group.label, kind: group.kind, total: c.total, entries: c.entries, collapsed: true })}
                 className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-left">
                 <span className="flex items-center gap-1.5 min-w-0 truncate text-muted-foreground">
                   {rec.length > 0 && (
@@ -502,9 +495,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
                       {allRec && <Check className="size-2.5" />}
                     </span>
                   )}
-                  <span className="truncate">
-                    Cobrança {c.chargeLabel}{c.account ? <span className="opacity-70"> · conta …{c.account.slice(-4)}</span> : null}
-                  </span>
+                  <span className="truncate">Facebook</span>
                   {c.entries.every((e) => e.via_balance) && <BalanceTag />}
                 </span>
                 <span className="font-semibold tabular-nums shrink-0">-{fmtMoney(c.total)}</span>
