@@ -20,6 +20,7 @@ import { ProjectsBoard } from "@/components/projects/ProjectsBoard";
 import { IntelTipSheet } from "@/components/inteligencia/Inteligencia";
 import { CarriersView, CARRIER_PERIODS } from "@/components/gerencial/CarriersView";
 import { AlertOrdersSheet } from "@/components/gerencial/AlertOrdersSheet";
+import { AlertActionSheet } from "@/components/gerencial/AlertActionSheet";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
@@ -236,7 +237,7 @@ const ALERT_ICON: Record<Data["alerts"][number]["kind"], any> = {
 };
 const LEVEL = {
   critico: { label: "Crítico", icon: "bg-rose-500/10 text-rose-600", bar: "bg-rose-500", metric: "text-rose-600", btn: "bg-rose-600 text-white hover:bg-rose-700" },
-  atencao: { label: "Atenção", icon: "bg-amber-500/10 text-amber-600", bar: "bg-amber-400", metric: "text-foreground", btn: "bg-muted text-foreground hover:bg-muted/70" },
+  atencao: { label: "Atenção", icon: "bg-amber-500/10 text-amber-600", bar: "bg-amber-400", metric: "text-foreground", btn: "bg-amber-400 text-amber-950 hover:bg-amber-500" },
 } as const;
 
 // Desconsiderar: o alerta sai da lista no mês escolhido (pra toda a equipe) e
@@ -250,6 +251,8 @@ function Alerts({ d }: { d: Data }) {
   const [tipOpen, setTipOpen] = useState<number | null>(null);
   // Alerta de rastreio (entrega / lote parado / alfândega) aberto na gaveta.
   const [ordersOpen, setOrdersOpen] = useState<{ key: string; title: string; detail: string } | null>(null);
+  // Os outros alertas também abrem gaveta (resolver ali o que der).
+  const [actionOpen, setActionOpen] = useState<Data["alerts"][number] | null>(null);
   const opensOrders = (a: Data["alerts"][number]) => a.key === "entrega" || a.key.startsWith("track123:alfandega:") || a.key.startsWith("track123:lote:")
     || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase") || /^fora:(transportadora:|sem_evento|status|local$)/.test(a.key);
   // Link de fora do sistema (ex.: cobrança da Meta) abre em outra aba.
@@ -327,7 +330,7 @@ function Alerts({ d }: { d: Data }) {
                       <p className={`text-lg sm:text-xl font-semibold tracking-tight whitespace-nowrap ${st.metric}`}>{a.metric}</p>
                       <p className="text-[11px] text-muted-foreground">{a.metricLabel}</p>
                     </div>
-                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : opensOrders(a) ? setOrdersOpen(a) : go(a.link)}
+                    <button onClick={() => a.tipIndex != null ? setTipOpen(a.tipIndex) : opensOrders(a) ? setOrdersOpen(a) : setActionOpen(a)}
                       className={`shrink-0 h-9 w-[140px] px-3 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors ${st.btn}`}>
                       {a.action} <ChevronRight className="size-3.5" />
                     </button>
@@ -347,6 +350,9 @@ function Alerts({ d }: { d: Data }) {
       {tipOpen != null && <IntelTipSheet index={tipOpen} onClose={() => setTipOpen(null)} />}
       {ordersOpen && <AlertOrdersSheet alert={ordersOpen} month={d.month} onClose={() => setOrdersOpen(null)}
         onDismiss={() => { dismiss.mutate({ key: ordersOpen.key }); setOrdersOpen(null); }} />}
+      {actionOpen && <AlertActionSheet alert={actionOpen} month={d.month} onClose={() => setActionOpen(null)}
+        onDismiss={() => { dismiss.mutate({ key: actionOpen.key }); setActionOpen(null); }}
+        onGo={(href) => { setActionOpen(null); go(href); }} />}
     </div>
   );
 }
