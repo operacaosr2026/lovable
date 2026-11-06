@@ -103,6 +103,7 @@ const AREA_BY_PREFIX: [string, string][] = [
   ["dispute:", "atendimento"],
   ["meta_token:", "marketing"],
   ["meta_account:", "marketing"],
+  ["meta_campaign:", "marketing"],
   ["shopify_sync:", "lojas"],
   ["shopify_refunds:", "lojas"],
   ["track123:", "pedidos"],

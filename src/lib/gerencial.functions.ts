@@ -42,7 +42,7 @@ const prevMonthOf = (monthStart: string) => {
 const SUPPLIER_PAYMENT_TRACKED_SINCE = "2026-09-01";
 const SUPPLIER_PAYMENT_GRACE_DAYS = 15;
 
-const SYSTEM_NOTICE_PREFIXES = ["meta_token:", "meta_payment:", "meta_account:", "shopify_sync:", "shopify_access:", "zoho_mail:", "system:", "product_missing:", "stuck:", "cron:"];
+const SYSTEM_NOTICE_PREFIXES = ["meta_token:", "meta_payment:", "meta_account:", "meta_campaign:", "shopify_sync:", "shopify_access:", "zoho_mail:", "system:", "product_missing:", "stuck:", "cron:"];
 
 // key: identifica o alerta pra "Desconsiderar" (tabela gerencial_alert_dismissals,
 // vale no mês escolhido pra toda a equipe).

@@ -17,7 +17,7 @@ type NotificationInput = { level: NotificationLevel; title: string; body?: strin
 // Outras chaves — ex.: "shopify_refunds:" — são abertas/fechadas por quem
 // detecta o problema na hora (ver raiseNotification/resolveNotification).
 const SHOPIFY_STALE_HOURS = 13;
-const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:", "product_missing:", "stuck:"];
+const MANAGED_PREFIXES = ["meta_payment:", "meta_token:", "meta_account:", "meta_campaign:", "shopify_sync:", "track123:", "dispute:", "zoho_mail:", "system:alerts_errors", "cron:", "product_missing:", "stuck:"];
 
 // Rastreio (17track): cron a cada 30 min. A chave "track123:<loja>" do aviso
 // ficou com o nome antigo pra não duplicar avisos já abertos.
@@ -252,6 +252,40 @@ export async function refreshSystemNotifications(ownerId: string) {
           : "A conta de anúncio está com pagamento pendente e os anúncios podem parar. Atualize a forma de pagamento no Gerenciador de Anúncios.",
         link: `https://adsmanager.facebook.com/adsmanager/manage/billing?act=${num}`,
       });
+    }
+
+    // Contas de anúncio dos cards (lg_card_meta_accounts) — é por elas que o gasto
+    // entra hoje; a tabela antiga por loja não tem a "Conta 1 - BM04" e o aviso de
+    // pagamento não disparava (05/11/2026). Também: campanha gastando nos últimos
+    // 3 dias que não está escolhida no card (o gasto não entra no lucro).
+    const { data: cardAccs, error: cardAccErr } = await supabaseAdmin.from("lg_card_meta_accounts")
+      .select("card_id,ad_account_id,account_name,account_status,outside_campaigns").eq("user_id", ownerId).eq("enabled", true);
+    if (cardAccErr) throw new Error(`refreshSystemNotifications: contas Meta dos cards: ${cardAccErr.message}`);
+    for (const a of (cardAccs ?? []) as any[]) {
+      const label = a.account_name ?? a.ad_account_id;
+      if ((a.account_status === 3 || a.account_status === 9) && !paymentSeen.has(a.ad_account_id)) {
+        paymentSeen.add(a.ad_account_id);
+        const num = String(a.ad_account_id).replace(/^act_/, "");
+        want.set(`meta_payment:${a.ad_account_id}`, {
+          level: "error",
+          title: `Falha de pagamento na Meta — ${label}`,
+          body: a.account_status === 9
+            ? "A conta de anúncio está em período de carência por pagamento não processado. Atualize a forma de pagamento antes que os anúncios parem."
+            : "A conta de anúncio está com pagamento pendente e os anúncios podem parar. Pague o saldo / atualize a forma de pagamento no Gerenciador de Anúncios.",
+          link: `https://adsmanager.facebook.com/adsmanager/manage/billing?act=${num}`,
+        });
+      }
+      const outside = (Array.isArray(a.outside_campaigns) ? a.outside_campaigns : []) as { name: string; spend: number }[];
+      if (outside.length) {
+        const total = outside.reduce((s, c) => s + Number(c.spend ?? 0), 0);
+        const usd = (v: number) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        want.set(`meta_campaign:${a.card_id}:${a.ad_account_id}`, {
+          level: "warning",
+          title: `Campanha gastando fora do card — ${label}`,
+          body: `${outside.map((c) => `${c.name} (US$ ${usd(c.spend)})`).join(", ").slice(0, 200)} — US$ ${usd(total)} nos últimos 3 dias que não entram no lucro. Escolha a campanha no card (Integrações › Meta) se ela for desse grupo.`,
+          link: `/shops/lojas-grupos/${a.card_id}?tab=integracoes`,
+        });
+      }
     }
 
     for (const a of (accountsRes.data ?? []) as any[]) {

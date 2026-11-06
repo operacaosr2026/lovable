@@ -954,6 +954,8 @@ export type Database = {
         Row: {
           account_name: string | null;
           ad_account_id: string;
+          account_status: number | null;
+          outside_campaigns: Json;
           card_id: string;
           created_at: string;
           currency: string | null;
@@ -969,6 +971,8 @@ export type Database = {
         Insert: {
           account_name?: string | null;
           ad_account_id: string;
+          account_status?: number | null;
+          outside_campaigns?: Json;
           card_id: string;
           created_at?: string;
           currency?: string | null;
@@ -984,6 +988,8 @@ export type Database = {
         Update: {
           account_name?: string | null;
           ad_account_id?: string;
+          account_status?: number | null;
+          outside_campaigns?: Json;
           card_id?: string;
           created_at?: string;
           currency?: string | null;

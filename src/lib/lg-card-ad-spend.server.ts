@@ -19,6 +19,28 @@ export async function metaTokenForAccount(ownerId: string, adAccountId: string):
   return (rows.find(sees) ?? rows[0])?.access_token ?? null;
 }
 
+// Status da conta na Meta (1 ativa, 3 pagamento pendente, 9 carência…) e as
+// campanhas que gastaram nos últimos 3 dias sem estar escolhidas no card — o
+// gasto delas não entra no lucro (ex.: CBO_Georgetown_Loja7, 04/11/2026).
+// Card sem campanhas escolhidas = todas entram, então nada fica de fora.
+async function accountHealth(adAccountId: string, selected: string[], token: string, today: string) {
+  const t = encodeURIComponent(token);
+  const acc: any = await (await fetchWithRetry(`${META_GRAPH}/${adAccountId}?fields=account_status&access_token=${t}`)).json();
+  if (acc?.error) throw new Error(acc.error.message);
+  const outside: { id: string; name: string; spend: number }[] = [];
+  if (selected.length) {
+    const range = encodeURIComponent(JSON.stringify({ since: addDaysIso(today, -2), until: today }));
+    const ins: any = await (await fetchWithRetry(`${META_GRAPH}/${adAccountId}/insights?level=campaign&fields=campaign_id,campaign_name,spend&time_range=${range}&limit=500&access_token=${t}`)).json();
+    if (ins?.error) throw new Error(ins.error.message);
+    const sel = new Set(selected);
+    for (const r of (ins.data ?? []) as any[]) {
+      const spend = Number(r.spend ?? 0);
+      if (spend > 0 && !sel.has(String(r.campaign_id))) outside.push({ id: String(r.campaign_id), name: String(r.campaign_name ?? r.campaign_id), spend: Math.round(spend * 100) / 100 });
+    }
+  }
+  return { accountStatus: typeof acc.account_status === "number" ? acc.account_status : null, outside };
+}
+
 export async function syncCardAdSpend(
   ownerId: string,
   cardId: string,
@@ -60,7 +82,13 @@ export async function syncCardAdSpend(
         url = json.paging?.next ?? null;
       }
       for (const [date, v] of accountSpend) spendByDate.set(date, (spendByDate.get(date) ?? 0) + v);
-      await setStatus({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null });
+      // Saúde da conta (sino + Gerencial): pagamento pendente na Meta e campanha
+      // gastando fora das escolhidas no card. Falha aqui não derruba o gasto.
+      const health = await accountHealth(account.ad_account_id, ids, token, today).catch(() => null);
+      await setStatus({
+        last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_error: null,
+        ...(health ? { account_status: health.accountStatus, outside_campaigns: health.outside as any } : {}),
+      });
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       errors.push(`${account.ad_account_id}: ${msg}`);
