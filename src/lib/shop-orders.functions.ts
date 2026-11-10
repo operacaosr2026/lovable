@@ -211,6 +211,10 @@ export const getStoreBalances = createServerOnlyFn(async (ownerId: string, store
     .select("id,payments_balance,payments_balance_currency,payments_balance_at")
     .eq("user_id", ownerId).in("id", storeIds);
   const now = Date.now();
+  // Uma loja com a Shopify fora (ex.: 402 "Unavailable Shop") não pode derrubar
+  // o saldo das outras: ela só fica fora do mapa (quem chama usa o fallback).
+  // Só propaga o erro quando nenhuma loja deu saldo.
+  let firstError: unknown = null;
   await Promise.all(storeIds.map(async (id) => {
     const r = ((rows ?? []) as any[]).find((x) => x.id === id);
     const fresh = r?.payments_balance_at && now - new Date(r.payments_balance_at).getTime() < maxAgeMs;
@@ -224,9 +228,10 @@ export const getStoreBalances = createServerOnlyFn(async (ownerId: string, store
       console.error("getStoreBalances: Shopify falhou", id, e);
       // Shopify fora: melhor o último valor guardado do que nada.
       if (r?.payments_balance != null) out.set(id, { amount: Number(r.payments_balance), currency: r.payments_balance_currency ?? null, live: false });
-      else throw e;
+      else firstError ??= e;
     }
   }));
+  if (firstError && out.size === 0) throw firstError;
   return out;
 });
 
