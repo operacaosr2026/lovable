@@ -50,12 +50,22 @@ export type Situations = {
   semEvento: SituationOrder[];        // cadastrado no 17track há 3+ dias e nenhum evento
   statusDiverge: SituationOrder[];    // rastreio diz entregue e o pedido não (1+ dia)
   localNova: SituationOrder[];        // repassado à transportadora local e os eventos não batem com nenhuma conhecida
+  // Marcados como resolvidos na gaveta (gerencial_order_resolutions): saíram das
+  // listas acima; ficam aqui por tipo de alerta pra dar pra desfazer.
+  resolved: Map<string, SituationOrder[]>;
 };
+
+// Tipo de alerta da marcação "resolvido": os alertas por transportadora
+// (nao_postado:<x>, fora:transportadora:<x>) contam como um só.
+export const resolutionKindOf = (alertKey: string) =>
+  alertKey.startsWith("rastreio:nao_postado") ? "rastreio:nao_postado"
+  : alertKey.startsWith("fora:transportadora") ? "fora:transportadora"
+  : alertKey;
 
 const isDelivered = (o: any) => o.delivery_status === "delivered";
 
 export async function trackingSituations(ownerId: string, shopIds: string[], nowMs = Date.now()): Promise<Situations> {
-  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [] };
+  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [], resolved: new Map() };
   if (!shopIds.length) return empty;
   const since = new Date(nowMs - WINDOW_DAYS * DAY).toISOString().slice(0, 10);
   const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,shopify_financial_status,cancelled:raw->>cancelled_at";
@@ -83,7 +93,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   if (tracks.error) throw new Error(tracks.error.message);
   const trackBy = new Map(tracks.data.map((t) => [String(t.order_id), t]));
 
-  const out: Situations = { ...empty, naoPostado: new Map(), transportadoraNova: new Map() };
+  const out: Situations = { ...empty, naoPostado: new Map(), transportadoraNova: new Map(), resolved: new Map() };
   const unknown = new Map<string, { example: string; count: number; sample?: SemFaseSample }>();
   // Até 3 eventos antes e 2 depois, em ordem cronológica. Prefere um pedido que
   // já tenha evento depois do texto (mostra pra onde o pacote foi).
@@ -149,6 +159,42 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   const specific = new Set([...out.cliente, ...out.repassado, ...out.reenvioEntregue, ...[...out.naoPostado.values()].flat()].map((o) => o.id));
   out.entrega = out.entrega.filter((o) => !specific.has(o.id) && !noticeNums.has(String(o.order_number)));
   out.semFase = [...unknown.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count);
+
+  // Marcados como resolvidos — depois do "specific" acima, pra um pedido
+  // resolvido em "não postado" não cair em "atenção na entrega". Só vale com o
+  // mesmo código de rastreio de quando foi marcado.
+  const { data: resRows, error: resErr } = await supabaseAdmin.from("gerencial_order_resolutions")
+    .select("order_id,alert_kind,tracking_code,resolved_at").eq("owner_id", ownerId);
+  if (resErr) throw new Error(resErr.message);
+  const codeNow = new Map(open.map((o) => [String(o.id), String(o.tracking_code ?? "").trim()]));
+  const resolvedAt = new Map<string, string>();
+  for (const r of (resRows ?? []) as any[]) {
+    if (String(r.tracking_code ?? "").trim() === (codeNow.get(String(r.order_id)) ?? null)) resolvedAt.set(`${r.alert_kind}|${r.order_id}`, r.resolved_at);
+  }
+  if (resolvedAt.size) {
+    const split = (kind: string, list: SituationOrder[]) => {
+      const keep: SituationOrder[] = [];
+      for (const o of list) {
+        const at = resolvedAt.get(`${kind}|${o.id}`);
+        if (at) out.resolved.set(kind, [...(out.resolved.get(kind) ?? []), { ...o, _resolvedAt: at }]);
+        else keep.push(o);
+      }
+      return keep;
+    };
+    out.entrega = split("entrega", out.entrega);
+    out.cliente = split("rastreio:cliente", out.cliente);
+    out.repassado = split("rastreio:repassado", out.repassado);
+    out.reenvioEntregue = split("rastreio:reenvio_entregue", out.reenvioEntregue);
+    out.semEvento = split("fora:sem_evento", out.semEvento);
+    out.statusDiverge = split("fora:status", out.statusDiverge);
+    out.localNova = split("fora:local", out.localNova);
+    for (const [m, kind] of [[out.naoPostado, "rastreio:nao_postado"], [out.transportadoraNova, "fora:transportadora"]] as const) {
+      for (const [k, list] of [...m]) {
+        const rest = split(kind, list);
+        if (rest.length) m.set(k, rest); else m.delete(k);
+      }
+    }
+  }
   return out;
 }
 

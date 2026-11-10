@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { attentionReason } from "@/lib/logistics-kpis";
-import { trackingSituations } from "@/lib/tracking-situations.server";
+import { resolutionKindOf, trackingSituations } from "@/lib/tracking-situations.server";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { autoPhase, phaseLabel } from "@/lib/tracking-phases";
@@ -36,6 +36,7 @@ export type AlertOrder = {
   shopDomain: string | null;      // xxx.myshopify.com (mensagem pro fornecedor)
   oldCode: string | null;         // reenvio: código do pacote antigo
   oldDeliveredAt: string | null;  // reenvio: quando o pacote antigo foi entregue
+  resolvedAt: string | null;      // marcado como resolvido na gaveta (sai do alerta)
 };
 // Fase do último evento em palavras de operação (o "aviso" = nunca foi postado).
 function phaseText(last: string | null): string {
@@ -64,7 +65,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     key: z.string().min(1).max(200),
     month: z.string().regex(/^\d{4}-\d{2}$/),
   }).parse(d))
-  .handler(async ({ data, context }): Promise<{ orders: AlertOrder[]; analysis: AlertAnalysis }> => {
+  .handler(async ({ data, context }): Promise<{ orders: AlertOrder[]; resolved: AlertOrder[]; analysis: AlertAnalysis; canResolve: boolean }> => {
     const ctx = context as Ctx;
     if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
     const { ownerId } = ctx;
@@ -74,6 +75,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     // Pedidos do alerta: entrega = os do mês que precisam de atenção (mesma
     // conta do alerta); lote/alfândega = os números listados no aviso.
     let orders: any[] = [];
+    let resolvedRows: any[] = [];
     const situation = data.key === "entrega" || data.key.startsWith("rastreio:") || data.key.startsWith("fora:");
     if (situation) {
       // Mesma conta dos alertas (tracking-situations.server.ts).
@@ -89,6 +91,13 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "fora:status" ? sit.statusDiverge
         : data.key === "fora:local" ? sit.localNova
         : [];
+      // Resolvidos do mesmo alerta (por transportadora: só os daquela transportadora).
+      const carrierKey = data.key.match(/^(?:rastreio:nao_postado|fora:transportadora):(.+)$/)?.[1];
+      resolvedRows = (sit.resolved.get(resolutionKindOf(data.key)) ?? []).filter((o) => {
+        if (!carrierKey) return true;
+        const code = String(o.tracking_code ?? "").trim();
+        return data.key.startsWith("rastreio:") ? carrierOf(code) === carrierKey : (code.toUpperCase().match(/^[A-Z]+/)?.[0] ?? code.slice(0, 4).toUpperCase()) === carrierKey;
+      });
     } else if (data.key.startsWith("track123:lote:") || data.key.startsWith("track123:alfandega:")) {
       const { data: n, error } = await supabaseAdmin.from("app_notifications").select("body").eq("user_id", ownerId).eq("key", data.key).maybeSingle();
       if (error) throw new Error(error.message);
@@ -109,10 +118,11 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     } else {
       throw new Error("Esse alerta não tem lista de pedidos");
     }
-    if (!orders.length) return { orders: [], analysis: [] };
+    if (!orders.length && !resolvedRows.length) return { orders: [], resolved: [], analysis: [], canResolve: situation };
 
-    const ids = orders.map((o) => o.id as string);
-    const shopIds = [...new Set(orders.map((o) => o.shop_id as string))];
+    const all = [...orders, ...resolvedRows];
+    const ids = all.map((o) => o.id as string);
+    const shopIds = [...new Set(all.map((o) => o.shop_id as string))];
     const [tracks, shops, integs] = await Promise.all([
       selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking").select("order_id,tracking_number,last_event_at,last_event_label,timeline,replaced_packages").in("order_id", c)),
       supabaseAdmin.from("shops").select("id,name,shopify_store_id").in("id", shopIds),
@@ -128,7 +138,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     const domainByStore = new Map((stores ?? []).map((s: any) => [s.id as string, s.shop_domain as string | null]));
     const shopDomain = new Map((shops.data ?? []).map((s: any) => [s.id as string, domainByStore.get(s.shopify_store_id) ?? null]));
 
-    const out: AlertOrder[] = orders.map((o) => {
+    const toAlertOrder = (o: any): AlertOrder => {
       const t = trackBy.get(String(o.id));
       const code = String(o.tracking_code ?? "").trim() || null;
       const evs = parseEvents(t?.timeline).sort((a, b) => b.ts - a.ts);
@@ -168,8 +178,12 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         shopDomain: shopDomain.get(o.shop_id) ?? null,
         oldCode: history.length ? String(history[history.length - 1]?.code ?? "") || null : null,
         oldDeliveredAt: oldDelivered(t?.replaced_packages),
+        resolvedAt: o._resolvedAt ?? null,
       };
-    }).sort((a, b) => (b.daysStopped ?? -1) - (a.daysStopped ?? -1));
+    };
+    const byStopped = (a: AlertOrder, b: AlertOrder) => (b.daysStopped ?? -1) - (a.daysStopped ?? -1);
+    const out = orders.map(toAlertOrder).sort(byStopped);
+    const resolved = resolvedRows.map(toAlertOrder).sort((a, b) => String(b.resolvedAt).localeCompare(String(a.resolvedAt)));
 
     // Resumo do que foi analisado: o que se repete entre os pedidos.
     const top = (vals: string[]) => {
@@ -187,5 +201,28 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       { label: "Cliente avisado", value: `${out.filter((o) => o.notifiedAt).length} de ${out.length}` },
       ...(out.some((o) => o.resent) ? [{ label: "Já reenviados", value: `${out.filter((o) => o.resent).length}` }] : []),
     ].filter((x) => x.value);
-    return { orders: out, analysis };
+    return { orders: out, resolved, analysis: out.length ? analysis : [], canResolve: situation };
+  });
+
+// Marcar (ou desmarcar) um pedido como resolvido num alerta de rastreio: sai
+// da lista e da contagem pra toda a equipe, enquanto o código for o mesmo.
+export const resolveAlertOrder = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ key: z.string().min(1).max(200), orderId: z.string().uuid(), undo: z.boolean().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as Ctx & { userId: string };
+    if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
+    const kind = resolutionKindOf(data.key);
+    const q = supabaseAdmin.from("gerencial_order_resolutions");
+    if (data.undo) {
+      const { error } = await q.delete().eq("owner_id", ctx.ownerId).eq("order_id", data.orderId).eq("alert_kind", kind);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+    const { data: o, error: oErr } = await supabaseAdmin.from("shop_orders").select("tracking_code").eq("user_id", ctx.ownerId).eq("id", data.orderId).maybeSingle();
+    if (oErr) throw new Error(oErr.message);
+    if (!o) throw new Error("Pedido não encontrado");
+    const { error } = await q.upsert({ owner_id: ctx.ownerId, order_id: data.orderId, alert_kind: kind, tracking_code: String(o.tracking_code ?? "").trim(), resolved_by: ctx.userId, resolved_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

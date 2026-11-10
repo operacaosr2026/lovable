@@ -717,6 +717,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      gerencial_order_resolutions: {
+        Row: {
+          alert_kind: string;
+          order_id: string;
+          owner_id: string;
+          resolved_at: string;
+          resolved_by: string | null;
+          tracking_code: string | null;
+        };
+        Insert: {
+          alert_kind: string;
+          order_id: string;
+          owner_id: string;
+          resolved_at?: string;
+          resolved_by?: string | null;
+          tracking_code?: string | null;
+        };
+        Update: {
+          alert_kind?: string;
+          order_id?: string;
+          owner_id?: string;
+          resolved_at?: string;
+          resolved_by?: string | null;
+          tracking_code?: string | null;
+        };
+        Relationships: [];
+      };
       gratitude_entries: {
         Row: {
           content: string;

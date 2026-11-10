@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { BellRing, CheckCircle2, ChevronDown, Copy, EyeOff, ExternalLink, Loader2, Mail, MessageCircle, RotateCcw } from "lucide-react";
+import { BellRing, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, EyeOff, ExternalLink, Loader2, Mail, MessageCircle, RotateCcw, Undo2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { getAlertOrders, type AlertOrder } from "@/lib/gerencial-alert-orders.functions";
+import { getAlertOrders, resolveAlertOrder, type AlertOrder } from "@/lib/gerencial-alert-orders.functions";
 import { listNoticeTemplates, queueOrderNotices } from "@/lib/order-notices.functions";
 import { buildAlertSupplierMessage } from "@/lib/order-message";
 
@@ -26,6 +26,22 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
   const fn = useServerFn(getAlertOrders);
   const q = useQuery({ queryKey: ["alert-orders", alert.key, month], queryFn: () => fn({ data: { key: alert.key, month } }) });
   const orders = q.data?.orders ?? [];
+  const resolved = q.data?.resolved ?? [];
+  const canResolve = !!q.data?.canResolve;
+
+  // Resolvido (um pedido por vez): sai do alerta e da contagem pra equipe.
+  const resolveFn = useServerFn(resolveAlertOrder);
+  const [showResolved, setShowResolved] = useState(false);
+  const resolve = useMutation({
+    mutationFn: (v: { orderId: string; undo?: boolean }) => resolveFn({ data: { key: alert.key, ...v } }),
+    onSuccess: (_r, v) => {
+      setSel((s) => { const n = new Set(s); n.delete(v.orderId); return n; });
+      qc.invalidateQueries({ queryKey: ["alert-orders", alert.key, month] });
+      qc.invalidateQueries({ queryKey: ["gerencial", month] });
+      toast.success(v.undo ? "Pedido voltou pro alerta" : "Marcado como resolvido");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // Seleção: começa com quem ainda não foi avisado.
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -80,7 +96,7 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
 
           {q.isLoading ? <div className="py-16 grid place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
             : q.isError ? <p className="text-sm text-destructive">{(q.error as Error).message}</p>
-            : !orders.length ? <p className="text-sm text-muted-foreground py-8 text-center">Nenhum pedido nesse alerta agora.</p>
+            : !orders.length ? <p className="text-sm text-muted-foreground py-8 text-center">Nenhum pedido nesse alerta agora{resolved.length ? " — todos marcados como resolvidos." : "."}</p>
             : (
               <>
                 {/* O que foi analisado */}
@@ -142,18 +158,51 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {orders.map((o) => <OrderRow key={o.id} o={o} on={sel.has(o.id)} onToggle={() => toggle(o.id)} />)}
+                    {orders.map((o) => (
+                      <OrderRow key={o.id} o={o} on={sel.has(o.id)} onToggle={() => toggle(o.id)}
+                        onResolve={canResolve ? () => resolve.mutate({ orderId: o.id }) : undefined}
+                        busy={resolve.isPending && resolve.variables?.orderId === o.id} />
+                    ))}
                   </div>
                 </div>
               </>
             )}
+
+          {/* Resolvidos (dá pra desfazer) */}
+          {!q.isLoading && resolved.length > 0 && (
+            <div>
+              <button onClick={() => setShowResolved((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                <ChevronRight className={`size-3.5 transition-transform ${showResolved ? "rotate-90" : ""}`} /> Resolvidos ({resolved.length})
+              </button>
+              {showResolved && (
+                <div className="mt-2 space-y-2">
+                  {resolved.map((o) => (
+                    <div key={o.id} className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-3 flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="text-sm font-semibold">{o.number}</span>
+                          <span className="text-[11px] text-muted-foreground">{o.shop} · {o.carrier}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Resolvido em {o.resolvedAt ? ddmmhm(o.resolvedAt) : "—"} · {o.reason}</p>
+                      </div>
+                      <button onClick={() => resolve.mutate({ orderId: o.id, undo: true })} disabled={resolve.isPending}
+                        title="Voltar este pedido pro alerta"
+                        className="shrink-0 h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1.5 disabled:opacity-50">
+                        <Undo2 className="size-3.5" /> Desfazer
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>
   );
 }
 
-function OrderRow({ o, on, onToggle }: { o: AlertOrder; on: boolean; onToggle: () => void }) {
+function OrderRow({ o, on, onToggle, onResolve, busy }: { o: AlertOrder; on: boolean; onToggle: () => void; onResolve?: () => void; busy?: boolean }) {
   const [open, setOpen] = useState(false);
   const tone = useMemo(() => ((o.daysStopped ?? 0) >= 10 ? "text-rose-600" : (o.daysStopped ?? 0) >= 5 ? "text-amber-600" : "text-muted-foreground"), [o.daysStopped]);
   return (
@@ -171,6 +220,12 @@ function OrderRow({ o, on, onToggle }: { o: AlertOrder; on: boolean; onToggle: (
           {o.lastEvent && <p className="text-xs text-muted-foreground mt-0.5 break-words">Último: {o.lastEvent}{o.lastEventAt ? ` (${ddmm(o.lastEventAt)})` : ""}</p>}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {onResolve && (
+            <button onClick={onResolve} disabled={busy} title="Marcar como resolvido — sai deste alerta pra toda a equipe (enquanto o código de rastreio for o mesmo)"
+              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-emerald-700 hover:border-emerald-500/50 hover:bg-emerald-500/5 inline-flex items-center gap-1 disabled:opacity-50">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} Resolvido
+            </button>
+          )}
           {o.trackingLink && (
             <a href={o.trackingLink} target="_blank" rel="noreferrer" title="Abrir a página de rastreio"
               className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-foreground hover:bg-muted"><ExternalLink className="size-4" /></a>
