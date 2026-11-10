@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
-import { trackingSituations } from "@/lib/tracking-situations.server";
+import { trackingSituations, type SemFaseText } from "@/lib/tracking-situations.server";
 import { isoTodayUS } from "@/lib/timezone";
 
 // Gerencial › Alertas: gaveta dos alertas que não são de rastreio (chargeback,
@@ -22,7 +22,7 @@ export type AlertDetailItem = {
   href?: string;            // abrir (interno ou externo)
   taskId?: string;          // tarefa: dá pra concluir na gaveta
 };
-export type AlertDetail = { items: AlertDetailItem[]; texts?: { key: string; example: string; count: number }[] };
+export type AlertDetail = { items: AlertDetailItem[]; texts?: SemFaseText[] };
 
 async function cardByShop(ownerId: string) {
   const { data } = await supabaseAdmin.from("lg_card_shops").select("card_id,shop_id,lg_cards!inner(user_id,status)").eq("lg_cards.user_id", ownerId);

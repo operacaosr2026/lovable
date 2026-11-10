@@ -8,8 +8,15 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { getAlertDetail } from "@/lib/gerencial-alert-detail.functions";
 import { createTask, listTaskAssignees, updateTask, TASK_AREAS } from "@/lib/tasks.functions";
 import { saveTrackingPhase } from "@/lib/tracking-texts.functions";
-import { PHASES, type Phase } from "@/lib/tracking-phases";
-import { isoTodayUS } from "@/lib/timezone";
+import { PHASES, phaseLabel, type Phase } from "@/lib/tracking-phases";
+import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
+
+// Hora do evento no fuso de Nova York (dd/mm HH:mm).
+const fmtNY = (ts: number) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: US_TIME_ZONE, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+    .formatToParts(new Date(ts)).map((x) => [x.type, x.value]));
+  return `${p.day}/${p.month} ${p.hour}:${p.minute}`;
+};
 
 // Gerencial › Alertas: gaveta de todo alerta que não é de rastreio (esses usam
 // AlertOrdersSheet) — o que fazer, a lista pra resolver ali mesmo (concluir
@@ -113,17 +120,40 @@ export function AlertActionSheet({ alert, month, onClose, onDismiss, onGo }: {
                   <div className="space-y-2">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Textos sem fase · {texts.length}</p>
                     {texts.map((t) => (
-                      <div key={t.key} className="rounded-xl border border-border p-3 flex flex-col sm:flex-row sm:items-center gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm break-words">{t.example}</p>
-                          <p className="text-[11px] text-muted-foreground">{t.count} evento{t.count === 1 ? "" : "s"}</p>
+                      <div key={t.key} className="rounded-xl border border-border p-3 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm break-words">{t.example}</p>
+                            <p className="text-[11px] text-muted-foreground">{t.count} evento{t.count === 1 ? "" : "s"}</p>
+                          </div>
+                          <select value={phases[t.key] ?? ""} disabled={savePhase.isPending}
+                            onChange={(e) => e.target.value && savePhase.mutate({ example: t.example, phase: e.target.value as Phase, key: t.key })}
+                            className={`h-9 rounded-lg border px-2 text-xs ${phases[t.key] ? "border-emerald-500/50 bg-emerald-500/5" : "border-border bg-card"}`}>
+                            <option value="">Escolher fase…</option>
+                            {PHASES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                          </select>
                         </div>
-                        <select value={phases[t.key] ?? ""} disabled={savePhase.isPending}
-                          onChange={(e) => e.target.value && savePhase.mutate({ example: t.example, phase: e.target.value as Phase, key: t.key })}
-                          className={`h-9 rounded-lg border px-2 text-xs ${phases[t.key] ? "border-emerald-500/50 bg-emerald-500/5" : "border-border bg-card"}`}>
-                          <option value="">Escolher fase…</option>
-                          {PHASES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-                        </select>
+                        {t.sample && t.sample.events.length > 1 && (
+                          <div className="rounded-lg bg-muted/40 p-2.5 space-y-1.5">
+                            <p className="text-[11px] text-muted-foreground">
+                              Exemplo: <span className="font-medium text-foreground">{t.sample.order}</span>
+                              {t.sample.tracking && <> · <span className="font-mono">{t.sample.tracking}</span></>} — onde o texto cai no caminho do pacote
+                            </p>
+                            <ol className="space-y-1">
+                              {t.sample.events.map((e, i) => (
+                                <li key={i} className={`grid grid-cols-[4.75rem_1fr] gap-2 text-[11px] leading-snug ${e.hit ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                  <span className="tabular-nums">{fmtNY(e.ts)}</span>
+                                  <span className="min-w-0 break-words">
+                                    {e.d}
+                                    <span className={`ml-1.5 inline-block rounded px-1 py-px text-[10px] font-medium ${e.hit ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}>
+                                      {e.hit ? "este texto" : phaseLabel(e.phase)}
+                                    </span>
+                                  </span>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
