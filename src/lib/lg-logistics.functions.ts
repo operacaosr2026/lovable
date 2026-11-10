@@ -7,6 +7,7 @@ import { isoTodayUS, isoDateUS } from "@/lib/timezone";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { firstCarrierEventDateUS } from "@/lib/tracking-rules.server";
 import { updateFulfillmentTrackingNumber } from "@/lib/shopify-fulfillment-status.server";
+import { refundedResendIds } from "@/lib/refunded-resends.server";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -65,6 +66,10 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     if (olderErr) throw new Error(olderErr.message);
     rows.push(...(older ?? []).map((o: any) => ({ ...o, before_period: true })));
   }
+
+  // Reenvio de pedido reembolsado também sai (o reenvio fica "paid", $0).
+  const refundedResends = await refundedResendIds(ownerId, rows.map((o: any) => o.id as string));
+  if (refundedResends.size) rows.splice(0, rows.length, ...rows.filter((o: any) => !refundedResends.has(o.id)));
 
   // Data do último evento real de rastreio (17track), quando o pedido tem
   // integração ativa — mais confiável que shipped_at pra saber se o rastreio
