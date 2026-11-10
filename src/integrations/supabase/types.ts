@@ -4214,6 +4214,8 @@ export type Database = {
           shipped_at: string | null;
           shop_id: string;
           shopify_financial_status: string | null;
+          supplier_hold_released_at: string | null;
+          supplier_hold_released_by: string | null;
           source: string;
           tracking_code: string | null;
           tracking_code_manual_at: string | null;
@@ -4248,6 +4250,8 @@ export type Database = {
           shipped_at?: string | null;
           shop_id: string;
           shopify_financial_status?: string | null;
+          supplier_hold_released_at?: string | null;
+          supplier_hold_released_by?: string | null;
           source?: string;
           tracking_code?: string | null;
           tracking_code_manual_at?: string | null;
@@ -4282,6 +4286,8 @@ export type Database = {
           shipped_at?: string | null;
           shop_id?: string;
           shopify_financial_status?: string | null;
+          supplier_hold_released_at?: string | null;
+          supplier_hold_released_by?: string | null;
           source?: string;
           tracking_code?: string | null;
           tracking_code_manual_at?: string | null;

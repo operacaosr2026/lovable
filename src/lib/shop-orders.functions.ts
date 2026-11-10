@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
+import { repeatedItems } from "@/lib/repeated-items";
 import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
 import { costProductsFor } from "@/lib/product-links.server";
 import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
@@ -696,7 +697,24 @@ const ORDER_LIST_COLUMNS = [
   "items_count", "revenue", "currency", "payment_status", "payment_batch_id", "paid_at", "shipped_at",
   "delivered_at", "problem_at", "created_at", "updated_at", "connection_id", "carrier", "tracking_code",
   "tracking_url", "delivery_status", "shopify_financial_status", "logistics_note", "kpi_excluded", "tracking_code_history",
+  "supplier_hold_released_at",
 ].join(",");
+
+// Pedido com item repetido fica separado do fornecedor até o cliente confirmar
+// (LgOrders + repeated-items.ts). Liberar = "cliente confirmou"; undo volta a separar.
+export const releaseSupplierHold = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ order_id: z.string().uuid(), undo: z.boolean().optional() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: row, error } = await supabaseAdmin.from("shop_orders")
+      .update(data.undo
+        ? { supplier_hold_released_at: null, supplier_hold_released_by: null }
+        : { supplier_hold_released_at: new Date().toISOString(), supplier_hold_released_by: (context as any).userId ?? null })
+      .eq("id", data.order_id).eq("user_id", context.ownerId).select("id").maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Pedido não encontrado");
+    return { ok: true };
+  });
 
 export const listOrders = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -704,17 +722,25 @@ export const listOrders = createServerFn({ method: "GET" })
     shop_ids: z.array(z.string().uuid()).min(1),
     from: z.string(),
     to: z.string(),
+    // Só os separados por item repetido (não pagos, sem rastreio, não liberados),
+    // dos últimos 120 dias — fora do período da tela, pra não sumirem quando o
+    // dia vira.
+    held_only: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     // Sem o `raw` inteiro (pedido completo da Shopify, ~9 KB cada — 90% do
     // tráfego): a aba Pedidos só usa os produtos (título/quantidade) e o
     // financial_status. Devolve `raw` enxuto no mesmo formato.
-    const { data: rows, error } = await selectAll(context.supabase.from("shop_orders")
+    let q = context.supabase.from("shop_orders")
       .select(`${ORDER_LIST_COLUMNS},line_items:raw->line_items,tags:raw->>tags,raw_financial_status:raw->>financial_status`)
-      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
-      .gte("order_date", data.from).lte("order_date", data.to)
-      .order("created_at_shopify", { ascending: false }));
+      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
+    q = data.held_only
+      ? q.gte("order_date", isoDateUS(Date.now() - 120 * 86_400_000)).eq("payment_status", "pending")
+          .is("tracking_code", null).is("supplier_hold_released_at", null).filter("raw->>cancelled_at", "is", null)
+      : q.gte("order_date", data.from).lte("order_date", data.to);
+    const { data: allRows, error } = await selectAll(q.order("created_at_shopify", { ascending: false }));
     if (error) throw new Error(error.message);
+    const rows = data.held_only ? ((allRows ?? []) as any[]).filter((o) => repeatedItems(o.line_items).length) : allRows;
     // Pedido com chargeback (aberto ou perdido) não entra na fila de envio /
     // pagamento ao fornecedor — na Shopify ele segue "Pago", então só a
     // disputa diz. Chargeback ganho (won) volta pra lista.

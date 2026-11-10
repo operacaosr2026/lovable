@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  listOrders, markOrdersPaid, markOrdersShipped, recomputeRange,
+  listOrders, markOrdersPaid, markOrdersShipped, recomputeRange, releaseSupplierHold,
   getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts, supplierOrdersTotal,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
@@ -58,6 +58,11 @@ function orderMatches(o: any, term: string) {
     ...((raw.line_items ?? []) as any[]).map((li) => `${li.title ?? li.name ?? ""} ${li.variant_title ?? ""} ${li.sku ?? ""}`),
   ].filter(Boolean).join(" ").toLowerCase().replace(/#/g, "");
   return term.split(/\s+/).every((w) => hay.includes(w));
+}
+
+// Separado do fornecedor: item repetido, não pago, sem rastreio e não liberado.
+function isHeld(o: any) {
+  return o.payment_status === "pending" && !o.tracking_code && !o.supplier_hold_released_at && repeatedItems(o.raw?.line_items).length > 0;
 }
 
 function orderTags(o: any): string[] {
@@ -211,11 +216,30 @@ export function LgOrders({
 
   const loadedOrders = (ordersQuery.data ?? []) as any[];
 
-  // Mesmo item repetido (mesma cor e tamanho, 2+): confirmar com o cliente por
-  // e-mail antes de despachar. Itens diferentes do mesmo modelo estão ok.
-  const repeatedIds = useMemo(() => loadedOrders
+  // Mesmo item repetido (mesma cor e tamanho, 2+): fica separado do fornecedor
+  // (fora dos dias, da mensagem e do pagamento) até alguém marcar que o cliente
+  // confirmou. Itens diferentes do mesmo modelo estão ok. Os separados vêm numa
+  // consulta própria (120 dias), pra não sumirem quando o dia sai do período.
+  const heldQuery = useQuery({
+    queryKey: ["lg-orders-held", cacheKey],
+    queryFn: () => listOrdersFn({ data: { shop_ids: shopIds, from, to, held_only: true } }),
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: false,
+  });
+  const releaseFn = useServerFn(releaseSupplierHold);
+  const release = useMutation({
+    mutationFn: (v: { orderId: string; undo?: boolean }) => releaseFn({ data: { order_id: v.orderId, undo: v.undo } }),
+    onSuccess: (_r, v) => {
+      toast.success(v.undo ? "Pedido separado de novo (fora do fornecedor)" : "Liberado — o pedido voltou pro dia dele");
+      setSelected((s) => { const n = new Set(s); n.delete(v.orderId); return n; });
+      qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["lg-orders-held", cacheKey] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const repeatedIds = useMemo(() => [...new Set([...loadedOrders, ...((heldQuery.data ?? []) as any[])]
     .filter((o) => !o.tracking_code && repeatedItems(o.raw?.line_items).length)
-    .map((o) => o.id as string), [loadedOrders]);
+    .map((o) => o.id as string))], [loadedOrders, heldQuery.data]);
   const confirmStatusFn = useServerFn(repeatedConfirmStatus);
   const confirmStatus = useQuery({
     queryKey: ["repeated-confirm", repeatedIds.join(",")],
@@ -269,6 +293,8 @@ export function LgOrders({
       const pending = o.payment_status === "pending";
       if (pending && rb === "reembolso") continue;
       if (pending && o.chargeback_status) continue;
+      // Item repetido sem confirmação do cliente: vai pra seção separada.
+      if (isHeld(o)) continue;
       const day = o.order_date as string;
       if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;
@@ -292,6 +318,12 @@ export function LgOrders({
         return { date, ...agg, byShop, dayStatus };
       });
   }, [allOrders, costByShop, costProducts, shops]);
+
+  // Separados (item repetido): mesmas regras de saída da fila (reembolso/chargeback).
+  const heldOrders = useMemo(() => ((heldQuery.data ?? []) as any[])
+    .filter((o) => isHeld(o) && shopifyRefundBadge(resolveFinancialStatus(o)) !== "reembolso" && !o.chargeback_status)
+    .filter((o) => !term || orderMatches(o, term))
+    .sort((a, b) => String(a.order_date).localeCompare(String(b.order_date))), [heldQuery.data, term]);
 
   const filteredGroups = useMemo(() =>
     // A pagar: dias não pagos e parciais. Pagos: dias com algo já pago (parcial
@@ -573,6 +605,54 @@ export function LgOrders({
         </div>
       )}
 
+      {/* ── Separados: item repetido aguardando o cliente confirmar ── */}
+      {heldOrders.length > 0 && (
+        <div className="rounded-2xl border border-violet-500/30 bg-violet-500/[0.03] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-violet-500/20 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-sm font-semibold text-foreground">Aguardando confirmação do cliente · {heldOrders.length}</p>
+            <p className="text-[11px] text-muted-foreground">Mesmo item repetido — fora da mensagem e do pagamento ao fornecedor até você liberar.</p>
+          </div>
+          {heldOrders.map((o: any) => {
+            const rep = repeatedItems(o.raw?.line_items);
+            const st = confirmStatus.data?.[o.id];
+            const sending = confirmRepeated.isPending && confirmRepeated.variables === o.id;
+            const releasing = release.isPending && release.variables?.orderId === o.id;
+            const cost = orderLineItemsCost(o.raw?.line_items, costProducts, costByShop.get(o.shop_id as string) ?? 0, o.raw?.tags, costOpts(o));
+            const confirmLabel = st?.status === "enviado" ? `E-mail enviado ${st.at ? fmtDayMonth(isoDateUS(Date.parse(st.at))) : ""}`
+              : st?.status === "na_fila" || st?.status === "enviando" ? "E-mail na fila" : null;
+            return (
+              <div key={o.id} className="px-4 py-2.5 border-b border-violet-500/10 last:border-0 flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {orderLabel(o)}
+                    <span className="font-normal text-muted-foreground"> · {isConsolidated ? `${shopNames[o.shop_id] ?? ""} · ` : ""}pedido {fmtDayMonth(o.order_date)} · {cost > 0 ? fmtMoney(cost) : "—"}</span>
+                  </p>
+                  <p className="text-xs text-violet-700 dark:text-violet-400 truncate">{rep.map((i) => `${i.qty}x ${i.title}${i.variant ? ` — ${i.variant}` : ""}`).join(" · ")}</p>
+                  {o.customer_name && <p className="text-[11px] text-muted-foreground truncate">{o.customer_name}</p>}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  {confirmLabel ? (
+                    <span className="text-[11px] px-2 py-1 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
+                      <Check className="size-3" /> {confirmLabel}
+                    </span>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => confirmRepeated.mutate(o.id)} disabled={sending}
+                      title="E-mail pro cliente confirmar os itens repetidos (fila de Notificações)">
+                      {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
+                      {st?.status === "erro" ? "Falhou — enviar de novo" : "Confirmar com o cliente"}
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={() => release.mutate({ orderId: o.id })} disabled={releasing}
+                    title="O cliente confirmou: o pedido volta pro dia dele e entra na mensagem/pagamento do fornecedor">
+                    {releasing ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />} Cliente confirmou — liberar
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Orders list ── */}
       {/* Colunas em px fixo não cabem em mobile; rola horizontal em vez de
           cortar (overflow-hidden anterior escondia colunas inteiras). */}
@@ -744,7 +824,20 @@ export function LgOrders({
                                       className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-violet-500/10 text-violet-600 border-violet-500/20">
                                       Item repetido · {rep.map((i) => `${i.qty}x ${i.variant ?? i.title}`).join(", ")}
                                     </span>
-                                    {sentLabel ? (
+                                    {o.supplier_hold_released_at ? (
+                                      <>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
+                                          <Check className="size-3" /> Cliente confirmou {fmtDayMonth(isoDateUS(Date.parse(o.supplier_hold_released_at)))}
+                                        </span>
+                                        {o.payment_status === "pending" && (
+                                          <button onClick={() => release.mutate({ orderId: o.id, undo: true })} disabled={release.isPending}
+                                            title="Separar de novo (sai da mensagem e do pagamento do fornecedor)"
+                                            className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50">
+                                            separar de novo
+                                          </button>
+                                        )}
+                                      </>
+                                    ) : sentLabel ? (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
                                         <Check className="size-3" /> {sentLabel}
                                       </span>
