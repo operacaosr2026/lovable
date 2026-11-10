@@ -14,7 +14,10 @@ export function repeatedItems(lineItems: unknown): RepeatedItem[] {
     if (!(qty > 0)) continue;
     const title = String(li?.title ?? "").trim();
     const variant = String(li?.variant_title ?? "").trim() || null;
-    const key = li?.variant_id ? `v:${li.variant_id}` : `t:${title}|${variant ?? ""}`;
+    // Sem variant_id nem variant_title não dá pra saber se é a mesma cor/tamanho:
+    // a linha conta sozinha (só entra com 2+ nela mesma) — nunca junta pelo título
+    // (o #L6-1204, uma de cada cor, aparecia como "2x Samba" assim).
+    const key = li?.variant_id ? `v:${li.variant_id}` : variant ? `t:${title}|${variant}` : `l:${by.size}`;
     const cur = by.get(key);
     if (cur) cur.qty += qty; else by.set(key, { title, variant, qty });
   }

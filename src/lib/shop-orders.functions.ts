@@ -739,6 +739,8 @@ export const listOrders = createServerFn({ method: "GET" })
           title: li?.title ?? null, name: li?.name ?? null, quantity: li?.quantity ?? 0,
           product_id: li?.product_id ?? null, current_quantity: li?.current_quantity ?? null,
           fulfillment_status: li?.fulfillment_status ?? null, fulfillable_quantity: li?.fulfillable_quantity ?? null,
+          // Variante (cor/tamanho): "Item repetido" (repeated-items.ts) e a busca por tamanho/SKU.
+          variant_id: li?.variant_id ?? null, variant_title: li?.variant_title ?? null, sku: li?.sku ?? null,
         })),
       },
     }));
