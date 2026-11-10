@@ -10,21 +10,23 @@ function trailingOrderNumber(label: string): number {
 // supplierResends: pedidos com a tag reenvio-fornecedor (custo $0,00 pra nós —
 // o fornecedor reenvia por conta dele) — vão juntos numa Obs. no fim.
 // total: custo de produto já formatado, no começo. Os dois em negrito (*…*, WhatsApp).
-// held: pedidos separados (item repetido aguardando o cliente confirmar) da
-// mesma loja — a mensagem manda um intervalo ("#L6-1150 a #L6-1200"), então o
-// que cai dentro dele sai numa Obs. de "não enviar ainda".
-export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; supplierResends?: string[]; held?: string[] };
+// dontSend: pedidos da mesma loja que NÃO são pra enviar (separado por item
+// repetido, reembolsado, chargeback) — a mensagem manda um intervalo
+// ("#L6-1150 a #L6-1200"), então o que cai dentro dele sai numa Obs. com o motivo.
+export type SupplierDontSend = { label: string; reason: string };
+export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; supplierResends?: string[]; dontSend?: SupplierDontSend[] };
 
 export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: string): string {
   const live = blocks.filter((b) => b.orderLabels.length > 0);
-  const heldInRange: string[] = [];
+  const blockedInRange: SupplierDontSend[] = [];
   const body = live
     .map((b) => {
       const sorted = [...b.orderLabels].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c));
       const range = sorted.length > 1 ? `${sorted[0]} a ${sorted[sorted.length - 1]}` : sorted[0];
       const lo = trailingOrderNumber(sorted[0]), hi = trailingOrderNumber(sorted[sorted.length - 1]);
-      heldInRange.push(...(b.held ?? []).filter((h) => !b.orderLabels.includes(h) && trailingOrderNumber(h) > lo && trailingOrderNumber(h) < hi)
-        .sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c)));
+      blockedInRange.push(...(b.dontSend ?? [])
+        .filter((h) => !b.orderLabels.includes(h.label) && trailingOrderNumber(h.label) > lo && trailingOrderNumber(h.label) < hi)
+        .sort((a, c) => trailingOrderNumber(a.label) - trailingOrderNumber(c.label)));
       const domain = stripMyshopifyDomain(b.shopDomain);
       const header = domain ? `Loja ${domain} - ${b.shopName}` : `Loja ${b.shopName}`;
       return `${header}\n${range}`;
@@ -34,8 +36,8 @@ export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: str
   const resends = live.flatMap((b) => [...(b.supplierResends ?? [])].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c)));
   const head = `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:${total ? `\n\n*Valor total: ${total}*` : ""}`;
   const obs = resends.length ? `\n\n*Obs.: reenvio fornecedor (custo $0.00): ${resends.join(", ")}*` : "";
-  const holdObs = heldInRange.length
-    ? `\n\n*Obs.: NÃO enviar ainda ${heldInRange.length === 1 ? "o pedido" : "os pedidos"} ${heldInRange.join(", ")} — aguardando confirmação do cliente.*`
+  const holdObs = blockedInRange.length
+    ? `\n\n*Obs.: NÃO enviar ${blockedInRange.length === 1 ? "o pedido" : "os pedidos"} ${blockedInRange.map((h) => `${h.label} (${h.reason})`).join(", ")}.*`
     : "";
   return `${head}\n\n${body}${obs}${holdObs}`;
 }

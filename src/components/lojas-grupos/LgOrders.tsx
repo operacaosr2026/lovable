@@ -324,6 +324,10 @@ export function LgOrders({
     .filter((o) => isHeld(o) && shopifyRefundBadge(resolveFinancialStatus(o)) !== "reembolso" && !o.chargeback_status)
     .sort((a, b) => String(a.order_date).localeCompare(String(b.order_date))), [heldQuery.data]);
   const heldOrders = useMemo(() => heldAll.filter((o) => !term || orderMatches(o, term)), [heldAll, term]);
+  // Não pagos que saíram da fila por reembolso/chargeback (mesma regra do
+  // agrupamento por dia) — entram no "NÃO enviar" da mensagem.
+  const outOfQueue = useMemo(() => loadedOrders.filter((o) => o.payment_status === "pending"
+    && (shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" || o.chargeback_status)), [loadedOrders]);
 
   const filteredGroups = useMemo(() =>
     // A pagar: dias não pagos e parciais. Pagos: dias com algo já pago (parcial
@@ -409,11 +413,15 @@ export function LgOrders({
       shopDomain: domains[shopId] ?? null,
       orderLabels: b.labels,
       supplierResends: b.resends,
-      // Separados da loja: os que caem dentro do intervalo viram "NÃO enviar ainda".
-      held: heldAll.filter((o: any) => o.shop_id === shopId).map(orderLabel),
+      // O que não é pra enviar (separado, reembolsado, chargeback): o que cair
+      // dentro do intervalo vira "NÃO enviar" no fim da mensagem.
+      dontSend: [
+        ...heldAll.filter((o: any) => o.shop_id === shopId).map((o: any) => ({ label: orderLabel(o), reason: "aguardando confirmação do cliente" })),
+        ...outOfQueue.filter((o: any) => o.shop_id === shopId).map((o: any) => ({ label: orderLabel(o), reason: o.chargeback_status ? "chargeback" : "reembolsado" })),
+      ],
     }));
     return { blocks, orderIds };
-  }, [selected, groups, domainsQuery.data, shopNames, heldAll]);
+  }, [selected, groups, domainsQuery.data, shopNames, heldAll, outOfQueue]);
 
   // O total vem do servidor, com a mesma conta do lote que vai pro Caixa —
   // calculado no navegador ele podia sair com o custo padrão da loja em todos
