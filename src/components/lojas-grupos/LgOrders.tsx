@@ -320,10 +320,10 @@ export function LgOrders({
   }, [allOrders, costByShop, costProducts, shops]);
 
   // Separados (item repetido): mesmas regras de saída da fila (reembolso/chargeback).
-  const heldOrders = useMemo(() => ((heldQuery.data ?? []) as any[])
+  const heldAll = useMemo(() => ((heldQuery.data ?? []) as any[])
     .filter((o) => isHeld(o) && shopifyRefundBadge(resolveFinancialStatus(o)) !== "reembolso" && !o.chargeback_status)
-    .filter((o) => !term || orderMatches(o, term))
-    .sort((a, b) => String(a.order_date).localeCompare(String(b.order_date))), [heldQuery.data, term]);
+    .sort((a, b) => String(a.order_date).localeCompare(String(b.order_date))), [heldQuery.data]);
+  const heldOrders = useMemo(() => heldAll.filter((o) => !term || orderMatches(o, term)), [heldAll, term]);
 
   const filteredGroups = useMemo(() =>
     // A pagar: dias não pagos e parciais. Pagos: dias com algo já pago (parcial
@@ -409,9 +409,11 @@ export function LgOrders({
       shopDomain: domains[shopId] ?? null,
       orderLabels: b.labels,
       supplierResends: b.resends,
+      // Separados da loja: os que caem dentro do intervalo viram "NÃO enviar ainda".
+      held: heldAll.filter((o: any) => o.shop_id === shopId).map(orderLabel),
     }));
     return { blocks, orderIds };
-  }, [selected, groups, domainsQuery.data, shopNames]);
+  }, [selected, groups, domainsQuery.data, shopNames, heldAll]);
 
   // O total vem do servidor, com a mesma conta do lote que vai pro Caixa —
   // calculado no navegador ele podia sair com o custo padrão da loja em todos
