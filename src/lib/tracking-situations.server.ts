@@ -44,6 +44,9 @@ export type Situations = {
   cliente: SituationOrder[];
   repassado: SituationOrder[];
   reenvioEntregue: SituationOrder[];
+  // Fornecedor avisou que não tem estoque (order_supplier_flags) e o pacote
+  // ainda não andou — sai de "não postado"/"atenção na entrega".
+  semEstoque: SituationOrder[];
   semFase: SemFaseText[];
   // Fora do combinado (o sistema caiu num padrão — precisa de alguém acertar):
   transportadoraNova: Map<string, SituationOrder[]>; // prefixo do código → pedidos
@@ -65,7 +68,7 @@ export const resolutionKindOf = (alertKey: string) =>
 const isDelivered = (o: any) => o.delivery_status === "delivered";
 
 export async function trackingSituations(ownerId: string, shopIds: string[], nowMs = Date.now()): Promise<Situations> {
-  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [], resolved: new Map() };
+  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semEstoque: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [], resolved: new Map() };
   if (!shopIds.length) return empty;
   const since = new Date(nowMs - WINDOW_DAYS * DAY).toISOString().slice(0, 10);
   const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,shopify_financial_status,cancelled:raw->>cancelled_at";
@@ -151,12 +154,29 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
 // nem num aviso de alfândega/lote parado.
   // Reenvio com o pacote antigo entregue: a decisão é cancelar o reenvio — não
   // repete em "não postado" (#L2-1245 aparecia nos dois).
+  // Sem estoque (aviso do fornecedor): enquanto o pacote não andar (só aviso de
+  // etiqueta ou nenhum evento) e o código for o mesmo do aviso. Andou = some.
+  const { data: flagRows, error: flagErr } = await supabaseAdmin.from("order_supplier_flags")
+    .select("order_id,note,tracking_code,flagged_at").eq("owner_id", ownerId).eq("kind", "sem_estoque");
+  if (flagErr) throw new Error(flagErr.message);
+  const flagBy = new Map(((flagRows ?? []) as any[]).map((f) => [String(f.order_id), f]));
+  if (flagBy.size) {
+    for (const o of open) {
+      const f = flagBy.get(String(o.id));
+      if (!f || String(f.tracking_code ?? "").trim() !== String(o.tracking_code ?? "").trim()) continue;
+      const t = trackBy.get(String(o.id));
+      const evs = parseEvents(t?.timeline).sort((a, b) => b.ts - a.ts);
+      if (!evs.every((e) => phaseOf(e.d) === "aviso")) continue;
+      out.semEstoque.push({ ...o, last_event_at: t?.last_event_at ?? null, _track: t, _events: evs, _flagNote: f.note, _flaggedAt: f.flagged_at });
+    }
+  }
+  const outOfStock = new Set(out.semEstoque.map((o) => o.id));
   const resentDelivered = new Set(out.reenvioEntregue.map((o) => o.id));
   for (const [k, list] of [...out.naoPostado]) {
-    const rest = list.filter((o) => !resentDelivered.has(o.id));
+    const rest = list.filter((o) => !resentDelivered.has(o.id) && !outOfStock.has(o.id));
     if (rest.length) out.naoPostado.set(k, rest); else out.naoPostado.delete(k);
   }
-  const specific = new Set([...out.cliente, ...out.repassado, ...out.reenvioEntregue, ...[...out.naoPostado.values()].flat()].map((o) => o.id));
+  const specific = new Set([...out.cliente, ...out.repassado, ...out.reenvioEntregue, ...out.semEstoque, ...[...out.naoPostado.values()].flat()].map((o) => o.id));
   out.entrega = out.entrega.filter((o) => !specific.has(o.id) && !noticeNums.has(String(o.order_number)));
   out.semFase = [...unknown.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count);
 
@@ -185,6 +205,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
     out.cliente = split("rastreio:cliente", out.cliente);
     out.repassado = split("rastreio:repassado", out.repassado);
     out.reenvioEntregue = split("rastreio:reenvio_entregue", out.reenvioEntregue);
+    out.semEstoque = split("rastreio:sem_estoque", out.semEstoque);
     out.semEvento = split("fora:sem_evento", out.semEvento);
     out.statusDiverge = split("fora:status", out.statusDiverge);
     out.localNova = split("fora:local", out.localNova);

@@ -744,6 +744,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      order_supplier_flags: {
+        Row: {
+          flagged_at: string;
+          flagged_by: string | null;
+          kind: string;
+          note: string | null;
+          order_id: string;
+          owner_id: string;
+          tracking_code: string | null;
+        };
+        Insert: {
+          flagged_at?: string;
+          flagged_by?: string | null;
+          kind?: string;
+          note?: string | null;
+          order_id: string;
+          owner_id: string;
+          tracking_code?: string | null;
+        };
+        Update: {
+          flagged_at?: string;
+          flagged_by?: string | null;
+          kind?: string;
+          note?: string | null;
+          order_id?: string;
+          owner_id?: string;
+          tracking_code?: string | null;
+        };
+        Relationships: [];
+      };
       gratitude_entries: {
         Row: {
           content: string;

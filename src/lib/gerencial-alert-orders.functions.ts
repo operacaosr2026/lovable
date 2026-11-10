@@ -84,6 +84,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "rastreio:cliente" ? sit.cliente
         : data.key === "rastreio:repassado" ? sit.repassado
         : data.key === "rastreio:reenvio_entregue" ? sit.reenvioEntregue
+        : data.key === "rastreio:sem_estoque" ? sit.semEstoque
         : data.key === "rastreio:nao_postado" ? [...sit.naoPostado.values()].flat()
         : data.key.startsWith("rastreio:nao_postado:") ? (sit.naoPostado.get(data.key.slice("rastreio:nao_postado:".length)) ?? [])
         : data.key.startsWith("fora:transportadora:") ? (sit.transportadoraNova.get(data.key.slice("fora:transportadora:".length)) ?? [])
@@ -106,7 +107,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       // (mesma regra do Gerencial).
       if (data.key.startsWith("track123:lote:") && nums.length) {
         const sit = await trackingSituations(ownerId, await companyShopIdsForMonth(ownerId, `${data.month}-01`), now);
-        const specific = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
+        const specific = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...sit.semEstoque, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
         const rest = nums.filter((x) => !specific.has(x));
         if (rest.length) nums = rest;
       }
@@ -154,6 +155,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       const reason = data.key === "rastreio:nao_postado" || data.key.startsWith("rastreio:nao_postado:")
         ? `Só aviso de etiqueta há ${daysStopped ?? "?"}d — não postado`
         : data.key === "rastreio:reenvio_entregue" ? "Pacote antigo entregue"
+        : data.key === "rastreio:sem_estoque" ? `Sem estoque no fornecedor${o._flaggedAt ? ` (avisado ${new Date(o._flaggedAt).toLocaleDateString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit" })})` : ""}`
         : data.key === "rastreio:repassado" ? `Com a transportadora local há ${daysStopped ?? "?"}d`
         : data.key === "rastreio:cliente" ? "Endereço / devolução / falha na entrega"
         : data.key.startsWith("fora:transportadora:") ? "Código de transportadora não cadastrada"
@@ -202,6 +204,29 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       ...(out.some((o) => o.resent) ? [{ label: "Já reenviados", value: `${out.filter((o) => o.resent).length}` }] : []),
     ].filter((x) => x.value);
     return { orders: out, resolved, analysis: out.length ? analysis : [], canResolve: situation };
+  });
+
+// Aviso do fornecedor "sem estoque" num pedido (ou desfazer): vira o alerta
+// "Sem estoque no fornecedor" e sai de "não postado" até o pacote andar.
+export const flagOrderOutOfStock = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ orderId: z.string().uuid(), note: z.string().trim().max(500).nullable().default(null), undo: z.boolean().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as Ctx & { userId: string };
+    if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
+    const q = supabaseAdmin.from("order_supplier_flags");
+    if (data.undo) {
+      const { error } = await q.delete().eq("owner_id", ctx.ownerId).eq("order_id", data.orderId).eq("kind", "sem_estoque");
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+    const { data: o, error: oErr } = await supabaseAdmin.from("shop_orders").select("tracking_code").eq("user_id", ctx.ownerId).eq("id", data.orderId).maybeSingle();
+    if (oErr) throw new Error(oErr.message);
+    if (!o) throw new Error("Pedido não encontrado");
+    const { error } = await q.upsert({ owner_id: ctx.ownerId, order_id: data.orderId, kind: "sem_estoque", note: data.note ?? "Fornecedor avisou: sem estoque.",
+      tracking_code: String(o.tracking_code ?? "").trim(), flagged_by: ctx.userId, flagged_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // Marcar (ou desmarcar) um pedido como resolvido num alerta de rastreio: sai

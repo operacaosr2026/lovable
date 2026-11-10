@@ -73,6 +73,7 @@ const ddmmMsg = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(
 
 function alertSupplierHead(key: string): string {
   if (key === "rastreio:reenvio_entregue") return "Os pedidos abaixo foram reenviados, mas o pacote antigo já foi entregue ao cliente. Favor *cancelar o reenvio*:";
+  if (key === "rastreio:sem_estoque") return "Sobre os pedidos abaixo, que vocês avisaram estar *sem estoque*: tem previsão de quando chega o estoque? Se não tiver, podemos trocar o modelo/tamanho?";
   if (key.startsWith("rastreio:nao_postado")) return "Os pedidos abaixo estão com etiqueta gerada mas *ainda não foram postados*. Favor despachar com urgência:";
   if (key === "rastreio:repassado") return "Os pedidos abaixo foram repassados à transportadora local dos EUA e estão *sem movimento*. Favor verificar e passar o código de rastreio local:";
   if (key === "rastreio:cliente") return "Os pedidos abaixo tiveram *problema na entrega* (endereço / devolução / falha). Favor verificar com a transportadora:";

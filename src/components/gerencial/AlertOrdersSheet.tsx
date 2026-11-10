@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { BellRing, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, EyeOff, ExternalLink, Loader2, Mail, MessageCircle, RotateCcw, Undo2 } from "lucide-react";
+import { BellRing, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, EyeOff, ExternalLink, Loader2, Mail, MessageCircle, PackageX, RotateCcw, Undo2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { getAlertOrders, resolveAlertOrder, type AlertOrder } from "@/lib/gerencial-alert-orders.functions";
+import { flagOrderOutOfStock, getAlertOrders, resolveAlertOrder, type AlertOrder } from "@/lib/gerencial-alert-orders.functions";
 import { listNoticeTemplates, queueOrderNotices } from "@/lib/order-notices.functions";
 import { buildAlertSupplierMessage } from "@/lib/order-message";
 
@@ -39,6 +39,22 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
       qc.invalidateQueries({ queryKey: ["alert-orders", alert.key, month] });
       qc.invalidateQueries({ queryKey: ["gerencial", month] });
       toast.success(v.undo ? "Pedido voltou pro alerta" : "Marcado como resolvido");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Sem estoque (aviso do fornecedor): nos não postados / atenção na entrega
+  // marca; no próprio alerta "sem estoque" desfaz.
+  const isOutOfStockAlert = alert.key === "rastreio:sem_estoque";
+  const canFlagStock = canResolve && (isOutOfStockAlert || alert.key.startsWith("rastreio:nao_postado") || alert.key === "entrega");
+  const flagFn = useServerFn(flagOrderOutOfStock);
+  const flag = useMutation({
+    mutationFn: (orderId: string) => flagFn({ data: { orderId, undo: isOutOfStockAlert } }),
+    onSuccess: (_r, orderId) => {
+      setSel((s) => { const n = new Set(s); n.delete(orderId); return n; });
+      qc.invalidateQueries({ queryKey: ["alert-orders"] });
+      qc.invalidateQueries({ queryKey: ["gerencial", month] });
+      toast.success(isOutOfStockAlert ? "Tirado de \"sem estoque\" — volta pro alerta de rastreio dele" : "Marcado como sem estoque — foi pro alerta \"Sem estoque no fornecedor\"");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -161,7 +177,10 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
                     {orders.map((o) => (
                       <OrderRow key={o.id} o={o} on={sel.has(o.id)} onToggle={() => toggle(o.id)}
                         onResolve={canResolve ? () => resolve.mutate({ orderId: o.id }) : undefined}
-                        busy={resolve.isPending && resolve.variables?.orderId === o.id} />
+                        busy={resolve.isPending && resolve.variables?.orderId === o.id}
+                        onFlagStock={canFlagStock ? () => flag.mutate(o.id) : undefined}
+                        flagLabel={isOutOfStockAlert ? "Tem estoque" : "Sem estoque"}
+                        flagBusy={flag.isPending && flag.variables === o.id} />
                     ))}
                   </div>
                 </div>
@@ -202,7 +221,10 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
   );
 }
 
-function OrderRow({ o, on, onToggle, onResolve, busy }: { o: AlertOrder; on: boolean; onToggle: () => void; onResolve?: () => void; busy?: boolean }) {
+function OrderRow({ o, on, onToggle, onResolve, busy, onFlagStock, flagLabel, flagBusy }: {
+  o: AlertOrder; on: boolean; onToggle: () => void; onResolve?: () => void; busy?: boolean;
+  onFlagStock?: () => void; flagLabel?: string; flagBusy?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const tone = useMemo(() => ((o.daysStopped ?? 0) >= 10 ? "text-rose-600" : (o.daysStopped ?? 0) >= 5 ? "text-amber-600" : "text-muted-foreground"), [o.daysStopped]);
   return (
@@ -220,6 +242,13 @@ function OrderRow({ o, on, onToggle, onResolve, busy }: { o: AlertOrder; on: boo
           {o.lastEvent && <p className="text-xs text-muted-foreground mt-0.5 break-words">Último: {o.lastEvent}{o.lastEventAt ? ` (${ddmm(o.lastEventAt)})` : ""}</p>}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {onFlagStock && (
+            <button onClick={onFlagStock} disabled={flagBusy}
+              title={flagLabel === "Sem estoque" ? "O fornecedor avisou que não tem estoque — vai pro alerta \"Sem estoque no fornecedor\" até o pacote andar" : "Não está mais sem estoque — volta pro alerta de rastreio dele"}
+              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-amber-700 hover:border-amber-500/50 hover:bg-amber-500/5 inline-flex items-center gap-1 disabled:opacity-50">
+              {flagBusy ? <Loader2 className="size-3.5 animate-spin" /> : <PackageX className="size-3.5" />} {flagLabel}
+            </button>
+          )}
           {onResolve && (
             <button onClick={onResolve} disabled={busy} title="Marcar como resolvido — sai deste alerta pra toda a equipe (enquanto o código de rastreio for o mesmo)"
               className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-emerald-700 hover:border-emerald-500/50 hover:bg-emerald-500/5 inline-flex items-center gap-1 disabled:opacity-50">
