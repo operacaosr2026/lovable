@@ -47,6 +47,9 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
   const [charge, setCharge] = useState(false);
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<RefundReason | null>(null);
+  // Pedido ainda não enviado: cancelar na Shopify junto (já vem marcado).
+  const [cancelOrder, setCancelOrder] = useState(true);
+  const willCancel = mode === "total" && !!setup.data?.canCancel && cancelOrder;
 
   // Reembolso do fornecedor junto: marca na aba Reembolso (valor sugerido =
   // custo do fornecedor do pedido, editável). Some se o pedido já está marcado.
@@ -96,13 +99,14 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
   const submit = useMutation({
     mutationFn: async () => {
       if (canApprove && !(await confirm({
-        title: `Reembolsar ${formatMoney(amount, s!.currency)}?`,
-        description: `O dinheiro volta pro cliente pelo mesmo meio de pagamento do pedido ${s!.orderNumber ?? ""}. Não dá pra desfazer.`,
-        confirmText: "Reembolsar", variant: "destructive",
+        title: `Reembolsar ${formatMoney(amount, s!.currency)}${willCancel ? " e cancelar" : ""}?`,
+        description: `O dinheiro volta pro cliente pelo mesmo meio de pagamento do pedido ${s!.orderNumber ?? ""}${willCancel ? ", e o pedido é cancelado na Shopify" : ""}. Não dá pra desfazer.`,
+        confirmText: willCancel ? "Reembolsar e cancelar" : "Reembolsar", variant: "destructive",
       }))) return null;
       const res = await requestFn({ data: {
         orderId, conversationId, mode, reason, lines: mode === "itens" ? lines : [], includeShipping: mode === "itens" && shipping,
         amount: mode === "valor" ? amount : null, notifyCustomer: notify, chargeOnDelivery: mode === "total" && charge, note: note.trim() || null,
+        cancelOrder: willCancel,
       } });
       if (canSupplier && supplier) {
         // O reembolso do cliente já foi; se marcar o fornecedor falhar, só avisa.
@@ -116,7 +120,10 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
     },
     onSuccess: (res: any) => {
       if (!res) return;
-      if (res.status === "aprovado") toast.success(`Reembolso de ${formatMoney(res.amount, res.currency)} feito`);
+      if (res.status === "aprovado") {
+        toast.success(`Reembolso de ${formatMoney(res.amount, res.currency)} feito${res.cancelled ? " e pedido cancelado" : ""}`);
+        if (res.cancelError) toast.error(res.cancelError, { description: "Cancele o pedido direto na Shopify." });
+      }
       else toast.success("Reembolso enviado pra aprovação", { description: "Quem aprova recebe o aviso no sino." });
       qc.invalidateQueries({ queryKey: ["refund-requests"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
@@ -164,6 +171,15 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
 
             {mode === "total" && (
               <p className="text-xs text-muted-foreground">Devolve tudo o que ainda está disponível, incluindo o frete.</p>
+            )}
+            {mode === "total" && s.canCancel && (
+              <label className="flex items-start gap-2 text-xs cursor-pointer rounded-lg border border-border p-2.5">
+                <input type="checkbox" checked={cancelOrder} onChange={(e) => setCancelOrder(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Cancelar o pedido também
+                  <span className="block text-[11px] text-muted-foreground">Ainda não foi enviado: cancela na Shopify depois do reembolso e sai da fila do fornecedor.</span>
+                </span>
+              </label>
             )}
 
             {mode === "itens" && (
@@ -290,7 +306,7 @@ export function RefundDialog({ orderId, conversationId, open, onClose }: {
             <button onClick={() => submit.mutate()} disabled={!ready || submit.isPending}
               className={`h-9 w-full rounded-lg text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2 ${canApprove ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}>
               {submit.isPending && <Loader2 className="size-4 animate-spin" />}
-              {canApprove ? `Reembolsar ${formatMoney(amount, s.currency)}` : "Enviar pra aprovação"}
+              {canApprove ? `Reembolsar ${formatMoney(amount, s.currency)}${willCancel ? " e cancelar" : ""}` : "Enviar pra aprovação"}
             </button>
           </div>
           )
@@ -320,6 +336,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 export type RefundRequestView = {
   id: string; order_id: string; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean;
   amount: number; currency: string; notify_customer: boolean; charge_on_delivery: boolean; note: string | null; status: string;
+  cancel_order?: boolean; order_cancelled_at?: string | null;
   requestedByName: string | null; decidedByName: string | null; decided_at: string | null; reject_reason: string | null;
   refunded_amount: number | null; error: string | null; created_at: string;
 };
@@ -353,7 +370,8 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
     },
     onSuccess: (res: any) => {
       if (!res) return;
-      toast.success(res.status === "aprovado" ? `Reembolso de ${formatMoney(res.amount, r.currency)} feito` : "Reembolso recusado");
+      toast.success(res.status === "aprovado" ? `Reembolso de ${formatMoney(res.amount, r.currency)} feito${res.cancelled ? " e pedido cancelado" : ""}` : "Reembolso recusado");
+      if (res.cancelError) toast.error(res.cancelError, { description: "Cancele o pedido direto na Shopify." });
       setRejecting(false);
     },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
@@ -377,7 +395,7 @@ export function RefundRequestCard({ r, canApprove }: { r: RefundRequestView; can
         {/* Feito não precisa de etiqueta: a linha "Aprovado por" já diz. */}
         {r.status !== "aprovado" && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${st.cls}`}>{st.label}</span>}
       </div>
-      <p className="text-[11px]">{what}{r.charge_on_delivery ? " · cobrar quando entregar" : ""}</p>
+      <p className="text-[11px]">{what}{r.cancel_order ? (r.order_cancelled_at ? " · pedido cancelado" : " · cancelar o pedido") : ""}{r.charge_on_delivery ? " · cobrar quando entregar" : ""}</p>
       {r.reason && <p className="text-[11px] text-muted-foreground">Motivo: {refundReasonLabel(r.reason)}</p>}
       <WhoWhen label="Solicitado" name={r.requestedByName ?? "Equipe"} at={r.created_at} />
       {r.status === "aprovado" && r.decided_at && (

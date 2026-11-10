@@ -29,6 +29,29 @@ const money = (v: number, cur: string) => {
 const amt = (m: any) => Number(m?.shopMoney?.amount ?? 0);
 const orderGid = (o: { raw: any }) => o.raw?.admin_graphql_api_id ?? `gid://shopify/Order/${o.raw?.id}`;
 
+// Cancelar junto com o reembolso total: só pedido que ainda não saiu (a Shopify
+// diz "não processado") e que não foi cancelado.
+const canCancelOrder = (shopifyOrder: any) =>
+  !shopifyOrder?.cancelledAt && String(shopifyOrder?.displayFulfillmentStatus ?? "") === "UNFULFILLED";
+
+// Motivo do reembolso → motivo de cancelamento da Shopify.
+const cancelReasonOf = (reason: string | null) => (reason === "outro" ? "OTHER" : "CUSTOMER");
+
+// Cancela o pedido na Shopify sem reembolsar de novo (o reembolso já saiu pelo
+// refundCreate) e sem voltar ao estoque. Já cancelado = ok.
+async function cancelShopifyOrder(shopId: string, gid: string, reason: string | null, note: string) {
+  const cur = await shopifyGql(shopId, `query CancelState($id: ID!) { order(id: $id) { cancelledAt displayFulfillmentStatus } }`, { id: gid });
+  if (cur?.order?.cancelledAt) return;
+  if (String(cur?.order?.displayFulfillmentStatus ?? "") !== "UNFULFILLED") throw new Error("o pedido já foi processado/enviado");
+  const out = (await shopifyGql(shopId, `mutation SupportCancel($id: ID!, $reason: OrderCancelReason!, $note: String) {
+    orderCancel(orderId: $id, reason: $reason, restock: false, notifyCustomer: false, staffNote: $note) {
+      job { id } orderCancelUserErrors { message }
+    }
+  }`, { id: gid, reason: cancelReasonOf(reason), note }))?.orderCancel;
+  if (out?.orderCancelUserErrors?.length) throw new Error(out.orderCancelUserErrors.map((e: any) => e.message).join("; ").slice(0, 200));
+  if (!out?.job?.id) throw new Error("a Shopify não confirmou o cancelamento");
+}
+
 // Valor, itens e transações que a Shopify sugere pro reembolso pedido.
 async function suggest(shopId: string, orderId: string, mode: RefundMode, lines: { lineItemId: string; quantity: number }[], shipping: boolean) {
   const full = mode !== "itens";
@@ -66,7 +89,7 @@ export const getRefundSetup = createServerFn({ method: "GET" })
     const o = await loadOrder(context.ownerId, data.orderId);
     const res = await shopifyGql(o.shop_id, `query RefundOrder($id: ID!) {
       order(id: $id) {
-        name cancelledAt
+        name cancelledAt displayFulfillmentStatus
         totalReceivedSet { shopMoney { amount currencyCode } }
         totalRefundedSet { shopMoney { amount } }
         lineItems(first: 50) { nodes { id title variantTitle refundableQuantity discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } } } }
@@ -88,6 +111,8 @@ export const getRefundSetup = createServerFn({ method: "GET" })
       maxRefundable: amt(order.suggestedRefund?.amountSet),
       shippingRefundable: amt(order.suggestedRefund?.shipping?.amountSet),
       canApprove: isApprover(context as Ctx),
+      // Dá pra cancelar junto: ainda não enviado (nada despachado) e não cancelado.
+      canCancel: canCancelOrder(order),
       lines: ((order.lineItems?.nodes ?? []) as any[]).filter((l) => l.refundableQuantity > 0).map((l) => ({
         id: l.id as string, title: l.title as string, variantTitle: (l.variantTitle as string) || null,
         refundable: l.refundableQuantity as number, unitPrice: amt(l.discountedUnitPriceAfterAllDiscountsSet),
@@ -121,7 +146,7 @@ export const listRefundRequests = createServerFn({ method: "GET" })
     assertAccess(context as Ctx);
     if (!data.orderIds.length) return { canApprove: isApprover(context as Ctx), requests: [] };
     const { data: rows, error } = await db("support_refund_requests")
-      .select("id,order_id,order_number,mode,reason,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at")
+      .select("id,order_id,order_number,mode,reason,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,cancel_order,order_cancelled_at,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at")
       .eq("owner_id", context.ownerId).in("order_id", data.orderIds).order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     const name = await personNames((rows ?? []).flatMap((r: any) => [r.requested_by, r.decided_by]));
@@ -149,10 +174,13 @@ export const requestRefund = createServerFn({ method: "POST" })
     notifyCustomer: z.boolean(),
     chargeOnDelivery: z.boolean().default(false),
     note: z.string().trim().max(1000).nullable(),
+    // Cancelar o pedido na Shopify junto (só reembolso total de pedido não enviado).
+    cancelOrder: z.boolean().default(false),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
     assertAccess(ctx);
+    if (data.cancelOrder && data.mode !== "total") throw new Error("Cancelar o pedido só junto com o reembolso do pedido inteiro");
     if (data.mode === "itens" && !data.lines.length) throw new Error("Escolha pelo menos um item");
     if (data.mode === "valor" && !data.amount) throw new Error("Digite o valor do reembolso");
     const o = await loadOrder(ctx.ownerId, data.orderId);
@@ -166,6 +194,10 @@ export const requestRefund = createServerFn({ method: "POST" })
     const amount = data.mode === "valor" ? Math.round(data.amount! * 100) / 100 : plan.amount;
     if (amount <= 0) throw new Error("Nada a reembolsar neste pedido");
     if (amount > full.amount + 0.001) throw new Error(`Valor maior que o reembolsável (${money(full.amount, full.currency)})`);
+    if (data.cancelOrder) {
+      const st = await shopifyGql(o.shop_id, `query CancelState($id: ID!) { order(id: $id) { cancelledAt displayFulfillmentStatus } }`, { id: orderGid(o) });
+      if (!canCancelOrder(st?.order)) throw new Error("Esse pedido não dá pra cancelar (já foi enviado ou já está cancelado) — desmarque \"Cancelar o pedido\"");
+    }
 
     const customer = customerOf(o.raw);
     const { data: row, error } = await db("support_refund_requests").insert({
@@ -173,16 +205,17 @@ export const requestRefund = createServerFn({ method: "POST" })
       order_id: o.id, order_number: o.order_number, customer_email: customer.email, customer_name: customer.name,
       mode: data.mode, reason: data.reason, line_items: data.mode === "itens" ? data.lines : [], include_shipping: data.mode === "itens" && data.includeShipping,
       amount, currency: plan.currency, notify_customer: data.notifyCustomer, charge_on_delivery: data.mode === "total" && data.chargeOnDelivery, note: data.note,
+      cancel_order: data.cancelOrder,
     }).select("id").single();
     if (error) throw new Error(error.message);
 
     if (isApprover(ctx)) {
       const r = await executeRefund(ctx, row.id);
-      return { status: "aprovado" as const, amount: r.amount, currency: plan.currency };
+      return { status: "aprovado" as const, amount: r.amount, currency: plan.currency, cancelled: r.cancelled, cancelError: r.cancelError };
     }
 
     const who = await personName(ctx.userId);
-    const what = data.mode === "total" ? "pedido inteiro"
+    const what = data.mode === "total" ? (data.cancelOrder ? "pedido inteiro + cancelar o pedido" : "pedido inteiro")
       : data.mode === "valor" ? "valor avulso"
       : data.lines.map((l) => `${l.quantity}× ${l.title}${l.variant_title ? ` (${l.variant_title})` : ""}`).join(", ") + (data.includeShipping ? " + frete" : "");
     await raiseNotification(ctx.ownerId, noticeKey(row.id), {
@@ -205,7 +238,7 @@ export const decideRefund = createServerFn({ method: "POST" })
     if (!isApprover(ctx)) throw new Error("Sem permissão para aprovar reembolsos");
     if (data.approve) {
       const r = await executeRefund(ctx, data.id);
-      return { status: "aprovado" as const, amount: r.amount };
+      return { status: "aprovado" as const, amount: r.amount, cancelled: r.cancelled, cancelError: r.cancelError };
     }
     const { data: done, error } = await db("support_refund_requests").update({
       status: "recusado", decided_by: ctx.userId, decided_at: new Date().toISOString(), reject_reason: data.reason,
@@ -233,7 +266,8 @@ export const setRefundReason = createServerFn({ method: "POST" })
 
 // Faz o reembolso na Shopify. Trava em "gerando" (dois cliques não reembolsam
 // 2x); nova tentativa depois de erro confere antes se o reembolso já entrou.
-async function executeRefund(ctx: Ctx, id: string): Promise<{ amount: number }> {
+type RefundResult = { amount: number; cancelled: boolean; cancelError: string | null };
+async function executeRefund(ctx: Ctx, id: string): Promise<RefundResult> {
   const { data: claimed, error: claimErr } = await db("support_refund_requests")
     .update({ status: "gerando", error: null, decided_by: ctx.userId, decided_at: new Date().toISOString() })
     .eq("id", id).eq("owner_id", ctx.ownerId).in("status", ["pendente", "erro"]).select("*");
@@ -241,17 +275,33 @@ async function executeRefund(ctx: Ctx, id: string): Promise<{ amount: number }> 
   const r = claimed?.[0];
   if (!r) throw new Error("Esse reembolso já foi decidido ou está sendo feito");
 
-  const finish = async (refund: { id: string; amount: number }) => {
-    await db("support_refund_requests").update({ status: "aprovado", refund_id: refund.id, refunded_amount: refund.amount, error: null }).eq("id", id);
+  let shop: { shopId: string; gid: string } | null = null;
+  const finish = async (refund: { id: string; amount: number }): Promise<RefundResult> => {
+    // Cancelar junto (pedido não enviado): depois do reembolso. Se falhar, o
+    // reembolso já foi — fica registrado o erro do cancelamento pra cancelar à mão.
+    let cancelled = false, cancelError: string | null = null;
+    if (r.cancel_order && !r.order_cancelled_at && shop) {
+      try {
+        await cancelShopifyOrder(shop.shopId, shop.gid, r.reason, `Cancelado pelo SRX Growth junto com o reembolso — motivo: ${refundReasonLabel(r.reason)} ${marker(id)}`);
+        cancelled = true;
+      } catch (e: any) {
+        cancelError = `Reembolsado, mas não cancelou o pedido na Shopify: ${String(e?.message ?? e).slice(0, 200)}`;
+      }
+    }
+    await db("support_refund_requests").update({
+      status: "aprovado", refund_id: refund.id, refunded_amount: refund.amount, error: cancelError,
+      ...(cancelled ? { order_cancelled_at: new Date().toISOString() } : {}),
+    }).eq("id", id);
     await resolveNotification(ctx.ownerId, noticeKey(id));
     await tellRequester(ctx, "reembolso_res", r, `Reembolso aprovado — ${r.order_number ?? "pedido"}`,
-      `${money(refund.amount, r.currency)} devolvido ao cliente.`);
-    return { amount: refund.amount };
+      `${money(refund.amount, r.currency)} devolvido ao cliente.${cancelled ? " Pedido cancelado na Shopify." : cancelError ? ` ${cancelError}` : ""}`);
+    return { amount: refund.amount, cancelled, cancelError };
   };
 
   try {
     const o = await loadOrder(ctx.ownerId, r.order_id);
     const gid = orderGid(o);
+    shop = { shopId: o.shop_id, gid };
 
     const prev = await shopifyGql(o.shop_id, `query RefundDone($id: ID!) {
       order(id: $id) { refunds(first: 50) { id note totalRefundedSet { shopMoney { amount } } } }

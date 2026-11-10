@@ -29,7 +29,7 @@ type Base = {
 };
 type RefundItem = Base & {
   kind: "reembolso"; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean; amount: number; currency: string;
-  notify_customer: boolean; charge_on_delivery: boolean; refunded_amount: number | null;
+  notify_customer: boolean; charge_on_delivery: boolean; cancel_order?: boolean; order_cancelled_at?: string | null; refunded_amount: number | null;
 };
 type ExchangeReq = Base & { kind: "troca"; fault: ExchangeFault; reason: string | null; shipping_address: Record<string, string | null> | null; items: ExchangeItem[]; new_order_name: string | null };
 type Item = RefundItem | ExchangeReq;
@@ -468,7 +468,9 @@ function useApprovalActions() {
       for (const i of list) {
         try {
           const fn = i.kind === "reembolso" ? refundFn : exchangeFn;
-          await fn({ data: { id: i.id, approve, reason: approve ? null : reason } });
+          const res: any = await fn({ data: { id: i.id, approve, reason: approve ? null : reason } });
+          // Reembolso feito, mas o cancelamento na Shopify falhou: avisa (cancelar à mão).
+          if (res?.cancelError) fails.push(`${i.order_number ?? "Pedido"}: ${res.cancelError}`);
         } catch (e: any) {
           fails.push(`${i.order_number ?? "Pedido"}: ${e?.message ?? "erro"}`);
         }
@@ -608,6 +610,7 @@ function DetailPanel({ i, canApprove, actions, onClose, onOpenConversation }: {
                   <Info label="Devolve" value={refundWhat(i)} />
                   <Info label="Avisa o cliente" value={i.notify_customer ? "Sim (e-mail da Shopify)" : "Não"} />
                   {i.charge_on_delivery && <Info label="Cobrança" value="Cobrar quando entregar" />}
+                  {i.cancel_order && <Info label="Pedido" value={i.order_cancelled_at ? `Cancelado na Shopify (${fullTime(i.order_cancelled_at)})` : "Cancelar na Shopify junto (ainda não enviado)"} />}
                 </>
               ) : (
                 <>
