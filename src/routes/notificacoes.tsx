@@ -798,7 +798,7 @@ function TemplatesDialog({ open, onOpenChange, templates }: { open: boolean; onO
         <DialogHeader>
           <DialogTitle>Mensagens</DialogTitle>
           <DialogDescription>
-            Escritas em inglês, como o cliente recebe. Use <code>{"{nome}"}</code> (primeiro nome), <code>{"{pedido}"}</code> (nº do pedido) e <code>{"{rastreio}"}</code> (link de rastreio).
+            Escritas em inglês, como o cliente recebe. Use <code>{"{nome}"}</code> (primeiro nome), <code>{"{pedido}"}</code> (nº do pedido), <code>{"{rastreio}"}</code> (link de rastreio) e <code>{"{itens}"}</code> (itens repetidos do pedido — usado em "Confirmar itens repetidos", que sai pelo botão em Lojas e Grupos › Pedidos).
           </DialogDescription>
         </DialogHeader>
         <div className="grid sm:grid-cols-[220px_1fr] gap-4 min-w-0">

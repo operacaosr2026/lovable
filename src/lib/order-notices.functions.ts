@@ -8,6 +8,7 @@ import { sanitizeEvents } from "@/lib/tracking-display";
 import { getZohoAccount } from "@/lib/zoho-mail.server";
 import { renderNotice, NOTICE_MIN_DAYS, NOTICE_MAX_DAYS } from "@/lib/order-notices";
 import { isoDateUS } from "@/lib/timezone";
+import { REPEATED_CONFIRM_TITLE, repeatedItems, repeatedItemsText } from "@/lib/repeated-items";
 import type { Database } from "@/integrations/supabase/types";
 
 // Aba Notificações: e-mail manual pro cliente de pedido atrasado, antes que ele
@@ -273,15 +274,20 @@ export const queueOrderNotices = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     assertAccess(context);
+    const { data: tpl } = await supabaseAdmin.from("order_notice_templates").select("id,title,subject,body")
+      .eq("id", data.templateId).eq("owner_id", context.ownerId).maybeSingle();
+    if (!tpl) throw new Error("Mensagem não encontrada");
+    return queueNotices(context, tpl, data.orderIds);
+  });
+
+async function queueNotices(context: Ctx, tpl: { id: string; title: string; subject: string; body: string }, orderIds: string[]) {
+    const data = { orderIds };
     const ownerId = context.ownerId;
     const acc = await getZohoAccount(ownerId);
     if (!acc?.refresh_token || !acc.account_id) throw new Error("Zoho Mail não conectado (Atendimento → Configurações)");
-    const { data: tpl } = await supabaseAdmin.from("order_notice_templates").select("id,title,subject,body")
-      .eq("id", data.templateId).eq("owner_id", ownerId).maybeSingle();
-    if (!tpl) throw new Error("Mensagem não encontrada");
     const [{ data: orders, error }, inQueue] = await Promise.all([
       selectAllIn<any>(data.orderIds, (c) => supabaseAdmin.from("shop_orders")
-        .select("id,shop_id,order_number,tracking_code,tracking_url,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,ship_first:raw->shipping_address->>first_name,cancelled_at:raw->>cancelled_at")
+        .select("id,shop_id,order_number,tracking_code,tracking_url,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,ship_first:raw->shipping_address->>first_name,cancelled_at:raw->>cancelled_at,line_items:raw->line_items")
         .eq("user_id", ownerId).in("id", c)),
       selectAllIn<any>(data.orderIds, (c) => supabaseAdmin.from("order_notices").select("order_id")
         .eq("owner_id", ownerId).in("status", ["na_fila", "enviando"]).in("order_id", c)),
@@ -292,6 +298,7 @@ export const queueOrderNotices = createServerFn({ method: "POST" })
     const { data: integs } = await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds);
     const linkTemplate = new Map((integs ?? []).map((i) => [i.shop_id, i.tracking_link_template]));
     const needsLink = /\{rastreio\}/i.test(tpl.body) || /\{rastreio\}/i.test(tpl.subject);
+    const needsItems = /\{itens\}/i.test(tpl.body) || /\{itens\}/i.test(tpl.subject);
 
     // Na ordem em que foram marcados.
     const byId = new Map(orders.map((o) => [o.id, o]));
@@ -308,7 +315,9 @@ export const queueOrderNotices = createServerFn({ method: "POST" })
       if (o.cancelled_at) { skipped.push({ order, motivo: "pedido cancelado" }); continue; }
       if (!z.string().email().safeParse(to).success) { skipped.push({ order, motivo: "sem e-mail do cliente" }); continue; }
       if (needsLink && !link) { skipped.push({ order, motivo: "sem link de rastreio" }); continue; }
-      const vars = { nome: String(o.first_name || o.ship_first || "").trim().split(/\s+/)[0] ?? "", pedido: order, rastreio: link ?? "" };
+      const repeated = repeatedItems(o.line_items);
+      if (needsItems && !repeated.length) { skipped.push({ order, motivo: "sem item repetido" }); continue; }
+      const vars = { nome: String(o.first_name || o.ship_first || "").trim().split(/\s+/)[0] ?? "", pedido: order, rastreio: link ?? "", itens: repeatedItemsText(repeated) };
       rows.push({
         owner_id: ownerId, order_id: o.id, shop_id: o.shop_id, template_id: tpl.id, template_title: tpl.title,
         to_email: to, subject: renderNotice(tpl.subject, vars), body: renderNotice(tpl.body, vars),
@@ -322,6 +331,56 @@ export const queueOrderNotices = createServerFn({ method: "POST" })
       if (insErr) throw new Error(insErr.message);
     }
     return { queued: rows.length, skipped };
+}
+
+// ─── Confirmar itens repetidos (Lojas e Grupos › Pedidos) ─────────────────────
+// Pedido com o mesmo item 2+ vezes (repeated-items.ts): e-mail pedindo pro
+// cliente confirmar, pela mesma fila. A mensagem é criada na 1ª vez (dá pra
+// editar em Notificações › Mensagens). Não segura o pedido — só avisa.
+const REPEATED_CONFIRM_DEFAULT = {
+  title: REPEATED_CONFIRM_TITLE,
+  subject: "Quick check on your order {pedido}",
+  body: "Hi {nome},\n\nThank you for your order {pedido}!\n\nBefore we ship it, we noticed it includes more than one of the same item:\n\n{itens}\n\nWe just want to make sure that's what you intended. If everything is correct, there's nothing you need to do — we'll ship it as planned.\n\nIf it was a mistake, just reply to this email as soon as possible and we'll fix it for you.\n\nThank you!",
+};
+
+async function repeatedConfirmTemplate(ownerId: string) {
+  const { data: found } = await supabaseAdmin.from("order_notice_templates").select("id,title,subject,body")
+    .eq("owner_id", ownerId).eq("title", REPEATED_CONFIRM_TITLE).limit(1).maybeSingle();
+  if (found) return found;
+  const { data: last } = await supabaseAdmin.from("order_notice_templates").select("position")
+    .eq("owner_id", ownerId).order("position", { ascending: false }).limit(1).maybeSingle();
+  const { data: row, error } = await supabaseAdmin.from("order_notice_templates")
+    .insert({ owner_id: ownerId, ...REPEATED_CONFIRM_DEFAULT, position: (last?.position ?? -1) + 1 })
+    .select("id,title,subject,body").single();
+  if (error) throw new Error(error.message);
+  return row;
+}
+
+export const queueRepeatedConfirm = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ orderIds: z.array(z.string().uuid()).min(1).max(200) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    return queueNotices(context, await repeatedConfirmTemplate(context.ownerId), data.orderIds);
+  });
+
+// Situação da confirmação por pedido (o envio mais recente dessa mensagem).
+export const repeatedConfirmStatus = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ orderIds: z.array(z.string().uuid()).max(2000) }).parse(d))
+  .handler(async ({ data, context }): Promise<Record<string, { status: string; at: string | null }>> => {
+    if (!data.orderIds.length) return {};
+    const { data: rows, error } = await selectAllIn<any>(data.orderIds, (c) => supabaseAdmin.from("order_notices")
+      .select("order_id,status,sent_at,queued_at").eq("owner_id", context.ownerId).eq("template_title", REPEATED_CONFIRM_TITLE)
+      .in("status", ["na_fila", "enviando", "enviado", "erro"]).in("order_id", c));
+    if (error) throw new Error(error.message);
+    const out: Record<string, { status: string; at: string | null }> = {};
+    for (const r of rows) {
+      const at = r.sent_at ?? r.queued_at ?? null;
+      const cur = out[r.order_id];
+      if (!cur || String(at) > String(cur.at)) out[r.order_id] = { status: r.status, at };
+    }
+    return out;
   });
 
 export type NoticeQueue = {

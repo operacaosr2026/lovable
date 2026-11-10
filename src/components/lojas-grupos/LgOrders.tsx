@@ -8,17 +8,19 @@ import {
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
 import { orderLineItemsCost, orderItemsQty, orderUsesDefaultCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
+import { repeatedItems } from "@/lib/repeated-items";
+import { queueRepeatedConfirm, repeatedConfirmStatus } from "@/lib/order-notices.functions";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle, Mail, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { isoTodayUS } from "@/lib/timezone";
+import { isoTodayUS, isoDateUS } from "@/lib/timezone";
 
 function fmtMoney(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -208,6 +210,28 @@ export function LgOrders({
   };
 
   const loadedOrders = (ordersQuery.data ?? []) as any[];
+
+  // Mesmo item repetido (mesma cor e tamanho, 2+): confirmar com o cliente por
+  // e-mail antes de despachar. Itens diferentes do mesmo modelo estão ok.
+  const repeatedIds = useMemo(() => loadedOrders
+    .filter((o) => !o.tracking_code && repeatedItems(o.raw?.line_items).length)
+    .map((o) => o.id as string), [loadedOrders]);
+  const confirmStatusFn = useServerFn(repeatedConfirmStatus);
+  const confirmStatus = useQuery({
+    queryKey: ["repeated-confirm", repeatedIds.join(",")],
+    queryFn: () => confirmStatusFn({ data: { orderIds: repeatedIds } }),
+    enabled: repeatedIds.length > 0,
+  });
+  const queueConfirmFn = useServerFn(queueRepeatedConfirm);
+  const confirmRepeated = useMutation({
+    mutationFn: (orderId: string) => queueConfirmFn({ data: { orderIds: [orderId] } }),
+    onSuccess: (r) => {
+      if (r.queued) toast.success("E-mail de confirmação na fila de Notificações");
+      else toast.error(`Não foi pra fila: ${r.skipped.map((s) => s.motivo).join(", ") || "motivo desconhecido"}`);
+      qc.invalidateQueries({ queryKey: ["repeated-confirm"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const allOrders = useMemo(() => term ? loadedOrders.filter((o) => orderMatches(o, term)) : loadedOrders, [loadedOrders, term]);
 
   const shopNames: Record<string, string> = {};
@@ -706,6 +730,35 @@ export function LgOrders({
                                   >Custo padrão</span>
                                 )}
                               </p>
+                              {/* Mesmo item 2+ vezes: confirmar com o cliente antes de despachar. */}
+                              {!o.tracking_code && (() => {
+                                const rep = repeatedItems(o.raw?.line_items);
+                                if (!rep.length) return null;
+                                const st = confirmStatus.data?.[o.id];
+                                const busy = confirmRepeated.isPending && confirmRepeated.variables === o.id;
+                                const sentLabel = st?.status === "enviado" ? `Confirmação enviada ${st.at ? fmtDayMonth(isoDateUS(Date.parse(st.at))) : ""}`
+                                  : st?.status === "na_fila" || st?.status === "enviando" ? "Confirmação na fila" : null;
+                                return (
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                    <span title={rep.map((i) => `${i.qty}x ${i.title}${i.variant ? ` — ${i.variant}` : ""}`).join("\n")}
+                                      className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-violet-500/10 text-violet-600 border-violet-500/20">
+                                      Item repetido · {rep.map((i) => `${i.qty}x ${i.variant ?? i.title}`).join(", ")}
+                                    </span>
+                                    {sentLabel ? (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
+                                        <Check className="size-3" /> {sentLabel}
+                                      </span>
+                                    ) : (
+                                      <button onClick={() => confirmRepeated.mutate(o.id)} disabled={busy}
+                                        title="Manda um e-mail pro cliente confirmar os itens repetidos (fila de Notificações). Não segura o pedido."
+                                        className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium border-border text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 disabled:opacity-50">
+                                        {busy ? <Loader2 className="size-3 animate-spin" /> : <Mail className="size-3" />}
+                                        {st?.status === "erro" ? "Falhou — enviar de novo" : "Confirmar com o cliente"}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               {o.customer_name && <p className="text-xs text-muted-foreground truncate">{o.customer_name}</p>}
                             </div>
                             {(() => { const n = o.raw?.line_items?.length ? orderItemsQty(o.raw.line_items, !!o.tracking_code) : Number(o.items_count ?? 0); return <div className="text-xs text-muted-foreground">{n} {n === 1 ? "item" : "itens"}</div>; })()}

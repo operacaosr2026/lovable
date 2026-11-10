@@ -23,11 +23,13 @@ export const stageOf = (days: number): NoticeStageKey | null =>
 // Número do pedido como o cliente vê (#1234).
 export const customerOrderNumber = (n: string) => (n.startsWith("#") ? n : `#${n}`);
 
-// {nome} = primeiro nome, {pedido} = nº do pedido, {rastreio} = link de rastreio.
-export function renderNotice(text: string, vars: { nome: string; pedido: string; rastreio: string }) {
+// {nome} = primeiro nome, {pedido} = nº do pedido, {rastreio} = link de rastreio,
+// {itens} = itens repetidos do pedido (um por linha — ver repeated-items.ts).
+export function renderNotice(text: string, vars: { nome: string; pedido: string; rastreio: string; itens?: string }) {
   return text
     .replace(/\{nome\}/gi, vars.nome)
     .replace(/\{pedido\}/gi, customerOrderNumber(vars.pedido))
     .replace(/\{rastreio\}/gi, vars.rastreio)
+    .replace(/\{itens\}/gi, vars.itens ?? "")
     .replace(/^(Hi|Hello|Dear) ,/m, "$1,");
 }
