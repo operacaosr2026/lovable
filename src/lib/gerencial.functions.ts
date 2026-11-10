@@ -347,17 +347,24 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
         detail: `${sit.cliente.map((o) => o.order_number).join(", ")}. Fale com o cliente (confirmar endereço) ou decida o reenvio antes de virar chargeback.`,
         metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
     }
-    // Fornecedor avisou que não tem estoque (pedido do usuário em 10/11/2026):
-    // decidir com o cliente (esperar, trocar ou reembolsar). Some sozinho quando
-    // o pacote anda no rastreio.
-    if (sit.semEstoque.length) {
-      const n = sit.semEstoque.length;
-      const oldest = sit.semEstoque.map((o) => Date.parse(o._flaggedAt ?? "") || now).reduce((m, v) => Math.min(m, v), now);
+    // Resposta do fornecedor registrada na tela (Gerencial › "Resposta do
+    // fornecedor"; pedido do usuário em 10/11/2026): um alerta por tipo/título,
+    // com o que ele disse. Some sozinho quando o pacote anda no rastreio.
+    for (const [key, g] of sit.fornecedor) {
+      const n = g.rows.length;
+      const oldest = g.rows.map((o) => Date.parse(o._flaggedAt ?? "") || now).reduce((m, v) => Math.min(m, v), now);
       const dias = Math.floor((now - oldest) / DAY);
-      alerts.push({ key: "rastreio:sem_estoque", kind: "lote", level: "critico",
-        title: `${pl(n, "Pedido", "Pedidos")} sem estoque no fornecedor`, link: "", action: "Ver rastreio",
-        detail: `O fornecedor avisou que não pode enviar por falta de estoque${dias > 0 ? ` (há ${dias} ${dias === 1 ? "dia" : "dias"})` : ""}: ${sit.semEstoque.map((o) => o.order_number).join(", ")}. Decida com o cliente: esperar, trocar o produto ou reembolsar.`,
-        metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
+      const ha = dias > 0 ? ` (há ${dias} ${dias === 1 ? "dia" : "dias"})` : "";
+      const nums = g.rows.map((o) => o.order_number).join(", ");
+      const notes = [...new Set(g.rows.map((o) => String(o._flagNote ?? "").trim()).filter(Boolean))];
+      const said = notes.length === 1 ? ` Ele disse: "${notes[0].slice(0, 160)}"` : "";
+      alerts.push(g.kind === "sem_estoque"
+        ? { key, kind: "lote", level: "critico", title: `${pl(n, "Pedido", "Pedidos")} sem estoque no fornecedor`, link: "", action: "Ver rastreio",
+            detail: `O fornecedor avisou que não pode enviar por falta de estoque${ha}: ${nums}. Decida com o cliente: esperar, trocar o produto ou reembolsar.`,
+            metric: String(n), metricLabel: pl(n, "pedido", "pedidos") }
+        : { key, kind: "lote", level: "atencao", title: g.title, link: "", action: "Ver rastreio",
+            detail: `Resposta do fornecedor${ha}: ${nums}.${said}`,
+            metric: String(n), metricLabel: pl(n, "pedido", "pedidos") });
     }
     // Não postados: um alerta só, todas as transportadoras juntas (pedido do
     // usuário em 06/11/2026 — "é tudo não postado"); a divisão fica na gaveta.

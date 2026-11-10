@@ -752,6 +752,7 @@ export type Database = {
           note: string | null;
           order_id: string;
           owner_id: string;
+          title: string | null;
           tracking_code: string | null;
         };
         Insert: {
@@ -761,6 +762,7 @@ export type Database = {
           note?: string | null;
           order_id: string;
           owner_id: string;
+          title?: string | null;
           tracking_code?: string | null;
         };
         Update: {
@@ -770,6 +772,7 @@ export type Database = {
           note?: string | null;
           order_id?: string;
           owner_id?: string;
+          title?: string | null;
           tracking_code?: string | null;
         };
         Relationships: [];

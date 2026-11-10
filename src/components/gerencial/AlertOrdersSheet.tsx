@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { BellRing, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, EyeOff, ExternalLink, Loader2, Mail, MessageCircle, PackageX, RotateCcw, Undo2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { flagOrderOutOfStock, getAlertOrders, resolveAlertOrder, type AlertOrder } from "@/lib/gerencial-alert-orders.functions";
+import { isSupplierReplyAlert } from "@/lib/supplier-replies";
 import { listNoticeTemplates, queueOrderNotices } from "@/lib/order-notices.functions";
 import { buildAlertSupplierMessage } from "@/lib/order-message";
 
@@ -45,7 +46,8 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
 
   // Sem estoque (aviso do fornecedor): nos não postados / atenção na entrega
   // marca; no próprio alerta "sem estoque" desfaz.
-  const isOutOfStockAlert = alert.key === "rastreio:sem_estoque";
+  // Alerta de resposta do fornecedor: o botão tira a resposta (volta pros alertas de rastreio).
+  const isOutOfStockAlert = isSupplierReplyAlert(alert.key);
   const canFlagStock = canResolve && (isOutOfStockAlert || alert.key.startsWith("rastreio:nao_postado") || alert.key === "entrega");
   const flagFn = useServerFn(flagOrderOutOfStock);
   const flag = useMutation({
@@ -54,7 +56,7 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
       setSel((s) => { const n = new Set(s); n.delete(orderId); return n; });
       qc.invalidateQueries({ queryKey: ["alert-orders"] });
       qc.invalidateQueries({ queryKey: ["gerencial", month] });
-      toast.success(isOutOfStockAlert ? "Tirado de \"sem estoque\" — volta pro alerta de rastreio dele" : "Marcado como sem estoque — foi pro alerta \"Sem estoque no fornecedor\"");
+      toast.success(isOutOfStockAlert ? "Resposta do fornecedor tirada — o pedido volta pro alerta de rastreio dele" : "Marcado como sem estoque — foi pro alerta \"Sem estoque no fornecedor\"");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -179,7 +181,7 @@ export function AlertOrdersSheet({ alert, month, onClose, onDismiss }: {
                         onResolve={canResolve ? () => resolve.mutate({ orderId: o.id }) : undefined}
                         busy={resolve.isPending && resolve.variables?.orderId === o.id}
                         onFlagStock={canFlagStock ? () => flag.mutate(o.id) : undefined}
-                        flagLabel={isOutOfStockAlert ? "Tem estoque" : "Sem estoque"}
+                        flagLabel={alert.key === "rastreio:sem_estoque" ? "Tem estoque" : isOutOfStockAlert ? "Tirar resposta" : "Sem estoque"}
                         flagBusy={flag.isPending && flag.variables === o.id} />
                     ))}
                   </div>
@@ -239,12 +241,13 @@ function OrderRow({ o, on, onToggle, onResolve, busy, onFlagStock, flagLabel, fl
             {o.notifiedAt && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-700 px-1.5 py-0.5 text-[10px] font-semibold"><CheckCircle2 className="size-3" />avisado {ddmm(o.notifiedAt)}</span>}
           </div>
           <p className={`text-xs font-medium mt-1 ${tone}`}>{o.reason}{o.phase !== "—" ? ` · ${o.phase}` : ""}</p>
+          {o.supplierNote && <p className="text-xs mt-1 break-words rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 px-2 py-1">Fornecedor: {o.supplierNote}</p>}
           {o.lastEvent && <p className="text-xs text-muted-foreground mt-0.5 break-words">Último: {o.lastEvent}{o.lastEventAt ? ` (${ddmm(o.lastEventAt)})` : ""}</p>}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {onFlagStock && (
             <button onClick={onFlagStock} disabled={flagBusy}
-              title={flagLabel === "Sem estoque" ? "O fornecedor avisou que não tem estoque — vai pro alerta \"Sem estoque no fornecedor\" até o pacote andar" : "Não está mais sem estoque — volta pro alerta de rastreio dele"}
+              title={flagLabel === "Sem estoque" ? "O fornecedor avisou que não tem estoque — vai pro alerta \"Sem estoque no fornecedor\" até o pacote andar" : "Tira a resposta do fornecedor — o pedido volta pro alerta de rastreio dele"}
               className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-amber-700 hover:border-amber-500/50 hover:bg-amber-500/5 inline-flex items-center gap-1 disabled:opacity-50">
               {flagBusy ? <Loader2 className="size-3.5 animate-spin" /> : <PackageX className="size-3.5" />} {flagLabel}
             </button>

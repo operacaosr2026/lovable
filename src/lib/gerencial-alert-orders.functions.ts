@@ -6,6 +6,7 @@ import { selectAll, selectAllIn } from "@/lib/select-all";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { attentionReason } from "@/lib/logistics-kpis";
 import { resolutionKindOf, trackingSituations } from "@/lib/tracking-situations.server";
+import { isSupplierReplyAlert } from "@/lib/supplier-replies";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { autoPhase, phaseLabel } from "@/lib/tracking-phases";
@@ -37,7 +38,9 @@ export type AlertOrder = {
   oldCode: string | null;         // reenvio: código do pacote antigo
   oldDeliveredAt: string | null;  // reenvio: quando o pacote antigo foi entregue
   resolvedAt: string | null;      // marcado como resolvido na gaveta (sai do alerta)
+  supplierNote: string | null;    // o que o fornecedor respondeu (alertas de resposta do fornecedor)
 };
+const nyDayMonth = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit" });
 // Fase do último evento em palavras de operação (o "aviso" = nunca foi postado).
 function phaseText(last: string | null): string {
   if (!last) return "Sem rastreio";
@@ -76,7 +79,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
     // conta do alerta); lote/alfândega = os números listados no aviso.
     let orders: any[] = [];
     let resolvedRows: any[] = [];
-    const situation = data.key === "entrega" || data.key.startsWith("rastreio:") || data.key.startsWith("fora:");
+    const situation = data.key === "entrega" || data.key.startsWith("rastreio:") || data.key.startsWith("fora:") || data.key.startsWith("fornecedor:");
     if (situation) {
       // Mesma conta dos alertas (tracking-situations.server.ts).
       const sit = await trackingSituations(ownerId, await companyShopIdsForMonth(ownerId, `${data.month}-01`), now);
@@ -84,7 +87,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         : data.key === "rastreio:cliente" ? sit.cliente
         : data.key === "rastreio:repassado" ? sit.repassado
         : data.key === "rastreio:reenvio_entregue" ? sit.reenvioEntregue
-        : data.key === "rastreio:sem_estoque" ? sit.semEstoque
+        : isSupplierReplyAlert(data.key) ? (sit.fornecedor.get(data.key)?.rows ?? [])
         : data.key === "rastreio:nao_postado" ? [...sit.naoPostado.values()].flat()
         : data.key.startsWith("rastreio:nao_postado:") ? (sit.naoPostado.get(data.key.slice("rastreio:nao_postado:".length)) ?? [])
         : data.key.startsWith("fora:transportadora:") ? (sit.transportadoraNova.get(data.key.slice("fora:transportadora:".length)) ?? [])
@@ -107,7 +110,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       // (mesma regra do Gerencial).
       if (data.key.startsWith("track123:lote:") && nums.length) {
         const sit = await trackingSituations(ownerId, await companyShopIdsForMonth(ownerId, `${data.month}-01`), now);
-        const specific = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...sit.semEstoque, ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
+        const specific = new Set([...sit.cliente, ...sit.repassado, ...sit.reenvioEntregue, ...[...sit.fornecedor.values()].flatMap((g) => g.rows), ...[...sit.naoPostado.values()].flat()].map((o) => String(o.order_number)));
         const rest = nums.filter((x) => !specific.has(x));
         if (rest.length) nums = rest;
       }
@@ -155,7 +158,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
       const reason = data.key === "rastreio:nao_postado" || data.key.startsWith("rastreio:nao_postado:")
         ? `Só aviso de etiqueta há ${daysStopped ?? "?"}d — não postado`
         : data.key === "rastreio:reenvio_entregue" ? "Pacote antigo entregue"
-        : data.key === "rastreio:sem_estoque" ? `Sem estoque no fornecedor${o._flaggedAt ? ` (avisado ${new Date(o._flaggedAt).toLocaleDateString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit" })})` : ""}`
+        : isSupplierReplyAlert(data.key) ? `${o._flagTitle ?? "Resposta do fornecedor"}${o._flaggedAt ? ` (avisado ${nyDayMonth(o._flaggedAt)})` : ""}`
         : data.key === "rastreio:repassado" ? `Com a transportadora local há ${daysStopped ?? "?"}d`
         : data.key === "rastreio:cliente" ? "Endereço / devolução / falha na entrega"
         : data.key.startsWith("fora:transportadora:") ? "Código de transportadora não cadastrada"
@@ -181,6 +184,7 @@ export const getAlertOrders = createServerFn({ method: "GET" })
         oldCode: history.length ? String(history[history.length - 1]?.code ?? "") || null : null,
         oldDeliveredAt: oldDelivered(t?.replaced_packages),
         resolvedAt: o._resolvedAt ?? null,
+        supplierNote: o._flagNote ?? null,
       };
     };
     const byStopped = (a: AlertOrder, b: AlertOrder) => (b.daysStopped ?? -1) - (a.daysStopped ?? -1);
@@ -216,7 +220,7 @@ export const flagOrderOutOfStock = createServerFn({ method: "POST" })
     if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
     const q = supabaseAdmin.from("order_supplier_flags");
     if (data.undo) {
-      const { error } = await q.delete().eq("owner_id", ctx.ownerId).eq("order_id", data.orderId).eq("kind", "sem_estoque");
+      const { error } = await q.delete().eq("owner_id", ctx.ownerId).eq("order_id", data.orderId);
       if (error) throw new Error(error.message);
       return { ok: true };
     }

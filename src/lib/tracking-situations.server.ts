@@ -6,6 +6,7 @@ import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { localLegOf } from "@/lib/local-carriers";
 import { refundedResendIds } from "@/lib/refunded-resends.server";
+import { supplierReplyAlertKey, supplierReplyTitle } from "@/lib/supplier-replies";
 
 // Situações de rastreio que viram alerta no Gerencial (e a lista de pedidos da
 // gaveta "Ver rastreio"). Olha TODO pedido em aberto das lojas (até 180 dias),
@@ -44,9 +45,10 @@ export type Situations = {
   cliente: SituationOrder[];
   repassado: SituationOrder[];
   reenvioEntregue: SituationOrder[];
-  // Fornecedor avisou que não tem estoque (order_supplier_flags) e o pacote
-  // ainda não andou — sai de "não postado"/"atenção na entrega".
-  semEstoque: SituationOrder[];
+  // Resposta do fornecedor (order_supplier_flags — sem estoque, vai postar,
+  // outro): um grupo por alerta (supplierReplyAlertKey), enquanto o pacote não
+  // andar depois da resposta. Esses pedidos saem dos outros alertas.
+  fornecedor: Map<string, { kind: string; title: string; rows: SituationOrder[] }>;
   semFase: SemFaseText[];
   // Fora do combinado (o sistema caiu num padrão — precisa de alguém acertar):
   transportadoraNova: Map<string, SituationOrder[]>; // prefixo do código → pedidos
@@ -68,7 +70,7 @@ export const resolutionKindOf = (alertKey: string) =>
 const isDelivered = (o: any) => o.delivery_status === "delivered";
 
 export async function trackingSituations(ownerId: string, shopIds: string[], nowMs = Date.now()): Promise<Situations> {
-  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], semEstoque: [], semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [], resolved: new Map() };
+  const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], fornecedor: new Map(), semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [], resolved: new Map() };
   if (!shopIds.length) return empty;
   const since = new Date(nowMs - WINDOW_DAYS * DAY).toISOString().slice(0, 10);
   const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,shopify_financial_status,cancelled:raw->>cancelled_at";
@@ -96,7 +98,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   if (tracks.error) throw new Error(tracks.error.message);
   const trackBy = new Map(tracks.data.map((t) => [String(t.order_id), t]));
 
-  const out: Situations = { ...empty, naoPostado: new Map(), transportadoraNova: new Map(), resolved: new Map() };
+  const out: Situations = { ...empty, naoPostado: new Map(), transportadoraNova: new Map(), resolved: new Map(), fornecedor: new Map() };
   const unknown = new Map<string, { example: string; count: number; sample?: SemFaseSample }>();
   // Até 3 eventos antes e 2 depois, em ordem cronológica. Prefere um pedido que
   // já tenha evento depois do texto (mostra pra onde o pacote foi).
@@ -154,10 +156,11 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
 // nem num aviso de alfândega/lote parado.
   // Reenvio com o pacote antigo entregue: a decisão é cancelar o reenvio — não
   // repete em "não postado" (#L2-1245 aparecia nos dois).
-  // Sem estoque (aviso do fornecedor): enquanto o pacote não andar (só aviso de
-  // etiqueta ou nenhum evento) e o código for o mesmo do aviso. Andou = some.
+  // Resposta do fornecedor: vale enquanto o código for o mesmo e o pacote não
+  // tiver andado depois dela (evento que não é aviso, mais novo que a resposta).
+  // Andou = some sozinho (ex.: sem estoque → postou).
   const { data: flagRows, error: flagErr } = await supabaseAdmin.from("order_supplier_flags")
-    .select("order_id,note,tracking_code,flagged_at").eq("owner_id", ownerId).eq("kind", "sem_estoque");
+    .select("order_id,kind,title,note,tracking_code,flagged_at").eq("owner_id", ownerId);
   if (flagErr) throw new Error(flagErr.message);
   const flagBy = new Map(((flagRows ?? []) as any[]).map((f) => [String(f.order_id), f]));
   if (flagBy.size) {
@@ -166,17 +169,32 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
       if (!f || String(f.tracking_code ?? "").trim() !== String(o.tracking_code ?? "").trim()) continue;
       const t = trackBy.get(String(o.id));
       const evs = parseEvents(t?.timeline).sort((a, b) => b.ts - a.ts);
-      if (!evs.every((e) => phaseOf(e.d) === "aviso")) continue;
-      out.semEstoque.push({ ...o, last_event_at: t?.last_event_at ?? null, _track: t, _events: evs, _flagNote: f.note, _flaggedAt: f.flagged_at });
+      const at = Date.parse(f.flagged_at);
+      if (evs.some((e) => e.ts > at && phaseOf(e.d) !== "aviso")) continue;
+      const key = supplierReplyAlertKey(f.kind, f.title);
+      const g = out.fornecedor.get(key) ?? { kind: f.kind, title: supplierReplyTitle(f.kind, f.title), rows: [] as SituationOrder[] };
+      g.rows.push({ ...o, last_event_at: t?.last_event_at ?? null, _track: t, _events: evs, _flagNote: f.note, _flaggedAt: f.flagged_at, _flagTitle: g.title });
+      out.fornecedor.set(key, g);
     }
   }
-  const outOfStock = new Set(out.semEstoque.map((o) => o.id));
+  const outOfStock = new Set([...out.fornecedor.values()].flatMap((g) => g.rows.map((o) => o.id)));
   const resentDelivered = new Set(out.reenvioEntregue.map((o) => o.id));
   for (const [k, list] of [...out.naoPostado]) {
     const rest = list.filter((o) => !resentDelivered.has(o.id) && !outOfStock.has(o.id));
     if (rest.length) out.naoPostado.set(k, rest); else out.naoPostado.delete(k);
   }
-  const specific = new Set([...out.cliente, ...out.repassado, ...out.reenvioEntregue, ...out.semEstoque, ...[...out.naoPostado.values()].flat()].map((o) => o.id));
+  // Respondido pelo fornecedor sai de todos os outros alertas.
+  out.cliente = out.cliente.filter((o) => !outOfStock.has(o.id));
+  out.repassado = out.repassado.filter((o) => !outOfStock.has(o.id));
+  out.reenvioEntregue = out.reenvioEntregue.filter((o) => !outOfStock.has(o.id));
+  out.semEvento = out.semEvento.filter((o) => !outOfStock.has(o.id));
+  out.statusDiverge = out.statusDiverge.filter((o) => !outOfStock.has(o.id));
+  out.localNova = out.localNova.filter((o) => !outOfStock.has(o.id));
+  for (const [k, list] of [...out.transportadoraNova]) {
+    const rest = list.filter((o) => !outOfStock.has(o.id));
+    if (rest.length) out.transportadoraNova.set(k, rest); else out.transportadoraNova.delete(k);
+  }
+  const specific = new Set([...[...out.cliente, ...out.repassado, ...out.reenvioEntregue, ...[...out.naoPostado.values()].flat()].map((o) => o.id as string), ...outOfStock]);
   out.entrega = out.entrega.filter((o) => !specific.has(o.id) && !noticeNums.has(String(o.order_number)));
   out.semFase = [...unknown.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count);
 
@@ -205,7 +223,10 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
     out.cliente = split("rastreio:cliente", out.cliente);
     out.repassado = split("rastreio:repassado", out.repassado);
     out.reenvioEntregue = split("rastreio:reenvio_entregue", out.reenvioEntregue);
-    out.semEstoque = split("rastreio:sem_estoque", out.semEstoque);
+    for (const [key, g] of [...out.fornecedor]) {
+      g.rows = split(key, g.rows);
+      if (!g.rows.length) out.fornecedor.delete(key);
+    }
     out.semEvento = split("fora:sem_evento", out.semEvento);
     out.statusDiverge = split("fora:status", out.statusDiverge);
     out.localNova = split("fora:local", out.localNova);

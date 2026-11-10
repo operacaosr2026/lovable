@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Brain, ClipboardList, Headphones, Layers, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Brain, ClipboardList, Headphones, Layers, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare, MessageSquareReply,
   Package, PackageX, RotateCcw, Wrench, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, X,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
@@ -21,6 +21,7 @@ import { IntelTipSheet } from "@/components/inteligencia/Inteligencia";
 import { CarriersView, CARRIER_PERIODS } from "@/components/gerencial/CarriersView";
 import { AlertOrdersSheet } from "@/components/gerencial/AlertOrdersSheet";
 import { AlertActionSheet } from "@/components/gerencial/AlertActionSheet";
+import { SupplierReplyDialog } from "@/components/gerencial/SupplierReplyDialog";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
@@ -254,7 +255,19 @@ function Alerts({ d }: { d: Data }) {
   // Os outros alertas também abrem gaveta (resolver ali o que der).
   const [actionOpen, setActionOpen] = useState<Data["alerts"][number] | null>(null);
   const opensOrders = (a: Data["alerts"][number]) => a.key === "entrega" || a.key.startsWith("track123:alfandega:") || a.key.startsWith("track123:lote:")
-    || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase") || /^fora:(transportadora:|sem_evento|status|local$)/.test(a.key);
+    || (a.key.startsWith("rastreio:") && a.key !== "rastreio:sem_fase") || a.key.startsWith("fornecedor:") || /^fora:(transportadora:|sem_evento|status|local$)/.test(a.key);
+  // Registrar resposta do fornecedor (cola a mensagem; vira alerta próprio).
+  const [replyOpen, setReplyOpen] = useState(false);
+  const replyBar = (
+    <div className="flex justify-end">
+      <button onClick={() => setReplyOpen(true)}
+        title="Cole o que o fornecedor respondeu (ex.: sem estoque) — os pedidos vão pra um alerta próprio e saem dos outros"
+        className="h-9 px-3.5 rounded-xl border border-border bg-card text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-muted">
+        <MessageSquareReply className="size-4" /> Resposta do fornecedor
+      </button>
+    </div>
+  );
+  const replyDialog = replyOpen && <SupplierReplyDialog month={d.month} onClose={() => setReplyOpen(false)} />;
   // Link de fora do sistema (ex.: cobrança da Meta) abre em outra aba.
   const go = (href: string) => (/^https?:\/\//.test(href) ? window.open(href, "_blank", "noopener") : navigate({ href }));
   const dismiss = useMutation({
@@ -290,18 +303,21 @@ function Alerts({ d }: { d: Data }) {
   if (!d.alerts.length) {
     return (
       <div className="space-y-5">
+        {replyBar}
         <div className="rounded-3xl border border-border bg-card py-16 grid place-items-center text-center">
           <span className="size-12 rounded-2xl grid place-items-center bg-emerald-500/10 text-emerald-600 mb-3"><CircleCheck className="size-6" /></span>
           <p className="text-sm font-semibold">Tudo em ordem</p>
           <p className="text-xs text-muted-foreground">Nada pedindo decisão agora.</p>
         </div>
         {dismissedList}
+        {replyDialog}
       </div>
     );
   }
   const groups = (["critico", "atencao"] as const).map((lv) => [lv, d.alerts.filter((a) => a.level === lv)] as const).filter(([, l]) => l.length);
   return (
     <div className="space-y-5">
+      {replyBar}
       {groups.map(([lv, list]) => (
         <div key={lv}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{LEVEL[lv].label}</p>
@@ -347,6 +363,7 @@ function Alerts({ d }: { d: Data }) {
         </div>
       ))}
       {dismissedList}
+      {replyDialog}
       {tipOpen != null && <IntelTipSheet index={tipOpen} onClose={() => setTipOpen(null)} />}
       {ordersOpen && <AlertOrdersSheet alert={ordersOpen} month={d.month} onClose={() => setOrdersOpen(null)}
         onDismiss={() => { dismiss.mutate({ key: ordersOpen.key }); setOrdersOpen(null); }} />}
