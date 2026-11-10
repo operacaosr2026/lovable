@@ -732,7 +732,7 @@ export const listOrders = createServerFn({ method: "GET" })
     // tráfego): a aba Pedidos só usa os produtos (título/quantidade) e o
     // financial_status. Devolve `raw` enxuto no mesmo formato.
     let q = context.supabase.from("shop_orders")
-      .select(`${ORDER_LIST_COLUMNS},line_items:raw->line_items,tags:raw->>tags,raw_financial_status:raw->>financial_status`)
+      .select(`${ORDER_LIST_COLUMNS},line_items:raw->line_items,tags:raw->>tags,raw_financial_status:raw->>financial_status,cancelled_at:raw->>cancelled_at`)
       .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
     q = data.held_only
       ? q.gte("order_date", isoDateUS(Date.now() - 120 * 86_400_000)).eq("payment_status", "pending")
@@ -752,12 +752,15 @@ export const listOrders = createServerFn({ method: "GET" })
       : { data: [] as { shop_id: string; order_external_id: string; status: string }[] };
     const chargebackStatus = new Map<string, string>();
     for (const d of cbs ?? []) if (d.status !== "won") chargebackStatus.set(`${d.shop_id}:${d.order_external_id}`, d.status);
-    return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, tags, ...o }) => ({
+    return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, tags, cancelled_at, ...o }) => ({
       ...o,
       chargeback_status: chargebackStatus.get(`${o.shop_id}:${o.external_id}`) ?? null,
       raw: {
         financial_status: raw_financial_status ?? null,
         tags: tags ?? null,
+        // Cancelado na Shopify: sai da fila do fornecedor mesmo com o reembolso
+        // ainda pendente (financial_status segue "paid" até ele cair — #L6-1195).
+        cancelled_at: cancelled_at ?? null,
         // Inclui o que orderLineItemsCost usa (produto ligado ao card, item
         // removido, enviado) — sem isso o custo da tela saía diferente do
         // total copiado pro fornecedor ($494 × $450).
@@ -1550,7 +1553,9 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   const { data: pendingRows } = await context.supabase.from("shop_orders")
     .select("order_date,items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items,tags:raw->>tags,tracking_code")
     .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("order_date", orderDate)
-    .eq("payment_status", "pending");
+    .eq("payment_status", "pending")
+    // Cancelado na Shopify não vai pro fornecedor (mesma regra da aba Pedidos).
+    .filter("raw->>cancelled_at", "is", null);
   const pendingExt = ((pendingRows ?? []) as any[]).map((o) => o.external_id).filter(Boolean) as string[];
   const { data: cbRows } = pendingExt.length
     ? await supabaseAdmin.from("shop_order_disputes").select("order_external_id,status")

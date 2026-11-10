@@ -241,8 +241,11 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-1">{formatDateUS(o.date)}{o.store ? ` · ${o.store}` : ""}</p>
                   {(o.cancelled || (o.delivery && !o.tracking) || o.dispute) && <div className="flex flex-wrap gap-1 mt-2">
-                    {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Cancelado</span>}
-                    {o.delivery && !o.tracking && <DeliveryBadge status={o.delivery} />}
+                    {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">
+                      Cancelado{o.cancelReason ? ` · ${CANCEL_REASON[o.cancelReason] ?? o.cancelReason}` : ""}
+                    </span>}
+                    {/* Cancelado antes de enviar: "Pendente envio" não vale mais (#L6-1195). */}
+                    {o.delivery && !o.tracking && !o.cancelled && <DeliveryBadge status={o.delivery} />}
                     {o.dispute && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.dispute.status === "won" ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>
                         {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"} · {DISPUTE[o.dispute.status ?? ""] ?? o.dispute.status}
@@ -364,6 +367,11 @@ const DELIVERY: Record<string, { label: string; cls: string }> = {
   problem: { label: "Problema", cls: "bg-rose-500/10 text-rose-600" },
   waiting_customer: { label: "Esperando cliente", cls: "bg-violet-500/10 text-violet-600" },
   shipment_cancelled: { label: "Envio cancelado", cls: "bg-muted text-muted-foreground" },
+};
+// cancel_reason da Shopify.
+const CANCEL_REASON: Record<string, string> = {
+  customer: "a pedido do cliente", declined: "pagamento recusado", fraud: "fraude",
+  inventory: "sem estoque", staff: "erro da equipe", other: "outro motivo",
 };
 const FINANCIAL: Record<string, { label: string; cls: string }> = {
   paid: { label: "Pago", cls: "bg-emerald-500/10 text-emerald-600" },

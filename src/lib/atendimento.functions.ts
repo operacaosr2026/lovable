@@ -834,7 +834,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
     let orders: any[] = [];
     if (idList.length) {
       const { data: rows, error } = await supabaseAdmin.from("shop_orders")
-        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at")
+        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at,cancel_reason:raw->>cancel_reason")
         .eq("user_id", context.ownerId).in("id", idList)
         .order("created_at_shopify", { ascending: false });
       if (error) throw new Error(error.message);
@@ -899,7 +899,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
         // Códigos anteriores (trocados à mão ou pela Shopify), mais recente primeiro.
         trackingHistory: (Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : []) as { code: string; until: string }[],
         local: localBy.get(o.id) ?? null,
-        carrier: o.carrier, cancelled: !!o.cancelled_at,
+        carrier: o.carrier, cancelled: !!o.cancelled_at, cancelReason: o.cancelled_at ? (o.cancel_reason ?? null) : null,
         dispute: disputeBy.get(`${o.shop_id}:${o.external_id}`) ?? null,
       })),
     };

@@ -293,6 +293,9 @@ export function LgOrders({
       const pending = o.payment_status === "pending";
       if (pending && rb === "reembolso") continue;
       if (pending && o.chargeback_status) continue;
+      // Cancelado na Shopify (o reembolso pode ainda estar pendente e o status
+      // seguir "Pago" — #L6-1195): também não vai pro fornecedor.
+      if (pending && o.raw?.cancelled_at) continue;
       // Item repetido sem confirmação do cliente: vai pra seção separada.
       if (isHeld(o)) continue;
       const day = o.order_date as string;
@@ -327,7 +330,7 @@ export function LgOrders({
   // Não pagos que saíram da fila por reembolso/chargeback (mesma regra do
   // agrupamento por dia) — entram no "NÃO enviar" da mensagem.
   const outOfQueue = useMemo(() => loadedOrders.filter((o) => o.payment_status === "pending"
-    && (shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" || o.chargeback_status)), [loadedOrders]);
+    && (shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" || o.chargeback_status || o.raw?.cancelled_at)), [loadedOrders]);
 
   const filteredGroups = useMemo(() =>
     // A pagar: dias não pagos e parciais. Pagos: dias com algo já pago (parcial
@@ -417,7 +420,7 @@ export function LgOrders({
       // dentro do intervalo vira "NÃO enviar" no fim da mensagem.
       dontSend: [
         ...heldAll.filter((o: any) => o.shop_id === shopId).map((o: any) => ({ label: orderLabel(o), reason: "aguardando confirmação do cliente" })),
-        ...outOfQueue.filter((o: any) => o.shop_id === shopId).map((o: any) => ({ label: orderLabel(o), reason: o.chargeback_status ? "chargeback" : "reembolsado" })),
+        ...outOfQueue.filter((o: any) => o.shop_id === shopId).map((o: any) => ({ label: orderLabel(o), reason: o.chargeback_status ? "chargeback" : o.raw?.cancelled_at ? "cancelado" : "reembolsado" })),
       ],
     }));
     return { blocks, orderIds };
@@ -875,9 +878,9 @@ export function LgOrders({
                                 {o.payment_status === "pending" ? "Pendente" : "Pago"}
                               </span>
                               {/* Pago ao fornecedor e depois reembolsado/chargeback: fica no histórico, com aviso. */}
-                              {o.payment_status !== "pending" && (shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" || o.chargeback_status) && (
+                              {o.payment_status !== "pending" && (shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" || o.chargeback_status || o.raw?.cancelled_at) && (
                                 <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-rose-500/10 text-rose-600 border-rose-500/20">
-                                  {o.chargeback_status ? "Chargeback" : "Reembolsado"}
+                                  {o.chargeback_status ? "Chargeback" : shopifyRefundBadge(resolveFinancialStatus(o)) === "reembolso" ? "Reembolsado" : "Cancelado"}
                                 </span>
                               )}
                             </div>
