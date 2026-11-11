@@ -90,8 +90,8 @@ function GerencialPage() {
       <div className="space-y-4 pb-8">
         {/* Abas e o mês na mesma linha, com altura fixa: trocar de aba não mexe no layout
             (Fila, Análise de reembolsos, Metas e Projetos têm o filtro delas, então o mês some ali). */}
-        <div className="flex flex-wrap items-center gap-3 min-h-10">
-          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 min-h-10">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-muted w-fit max-w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {TABS.map(([k, label, Icon]) => (
               <button key={k} onClick={() => setTab(k)}
                 className={`h-7 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === k ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -107,7 +107,7 @@ function GerencialPage() {
             ))}
           </div>
           {tab === "transportadoras" ? (
-            <label className="relative w-full sm:w-auto sm:ml-auto">
+            <label className="relative w-full sm:w-auto sm:ml-auto shrink-0">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={carrierPeriod} onChange={(e) => setCarrierPeriod(e.target.value)}
                 className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary">
@@ -115,7 +115,7 @@ function GerencialPage() {
               </select>
             </label>
           ) : !ownFilter && (
-            <label className="relative w-full sm:w-auto sm:ml-auto">
+            <label className="relative w-full sm:w-auto sm:ml-auto shrink-0">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={month} onChange={(e) => setMonth(e.target.value)}
                 className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
