@@ -363,7 +363,6 @@ function Groups({ d }: { d: Data }) {
 function Products({ d }: { d: Data }) {
   const st = d.settings;
   const over = (p: Data["byProduct"][number]) => st.enabled && p.rate != null && p.sold >= st.product_min_sold && p.rate * 100 > st.product_rate_limit;
-  const maxRate = Math.max(0, ...d.byProduct.map((p) => p.rate ?? 0));
   return (
     <Card icon={Tag} title="Por produto" hint="Pedidos vendidos no período: unidades reembolsadas ÷ vendidas. Em vermelho: acima do limite do alerta.">
       {d.byProduct.length === 0 ? <Empty /> : (
@@ -390,13 +389,9 @@ function Products({ d }: { d: Data }) {
                     </div>
                   </td>
                   <td className="text-center whitespace-nowrap">{p.units} / {p.sold || "—"}</td>
-                  <td className="pl-6 w-56">
-                    {p.rate == null ? <span className="text-muted-foreground">sem venda no período</span> : (
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1"><Track value={p.rate} max={maxRate} danger={over(p)} /></div>
-                        <span className={`w-12 text-right font-semibold ${over(p) ? "text-rose-600" : ""}`}>{pct(p.rate)}</span>
-                      </div>
-                    )}
+                  <td className="pl-6 text-center whitespace-nowrap">
+                    {p.rate == null ? <span className="text-muted-foreground">sem venda no período</span>
+                      : <span className={`font-semibold ${over(p) ? "text-rose-600" : ""}`}>{pct(p.rate)}</span>}
                   </td>
                   <td className="text-center font-semibold whitespace-nowrap pl-3">{usd(p.amount)}</td>
                   <td className="pl-6 text-center text-muted-foreground whitespace-nowrap">{p.topReason ? refundReasonLabel(p.topReason) : "—"}</td>
@@ -470,8 +465,9 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
                   <td className="pr-3 whitespace-nowrap"><ReasonCell e={e} canEdit={d.canEdit} /></td>
                   <td className="text-right">
                     {e.conversationId && (
-                      <button onClick={() => onOpenConversation(e.conversationId!)} title="Abrir conversa" className="text-muted-foreground hover:text-primary">
-                        <MessageSquare className="size-3.5" />
+                      <button onClick={() => onOpenConversation(e.conversationId!)} title="Abrir a conversa com o cliente no Atendimento"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline whitespace-nowrap">
+                        <MessageSquare className="size-3.5" /> Ver conversa
                       </button>
                     )}
                   </td>

@@ -28,7 +28,7 @@ export type RefundEvent = {
   key: string; orderId: string; refundId: string; requestId: string | null; orderNumber: string | null; shopId: string; shop: string;
   date: string; at: string; orderDate: string; amount: number; status: "concluido" | "pendente";
   pendingDays: number | null; reason: string | null; source: "app" | "shopify" | "disputifier";
-  requestedBy: string | null; requestedByName: string | null; conversationId: string | null;
+  requestedBy: string | null; requestedByName: string | null; conversationId: string | null; customerEmail: string | null;
   products: { key: string; name: string; units: number; amount: number }[];
 };
 
@@ -54,7 +54,7 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
   if (!shopIds.length) return empty;
 
   const lookback = addDaysIso(from, -LOOKBACK_DAYS);
-  const ORDER_COLS = "id,shop_id,order_number,order_date,revenue,refunds:raw->refunds,line_items:raw->line_items";
+  const ORDER_COLS = "id,shop_id,order_number,order_date,revenue,refunds:raw->refunds,line_items:raw->line_items,email:raw->>email,customer_email:raw->customer->>email";
   const [shopsRes, refundedRes, appReqRes, periodRes, cardOf] = await Promise.all([
     supabaseAdmin.from("shops").select("id,name").in("id", shopIds),
     // Todo pedido com reembolso registrado — inclusive "paid" com reembolso ainda
@@ -170,11 +170,27 @@ export async function refundAnalytics(ownerId: string, from: string, to: string)
         reason: dsp ? "chargeback" : req?.reason ?? manualReason.get(`${o.id}:${rf.id}`) ?? null, source: dsp ? "disputifier" : req ? "app" : "shopify",
         requestedBy: req?.requested_by ?? null, requestedByName: req ? names.get(req.requested_by) ?? "Equipe" : null,
         conversationId: req?.conversation_id ?? null,
+        customerEmail: String(o.email || o.customer_email || "").trim().toLowerCase() || null,
         products: [...prods].map(([k, p]) => ({ key: k, name: products.get(k)?.name ?? k, units: p.units, amount: r2(p.amount) })),
       });
     }
   }
   all.sort((a, b) => b.at.localeCompare(a.at));
+
+  // Reembolso feito direto na Shopify não tem conversa ligada: acha a conversa
+  // do Atendimento pelo e-mail do cliente (a mais recente).
+  const emails = [...new Set(all.filter((e) => !e.conversationId && e.customerEmail).map((e) => e.customerEmail as string))];
+  if (emails.length) {
+    const { data: convs } = await selectAllIn<any>(emails, (c) => db("support_conversations")
+      .select("id,customer_email,last_message_at").eq("owner_id", ownerId).in("customer_email", c));
+    const convByEmail = new Map<string, { id: string; at: string }>();
+    for (const c of convs ?? []) {
+      const k = String(c.customer_email ?? "").toLowerCase();
+      const prev = convByEmail.get(k);
+      if (!prev || String(c.last_message_at ?? "") > prev.at) convByEmail.set(k, { id: c.id, at: String(c.last_message_at ?? "") });
+    }
+    for (const e of all) if (!e.conversationId && e.customerEmail) e.conversationId = convByEmail.get(e.customerEmail)?.id ?? null;
+  }
   const events = all.filter((e) => e.orderDate >= from && e.orderDate <= to);
   // Só pro gráfico "por dia do reembolso": reembolsos feitos no período, de qualquer pedido.
   const byRefundDate = all.filter((e) => e.date >= from && e.date <= to);
@@ -200,8 +216,9 @@ export function productBreakdown(a: Awaited<ReturnType<typeof refundAnalytics>>)
       const x = by.get(p.key) ?? { units: 0, amount: 0, reasons: new Map() };
       x.units += p.units;
       x.amount += p.amount;
-      const rk = e.reason ?? "sem";
-      x.reasons.set(rk, (x.reasons.get(rk) ?? 0) + 1);
+      // Motivo principal = o mais comum entre os escolhidos (reembolso sem
+      // motivo — feito direto na Shopify e não classificado — não conta).
+      if (e.reason) x.reasons.set(e.reason, (x.reasons.get(e.reason) ?? 0) + 1);
       by.set(p.key, x);
     }
   }
@@ -211,7 +228,7 @@ export function productBreakdown(a: Awaited<ReturnType<typeof refundAnalytics>>)
     return {
       key, name: a.products.get(key)?.name ?? key, image: a.products.get(key)?.image ?? null,
       units: x.units, amount: r2(x.amount), sold, rate: sold > 0 ? x.units / sold : null,
-      topReason: top && top !== "sem" ? top : null,
+      topReason: top,
     };
   }).sort((p, q) => q.amount - p.amount);
 }
