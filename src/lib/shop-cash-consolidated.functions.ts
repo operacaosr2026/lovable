@@ -216,27 +216,19 @@ export const deleteConsolidatedCashEntry = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// Caixa Geral › Resumo: prazo de repasse (D+X) de cada loja, pra estimar
-// quando o "A receber" cai no banco. Mesma regra do Banco de Lojas
-// (payoutLagDaysFor: ajuste manual > média dos últimos payouts > média geral > 7).
-export const getCaixaPayoutLags = createServerFn({ method: "GET" })
+// Caixa Geral › Resumo: lucro médio por dia — o mesmo número da "Projeção do
+// mês" (Metas/Dashboard): média dos últimos 3 dias fechados das lojas da meta
+// do mês. A linha estimada do caixa é Saldo total + esse lucro × dias.
+export const getCaixaLucroDia = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1).max(100) }).parse(d))
-  .handler(async ({ context, data }) => {
-    const { payoutLagDaysFor } = await import("@/lib/shop-orders.functions");
-    const { data: settings, error } = await context.supabase.from("shop_order_settings")
-      .select("shop_id,shopify_store_id,payout_lag_days,payout_lag_avg_days")
-      .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
-    if (error) throw new Error(error.message);
-    const storeIds = [...new Set((settings ?? []).map((s: any) => s.shopify_store_id).filter(Boolean))] as string[];
-    const { data: stores } = storeIds.length
-      ? await context.supabase.from("shopify_stores").select("id,board_payout_days").eq("user_id", context.ownerId).in("id", storeIds)
-      : { data: [] as any[] };
-    const board = new Map(((stores ?? []) as any[]).map((r) => [r.id as string, r.board_payout_days as number | null]));
-    const out: Record<string, number> = {};
-    for (const id of data.shop_ids) {
-      const s: any = (settings ?? []).find((x: any) => x.shop_id === id) ?? {};
-      out[id] = Math.max(1, Math.round(payoutLagDaysFor(s, s.shopify_store_id ? board.get(s.shopify_store_id) : null)));
-    }
-    return out;
+  .handler(async ({ context }) => {
+    const [{ isoTodayUS }, { companyShopIdsForMonth, monthStartOf }, { computeAccumulatedLucroServer }, { supabaseAdmin }] = await Promise.all([
+      import("@/lib/timezone"), import("@/lib/company-goals.server"), import("@/lib/lg-overview.functions"), import("@/integrations/supabase/client.server"),
+    ]);
+    const today = isoTodayUS();
+    const shops = await companyShopIdsForMonth(context.ownerId, monthStartOf(today));
+    if (!shops.length) return { lucroDia: null as number | null };
+    const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 7);
+    const acc = await computeAccumulatedLucroServer(supabaseAdmin, context.ownerId, shops, d.toISOString().slice(0, 10), today);
+    return { lucroDia: Math.round(Number(acc.mediaUltimos3 ?? 0) * 100) / 100 };
   });

@@ -16,10 +16,6 @@ export type ResumoItem = {
 const DAYS_AHEAD = 30;
 const LINE = "#3b6fe8"; // mesmo azul do card Saldo atual
 const EST = "#8b5cf6";  // estimativa: violeta (mesmo do card A receber), tracejada
-const ADS_RE = /facebook|meta|\bads?\b|an[úu]nc/i;
-const SUPPLIER_RE = /fornecedor/i;
-const isDeposit =(e: ResumoItem) => e.kind === "income" && (e.source ?? "").startsWith("shopify");
-
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moneyShort = (n: number) => {
   const a = Math.abs(n);
@@ -39,43 +35,22 @@ const labelOf = (e: ResumoItem) => {
   return /^outros?\b/i.test(cat) && desc ? desc : cat;
 };
 
-export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, perShopReceivable, payoutLags }: {
+export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, perShopReceivable, lucroDia }: {
   items: ResumoItem[]; opening: number; todayKey: string;
   shopIds: string[]; shopNamesMap: Record<string, string>;
   perShopReceivable: { shop_id: string; amount: number }[];
-  payoutLags: Record<string, number> | undefined;
+  // Lucro médio por dia (últimos 3 dias fechados) — mesma base da "Projeção do
+  // mês" das Metas. undefined = carregando; null = sem lojas na meta.
+  lucroDia: number | null | undefined;
 }) {
-  // ── Estimativa do que ainda não está lançado ──
-  // · A receber de cada loja: dividido igual pelos próximos D dias (D = prazo
-  //   de repasse da loja).
-  // · Vendas novas: depois desse prazo, a média diária de depósitos da Shopify
-  //   da loja nos últimos 14 dias.
-  // · Anúncios: a média diária das saídas de anúncio dos últimos 7 dias.
-  // · Fornecedor: a média diária dos pagamentos dos últimos 14 dias (paga em
-  //   lotes, por isso janela maior).
-  const estimate = useMemo(() => {
-    const d14 = addDays(todayKey, -14), d7 = addDays(todayKey, -7);
-    const past = items.filter((e) => e.date >= d14 && e.date < todayKey);
-    const adsPerDay = past.filter((e) => e.kind === "expense" && e.date >= d7 && ADS_RE.test(e.category ?? ""))
-      .reduce((s, e) => s + Number(e.amount), 0) / 7;
-    const supplierPerDay = past.filter((e) => e.kind === "expense" && SUPPLIER_RE.test(e.category ?? ""))
-      .reduce((s, e) => s + Number(e.amount), 0) / 14;
-    const shops = shopIds.map((id) => {
-      const lag = payoutLags?.[id] ?? 7;
-      const receivable = Number(perShopReceivable.find((p) => p.shop_id === id)?.amount ?? 0);
-      const depositsPerDay = past.filter((e) => e.shop_id === id && isDeposit(e)).reduce((s, e) => s + Number(e.amount), 0) / 14;
-      return { id, lag, receivable, depositsPerDay };
-    });
-    // Entrada estimada no dia n (1 = amanhã).
-    const inflow = (n: number) => shops.reduce((s, sh) => s + (n <= sh.lag ? sh.receivable / sh.lag : sh.depositsPerDay), 0);
-    return {
-      adsPerDay, supplierPerDay, inflow,
-      depositsPerDay: shops.reduce((s, sh) => s + sh.depositsPerDay, 0),
-      ready: !!payoutLags,
-    };
-  }, [items, todayKey, shopIds, payoutLags, perShopReceivable]);
+  const receivableTotal = useMemo(() => perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0), [perShopReceivable]);
+  const estReady = lucroDia != null;
 
   // ── Projeção: saldo no fim de cada dia, de hoje até +30 ──
+  // · Lançado: o que já está no caixa (repasses agendados, contas, recorrentes).
+  // · Estimado: Saldo total de hoje (saldo + a receber) + lucro médio/dia × dias.
+  //   Não soma os lançamentos futuros: o lucro já desconta fornecedor e anúncios
+  //   (somar seria contar duas vezes).
   const projection = useMemo(() => {
     const end = addDays(todayKey, DAYS_AHEAD);
     let bal = opening;
@@ -84,9 +59,10 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
       if (e.date <= todayKey) bal += signedAmount(e);
       else if (e.date <= end) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
     }
-    let est = bal, n = 0;
-    const points: { key: string; label: string; saldo: number; estimado: number; estEntra: number; estAds: number; estForn: number; entradas: number; saidas: number; maiorSaida: string | null }[] = [
-      { key: todayKey, label: dm(todayKey), saldo: bal, estimado: bal, estEntra: 0, estAds: 0, estForn: 0, entradas: 0, saidas: 0, maiorSaida: null },
+    const base = bal + receivableTotal;
+    let n = 0;
+    const points: { key: string; label: string; saldo: number; estimado: number; entradas: number; saidas: number; maiorSaida: string | null }[] = [
+      { key: todayKey, label: dm(todayKey), saldo: bal, estimado: base, entradas: 0, saidas: 0, maiorSaida: null },
     ];
     for (let k = addDays(todayKey, 1); k <= end; k = addDays(k, 1)) {
       n++;
@@ -95,16 +71,13 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
       const saidas = list.filter((e) => e.kind === "expense").reduce((s, e) => s + Number(e.amount), 0);
       const top = list.filter((e) => e.kind === "expense").sort((a, b) => Number(b.amount) - Number(a.amount))[0];
       bal += entradas - saidas;
-      const estEntra = estimate.inflow(n), estAds = estimate.adsPerDay, estForn = estimate.supplierPerDay;
-      est += entradas - saidas + estEntra - estAds - estForn;
-      points.push({ key: k, label: dm(k), saldo: Math.round(bal * 100) / 100, estimado: Math.round(est * 100) / 100, estEntra, estAds, estForn,
+      points.push({ key: k, label: dm(k), saldo: Math.round(bal * 100) / 100, estimado: Math.round((base + (lucroDia ?? 0) * n) * 100) / 100,
         entradas, saidas, maiorSaida: top ? `${labelOf(top)} ${money(Number(top.amount))}` : null });
     }
-    // Dia mais apertado: pela estimativa (o mais realista); sem prazo de repasse ainda, pelo lançado.
-    const val = (p: (typeof points)[number]) => (estimate.ready ? p.estimado : p.saldo);
-    const min = points.reduce((m, p) => (val(p) < val(m) ? p : m), points[0]);
-    return { points, min, minValue: val(min), last: points[points.length - 1], first: points[0], val };
-  }, [items, opening, todayKey, estimate]);
+    // Dia mais apertado: pelo lançado (o que já tem data pra sair).
+    const min = points.reduce((m, p) => (p.saldo < m.saldo ? p : m), points[0]);
+    return { points, min, last: points[points.length - 1], first: points[0] };
+  }, [items, opening, todayKey, receivableTotal, lucroDia]);
 
   // ── Período dos totais: semana atual (seg–dom) ou mês atual ──
   const [range, setRange] = useState<"semana" | "mes">("semana");
@@ -150,8 +123,8 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" }));
   }, [inRange, perShopReceivable, shopIds, shopNamesMap]);
 
-  const { points, min, minValue, last, first, val } = projection;
-  const tight = minValue < 0;
+  const { points, min, last, first } = projection;
+  const tight = min.saldo < 0;
   const ticks = points.filter((_, i) => i % 5 === 0).map((p) => p.label);
 
   return (
@@ -163,16 +136,17 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
             <p className="text-sm font-semibold">Projeção de saldo · próximos {DAYS_AHEAD} dias</p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: LINE }} />Lançado no caixa</span>
-              <span className="flex items-center gap-1.5" title="Lançado + a receber de cada loja dividido pelo prazo de repasse + vendas novas (média de depósitos dos últimos 14 dias, depois do prazo) − anúncios (média dos últimos 7 dias) − fornecedor (média dos últimos 14 dias)">
-                <span className="w-4 border-t-2 border-dashed" style={{ borderColor: EST }} />Estimado
-                {estimate.ready && <span>· entra ~{money(estimate.depositsPerDay)}/dia em vendas, sai ~{money(estimate.adsPerDay)}/dia em anúncios e ~{money(estimate.supplierPerDay)}/dia em fornecedor</span>}
-              </span>
+              {estReady && (
+                <span className="flex items-center gap-1.5" title="Saldo total de hoje (saldo + a receber) + lucro médio por dia dos últimos 3 dias fechados — a mesma base da Projeção do mês nas Metas. Saídas fora do lucro (retiradas, ferramentas) não entram.">
+                  <span className="w-4 border-t-2 border-dashed" style={{ borderColor: EST }} />Estimado · saldo total + lucro de ~{money(lucroDia!)}/dia
+                </span>
+              )}
             </div>
           </div>
           <div className="flex gap-5 text-right">
             <Stat label="Hoje" value={money(first.saldo)} />
-            <Stat label={`Em ${dm(last.key)}${estimate.ready ? " · est." : ""}`} value={money(val(last))} />
-            <Stat label={`Menor · ${dm(min.key)}`} value={money(minValue)} danger={tight} />
+            <Stat label={`Em ${dm(last.key)}${estReady ? " · est." : ""}`} value={money(estReady ? last.estimado : last.saldo)} />
+            <Stat label={`Menor lançado · ${dm(min.key)}`} value={money(min.saldo)} danger={tight} />
           </div>
         </div>
 
@@ -180,7 +154,7 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
           <div className={`mb-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${tight ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground"}`}>
             {tight ? <AlertTriangle className="size-3.5 shrink-0" /> : <TrendingDown className="size-3.5 shrink-0 text-muted-foreground" />}
             <span>
-              {tight ? "Saldo fica negativo" : "Saldo mais baixo"}{estimate.ready ? " (estimado)" : ""} em <strong>{dm(min.key)}</strong>: {money(minValue)}
+              {tight ? "Saldo fica negativo" : "Saldo mais baixo"} em <strong>{dm(min.key)}</strong>: {money(min.saldo)}
               {min.maiorSaida && <span className="text-muted-foreground"> · maior saída do dia: {min.maiorSaida}</span>}
             </span>
           </div>
@@ -209,21 +183,18 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
                     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md space-y-0.5">
                       <p className="font-semibold">{p.key === todayKey ? `Hoje (${p.label})` : p.label}</p>
                       <p>Lançado: <span className="font-semibold tabular-nums">{money(p.saldo)}</span></p>
-                      {estimate.ready && <p>Estimado: <span className="font-semibold tabular-nums">{money(p.estimado)}</span></p>}
+                      {estReady && <p>Estimado: <span className="font-semibold tabular-nums">{money(p.estimado)}</span></p>}
                       {p.entradas > 0 && <p className="text-muted-foreground tabular-nums">Entradas lançadas {signed(p.entradas)}</p>}
                       {p.saidas > 0 && <p className="text-muted-foreground tabular-nums">Saídas lançadas {signed(-p.saidas)}</p>}
-                      {estimate.ready && p.key !== todayKey && (
-                        <p className="text-muted-foreground tabular-nums">Estimativa do dia: {signed(p.estEntra)} repasses · {signed(-p.estAds)} anúncios · {signed(-p.estForn)} fornecedor</p>
-                      )}
                       {p.maiorSaida && <p className="text-muted-foreground">Maior saída: {p.maiorSaida}</p>}
                     </div>
                   );
                 }} />
               <Area type="monotone" dataKey="saldo" stroke={LINE} strokeWidth={2} fill="url(#caixa-proj)" isAnimationActive={false}
                 activeDot={{ r: 4, fill: LINE, stroke: "var(--color-card)", strokeWidth: 2 }} />
-              {estimate.ready && <Line type="monotone" dataKey="estimado" stroke={EST} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false}
+              {estReady && <Line type="monotone" dataKey="estimado" stroke={EST} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false}
                 activeDot={{ r: 4, fill: EST, stroke: "var(--color-card)", strokeWidth: 2 }} />}
-              <ReferenceDot x={min.label} y={minValue} r={5} fill={tight ? "var(--color-destructive)" : estimate.ready ? EST : LINE} stroke="var(--color-card)" strokeWidth={2} />
+              <ReferenceDot x={min.label} y={min.saldo} r={5} fill={tight ? "var(--color-destructive)" : LINE} stroke="var(--color-card)" strokeWidth={2} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

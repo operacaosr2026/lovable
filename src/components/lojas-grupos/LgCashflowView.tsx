@@ -41,7 +41,7 @@ import {
 } from "@/lib/shop-cash.functions";
 import {
   listShopCashConsolidated, createConsolidatedCashEntry,
-  updateConsolidatedCashEntry, deleteConsolidatedCashEntry, getCaixaPayoutLags,
+  updateConsolidatedCashEntry, deleteConsolidatedCashEntry, getCaixaLucroDia,
 } from "@/lib/shop-cash-consolidated.functions";
 import {
   getShopifyPendingBalance, syncShopifyPayouts,
@@ -1280,10 +1280,10 @@ export function LgCashflowView({
   });
   const setView = (v: "resumo" | "semana") => { setViewState(v); try { localStorage.setItem("caixa-geral-view", v); } catch { /* sem storage */ } };
   const showResumo = hasResumo && view === "resumo";
-  const payoutLagsFn = useServerFn(getCaixaPayoutLags);
-  const payoutLagsQuery = useQuery({
-    queryKey: ["caixa-payout-lags", cacheKey], enabled: showResumo, staleTime: 30 * 60_000,
-    queryFn: () => payoutLagsFn({ data: { shop_ids: shopIds } }),
+  const lucroDiaFn = useServerFn(getCaixaLucroDia);
+  const lucroDiaQuery = useQuery({
+    queryKey: ["caixa-lucro-dia"], enabled: showResumo, staleTime: 30 * 60_000,
+    queryFn: () => lucroDiaFn(),
   });
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const [weekOffset, setWeekOffset]   = useState(0); // 0 = semana atual, -1 = anterior, +1 = próxima
@@ -1781,7 +1781,7 @@ export function LgCashflowView({
 
       {showResumo ? (
         <CaixaResumo items={expanded} opening={opening} todayKey={todayKey}
-          shopIds={shopIds} shopNamesMap={shopNamesMap} perShopReceivable={perShopReceivable} payoutLags={payoutLagsQuery.data} />
+          shopIds={shopIds} shopNamesMap={shopNamesMap} perShopReceivable={perShopReceivable} lucroDia={lucroDiaQuery.isLoading ? undefined : lucroDiaQuery.data?.lucroDia ?? null} />
       ) : (
       /* ── Day grid (mesmo layout do ShopCashflow) ── */
       <DndContext
