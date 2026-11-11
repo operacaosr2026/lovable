@@ -70,17 +70,20 @@ export function SupportKpisView({ month }: { month: string }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <MiniStat icon={Landmark} tone="bg-destructive/10 text-destructive" label="Contato → foi ao banco"
           value={!k ? undefined : !k.extra ? "—" : k.extra.contactToBank.contacted ? `${k.extra.contactToBank.wentToBank} de ${k.extra.contactToBank.contacted}` : "—"}
-          sub={k?.extra ? `clientes que escreveram e depois abriram chargeback ou alerta${k.extra.contactToBank.avgDaysToBank != null ? ` · ${k.extra.contactToBank.avgDaysToBank.toLocaleString("pt-BR")} dias depois, em média` : ""}` : undefined}
-          foot={k?.extra ? `Dos ${k.extra.contactToBank.bankEvents} chargebacks do mês, ${k.extra.contactToBank.bankWithContactBefore} escreveram antes · ${k.extra.contactToBank.refunded} viraram reembolso` : undefined} />
+          sub={k?.extra ? "escreveram e depois abriram chargeback" : undefined}
+          hint={k?.extra ? `Clientes que escreveram no Atendimento e depois abriram chargeback ou alerta${k.extra.contactToBank.avgDaysToBank != null ? ` (${k.extra.contactToBank.avgDaysToBank.toLocaleString("pt-BR")} dias depois, em média)` : ""}.
+Dos ${k.extra.contactToBank.bankEvents} chargebacks do mês, ${k.extra.contactToBank.bankWithContactBefore} escreveram antes · ${k.extra.contactToBank.refunded} viraram reembolso.` : undefined} />
         <MiniStat icon={PackageSearch} tone="bg-primary/10 text-primary" label="Contatos por 100 pedidos"
           value={!k ? undefined : k.extra?.contactRate.value == null ? "—" : k.extra.contactRate.value.toLocaleString("pt-BR")}
           delta={k?.extra ? ppDelta(k.extra.contactRate.value, k.extra.contactRate.prev) : null} deltaUnit=" p.p." deltaTone="lower" vs={vs}
           sub={k?.extra ? `${k.extra.contactRate.contacts} conversas · ${k.extra.contactRate.orders} pedidos` : undefined}
-          foot={k?.extra?.contactRate.rastreio != null ? `Sobre rastreio: ${k.extra.contactRate.rastreio.toLocaleString("pt-BR")} por 100 pedidos` : undefined} />
+          hint={k?.extra ? `Conversas do mês a cada 100 pedidos.${k.extra.contactRate.rastreio != null ? `
+Sobre rastreio: ${k.extra.contactRate.rastreio.toLocaleString("pt-BR")} por 100 pedidos.` : ""}` : undefined} />
         <MiniStat icon={Repeat} tone="bg-warning/15 text-warning" label="Recontato"
           value={!k ? undefined : k.extra?.recontact.value == null ? "—" : `${k.extra.recontact.value.toLocaleString("pt-BR")}%`}
           delta={k?.extra ? ppDelta(k.extra.recontact.value, k.extra.recontact.prev) : null} deltaUnit=" p.p." deltaTone="lower" vs={vs}
-          sub={k?.extra ? `${k.extra.recontact.recontacted} de ${k.extra.recontact.conversations} conversas: o cliente escreveu 2+ vezes` : undefined} />
+          sub={k?.extra ? `${k.extra.recontact.recontacted} de ${k.extra.recontact.conversations} escreveram 2+ vezes` : undefined}
+          hint="Conversas em que o cliente precisou escrever 2 vezes ou mais." />
       </div>
 
       {/* ── Por tag | Chegada ── */}
@@ -94,13 +97,15 @@ export function SupportKpisView({ month }: { month: string }) {
 
 // ─── Peças ────────────────────────────────────────────────────────────────────
 
-function MiniStat({ icon: Icon, tone, label, value, sub, foot, delta, deltaUnit = "%", deltaTone = "neutral", vs }: {
-  icon: typeof Mail; tone: string; label: string; value: string | undefined; sub?: string; foot?: string;
+// Card enxuto: número, variação e uma linha; o resto vai no tooltip (hint).
+function MiniStat({ icon: Icon, tone, label, value, sub, foot, hint, delta, deltaUnit = "%", deltaTone = "neutral", vs }: {
+  icon: typeof Mail; tone: string; label: string; value: string | undefined; sub?: string; foot?: string; hint?: string;
   delta?: number | null; deltaUnit?: string; deltaTone?: "lower" | "higher" | "neutral"; vs?: string;
 }) {
   const good = delta == null || delta === 0 || deltaTone === "neutral" ? null : deltaTone === "lower" ? delta < 0 : delta > 0;
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 flex items-start gap-3 min-w-0">
+    <div className="rounded-2xl border border-border bg-card p-4 flex items-start gap-3 min-w-0"
+      title={[hint, delta != null && vs ? `Variação ${vs}.` : null].filter(Boolean).join("\n") || undefined}>
       <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${tone}`}><Icon className="size-[18px]" /></div>
       <div className="min-w-0">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">{label}</p>
@@ -113,7 +118,7 @@ function MiniStat({ icon: Icon, tone, label, value, sub, foot, delta, deltaUnit 
               {delta > 0 ? <ArrowUp className="size-3" /> : delta < 0 ? <ArrowDown className="size-3" /> : <Minus className="size-3" />}
               {delta > 0 ? "+" : ""}{delta.toLocaleString("pt-BR")}{deltaUnit}
             </span>
-            <span className="truncate">{vs}</span>
+            <span className="truncate">vs mês anterior</span>
           </p>
         )}
         {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
