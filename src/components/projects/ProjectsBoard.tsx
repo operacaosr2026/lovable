@@ -93,7 +93,7 @@ export function ProjectsBoard() {
   return (
     <div>
       <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 mb-5">
-        <div className="flex items-center gap-2 px-3 h-9 rounded-xl bg-card border border-border flex-1 min-w-[180px] lg:min-w-0">
+        <div className="flex items-center gap-2 px-3 h-9 rounded-xl bg-card border border-border w-full sm:w-56 shrink-0">
           <Search className="size-3.5 text-muted-foreground" />
           <input
             value={search}
