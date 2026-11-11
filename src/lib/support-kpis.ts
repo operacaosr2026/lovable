@@ -223,11 +223,16 @@ export function computeSupportKpis(
   // total, comparando com o mês anterior. Conta as conversas ABERTAS no mês —
   // conversa antiga que recebeu resposta no mês não conta de novo.
   const active = convs.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to));
+  const TAG_SEVERITY = ["Chargeback", "Reembolso", "Defeito", "Troca", "Rastreio"];
+  const tagPriority = [...TAG_SEVERITY.filter((t) => fixedTags.includes(t)), ...fixedTags.filter((t) => !TAG_SEVERITY.includes(t))];
   const tagStats = (subset: Conv[]): TagStats => {
     const cur = subset.filter((c) => c.opened >= from && c.opened <= to);
     const prv = subset.filter((c) => c.opened >= pFrom && c.opened <= pTo);
     const hasTag = (c: Conv) => c.tags.some((t) => fixedTags.includes(t));
-    const count = (list: Conv[], tag: string) => (tag === "Sem tag" ? list.filter((c) => !hasTag(c)).length : list.filter((c) => c.tags.includes(tag)).length);
+    // Cada conversa conta numa tag só — a principal (a mais grave que ela tem),
+    // pra soma dar 100%. Tags criadas pelo usuário vêm depois, na ordem dele.
+    const primary = (c: Conv) => tagPriority.find((t) => c.tags.includes(t)) ?? "Sem tag";
+    const count = (list: Conv[], tag: string) => list.filter((c) => primary(c) === tag).length;
     const withTag = cur.filter(hasTag).length;
     const prevWithTag = prv.filter(hasTag).length;
     const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);

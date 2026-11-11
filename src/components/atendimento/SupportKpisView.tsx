@@ -244,7 +244,8 @@ function TagsCard({ k, className }: { k: Kpis | undefined; className: string }) 
               const d = pctDelta(t.count, t.prevCount);
               return (
                 <div key={t.tag} className="grid grid-cols-[minmax(0,1fr)_32px_44px_52px] sm:grid-cols-[minmax(0,1fr)_32px_44px_minmax(0,1.2fr)_52px] items-center gap-2.5 text-xs"
-                  title={`${t.tag}: ${t.count} conversa${t.count === 1 ? "" : "s"} (${t.pct}%) · mês anterior: ${t.prevCount}`}>
+                  title={`${t.tag}: ${t.count} conversa${t.count === 1 ? "" : "s"} aberta${t.count === 1 ? "" : "s"} no mês (${t.pct}%) · mês anterior: ${t.prevCount}
+Conversa com várias tags conta só na mais grave: Chargeback > Reembolso > Defeito > Troca > Rastreio`}>
                   <span className="flex items-center gap-2 min-w-0">
                     <span className="size-2.5 rounded-full shrink-0" style={{ background: color }} />
                     <span className="truncate">{t.tag}</span>
