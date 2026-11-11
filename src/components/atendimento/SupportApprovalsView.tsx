@@ -64,7 +64,8 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   const [kind, setKind] = useState<"todos" | "reembolso" | "troca">("todos");
   const [store, setStore] = useState<string>("");
   const [status, setStatus] = useState<StatusFilter>("abertos");
-  const [sort, setSort] = useState<Sort>("recentes");
+  // Sempre do mais recente pro mais antigo (o seletor de ordem saiu da tela).
+  const sort = "recentes" as Sort;
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
@@ -133,10 +134,9 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-3 sm:flex gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
             <Select value={store} onChange={setStore} options={[["", "Todas as lojas"], ...stores.map((s) => [s, s] as [string, string])]} />
             <Select value={status} onChange={(v) => setStatus(v as StatusFilter)} options={STATUS_FILTERS} />
-            <Select value={sort} onChange={(v) => setSort(v as Sort)} options={SORTS} />
           </div>
           <div className="hidden sm:block flex-1" />
           <div className="relative w-full sm:w-56">
