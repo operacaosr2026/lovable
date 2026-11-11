@@ -210,7 +210,8 @@ function TasksPage() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tasks
-      .filter((t) => tab === "todas" ? true : tab === "atrasada" ? isOverdue(t, today) : t.status === tab)
+      // "Todas" = as abertas; concluídas ficam só na aba delas.
+      .filter((t) => tab === "todas" ? t.status !== "concluida" : tab === "atrasada" ? isOverdue(t, today) : t.status === tab)
       .filter((t) => !q || t.title.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q))
       .filter((t) => !areaFilter || t.area === areaFilter)
       .filter((t) => !priorityFilter || t.priority === priorityFilter)
@@ -337,7 +338,7 @@ function TasksPage() {
                 {label}
                 <span className={`min-w-5 h-5 px-1.5 rounded-md text-[11px] font-semibold grid place-items-center ${
                   tab === key ? "bg-primary/10 text-primary" : key === "atrasada" && counts.atrasada ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"
-                }`}>{counts[key]}</span>
+                }`}>{key === "todas" ? counts.todas - counts.concluida : counts[key]}</span>
               </button>
             ))}
           </div>
