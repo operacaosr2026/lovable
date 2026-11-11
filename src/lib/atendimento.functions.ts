@@ -263,7 +263,7 @@ export const supportKpisFor = createServerOnlyFn(async (ownerId: string, month: 
     selectAll<KpiMessage & { subject: string | null }>(supabaseAdmin.from("support_messages").select("conversation_id,direction,sent_at,subject")
       .eq("owner_id", ownerId).gte("sent_at", range.prevFrom).lte("sent_at", until)),
     selectAll<KpiConversation & { customer_email: string }>(supabaseAdmin.from("support_conversations")
-      .select("id,customer_email,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id")
+      .select("id,customer_email,status,tags,resolved_at,last_message_at,last_inbound_at,last_outbound_at,shop_id,created_at")
       .eq("owner_id", ownerId).or(`last_message_at.gte.${range.prevFrom},status.eq.em_atendimento`)),
     supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
     supabaseAdmin.from("support_settings").select(`tags,goal_first_response_min,goal_resolution_min,${BH_COLS}`).eq("owner_id", ownerId).maybeSingle(),

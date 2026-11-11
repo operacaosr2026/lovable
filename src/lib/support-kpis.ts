@@ -8,6 +8,7 @@ export type KpiMessage = { conversation_id: string; direction: string; sent_at: 
 export type KpiConversation = {
   id: string; status: string; tags: string[]; resolved_at: string | null;
   last_message_at: string | null; last_inbound_at: string | null; last_outbound_at: string | null; shop_id: string | null;
+  created_at?: string | null;
 };
 export type KpiShop = { id: string; name: string };
 
@@ -103,7 +104,7 @@ export function businessMs(a: number, b: number, h: BusinessHours = DEFAULT_BUSI
   return total;
 }
 
-type Conv = KpiConversation & { first: number; firstIn: number | null; firstOut: number | null; msgs: { dir: string; t: number }[] };
+type Conv = KpiConversation & { first: number; opened: number; firstIn: number | null; firstOut: number | null; msgs: { dir: string; t: number }[] };
 
 function prepare(messages: KpiMessage[], conversations: KpiConversation[]): Conv[] {
   const byConv = new Map<string, { dir: string; t: number }[]>();
@@ -115,7 +116,13 @@ function prepare(messages: KpiMessage[], conversations: KpiConversation[]): Conv
     const msgs = (byConv.get(c.id) ?? []).sort((a, b) => a.t - b.t);
     const firstIn = msgs.find((m) => m.dir === "in")?.t ?? null;
     const firstOut = firstIn != null ? msgs.find((m) => m.dir === "out" && m.t > firstIn)?.t ?? null : null;
-    return { ...c, msgs, first: msgs[0]?.t ?? Infinity, firstIn, firstOut };
+    // Quando a conversa abriu: a 1ª mensagem carregada — mas só vêm mensagens
+    // a partir do mês anterior, então conversa criada no sistema bem antes
+    // (mais de 1 dia antes dessa mensagem) é antiga e abriu em created_at.
+    const created = c.created_at ? new Date(c.created_at).getTime() : null;
+    const firstMsg = msgs[0]?.t ?? Infinity;
+    const opened = created != null && created < firstMsg - 86_400_000 ? created : firstMsg;
+    return { ...c, msgs, first: firstMsg, firstIn, firstOut, opened };
   });
 }
 
@@ -213,11 +220,12 @@ export function computeSupportKpis(
   });
 
   // Tags: só a lista fixa (Configurações > Tags) + "Sem tag", por loja e no
-  // total, comparando com o mês anterior (conversas com movimento em cada mês).
+  // total, comparando com o mês anterior. Conta as conversas ABERTAS no mês —
+  // conversa antiga que recebeu resposta no mês não conta de novo.
   const active = convs.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to));
   const tagStats = (subset: Conv[]): TagStats => {
-    const cur = subset.filter((c) => c.msgs.some((m) => m.t >= from && m.t <= to));
-    const prv = subset.filter((c) => c.msgs.some((m) => m.t >= pFrom && m.t <= pTo));
+    const cur = subset.filter((c) => c.opened >= from && c.opened <= to);
+    const prv = subset.filter((c) => c.opened >= pFrom && c.opened <= pTo);
     const hasTag = (c: Conv) => c.tags.some((t) => fixedTags.includes(t));
     const count = (list: Conv[], tag: string) => (tag === "Sem tag" ? list.filter((c) => !hasTag(c)).length : list.filter((c) => c.tags.includes(tag)).length);
     const withTag = cur.filter(hasTag).length;
