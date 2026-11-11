@@ -372,10 +372,10 @@ function Products({ d }: { d: Data }) {
             <thead>
               <tr className="text-[11px] text-muted-foreground">
                 <th className="text-left font-medium pb-2">Produto</th>
-                <th className="text-right font-medium pb-2">Reemb. / vendidos</th>
-                <th className="text-left font-medium pb-2 pl-6">Taxa</th>
-                <th className="text-right font-medium pb-2">Valor</th>
-                <th className="text-left font-medium pb-2 pl-6">Motivo principal</th>
+                <th className="text-center font-medium pb-2">Reemb. / vendidos</th>
+                <th className="text-center font-medium pb-2 pl-6">Taxa</th>
+                <th className="text-center font-medium pb-2 pl-3">Valor</th>
+                <th className="text-center font-medium pb-2 pl-6">Motivo principal</th>
               </tr>
             </thead>
             <tbody>
@@ -389,7 +389,7 @@ function Products({ d }: { d: Data }) {
                       <span className="truncate max-w-[260px]">{p.name}</span>
                     </div>
                   </td>
-                  <td className="text-right whitespace-nowrap">{p.units} / {p.sold || "—"}</td>
+                  <td className="text-center whitespace-nowrap">{p.units} / {p.sold || "—"}</td>
                   <td className="pl-6 w-56">
                     {p.rate == null ? <span className="text-muted-foreground">sem venda no período</span> : (
                       <div className="flex items-center gap-3">
@@ -398,8 +398,8 @@ function Products({ d }: { d: Data }) {
                       </div>
                     )}
                   </td>
-                  <td className="text-right font-semibold whitespace-nowrap pl-3">{usd(p.amount)}</td>
-                  <td className="pl-6 text-muted-foreground whitespace-nowrap">{p.topReason ? refundReasonLabel(p.topReason) : "—"}</td>
+                  <td className="text-center font-semibold whitespace-nowrap pl-3">{usd(p.amount)}</td>
+                  <td className="pl-6 text-center text-muted-foreground whitespace-nowrap">{p.topReason ? refundReasonLabel(p.topReason) : "—"}</td>
                 </tr>
               ))}
             </tbody>
