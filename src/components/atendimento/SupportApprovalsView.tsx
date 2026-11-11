@@ -46,7 +46,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   aprovado: { label: "Aprovado", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" },
   recusado: { label: "Recusado", cls: "bg-muted text-muted-foreground border-border" },
 };
-const STATUS_FILTERS = [["abertos", "Em aberto"], ["aprovado", "Aprovados (14 dias)"], ["recusado", "Recusados (14 dias)"], ["todos", "Todos os status"]] as const;
+const STATUS_FILTERS = [["abertos", "Em aberto"], ["aprovado", "Aprovados"], ["recusado", "Recusados"], ["todos", "Todos os status"]] as const;
 const SORTS = [["recentes", "Mais recentes"], ["antigos", "Mais antigos"], ["valor", "Maior valor"]] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number][0];
 type Sort = (typeof SORTS)[number][0];

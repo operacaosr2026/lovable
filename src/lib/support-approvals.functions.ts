@@ -8,8 +8,8 @@ import type { RefundLine } from "@/lib/support-refund.functions";
 import type { ExchangeItem } from "@/lib/support-exchange.functions";
 
 // Atendimento › Aprovações: reembolsos e trocas de todas as lojas num lugar só.
-// Em aberto (pendente, gerando, erro) mais as decisões dos últimos 14 dias (a
-// tela mostra 7; os 7 de antes servem pra comparar o tempo de análise). Vê quem
+// Em aberto (pendente, gerando, erro) mais todas as decisões (aprovados e
+// recusados, sem limite de data — o tempo médio de análise usa só 7+7 dias). Vê quem
 // aprova ou tem "Aprovações (ver a fila)" nas permissões.
 
 const REFUND_COLS = "id,shop_id,conversation_id,order_id,order_number,customer_name,customer_email,mode,reason,line_items,include_shipping,amount,currency,notify_customer,charge_on_delivery,cancel_order,order_cancelled_at,note,status,requested_by,decided_by,decided_at,reject_reason,refunded_amount,error,created_at";
@@ -47,11 +47,10 @@ export const listSupportApprovals = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const ctx = context as Ctx;
     assertSee(ctx);
-    const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
     const load = (table: string, cols: string) => Promise.all([
       db(table).select(cols).eq("owner_id", ctx.ownerId).in("status", OPEN).order("created_at", { ascending: true }),
-      db(table).select(cols).eq("owner_id", ctx.ownerId).in("status", ["aprovado", "recusado"]).gte("decided_at", since)
-        .order("decided_at", { ascending: false }).limit(300),
+      db(table).select(cols).eq("owner_id", ctx.ownerId).in("status", ["aprovado", "recusado"])
+        .order("decided_at", { ascending: false }).limit(5000),
     ]).then((res) => {
       const err = res.find((r: any) => r.error)?.error;
       if (err) throw new Error(err.message);
