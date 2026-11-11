@@ -70,10 +70,12 @@ function GerencialPage() {
   const navigate = Route.useNavigate();
   const tab: Tab = search.tab ?? "alertas";
   const setTab = (t: Tab) => navigate({ search: t === "alertas" ? {} : { tab: t }, replace: true });
-  const ownFilter = OWN_FILTER_TABS.includes(tab);
+  // Alertas não têm filtro de mês: alerta é alerta, sempre o mês atual.
+  const ownFilter = OWN_FILTER_TABS.includes(tab) || tab === "alertas";
+  const dataMonth = tab === "alertas" ? months[0] : month;
 
   const fn = useServerFn(getGerencial);
-  const q = useQuery({ queryKey: ["gerencial", month], queryFn: () => fn({ data: { month } }), staleTime: 5 * 60_000 });
+  const q = useQuery({ queryKey: ["gerencial", dataMonth], queryFn: () => fn({ data: { month: dataMonth } }), staleTime: 5 * 60_000 });
   const d = q.data as Data | undefined;
   // Número na aba da fila (mesma consulta da tela).
   const approvalsFn = useServerFn(listSupportApprovals);
