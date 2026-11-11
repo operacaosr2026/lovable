@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { selectAllIn } from "@/lib/select-all";
+import { refundedResendIds } from "@/lib/refunded-resends.server";
 import { addDaysIso, isoTodayUS } from "@/lib/timezone";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { aggregate, avg, carrierLabel, carrierOf, CARRIERS, median, parseEvents, type CarrierRow, type CarrierTotals } from "@/lib/carrier-stats";
@@ -124,7 +125,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
     if (!shopIds.length) return { rows: [] as LocalRow[], orders: [] as LocalOrder[] };
 
     const { data: orders, error } = await selectAllIn<any>(shopIds, (ids) => {
-      let q = supabaseAdmin.from("shop_orders").select("id,order_number,order_date,tracking_code,tracking_url,delivery_status,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at")
+      let q = supabaseAdmin.from("shop_orders").select("id,order_number,order_date,tracking_code,tracking_url,delivery_status,tracking_code_history,tracking_code_manual_at,cancelled:raw->>cancelled_at,shopify_financial_status")
         .eq("user_id", ownerId).in("shop_id", ids).not("tracking_code", "is", null)
         .or("delivery_status.is.null,delivery_status.neq.shipment_cancelled");   // envio cancelado: fora
       if (from) q = q.gte("order_date", from);
@@ -139,6 +140,12 @@ export const getLocalTracking = createServerFn({ method: "GET" })
     const phaseOf = await phaseOfOwner(ownerId);
     const now = Date.now();
     const DAY = 86_400_000;
+    // Reembolsado por inteiro (ou reenvio de pedido reembolsado): o cliente já tem
+    // o dinheiro, então o pacote parado/em trânsito não é mais problema — sai da
+    // lista (mesma regra dos alertas de rastreio). Se for entregue, volta a contar
+    // e o pedido vai pros alertas de Chargebacks pra cobrar o cliente.
+    const refundedResends = await refundedResendIds(ownerId, live.map((o) => o.id as string));
+    const isRefunded = (o: any) => ["refunded", "voided"].includes(String(o.shopify_financial_status ?? "")) || refundedResends.has(o.id);
 
     const out: LocalOrder[] = [];
     for (const o of live) {
@@ -163,6 +170,7 @@ export const getLocalTracking = createServerFn({ method: "GET" })
       const delivered = leg.deliveredTs != null || o.delivery_status === "delivered";
       const lastTs = same && t.last_event_at ? Date.parse(t.last_event_at) : null;
       const status = delivered ? "entregue" : lastTs != null && now - lastTs >= LOCAL_STALE_DAYS * DAY ? "parado" : "andamento";
+      if (status !== "entregue" && isRefunded(o)) continue;
       const end = leg.deliveredTs ?? (delivered ? lastTs ?? now : now);
       out.push({
         id: o.id, order_number: o.order_number, order_date: String(o.order_date).slice(0, 10), carrier: carrierOf(code), carrier_label: carrierLabel(carrierOf(code)), local: leg.key,
