@@ -9,7 +9,7 @@ export const askAssistantFn = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({
     messages: z.array(z.object({
       role: z.enum(["user", "assistant"]),
-      content: z.string().trim().min(1).max(4000),
+      content: z.string().trim().min(1).max(20_000), // mensagem do fornecedor colada pode ser longa
     })).min(1).max(30),
   }).parse(d))
   .handler(async ({ context, data }) => {

@@ -1,18 +1,27 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { MessageCircle, X, Send, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { MessageCircle, X, Send, Loader2, Sparkles, Trash2, Check } from "lucide-react";
+import { toast } from "sonner";
 import { askAssistantFn } from "@/lib/assistant.functions";
+import { saveSupplierReply } from "@/lib/supplier-replies.functions";
+import type { SupplierProposal } from "@/lib/assistant.server";
 
 // Bolinha no canto inferior direito: chat com o sistema (assistant.server.ts).
 // A conversa fica no navegador (localStorage) só pra não sumir ao trocar de página.
 
-type Msg = { role: "user" | "assistant"; content: string; error?: boolean };
+type Msg = {
+  role: "user" | "assistant"; content: string; error?: boolean;
+  // Resposta do fornecedor preparada pela IA: só grava no botão.
+  proposal?: SupplierProposal; proposalStatus?: "saved" | "cancelled";
+};
 const KEY = "srx-assistant-chat";
 const SUGGESTIONS = [
   "Quanto faturei hoje?",
   "Quantos pedidos estão sem postar há mais de 5 dias?",
   "Quais chargebacks estão abertos e quando vence o prazo?",
   "Qual produto mais vendeu esse mês?",
+  "Colar resposta do fornecedor (ex.: sem estoque) com os pedidos",
 ];
 
 function load(): Msg[] {
@@ -40,8 +49,50 @@ function Rich({ text }: { text: string }) {
   );
 }
 
+function ProposalCard({ p, status, onSave, onCancel }: {
+  p: SupplierProposal; status?: "saved" | "cancelled"; onSave: () => Promise<void>; onCancel: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const replacing = p.orders.filter((o) => o.current);
+  return (
+    <div className="mt-2 rounded-xl border border-border bg-background p-3 space-y-2">
+      <div>
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Resposta do fornecedor</p>
+        <p className="font-semibold">{p.label}</p>
+        {p.note && <p className="text-xs text-muted-foreground">{p.note}</p>}
+      </div>
+      <div className="max-h-40 overflow-y-auto space-y-1">
+        {p.orders.map((o) => (
+          <div key={o.id} className="flex items-baseline gap-2 text-xs">
+            <span className="font-medium">{o.number}</span>
+            <span className="text-muted-foreground truncate">{o.shop}{o.code ? ` · ${o.code}` : ""}</span>
+            {o.current && <span className="ml-auto shrink-0 text-amber-600" title={o.current.note ?? ""}>substitui "{o.current.title}"</span>}
+          </div>
+        ))}
+      </div>
+      {p.notFound.length > 0 && <p className="text-xs text-red-500">Não achei: {p.notFound.join(", ")}</p>}
+      {status === "saved" ? (
+        <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1"><Check className="size-3.5" /> Gravado — já está nos alertas do Gerencial</p>
+      ) : status === "cancelled" ? (
+        <p className="text-xs text-muted-foreground">Cancelado</p>
+      ) : (
+        <div className="flex gap-2 pt-1">
+          <button disabled={saving} onClick={async () => { setSaving(true); try { await onSave(); } finally { setSaving(false); } }}
+            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50">
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+            Gravar {p.orders.length} pedido{p.orders.length === 1 ? "" : "s"}{replacing.length ? ` (${replacing.length} substitui)` : ""}
+          </button>
+          <button disabled={saving} onClick={onCancel} className="h-8 px-3 rounded-lg bg-muted text-xs font-medium hover:bg-muted/70">Cancelar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AssistantChat() {
   const ask = useServerFn(askAssistantFn);
+  const saveReply = useServerFn(saveSupplierReply);
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -67,13 +118,29 @@ export function AssistantChat() {
     setInput("");
     setBusy(true);
     try {
-      const history = next.filter((m) => !m.error).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
+      const history = next.filter((m) => !m.error).map(({ role, content }) => ({ role, content: content.slice(0, 20_000) }));
       const r = await ask({ data: { messages: history } });
-      setMsgs((m) => [...m, { role: "assistant", content: r.answer }]);
+      setMsgs((m) => [...m, { role: "assistant", content: r.answer, proposal: r.proposal ?? undefined }]);
     } catch (e: any) {
       setMsgs((m) => [...m, { role: "assistant", content: String(e?.message ?? "Erro ao consultar"), error: true }]);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Marca o cartão e deixa registrado na conversa (a IA vê no histórico).
+  const settle = (i: number, status: "saved" | "cancelled", text: string) =>
+    setMsgs((m) => m.map((x, j) => (j === i ? { ...x, proposalStatus: status, content: `${x.content}\n\n[${text}]` } : x)));
+  const saveProposal = async (i: number, p: SupplierProposal) => {
+    try {
+      const r = await saveReply({ data: { orderIds: p.orders.map((o) => o.id), kind: p.kind, title: p.title, note: p.note } });
+      settle(i, "saved", `Gravado pelo usuário: "${p.label}" em ${r.saved} pedido(s)`);
+      toast.success(`Resposta registrada em ${r.saved} pedido${r.saved === 1 ? "" : "s"} — já está nos alertas`);
+      qc.invalidateQueries({ queryKey: ["gerencial"] });
+      qc.invalidateQueries({ queryKey: ["alert-orders"] });
+      qc.invalidateQueries({ queryKey: ["nav-badges"] });
+    } catch (e: any) {
+      toast.error(String(e?.message ?? "Erro ao gravar"));
     }
   };
 
@@ -102,7 +169,7 @@ export function AssistantChat() {
                 <p className="text-muted-foreground mb-3">Pergunte qualquer coisa sobre pedidos, rastreio, atendimento, chargebacks, Caixa, tarefas, produtos…</p>
                 <div className="flex flex-col gap-2">
                   {SUGGESTIONS.map((s) => (
-                    <button key={s} onClick={() => send(s)}
+                    <button key={s} onClick={() => (s.startsWith("Colar") ? (setInput(""), inputRef.current?.focus(), toast.info("Cole a mensagem do fornecedor na caixa de texto e envie")) : send(s))}
                       className="text-left px-3 py-2 rounded-xl border border-border hover:bg-muted transition-colors">
                       {s}
                     </button>
@@ -119,7 +186,12 @@ export function AssistantChat() {
                       ? "max-w-[90%] rounded-2xl rounded-bl-md bg-destructive/10 text-destructive px-3 py-2"
                       : "max-w-[90%] rounded-2xl rounded-bl-md bg-muted px-3 py-2"
                 }>
-                  {m.role === "assistant" && !m.error ? <Rich text={m.content} /> : m.content}
+                  {m.role === "assistant" && !m.error ? <Rich text={m.content.replace(/\n\n\[(Gravado|Cancelado) pelo usuário[^\]]*\]$/, "")} /> : m.content}
+                  {m.proposal && (
+                    <ProposalCard p={m.proposal} status={m.proposalStatus}
+                      onSave={() => saveProposal(i, m.proposal!)}
+                      onCancel={() => settle(i, "cancelled", "Cancelado pelo usuário — não gravou")} />
+                  )}
                 </div>
               </div>
             ))}

@@ -27,10 +27,17 @@ export type ReplyOrder = {
 export const parseSupplierReply = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ text: z.string().max(20_000) }).parse(d))
-  .handler(async ({ data, context }): Promise<{ orders: ReplyOrder[]; notFound: string[]; suggestedNote: string }> => {
+  .handler(async ({ data, context }) => {
     const ctx = context as Ctx;
     if (!canView(ctx)) throw new Error("Sem acesso ao Gerencial");
-    const text = data.text;
+    return findSupplierReplyOrders(ctx.ownerId, data.text);
+  });
+
+export type SupplierReplyMatch = { orders: ReplyOrder[]; notFound: string[]; suggestedNote: string };
+
+// Também usado pelo Assistente (chat), que cola a mensagem do fornecedor ali.
+export async function findSupplierReplyOrders(ownerId: string, text: string): Promise<SupplierReplyMatch> {
+    const ctx = { ownerId };
     const codes = [...new Set([...text.matchAll(CODE_RE)].map((m) => m[1].toUpperCase()))];
     const codeSet = new Set(codes);
     // Nº de pedido que não é um código de rastreio.
@@ -83,7 +90,7 @@ export const parseSupplierReply = createServerFn({ method: "POST" })
       notFound,
       suggestedNote,
     };
-  });
+}
 
 export const saveSupplierReply = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
