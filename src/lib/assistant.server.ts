@@ -84,7 +84,7 @@ async function runTool(ownerId: string, name: string, input: any): Promise<strin
         periodo: { de, ate },
         totais: o.totals,
         por_loja: o.shopBreakdown.map((s) => ({ loja: s.shop_name, faturamento: s.faturamento, taxa_estorno_90d: s.taxaEstorno })),
-        produtos: o.productBreakdown.slice(0, 30).map((p) => ({ produto: p.name, pedidos: p.pedidos, unidades: p.unidades, faturamento: p.faturamento })),
+        produtos: o.productBreakdown.slice(0, 30).map((p) => ({ produto: p.name, pedidos: p.pedidos, unidades: p.unidades, faturamento: p.faturamento, reembolsos: p.reembolsos, pedidos_reembolsados: p.reembolsosPedidos, chargebacks: p.chargebacks, pedidos_com_chargeback: p.chargebacksPedidos })),
         por_dia: o.chartData,
       });
     }

@@ -683,6 +683,17 @@ const fmtDays = (d: number | null) => (d == null ? "—" : `${d.toFixed(1)}d`);
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────────
 
+// Reembolso / chargeback do produto: valor e quantos pedidos (traço quando zero).
+function LossCell({ value, orders }: { value: number; orders: number }) {
+  if (!orders) return <td className="py-2 px-3 text-center tabular-nums text-muted-foreground/60">—</td>;
+  return (
+    <td className="py-2 px-3 text-center tabular-nums">
+      <p className="font-semibold text-red-500">{fmtMoney(value)}</p>
+      <p className="text-[10px] text-muted-foreground">{orders} pedido{orders === 1 ? "" : "s"}</p>
+    </td>
+  );
+}
+
 function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; loading: boolean }) {
   const total = rows.reduce((s, r) => s + r.faturamento, 0);
   const totalUnidades = rows.reduce((s, r) => s + r.unidades, 0);
@@ -715,6 +726,8 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
                 <th className="text-center font-semibold py-2 px-3">Pedidos</th>
                 <th className="text-center font-semibold py-2 px-3 hidden sm:table-cell">Unidades</th>
                 <th className="text-center font-semibold py-2 px-3">Faturamento</th>
+                <th className="text-center font-semibold py-2 px-3" title="Dos pedidos vendidos no período">Reembolsos</th>
+                <th className="text-center font-semibold py-2 px-3" title="Dos pedidos vendidos no período">Chargebacks</th>
                 <th className="text-center font-semibold py-2 pl-3 w-[22%] hidden md:table-cell">% do faturamento</th>
               </tr>
             </thead>
@@ -741,6 +754,8 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
                     <td className="py-2 px-3 text-center tabular-nums font-medium">{r.pedidos.toLocaleString("pt-BR")}</td>
                     <td className="py-2 px-3 text-center tabular-nums text-muted-foreground hidden sm:table-cell">{r.unidades.toLocaleString("pt-BR")}</td>
                     <td className="py-2 px-3 text-center tabular-nums font-semibold">{fmtMoney(r.faturamento)}</td>
+                    <LossCell value={r.reembolsos} orders={r.reembolsosPedidos} />
+                    <LossCell value={r.chargebacks} orders={r.chargebacksPedidos} />
                     <td className="py-2 pl-3 hidden md:table-cell">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">

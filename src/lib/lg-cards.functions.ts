@@ -609,6 +609,8 @@ export const saveLgCurrencyRates = createServerFn({ method: "POST" })
 export type DashboardProductRow = {
   key: string; product_id: string | null; name: string; image_url: string | null;
   pedidos: number; unidades: number; faturamento: number;
+  // Dos pedidos vendidos no período: valor reembolsado / em chargeback e quantos pedidos.
+  reembolsos: number; reembolsosPedidos: number; chargebacks: number; chargebacksPedidos: number;
 };
 
 const emptyDashboardOverview = {
@@ -692,7 +694,7 @@ export async function computeDashboardOverview(ownerId: string, fromArg?: string
           ownerId,
           (shopsRes.data ?? []).map((s: any) => ({ id: s.id as string, name: s.name as string })),
         )),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, external_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code,refunds:raw->refunds").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
       selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
       // Mesma fonte do card de Lojas e Grupos (getLgCardQuickMetrics).
       getEstornoStats(ownerId, shopIds),
@@ -746,8 +748,12 @@ export async function computeDashboardOverview(ownerId: string, fromArg?: string
     // título do item na Shopify. Faturamento = preço × qtd − descontos do item.
     const imageOf = new Map(((catalogRes.data ?? []) as { id: string; main_image_url: string | null }[]).map((p) => [p.id, p.main_image_url]));
     const productsByKey = new Map<string, DashboardProductRow>();
+    // Receita de cada produto dentro de cada pedido — pra dividir reembolso/chargeback do pedido.
+    const orderShares = new Map<string, Map<string, number>>();
     for (const o of (monthOrdersRes.data ?? []) as any[]) {
       const seen = new Set<string>();
+      const shares = new Map<string, number>();
+      orderShares.set(`${o.shop_id}:${o.external_id}`, shares);
       for (const li of (o.line_items ?? []) as any[]) {
         const title = String(li?.title ?? li?.name ?? "").trim() || "Sem nome";
         const match = matchLineItemProduct(li, costProducts);
@@ -759,16 +765,43 @@ export async function computeDashboardOverview(ownerId: string, fromArg?: string
           : Number(li?.total_discount ?? 0);
         const row = productsByKey.get(key) ?? {
           key, product_id: match?.id ?? null, name: match?.name ?? title, image_url: (match?.id && imageOf.get(match.id)) || null,
-          pedidos: 0, unidades: 0, faturamento: 0,
+          pedidos: 0, unidades: 0, faturamento: 0, reembolsos: 0, reembolsosPedidos: 0, chargebacks: 0, chargebacksPedidos: 0,
         };
+        const lineRev = Number(li?.price ?? 0) * qty - discount;
         row.unidades += qty;
-        row.faturamento += Number(li?.price ?? 0) * qty - discount;
+        row.faturamento += lineRev;
+        shares.set(key, (shares.get(key) ?? 0) + Math.max(0, lineRev));
         if (!seen.has(key)) { row.pedidos += 1; seen.add(key); }
         productsByKey.set(key, row);
       }
     }
+    // Reembolso e chargeback por produto: dos pedidos vendidos no período (pela
+    // data do pedido, não do reembolso — diferente do card do Lucro), o valor do
+    // pedido dividido entre os produtos dele pela receita de cada item.
+    const attribute = (orderKey: string, amount: number, kind: "reembolsos" | "chargebacks") => {
+      const shares = orderShares.get(orderKey);
+      if (!shares?.size || !(amount > 0)) return;
+      const tot = Array.from(shares.values()).reduce((a, b) => a + b, 0);
+      for (const [k, v] of shares) {
+        const row = productsByKey.get(k);
+        if (!row) continue;
+        row[kind] += amount * (tot > 0 ? v / tot : 1 / shares.size);
+        if (kind === "reembolsos") row.reembolsosPedidos += 1; else row.chargebacksPedidos += 1;
+      }
+    };
+    for (const o of (monthOrdersRes.data ?? []) as any[]) {
+      const refunded = ((o.refunds ?? []) as any[]).flatMap((r) => (r?.transactions ?? []) as any[])
+        .filter((t) => t?.kind === "refund" && t?.status === "success")
+        .reduce((sum, t) => sum + Number(t?.amount ?? 0), 0);
+      attribute(`${o.shop_id}:${o.external_id}`, refunded, "reembolsos");
+    }
+    const { data: cbRows } = await selectAll<any>(supabaseAdmin.from("shop_order_disputes")
+      .select("shop_id,order_external_id,amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback"));
+    for (const d of cbRows ?? []) attribute(`${d.shop_id}:${d.order_external_id}`, Number(d.amount ?? 0), "chargebacks");
+
+    const r2 = (n: number) => Math.round(n * 100) / 100;
     const productBreakdown = Array.from(productsByKey.values())
-      .map((r) => ({ ...r, faturamento: Math.round(r.faturamento * 100) / 100 }))
+      .map((r) => ({ ...r, faturamento: r2(r.faturamento), reembolsos: r2(r.reembolsos), chargebacks: r2(r.chargebacks) }))
       .sort((a, b) => b.faturamento - a.faturamento || b.pedidos - a.pedidos);
 
     // Período anterior — só totais por loja, não precisa de série diária
