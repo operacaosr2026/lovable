@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { NotificationBell } from "@/components/NotificationBell";
+import { AssistantChat } from "@/components/AssistantChat";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -451,6 +452,7 @@ export function AppLayout() {
       <main className="flex-1 min-w-0 pt-14 md:pt-0">
         <PageAccessGate path={path} />
       </main>
+      <AssistantChat />
     </div>
   );
 }

@@ -640,8 +640,10 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     from: z.string().optional(),
     to: z.string().optional(),
   }).optional().parse(d ?? {}))
-  .handler(async ({ context, data }) => {
-    const { ownerId } = context;
+  .handler(async ({ context, data }) => computeDashboardOverview(context.ownerId, data?.from, data?.to));
+
+// Também usado pelo Assistente (chat) — mesmos números do Dashboard.
+export async function computeDashboardOverview(ownerId: string, fromArg?: string, toArg?: string) {
 
     // Lojas dos grupos ativos numa consulta só (antes: grupos, depois lojas).
     const { data: cardShops, error } = await supabaseAdmin
@@ -658,8 +660,8 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
     // negócio), não UTC nem o horário local do servidor.
     const todayStr = isoTodayUS();
     const defaultMonthStart = isoMonthStartUS();
-    const from = data?.from ?? defaultMonthStart;
-    const to = data?.to ?? todayStr;
+    const from = fromArg ?? defaultMonthStart;
+    const to = toArg ?? todayStr;
 
     const { prevFrom, prevTo } = comparisonPeriod(from, to);
 
@@ -898,7 +900,7 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
       shopIds,
       cardIds,
     };
-  });
+}
 
 // ─── Card quick metrics ───────────────────────────────────────────────────────
 
