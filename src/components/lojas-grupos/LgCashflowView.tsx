@@ -117,6 +117,13 @@ function shiftToMondayIfWeekend(k: string) {
   if (wd===0) return addDaysToKey(k,1);
   return k;
 }
+// Valor com sinal: entrada soma (+), saída tira (−). Entrada negativa (repasse
+// negativo) vira "−$x" e saída negativa (estorno a favor) "+$x" — antes saía "+-$x".
+function signedMoney(isIncome: boolean, amount: number) {
+  const v = isIncome ? amount : -amount;
+  return `${v < 0 ? "-" : "+"}${fmtMoney(Math.abs(v))}`;
+}
+
 function fmtMoney(n: number) {
   return n.toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:false});
 }
@@ -236,7 +243,7 @@ function EntryChip({
           {entry.via_balance && <BalanceTag />}
         </span>
         <span className="font-semibold tabular-nums shrink-0">
-          {isIncome ? "+" : "-"}{fmtMoney(Number(entry.amount))}
+          {signedMoney(isIncome, Number(entry.amount))}
         </span>
       </div>
       {entry.description && entryLabel(entry) !== entry.description.trim() && (
@@ -445,7 +452,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
           <span className="truncate">{group.label}</span>
           {e.via_balance && <BalanceTag />}
         </span>
-        <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
+        <span className="font-semibold tabular-nums shrink-0">{signedMoney(isIncome, group.total)}</span>
       </button>
     );
   }
@@ -482,7 +489,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
             <span className="truncate">{group.label}</span>
             {group.entries.some((x) => x.via_balance) && <BalanceTag />}
           </span>
-          <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(group.total)}</span>
+          <span className="font-semibold tabular-nums shrink-0">{signedMoney(isIncome, group.total)}</span>
         </button>
   );
 
@@ -599,7 +606,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
                 </span>
                 {e.via_balance && <BalanceTag account={e.balance_shop_id && e.balance_shop_id !== e.shop_id ? shopNamesMap?.[e.balance_shop_id] : undefined} />}
               </span>
-              <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(e.amount))}</span>
+              <span className="font-semibold tabular-nums shrink-0">{signedMoney(isIncome, Number(e.amount))}</span>
             </button>
           );
         })}
@@ -639,7 +646,7 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
       <div className="p-2 border-b border-border/60 overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-1.5 shrink-0">
           <span className="text-[10px] uppercase tracking-wider text-blue-700/70 dark:text-blue-400/70 font-medium">Entradas</span>
-          <span className="text-[10px] tabular-nums text-blue-700 dark:text-blue-400 font-semibold">{dd.income > 0 ? `+${fmtMoney(dd.income)}` : "—"}</span>
+          <span className="text-[10px] tabular-nums text-blue-700 dark:text-blue-400 font-semibold">{dd.income ? signedMoney(true, dd.income) : "—"}</span>
         </div>
         <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
           {simplified
@@ -660,7 +667,7 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
       <div className="p-2 overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-1.5 shrink-0">
           <span className="text-[10px] uppercase tracking-wider text-neutral-500/70 font-medium">Saídas</span>
-          <span className="text-[10px] tabular-nums text-neutral-600 dark:text-neutral-400 font-semibold">{dd.expense > 0 ? `-${fmtMoney(dd.expense)}` : "—"}</span>
+          <span className="text-[10px] tabular-nums text-neutral-600 dark:text-neutral-400 font-semibold">{dd.expense ? signedMoney(false, dd.expense) : "—"}</span>
         </div>
         <div className="space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
           {simplified
@@ -1796,7 +1803,7 @@ export function LgCashflowView({
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate">{activeDrag.category ?? (activeDrag.kind==="income" ? "Entrada" : "Saída")}</span>
                 <span className={`font-semibold tabular-nums shrink-0 ${activeDrag.kind==="income" ? "text-blue-600" : "text-neutral-600"}`}>
-                  {activeDrag.kind==="income" ? "+" : "-"}{fmtMoney(Number(activeDrag.amount))}
+                  {signedMoney(activeDrag.kind==="income", Number(activeDrag.amount))}
                 </span>
               </div>
             </div>
