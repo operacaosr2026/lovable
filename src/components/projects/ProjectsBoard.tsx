@@ -92,16 +92,6 @@ export function ProjectsBoard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <p className="text-sm text-muted-foreground">{filtered.length} {filtered.length === 1 ? "projeto" : "projetos"}</p>
-        <button
-          onClick={() => { setEditing(null); setEditorOpen(true); }}
-          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
-        >
-          <Plus className="size-4" /> Novo projeto
-        </button>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 mb-5">
         <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-[220px]">
           <Search className="size-3.5 text-muted-foreground" />
@@ -125,6 +115,13 @@ export function ProjectsBoard() {
           className={`h-9 px-3 rounded-lg border text-sm flex items-center gap-1.5 ${showArchived ? "bg-primary/10 border-primary/40 text-primary" : "border-border bg-surface text-muted-foreground"}`}
         >
           <Archive className="size-3.5" /> Arquivados
+        </button>
+        {/* Botão na mesma linha dos filtros (antes ocupava uma linha só pra ele). */}
+        <button
+          onClick={() => { setEditing(null); setEditorOpen(true); }}
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 whitespace-nowrap"
+        >
+          <Plus className="size-4" /> Novo projeto
         </button>
       </div>
 
