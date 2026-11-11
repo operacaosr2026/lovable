@@ -1618,7 +1618,8 @@ export function LgCashflowView({
   return (
     <EditGroupContext.Provider value={setEditingGroup}>
     <div className={`space-y-5 ${fill ? "lg:flex-1 lg:min-h-0 lg:flex lg:flex-col" : ""}`}>
-      {/* ── 3 KPIs ── */}
+      {/* ── 3 KPIs (no Resumo do Caixa Geral os números vão pro topo da projeção) ── */}
+      {!showResumo && (
       <TooltipProvider delayDuration={150}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <KpiCard
@@ -1677,6 +1678,7 @@ export function LgCashflowView({
           </KpiCard>
         </div>
       </TooltipProvider>
+      )}
 
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-2">
@@ -1781,7 +1783,9 @@ export function LgCashflowView({
 
       {showResumo ? (
         <CaixaResumo items={expanded} opening={opening} todayKey={todayKey}
-          shopIds={shopIds} shopNamesMap={shopNamesMap} perShopReceivable={perShopReceivable} lucroDia={lucroDiaQuery.isLoading ? undefined : lucroDiaQuery.data?.lucroDia ?? null} />
+          shopIds={shopIds} shopNamesMap={shopNamesMap} perShopReceivable={perShopReceivable} lucroDia={lucroDiaQuery.isLoading ? undefined : lucroDiaQuery.data?.lucroDia ?? null}
+          saldoAtual={future}
+          alert={reconcileAlert && { ...reconcileAlert, onClick: () => { setView("semana"); reconcileAlert.onClick?.(); } }} />
       ) : (
       /* ── Day grid (mesmo layout do ShopCashflow) ── */
       <DndContext

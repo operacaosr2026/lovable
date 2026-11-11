@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot, ReferenceLine } from "recharts";
-import { AlertTriangle, TrendingDown } from "lucide-react";
+import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from "recharts";
 
 // Caixa Geral › Resumo: em vez da grade dia a dia (que continua na aba Semana e
 // no caixa de cada loja), responde três perguntas — pra onde vai o saldo nos
@@ -35,13 +34,17 @@ const labelOf = (e: ResumoItem) => {
   return /^outros?\b/i.test(cat) && desc ? desc : cat;
 };
 
-export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, perShopReceivable, lucroDia }: {
+export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, perShopReceivable, lucroDia, saldoAtual, alert }: {
   items: ResumoItem[]; opening: number; todayKey: string;
   shopIds: string[]; shopNamesMap: Record<string, string>;
   perShopReceivable: { shop_id: string; amount: number }[];
   // Lucro médio por dia (últimos 7 dias fechados).
   // undefined = carregando; null = sem lojas na meta.
   lucroDia: number | null | undefined;
+  // Mesmo número do card Saldo atual (só conciliados) — no Resumo os 3 cards
+  // de cima saem e os números vêm pra cá.
+  saldoAtual: number;
+  alert?: { label: string; detail: string; onClick?: () => void };
 }) {
   const receivableTotal = useMemo(() => perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0), [perShopReceivable]);
   const estReady = lucroDia != null;
@@ -59,7 +62,7 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
       if (e.date <= todayKey) bal += signedAmount(e);
       else if (e.date <= end) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
     }
-    const base = bal + receivableTotal;
+    const base = saldoAtual + receivableTotal;
     let n = 0;
     const points: { key: string; label: string; saldo: number; estimado: number; entradas: number; saidas: number; maiorSaida: string | null }[] = [
       { key: todayKey, label: dm(todayKey), saldo: bal, estimado: base, entradas: 0, saidas: 0, maiorSaida: null },
@@ -77,7 +80,7 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
     // Dia mais apertado: pelo lançado (o que já tem data pra sair).
     const min = points.reduce((m, p) => (p.saldo < m.saldo ? p : m), points[0]);
     return { points, min, last: points[points.length - 1], first: points[0] };
-  }, [items, opening, todayKey, receivableTotal, lucroDia]);
+  }, [items, opening, todayKey, receivableTotal, lucroDia, saldoAtual]);
 
   // ── Período dos totais: semana atual (seg–dom) ou mês atual ──
   const [range, setRange] = useState<"semana" | "mes">("semana");
@@ -123,12 +126,19 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" }));
   }, [inRange, perShopReceivable, shopIds, shopNamesMap]);
 
-  const { points, min, last, first } = projection;
+  const { points, min, last } = projection;
   const tight = min.saldo < 0;
   const ticks = points.filter((_, i) => i % 5 === 0).map((p) => p.label);
 
   return (
     <div className="space-y-4">
+      {alert && (
+        <button type="button" onClick={alert.onClick} title={alert.detail}
+          className="w-full text-left rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-500/15">
+          <span className="font-semibold">{alert.label}:</span> {alert.detail}
+        </button>
+      )}
+
       {/* ── Projeção ── */}
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
@@ -143,21 +153,13 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
               )}
             </div>
           </div>
-          <div className="flex gap-5 text-right">
-            <Stat label="Hoje" value={money(first.saldo)} />
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-right">
+            <Stat label="Saldo atual" value={money(saldoAtual)} />
+            <Stat label="A receber" value={money(receivableTotal)} />
+            <Stat label="Saldo total" value={money(saldoAtual + receivableTotal)} />
             <Stat label={`Em ${dm(last.key)}${estReady ? " · est." : ""}`} value={money(estReady ? last.estimado : last.saldo)} />
           </div>
         </div>
-
-        {min.key !== first.key && (
-          <div className={`mb-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${tight ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground"}`}>
-            {tight ? <AlertTriangle className="size-3.5 shrink-0" /> : <TrendingDown className="size-3.5 shrink-0 text-muted-foreground" />}
-            <span>
-              {tight ? "Saldo fica negativo" : "Saldo mais baixo"} em <strong>{dm(min.key)}</strong>: {money(min.saldo)}
-              {min.maiorSaida && <span className="text-muted-foreground"> · maior saída do dia: {min.maiorSaida}</span>}
-            </span>
-          </div>
-        )}
 
         <div className="h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -193,7 +195,6 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
                 activeDot={{ r: 4, fill: LINE, stroke: "var(--color-card)", strokeWidth: 2 }} />
               {estReady && <Line type="monotone" dataKey="estimado" stroke={EST} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false}
                 activeDot={{ r: 4, fill: EST, stroke: "var(--color-card)", strokeWidth: 2 }} />}
-              <ReferenceDot x={min.label} y={min.saldo} r={5} fill={tight ? "var(--color-destructive)" : LINE} stroke="var(--color-card)" strokeWidth={2} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -214,13 +215,14 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
         <div className="rounded-2xl border border-border bg-card p-5">
           <p className="text-sm font-semibold mb-3">Por categoria</p>
           {!inRange.length ? <p className="text-xs text-muted-foreground py-6 text-center">Nenhum lançamento no período.</p> : (
-            <div className="space-y-3 text-sm">
-              <CategoryBlock title="Entradas" rows={byCategory.income} sign={1} />
-              <CategoryBlock title="Saídas" rows={byCategory.expense} sign={-1} />
-              <div className="flex items-center justify-between border-t border-border pt-2 font-semibold">
-                <span>Resultado</span>
-                <span className={`tabular-nums ${byCategory.result < 0 ? "text-destructive" : "text-emerald-600"}`}>{signed(byCategory.result)}</span>
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                <TotalTile label="Entradas" value={signed(byCategory.income.reduce((t, r) => t + r.total, 0))} />
+                <TotalTile label="Saídas" value={signed(-byCategory.expense.reduce((t, r) => t + r.total, 0))} />
+                <TotalTile label="Resultado" value={signed(byCategory.result)} tone={byCategory.result < 0 ? "neg" : "pos"} />
               </div>
+              <CategoryBlock title="Entradas" rows={byCategory.income} sign={1} bar="bg-blue-500" />
+              <CategoryBlock title="Saídas" rows={byCategory.expense} sign={-1} bar="bg-neutral-400 dark:bg-neutral-500" />
             </div>
           )}
         </div>
@@ -268,19 +270,41 @@ function Stat({ label, value, danger }: { label: string; value: string; danger?:
   );
 }
 
-function CategoryBlock({ title, rows, sign }: { title: string; rows: { label: string; total: number }[]; sign: 1 | -1 }) {
-  const sum = rows.reduce((s, r) => s + r.total, 0);
+function TotalTile({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
+  const cls = tone === "neg" ? "bg-destructive/10 text-destructive" : tone === "pos" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-foreground";
+  return (
+    <div className={`rounded-xl px-3 py-2 ${cls}`}>
+      <p className="text-[10px] uppercase tracking-wide opacity-70">{label}</p>
+      <p className="text-sm font-bold tabular-nums truncate">{value}</p>
+    </div>
+  );
+}
+
+// Cada categoria com a fatia dela dentro do grupo (barra fina + %).
+function CategoryBlock({ title, rows, sign, bar }: { title: string; rows: { label: string; total: number }[]; sign: 1 | -1; bar: string }) {
+  const sum = rows.reduce((t, r) => t + Math.abs(r.total), 0);
+  if (!rows.length) return null;
   return (
     <div>
-      <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
-        <span>{title}</span><span className="tabular-nums">{rows.length ? signed(sign * sum) : "—"}</span>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">{title}</p>
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const share = sum > 0 ? Math.abs(r.total) / sum : 0;
+          return (
+            <div key={r.label} className="text-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate">{r.label}</span>
+                <span className="shrink-0 tabular-nums font-semibold">{signed(sign * r.total)}
+                  <span className="ml-1.5 font-normal text-muted-foreground">{Math.round(share * 100)}%</span>
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.max(2, share * 100)}%` }} />
+              </div>
+            </div>
+          );
+        })}
       </div>
-      {rows.map((r) => (
-        <div key={r.label} className="flex items-center justify-between py-0.5">
-          <span className="truncate pr-2">{r.label}</span>
-          <span className="tabular-nums">{signed(sign * r.total)}</span>
-        </div>
-      ))}
     </div>
   );
 }
