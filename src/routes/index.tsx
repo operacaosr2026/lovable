@@ -712,10 +712,10 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
             <thead className="sticky top-0 bg-card">
               <tr className="text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border">
                 <th className="text-left font-semibold py-2 pr-3">Produto</th>
-                <th className="text-right font-semibold py-2 px-3">Pedidos</th>
-                <th className="text-right font-semibold py-2 px-3 hidden sm:table-cell">Unidades</th>
-                <th className="text-right font-semibold py-2 px-3">Faturamento</th>
-                <th className="text-left font-semibold py-2 pl-3 w-[22%] hidden md:table-cell">% do faturamento</th>
+                <th className="text-center font-semibold py-2 px-3">Pedidos</th>
+                <th className="text-center font-semibold py-2 px-3 hidden sm:table-cell">Unidades</th>
+                <th className="text-center font-semibold py-2 px-3">Faturamento</th>
+                <th className="text-center font-semibold py-2 pl-3 w-[22%] hidden md:table-cell">% do faturamento</th>
               </tr>
             </thead>
             <tbody>
@@ -738,9 +738,9 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
                         </div>
                       </div>
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums font-medium">{r.pedidos.toLocaleString("pt-BR")}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{r.unidades.toLocaleString("pt-BR")}</td>
-                    <td className="py-2 px-3 text-right tabular-nums font-semibold">{fmtMoney(r.faturamento)}</td>
+                    <td className="py-2 px-3 text-center tabular-nums font-medium">{r.pedidos.toLocaleString("pt-BR")}</td>
+                    <td className="py-2 px-3 text-center tabular-nums text-muted-foreground hidden sm:table-cell">{r.unidades.toLocaleString("pt-BR")}</td>
+                    <td className="py-2 px-3 text-center tabular-nums font-semibold">{fmtMoney(r.faturamento)}</td>
                     <td className="py-2 pl-3 hidden md:table-cell">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
