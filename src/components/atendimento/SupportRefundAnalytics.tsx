@@ -445,25 +445,25 @@ function Events({ d, onOpenConversation }: { d: Data; onOpenConversation: (id: s
           <table className="w-full text-xs min-w-[880px]">
             <thead className="sticky top-0 bg-card">
               <tr className="text-[11px] text-muted-foreground">
-                {["Reembolso", "Pedido em", "Pedido", "Loja", "Produto", "Valor", "Status", "Motivo", ""].map((h) => <th key={h} className="text-left font-medium pb-2 pr-3">{h}</th>)}
+                {["Reembolso", "Pedido em", "Pedido", "Loja", "Produto", "Valor", "Status", "Motivo", ""].map((h) => <th key={h} className="text-center font-medium pb-2 px-2">{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.map((e) => (
                 <tr key={e.key} className="border-t border-border">
-                  <td className="py-2.5 pr-3 whitespace-nowrap" title={fullTime(e.at)}>{dm(e.date)}</td>
-                  <td className="pr-3 whitespace-nowrap text-muted-foreground">{dm(e.orderDate)}</td>
-                  <td className="pr-3 font-medium whitespace-nowrap">{e.orderNumber ?? "—"}</td>
-                  <td className="pr-3 whitespace-nowrap max-w-[140px] truncate">{e.shop}</td>
-                  <td className="pr-3 max-w-[220px] truncate" title={e.product}>{e.product || "—"}</td>
-                  <td className="pr-3 font-semibold whitespace-nowrap">{usd(e.amount)}</td>
-                  <td className="pr-3 whitespace-nowrap">
+                  <td className="py-2.5 px-2 text-center whitespace-nowrap" title={fullTime(e.at)}>{dm(e.date)}</td>
+                  <td className="px-2 text-center whitespace-nowrap text-muted-foreground">{dm(e.orderDate)}</td>
+                  <td className="px-2 text-center font-medium whitespace-nowrap">{e.orderNumber ?? "—"}</td>
+                  <td className="px-2 text-center whitespace-nowrap max-w-[140px] truncate">{e.shop}</td>
+                  <td className="px-2 text-center max-w-[220px] truncate" title={e.product}>{e.product || "—"}</td>
+                  <td className="px-2 text-center font-semibold whitespace-nowrap">{usd(e.amount)}</td>
+                  <td className="px-2 text-center whitespace-nowrap">
                     {e.status === "pendente"
                       ? <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">Pendente{e.pendingDays ? ` há ${e.pendingDays}d` : ""}</span>
                       : <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">Concluído</span>}
                   </td>
-                  <td className="pr-3 whitespace-nowrap"><ReasonCell e={e} canEdit={d.canEdit} /></td>
-                  <td className="text-right">
+                  <td className="px-2 text-center whitespace-nowrap"><ReasonCell e={e} canEdit={d.canEdit} /></td>
+                  <td className="px-2 text-center">
                     {e.conversationId && (
                       <button onClick={() => onOpenConversation(e.conversationId!)} title="Abrir a conversa com o cliente no Atendimento"
                         className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline whitespace-nowrap">
