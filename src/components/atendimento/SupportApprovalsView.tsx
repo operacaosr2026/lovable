@@ -117,7 +117,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   // Painel aberto: tabela enxuta (loja embaixo do cliente, sem a coluna Tipo,
   // Recusar no menu) pra caber ao lado sem cortar.
   const compact = !!openItem;
-  const headers = compact ? ["Pedido", "Loja", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Loja", "Tipo", "Valor", "Motivo", "Solicitado em", "Status"];
+  const headers = compact ? ["Pedido", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Tipo", "Valor", "Motivo", "Solicitado em", "Status"];
 
   return (
     <div className="space-y-4 pb-6">
@@ -195,9 +195,9 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                         )}
                       </th>
                       {headers.map((h) => (
-                        <th key={h} className="px-3 py-3 text-left font-medium whitespace-nowrap">{h}</th>
+                        <th key={h} className="px-2 py-3 text-left font-medium whitespace-nowrap">{h}</th>
                       ))}
-                      <th className="px-3 py-3 text-left font-medium">Ações</th>
+                      <th className="px-2 py-3 text-left font-medium">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -209,8 +209,8 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                             <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggle(i.id)} aria-label="Selecionar" className="size-3.5 accent-primary" />
                           )}
                         </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2.5 min-w-[150px]">
+                        <td className="px-2 py-2.5">
+                          <div className="flex items-center gap-2.5 min-w-[130px]">
                             <Thumb src={i.product?.image ?? null} />
                             <div className="min-w-0">
                               <p className="font-semibold whitespace-nowrap">{i.order_number ?? "Pedido"}</p>
@@ -218,20 +218,19 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap max-w-[140px] truncate">{i.store ?? "—"}</td>
-                        {!compact && <td className="px-3 py-2.5"><KindBadge kind={i.kind} /></td>}
-                        <td className="px-3 py-2.5 font-semibold whitespace-nowrap">{i.kind === "reembolso" ? formatMoney(i.amount, i.currency) : "—"}</td>
+                        {!compact && <td className="px-2 py-2.5"><KindBadge kind={i.kind} /></td>}
+                        <td className="px-2 py-2.5 font-semibold whitespace-nowrap">{i.kind === "reembolso" ? formatMoney(i.amount, i.currency) : "—"}</td>
                         {/* Troca antiga (sem motivo de lista): mostra de quem foi o erro. */}
-                        <td className="px-3 py-2.5 max-w-[160px] truncate text-muted-foreground"
+                        <td className="px-2 py-2.5 max-w-[150px] truncate text-muted-foreground"
                           title={i.kind === "troca" && !i.reason ? exchangeFaultLabel(i.fault) : refundReasonLabel(i.reason)}>
                           {i.kind === "troca" && !i.reason ? exchangeFaultLabel(i.fault) : refundReasonLabel(i.reason)}
                         </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
+                        <td className="px-2 py-2.5 whitespace-nowrap">
                           <p>{day(i.created_at)}</p>
                           <p className="text-[11px] text-muted-foreground">há {ago(i.created_at)}</p>
                         </td>
-                        <td className="px-3 py-2.5"><StatusBadge status={i.status} /></td>
-                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-2 py-2.5"><StatusBadge status={i.status} /></td>
+                        <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <RowActions i={i} canApprove={canApprove} actions={actions} compact={compact} onOpen={() => setOpenId(i.id)} onOpenConversation={onOpenConversation} />
                         </td>
                       </tr>
@@ -433,13 +432,13 @@ function RowActions({ i, canApprove, actions, compact, onOpen, onOpenConversatio
       {decidable && (
         <>
           <button onClick={() => actions.approve([i])} disabled={busy}
-            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap">
+            className="h-8 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
             {i.status === "erro" ? "Tentar de novo" : "Aprovar"}
           </button>
           {!compact && (
             <button onClick={() => actions.askReject([i])} disabled={busy}
-              className="h-8 px-3 rounded-lg border border-border text-xs font-medium hover:border-destructive hover:text-destructive disabled:opacity-50">
+              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium hover:border-destructive hover:text-destructive disabled:opacity-50">
               Recusar
             </button>
           )}
