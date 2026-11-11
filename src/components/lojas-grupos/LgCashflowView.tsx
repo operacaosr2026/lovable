@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
+import { CaixaResumo } from "@/components/lojas-grupos/CaixaResumo";
 import {
   listShopCash, createCashEntry, updateCashEntry, deleteCashEntry,
   setOpeningBalance, setWeekendRule, resetShopCash,
@@ -1271,6 +1272,14 @@ export function LgCashflowView({
 
   // Period date picker state
   const [period, setPeriod]           = useState("semana");
+  // Caixa Geral: "Resumo" (projeção + totais) ou "Semana" (a grade). Lembrado
+  // no navegador. Caixa de loja/grupo continua só com a grade.
+  const hasResumo = !!standalone && isConsolidated;
+  const [view, setViewState] = useState<"resumo" | "semana">(() => {
+    try { return localStorage.getItem("caixa-geral-view") === "semana" ? "semana" : "resumo"; } catch { return "resumo"; }
+  });
+  const setView = (v: "resumo" | "semana") => { setViewState(v); try { localStorage.setItem("caixa-geral-view", v); } catch { /* sem storage */ } };
+  const showResumo = hasResumo && view === "resumo";
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const [weekOffset, setWeekOffset]   = useState(0); // 0 = semana atual, -1 = anterior, +1 = próxima
 
@@ -1666,6 +1675,15 @@ export function LgCashflowView({
 
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-2">
+        {hasResumo && (
+          <div className="inline-flex rounded-xl bg-muted p-0.5 text-xs">
+            {([["resumo", "Resumo"], ["semana", "Semana"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setView(k)}
+                className={`h-7 px-3 rounded-lg font-medium transition-colors ${view === k ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{l}</button>
+            ))}
+          </div>
+        )}
+        {!showResumo && (<>
         {/* Period dropdown + calendar range (igual ao dashboard) */}
         <DateRangePicker
           period={period === "semana" ? "hoje" : period}
@@ -1693,6 +1711,7 @@ export function LgCashflowView({
             title="Próxima semana"
           >›</button>
         </div>
+        </>)}
 
         <div className="flex-1" />
 
@@ -1755,7 +1774,11 @@ export function LgCashflowView({
         </Popover>
       </div>
 
-      {/* ── Day grid (mesmo layout do ShopCashflow) ── */}
+      {showResumo ? (
+        <CaixaResumo items={expanded} opening={opening} todayKey={todayKey}
+          shopIds={shopIds} shopNamesMap={shopNamesMap} perShopReceivable={perShopReceivable} />
+      ) : (
+      /* ── Day grid (mesmo layout do ShopCashflow) ── */
       <DndContext
         sensors={sensors}
         onDragStart={(e) => {
@@ -1810,6 +1833,7 @@ export function LgCashflowView({
           )}
         </DragOverlay>
       </DndContext>
+      )}
 
       {/* ── Modals ── */}
       {quickAdd && (
