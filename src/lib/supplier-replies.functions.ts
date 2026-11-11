@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -36,7 +36,9 @@ export const parseSupplierReply = createServerFn({ method: "POST" })
 export type SupplierReplyMatch = { orders: ReplyOrder[]; notFound: string[]; suggestedNote: string };
 
 // Também usado pelo Assistente (chat), que cola a mensagem do fornecedor ali.
-export async function findSupplierReplyOrders(ownerId: string, text: string): Promise<SupplierReplyMatch> {
+// Server-only: este arquivo também vai pro navegador (botão Gravar do chat).
+export const findSupplierReplyOrders = createServerOnlyFn((ownerId: string, text: string) => findSupplierReplyOrdersImpl(ownerId, text));
+async function findSupplierReplyOrdersImpl(ownerId: string, text: string): Promise<SupplierReplyMatch> {
     const ctx = { ownerId };
     const codes = [...new Set([...text.matchAll(CODE_RE)].map((m) => m[1].toUpperCase()))];
     const codeSet = new Set(codes);

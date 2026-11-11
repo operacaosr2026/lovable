@@ -645,7 +645,9 @@ export const getDashboardOverview = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => computeDashboardOverview(context.ownerId, data?.from, data?.to));
 
 // Também usado pelo Assistente (chat) — mesmos números do Dashboard.
-export async function computeDashboardOverview(ownerId: string, fromArg?: string, toArg?: string) {
+// Server-only: este arquivo também vai pro navegador e o build barra acesso ao banco lá.
+export const computeDashboardOverview = createServerOnlyFn((ownerId: string, fromArg?: string, toArg?: string) => computeDashboardOverviewImpl(ownerId, fromArg, toArg));
+async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, toArg?: string) {
 
     // Lojas dos grupos ativos numa consulta só (antes: grupos, depois lojas).
     const { data: cardShops, error } = await supabaseAdmin
