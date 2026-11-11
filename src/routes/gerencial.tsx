@@ -110,7 +110,7 @@ function GerencialPage() {
             <label className="relative w-full sm:w-auto sm:ml-auto shrink-0">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={carrierPeriod} onChange={(e) => setCarrierPeriod(e.target.value)}
-                className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary">
+                className="w-full sm:w-auto h-8 pl-8 pr-3 rounded-xl border border-border bg-card text-xs font-medium outline-none focus:border-primary">
                 {CARRIER_PERIODS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
               </select>
             </label>
@@ -118,7 +118,7 @@ function GerencialPage() {
             <label className="relative w-full sm:w-auto sm:ml-auto shrink-0">
               <CalendarDays className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select value={month} onChange={(e) => setMonth(e.target.value)}
-                className="w-full sm:w-auto h-9 sm:h-10 pl-8 pr-3 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary capitalize">
+                className="w-full sm:w-auto h-8 pl-8 pr-3 rounded-xl border border-border bg-card text-xs font-medium outline-none focus:border-primary capitalize">
                 {months.map((m, i) => <option key={m} value={m}>{i === 0 ? `Este mês (${monthName(m)})` : monthName(m)}</option>)}
               </select>
             </label>
