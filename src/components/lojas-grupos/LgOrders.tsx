@@ -214,18 +214,25 @@ export function LgOrders({
     }
   };
 
-  const loadedOrders = (ordersQuery.data ?? []) as any[];
+  const periodOrders = (ordersQuery.data ?? []) as any[];
 
   // Mesmo item repetido (mesma cor e tamanho, 2+): fica separado do fornecedor
   // (fora dos dias, da mensagem e do pagamento) até alguém marcar que o cliente
   // confirmou. Itens diferentes do mesmo modelo estão ok. Os separados vêm numa
   // consulta própria (120 dias), pra não sumirem quando o dia sai do período.
   const heldQuery = useQuery({
-    queryKey: ["lg-orders-held", cacheKey],
+    // Dentro de "lg-orders": recarrega junto com a lista (pagar, Atualizar, tempo real).
+    queryKey: ["lg-orders", cacheKey, "held"],
     queryFn: () => listOrdersFn({ data: { shop_ids: shopIds, from, to, held_only: true } }),
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: false,
   });
+  // Liberado e ainda não pago aparece no dia dele mesmo fora do período, pra não
+  // ficar esquecido sem ir pro fornecedor.
+  const loadedOrders = useMemo(() => [
+    ...periodOrders,
+    ...((heldQuery.data ?? []) as any[]).filter((o) => o.supplier_hold_released_at && (o.order_date < from || o.order_date > to)),
+  ], [periodOrders, heldQuery.data, from, to]);
   const releaseFn = useServerFn(releaseSupplierHold);
   const release = useMutation({
     mutationFn: (v: { orderId: string; undo?: boolean }) => releaseFn({ data: { order_id: v.orderId, undo: v.undo } }),
@@ -233,7 +240,7 @@ export function LgOrders({
       toast.success(v.undo ? "Pedido separado de novo (fora do fornecedor)" : "Liberado — o pedido voltou pro dia dele");
       setSelected((s) => { const n = new Set(s); n.delete(v.orderId); return n; });
       qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] });
-      qc.invalidateQueries({ queryKey: ["lg-orders-held", cacheKey] });
+      qc.invalidateQueries({ queryKey: ["shop-cash"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -396,15 +403,16 @@ export function LgOrders({
 
   // Texto pro fornecedor: agrupa os pedidos selecionados por loja com o range de números.
   const supplierSelection = useMemo(() => {
-    const byShop = new Map<string, { labels: string[]; resends: string[] }>();
+    const byShop = new Map<string, { labels: string[]; resends: string[]; loose: string[] }>();
     const orderIds: string[] = [];
     for (const group of groups) {
       for (const [shopId, orders] of group.byShop.entries()) {
         for (const o of orders) {
           if (!selected.has(o.id)) continue;
-          if (!byShop.has(shopId)) byShop.set(shopId, { labels: [], resends: [] });
+          if (!byShop.has(shopId)) byShop.set(shopId, { labels: [], resends: [], loose: [] });
           const b = byShop.get(shopId)!;
           b.labels.push(orderLabel(o));
+          if (o.supplier_hold_released_at) b.loose.push(orderLabel(o));
           if (orderTags(o).some((t) => t.toLowerCase() === "reenvio-fornecedor")) b.resends.push(orderLabel(o));
           orderIds.push(o.id);
         }
@@ -415,6 +423,7 @@ export function LgOrders({
       shopName: shopNames[shopId] ?? shopId,
       shopDomain: domains[shopId] ?? null,
       orderLabels: b.labels,
+      looseLabels: b.loose,
       supplierResends: b.resends,
       // O que não é pra enviar (separado, reembolsado, chargeback): o que cair
       // dentro do intervalo vira "NÃO enviar" no fim da mensagem.

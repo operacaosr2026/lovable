@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { attachLiveShopifyNames } from "@/lib/shop-orders.functions";
 import { costProductsFor } from "@/lib/product-links.server";
-import { isSupplierFree, lineItemCostQty, matchLineItemProduct, productCostAt, type CostProduct } from "@/lib/product-cost-match";
+import { isSupplierFree, lineItemCostQty, matchLineItemProduct, productCostAt, trackingCountsAsShipped, type CostProduct } from "@/lib/product-cost-match";
 import { linksByProduct } from "@/lib/product-links.server";
 import { comparisonPeriod } from "@/lib/finance-rules";
 import { selectAll } from "@/lib/select-all";
@@ -116,6 +116,7 @@ function productOrderTotals(o: any, catalog: { id: string; shopify_product_ids: 
   const date = String(o.order_date);
   let faturamento = 0, custo = 0, unidades = 0, matched = false;
   const free = isSupplierFree(o.tags);
+  const tracked = trackingCountsAsShipped(o.line_items, !!o.tracking_code);
   for (const li of (o.line_items ?? []) as any[]) {
     if (matchLineItemProduct(li, catalog)?.id !== productId) continue;
     matched = true;
@@ -126,7 +127,7 @@ function productOrderTotals(o: any, catalog: { id: string; shopify_product_ids: 
       : Number(li?.total_discount ?? 0);
     unidades += qty;
     faturamento += Number(li?.price ?? 0) * qty - discount;
-    if (!free && myCost) custo += lineItemCostQty(li, !!o.tracking_code) * productCostAt(myCost, date);
+    if (!free && myCost) custo += lineItemCostQty(li, tracked) * productCostAt(myCost, date);
   }
   return matched ? { faturamento, custo, unidades } : null;
 }

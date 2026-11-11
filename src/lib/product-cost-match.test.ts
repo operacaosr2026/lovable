@@ -67,6 +67,12 @@ describe("custo do fornecedor", () => {
     expect(orderLineItemsCost([item], products, FALLBACK, null, { hasTracking: false })).toBe(0);
   });
 
+  it("8b. item trocado por edição não conta, mesmo com rastreio", () => {
+    const trocado = [li("Georgetown", { current: 0, shipped: null }), li("Georgetown", { shipped: "fulfilled" })];
+    expect(orderLineItemsCost(trocado, products, FALLBACK, null, { hasTracking: true })).toBe(38);
+    expect(orderLineItemsCost(trocado, products, FALLBACK, null, { hasTracking: false })).toBe(38);
+  });
+
   it("9. custo é o da data do pedido (mudança só vale pra frente)", () => {
     expect(orderLineItemsCost([li("Handball Shoes")], products, FALLBACK, null, { date: "2026-10-09" })).toBe(38);
     expect(orderLineItemsCost([li("Handball Shoes")], products, FALLBACK, null, { date: "2026-10-12" })).toBe(40);

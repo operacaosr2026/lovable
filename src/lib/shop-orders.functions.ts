@@ -710,9 +710,12 @@ export const releaseSupplierHold = createServerFn({ method: "POST" })
       .update(data.undo
         ? { supplier_hold_released_at: null, supplier_hold_released_by: null }
         : { supplier_hold_released_at: new Date().toISOString(), supplier_hold_released_by: (context as any).userId ?? null })
-      .eq("id", data.order_id).eq("user_id", context.ownerId).select("id").maybeSingle();
+      .eq("id", data.order_id).eq("user_id", context.ownerId).select("id,shop_id,order_date").maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Pedido não encontrado");
+    // Separado não entra na previsão do Caixa: liberar devolve, separar de novo tira.
+    const paymentDays = await getShopPaymentDays(context.supabase, row.shop_id);
+    await recomputeForShop(context, row.shop_id, addDays(row.order_date, paymentDays), undefined, paymentDays);
     return { ok: true };
   });
 
@@ -722,7 +725,7 @@ export const listOrders = createServerFn({ method: "GET" })
     shop_ids: z.array(z.string().uuid()).min(1),
     from: z.string(),
     to: z.string(),
-    // Só os separados por item repetido (não pagos, sem rastreio, não liberados),
+    // Só os com item repetido não pagos e sem rastreio (separados ou já liberados),
     // dos últimos 120 dias — fora do período da tela, pra não sumirem quando o
     // dia vira.
     held_only: z.boolean().optional(),
@@ -736,7 +739,7 @@ export const listOrders = createServerFn({ method: "GET" })
       .eq("user_id", context.ownerId).in("shop_id", data.shop_ids);
     q = data.held_only
       ? q.gte("order_date", isoDateUS(Date.now() - 120 * 86_400_000)).eq("payment_status", "pending")
-          .is("tracking_code", null).is("supplier_hold_released_at", null).filter("raw->>cancelled_at", "is", null)
+          .is("tracking_code", null).filter("raw->>cancelled_at", "is", null)
       : q.gte("order_date", data.from).lte("order_date", data.to);
     const { data: allRows, error } = await selectAll(q.order("created_at_shopify", { ascending: false }));
     if (error) throw new Error(error.message);
@@ -1551,7 +1554,7 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
   // Mesma regra da aba Pedidos: reembolsado ou com chargeback (menos o ganho)
   // sai da lista e não vai ser enviado — não entra no que vai ser pago ao fornecedor.
   const { data: pendingRows } = await context.supabase.from("shop_orders")
-    .select("order_date,items_count,payment_status,external_id,shopify_financial_status,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+    .select("order_date,items_count,payment_status,external_id,shopify_financial_status,supplier_hold_released_at,line_items:raw->line_items,tags:raw->>tags,tracking_code")
     .eq("user_id", context.ownerId).eq("shop_id", shopId).eq("order_date", orderDate)
     .eq("payment_status", "pending")
     // Cancelado na Shopify não vai pro fornecedor (mesma regra da aba Pedidos).

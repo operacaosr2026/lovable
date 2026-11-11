@@ -24,6 +24,12 @@ export function repeatedItems(lineItems: unknown): RepeatedItem[] {
   return [...by.values()].filter((i) => i.qty >= 2);
 }
 
+// Separado do fornecedor até o cliente confirmar: item repetido, não pago, sem
+// rastreio e não liberado. Fora da fila de Pedidos e da previsão do Caixa.
+export function onSupplierHold(o: { payment_status?: string | null; tracking_code?: string | null; supplier_hold_released_at?: string | null; line_items?: unknown }): boolean {
+  return (o.payment_status ?? "pending") === "pending" && !o.tracking_code && !o.supplier_hold_released_at && repeatedItems(o.line_items).length > 0;
+}
+
 // Texto da variável {itens} do e-mail (inglês, como as outras mensagens).
 export const repeatedItemsText = (items: RepeatedItem[]) =>
   items.map((i) => `• ${i.qty}x ${i.title}${i.variant ? ` — ${i.variant}` : ""}`).join("\n");

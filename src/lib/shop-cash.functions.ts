@@ -24,7 +24,7 @@ export const listShopCash = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ shop_ids: z.array(z.string().uuid()).min(1) }).parse(d))
   .handler(async ({ context, data }) => {
-    const [entries, imports, shops] = await Promise.all([
+    const [entries, imports, shops, accounts, elsewhere] = await Promise.all([
       selectAll(context.supabase.from("shop_cash_entries").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .neq("source", "shopify_fees_sync")
@@ -35,8 +35,17 @@ export const listShopCash = createServerFn({ method: "GET" })
         .order("created_at", { ascending: false }),
       context.supabase.from("shops").select("id, opening_balance, weekend_payouts_to_monday, payouts_to_balance")
         .eq("user_id", context.ownerId).in("id", data.shop_ids),
+      // Contas Balance que podem ser cobradas (de qualquer loja, mesmo fora desta visão).
+      context.supabase.from("shops").select("id, name")
+        .eq("user_id", context.ownerId).eq("payouts_to_balance", true).order("name"),
+      // Gasto de outra loja cobrado no Balance de uma destas: desconta do Balance dela.
+      selectAll(context.supabase.from("shop_cash_entries").select("kind, amount, balance_shop_id")
+        .eq("user_id", context.ownerId).in("balance_shop_id", data.shop_ids)
+        .eq("via_balance", true).eq("reconciled", true)
+        .not("shop_id", "in", `(${data.shop_ids.join(",")})`)),
     ]);
     if (entries.error) throw new Error(entries.error.message);
+    if (elsewhere.error) throw new Error(elsewhere.error.message);
     if (imports.error) throw new Error(imports.error.message);
     const shopRows = shops.data ?? [];
     const opening_balance = shopRows.reduce((s, r) => s + Number(r.opening_balance ?? 0), 0);
@@ -49,6 +58,8 @@ export const listShopCash = createServerFn({ method: "GET" })
       opening_balance,
       weekend_payouts_to_monday,
       balance_shop_ids,
+      balance_accounts: (accounts.data ?? []) as { id: string; name: string }[],
+      balance_charges_elsewhere: elsewhere.data ?? [],
     };
   });
 
@@ -184,6 +195,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
       recurrence: z.enum(RECURRENCES).optional(),
       recurrence_until: z.string().nullable().optional(),
       via_balance: z.boolean().optional(),
+      balance_shop_id: z.string().uuid().nullable().optional(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -200,6 +212,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
       source: "manual",
       reconciled: true,
       via_balance: data.via_balance ?? false,
+      balance_shop_id: data.balance_shop_id ?? null,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };
@@ -221,6 +234,7 @@ export const updateCashEntry = createServerFn({ method: "POST" })
         skip_weekend_rule: z.boolean().optional(),
         reconciled: z.boolean().optional(),
         via_balance: z.boolean().optional(),
+        balance_shop_id: z.string().uuid().nullable().optional(),
       }),
     }).parse(d),
   )

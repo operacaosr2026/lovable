@@ -47,6 +47,13 @@ export function lineItemCostQty(li: any, hasTracking = false): number {
   return Math.max(shipped, current);
 }
 
+// Rastreio à mão só conta o item zerado como enviado com o pedido inteiro zerado
+// (reembolsado depois do envio). Com outro item ativo ou enviado, o zerado foi
+// trocado por edição (ex.: outro tamanho) e não saiu — #L6-1163 cobrava 2 pares.
+export function trackingCountsAsShipped(rawLineItems: any[] | undefined, hasTracking = false): boolean {
+  return hasTracking && !(rawLineItems ?? []).some((li) => lineItemCostQty(li) > 0);
+}
+
 export type OrderCostOpts = { date?: string | null; hasTracking?: boolean };
 
 // `tags` = tags do pedido (raw->>tags); com "reenvio-fornecedor" o custo é 0.
@@ -54,8 +61,9 @@ export type OrderCostOpts = { date?: string | null; hasTracking?: boolean };
 export function orderLineItemsCost(rawLineItems: any[] | undefined, products: CostProduct[], fallbackUnitCost: number, tags?: string | null, opts: OrderCostOpts = {}): number {
   if (isSupplierFree(tags)) return 0;
   let total = 0;
+  const tracked = trackingCountsAsShipped(rawLineItems, opts.hasTracking);
   for (const li of rawLineItems ?? []) {
-    const qty = lineItemCostQty(li, opts.hasTracking);
+    const qty = lineItemCostQty(li, tracked);
     if (!qty) continue;
     const matched = matchLineItemCost(li, products, opts.date);
     total += qty * (matched ?? fallbackUnitCost);
@@ -66,12 +74,14 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
 // Algum item cobrado do pedido não achou o Card de Produto e caiu no custo padrão da loja.
 export function orderUsesDefaultCost(rawLineItems: any[] | undefined, products: CostProduct[], tags?: string | null, opts: OrderCostOpts = {}): boolean {
   if (isSupplierFree(tags)) return false;
-  return (rawLineItems ?? []).some((li) => lineItemCostQty(li, opts.hasTracking) > 0 && matchLineItemCost(li, products, opts.date) == null);
+  const tracked = trackingCountsAsShipped(rawLineItems, opts.hasTracking);
+  return (rawLineItems ?? []).some((li) => lineItemCostQty(li, tracked) > 0 && matchLineItemCost(li, products, opts.date) == null);
 }
 
 // Quantidade de itens do pedido com a mesma regra do custo (item removido não conta).
 export function orderItemsQty(rawLineItems: any[] | undefined, hasTracking = false): number {
-  return (rawLineItems ?? []).reduce((s, li) => s + lineItemCostQty(li, hasTracking), 0);
+  const tracked = trackingCountsAsShipped(rawLineItems, hasTracking);
+  return (rawLineItems ?? []).reduce((s, li) => s + lineItemCostQty(li, tracked), 0);
 }
 
 // Opções a partir de uma linha de shop_orders (order_date + tracking_code no select).

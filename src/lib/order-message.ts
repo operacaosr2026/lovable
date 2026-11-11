@@ -13,8 +13,11 @@ function trailingOrderNumber(label: string): number {
 // dontSend: pedidos da mesma loja que NÃO são pra enviar (separado por item
 // repetido, reembolsado, chargeback) — a mensagem manda um intervalo
 // ("#L6-1150 a #L6-1200"), então o que cai dentro dele sai numa Obs. com o motivo.
+// looseLabels: pedidos fora da sequência (item repetido liberado depois). Não
+// esticam o intervalo — senão o fornecedor enviaria de novo o que ficou no meio;
+// o que cair fora dele vai numa linha própria.
 export type SupplierDontSend = { label: string; reason: string };
-export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; supplierResends?: string[]; dontSend?: SupplierDontSend[] };
+export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; looseLabels?: string[]; supplierResends?: string[]; dontSend?: SupplierDontSend[] };
 
 export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: string): string {
   const live = blocks.filter((b) => b.orderLabels.length > 0);
@@ -22,14 +25,17 @@ export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: str
   const body = live
     .map((b) => {
       const sorted = [...b.orderLabels].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c));
-      const range = sorted.length > 1 ? `${sorted[0]} a ${sorted[sorted.length - 1]}` : sorted[0];
-      const lo = trailingOrderNumber(sorted[0]), hi = trailingOrderNumber(sorted[sorted.length - 1]);
+      const loose = new Set(b.looseLabels ?? []);
+      const seq = sorted.filter((l) => !loose.has(l));
+      const lo = seq.length ? trailingOrderNumber(seq[0]) : 0, hi = seq.length ? trailingOrderNumber(seq[seq.length - 1]) : 0;
+      const range = seq.length > 1 ? `${seq[0]} a ${seq[seq.length - 1]}` : seq[0];
+      const apart = sorted.filter((l) => loose.has(l) && (!seq.length || trailingOrderNumber(l) < lo || trailingOrderNumber(l) > hi));
       blockedInRange.push(...(b.dontSend ?? [])
         .filter((h) => !b.orderLabels.includes(h.label) && trailingOrderNumber(h.label) > lo && trailingOrderNumber(h.label) < hi)
         .sort((a, c) => trailingOrderNumber(a.label) - trailingOrderNumber(c.label)));
       const domain = stripMyshopifyDomain(b.shopDomain);
       const header = domain ? `Loja ${domain} - ${b.shopName}` : `Loja ${b.shopName}`;
-      return `${header}\n${range}`;
+      return [header, ...(range ? [range] : []), ...apart].join("\n");
     })
     .join("\n\n");
   if (!body) return "";

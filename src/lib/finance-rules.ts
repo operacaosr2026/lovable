@@ -1,4 +1,5 @@
 import { orderDateFor } from "@/lib/order-date";
+import { onSupplierHold } from "@/lib/repeated-items";
 import { isoDateUS } from "@/lib/timezone";
 
 // Regras de dinheiro em funções puras (só cálculo, sem banco): reembolso,
@@ -217,14 +218,16 @@ export function profit(p: { faturamento: number; custoProduto: number; taxas: nu
 
 // Pedidos do dia que entram na previsão: só os ainda NÃO pagos ao fornecedor
 // (os pagos já saíram em lote — contar de novo era o custo em dobro), sem
-// reembolsados e sem chargeback (chargeback ganho volta a contar).
-export function supplierForecastOrders<O extends { payment_status?: string | null; shopify_financial_status?: string | null; external_id?: string | null }>(
+// reembolsados, sem chargeback (chargeback ganho volta a contar) e sem os
+// separados por item repetido (voltam quando o cliente confirma).
+export function supplierForecastOrders<O extends { payment_status?: string | null; shopify_financial_status?: string | null; external_id?: string | null; tracking_code?: string | null; supplier_hold_released_at?: string | null; line_items?: unknown }>(
   orders: O[], chargebacks: { order_external_id: string; status: string | null }[],
 ): O[] {
   const withChargeback = new Set(chargebacks.filter((d) => d.status !== "won").map((d) => d.order_external_id));
   return orders.filter((o) => (o.payment_status ?? "pending") === "pending"
     && !["refunded", "partially_refunded"].includes(o.shopify_financial_status ?? "")
-    && !(o.external_id && withChargeback.has(o.external_id)));
+    && !(o.external_id && withChargeback.has(o.external_id))
+    && !onSupplierHold(o));
 }
 
 type CostEntry = { source?: string | null; reconciled?: boolean | null; date_locked?: boolean | null; amount_locked?: boolean | null } | null;

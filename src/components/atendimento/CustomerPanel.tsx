@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Factory, MapPin, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
+import { Check, CheckCircle2, Copy, ExternalLink, Factory, MapPin, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
@@ -12,6 +12,7 @@ import { listRefundRequests } from "@/lib/support-refund.functions";
 import { RefundDialog, RefundRequestCard, type RefundRequestView } from "./RefundDialog";
 import { TrackingCodeDialog } from "./TrackingCodeDialog";
 import { listSupplierRefundsForOrders, type SupplierRefund } from "@/lib/supplier-refund.functions";
+import { releaseSupplierHold } from "@/lib/shop-orders.functions";
 import { SupplierRefundCard } from "./SupplierRefund";
 import { useIsDemo } from "./demo";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
@@ -137,6 +138,18 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
     enabled: orderIds.length > 0 && !demo, staleTime: 30_000,
   });
   const [trackingOrder, setTrackingOrder] = useState<{ id: string; number: string | null; tracking: string | null } | null>(null);
+  // Item repetido: a mesma liberação de Pedidos › "Aguardando confirmação do cliente".
+  const releaseFn = useServerFn(releaseSupplierHold);
+  const release = useMutation({
+    mutationFn: (v: { orderId: string; undo?: boolean }) => releaseFn({ data: { order_id: v.orderId, undo: v.undo } }),
+    onSuccess: (_r, v) => {
+      toast.success(v.undo ? "Pedido separado de novo (fora do fornecedor)" : "Pedido confirmado — liberado pro fornecedor");
+      qc.invalidateQueries({ queryKey: ["support-customer"] });
+      qc.invalidateQueries({ queryKey: ["lg-orders"] });
+      qc.invalidateQueries({ queryKey: ["shop-cash"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const update = useMutation({
     mutationFn: (patch: { tags?: string[]; note?: string | null; shop_id?: string | null }) => updateFn({ data: { ids: [conversationId!], patch } }),
@@ -239,19 +252,49 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                     </div>
                     <p className="text-sm font-semibold whitespace-nowrap">{formatMoney(o.revenue, o.currency)}</p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1">{formatDateUS(o.date)}{o.store ? ` · ${o.store}` : ""}</p>
-                  {(o.cancelled || (o.delivery && !o.tracking) || o.dispute) && <div className="flex flex-wrap gap-1 mt-2">
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <p className="text-[11px] text-muted-foreground truncate">{formatDateUS(o.date)}</p>
+                    {/* Cancelado antes de enviar: "Pendente envio" não vale mais (#L6-1195). */}
+                    {o.delivery && !o.tracking && !o.cancelled && <DeliveryBadge status={o.delivery} />}
+                  </div>
+                  {(o.cancelled || o.dispute) && <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">
                       Cancelado{o.cancelReason ? ` · ${CANCEL_REASON[o.cancelReason] ?? o.cancelReason}` : ""}
                     </span>}
-                    {/* Cancelado antes de enviar: "Pendente envio" não vale mais (#L6-1195). */}
-                    {o.delivery && !o.tracking && !o.cancelled && <DeliveryBadge status={o.delivery} />}
                     {o.dispute && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.dispute.status === "won" ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>
                         {o.dispute.type === "inquiry" ? "Inquiry" : "Chargeback"} · {DISPUTE[o.dispute.status ?? ""] ?? o.dispute.status}
                       </span>
                     )}
                   </div>}
+                  {o.repeat && (
+                    <div className="mt-2 rounded-lg border border-violet-500/20 bg-violet-500/[0.05] p-2">
+                      <p className="text-[11px] font-semibold">{o.repeat.releasedAt ? "Item repetido" : "Aguardando confirmação do cliente"}</p>
+                      {o.repeat.items.map((i, n) => (
+                        <p key={n} className="text-[11px] text-violet-700 dark:text-violet-400 mt-0.5">{i.qty}x {i.title}{i.variant ? ` — ${i.variant}` : ""}</p>
+                      ))}
+                      {o.repeat.releasedAt ? (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-600 inline-flex items-center gap-1">
+                            <Check className="size-3" /> Cliente confirmou {formatDateUS(o.repeat.releasedAt, { day: "2-digit", month: "2-digit" })}
+                          </span>
+                          {o.repeat.canUndo && (
+                            <button onClick={() => release.mutate({ orderId: o.id, undo: true })} disabled={release.isPending}
+                              title="Separar de novo (sai da mensagem e do pagamento do fornecedor)"
+                              className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50">
+                              separar de novo
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <button onClick={() => release.mutate({ orderId: o.id })} disabled={release.isPending}
+                          title="O cliente confirmou: o pedido volta pro dia dele e entra na mensagem/pagamento do fornecedor"
+                          className="mt-1.5 h-7 w-full px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium inline-flex items-center justify-center gap-1 disabled:opacity-50">
+                          {release.isPending && release.variables?.orderId === o.id ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />} Cliente confirmou — liberar
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {o.tracking && (
                     <div className="flex items-center gap-1.5 mt-2 text-[11px]">
                       <Truck className="size-3 text-muted-foreground shrink-0" />

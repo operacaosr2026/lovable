@@ -59,6 +59,7 @@ type Entry = {
   skip_weekend_rule?: boolean | null; reconciled?: boolean | null;
   shop_id?: string; created_at?: string | null;
   via_balance?: boolean | null;
+  balance_shop_id?: string | null;
 };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
 
@@ -122,11 +123,39 @@ function fmtMoney(n: number) {
 
 // Lançamento que passou pelo Shopify Balance (repasse que caiu lá ou gasto no
 // cartão do Balance) — o resto é conta bancária.
-function BalanceTag({ className }: { className?: string }) {
+function BalanceTag({ className, account }: { className?: string; account?: string }) {
   return (
     <span className={cn("shrink-0 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold leading-none bg-emerald-500/15 text-emerald-700 dark:text-emerald-400", className)} title="Shopify Balance">
-      Balance
+      Balance{account ? ` · ${account}` : ""}
     </span>
+  );
+}
+
+// Gasto pago com o Balance sai da conta de UMA loja, mesmo sendo despesa de
+// várias (pagamento único ao fornecedor). Vazio no banco = a própria loja.
+type BalanceAccount = { id: string; name: string };
+
+// Sem escolha salva e com mais de uma conta possível: fica vazio pra escolher.
+function initialBalanceAccount(entries: { shop_id?: string; balance_shop_id?: string | null }[], accounts: BalanceAccount[]): string {
+  const saved = new Set(entries.map((e) => e.balance_shop_id ?? null));
+  const only = saved.size === 1 ? [...saved][0] : null;
+  if (only) return only;
+  if (accounts.length === 1) return accounts[0].id;
+  if (entries.length === 1 && accounts.some((a) => a.id === entries[0].shop_id)) return entries[0].shop_id!;
+  return "";
+}
+
+// Depósito da Shopify sempre cai no Balance da própria loja: não tem o que escolher.
+const isShopifyPayout = (e: { source?: string | null }) => (e.source ?? "").startsWith("shopify");
+
+function BalanceAccountSelect({ accounts, value, onChange, income }: { accounts: BalanceAccount[]; value: string; onChange: (id: string) => void; income?: boolean }) {
+  if (!accounts.length) return null;
+  return (
+    <div><label className="text-xs text-muted-foreground">{income ? "Em qual Balance entrou?" : "Qual Balance foi cobrado?"}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={cn("flex h-9 w-full rounded-md border bg-transparent px-3 text-sm", value ? "border-input" : "border-amber-500")}>
+        <option value="" disabled>Escolher a loja…</option>
+        {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+      </select></div>
   );
 }
 
@@ -568,7 +597,7 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
                 <span className="truncate">
                   {isConsolidated ? (shopNamesMap?.[e.shop_id ?? ""] ?? "—") : (e.category ?? (isIncome ? "Entrada" : "Saída"))}
                 </span>
-                {e.via_balance && <BalanceTag />}
+                {e.via_balance && <BalanceTag account={e.balance_shop_id && e.balance_shop_id !== e.shop_id ? shopNamesMap?.[e.balance_shop_id] : undefined} />}
               </span>
               <span className="font-semibold tabular-nums shrink-0">{isIncome ? "+" : "-"}{fmtMoney(Number(e.amount))}</span>
             </button>
@@ -856,7 +885,7 @@ function splitAmountEvenly(total: number, n: number): number[] {
   return Array.from({ length: n }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
 }
 
-function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
+function QuickAdd({ shopIds, shopNamesMap, date, kind, balanceAccounts, onClose, onSave }: any) {
   const [shopId, setShopId] = useState<string>(shopIds[0]);
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<string>("");
@@ -865,8 +894,12 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
   const [recurrence, setRecurrence] = useState<"none"|"daily"|"weekly"|"monthly">("none");
   const [until, setUntil] = useState("");
   const [viaBalance, setViaBalance] = useState(false);
+  const [pickedAccount, setPickedAccount] = useState("");
 
   const isAllShops = shopId === QUICK_ADD_ALL_SHOPS;
+  const account = pickedAccount || (isAllShops ? (balanceAccounts.length === 1 ? balanceAccounts[0].id : "") : initialBalanceAccount([{ shop_id: shopId }], balanceAccounts));
+  const asksAccount = viaBalance && balanceAccounts.length > 0;
+  const balanceShopId = asksAccount ? account : null;
   const catsShopId = isAllShops ? shopIds[0] : shopId;
   const listCatsFn = useServerFn(listCashCategories);
   const catsQuery = useQuery({
@@ -919,19 +952,20 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
           <input type="checkbox" checked={viaBalance} onChange={(e) => setViaBalance(e.target.checked)} className="size-3.5 accent-primary" />
           <span>{kind === "income" ? "Entrou no Shopify Balance" : "Pago com o Shopify Balance"}</span>
         </label>
+        {asksAccount && <BalanceAccountSelect accounts={balanceAccounts} value={account} onChange={setPickedAccount} income={kind === "income"} />}
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button onClick={() => {
+        <Button disabled={asksAccount && !account} onClick={() => {
           const v = parseFloat(amount);
           if (isNaN(v) || v <= 0) return;
           if (isAllShops) {
             const shares = splitAmountEvenly(v, shopIds.length);
             for (let i = 0; i < shopIds.length; i++) {
-              onSave({ shop_id: shopIds[i], kind, amount: shares[i], date: d, category, description: description||null, recurrence, recurrence_until: until||null, via_balance: viaBalance });
+              onSave({ shop_id: shopIds[i], kind, amount: shares[i], date: d, category, description: description||null, recurrence, recurrence_until: until||null, via_balance: viaBalance, balance_shop_id: balanceShopId });
             }
           } else {
-            onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description||null, recurrence, recurrence_until: until||null, via_balance: viaBalance });
+            onSave({ shop_id: shopId, kind, amount: v, date: d, category, description: description||null, recurrence, recurrence_until: until||null, via_balance: viaBalance, balance_shop_id: balanceShopId });
           }
         }}>Salvar</Button>
       </div>
@@ -939,7 +973,7 @@ function QuickAdd({ shopIds, shopNamesMap, date, kind, onClose, onSave }: any) {
   );
 }
 
-function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
+function EditEntry({ entry, categories, balanceAccounts, onClose, onSave, onDelete }: any) {
   const [amount, setAmount]           = useState(String(entry.amount));
   const [category, setCategory]       = useState(entry.category ?? "");
   const [description, setDescription] = useState(entry.description ?? "");
@@ -949,6 +983,9 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
   const [skipWeekend, setSkipWeekend] = useState(Boolean(entry.skip_weekend_rule));
   const [reconciled, setReconciled]   = useState(Boolean(entry.reconciled));
   const [viaBalance, setViaBalance]   = useState(Boolean(entry.via_balance));
+  const [account, setAccount]         = useState(() => initialBalanceAccount([entry], balanceAccounts));
+  const canPickAccount = !isShopifyPayout(entry);
+  const asksAccount = canPickAccount && viaBalance && balanceAccounts.length > 0;
   const isShopify   = entry.source === "shopify_import" || entry.source === "shopify_sync";
   const canReconcile = !entry.virtual && entry.source !== "shopify_pending";
   return (
@@ -995,6 +1032,7 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
           <input type="checkbox" checked={viaBalance} onChange={(e) => setViaBalance(e.target.checked)} className="size-3.5 accent-primary" />
           <span>{entry.kind === "income" ? "Entrou no Shopify Balance" : "Pago com o Shopify Balance"}</span>
         </label>
+        {asksAccount && <BalanceAccountSelect accounts={balanceAccounts} value={account} onChange={setAccount} income={entry.kind === "income"} />}
         {canReconcile && (
           <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
             <input type="checkbox" checked={reconciled} onChange={(e) => setReconciled(e.target.checked)} className="size-3.5 accent-primary" />
@@ -1008,10 +1046,10 @@ function EditEntry({ entry, categories, onClose, onSave, onDelete }: any) {
         </Button>
         <div className="flex gap-2">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={() => {
+          <Button disabled={asksAccount && !account} onClick={() => {
             const v = parseFloat(amount);
             if (isNaN(v)) return;
-            onSave({ amount:v, category:category||null, description:description||null, date:d, recurrence, recurrence_until:until||null, skip_weekend_rule:skipWeekend, via_balance:viaBalance, ...(canReconcile ? { reconciled } : {}) });
+            onSave({ amount:v, category:category||null, description:description||null, date:d, recurrence, recurrence_until:until||null, skip_weekend_rule:skipWeekend, via_balance:viaBalance, ...(canPickAccount ? { balance_shop_id: asksAccount ? account : null } : {}), ...(canReconcile ? { reconciled } : {}) });
           }}>Salvar</Button>
         </div>
       </div>
@@ -1031,16 +1069,25 @@ function splitAmountProportionally(total: number, weights: number[]): number[] {
   return shares.map((c) => c / 100);
 }
 
-function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose: () => void; onSave: (total: number, viaBalance: boolean) => void }) {
+function EditGroupTotal({ group, balanceAccounts, onClose, onSave }: { group: EntryGroup; balanceAccounts: BalanceAccount[]; onClose: () => void; onSave: (total: number, viaBalance: boolean, balanceShopId?: string | null, date?: string) => void }) {
   const [amount, setAmount] = useState(String(Number(group.total.toFixed(2))));
   // Balance vale pro grupo todo: marcado só se todos já estão; alguns marcados avisa.
   const balanceCount = group.entries.filter((e) => e.via_balance).length;
   const [viaBalance, setViaBalance] = useState(balanceCount === group.entries.length && balanceCount > 0);
   const isIncome = group.entries[0]?.kind === "income";
+  const [account, setAccount] = useState(() => initialBalanceAccount(group.entries, balanceAccounts));
+  const canPickAccount = !group.entries.some(isShopifyPayout);
+  const asksAccount = canPickAccount && viaBalance && balanceAccounts.length > 0;
+  // Ex.: a Meta marca a cobrança num dia e o banco concilia no outro. Recorrente
+  // fica de fora: mudar a data mexeria na série toda.
+  const groupDate = group.entries[0]?.date ?? "";
+  const [date, setDate] = useState(groupDate);
+  const canMoveDate = !group.entries.some((e) => e.virtual || (e.recurrence && e.recurrence !== "none"));
+  const blocked = (asksAccount && !account) || (canMoveDate && !date);
   const save = () => {
     const v = parseFloat(amount);
-    if (isNaN(v) || v < 0) return;
-    onSave(v, viaBalance);
+    if (isNaN(v) || v < 0 || blocked) return;
+    onSave(v, viaBalance, !canPickAccount ? undefined : asksAccount ? account : null, canMoveDate && date !== groupDate ? date : undefined);
   };
   return (
     <Modal onClose={onClose} title={`Editar ${group.label}`}>
@@ -1048,8 +1095,12 @@ function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose
         <div><label className="text-xs text-muted-foreground">Valor total</label>
           <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus
             onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></div>
+        {canMoveDate && (
+          <div><label className="text-xs text-muted-foreground">Data</label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        )}
         <div className="text-[11px] text-muted-foreground">
-          Soma de {group.entries.length} lançamentos. O novo total é dividido entre eles na proporção atual e fica travado contra o sync.
+          Soma de {group.entries.length} lançamentos. O novo total é dividido entre eles na proporção atual; valor e data alterados ficam travados contra o sync.
         </div>
         <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-surface cursor-pointer select-none">
           <input type="checkbox" checked={viaBalance} onChange={(e) => setViaBalance(e.target.checked)} className="size-3.5 accent-primary" />
@@ -1058,10 +1109,11 @@ function EditGroupTotal({ group, onClose, onSave }: { group: EntryGroup; onClose
             <span className="ml-auto text-[10px] text-amber-600">hoje {balanceCount} de {group.entries.length} marcados</span>
           )}
         </label>
+        {asksAccount && <BalanceAccountSelect accounts={balanceAccounts} value={account} onChange={setAccount} income={isIncome} />}
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button onClick={save}>Salvar</Button>
+        <Button onClick={save} disabled={blocked}>Salvar</Button>
       </div>
     </Modal>
   );
@@ -1347,14 +1399,20 @@ export function LgCashflowView({
     for (const id of data?.balance_shop_ids ?? []) m.set(id, 0);
     for (const e of expanded) {
       if (e.virtual || !e.reconciled || !e.via_balance) continue;
-      const id = e.shop_id ?? shopId;
+      // Sai da conta escolhida; cobrada numa loja fora desta visão, não é Balance daqui.
+      const id = e.balance_shop_id ?? e.shop_id ?? shopId;
+      if (!shopIds.includes(id)) continue;
       m.set(id, (m.get(id) ?? 0) + (e.kind==="income" ? Number(e.amount) : -Number(e.amount)));
+    }
+    for (const c of ((data as any)?.balance_charges_elsewhere ?? []) as { kind: string; amount: number; balance_shop_id: string }[]) {
+      m.set(c.balance_shop_id, (m.get(c.balance_shop_id) ?? 0) + (c.kind==="income" ? Number(c.amount) : -Number(c.amount)));
     }
     return [...m.entries()]
       .map(([id, amount]) => ({ id, amount }))
       .sort((a, b) => (shopNamesMap[a.id] ?? "").localeCompare(shopNamesMap[b.id] ?? "", "pt-BR", { numeric: true, sensitivity: "base" }));
-  }, [expanded, data?.balance_shop_ids, shopId, shopNamesMap]);
+  }, [expanded, data, shopId, shopIds, shopNamesMap]);
   const balanceAmount = balanceByShop.reduce((s, b) => s + b.amount, 0);
+  const balanceAccounts = ((data as any)?.balance_accounts ?? []) as BalanceAccount[];
 
   // Lançamentos de dias anteriores a hoje ainda não conciliados. O Saldo atual
   // só soma conciliados, então ele ainda vai mudar quando forem conciliados —
@@ -1749,7 +1807,7 @@ export function LgCashflowView({
       {/* ── Modals ── */}
       {quickAdd && (
         <QuickAdd
-          shopIds={shopIds} shopNamesMap={shopNamesMap} date={quickAdd.date} kind={quickAdd.kind}
+          shopIds={shopIds} shopNamesMap={shopNamesMap} date={quickAdd.date} kind={quickAdd.kind} balanceAccounts={balanceAccounts}
           onClose={() => setQuickAdd(null)}
           onSave={(v:any) => { createMut.mutate(v); setQuickAdd(null); }}
         />
@@ -1758,6 +1816,7 @@ export function LgCashflowView({
         <EditEntry
           entry={editing}
           categories={editing.kind==="income" ? incomeCats : expenseCats}
+          balanceAccounts={balanceAccounts}
           onClose={() => setEditing(null)}
           onSave={(patch:any) => { updateMut.mutate({ id:editing.id, patch }); setEditing(null); }}
           onDelete={() => {
@@ -1785,14 +1844,17 @@ export function LgCashflowView({
       {editingGroup && (
         <EditGroupTotal
           group={editingGroup}
+          balanceAccounts={balanceAccounts}
           onClose={() => setEditingGroup(null)}
-          onSave={(total, viaBalance) => {
+          onSave={(total, viaBalance, balanceShopId, date) => {
             const entries = editingGroup.entries;
             const shares = splitAmountProportionally(total, entries.map((e) => Math.round(Number(e.amount) * 100)));
             entries.forEach((e, i) => {
               const patch: Record<string, unknown> = {};
               if (Number(e.amount) !== shares[i]) patch.amount = shares[i];
               if (Boolean(e.via_balance) !== viaBalance) patch.via_balance = viaBalance;
+              if (balanceShopId !== undefined && (e.balance_shop_id ?? null) !== balanceShopId) patch.balance_shop_id = balanceShopId;
+              if (date) patch.date = date;
               if (Object.keys(patch).length) updateMut.mutate({ id: e.id, patch });
             });
             setEditingGroup(null);

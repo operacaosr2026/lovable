@@ -10,6 +10,7 @@ import { phaseResolver } from "@/lib/tracking-phases";
 import { effectiveLocalNumber, localCarrierLabel, localLegOf, localNumberDisplay, localNumberOrZero, localTrackingUrl } from "@/lib/local-carriers";
 import { companyShopIdsForMonth } from "@/lib/company-goals.server";
 import { orderNumberVariants, orderNumbersInText } from "@/lib/order-numbers";
+import { repeatedItems } from "@/lib/repeated-items";
 import { US_TIME_ZONE } from "@/lib/timezone";
 import {
   DEFAULT_GOALS, DEFAULT_BUSINESS_HOURS, BUSINESS_TIMEZONES, businessMs, computeSupportKpis, monthRange,
@@ -834,7 +835,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
     let orders: any[] = [];
     if (idList.length) {
       const { data: rows, error } = await supabaseAdmin.from("shop_orders")
-        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at,cancel_reason:raw->>cancel_reason")
+        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at,cancel_reason:raw->>cancel_reason,payment_status,supplier_hold_released_at,line_items:raw->line_items")
         .eq("user_id", context.ownerId).in("id", idList)
         .order("created_at_shopify", { ascending: false });
       if (error) throw new Error(error.message);
@@ -901,6 +902,15 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
         local: localBy.get(o.id) ?? null,
         carrier: o.carrier, cancelled: !!o.cancelled_at, cancelReason: o.cancelled_at ? (o.cancel_reason ?? null) : null,
         dispute: disputeBy.get(`${o.shop_id}:${o.external_id}`) ?? null,
+        // Item repetido ainda sem rastreio (mesma regra de Pedidos › "Aguardando
+        // confirmação do cliente"): separado até liberar, ou já liberado. Já pago
+        // ao fornecedor sem liberação não tem mais o que confirmar.
+        repeat: (() => {
+          const items = !o.cancelled_at && !o.tracking_code ? repeatedItems(o.line_items) : [];
+          const unpaid = o.payment_status === "pending";
+          if (!items.length || (!unpaid && !o.supplier_hold_released_at)) return null;
+          return { items, releasedAt: (o.supplier_hold_released_at ?? null) as string | null, canUndo: unpaid };
+        })(),
       })),
     };
   });

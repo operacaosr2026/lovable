@@ -156,6 +156,17 @@ describe("Caixa", () => {
     expect(supplierForecastOrders(orders, cbs).map((o) => o.external_id)).toEqual(["3"]);
   });
 
+  it("17b. item repetido aguardando confirmação sai; liberado volta", () => {
+    const line_items = [{ title: "Samba", variant_id: 1, quantity: 2 }];
+    const orders = [
+      { external_id: "1", payment_status: "pending", line_items },
+      { external_id: "2", payment_status: "pending", line_items, supplier_hold_released_at: "2026-11-11T00:00:00Z" },
+      { external_id: "3", payment_status: "pending", line_items, tracking_code: "ABC" },
+      { external_id: "4", payment_status: "pending", line_items: [{ title: "Samba", variant_id: 1, quantity: 1 }] },
+    ];
+    expect(supplierForecastOrders(orders, []).map((o) => o.external_id)).toEqual(["2", "3", "4"]);
+  });
+
   it("18. lançamento conciliado nunca muda", () => {
     expect(orderCostGuard({ source: "auto", reconciled: true }, null, "2026-10-05")).toBe("keep");
   });
