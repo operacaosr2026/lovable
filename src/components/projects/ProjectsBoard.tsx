@@ -93,7 +93,7 @@ export function ProjectsBoard() {
   return (
     <div>
       <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 mb-5">
-        <div className="flex items-center gap-2 px-3 h-9 rounded-xl bg-card border border-border w-full sm:w-56 shrink-0">
+        <div className="flex items-center gap-2 px-3 h-8 rounded-xl bg-card border border-border w-full sm:w-56 shrink-0">
           <Search className="size-3.5 text-muted-foreground" />
           <input
             value={search}
@@ -111,14 +111,14 @@ export function ProjectsBoard() {
         ]} />
         <button
           onClick={() => setShowArchived(v => !v)}
-          className={`h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 ${showArchived ? "bg-primary/10 border-primary/40 text-primary" : "border-border bg-card text-muted-foreground"}`}
+          className={`h-8 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 ${showArchived ? "bg-primary/10 border-primary/40 text-primary" : "border-border bg-card text-muted-foreground"}`}
         >
           <Archive className="size-3.5" /> Arquivados
         </button>
         {/* Botão na mesma linha dos filtros (antes ocupava uma linha só pra ele). */}
         <button
           onClick={() => { setEditing(null); setEditorOpen(true); }}
-          className="h-9 px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
+          className="h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
         >
           <Plus className="size-3.5" /> Novo projeto
         </button>
@@ -169,7 +169,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-9 px-2.5 rounded-xl bg-card border border-border text-xs outline-none cursor-pointer focus:border-primary"
+      className="h-8 px-2.5 rounded-xl bg-card border border-border text-xs outline-none cursor-pointer focus:border-primary"
     >
       {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
     </select>
