@@ -39,8 +39,8 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
   items: ResumoItem[]; opening: number; todayKey: string;
   shopIds: string[]; shopNamesMap: Record<string, string>;
   perShopReceivable: { shop_id: string; amount: number }[];
-  // Lucro médio por dia (últimos 3 dias fechados) — mesma base da "Projeção do
-  // mês" das Metas. undefined = carregando; null = sem lojas na meta.
+  // Lucro médio por dia (últimos 7 dias fechados).
+  // undefined = carregando; null = sem lojas na meta.
   lucroDia: number | null | undefined;
 }) {
   const receivableTotal = useMemo(() => perShopReceivable.reduce((s, p) => s + Number(p.amount ?? 0), 0), [perShopReceivable]);
@@ -137,8 +137,8 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: LINE }} />Lançado no caixa</span>
               {estReady && (
-                <span className="flex items-center gap-1.5" title="Saldo total de hoje (saldo + a receber) + lucro médio por dia dos últimos 3 dias fechados — a mesma base da Projeção do mês nas Metas. Saídas fora do lucro (retiradas, ferramentas) não entram.">
-                  <span className="w-4 border-t-2 border-dashed" style={{ borderColor: EST }} />Estimado · saldo total + lucro de ~{money(lucroDia!)}/dia
+                <span className="flex items-center gap-1.5" title="Saldo total de hoje (saldo + a receber) + lucro médio por dia dos últimos 7 dias fechados (hoje não entra: ainda está em andamento). Saídas fora do lucro (retiradas, ferramentas) não entram.">
+                  <span className="w-4 border-t-2 border-dashed" style={{ borderColor: EST }} />Estimado · saldo total + lucro médio de 7 dias (~{money(lucroDia!)}/dia)
                 </span>
               )}
             </div>
