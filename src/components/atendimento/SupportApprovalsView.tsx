@@ -125,22 +125,24 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
 
         {/* ── Filtros ── */}
         <div className="flex flex-wrap items-center gap-2">
-          {([["todos", "Todos"], ["reembolso", "Reembolsos"], ["troca", "Trocas"]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setKind(k)}
-              className={`flex-1 sm:flex-none h-9 px-3 sm:px-4 rounded-xl text-xs font-semibold border transition-colors ${kind === k ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:border-primary/40"}`}>
-              {label} ({openCount(k)})
-            </button>
-          ))}
-          <div className="hidden sm:block flex-1" />
-          <div className="relative w-full sm:w-56">
-            <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pedido, cliente ou loja…"
-              className="w-full h-9 pl-8 pr-3 rounded-xl bg-card border border-border text-xs outline-none focus:border-primary" />
+          <div className="inline-flex rounded-xl bg-muted p-0.5 w-full sm:w-auto">
+            {([["todos", "Todos"], ["reembolso", "Reembolsos"], ["troca", "Trocas"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setKind(k)}
+                className={`flex-1 sm:flex-none h-8 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${kind === k ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                {label} <span className={kind === k ? "text-primary" : ""}>{openCount(k)}</span>
+              </button>
+            ))}
           </div>
           <div className="grid grid-cols-3 sm:flex gap-2 w-full sm:w-auto">
             <Select value={store} onChange={setStore} options={[["", "Todas as lojas"], ...stores.map((s) => [s, s] as [string, string])]} />
             <Select value={status} onChange={(v) => setStatus(v as StatusFilter)} options={STATUS_FILTERS} />
             <Select value={sort} onChange={(v) => setSort(v as Sort)} options={SORTS} />
+          </div>
+          <div className="hidden sm:block flex-1" />
+          <div className="relative w-full sm:w-56">
+            <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pedido, cliente ou loja…"
+              className="w-full h-9 pl-8 pr-3 rounded-xl bg-card border border-border text-xs outline-none focus:border-primary" />
           </div>
           <div className="hidden md:flex items-center rounded-xl border border-border bg-card p-0.5">
             {([["lista", List], ["grade", LayoutGrid]] as const).map(([k, Icon]) => (
@@ -324,46 +326,40 @@ function Kpis({ all }: { all: Item[] }) {
   const delta = cur != null && prev ? Math.round(((cur - prev) / prev) * 100) : null;
   const items = exchanges.reduce((s, i) => s + (i.kind === "troca" ? i.items.reduce((n, x) => n + x.quantity, 0) : 0), 0);
 
+  // Uma faixa só: o que está esperando decisão e o tempo médio pra decidir.
+  // (Reembolsos/Trocas por tipo já aparecem nas abas logo abaixo.)
   return (
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-      <Kpi icon={Clock} tone="amber" label={<>Aguardando<span className="hidden sm:inline"> aprovação</span></>} value={String(waiting.length)}
-        sub={<>{sum(refunds)} <span className="text-muted-foreground font-normal hidden sm:inline">em reembolsos</span></>} />
-      <Kpi icon={Undo2} tone="rose" label="Reembolsos" value={String(refunds.length)} sub={sum(refunds)} />
-      <Kpi icon={Repeat} tone="blue" label="Trocas" value={String(exchanges.length)}
-        sub={<span className="font-normal text-muted-foreground">{items} {items === 1 ? "item" : "itens"} pra reenviar</span>} />
-      <Kpi icon={Clock} tone="emerald" label={<>Tempo<span className="hidden sm:inline"> médio</span> de análise</>} value={cur == null ? "—" : formatDuration(cur)}
-        sub={delta == null ? <span className="font-normal text-muted-foreground">últimos 7 dias</span> : (
-          <span className={`flex flex-wrap items-center gap-x-1 ${delta <= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-            {delta <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(delta)}%
-            <span className="font-normal text-muted-foreground">vs. semana anterior</span>
-          </span>
-        )} />
-    </div>
-  );
-}
-
-const TONES = {
-  amber: "from-amber-500/10 text-amber-600 bg-amber-500/15",
-  rose: "from-rose-500/10 text-rose-600 bg-rose-500/15",
-  blue: "from-blue-500/10 text-blue-600 bg-blue-500/15",
-  emerald: "from-emerald-500/10 text-emerald-600 bg-emerald-500/15",
-} as const;
-
-function Kpi({ icon: Icon, tone, label, value, sub }: { icon: any; tone: keyof typeof TONES; label: React.ReactNode; value: string; sub: React.ReactNode }) {
-  const [grad, text, bg] = TONES[tone].split(" ");
-  return (
-    <div className={`rounded-2xl border border-border bg-gradient-to-br ${grad} to-card p-3.5 sm:p-4 flex flex-col sm:flex-row items-start gap-2 sm:gap-3`}>
-      <span className={`size-8 sm:size-10 shrink-0 rounded-full grid place-items-center ${bg} ${text}`}><Icon className="size-4 sm:size-5" /></span>
-      <div className="min-w-0 w-full">
-        <p className="text-xs font-medium truncate">{label}</p>
-        <p className="text-xl sm:text-2xl font-semibold tracking-tight leading-tight">{value}</p>
-        <div className="text-[11px] sm:text-xs font-semibold leading-snug sm:truncate">{sub}</div>
+    <div className="rounded-2xl border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
+      <div className="flex items-center gap-3">
+        <span className="size-9 shrink-0 rounded-full grid place-items-center bg-amber-500/15 text-amber-600"><Clock className="size-4" /></span>
+        <div>
+          <p className="text-[11px] text-muted-foreground">Aguardando aprovação</p>
+          <p className="text-lg font-semibold leading-tight tabular-nums">
+            {waiting.length}
+            <span className="ml-2 text-xs font-medium text-muted-foreground">
+              {refunds.length > 0 && <>{sum(refunds)} em {refunds.length} reembolso{refunds.length === 1 ? "" : "s"}</>}
+              {refunds.length > 0 && exchanges.length > 0 && " · "}
+              {exchanges.length > 0 && <>{exchanges.length} troca{exchanges.length === 1 ? "" : "s"} ({items} {items === 1 ? "item" : "itens"})</>}
+            </span>
+          </p>
+        </div>
+      </div>
+      <div className="hidden sm:block h-8 w-px bg-border" />
+      <div>
+        <p className="text-[11px] text-muted-foreground">Tempo médio de análise · 7 dias</p>
+        <p className="text-lg font-semibold leading-tight tabular-nums flex items-center gap-2">
+          {cur == null ? "—" : formatDuration(cur)}
+          {delta != null && (
+            <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${delta <= 0 ? "text-emerald-600" : "text-rose-600"}`}
+              title="vs. os 7 dias anteriores">
+              {delta <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(delta)}%
+            </span>
+          )}
+        </p>
       </div>
     </div>
   );
 }
-
-// ─── Peças ────────────────────────────────────────────────────────────────────
 
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: readonly (readonly [string, string])[] }) {
   return (
