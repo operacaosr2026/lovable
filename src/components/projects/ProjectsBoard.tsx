@@ -92,19 +92,18 @@ export function ProjectsBoard() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 mb-5">
-        <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-[220px]">
+      <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 mb-5">
+        <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-[180px] lg:min-w-0">
           <Search className="size-3.5 text-muted-foreground" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar projeto..."
-            className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
+            className="bg-transparent text-xs outline-none flex-1 placeholder:text-muted-foreground"
           />
         </div>
         <Select value={fCat} onChange={setFCat} options={[{ v: "all", l: "Categoria" }, ...CATEGORIES.map(c => ({ v: c, l: CATEGORY_META[c].label }))]} />
         <Select value={fStatus} onChange={setFStatus} options={[{ v: "all", l: "Status" }, ...STATUSES.map(s => ({ v: s, l: STATUS_META[s].label }))]} />
-        <Select value={fPrio} onChange={setFPrio} options={[{ v: "all", l: "Prioridade" }, ...PRIORITIES.map(p => ({ v: p, l: PRIORITY_META[p].label }))]} />
         <Select value={sortBy} onChange={(v) => setSortBy(v as any)} options={[
           { v: "created", l: "Mais recentes" },
           { v: "due", l: "Prazo" },
@@ -112,14 +111,14 @@ export function ProjectsBoard() {
         ]} />
         <button
           onClick={() => setShowArchived(v => !v)}
-          className={`h-9 px-3 rounded-lg border text-sm flex items-center gap-1.5 ${showArchived ? "bg-primary/10 border-primary/40 text-primary" : "border-border bg-surface text-muted-foreground"}`}
+          className={`h-9 px-3 rounded-lg border text-xs flex items-center gap-1.5 ${showArchived ? "bg-primary/10 border-primary/40 text-primary" : "border-border bg-surface text-muted-foreground"}`}
         >
           <Archive className="size-3.5" /> Arquivados
         </button>
         {/* Botão na mesma linha dos filtros (antes ocupava uma linha só pra ele). */}
         <button
           onClick={() => { setEditing(null); setEditorOpen(true); }}
-          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5 whitespace-nowrap"
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
         >
           <Plus className="size-4" /> Novo projeto
         </button>
@@ -170,7 +169,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-9 px-2 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
+      className="h-9 px-2 rounded-lg bg-surface border border-border text-xs outline-none cursor-pointer"
     >
       {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
     </select>
