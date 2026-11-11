@@ -326,36 +326,33 @@ function Kpis({ all }: { all: Item[] }) {
   const delta = cur != null && prev ? Math.round(((cur - prev) / prev) * 100) : null;
   const items = exchanges.reduce((s, i) => s + (i.kind === "troca" ? i.items.reduce((n, x) => n + x.quantity, 0) : 0), 0);
 
-  // Uma faixa só: o que está esperando decisão e o tempo médio pra decidir.
-  // (Reembolsos/Trocas por tipo já aparecem nas abas logo abaixo.)
+  // Faixa única com as 4 informações (aguardando, reembolsos, trocas, tempo médio).
   return (
-    <div className="rounded-2xl border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
-      <div className="flex items-center gap-3">
-        <span className="size-9 shrink-0 rounded-full grid place-items-center bg-amber-500/15 text-amber-600"><Clock className="size-4" /></span>
-        <div>
-          <p className="text-[11px] text-muted-foreground">Aguardando aprovação</p>
-          <p className="text-lg font-semibold leading-tight tabular-nums">
-            {waiting.length}
-            <span className="ml-2 text-xs font-medium text-muted-foreground">
-              {refunds.length > 0 && <>{sum(refunds)} em {refunds.length} reembolso{refunds.length === 1 ? "" : "s"}</>}
-              {refunds.length > 0 && exchanges.length > 0 && " · "}
-              {exchanges.length > 0 && <>{exchanges.length} troca{exchanges.length === 1 ? "" : "s"} ({items} {items === 1 ? "item" : "itens"})</>}
-            </span>
-          </p>
-        </div>
-      </div>
-      <div className="hidden sm:block h-8 w-px bg-border" />
-      <div>
-        <p className="text-[11px] text-muted-foreground">Tempo médio de análise · 7 dias</p>
-        <p className="text-lg font-semibold leading-tight tabular-nums flex items-center gap-2">
-          {cur == null ? "—" : formatDuration(cur)}
-          {delta != null && (
-            <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${delta <= 0 ? "text-emerald-600" : "text-rose-600"}`}
-              title="vs. os 7 dias anteriores">
-              {delta <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(delta)}%
-            </span>
-          )}
-        </p>
+    <div className="rounded-2xl border border-border bg-card grid grid-cols-2 lg:grid-cols-4 divide-border lg:divide-x [&>*]:px-4 [&>*]:py-3">
+      <StripStat icon={Clock} tone="bg-amber-500/15 text-amber-600" label="Aguardando aprovação" value={String(waiting.length)}
+        sub={`${sum(refunds)} em reembolsos`} />
+      <StripStat icon={Undo2} tone="bg-rose-500/15 text-rose-600" label="Reembolsos" value={String(refunds.length)} sub={sum(refunds)} />
+      <StripStat icon={Repeat} tone="bg-blue-500/15 text-blue-600" label="Trocas" value={String(exchanges.length)}
+        sub={`${items} ${items === 1 ? "item" : "itens"} pra reenviar`} />
+      <StripStat icon={Clock} tone="bg-emerald-500/15 text-emerald-600" label="Tempo médio de análise" value={cur == null ? "—" : formatDuration(cur)}
+        sub={delta == null ? "últimos 7 dias" : (
+          <span className={`inline-flex items-center gap-0.5 ${delta <= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+            {delta <= 0 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}{Math.abs(delta)}%
+            <span className="text-muted-foreground ml-1">vs. semana anterior</span>
+          </span>
+        )} />
+    </div>
+  );
+}
+
+function StripStat({ icon: Icon, tone, label, value, sub }: { icon: any; tone: string; label: string; value: string; sub: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 min-w-0">
+      <span className={`size-9 shrink-0 rounded-full grid place-items-center ${tone}`}><Icon className="size-4" /></span>
+      <div className="min-w-0">
+        <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+        <p className="text-lg font-semibold leading-tight tabular-nums">{value}</p>
+        <div className="text-[11px] text-muted-foreground truncate">{sub}</div>
       </div>
     </div>
   );
