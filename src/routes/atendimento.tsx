@@ -33,6 +33,9 @@ import { Avatar, STATUS_META, displayName, formatDuration, fullTime, listTime, r
 import { useSupportFn, useIsDemo, DemoContext, isDemoUrl } from "@/components/atendimento/demo";
 import { useSupportTags } from "@/components/atendimento/useSupportTags";
 
+// Filtro de tags: conversas sem nenhuma tag fixa.
+const NO_TAG = "Sem tag";
+
 export const Route = createFileRoute("/atendimento")({
   beforeLoad: requireAuth,
   head: () => ({ meta: [{ title: "Atendimento — SRX Growth" }] }),
@@ -210,8 +213,11 @@ function Inboxes({ status }: { status: ZohoStatus }) {
       (!q || byOrder.has(c.customer_email) ||
         [c.customer_email, c.customer_name, c.subject, c.summary].some((v) => v?.toLowerCase().includes(q))) &&
       (!statusFilter.length || statusFilter.includes(c.status)) &&
-      (!tagFilter.length || tagFilter.some((t) => c.tags.includes(t))));
-  }, [conversations, search, orderEmails.data, statusFilter, tagFilter]);
+      (!tagFilter.length || tagFilter.some((t) => (t === NO_TAG
+        // "Sem tag": nenhuma das tags fixas — mesma regra do card do KPI.
+        ? !c.tags.some((x) => fixedTags.includes(x))
+        : c.tags.includes(t)))));
+  }, [conversations, search, orderEmails.data, statusFilter, tagFilter, fixedTags]);
 
   const counts = {
     todos: filteredBase.length,
@@ -376,9 +382,9 @@ function Inboxes({ status }: { status: ZohoStatus }) {
                 <div>
                   <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">Tags</p>
                   <div className="flex flex-wrap gap-1">
-                    {allTags.map((t) => (
+                    {[...allTags, NO_TAG].map((t) => (
                       <button key={t} onClick={() => setTagFilter((f) => f.includes(t) ? f.filter((x) => x !== t) : [...f, t])}
-                        className={`h-6 px-2 rounded-md text-[11px] font-medium border ${tagFilter.includes(t) ? `${tagTone(t, fixedTags)} border-current` : "border-border text-muted-foreground"}`}>
+                        className={`h-6 px-2 rounded-md text-[11px] font-medium border ${tagFilter.includes(t) ? `${t === NO_TAG ? "bg-muted text-foreground" : tagTone(t, fixedTags)} border-current` : "border-border text-muted-foreground"} ${t === NO_TAG ? "border-dashed" : ""}`}>
                         {t}
                       </button>
                     ))}
