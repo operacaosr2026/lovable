@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowDown, ArrowUp, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Copy, LayoutGrid, List, Loader2,
+  ArrowDown, ArrowUp, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Copy, Loader2,
   MessageSquare, MoreHorizontal, Package, Repeat, Search, Undo2, X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -65,7 +65,6 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   const [store, setStore] = useState<string>("");
   const [status, setStatus] = useState<StatusFilter>("abertos");
   const [sort, setSort] = useState<Sort>("recentes");
-  const [layout, setLayout] = useState<"lista" | "grade">("lista");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
@@ -74,7 +73,8 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   const actions = useApprovalActions();
   // Celular: a tabela não cabe — sempre em cartões.
   const isMobile = useIsMobile();
-  const view = isMobile ? "grade" : layout;
+  // Celular: cartões; computador: tabela.
+  const view = isMobile ? "grade" : "lista";
 
   const all = (list.data?.items ?? []) as Item[];
   const canApprove = !!list.data?.canApprove;
@@ -143,14 +143,6 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
             <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pedido, cliente ou loja…"
               className="w-full h-9 pl-8 pr-3 rounded-xl bg-card border border-border text-xs outline-none focus:border-primary" />
-          </div>
-          <div className="hidden md:flex items-center rounded-xl border border-border bg-card p-0.5">
-            {([["lista", List], ["grade", LayoutGrid]] as const).map(([k, Icon]) => (
-              <button key={k} onClick={() => setLayout(k)} title={k === "lista" ? "Lista" : "Grade"}
-                className={`size-8 rounded-lg grid place-items-center ${layout === k ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
-                <Icon className="size-4" />
-              </button>
-            ))}
           </div>
         </div>
 
