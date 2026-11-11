@@ -367,14 +367,19 @@ function MetaLineShape(props: any) {
     busy.push([top, top + 18]);
   }
   if (payload.projExtra > 0) busy.push([totalTop + 3, totalTop + 21]);        // valor da projeção
+  // A própria coluna: etiqueta por cima dela escondia o topo (setembro parecia
+  // parar em $11k com $14,8k).
+  if (payload.topo > 0) busy.push([totalTop, y + height]);
 
   const above: [number, number] = [y - 22, y - 5];
   const below: [number, number] = [y + 5, y + 22];
   const free = (r: [number, number]) => !busy.some((b) => overlaps(r, b));
   const pos = free(above) ? "above" : free(below) ? "below" : "side";
 
+  // Ao lado: à direita, menos na última coluna (não tem espaço depois dela).
+  const sideX = payload.last ? x - 14 - w : x + width + 14;
   const box = pos === "side"
-    ? { x: x + width + 14, y: y - 8.5, tx: x + width + 14 + w / 2, ty: y + 3.5 }
+    ? { x: sideX, y: y - 8.5, tx: sideX + w / 2, ty: y + 3.5 }
     : { x: x + width / 2 - w / 2, y: pos === "above" ? y - 22 : y + 5, tx: x + width / 2, ty: pos === "above" ? y - 10 : y + 17 };
   return (
     <g>
@@ -397,9 +402,27 @@ function realizadoColor(d: { realizado: number; meta: number; atual: boolean }) 
 // Lucro realizado: barra com degradê e o valor dentro.
 function RealizadoShape(props: any) {
   const { x, y, width, height, payload } = props;
-  if (!width || height == null || height <= 0) return null;
-  const top = payload?.projExtra > 0 ? 0 : 6;
+  if (!width || !height) return null;
   const c = realizadoColor(payload);
+  // Mês no prejuízo: barra pra baixo do zero (a biblioteca manda y na ponta de
+  // baixo e height negativo).
+  if (height < 0) {
+    const h = -height, zero = y - h, r = Math.min(6, h);
+    const negId = `goal-bar-grad-${c.key}-neg`;
+    return (
+      <g>
+        <defs>
+          <linearGradient id={negId} x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stopColor={c.color} stopOpacity={1} />
+            <stop offset="100%" stopColor={c.color} stopOpacity={0.45} />
+          </linearGradient>
+        </defs>
+        <path d={`M${x},${zero} L${x + width},${zero} L${x + width},${y - r} Q${x + width},${y} ${x + width - r},${y} L${x + r},${y} Q${x},${y} ${x},${y - r} Z`} fill={`url(#${negId})`} />
+        {h > 14 && <text x={x + width / 2} y={zero + h / 2 + 4} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#fff">{fmtK(payload.realizado)}</text>}
+      </g>
+    );
+  }
+  const top = payload?.projExtra > 0 ? 0 : 6;
   const gid = `goal-bar-grad-${c.key}`;
   return (
     <g>
@@ -410,10 +433,10 @@ function RealizadoShape(props: any) {
         </linearGradient>
       </defs>
       <path d={`M${x},${y + height} L${x},${y + top} Q${x},${y} ${x + top},${y} L${x + width - top},${y} Q${x + width},${y} ${x + width},${y + top} L${x + width},${y + height} Z`} fill={`url(#${gid})`} />
-      {height > 22 && (() => {
+      {height > 14 && (() => {
         // Se a linha da meta passa pelo valor, ele desce pra baixo da linha.
         const metaY = payload.meta > 0 && payload.realizado > 0 ? y + height - (payload.meta / payload.realizado) * height : null;
-        let ty = y + 16;
+        let ty = y + Math.min(16, height / 2 + 4);
         if (metaY != null && metaY > y + 2 && metaY < y + 24) ty = metaY + 15;
         if (ty > y + height - 4) return null;
         return <text x={x + width / 2} y={ty} textAnchor="middle" fontSize={10.5} fontWeight={700} fill="#fff">{fmtK(payload.realizado)}</text>;
@@ -441,7 +464,7 @@ function ProjecaoShape(props: any) {
 
 // Selo de % acima da barra (realizado; no mês atual, o % projetado).
 function PctPill(props: any) {
-  const { x, y, width, index, data } = props;
+  const { x, y, width, height, index, data } = props;
   const d = data?.[index];
   if (!d || !d.meta || x == null || y == null) return null;
   const pct = d.pctShown;
@@ -449,20 +472,24 @@ function PctPill(props: any) {
   const label = `${Math.round(pct)}%`;
   const w = label.length * 7 + 14;
   const cx = x + width / 2;
+  // Barra negativa: o selo vai embaixo dela.
+  const boxY = height < 0 ? y + 5 : y - 22;
   return (
     <g>
-      <rect x={cx - w / 2} y={y - 22} width={w} height={17} rx={8.5} fill={tone.bg} fillOpacity={0.15} />
-      <text x={cx} y={y - 10} textAnchor="middle" fontSize={10} fontWeight={700} fill={tone.text}>{label}</text>
+      <rect x={cx - w / 2} y={boxY} width={w} height={17} rx={8.5} fill={tone.bg} fillOpacity={0.15} />
+      <text x={cx} y={boxY + 12} textAnchor="middle" fontSize={10} fontWeight={700} fill={tone.text}>{label}</text>
     </g>
   );
 }
 
 function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
   if (loading) return <div className="flex-1 min-h-[200px] bg-muted animate-pulse rounded-xl" />;
-  const months = (data?.months ?? []).map((m) => {
+  const months = (data?.months ?? []).map((m, i, all) => {
     const projExtra = m.atual && m.projecao != null ? Math.max(0, m.projecao - m.realizado) : 0;
     const pctShown = m.meta > 0 ? ((m.atual && m.projecao != null ? m.projecao : m.realizado) / m.meta) * 100 : 0;
-    return { ...m, label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month, projExtra, pctShown, topo: Math.max(0, m.realizado) + projExtra };
+    const topo = Math.max(0, m.realizado, m.atual && m.projecao != null ? m.projecao : 0);
+    // pillBase: onde vai o selo de % — no topo, ou na ponta da barra negativa.
+    return { ...m, label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month, projExtra, pctShown, topo, pillBase: topo > 0 ? topo : m.realizado, last: i === all.length - 1 };
   });
   const atual = months.find((m) => m.atual);
   // Eixo com valores redondos (passo 1/2/2,5/5 × 10^n, ~4 linhas) e folga pros selos.
@@ -470,7 +497,10 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax / 4)));
   const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((st) => rawMax / st <= 4.5) ?? 10 * mag;
   const yMax = Math.ceil(rawMax / step) * step;
-  const yTicks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step);
+  // Mês no prejuízo: o eixo desce abaixo de zero, com folga pro selo embaixo da barra.
+  const rawMin = Math.min(0, ...months.map((m) => m.realizado)) * 1.22;
+  const yMin = rawMin < 0 ? Math.floor(rawMin / step) * step : 0;
+  const yTicks = Array.from({ length: Math.round((yMax - yMin) / step) + 1 }, (_, i) => yMin + i * step);
   const BAR = 44;
   return (
     <div className="flex-1 min-h-[200px] flex flex-col">
@@ -483,7 +513,8 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
               <BarChart data={months} margin={{ top: 26, right: 14, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="22%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, yMax]} ticks={yTicks} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                <YAxis domain={[yMin, yMax]} ticks={yTicks} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                {yMin < 0 && <ReferenceLine y={0} stroke="var(--color-muted-foreground)" strokeOpacity={0.5} />}
                 <Tooltip
                   cursor={{ fill: "var(--color-muted)", opacity: 0.4 }}
                   content={({ active, payload }: any) => {
@@ -505,8 +536,8 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
                 {/* Meta por cima das barras (a linha aparece mesmo quando o lucro passa dela) */}
                 <Bar dataKey="meta" barSize={BAR} shape={<MetaLineShape />} isAnimationActive={false} />
                 {/* Camada invisível só pro selo de % no topo (realizado + projeção) */}
-                <Bar dataKey="topo" barSize={BAR} shape={() => <g />} isAnimationActive={false}>
-                  <LabelList dataKey="topo" content={<PctPill data={months} />} />
+                <Bar dataKey="pillBase" barSize={BAR} shape={() => <g />} isAnimationActive={false}>
+                  <LabelList dataKey="pillBase" content={<PctPill data={months} />} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
