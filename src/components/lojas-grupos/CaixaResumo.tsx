@@ -146,7 +146,6 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
           <div className="flex gap-5 text-right">
             <Stat label="Hoje" value={money(first.saldo)} />
             <Stat label={`Em ${dm(last.key)}${estReady ? " · est." : ""}`} value={money(estReady ? last.estimado : last.saldo)} />
-            <Stat label={`Menor lançado · ${dm(min.key)}`} value={money(min.saldo)} danger={tight} />
           </div>
         </div>
 
