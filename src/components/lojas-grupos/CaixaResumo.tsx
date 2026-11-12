@@ -153,7 +153,7 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-right">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-2 w-full sm:w-auto sm:flex sm:flex-wrap sm:text-right">
             <Stat label="Saldo atual" value={money(saldoAtual)} />
             <Stat label="A receber" value={money(receivableTotal)} />
             <Stat label="Saldo total" value={money(saldoAtual + receivableTotal)} />
@@ -235,8 +235,8 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
                 <thead>
                   <tr className="text-[11px] text-muted-foreground">
                     <th className="text-left font-medium pb-2">Loja</th>
-                    <th className="text-center font-medium pb-2">Entradas</th>
-                    <th className="text-center font-medium pb-2">Saídas</th>
+                    <th className="text-center font-medium pb-2 hidden sm:table-cell">Entradas</th>
+                    <th className="text-center font-medium pb-2 hidden sm:table-cell">Saídas</th>
                     <th className="text-center font-medium pb-2">Resultado</th>
                     <th className="text-center font-medium pb-2" title="Saldo na Shopify aguardando repasse (agora)">A receber</th>
                   </tr>
@@ -245,8 +245,8 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
                   {byShop.map((r) => (
                     <tr key={r.id || "none"} className="border-t border-border">
                       <td className="py-2 pr-2 truncate max-w-[160px]">{r.name}</td>
-                      <td className="text-center tabular-nums">{r.entradas ? money(r.entradas) : "—"}</td>
-                      <td className="text-center tabular-nums">{r.saidas ? money(r.saidas) : "—"}</td>
+                      <td className="text-center tabular-nums hidden sm:table-cell">{r.entradas ? money(r.entradas) : "—"}</td>
+                      <td className="text-center tabular-nums hidden sm:table-cell">{r.saidas ? money(r.saidas) : "—"}</td>
                       <td className={`text-center tabular-nums font-semibold ${r.resultado < 0 ? "text-destructive" : ""}`}>{r.entradas || r.saidas ? signed(r.resultado) : "—"}</td>
                       <td className="text-center tabular-nums text-muted-foreground">{r.receber ? money(r.receber) : "—"}</td>
                     </tr>
@@ -273,9 +273,9 @@ function Stat({ label, value, danger }: { label: string; value: string; danger?:
 function TotalTile({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
   const cls = tone === "neg" ? "bg-destructive/10 text-destructive" : tone === "pos" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-foreground";
   return (
-    <div className={`rounded-xl px-3 py-2 ${cls}`}>
+    <div className={`rounded-xl px-2 sm:px-3 py-2 min-w-0 ${cls}`}>
       <p className="text-[10px] uppercase tracking-wide opacity-70">{label}</p>
-      <p className="text-sm font-bold tabular-nums truncate">{value}</p>
+      <p className="text-xs sm:text-sm font-bold tabular-nums truncate">{value}</p>
     </div>
   );
 }

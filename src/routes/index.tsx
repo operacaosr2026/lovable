@@ -685,9 +685,9 @@ const fmtDays = (d: number | null) => (d == null ? "—" : `${d.toFixed(1)}d`);
 
 // Reembolso / chargeback do produto: valor e quantos pedidos (traço quando zero).
 function LossCell({ value, orders }: { value: number; orders: number }) {
-  if (!orders) return <td className="py-2 px-3 text-center tabular-nums text-muted-foreground/60">—</td>;
+  if (!orders) return <td className="py-2 px-3 text-center tabular-nums text-muted-foreground/60 hidden sm:table-cell">—</td>;
   return (
-    <td className="py-2 px-3 text-center tabular-nums">
+    <td className="py-2 px-3 text-center tabular-nums hidden sm:table-cell">
       <p className="font-semibold text-red-500">{fmtMoney(value)}</p>
       <p className="text-[10px] text-muted-foreground">{orders} pedido{orders === 1 ? "" : "s"}</p>
     </td>
@@ -726,8 +726,8 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
                 <th className="text-center font-semibold py-2 px-3">Pedidos</th>
                 <th className="text-center font-semibold py-2 px-3 hidden sm:table-cell">Unidades</th>
                 <th className="text-center font-semibold py-2 px-3">Faturamento</th>
-                <th className="text-center font-semibold py-2 px-3" title="Dos pedidos vendidos no período">Reembolsos</th>
-                <th className="text-center font-semibold py-2 px-3" title="Dos pedidos vendidos no período">Chargebacks</th>
+                <th className="text-center font-semibold py-2 px-3 hidden sm:table-cell" title="Dos pedidos vendidos no período">Reembolsos</th>
+                <th className="text-center font-semibold py-2 px-3 hidden sm:table-cell" title="Dos pedidos vendidos no período">Chargebacks</th>
                 <th className="text-center font-semibold py-2 pl-3 w-[22%] hidden md:table-cell">% do faturamento</th>
               </tr>
             </thead>

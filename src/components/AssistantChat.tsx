@@ -147,7 +147,7 @@ export function AssistantChat() {
   return (
     <>
       {open && (
-        <div className="fixed z-50 bottom-20 right-4 left-4 sm:left-auto sm:w-[400px] h-[min(600px,calc(100vh-7rem))] flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
+        <div className="fixed z-50 bottom-20 right-4 left-4 sm:left-auto sm:w-[400px] h-[min(600px,calc(100dvh-7rem))] flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
             <Sparkles className="size-4 text-primary" />
             <span className="text-sm font-semibold flex-1">Pergunte ao sistema</span>
@@ -213,7 +213,7 @@ export function AssistantChat() {
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
               rows={1}
               placeholder="Escreva sua pergunta…"
-              className="flex-1 resize-none max-h-32 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+              className="flex-1 resize-none max-h-32 rounded-xl border border-border bg-background px-3 py-2 text-base sm:text-sm outline-none focus:ring-2 focus:ring-primary/30"
             />
             <button type="submit" disabled={busy || !input.trim()} title="Enviar"
               className="size-9 grid place-items-center rounded-xl bg-primary text-primary-foreground disabled:opacity-40 shrink-0">
@@ -227,7 +227,7 @@ export function AssistantChat() {
         onClick={() => setOpen((o) => !o)}
         title={open ? "Fechar assistente" : "Pergunte ao sistema"}
         aria-label="Assistente"
-        className="fixed z-50 bottom-4 right-4 size-13 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 active:scale-95 transition-transform grid place-items-center"
+        className="fixed z-50 bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 size-12 sm:size-13 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 active:scale-95 transition-transform grid place-items-center"
       >
         {open ? <X className="size-5" /> : <MessageCircle className="size-6" />}
       </button>
