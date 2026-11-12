@@ -52,6 +52,8 @@ async function findOrCreateOverride(supabase: any, ownerId: string, id: string) 
     recurrence_until: source.recurrence_until,
     skip_weekend_rule: source.skip_weekend_rule ?? false,
     reconciled: source.reconciled ?? false,
+    via_balance: source.via_balance ?? false,
+    balance_shop_id: source.balance_shop_id ?? null,
   }).select().single();
   if (insErr) throw new Error(insErr.message);
   return created;
@@ -72,9 +74,12 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
       context.supabase.from("shop_cash_imports").select("*")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids)
         .order("created_at", { ascending: false }),
-      context.supabase.from("shops").select("opening_balance, weekend_payouts_to_monday")
+      context.supabase.from("shops").select("id, opening_balance, weekend_payouts_to_monday, payouts_to_balance")
         .eq("user_id", context.ownerId).in("id", data.shop_ids),
     ]);
+    // Contas Balance que podem ser cobradas (mesma lista do caixa da loja/grupo).
+    const { data: balanceAccounts } = await context.supabase.from("shops").select("id, name")
+      .eq("user_id", context.ownerId).eq("payouts_to_balance", true).order("name");
     if (entriesRes.error) throw new Error(entriesRes.error.message);
     if (overridesRes.error) throw new Error(overridesRes.error.message);
     if (importsRes.error) throw new Error(importsRes.error.message);
@@ -102,6 +107,8 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
         recurrence_until: ov.recurrence_until,
         skip_weekend_rule: ov.skip_weekend_rule,
         reconciled: ov.reconciled,
+        via_balance: ov.via_balance ?? e.via_balance,
+        balance_shop_id: ov.via_balance == null ? e.balance_shop_id : ov.balance_shop_id,
       });
     }
     for (const o of localOverrides) {
@@ -122,6 +129,8 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
         recurrence_until: o.recurrence_until,
         skip_weekend_rule: o.skip_weekend_rule,
         reconciled: o.reconciled,
+        via_balance: o.via_balance ?? false,
+        balance_shop_id: o.balance_shop_id ?? null,
         created_at: o.created_at ?? null,
       });
     }
@@ -135,6 +144,10 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
       imports: importsRes.data ?? [],
       opening_balance,
       weekend_payouts_to_monday,
+      balance_shop_ids: shopRows.filter((r: any) => Boolean(r.payouts_to_balance)).map((r: any) => r.id as string),
+      balance_accounts: (balanceAccounts ?? []) as { id: string; name: string }[],
+      // Todas as lojas estão nesta visão: não há gasto "de fora" no Balance delas.
+      balance_charges_elsewhere: [] as { kind: string; amount: number; balance_shop_id: string }[],
     };
   });
 
@@ -150,6 +163,8 @@ export const createConsolidatedCashEntry = createServerFn({ method: "POST" })
       description: z.string().max(300).nullable().optional(),
       recurrence: z.enum(RECURRENCES).optional(),
       recurrence_until: z.string().nullable().optional(),
+      via_balance: z.boolean().optional(),
+      balance_shop_id: z.string().uuid().nullable().optional(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -165,6 +180,8 @@ export const createConsolidatedCashEntry = createServerFn({ method: "POST" })
       recurrence: data.recurrence ?? "none",
       recurrence_until: data.recurrence_until ?? null,
       reconciled: true,
+      via_balance: data.via_balance ?? false,
+      balance_shop_id: data.balance_shop_id ?? null,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };
@@ -185,6 +202,8 @@ export const updateConsolidatedCashEntry = createServerFn({ method: "POST" })
         recurrence_until: z.string().nullable().optional(),
         skip_weekend_rule: z.boolean().optional(),
         reconciled: z.boolean().optional(),
+        via_balance: z.boolean().optional(),
+        balance_shop_id: z.string().uuid().nullable().optional(),
       }),
     }).parse(d),
   )
