@@ -89,6 +89,10 @@ function ProposalCard({ p, status, onSave, onCancel }: {
   );
 }
 
+// Celular: o chat abre pelo botão da barra de cima (AppLayout), não pela bolinha.
+export const openAssistant = () => window.dispatchEvent(new Event("assistant:open"));
+const isDesktop = () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+
 export function AssistantChat() {
   const ask = useServerFn(askAssistantFn);
   const saveReply = useServerFn(saveSupplierReply);
@@ -102,7 +106,13 @@ export function AssistantChat() {
 
   useEffect(() => { setMsgs(load()); }, []);
   useEffect(() => { save(msgs); endRef.current?.scrollIntoView({ block: "end" }); }, [msgs, busy, open]);
-  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+  // No celular não foca sozinho (o teclado cobriria as sugestões).
+  useEffect(() => { if (open && isDesktop()) inputRef.current?.focus(); }, [open]);
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("assistant:open", onOpen);
+    return () => window.removeEventListener("assistant:open", onOpen);
+  }, []);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -147,7 +157,7 @@ export function AssistantChat() {
   return (
     <>
       {open && (
-        <div className="fixed z-50 bottom-20 right-4 left-4 sm:left-auto sm:w-[400px] h-[min(600px,calc(100dvh-7rem))] flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
+        <div className="fixed z-50 inset-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] md:p-0 md:inset-auto md:bottom-20 md:right-4 md:w-[400px] md:h-[min(600px,calc(100dvh-7rem))] flex flex-col md:rounded-2xl md:border border-border bg-background shadow-2xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
             <Sparkles className="size-4 text-primary" />
             <span className="text-sm font-semibold flex-1">Pergunte ao sistema</span>
@@ -227,7 +237,7 @@ export function AssistantChat() {
         onClick={() => setOpen((o) => !o)}
         title={open ? "Fechar assistente" : "Pergunte ao sistema"}
         aria-label="Assistente"
-        className="fixed z-50 bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 size-12 sm:size-13 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 active:scale-95 transition-transform grid place-items-center"
+        className="hidden md:grid fixed z-50 bottom-4 right-4 size-13 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 active:scale-95 transition-transform place-items-center"
       >
         {open ? <X className="size-5" /> : <MessageCircle className="size-6" />}
       </button>

@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Briefcase,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  GraduationCap, Send, Swords,
+  GraduationCap, Send, Swords, MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -13,7 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { NotificationBell } from "@/components/NotificationBell";
-import { AssistantChat } from "@/components/AssistantChat";
+import { AssistantChat, openAssistant } from "@/components/AssistantChat";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -440,6 +440,13 @@ export function AppLayout() {
         <Link to="/" className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
           <img src="/logo.png" alt="SRX" className="h-6 w-auto" />
         </Link>
+        <button
+          onClick={openAssistant}
+          aria-label="Pergunte ao sistema"
+          className="size-9 grid place-items-center rounded-lg hover:bg-surface text-primary"
+        >
+          <MessageCircle className="size-5" />
+        </button>
         <button
           onClick={() => signOut()}
           aria-label="Sair"
