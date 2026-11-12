@@ -1077,7 +1077,10 @@ function splitAmountProportionally(total: number, weights: number[]): number[] {
   return shares.map((c) => c / 100);
 }
 
-function EditGroupTotal({ group, balanceAccounts, onClose, onSave }: { group: EntryGroup; balanceAccounts: BalanceAccount[]; onClose: () => void; onSave: (total: number, viaBalance: boolean, balanceShopId?: string | null, date?: string) => void }) {
+function EditGroupTotal({ group, balanceAccounts, shopNamesMap, onClose, onSave }: {
+  group: EntryGroup; balanceAccounts: BalanceAccount[]; shopNamesMap?: Record<string, string>; onClose: () => void;
+  onSave: (total: number, viaBalance: boolean, balanceShopId?: string | null, date?: string, balanceAmounts?: Record<string, number>) => void;
+}) {
   const [amount, setAmount] = useState(String(Number(group.total.toFixed(2))));
   // Balance vale pro grupo todo: marcado só se todos já estão; alguns marcados avisa.
   const balanceCount = group.entries.filter((e) => e.via_balance).length;
@@ -1091,11 +1094,27 @@ function EditGroupTotal({ group, balanceAccounts, onClose, onSave }: { group: En
   const groupDate = group.entries[0]?.date ?? "";
   const [date, setDate] = useState(groupDate);
   const canMoveDate = !group.entries.some((e) => e.virtual || (e.recurrence && e.recurrence !== "none"));
-  const blocked = (asksAccount && !account) || (canMoveDate && !date);
+  // Dividir entre Balances: você diz quanto cada Balance pagou (qualquer valor,
+  // não precisa ser o da loja do lote). Ao salvar, os lançamentos são partidos
+  // pra casar com esses valores — o custo de cada loja continua o mesmo.
+  const canSplit = asksAccount && balanceAccounts.length > 1 && canMoveDate;
+  const [split, setSplit] = useState(() => new Set(group.entries.map((e) => e.balance_shop_id ?? "")).size > 1);
+  const [byAcc, setByAcc] = useState<Record<string, string>>(() => {
+    const m: Record<string, number> = {};
+    for (const e of group.entries) if (e.balance_shop_id) m[e.balance_shop_id] = (m[e.balance_shop_id] ?? 0) + Number(e.amount);
+    return Object.fromEntries(balanceAccounts.map((a) => [a.id, m[a.id] ? String(Math.round(m[a.id] * 100) / 100) : ""]));
+  });
+  const splitting = canSplit && split;
+  const totalNum = parseFloat(amount);
+  const accCents = Object.fromEntries(balanceAccounts.map((a) => [a.id, Math.round((parseFloat(byAcc[a.id] || "0") || 0) * 100)]));
+  const splitSum = Object.values(accCents).reduce((x, y) => x + y, 0);
+  const splitOff = splitting && (isNaN(totalNum) || splitSum !== Math.round(totalNum * 100) || Object.values(accCents).some((c) => c < 0));
+  const blocked = (asksAccount && !splitting && !account) || splitOff || (canMoveDate && !date);
   const save = () => {
     const v = parseFloat(amount);
     if (isNaN(v) || v < 0 || blocked) return;
-    onSave(v, viaBalance, !canPickAccount ? undefined : asksAccount ? account : null, canMoveDate && date !== groupDate ? date : undefined);
+    onSave(v, viaBalance, !canPickAccount ? undefined : asksAccount ? (splitting ? null : account) : null, canMoveDate && date !== groupDate ? date : undefined,
+      splitting ? Object.fromEntries(Object.entries(accCents).filter(([, c]) => c > 0).map(([id, c]) => [id, c / 100])) : undefined);
   };
   return (
     <Modal onClose={onClose} title={`Editar ${group.label}`}>
@@ -1117,7 +1136,28 @@ function EditGroupTotal({ group, balanceAccounts, onClose, onSave }: { group: En
             <span className="ml-auto text-[10px] text-amber-600">hoje {balanceCount} de {group.entries.length} marcados</span>
           )}
         </label>
-        {asksAccount && <BalanceAccountSelect accounts={balanceAccounts} value={account} onChange={setAccount} income={isIncome} />}
+        {asksAccount && !splitting && <BalanceAccountSelect accounts={balanceAccounts} value={account} onChange={setAccount} income={isIncome} />}
+        {splitting && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">{isIncome ? "Quanto entrou em cada Balance?" : "Quanto cada Balance pagou?"}</p>
+            {balanceAccounts.map((a) => (
+              <div key={a.id} className="flex items-center gap-2">
+                <span className="flex-1 text-xs font-medium truncate">{a.name}</span>
+                <Input type="number" step="0.01" min="0" value={byAcc[a.id] ?? ""} placeholder="0,00" className="h-8 w-32 text-right"
+                  onChange={(ev) => setByAcc((m) => ({ ...m, [a.id]: ev.target.value }))} />
+              </div>
+            ))}
+            <p className={cn("text-[11px]", splitOff ? "text-amber-600" : "text-muted-foreground")}>
+              Soma {fmtMoney(splitSum / 100)} de {fmtMoney(isNaN(totalNum) ? 0 : totalNum)}
+              {splitOff && !isNaN(totalNum) ? ` — falta ${fmtMoney((Math.round(totalNum * 100) - splitSum) / 100)}` : ""}
+            </p>
+          </div>
+        )}
+        {canSplit && (
+          <button type="button" onClick={() => setSplit((v) => !v)} className="text-xs text-primary hover:underline">
+            {split ? "Usar um Balance só pra tudo" : "Dividir entre Balances (uma parte em cada loja)"}
+          </button>
+        )}
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
@@ -1885,10 +1925,46 @@ export function LgCashflowView({
         <EditGroupTotal
           group={editingGroup}
           balanceAccounts={balanceAccounts}
+          shopNamesMap={shopNamesMap}
           onClose={() => setEditingGroup(null)}
-          onSave={(total, viaBalance, balanceShopId, date) => {
+          onSave={(total, viaBalance, balanceShopId, date, balanceAmounts) => {
             const entries = editingGroup.entries;
             const shares = splitAmountProportionally(total, entries.map((e) => Math.round(Number(e.amount) * 100)));
+            if (balanceAmounts) {
+              // Cada lançamento vai primeiro pro Balance da própria loja (se ainda
+              // tiver valor pra ele) e o que sobra pros outros; a parte que não
+              // cabe vira um lançamento novo, mesma loja/categoria/data.
+              const remaining = new Map(Object.entries(balanceAmounts).map(([id, v]) => [id, Math.round(v * 100)]));
+              const nameOf = (id: string) => balanceAccounts.find((a) => a.id === id)?.name ?? "outra loja";
+              const jobs: Promise<unknown>[] = [];
+              entries.forEach((e, i) => {
+                let left = Math.round(shares[i] * 100);
+                const order = [...remaining.keys()].sort((x, y) => (x === e.shop_id ? -1 : y === e.shop_id ? 1 : (remaining.get(y)! - remaining.get(x)!)));
+                const parts: { acc: string; cents: number }[] = [];
+                for (const acc of order) {
+                  const take = Math.min(left, remaining.get(acc) ?? 0);
+                  if (take > 0) { parts.push({ acc, cents: take }); left -= take; remaining.set(acc, remaining.get(acc)! - take); }
+                  if (left <= 0) break;
+                }
+                if (!parts.length) parts.push({ acc: order[0], cents: Math.round(shares[i] * 100) });
+                const [first, ...rest] = parts;
+                const patch: Record<string, unknown> = { via_balance: true, balance_shop_id: first.acc };
+                if (Math.round(Number(e.amount) * 100) !== first.cents) patch.amount = first.cents / 100;
+                if (date) patch.date = date;
+                jobs.push(updateFn({ data: { id: e.id, patch } }));
+                for (const r of rest) {
+                  jobs.push(createFn({ data: {
+                    shop_id: e.shop_id, kind: e.kind, amount: r.cents / 100, date: date ?? e.date, category: e.category,
+                    description: `${(e.description ?? "").trim()} · parte paga no Balance ${nameOf(r.acc)}`.replace(/^ · /, "").slice(0, 300),
+                    via_balance: true, balance_shop_id: r.acc,
+                  } }).then((res: any) => (!e.reconciled && res?.entry?.id ? updateFn({ data: { id: res.entry.id, patch: { reconciled: false } } }) : null)));
+                }
+              });
+              Promise.all(jobs).then(() => { toast.success("Pagamento dividido entre os Balances"); refresh(); })
+                .catch((err) => { toast.error(String(err?.message ?? err)); refresh(); });
+              setEditingGroup(null);
+              return;
+            }
             entries.forEach((e, i) => {
               const patch: Record<string, unknown> = {};
               if (Number(e.amount) !== shares[i]) patch.amount = shares[i];
