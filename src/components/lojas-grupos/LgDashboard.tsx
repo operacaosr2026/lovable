@@ -22,7 +22,7 @@ import {
 } from "@/lib/shop-orders.functions";
 import { syncCardMetaSpend } from "@/lib/lg-card-meta.functions";
 import {
-  getLgCurrencyRates, saveLgCurrencyRates, getLgCardQuickMetrics,
+  getLgCurrencyRates, saveLgCurrencyRates,
 } from "@/lib/lg-cards.functions";
 import { listCompanyGoals } from "@/lib/company-goals.functions";
 import { toast } from "sonner";
@@ -860,7 +860,7 @@ export function LgDashboard({
             ))}
           </div>
         </div>
-        <MonthGoalCard cardId={cardId} fmt={fmt} />
+        <MonthGoalCard fmt={fmt} />
         <RefundsChargebacksDialog open={rcOpen} onClose={() => setRcOpen(false)} shopIds={shopIds} to={to} fmt={fmt} />
         </div>
       </div>
@@ -961,12 +961,10 @@ export function LgDashboard({
 
 const MONTHS_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-function MonthGoalCard({ cardId, fmt }: { cardId: string; fmt: (n: number) => string }) {
+function MonthGoalCard({ fmt }: { fmt: (n: number) => string }) {
   const goalsFn = useServerFn(listCompanyGoals);
-  const cardMetricsFn = useServerFn(getLgCardQuickMetrics);
-  // Mesmas chaves da página Metas e da lista de Lojas e Grupos (cache compartilhado).
+  // Mesma chave da página Metas (cache compartilhado).
   const goals = useQuery({ queryKey: ["company-goals"], queryFn: () => goalsFn() });
-  const card = useQuery({ queryKey: ["lg-card-metrics", cardId], queryFn: () => cardMetricsFn({ data: { card_id: cardId } }) });
 
   const g = goals.data?.goals.find((x) => x.status === "em_andamento");
   const monthName = MONTHS_PT[Number(isoTodayUS().slice(5, 7)) - 1];
@@ -975,7 +973,6 @@ function MonthGoalCard({ cardId, fmt }: { cardId: string; fmt: (n: number) => st
   const projPct = g && g.meta > 0 && g.projecao != null ? (g.projecao / g.meta) * 100 : null;
   const tone = (v: number) => (v >= 100 ? "text-success" : v >= 70 ? "text-amber-600" : "text-destructive");
   const bar = pct >= 100 ? "bg-success" : pct >= 70 ? "bg-amber-500" : "bg-destructive";
-  const grupoLucro = card.data?.lucro ?? null;
 
   return (
     <div className="bg-card border border-border rounded-2xl p-5 flex-1 flex flex-col">
@@ -1005,7 +1002,6 @@ function MonthGoalCard({ cardId, fmt }: { cardId: string; fmt: (n: number) => st
             {[
               { label: "Projeção no mês", value: g.projecao != null ? fmt(g.projecao) : "—", extra: projPct != null ? `${projPct.toFixed(0)}%` : null, cls: projPct != null ? tone(projPct) : "" },
               { label: "Média últimos 3 dias", value: g.media3 != null ? `${fmt(g.media3)}/dia` : "—", extra: null, cls: "" },
-              { label: "Este grupo", value: grupoLucro != null ? fmt(grupoLucro) : "—", extra: grupoLucro != null && realizado > 0 ? `${((grupoLucro / realizado) * 100).toFixed(0)}% do total` : null, cls: "text-muted-foreground" },
             ].map((r) => (
               <div key={r.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
                 <span className="text-xs text-muted-foreground flex-1">{r.label}</span>
