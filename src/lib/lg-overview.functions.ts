@@ -22,10 +22,11 @@ function addDays(iso: string, n: number) {
 
 // panelRefunds: reembolsos/chargebacks pela regra dos painéis (total do mês
 // no dia 1º) — Dashboard, Lucro do dia e Metas. Sem ela (Gerencial,
-// Consultor…): o valor real que caiu no período.
+// Consultor…): o valor real que caiu no período. semReembolsos: ignora
+// reembolsos/chargebacks (média do Caixa Geral).
 async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
-  opts: { panelRefunds?: boolean } = {},
+  opts: { panelRefunds?: boolean; semReembolsos?: boolean } = {},
 ) {
   const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
     // Só os produtos do pedido (raw->line_items), não o pedido inteiro da
@@ -44,7 +45,8 @@ async function computeAccumulatedLucro(
     costProductsFor(supabase, ownerId),
     // Reembolsos/chargebacks do banco (getGroupRefundsAndChargebacks) — mesma
     // fonte do Dashboard e do card de Lojas e Grupos, pra "lucro" bater nas telas.
-    (opts.panelRefunds ? getPanelRefundsAndChargebacks : getGroupRefundsAndChargebacks)(ownerId, shop_ids, start_date, end_date),
+    opts.semReembolsos ? Promise.resolve([] as any[])
+      : (opts.panelRefunds ? getPanelRefundsAndChargebacks : getGroupRefundsAndChargebacks)(ownerId, shop_ids, start_date, end_date),
   ]);
 
   const costByShop = new Map<string, number>(

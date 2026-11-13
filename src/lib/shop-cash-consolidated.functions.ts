@@ -238,8 +238,8 @@ export const deleteConsolidatedCashEntry = createServerFn({ method: "POST" })
 // Caixa Geral › Resumo: lucro médio por dia dos últimos 7 dias fechados (hoje
 // fica de fora: ainda em andamento), das lojas da meta do mês. O período vai
 // de hoje−7 a hoje, então mediaGeral (lucro dos dias fechados ÷ nº de dias) é
-// exatamente a média dos 7 dias. A linha estimada do caixa é Saldo total +
-// esse lucro × dias.
+// exatamente a média dos 7 dias, sem descontar reembolsos/chargebacks. A
+// linha estimada do caixa é Saldo total + esse lucro × dias.
 export const getCaixaLucroDia = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .handler(async ({ context }) => {
@@ -250,6 +250,6 @@ export const getCaixaLucroDia = createServerFn({ method: "GET" })
     const shops = await companyShopIdsForMonth(context.ownerId, monthStartOf(today));
     if (!shops.length) return { lucroDia: null as number | null };
     const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 7);
-    const acc = await computeAccumulatedLucroServer(supabaseAdmin, context.ownerId, shops, d.toISOString().slice(0, 10), today);
+    const acc = await computeAccumulatedLucroServer(supabaseAdmin, context.ownerId, shops, d.toISOString().slice(0, 10), today, { semReembolsos: true });
     return { lucroDia: Math.round(Number(acc.mediaGeral ?? 0) * 100) / 100 };
   });

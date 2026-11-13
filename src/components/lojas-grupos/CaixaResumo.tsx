@@ -148,7 +148,7 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: LINE }} />Lançado no caixa</span>
               {estReady && (
                 <span className="flex items-center gap-1.5" title="Saldo total de hoje (saldo + a receber) + lucro médio por dia dos últimos 7 dias fechados (hoje não entra: ainda está em andamento). Saídas fora do lucro (retiradas, ferramentas) não entram.">
-                  <span className="w-4 border-t-2 border-dashed" style={{ borderColor: EST }} />Estimado · saldo total + lucro médio de 7 dias (~{money(lucroDia!)}/dia)
+                  <span className="w-4 border-t-2 border-dashed" style={{ borderColor: EST }} />Estimado · saldo total + lucro médio de 7 dias sem reembolsos (~{money(lucroDia!)}/dia)
                 </span>
               )}
             </div>
