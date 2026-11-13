@@ -2041,6 +2041,103 @@ export const undoOrderPayment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Tira `moved` (pedidos pagos do lote `fromBatchId`) do lote e põe no lote da
+// data `paymentDate`: junta no lote que já existe nessa data ou cria um novo,
+// com lançamento no caixa (herda "pago com Balance" do lançamento original).
+// Valor travado no caixa (amount_locked) não é mexido — volta um aviso.
+async function splitOrdersToPaymentDate(
+  context: any, shopId: string, fromBatchId: string, moved: any[], paymentDate: string, products: CostProduct[],
+): Promise<string | null> {
+  const owner = context.ownerId;
+  const movedCost = roundCents(await ordersSupplierCost(context, shopId, moved, products));
+  const movedItems = moved.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
+  const movedIds = moved.map((o) => o.id as string);
+  const lotDesc = (n: number, dates: string[]) => dates.length <= 1
+    ? `Lote #${n} · ${dates[0] ?? ""}`
+    : `Lote #${n} · ${dates[0]} – ${dates[dates.length - 1]}`;
+  const cashDesc = (n: number, dates: string[], items: number, count: number) => `${lotDesc(n, dates)} · ${items} itens · ${count} pedidos`;
+  const warnings: string[] = [];
+
+  const { data: src, error: srcErr } = await supabaseAdmin.from("shop_order_payment_batches")
+    .select("id,batch_number,total_amount,total_items,total_orders,cash_entry_id")
+    .eq("id", fromBatchId).eq("user_id", owner).single();
+  if (srcErr) throw new Error(srcErr.message);
+  const { data: srcCash } = src.cash_entry_id
+    ? await supabaseAdmin.from("shop_cash_entries").select("id,amount,amount_locked,via_balance,balance_shop_id")
+        .eq("id", src.cash_entry_id).eq("user_id", owner).maybeSingle()
+    : { data: null as any };
+
+  // Lote de destino: o que já existe na data nova, ou um novo.
+  const { data: existing } = await supabaseAdmin.from("shop_order_payment_batches")
+    .select("id,batch_number,total_amount,total_items,total_orders,order_dates,cash_entry_id")
+    .eq("user_id", owner).eq("shop_id", shopId).eq("payment_date", paymentDate)
+    .not("cash_entry_id", "is", null).neq("id", fromBatchId).maybeSingle();
+  let targetId: string;
+  if (existing) {
+    targetId = existing.id;
+    const dates = [...new Set([...((existing.order_dates as string[]) ?? []), ...moved.map((o) => o.order_date as string)])].sort();
+    const items = Number(existing.total_items ?? 0) + movedItems;
+    const count = Number(existing.total_orders ?? 0) + moved.length;
+    await supabaseAdmin.from("shop_order_payment_batches").update({
+      total_amount: roundCents(Number(existing.total_amount ?? 0) + movedCost), total_items: items, total_orders: count,
+      order_dates: dates, description: lotDesc(existing.batch_number, dates),
+    }).eq("id", existing.id).eq("user_id", owner);
+    const { data: tCash } = await supabaseAdmin.from("shop_cash_entries").select("amount,amount_locked")
+      .eq("id", existing.cash_entry_id).eq("user_id", owner).maybeSingle();
+    await supabaseAdmin.from("shop_cash_entries").update({
+      ...(tCash?.amount_locked ? {} : { amount: roundCents(Number(tCash?.amount ?? 0) + movedCost) }),
+      description: cashDesc(existing.batch_number, dates, items, count),
+    }).eq("id", existing.cash_entry_id).eq("user_id", owner);
+    if (tCash?.amount_locked) warnings.push(`Lote #${existing.batch_number} tem valor travado no caixa: some $${movedCost.toFixed(2)} à mão.`);
+  } else {
+    const n = await nextBatchNumber(context, shopId);
+    const dates = [...new Set(moved.map((o) => o.order_date as string))].sort();
+    const { data: nb, error: nbErr } = await supabaseAdmin.from("shop_order_payment_batches").insert({
+      user_id: owner, shop_id: shopId, batch_number: n, payment_date: paymentDate,
+      total_amount: movedCost, total_items: movedItems, total_orders: moved.length,
+      order_dates: dates, description: lotDesc(n, dates),
+    }).select("id").single();
+    if (nbErr) throw new Error(nbErr.message);
+    targetId = nb.id;
+    const { data: cashRow, error: cErr } = await supabaseAdmin.from("shop_cash_entries").insert({
+      user_id: owner, shop_id: shopId, kind: "expense", amount: movedCost, date: paymentDate,
+      category: COST_CATEGORY, description: cashDesc(n, dates, movedItems, moved.length),
+      source: "auto", reconciled: true,
+      via_balance: srcCash?.via_balance ?? false, balance_shop_id: srcCash?.balance_shop_id ?? null,
+    }).select("id").single();
+    if (cErr) {
+      await supabaseAdmin.from("shop_order_payment_batches").delete().eq("id", nb.id).eq("user_id", owner);
+      throw new Error(cErr.message);
+    }
+    await supabaseAdmin.from("shop_order_payment_batches").update({ cash_entry_id: cashRow.id }).eq("id", nb.id).eq("user_id", owner);
+  }
+
+  for (const ids of chunk(movedIds)) {
+    const { error } = await supabaseAdmin.from("shop_orders").update({ payment_batch_id: targetId })
+      .in("id", ids).eq("user_id", owner).eq("payment_batch_id", fromBatchId);
+    if (error) throw new Error(`Erro ao mover pedidos de lote: ${error.message}`);
+  }
+
+  // Lote de origem: tira os pedidos que saíram.
+  const { data: rest } = await selectAll(supabaseAdmin.from("shop_orders").select("order_date")
+    .eq("user_id", owner).eq("payment_batch_id", fromBatchId));
+  const restDates = [...new Set(((rest ?? []) as any[]).map((o) => o.order_date as string))].sort();
+  const srcItems = Number(src.total_items ?? 0) - movedItems;
+  const srcCount = Number(src.total_orders ?? 0) - moved.length;
+  await supabaseAdmin.from("shop_order_payment_batches").update({
+    total_amount: roundCents(Number(src.total_amount ?? 0) - movedCost), total_items: srcItems, total_orders: srcCount,
+    order_dates: restDates, description: lotDesc(src.batch_number, restDates),
+  }).eq("id", fromBatchId).eq("user_id", owner);
+  if (srcCash) {
+    await supabaseAdmin.from("shop_cash_entries").update({
+      ...(srcCash.amount_locked ? {} : { amount: roundCents(Number(srcCash.amount ?? 0) - movedCost) }),
+      description: cashDesc(src.batch_number, restDates, srcItems, srcCount),
+    }).eq("id", srcCash.id).eq("user_id", owner);
+    if (srcCash.amount_locked) warnings.push(`Lote #${src.batch_number} tem valor travado no caixa: tire $${movedCost.toFixed(2)} à mão.`);
+  }
+  return warnings.length ? warnings.join(" ") : null;
+}
+
 export const updateBatchPaymentDate = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
@@ -2065,22 +2162,41 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
       if (paidAtErr) throw new Error(`Erro ao atualizar paid_at: ${paidAtErr.message}`);
     }
 
-    // Collect batch IDs: first from payment_batch_id on orders, then by order_dates overlap
-    const directBatchIds = [...new Set((orders ?? []).map((o: any) => o.payment_batch_id).filter(Boolean))];
+    // Lotes dos pedidos escolhidos. Lote inteiro escolhido = só muda a data do
+    // lote (e do lançamento no caixa). Só parte do lote = os pedidos escolhidos
+    // saem dele e vão pro lote da data nova (junta se já houver um nessa data,
+    // senão cria) — antes mudava a data do lote todo, e pedidos de dias
+    // diferentes pagos no mesmo lote não tinham como ser separados.
+    const directBatchIds = [...new Set((orders ?? []).map((o: any) => o.payment_batch_id).filter(Boolean))] as string[];
     const orderDates = [...new Set((orders ?? []).map((o: any) => o.order_date).filter(Boolean))];
 
     let allBatchIds = [...directBatchIds];
-    if (orderDates.length > 0) {
+    // Pedido sem lote (legado): acha o lote pelos dias dos pedidos.
+    if (directBatchIds.length === 0 && orderDates.length > 0) {
       const { data: batchesByDate } = await selectAll(context.supabase
         .from("shop_order_payment_batches")
         .select("id")
         .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
         .overlaps("order_dates", orderDates));
-      const extraIds = (batchesByDate ?? []).map((b: any) => b.id).filter((id: string) => !allBatchIds.includes(id));
-      allBatchIds = [...allBatchIds, ...extraIds];
+      allBatchIds = (batchesByDate ?? []).map((b: any) => b.id);
     }
 
+    const warnings: string[] = [];
+    let products: CostProduct[] | null = null;
     for (const batchId of allBatchIds) {
+      const moved = (orders ?? []).filter((o: any) => o.payment_batch_id === batchId);
+      if (moved.length > 0) {
+        const { count: batchOrderCount } = await context.supabase.from("shop_orders")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", context.ownerId).eq("payment_batch_id", batchId);
+        if (moved.length < (batchOrderCount ?? 0)) {
+          products ??= await costProductsFor(context.supabase, context.ownerId);
+          const w = await splitOrdersToPaymentDate(context, data.shop_id, batchId, moved, data.payment_date, products);
+          if (w) warnings.push(w);
+          continue;
+        }
+      }
+
       const { data: batchRow, error: batchSelectErr } = await context.supabase
         .from("shop_order_payment_batches")
         .select("cash_entry_id")
@@ -2169,7 +2285,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
       batchesCreated = 1;
     }
 
-    return { updated: allBatchIds.length + batchesCreated, ordersFound: (orders ?? []).length, batchIds: allBatchIds, searchedCount: data.order_ids.length };
+    return { updated: allBatchIds.length + batchesCreated, ordersFound: (orders ?? []).length, batchIds: allBatchIds, searchedCount: data.order_ids.length, warnings };
   });
 
 export const listPaymentBatches = createServerFn({ method: "GET" })

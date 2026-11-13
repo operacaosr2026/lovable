@@ -513,6 +513,7 @@ export function LgOrders({
       const totalBatches = results.reduce((s: number, r: any) => s + Number(r.updated ?? 0), 0);
       const totalSearched = results.reduce((s: number, r: any) => s + Number(r.searchedCount ?? 0), 0);
       toast.success(`Data atualizada · buscados:${totalSearched} encontrados:${totalOrders} lotes:${totalBatches}`);
+      for (const w of results.flatMap((r: any) => r.warnings ?? [])) toast.warning(w, { duration: 15000 });
       setSelected(new Set());
       setReDateOpen(false);
       qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] });
@@ -612,12 +613,12 @@ export function LgOrders({
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Limpar</Button>
           {selectionMode === "pending" && (
-            <Button size="sm" onClick={() => setPayOpen(true)}>
+            <Button size="sm" onClick={() => { setPayDate(isoTodayUS()); setPayOpen(true); }}>
               <CheckCircle2 className="size-4" /> Marcar como pago ({selectedCount})
             </Button>
           )}
           {selectionMode === "paid" && (
-            <Button size="sm" variant="outline" onClick={() => setReDateOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => { setReDate(isoTodayUS()); setReDateOpen(true); }}>
               <Calendar className="size-4" /> Alterar data de pagamento ({selectedCount})
             </Button>
           )}
