@@ -78,6 +78,8 @@ export type CompanyGoalRow = {
   // Reembolsos/chargebacks pela regra dos painéis: o total do mês cai no dia 1º,
   // então a média dos 3 dias fica sem eles (mês fechado = total real, igual).
   projecao: number | null;
+  // Só no mês atual: média de lucro dos últimos 3 dias fechados (base da projeção).
+  media3: number | null;
   status: "futura" | "em_andamento" | "batida" | "nao_batida";
 };
 
@@ -94,6 +96,7 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
     const meta = Number(r.meta);
     let realizado: number | null = null;
     let projecao: number | null = null;
+    let media3: number | null = null;
     if (r.month < current && r.realizado_final != null) realizado = Number(r.realizado_final);
     else if (r.month < current) {
       // Mês fechado ainda na carência (não congelado): ao vivo, com as lojas do mês.
@@ -109,6 +112,7 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
         // contando hoje — mesma conta da aba Atual. Hoje vale o maior entre a média
         // e o parcial real de hoje, pra projeção nunca ficar abaixo do realizado.
         const media = acc.mediaUltimos3 ?? 0;
+        media3 = media;
         projecao = acc.hojeEmAndamento
           ? acc.lucroFechado + Math.max(media, acc.lucro - acc.lucroFechado) + media * diasRestantes
           : acc.lucro + media * diasRestantes;
@@ -120,7 +124,7 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
     const status: CompanyGoalRow["status"] = realizado == null ? "futura"
       : r.month === current ? "em_andamento"
       : realizado >= meta ? "batida" : "nao_batida";
-    return { month: r.month, meta, lucro_por_venda: r.lucro_por_venda != null ? Number(r.lucro_por_venda) : null, realizado, projecao, status };
+    return { month: r.month, meta, lucro_por_venda: r.lucro_por_venda != null ? Number(r.lucro_por_venda) : null, realizado, projecao, media3, status };
   }));
 }
 

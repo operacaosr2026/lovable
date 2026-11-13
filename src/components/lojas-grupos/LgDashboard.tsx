@@ -1004,6 +1004,7 @@ function MonthGoalCard({ cardId, fmt }: { cardId: string; fmt: (n: number) => st
           <div className="space-y-0.5">
             {[
               { label: "Projeção no mês", value: g.projecao != null ? fmt(g.projecao) : "—", extra: projPct != null ? `${projPct.toFixed(0)}%` : null, cls: projPct != null ? tone(projPct) : "" },
+              { label: "Média últimos 3 dias", value: g.media3 != null ? `${fmt(g.media3)}/dia` : "—", extra: null, cls: "" },
               { label: "Este grupo", value: grupoLucro != null ? fmt(grupoLucro) : "—", extra: grupoLucro != null && realizado > 0 ? `${((grupoLucro / realizado) * 100).toFixed(0)}% do total` : null, cls: "text-muted-foreground" },
             ].map((r) => (
               <div key={r.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
