@@ -89,7 +89,7 @@ const SECTION_LABELS: Record<Section, string> = {
 };
 
 // Subabas de Lojas e Grupos (aparecem quando a aba Lojas e Grupos está marcada).
-const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_diario", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
+const LG_SUBTABS: Section[] = ["lg_dashboard", "lg_caixa", "lg_pedidos", "lg_rastreamento", "lg_integracoes"];
 // Subabas de Atendimento (aparecem quando a aba Atendimento está marcada).
 // Aprovações (e KPI) ficam no Gerencial — a permissão Gerencial cobre tudo.
 const AT_SUBTABS: Section[] = ["at_caixa", "at_imagens", "at_config"];

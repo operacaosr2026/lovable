@@ -5,23 +5,22 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
   ArrowLeft, Layers, MapPin, Store, ChevronDown,
-  LayoutDashboard, Wallet, ShoppingBag, Plug, StickyNote, Truck,
+  LayoutDashboard, Wallet, ShoppingBag, Plug, Truck,
 } from "lucide-react";
 import { getLgCard } from "@/lib/lg-cards.functions";
 import { useMyAccess } from "@/hooks/useMyAccess";
 import type { Section } from "@/lib/members.functions";
-import { LgNotesSection }  from "@/components/lojas-grupos/LgNotesSection";
 import { LgDashboard }     from "@/components/lojas-grupos/LgDashboard";
 import { LgCaixa }         from "@/components/lojas-grupos/LgCaixa";
 import { LgOrders }        from "@/components/lojas-grupos/LgOrders";
 import { LgIntegrations }  from "@/components/lojas-grupos/LgIntegrations";
 import { LgLogistica }     from "@/components/lojas-grupos/LgLogistica";
 
-type Tab = "overview" | "dashboard" | "caixa" | "pedidos" | "logistica" | "integracoes";
-const VALID_TABS: Tab[] = ["dashboard", "overview", "caixa", "pedidos", "logistica", "integracoes"];
+type Tab = "dashboard" | "caixa" | "pedidos" | "logistica" | "integracoes";
+const VALID_TABS: Tab[] = ["dashboard", "caixa", "pedidos", "logistica", "integracoes"];
 // Permissão de cada subaba (Configurações > Membros); admin vê todas.
 const TAB_SECTION: Record<Tab, Section> = {
-  dashboard: "lg_dashboard", overview: "lg_diario", caixa: "lg_caixa",
+  dashboard: "lg_dashboard", caixa: "lg_caixa",
   pedidos: "lg_pedidos", logistica: "lg_rastreamento", integracoes: "lg_integracoes",
 };
 
@@ -195,7 +194,6 @@ function LgCardDetail() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 border-b border-border">
         <div className="flex items-center gap-1 overflow-x-auto">
           {allowedTabs.includes("dashboard") && <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>}
-          {allowedTabs.includes("overview") && <TabBtn active={tab === "overview"}    onClick={() => setTab("overview")}    icon={StickyNote}>Diário</TabBtn>}
           {allowedTabs.includes("caixa") && <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>}
           {allowedTabs.includes("pedidos") && <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>}
           {allowedTabs.includes("logistica") && <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>}
@@ -210,11 +208,7 @@ function LgCardDetail() {
         </div>
       )}
 
-      {/* Content — only render when there are shops or for overview/integrations */}
-      {tab === "overview" && (
-        // Metas agora são da empresa (menu Metas); aqui fica só o Diário de Operação.
-        <LgNotesSection cardId={card.id} shopIds={allShopIds} matrizShopId={card.matriz_shop_id ?? null} />
-      )}
+      {/* Content — only render when there are shops (except integrations) */}
       {tab === "dashboard" && allShopIds.length > 0 && (
         <LgDashboard
           cardId={cardId}
