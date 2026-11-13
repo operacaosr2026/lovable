@@ -851,6 +851,20 @@ export function LgDashboard({
                 value: isLoading ? "—" : (m?.mesChargebacks ? fmt(m.mesChargebacks) : "—"),
                 color: m?.mesChargebacks ? "text-destructive" : "text-muted-foreground",
               },
+              (() => {
+                // Média por dia do mês do card: total ÷ dias corridos (mês atual
+                // até hoje, contando hoje; mês fechado = todos os dias).
+                const todayUS = isoTodayUS();
+                const mes = (to < todayUS ? to : todayUS).slice(0, 7);
+                const [y, mo] = mes.split("-").map(Number);
+                const dias = mes === todayUS.slice(0, 7) ? Number(todayUS.slice(8, 10)) : new Date(Date.UTC(y, mo, 0)).getUTCDate();
+                const total = (m?.mesReembolsos ?? 0) + (m?.mesChargebacks ?? 0);
+                return {
+                  label: "Média por dia",
+                  value: isLoading ? "—" : (total ? `${fmt(total / dias)}/dia` : "—"),
+                  color: total ? "text-destructive" : "text-muted-foreground",
+                };
+              })(),
             ].map(item => (
               <div key={item.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
                 <Package className="size-3.5 text-muted-foreground shrink-0" />
