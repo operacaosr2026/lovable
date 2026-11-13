@@ -18,7 +18,7 @@ import { beforeCashflowStart, shopifyOrderRow, shopifyTrackingPatch } from "@/li
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import {
-  aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, diluteRefundsAndChargebacks, monthsBetween, monthEndCapped,
+  aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, refundsOnFirstOfMonth, monthsBetween, monthEndCapped,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, roundCents, payoutLagDays,
 } from "@/lib/finance-rules";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
@@ -1362,34 +1362,23 @@ export const listMonthRefundsChargebacks = createServerFn({ method: "POST" })
     };
   });
 
-// Reembolsos e chargebacks "diluídos": o total de cada mês é dividido igual
-// pelos dias do mês (no mês corrente, pelos dias até hoje) e cada dia fica com
-// a sua parte. Assim um chargeback grande não derruba o lucro de um dia só — o
-// lucro do dia serve pra ver se as campanhas estão indo bem — e a soma do mês
-// continua igual ao total real. A diluição vai só até 2 dias atrás: hoje e
-// ontem ficam sem desconto (o total do mês até agora é dividido pelos dias
-// até D-2); no dia 1º e 2 o mês ainda não tem dia pra receber e fica sem
-// desconto até o dia 3. Mês fechado divide pelo mês todo, igual. Mesmo formato de getGroupRefundsAndChargebacks
-// em `rows`; `monthTotals` traz o total real de cada mês ("YYYY-MM").
-export const getDilutedRefundsAndChargebacks = createServerOnlyFn(async (
+// Reembolsos/chargebacks pros painéis (Dashboard de Lojas e Grupos, cards,
+// "Lucro do dia"): o total de cada mês cai inteiro no dia 1º daquele mês, em
+// qualquer período — os outros dias mostram só as campanhas. Metas e o resto
+// continuam com o valor real de cada dia (getGroupRefundsAndChargebacks).
+// Mesmo formato de getGroupRefundsAndChargebacks.
+export const getPanelRefundsAndChargebacks = createServerOnlyFn(async (
   ownerId: string, shopIds: string[], fromISO: string, toISO: string,
 ) => {
   const today = isoTodayUS();
   const end = toISO < today ? toISO : today;
-  const months = fromISO > end ? [] : monthsBetween(fromISO, end);
+  // Só os meses cujo dia 1º está no período.
+  const months = fromISO > end ? [] : monthsBetween(fromISO, end).filter((m) => `${m}-01` >= fromISO);
   const monthly = await Promise.all(months.map(async (m) => (
     { m, rows: await getGroupRefundsAndChargebacks(ownerId, shopIds, `${m}-01`, monthEndCapped(m, today)) }
   )));
-  return diluteRefundsAndChargebacks(shopIds, fromISO, toISO, today, monthly);
+  return refundsOnFirstOfMonth(shopIds, fromISO, toISO, today, monthly).rows;
 });
-// Reembolsos/chargebacks pros painéis: visão de um dia (Hoje, Ontem…) usa a
-// diluição acima — o lucro do dia mostra as campanhas; período de vários dias
-// (este mês, 7/30 dias…) desconta o total real que caiu no período, igual às Metas.
-export const getPanelRefundsAndChargebacks = createServerOnlyFn(async (
-  ownerId: string, shopIds: string[], fromISO: string, toISO: string,
-) => (fromISO === toISO
-  ? (await getDilutedRefundsAndChargebacks(ownerId, shopIds, fromISO, toISO)).rows
-  : await getGroupRefundsAndChargebacks(ownerId, shopIds, fromISO, toISO)));
 
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
 // e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
@@ -2221,7 +2210,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       .eq("user_id", ownerId).in("shop_id", shop_ids);
 
     // Reembolsos e chargebacks do período (e do anterior, pros deltas), lidos do
-    // banco: um dia = diluídos no mês; vários dias = total real (getPanelRefundsAndChargebacks).
+    // banco: o total do mês cai no dia 1º (getPanelRefundsAndChargebacks).
     const shopifyPromise = !withCosts ? Promise.resolve([] as any[]) : Promise.all([
       getPanelRefundsAndChargebacks(ownerId, shop_ids, from, to),
       withPrev ? getPanelRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve([] as any[]),

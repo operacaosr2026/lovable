@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  aggregateRefundsAndChargebacks, diluteRefundsAndChargebacks, netRevenue, profit,
+  aggregateRefundsAndChargebacks, refundsOnFirstOfMonth, netRevenue, profit,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, comparisonPeriod,
   payoutLagDays,
 } from "@/lib/finance-rules";
@@ -56,23 +56,25 @@ describe("reembolso e chargeback", () => {
     expect(r.refByDate["2026-10-08"]).toBeCloseTo(-99.9);
   });
 
-  it("14. diluição: mês fechado dividido pelos dias; soma do mês = total real", () => {
-    const monthly = [{ m: "2026-09", rows: [{ shop_id: SHOP, refAmt: 300, cbAmt: 0, refByDate: {}, cbByDate: {} }] }];
-    const { rows } = diluteRefundsAndChargebacks([SHOP], "2026-09-01", "2026-09-30", "2026-10-15", monthly);
-    expect(rows[0].refByDate["2026-09-15"]).toBeCloseTo(10); // 300 / 30 dias
-    expect(sum(rows[0].refByDate)).toBeCloseTo(300);
-    // um dia só pega a parte dele
-    const day = diluteRefundsAndChargebacks([SHOP], "2026-09-15", "2026-09-15", "2026-10-15", monthly);
-    expect(day.rows[0].refAmt).toBeCloseTo(10);
+  it("14. total do mês cai inteiro no dia 1º; outros dias sem desconto", () => {
+    const monthly = [{ m: "2026-09", rows: [{ shop_id: SHOP, refAmt: 300, cbAmt: 50, refByDate: {}, cbByDate: {} }] }];
+    const { rows } = refundsOnFirstOfMonth([SHOP], "2026-09-01", "2026-09-30", "2026-10-15", monthly);
+    expect(rows[0].refByDate["2026-09-01"]).toBeCloseTo(300);
+    expect(rows[0].cbByDate["2026-09-01"]).toBeCloseTo(50);
+    expect(rows[0].refByDate["2026-09-15"]).toBeUndefined();
+    expect(rows[0].refAmt).toBeCloseTo(300);
+    // um dia que não é o 1º fica sem desconto
+    const day = refundsOnFirstOfMonth([SHOP], "2026-09-15", "2026-09-15", "2026-10-15", monthly);
+    expect(day.rows[0].refAmt).toBe(0);
+    // o dia 1º sozinho leva o mês todo
+    const first = refundsOnFirstOfMonth([SHOP], "2026-09-01", "2026-09-01", "2026-10-15", monthly);
+    expect(first.rows[0].refAmt).toBeCloseTo(300);
   });
 
-  it("14b. mês corrente divide só até 2 dias atrás; hoje e ontem sem desconto", () => {
-    // hoje 10/10: divide por 8 dias (1º a 8)
+  it("14b. período que não contém o dia 1º não desconta o mês", () => {
     const monthly = [{ m: "2026-10", rows: [{ shop_id: SHOP, refAmt: 80, cbAmt: 0, refByDate: {}, cbByDate: {} }] }];
-    const { rows } = diluteRefundsAndChargebacks([SHOP], "2026-10-01", "2026-10-10", "2026-10-10", monthly);
-    expect(rows[0].refByDate["2026-10-08"]).toBeCloseTo(10);
-    expect(rows[0].refByDate["2026-10-09"]).toBeUndefined();
-    expect(rows[0].refByDate["2026-10-10"]).toBeUndefined();
+    const { rows } = refundsOnFirstOfMonth([SHOP], "2026-10-02", "2026-10-10", "2026-10-10", monthly);
+    expect(rows[0].refAmt).toBe(0);
   });
 
   it("13b. reembolso parcial conta só o que saiu, não o pedido inteiro (refund_discrepancy)", () => {

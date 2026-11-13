@@ -147,40 +147,30 @@ export function monthsBetween(fromISO: string, toISO: string): string[] {
   return months;
 }
 
-// Diluição: o total de cada mês é dividido igual pelos dias do mês e cada dia
-// do período fica com a sua parte. Mês fechado divide pelo mês todo; o mês
-// corrente divide só até D-2 (hoje e ontem ficam sem desconto). A soma do mês
-// fechado bate com o total real. `monthly` = totais reais de cada mês (do 1º
-// até o fim do mês, ou até hoje no mês corrente).
-export function diluteRefundsAndChargebacks(
+// Reembolsos/chargebacks dos painéis: o total de cada mês cai inteiro no dia
+// 1º daquele mês (os outros dias ficam sem desconto). Período que contém o dia
+// 1º de um mês desconta o total daquele mês; o mês corrente vai até hoje, então
+// o dia 1º dele cresce conforme entram reembolsos no mês. `monthly` = totais
+// reais de cada mês (do 1º até o fim do mês, ou até hoje no mês corrente).
+export function refundsOnFirstOfMonth(
   shopIds: string[], fromISO: string, toISO: string, today: string,
   monthly: { m: string; rows: RefundCbRow[] }[],
 ) {
   const end = toISO < today ? toISO : today;
-  const lastDiluted = addDayISO(today, -2);
   const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, { shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {}, cbByDate: {} }]));
   const monthTotals: Record<string, { reembolsos: number; chargebacks: number }> = {};
-  if (fromISO > end) return { rows: [...byShop.values()], monthTotals };
   for (const { m, rows } of monthly) {
-    const mStart = `${m}-01`;
-    const mEnd = m < today.slice(0, 7) ? monthEndCapped(m, today) : monthEndCapped(m, lastDiluted);
-    const nDays = Math.round((Date.parse(`${mEnd}T00:00:00Z`) - Date.parse(`${mStart}T00:00:00Z`)) / 86_400_000) + 1;
-    const pStart = fromISO > mStart ? fromISO : mStart;
-    const pEnd = end < mEnd ? end : mEnd;
     monthTotals[m] = {
       reembolsos: rows.reduce((t, r) => t + r.refAmt, 0),
       chargebacks: rows.reduce((t, r) => t + r.cbAmt, 0),
     };
-    if (nDays <= 0) continue;
+    const day = `${m}-01`;
+    if (day < fromISO || day > end) continue;
     for (const r of rows) {
       const row = byShop.get(r.shop_id);
       if (!row) continue;
-      const refDay = r.refAmt / nDays, cbDay = r.cbAmt / nDays;
-      if (!refDay && !cbDay) continue;
-      for (let d = pStart; d <= pEnd; d = addDayISO(d, 1)) {
-        if (refDay) { row.refAmt += refDay; row.refByDate[d] = (row.refByDate[d] ?? 0) + refDay; }
-        if (cbDay) { row.cbAmt += cbDay; row.cbByDate[d] = (row.cbByDate[d] ?? 0) + cbDay; }
-      }
+      if (r.refAmt) { row.refAmt += r.refAmt; row.refByDate[day] = (row.refByDate[day] ?? 0) + r.refAmt; }
+      if (r.cbAmt) { row.cbAmt += r.cbAmt; row.cbByDate[day] = (row.cbByDate[day] ?? 0) + r.cbAmt; }
     }
   }
   return { rows: [...byShop.values()], monthTotals };

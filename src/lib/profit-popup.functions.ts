@@ -8,7 +8,7 @@ import { allowedCategories } from "@/lib/notification-categories";
 
 // Popup do lucro de hoje ao abrir o app no celular. Mesma conta e mesmas lojas
 // do push "Lucro do dia" (goal-events.server.ts) e do Dashboard em Hoje
-// (reembolso/chargeback diluído no mês, hoje sem desconto), e só pra quem pode receber
+// (reembolso/chargeback do mês todo no dia 1º), e só pra quem pode receber
 // esse push (admin ou membro com nt_lucro). Sem acesso: null, e nada aparece.
 export const getTodayProfit = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])

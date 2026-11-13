@@ -713,7 +713,7 @@ export function LgDashboard({
         <KpiCard loading={isLoading}
           icon={<DollarSign className="size-4" />} iconColor="primary"
           label="Faturamento" value={fmt(m?.faturamento ?? 0)} delta={m?.faturamentoDelta ?? 0}
-          tooltip="Receita dos pedidos (bruto). Reembolsos e chargebacks saem do lucro (o total do mês é dividido igual entre os dias)"
+          tooltip="Receita dos pedidos (bruto). Reembolsos e chargebacks saem do lucro (o total do mês entra todo no dia 1º)"
           onClick={isConsolidated ? () => openBreakdown("faturamento", "Faturamento") : undefined}
         />
         <KpiCard loading={isLoading}

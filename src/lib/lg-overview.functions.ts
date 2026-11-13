@@ -20,8 +20,8 @@ function addDays(iso: string, n: number) {
 
 // ─── Accumulated lucro for a date range (usado tanto pra meta ativa quanto histórico) ──
 
-// panelRefunds: reembolsos/chargebacks pela regra dos painéis (dia único =
-// diluído, hoje sem desconto) — o aviso "Lucro do dia" bate com o Dashboard em
+// panelRefunds: reembolsos/chargebacks pela regra dos painéis (total do mês
+// no dia 1º) — o aviso "Lucro do dia" bate com o Dashboard em
 // Hoje. Sem ela (Metas etc.): o valor real que caiu no período.
 async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,

@@ -709,7 +709,7 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
       // Ao vivo da Shopify (não do cache em shop_cash_entries) — mesma fonte
       // usada pelo Dashboard, pelo card de Lojas e Grupos e por Metas, pra
       // "lucro" bater em todas as telas.
-      // Um dia = diluídos no mês; vários dias = total real (mesma regra do Dashboard de Lojas e Grupos).
+      // Total do mês no dia 1º (mesma regra do Dashboard de Lojas e Grupos).
       getPanelRefundsAndChargebacks(ownerId, shopIds, from, to),
       getPanelRefundsAndChargebacks(ownerId, shopIds, prevFrom, prevTo),
       costProductsFor(supabaseAdmin, ownerId),
