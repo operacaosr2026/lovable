@@ -34,7 +34,7 @@ export async function companyShopIdsForMonth(ownerId: string, monthStart: string
 async function lucroDoMes(ownerId: string, shopIds: string[], monthStart: string, today: string) {
   if (!shopIds.length || monthStart > today) return 0;
   const end = monthEndOf(monthStart) < today ? monthEndOf(monthStart) : today;
-  const r = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shopIds, monthStart, end);
+  const r = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shopIds, monthStart, end, { panelRefunds: true });
   return r.lucro;
 }
 
@@ -75,6 +75,8 @@ export type CompanyGoalRow = {
   realizado: number | null; // null = mês futuro
   // Só no mês atual: lucro previsto no fim do mês no ritmo atual — mesma conta da
   // aba Atual (lucro até hoje + média dos últimos 3 dias fechados × dias restantes).
+  // Reembolsos/chargebacks pela regra dos painéis: o total do mês cai no dia 1º,
+  // então a média dos 3 dias fica sem eles (mês fechado = total real, igual).
   projecao: number | null;
   status: "futura" | "em_andamento" | "batida" | "nao_batida";
 };
@@ -99,7 +101,7 @@ export async function listCompanyGoalsFor(ownerId: string): Promise<CompanyGoalR
     } else if (r.month === current) {
       const shops = await companyShopIdsForMonth(ownerId, current);
       if (shops.length) {
-        const acc = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, current, today);
+        const acc = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, current, today, { panelRefunds: true });
         const end = monthEndOf(current);
         const diasRestantes = Math.max(0, Math.round((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000));
         realizado = acc.lucro;

@@ -29,7 +29,7 @@ export async function checkGoalEvents(ownerId: string) {
 
   const shops = await companyShopIdsForMonth(ownerId, month);
   if (!shops.length) return;
-  const acc = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, month, today);
+  const acc = await computeAccumulatedLucroServer(supabaseAdmin, ownerId, shops, month, today, { panelRefunds: true });
   if (acc.lucro >= meta) {
     await emitEvent(ownerId, {
       key: monthKey, title: "🎯 Meta do mês atingida!",

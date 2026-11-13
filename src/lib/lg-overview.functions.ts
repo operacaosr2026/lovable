@@ -21,8 +21,8 @@ function addDays(iso: string, n: number) {
 // ─── Accumulated lucro for a date range (usado tanto pra meta ativa quanto histórico) ──
 
 // panelRefunds: reembolsos/chargebacks pela regra dos painéis (total do mês
-// no dia 1º) — o aviso "Lucro do dia" bate com o Dashboard em
-// Hoje. Sem ela (Metas etc.): o valor real que caiu no período.
+// no dia 1º) — Dashboard, Lucro do dia e Metas. Sem ela (Gerencial,
+// Consultor…): o valor real que caiu no período.
 async function computeAccumulatedLucro(
   supabase: any, ownerId: string, shop_ids: string[], start_date: string, end_date: string,
   opts: { panelRefunds?: boolean } = {},
@@ -149,7 +149,8 @@ export const getLgAccumulatedLucro = createServerFn({ method: "GET" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const end_date = data.end_date ?? isoToday();
-    return computeAccumulatedLucro(context.supabase, context.ownerId, data.shop_ids, data.start_date, end_date);
+    // Aba Metas: mesma regra dos painéis (reembolso/chargeback do mês no dia 1º).
+    return computeAccumulatedLucro(context.supabase, context.ownerId, data.shop_ids, data.start_date, end_date, { panelRefunds: true });
   });
 
 // ─── Goal CRUD (com histórico de metas) ────────────────────────────────────────
