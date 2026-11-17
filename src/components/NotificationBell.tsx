@@ -39,7 +39,7 @@ function timeAgo(iso: string): string {
 // Sino de notificações: problemas que precisam de atenção (token da Meta
 // vencendo, sync com erro, reembolsos que não carregaram...). Cada item some
 // sozinho quando o problema é resolvido.
-export function NotificationBell({ className = "" }: { className?: string }) {
+export function NotificationBell({ className = "", align = "start" }: { className?: string; align?: "start" | "end" }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const listFn = useServerFn(listNotifications);
@@ -109,7 +109,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={8} className="w-[340px] max-w-[calc(100vw-24px)] p-0 overflow-hidden rounded-xl">
+      <PopoverContent align={align} sideOffset={8} className="w-[340px] max-w-[calc(100vw-24px)] p-0 overflow-hidden rounded-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <span className="text-sm font-semibold">Notificações</span>
           {count > 0 && (

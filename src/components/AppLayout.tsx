@@ -436,10 +436,12 @@ export function AppLayout() {
             {navContent(() => setMobileOpen(false))}
           </SheetContent>
         </Sheet>
-        {canAccessSection("notificacoes") && <NotificationBell className="size-9 -ml-1 mr-auto text-foreground" />}
         <Link to="/" className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
           <img src="/logo.png" alt="SRX" className="h-6 w-auto" />
         </Link>
+        {/* Direita: sino, assistente e sair. */}
+        <div className="flex items-center">
+        {canAccessSection("notificacoes") && <NotificationBell className="size-9 text-foreground" align="end" />}
         <button
           onClick={openAssistant}
           aria-label="Pergunte ao sistema"
@@ -454,6 +456,7 @@ export function AppLayout() {
         >
           <LogOut className="size-4" />
         </button>
+        </div>
       </div>
 
       <main className="flex-1 min-w-0 pt-14 md:pt-0">
