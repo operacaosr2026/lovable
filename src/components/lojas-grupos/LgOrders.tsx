@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle, Mail, Loader2,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle, Mail, Loader2, MessageSquareReply,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -652,8 +652,12 @@ export function LgOrders({
                   </p>
                   <p className="text-xs text-violet-700 dark:text-violet-400 truncate">{rep.map((i) => `${i.qty}x ${i.title}${i.variant ? ` — ${i.variant}` : ""}`).join(" · ")}</p>
                   {o.customer_name && <p className="text-[11px] text-muted-foreground truncate">{o.customer_name}</p>}
+                  {st?.reply?.text && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 truncate" title={st.reply.text}>“{st.reply.text}”</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  {st?.reply && <ReplyBadge reply={st.reply} />}
                   {confirmLabel ? (
                     <span className="text-[11px] px-2 py-1 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
                       <Check className="size-3" /> {confirmLabel}
@@ -861,9 +865,12 @@ export function LgOrders({
                                         )}
                                       </>
                                     ) : sentLabel ? (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
-                                        <Check className="size-3" /> {sentLabel}
-                                      </span>
+                                      <>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
+                                          <Check className="size-3" /> {sentLabel}
+                                        </span>
+                                        {st?.reply && <ReplyBadge reply={st.reply} small />}
+                                      </>
                                     ) : (
                                       <button onClick={() => confirmRepeated.mutate(o.id)} disabled={busy}
                                         title="Manda um e-mail pro cliente confirmar os itens repetidos (fila de Notificações). Não segura o pedido."
@@ -1035,5 +1042,20 @@ export function LgOrders({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// Cliente respondeu o e-mail de confirmação (chegou no Atendimento depois do
+// envio). Clique abre a conversa; passar o mouse mostra o texto.
+function ReplyBadge({ reply, small }: { reply: { at: string; conversationId: string; text: string }; small?: boolean }) {
+  return (
+    <a href={`/atendimento?c=${reply.conversationId}`} target="_blank" rel="noreferrer"
+      title={reply.text ? `${reply.text}
+
+Abrir no Atendimento` : "Abrir no Atendimento"}
+      className={cn("rounded-md border font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20 inline-flex items-center gap-1",
+        small ? "text-[10px] px-1.5 py-0.5" : "text-[11px] px-2 py-1")}>
+      <MessageSquareReply className="size-3" /> Cliente respondeu {fmtDayMonth(isoDateUS(Date.parse(reply.at)))}
+    </a>
   );
 }

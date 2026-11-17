@@ -368,20 +368,65 @@ export const queueRepeatedConfirm = createServerFn({ method: "POST" })
 export const repeatedConfirmStatus = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ orderIds: z.array(z.string().uuid()).max(2000) }).parse(d))
-  .handler(async ({ data, context }): Promise<Record<string, { status: string; at: string | null }>> => {
+  .handler(async ({ data, context }): Promise<Record<string, RepeatedConfirmStatus>> => {
     if (!data.orderIds.length) return {};
     const { data: rows, error } = await selectAllIn<any>(data.orderIds, (c) => supabaseAdmin.from("order_notices")
-      .select("order_id,status,sent_at,queued_at").eq("owner_id", context.ownerId).eq("template_title", REPEATED_CONFIRM_TITLE)
+      .select("order_id,status,sent_at,queued_at,to_email").eq("owner_id", context.ownerId).eq("template_title", REPEATED_CONFIRM_TITLE)
       .in("status", ["na_fila", "enviando", "enviado", "erro"]).in("order_id", c));
     if (error) throw new Error(error.message);
-    const out: Record<string, { status: string; at: string | null }> = {};
+    const out: Record<string, RepeatedConfirmStatus> = {};
+    const emailOf = new Map<string, string>();
     for (const r of rows) {
       const at = r.sent_at ?? r.queued_at ?? null;
       const cur = out[r.order_id];
-      if (!cur || String(at) > String(cur.at)) out[r.order_id] = { status: r.status, at };
+      if (!cur || String(at) > String(cur.at)) {
+        out[r.order_id] = { status: r.status, at, reply: null };
+        emailOf.set(r.order_id, String(r.to_email ?? "").trim().toLowerCase());
+      }
+    }
+
+    // Resposta do cliente: e-mail que chegou no Atendimento (Zoho) do mesmo
+    // endereço depois que a confirmação saiu. Pega a primeira depois do envio.
+    const sent = Object.entries(out).filter(([id, s]) => s.status === "enviado" && s.at && emailOf.get(id));
+    if (!sent.length) return out;
+    const emails = [...new Set(sent.map(([id]) => emailOf.get(id)!))];
+    const { data: convs } = await selectAllIn<any>(emails, (c) => supabaseAdmin.from("support_conversations")
+      .select("id,customer_email").eq("owner_id", context.ownerId).in("customer_email", c));
+    if (!convs.length) return out;
+    const convEmail = new Map(convs.map((c) => [c.id as string, String(c.customer_email).toLowerCase()]));
+    const since = sent.reduce((m, [, s]) => (s.at! < m ? s.at! : m), sent[0][1].at!);
+    const { data: msgs } = await selectAllIn<any>([...convEmail.keys()], (c) => supabaseAdmin.from("support_messages")
+      .select("conversation_id,sent_at,summary,content_pt,content_html").eq("owner_id", context.ownerId)
+      .eq("direction", "in").gte("sent_at", since).in("conversation_id", c).order("sent_at"));
+    const byEmail = new Map<string, any[]>();
+    for (const m of msgs) {
+      const e = convEmail.get(m.conversation_id);
+      if (!e) continue;
+      if (!byEmail.has(e)) byEmail.set(e, []);
+      byEmail.get(e)!.push(m);
+    }
+    for (const [id, s] of sent) {
+      const m = (byEmail.get(emailOf.get(id)!) ?? []).find((x) => x.sent_at > s.at!);
+      if (!m) continue;
+      const text = String(m.summary || m.content_pt || htmlToText(m.content_html ?? "")).trim();
+      s.reply = { at: m.sent_at, conversationId: m.conversation_id, text: text.length > 400 ? `${text.slice(0, 400)}…` : text };
     }
     return out;
   });
+
+export type RepeatedConfirmStatus = {
+  status: string; at: string | null;
+  reply: { at: string; conversationId: string; text: string } | null;
+};
+
+const htmlToText = (html: string) => html
+  .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
+  .replace(/<br\s*\/?>|<\/p>|<\/div>/gi, "\n")
+  .replace(/<[^>]+>/g, " ")
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
+  // Corta a citação do e-mail original ("On ... wrote:").
+  .split(/\n\s*On .{5,120} wrote:|\n-{2,}\s*Original Message/i)[0]
+  .replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
 
 export type NoticeQueue = {
   pending: { id: string; orderNumber: string; email: string; title: string; status: string }[];
