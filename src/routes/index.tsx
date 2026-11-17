@@ -707,7 +707,7 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
   const total = rows.reduce((s, r) => s + r.faturamento, 0);
   const totalUnidades = rows.reduce((s, r) => s + r.unidades, 0);
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 mt-4 min-w-0 shrink-0">
+    <div className="bg-card border border-border rounded-2xl p-5 max-md:p-4 mt-4 max-md:mt-0 min-w-0 shrink-0">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2.5">
           <div className="size-9 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0">
@@ -727,7 +727,33 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
       ) : rows.length === 0 ? (
         <p className="text-xs text-muted-foreground py-8 text-center">Nenhum produto vendido no período.</p>
       ) : (
-        <div className="max-h-[360px] overflow-auto">
+        <>
+        {/* Celular: lista (a tabela rolava pro lado com nome de produto longo). */}
+        <div className="md:hidden max-h-[360px] overflow-y-auto divide-y divide-border/60">
+          {rows.map((r) => {
+            const pct = total > 0 ? r.faturamento / total : 0;
+            return (
+              <div key={r.key} className="flex items-center gap-2.5 py-2 min-w-0">
+                {r.image_url
+                  ? <img src={r.image_url} alt="" className="size-9 rounded-lg object-cover shrink-0 bg-muted" />
+                  : <div className="size-9 rounded-lg bg-muted grid place-items-center shrink-0"><Package className="size-3.5 text-muted-foreground" /></div>}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium truncate">{r.name}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {r.pedidos.toLocaleString("pt-BR")} pedido{r.pedidos === 1 ? "" : "s"}
+                    {r.reembolsosPedidos > 0 && <span className="text-red-500"> · {r.reembolsosPedidos} reemb.</span>}
+                    {r.chargebacksPedidos > 0 && <span className="text-red-500"> · {r.chargebacksPedidos} CB</span>}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-semibold tabular-nums">{fmtMoney(r.faturamento)}</p>
+                  <p className="text-[10px] text-muted-foreground tabular-nums">{(pct * 100).toFixed(1)}%</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden md:block max-h-[360px] overflow-auto">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-card">
               <tr className="text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border">
@@ -779,6 +805,7 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
@@ -829,9 +856,6 @@ function MobileLucroHero({ value, delta, compareLabel, chartData, sparkKey, semC
           </div>
         </div>
       </div>
-      <div className="h-12 mt-2 -mx-1">
-        <Sparkline data={chartData} dataKey={sparkKey} color="#ffffff" />
-      </div>
       {goal && goal.meta > 0 && (
         <div className="grid grid-cols-3 mt-3 pt-3 border-t border-white/20 text-center">
           <div className="min-w-0 px-1">
@@ -876,6 +900,45 @@ function MobileKpi({ icon: Icon, accent, label, value, delta, unit, invert, note
   );
 }
 
+// Mesmas lojas da legenda da Composição (as 2 maiores + "Outras"), cada uma com
+// a própria taxa de estorno (janela de 90 dias).
+function compositionGroups(slices: ShopSlice[]) {
+  const byValue = [...slices].sort((a, b) => b.faturamento - a.faturamento);
+  const row = (x: ShopSlice) => ({ id: x.shop_id, name: x.shop_name, color: x.color, v: x.faturamento, pedidos: x.totalPedidos, estornos: x.totalEstornos });
+  if (byValue.length <= 3) return byValue.map(row);
+  const rest = byValue.slice(2);
+  return [...byValue.slice(0, 2).map(row), {
+    id: "rest", name: "Outras", color: OTHER_COLOR, v: rest.reduce((t, x) => t + x.faturamento, 0),
+    pedidos: rest.reduce((t, x) => t + x.totalPedidos, 0), estornos: rest.reduce((t, x) => t + x.totalEstornos, 0),
+  }];
+}
+
+function MobileEstorno({ slices, loading }: { slices: ShopSlice[]; loading: boolean }) {
+  const a = METRIC_ACCENTS.destructive;
+  const groups = compositionGroups(slices);
+  return (
+    <div className="rounded-2xl border border-border bg-card p-3 min-w-0 flex flex-col soft-shadow-sm">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className={`size-8 rounded-lg grid place-items-center shrink-0 ${a.chip}`}><RotateCcw className="size-4" /></div>
+        <p className="text-[11px] font-medium text-muted-foreground leading-tight">Taxa de Estorno <span className="block text-[9px]">90 dias</span></p>
+      </div>
+      {loading ? <div className="h-12 bg-muted animate-pulse rounded mt-2" /> : !groups.length ? (
+        <p className="text-[11px] text-muted-foreground mt-2">Sem pedidos.</p>
+      ) : (
+        <div className="mt-2 space-y-1">
+          {groups.map((g) => (
+            <div key={g.id} className="flex items-center gap-1.5 text-[11px]">
+              <span className="size-2 rounded-full shrink-0" style={{ background: g.color }} />
+              <span className="truncate flex-1 min-w-0 text-muted-foreground">{g.name}</span>
+              <span className="font-semibold tabular-nums shrink-0">{g.pedidos > 0 ? fmtPct(g.estornos / g.pedidos) : "—"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Lucro por mês: barras simples (últimos 4 meses), positivo pra cima e prejuízo pra baixo do zero.
 function MobileGoalsBars({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
   const months = (data?.months ?? []).slice(-4).map((m) => {
@@ -893,7 +956,7 @@ function MobileGoalsBars({ data, loading }: { data?: GoalsHistory; loading: bool
       {loading ? <div className="flex-1 min-h-[120px] bg-muted animate-pulse rounded-lg mt-2" />
         : !months.length ? <p className="flex-1 grid place-items-center text-[11px] text-muted-foreground py-6">Sem metas ainda.</p> : (
         <>
-          <div className="relative flex-1 min-h-[118px] mt-2 py-4">
+          <div className="relative flex-1 min-h-[84px] mt-1 py-4">
             <div className="relative h-full">
               {maxNeg > 0 && <div className="absolute inset-x-0 border-t border-border" style={{ bottom: `${zero}%` }} />}
               <div className="absolute inset-0 flex gap-2">
@@ -931,20 +994,17 @@ function MobileGoalsBars({ data, loading }: { data?: GoalsHistory; loading: bool
 }
 
 function MobileComposicao({ slices, total, loading }: { slices: ShopSlice[]; total: number; loading: boolean }) {
-  // Legenda curta: as 2 maiores + "Outras".
-  const byValue = [...slices].sort((a, b) => b.faturamento - a.faturamento);
-  const toRow = (x: ShopSlice) => ({ id: x.shop_id, name: x.shop_name, color: x.color, v: x.faturamento });
-  const legend = byValue.length <= 3 ? byValue.map(toRow)
-    : [...byValue.slice(0, 2).map(toRow), { id: "rest", name: "Outras", color: OTHER_COLOR, v: byValue.slice(2).reduce((t, x) => t + x.faturamento, 0) }];
+  // Legenda curta: as 2 maiores + "Outras" (mesmas lojas do card de estorno).
+  const legend = compositionGroups(slices);
   return (
     <div className="rounded-2xl border border-border bg-card p-3 min-w-0 flex flex-col soft-shadow-sm">
       <p className="text-xs font-semibold">Composição</p>
       {loading ? <div className="flex-1 min-h-[120px] bg-muted animate-pulse rounded-lg mt-2" />
         : !slices.length ? <p className="flex-1 grid place-items-center text-[11px] text-muted-foreground py-6">Sem faturamento.</p> : (
         <>
-          <div className="relative size-[104px] mx-auto mt-2">
-            <PieChart width={104} height={104}>
-              <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius={36} outerRadius={52} paddingAngle={2} strokeWidth={0} isAnimationActive={false}>
+          <div className="relative size-[84px] mx-auto mt-1.5">
+            <PieChart width={84} height={84}>
+              <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius={29} outerRadius={42} paddingAngle={2} strokeWidth={0} isAnimationActive={false}>
                 {slices.map((x) => <Cell key={x.shop_id} fill={x.color} />)}
               </Pie>
             </PieChart>
@@ -1145,8 +1205,7 @@ function Dashboard() {
             delta={totals.anunciosDelta} chartData={chartData} sparkKey="anuncios" loading={isLoading} />
           <MobileKpi icon={Package} accent="warning" label="Gasto com Pedidos" value={fmtMoney(totals.custoProduto)} invert
             delta={totals.custoProdutoDelta} chartData={chartData} sparkKey="custo" loading={isLoading} />
-          <MobileKpi icon={RotateCcw} accent="destructive" label="Taxa de Estorno" value={fmtPct(totals.taxaEstorno)} invert
-            delta={totals.taxaEstornoDeltaPP} unit=" pp" note="vs. 90 dias anteriores" chartData={chartData} loading={isLoading} />
+          <MobileEstorno slices={slices} loading={isLoading} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <MobileGoalsBars data={goalsHistory.data} loading={goalsHistory.isLoading} />
