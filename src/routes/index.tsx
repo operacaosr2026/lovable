@@ -7,7 +7,7 @@ import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
   ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
-  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target, ShoppingBag,
+  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target, ShoppingBag, Trophy,
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, LabelList,
@@ -784,6 +784,210 @@ function ProductsSoldCard({ rows, loading }: { rows: DashboardProductRow[]; load
   );
 }
 
+// ─── Dashboard no celular ───────────────────────────────────────────────────────
+// Layout próprio (o do computador não muda): Lucro em destaque com meta e
+// projeção, 4 KPIs em 2×2, Lucro por mês + Composição lado a lado e a operação
+// numa faixa de 5 blocos. Mesmas cores do tema (roxo da marca + cor de cada métrica).
+
+function MDelta({ value, unit = "%", invert = false, onBrand = false }: { value: number | null; unit?: string; invert?: boolean; onBrand?: boolean }) {
+  if (value == null || !Number.isFinite(value)) return null;
+  const good = invert ? value <= 0 : value >= 0;
+  const Arrow = value >= 0 ? ArrowUpRight : ArrowDownRight;
+  const cls = onBrand ? "bg-white/20 text-white" : good ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive";
+  return (
+    <span className={`inline-flex items-center gap-0.5 h-5 px-1.5 rounded-md text-[10px] font-semibold tabular-nums shrink-0 ${cls}`}>
+      <Arrow className="size-3" />{value >= 0 ? "+" : ""}{Number(value.toFixed(1))}{unit}
+    </span>
+  );
+}
+
+function MobileLucroHero({ value, delta, compareLabel, chartData, sparkKey, semCb, onToggleSemCb, goal, loading }: {
+  value: number; delta: number | null; compareLabel: string; chartData: DailyPoint[]; sparkKey: keyof DailyPoint;
+  semCb: boolean; onToggleSemCb: () => void; loading: boolean;
+  goal?: { meta: number; projecao: number | null; realizado: number };
+}) {
+  const proj = goal ? (goal.projecao ?? goal.realizado) : null;
+  const pct = goal && goal.meta > 0 && proj != null ? (proj / goal.meta) * 100 : null;
+  return (
+    <div className="gradient-primary rounded-2xl p-4 text-white soft-shadow relative overflow-hidden">
+      <div className="flex items-start gap-3">
+        <div className="size-11 rounded-xl bg-white/20 grid place-items-center shrink-0"><Wallet className="size-5" /></div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold">{semCb ? "Lucro sem CB" : "Lucro"}</p>
+            <button type="button" onClick={onToggleSemCb}
+              className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full border border-white/40 bg-white/10">
+              {semCb ? "sem CB" : "com CB"}
+            </button>
+          </div>
+          {loading
+            ? <div className="h-8 w-36 bg-white/20 animate-pulse rounded-lg mt-1" />
+            : <p className="text-[28px] font-bold tracking-tight tabular-nums leading-tight">{fmtMoney(value)}</p>}
+          <div className="flex items-center gap-2 mt-1">
+            <MDelta value={delta} onBrand />
+            <span className="text-[11px] text-white/80 truncate">{compareLabel}</span>
+          </div>
+        </div>
+      </div>
+      <div className="h-12 mt-2 -mx-1">
+        <Sparkline data={chartData} dataKey={sparkKey} color="#ffffff" />
+      </div>
+      {goal && goal.meta > 0 && (
+        <div className="grid grid-cols-3 mt-3 pt-3 border-t border-white/20 text-center">
+          <div className="min-w-0 px-1">
+            <p className="flex items-center justify-center gap-1 text-[10px] text-white/80"><Target className="size-3" />Meta</p>
+            <p className="text-sm font-bold tabular-nums truncate">{fmtK(goal.meta)}</p>
+          </div>
+          <div className="min-w-0 px-1 border-x border-white/20">
+            <p className="flex items-center justify-center gap-1 text-[10px] text-white/80"><BarChart3 className="size-3" />Projeção</p>
+            <p className="text-sm font-bold tabular-nums truncate">{proj != null ? fmtK(proj) : "—"}</p>
+          </div>
+          <div className="min-w-0 px-1">
+            <p className="flex items-center justify-center gap-1 text-[10px] text-white/80"><Trophy className="size-3" />Da meta</p>
+            <p className="text-sm font-bold tabular-nums truncate">{pct != null ? `${Math.round(pct)}%` : "—"}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileKpi({ icon: Icon, accent, label, value, delta, unit, invert, note, chartData, sparkKey, loading }: {
+  icon: typeof TrendingUp; accent: MetricAccent; label: string; value: string; delta: number | null; unit?: string;
+  invert?: boolean; note?: string; chartData: DailyPoint[]; sparkKey?: keyof DailyPoint; loading: boolean;
+}) {
+  const a = METRIC_ACCENTS[accent];
+  return (
+    <div className="rounded-2xl border border-border bg-card p-3 min-w-0 flex flex-col soft-shadow-sm">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className={`size-8 rounded-lg grid place-items-center shrink-0 ${a.chip}`}><Icon className="size-4" /></div>
+        <p className="text-[11px] font-medium text-muted-foreground leading-tight line-clamp-2">{label}</p>
+      </div>
+      {loading
+        ? <div className="h-6 w-20 bg-muted animate-pulse rounded mt-2" />
+        : <p className="text-lg font-bold tracking-tight tabular-nums truncate mt-2 leading-tight">{value}</p>}
+      <div className="flex items-center gap-2 mt-1.5 min-h-6">
+        <MDelta value={delta} unit={unit} invert={invert} />
+        {sparkKey
+          ? <div className="flex-1 min-w-0 h-6"><Sparkline data={chartData} dataKey={sparkKey} color={a.solid} /></div>
+          : note && <span className="text-[10px] text-muted-foreground leading-tight">{note}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Lucro por mês: barras simples (últimos 4 meses), positivo pra cima e prejuízo pra baixo do zero.
+function MobileGoalsBars({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
+  const months = (data?.months ?? []).slice(-4).map((m) => {
+    const topo = m.atual && m.projecao != null ? Math.max(m.realizado, m.projecao) : m.realizado;
+    const pct = m.meta > 0 ? ((m.atual && m.projecao != null ? m.projecao : m.realizado) / m.meta) * 100 : null;
+    return { ...m, topo, pct, label: MONTH_ABBR[Number(m.month.slice(5, 7)) - 1] ?? m.month };
+  });
+  const maxPos = Math.max(0, ...months.map((m) => m.topo));
+  const maxNeg = Math.max(0, ...months.map((m) => -m.realizado));
+  const range = maxPos + maxNeg || 1;
+  const zero = (maxNeg / range) * 100;
+  return (
+    <div className="rounded-2xl border border-border bg-card p-3 min-w-0 flex flex-col soft-shadow-sm">
+      <p className="text-xs font-semibold">Lucro por mês</p>
+      {loading ? <div className="flex-1 min-h-[120px] bg-muted animate-pulse rounded-lg mt-2" />
+        : !months.length ? <p className="flex-1 grid place-items-center text-[11px] text-muted-foreground py-6">Sem metas ainda.</p> : (
+        <>
+          <div className="relative flex-1 min-h-[118px] mt-2 py-4">
+            <div className="relative h-full">
+              {maxNeg > 0 && <div className="absolute inset-x-0 border-t border-border" style={{ bottom: `${zero}%` }} />}
+              <div className="absolute inset-0 flex gap-2">
+                {months.map((m) => {
+                  const c = realizadoColor(m);
+                  const h = (Math.abs(m.realizado) / range) * 100;
+                  const neg = m.realizado < 0;
+                  const projH = m.atual && m.projecao != null && m.projecao > Math.max(0, m.realizado) ? ((m.projecao - Math.max(0, m.realizado)) / range) * 100 : 0;
+                  const tone = m.pct != null ? pctTone(m.pct) : null;
+                  const labelBottom = neg ? `calc(${zero - h}% - 15px)` : `calc(${zero + h + projH}% + 2px)`;
+                  return (
+                    <div key={m.month} className="relative flex-1 min-w-0">
+                      <div className="absolute inset-x-0.5" style={{ background: c.color, opacity: 0.9, bottom: `${neg ? zero - h : zero}%`, height: `${Math.max(h, 1.5)}%`, borderRadius: neg ? "0 0 6px 6px" : projH ? "0" : "6px 6px 0 0" }} />
+                      {projH > 0 && tone && (
+                        <div className="absolute inset-x-0.5 border border-dashed rounded-t-md" style={{ bottom: `${zero + h}%`, height: `${projH}%`, borderColor: tone.bg, background: `color-mix(in oklab, ${tone.bg} 12%, transparent)` }} />
+                      )}
+                      {tone && m.pct != null && (
+                        <span className="absolute inset-x-0 text-center text-[9px] font-bold tabular-nums" style={{ bottom: labelBottom, color: tone.text }}>
+                          {m.pct >= 0 ? "+" : ""}{Math.round(m.pct)}%
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 text-[10px] text-muted-foreground">
+            {months.map((m) => <span key={m.month} className="flex-1 text-center">{m.label}</span>)}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MobileComposicao({ slices, total, loading }: { slices: ShopSlice[]; total: number; loading: boolean }) {
+  // Legenda curta: as 2 maiores + "Outras".
+  const byValue = [...slices].sort((a, b) => b.faturamento - a.faturamento);
+  const toRow = (x: ShopSlice) => ({ id: x.shop_id, name: x.shop_name, color: x.color, v: x.faturamento });
+  const legend = byValue.length <= 3 ? byValue.map(toRow)
+    : [...byValue.slice(0, 2).map(toRow), { id: "rest", name: "Outras", color: OTHER_COLOR, v: byValue.slice(2).reduce((t, x) => t + x.faturamento, 0) }];
+  return (
+    <div className="rounded-2xl border border-border bg-card p-3 min-w-0 flex flex-col soft-shadow-sm">
+      <p className="text-xs font-semibold">Composição</p>
+      {loading ? <div className="flex-1 min-h-[120px] bg-muted animate-pulse rounded-lg mt-2" />
+        : !slices.length ? <p className="flex-1 grid place-items-center text-[11px] text-muted-foreground py-6">Sem faturamento.</p> : (
+        <>
+          <div className="relative size-[104px] mx-auto mt-2">
+            <PieChart width={104} height={104}>
+              <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius={36} outerRadius={52} paddingAngle={2} strokeWidth={0} isAnimationActive={false}>
+                {slices.map((x) => <Cell key={x.shop_id} fill={x.color} />)}
+              </Pie>
+            </PieChart>
+            <div className="absolute inset-0 grid place-items-center pointer-events-none text-center">
+              <div>
+                <p className="text-[11px] font-bold tabular-nums leading-tight">{fmtK(total)}</p>
+                <p className="text-[9px] text-muted-foreground">Total</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 space-y-1">
+            {legend.map((l) => (
+              <div key={l.id} className="flex items-center gap-1.5 text-[10px]">
+                <span className="size-2 rounded-full shrink-0" style={{ background: l.color }} />
+                <span className="truncate flex-1 min-w-0">{l.name}</span>
+                <span className="tabular-nums text-muted-foreground shrink-0">{total > 0 ? ((l.v / total) * 100).toFixed(1) : "0.0"}%</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MobileOpsTile({ icon: Icon, accent, label, value, trend, loading, onClick }: {
+  icon: typeof TrendingUp; accent: MetricAccent; label: string; value: string | number; trend: TrendDatum[]; loading: boolean; onClick: () => void;
+}) {
+  const delta = trendDelta(trend);
+  return (
+    <button onClick={onClick} className="rounded-xl border border-border bg-card px-1 py-2 min-w-0 flex flex-col items-center text-center gap-1 soft-shadow-sm">
+      <div className={`size-7 rounded-lg grid place-items-center ${METRIC_ACCENTS[accent].chip}`}><Icon className="size-3.5" /></div>
+      {loading ? <div className="h-4 w-8 bg-muted animate-pulse rounded" /> : <p className="text-sm font-bold tabular-nums leading-none">{value}</p>}
+      <p className="text-[9px] leading-tight text-muted-foreground h-[22px] flex items-center">{label}</p>
+      {delta != null && !loading
+        ? <span className={`inline-flex items-center gap-0.5 px-1 rounded text-[9px] font-semibold ${delta <= 0 ? "bg-success/15 text-success" : "bg-destructive/10 text-destructive"}`}>
+            {delta > 0 ? <ArrowUpRight className="size-2.5" /> : <ArrowDownRight className="size-2.5" />}{delta > 0 ? "+" : ""}{delta.toFixed(0)}%
+          </span>
+        : <span className="h-[15px]" />}
+    </button>
+  );
+}
+
 function Dashboard() {
   const { session } = useAuth();
   const getDashboardOverviewFn = useServerFn(getDashboardOverview);
@@ -809,7 +1013,8 @@ function Dashboard() {
       }));
       return { months, atingidas: months.filter((m) => m.atingida).length, total: months.length };
     },
-    enabled: activeTab === "metas",
+    // Sempre: o card de Lucro do celular mostra a meta e a projeção do mês.
+    enabled: !!session,
   });
 
   const { data, isFetching, isLoading } = useQuery({
@@ -927,8 +1132,42 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* ── Celular ── */}
+      <div className="md:hidden space-y-3 mb-3">
+        <MobileLucroHero value={lucroShown} delta={semCb ? (totals.lucroSemCbDelta ?? totals.lucroDelta) : totals.lucroDelta}
+          compareLabel={compareLabel} chartData={lucroChart} sparkKey={semCb ? "lucroSemCb" : "lucro"}
+          semCb={semCb} onToggleSemCb={toggleSemCb} loading={isLoading}
+          goal={goalsHistory.data?.months.find((m) => m.atual)} />
+        <div className="grid grid-cols-2 gap-3">
+          <MobileKpi icon={TrendingUp} accent="primary" label="Faturamento" value={fmtMoney(totals.faturamento)}
+            delta={totals.faturamentoDelta} chartData={chartData} sparkKey="faturamento" loading={isLoading} />
+          <MobileKpi icon={Megaphone} accent="info" label="Gasto com Ads" value={fmtMoney(totals.anuncios)} invert
+            delta={totals.anunciosDelta} chartData={chartData} sparkKey="anuncios" loading={isLoading} />
+          <MobileKpi icon={Package} accent="warning" label="Gasto com Pedidos" value={fmtMoney(totals.custoProduto)} invert
+            delta={totals.custoProdutoDelta} chartData={chartData} sparkKey="custo" loading={isLoading} />
+          <MobileKpi icon={RotateCcw} accent="destructive" label="Taxa de Estorno" value={fmtPct(totals.taxaEstorno)} invert
+            delta={totals.taxaEstornoDeltaPP} unit=" pp" note="vs. 90 dias anteriores" chartData={chartData} loading={isLoading} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <MobileGoalsBars data={goalsHistory.data} loading={goalsHistory.isLoading} />
+          <MobileComposicao slices={slices} total={donutTotal} loading={isLoading} />
+        </div>
+        <div className="grid grid-cols-5 gap-1.5">
+          <MobileOpsTile icon={CheckSquare} accent="primary" label="Tarefas pendentes" value={openTasks.length}
+            trend={tasksTrend} loading={tasksLoading} onClick={() => navigate({ to: "/tarefas" })} />
+          <MobileOpsTile icon={AlertTriangle} accent="destructive" label="Precisa de atenção" value={opsKpis.attention}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.attention }))} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+          <MobileOpsTile icon={Package} accent="warning" label="Pendente envio" value={opsKpis.pending}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.pending }))} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+          <MobileOpsTile icon={Clock} accent="info" label="TM Postagem" value={fmtDays(opsKpis.avgPostingDays)}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.avgPostingDays }))} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+          <MobileOpsTile icon={Truck} accent="success" label="TM Entrega" value={fmtDays(opsKpis.avgDeliveryDays)}
+            trend={opsTrend.map((p) => ({ label: p.label, value: p.avgDeliveryDays }))} loading={opsLoading} onClick={() => navigate({ href: logisticsHref })} />
+        </div>
+      </div>
+
       {/* ── KPIs ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+      <div className="hidden md:grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
         <DashKpiCard compareLabel={compareLabel}
           icon={TrendingUp} accent="primary" loading={isLoading}
           label="Faturamento total" value={fmtMoney(totals.faturamento)}
@@ -989,7 +1228,7 @@ function Dashboard() {
       </div>
 
       {/* ── Gráfico principal · Composição ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,290px)] gap-4 items-stretch lg:flex-1">
+      <div className="hidden md:grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,250px)_minmax(0,290px)] gap-4 items-stretch lg:flex-1">
         <div className="bg-card border border-border rounded-2xl p-5 min-w-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5">
