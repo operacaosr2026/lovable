@@ -196,6 +196,8 @@ export const createCashEntry = createServerFn({ method: "POST" })
       recurrence_until: z.string().nullable().optional(),
       via_balance: z.boolean().optional(),
       balance_shop_id: z.string().uuid().nullable().optional(),
+      // Par de uma transferência Balance → conta (mesmo id nos dois lados).
+      transfer_id: z.string().uuid().nullable().optional(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -213,6 +215,7 @@ export const createCashEntry = createServerFn({ method: "POST" })
       reconciled: true,
       via_balance: data.via_balance ?? false,
       balance_shop_id: data.balance_shop_id ?? null,
+      transfer_id: data.transfer_id ?? null,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };

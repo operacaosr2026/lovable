@@ -3529,6 +3529,7 @@ export type Database = {
           user_id: string;
           via_balance: boolean;
           balance_shop_id: string | null;
+          transfer_id: string | null;
         };
         Insert: {
           amount?: number;
@@ -3557,6 +3558,7 @@ export type Database = {
           user_id: string;
           via_balance?: boolean;
           balance_shop_id?: string | null;
+          transfer_id?: string | null;
         };
         Update: {
           amount?: number;
@@ -3585,6 +3587,7 @@ export type Database = {
           user_id?: string;
           via_balance?: boolean;
           balance_shop_id?: string | null;
+          transfer_id?: string | null;
         };
         Relationships: [
           {
@@ -3649,6 +3652,7 @@ export type Database = {
           user_id: string;
           via_balance: boolean | null;
           balance_shop_id: string | null;
+          transfer_id: string | null;
         };
         Insert: {
           amount?: number;
@@ -3669,6 +3673,7 @@ export type Database = {
           user_id: string;
           via_balance?: boolean | null;
           balance_shop_id?: string | null;
+          transfer_id?: string | null;
         };
         Update: {
           amount?: number;
@@ -3689,6 +3694,7 @@ export type Database = {
           user_id?: string;
           via_balance?: boolean | null;
           balance_shop_id?: string | null;
+          transfer_id?: string | null;
         };
         Relationships: [
           {

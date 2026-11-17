@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/core";
 import {
   Plus, Trash2, ChevronDown, X, Wallet, TrendingUp,
-  Repeat, Pencil, Check, RefreshCw, Database, ArrowUp, ArrowDown, AlertTriangle,
+  Repeat, Pencil, Check, RefreshCw, Database, ArrowUp, ArrowDown, AlertTriangle, ArrowLeftRight,
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area } from "recharts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -61,8 +61,11 @@ type Entry = {
   shop_id?: string; created_at?: string | null;
   via_balance?: boolean | null;
   balance_shop_id?: string | null;
+  // Transferência Balance → conta: par (saída no Balance + entrada na conta) com o mesmo id.
+  transfer_id?: string | null;
 };
 type DayItem = Entry & { virtual?: boolean; originalDate?: string; shiftedFromWeekday?: number };
+type DayData = { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; transferItems: DayItem[]; income: number; expense: number; balance: number };
 
 function fmtLastSynced(iso: string | null) {
   if (!iso) return "Nunca sincronizado";
@@ -616,12 +619,32 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
   );
 }
 
+// Transferência Balance → conta: um item só no dia, fora dos totais de
+// entradas/saídas (não muda o saldo, só tira do Balance e põe na conta).
+function TransferChip({ entry, shopNamesMap, onClick, compact }: {
+  entry: DayItem; shopNamesMap?: Record<string, string>; onClick: () => void; compact?: boolean;
+}) {
+  const from = shopNamesMap?.[entry.balance_shop_id ?? entry.shop_id ?? ""];
+  return (
+    <button type="button" onClick={onClick}
+      title={`Transferência do Balance${from ? ` (${from})` : ""} pra conta — não muda o saldo total`}
+      className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 transition-colors">
+      <span className="flex items-center gap-1.5 min-w-0 truncate">
+        <ArrowLeftRight className="size-3 shrink-0" />
+        <span className="truncate">{compact ? "Transf." : "Balance → conta"}</span>
+      </span>
+      <span className="font-semibold tabular-nums shrink-0">{fmtMoney(Number(entry.amount))}</span>
+    </button>
+  );
+}
+
 // ─── Day cells ────────────────────────────────────────────────────────────────
 
-function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, simplified }: {
-  dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
+function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onEditTransfer, onToggleReconciled, shopNamesMap, isConsolidated, simplified }: {
+  dd: DayData;
   weekday: number; isToday: boolean; todayKey: string;
   onEdit: (e: DayItem) => void;
+  onEditTransfer: (e: DayItem) => void;
   onToggleReconciled: (e: DayItem) => void;
   shopNamesMap?: Record<string, string>;
   isConsolidated: boolean;
@@ -661,7 +684,10 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
                 shopName={isConsolidated ? shopNamesMap?.[e.shop_id ?? ""] : undefined}
               />
             ))}
-          {dd.incomeItems.length === 0 && <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>}
+          {dd.transferItems.map((e) => (
+            <TransferChip key={e.id+e.date} entry={e} shopNamesMap={shopNamesMap} onClick={() => onEditTransfer(e)} />
+          ))}
+          {dd.incomeItems.length === 0 && dd.transferItems.length === 0 && <div className="text-center text-[10px] text-muted-foreground/60 py-2">—</div>}
         </div>
       </div>
       {/* Saídas */}
@@ -693,10 +719,11 @@ function WeekdayDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
   );
 }
 
-function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconciled, shopNamesMap, isConsolidated, simplified }: {
-  dd: { key: string; incomeItems: DayItem[]; expenseItems: DayItem[]; income: number; expense: number; balance: number };
+function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onEditTransfer, onToggleReconciled, shopNamesMap, isConsolidated, simplified }: {
+  dd: DayData;
   weekday: number; isToday: boolean; todayKey: string;
   onEdit: (e: DayItem) => void;
+  onEditTransfer: (e: DayItem) => void;
   onToggleReconciled: (e: DayItem) => void;
   shopNamesMap?: Record<string, string>;
   isConsolidated: boolean;
@@ -731,7 +758,10 @@ function WeekendDayCell({ dd, weekday, isToday, todayKey, onEdit, onToggleReconc
             shopName={isConsolidated ? shopNamesMap?.[e.shop_id ?? ""] : undefined}
           />
         ))}
-        {items.length === 0 && <div className="flex-1 grid place-items-center text-[10px] text-muted-foreground/60">—</div>}
+        {dd.transferItems.map((e) => (
+          <TransferChip key={e.id+e.date} entry={e} shopNamesMap={shopNamesMap} onClick={() => onEditTransfer(e)} compact />
+        ))}
+        {items.length === 0 && dd.transferItems.length === 0 && <div className="flex-1 grid place-items-center text-[10px] text-muted-foreground/60">—</div>}
       </div>
       <div className={`px-2 py-2 border-t-2 ${dd.balance < 0 ? "bg-rose-500/10 border-rose-500/40" : "bg-primary/5 border-primary/30"}`}>
         <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Saldo</div>
@@ -1077,6 +1107,59 @@ function splitAmountProportionally(total: number, weights: number[]): number[] {
   return shares.map((c) => c / 100);
 }
 
+// Transferir do Shopify Balance de uma loja pra conta bancária. Grava um par
+// (saída paga com o Balance + entrada na conta, mesma loja, mesmo transfer_id):
+// o Saldo atual fica igual, só muda a divisão conta / Balance.
+function TransferModal({ accounts, todayKey, initial, onClose, onSave, onDelete }: {
+  accounts: { id: string; name: string; amount: number }[];
+  todayKey: string;
+  initial?: { shop_id: string; amount: number; date: string; description: string | null };
+  onClose: () => void;
+  onSave: (v: { shop_id: string; amount: number; date: string; description: string | null }) => void;
+  onDelete?: () => void;
+}) {
+  const [shopId, setShopId] = useState(initial?.shop_id ?? (accounts.length === 1 ? accounts[0].id : ""));
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  const [date, setDate] = useState(initial?.date ?? todayKey);
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const v = parseFloat(amount.replace(",", "."));
+  const valid = !!shopId && Number.isFinite(v) && v > 0 && !!date;
+  const acc = accounts.find((a) => a.id === shopId);
+  // Na edição o próprio valor já saiu do Balance mostrado: soma de volta pra comparar.
+  const available = acc ? acc.amount + (initial && initial.shop_id === shopId ? initial.amount : 0) : null;
+  return (
+    <Modal onClose={onClose} title={initial ? "Editar transferência" : "Transferir do Balance pra conta"}>
+      <div className="space-y-3">
+        <div><label className="text-xs text-muted-foreground">De qual Balance?</label>
+          <select value={shopId} onChange={(e) => setShopId(e.target.value)} className={cn("flex h-9 w-full rounded-md border bg-transparent px-3 text-sm", shopId ? "border-input" : "border-amber-500")}>
+            <option value="" disabled>Escolher a loja…</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} — {fmtMoneyGrouped(a.amount)}</option>)}
+          </select></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className="text-xs text-muted-foreground">Valor</label>
+            <Input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></div>
+          <div><label className="text-xs text-muted-foreground">Data</label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        </div>
+        {available != null && Number.isFinite(v) && v > available + 0.005 && (
+          <p className="text-xs text-amber-600">Mais do que o Balance desta loja tem hoje ({fmtMoneyGrouped(available)}).</p>
+        )}
+        <div><label className="text-xs text-muted-foreground">Observação (opcional)</label>
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={200} /></div>
+        <p className="text-[11px] text-muted-foreground">Não muda o Saldo atual nem o lucro: só tira do Balance e põe na conta.</p>
+      </div>
+      <div className="flex items-center gap-2 mt-4">
+        {onDelete && <Button variant="ghost" size="sm" className="text-destructive" onClick={onDelete}><Trash2 className="size-3.5" /> Excluir</Button>}
+        <div className="flex-1" />
+        <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button size="sm" disabled={!valid} onClick={() => onSave({ shop_id: shopId, amount: Math.round(v * 100) / 100, date, description: description.trim() || null })}>
+          {initial ? "Salvar" : "Transferir"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 function EditGroupTotal({ group, balanceAccounts, shopNamesMap, onClose, onSave }: {
   group: EntryGroup; balanceAccounts: BalanceAccount[]; shopNamesMap?: Record<string, string>; onClose: () => void;
   onSave: (total: number, viaBalance: boolean, balanceShopId?: string | null, date?: string, balanceAmounts?: Record<string, number>) => void;
@@ -1307,6 +1390,8 @@ export function LgCashflowView({
   const [quickAdd,   setQuickAdd]   = useState<{ date: string; kind: "income"|"expense" } | null>(null);
   const [editing,    setEditing]    = useState<DayItem | null>(null);
   const [editingGroup, setEditingGroup] = useState<EntryGroup | null>(null);
+  // Modal de transferência Balance → conta: { item } = editando uma existente.
+  const [transfer, setTransfer] = useState<{ item?: DayItem } | null>(null);
   const [manageCats, setManageCats] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DayItem | null>(null);
 
@@ -1432,12 +1517,15 @@ export function LgCashflowView({
     let acc = saldoBeforeRange;
     return dayList.map((key) => {
       const items    = byDay.get(key) ?? [];
-      const incomeItems  = items.filter(e=>e.kind==="income" && Number(e.amount)!==0);
-      const expenseItems = items.filter(e=>e.kind==="expense" && Number(e.amount)!==0);
+      // Transferência não é entrada nem saída (os dois lados se anulam): sai dos
+      // totais e aparece como um item só (o lado da entrada).
+      const incomeItems  = items.filter(e=>e.kind==="income" && !e.transfer_id && Number(e.amount)!==0);
+      const expenseItems = items.filter(e=>e.kind==="expense" && !e.transfer_id && Number(e.amount)!==0);
+      const transferItems = items.filter(e=>e.kind==="income" && e.transfer_id);
       const income   = incomeItems.reduce((a,e)=>a+Number(e.amount),0);
       const expense  = expenseItems.reduce((a,e)=>a+Number(e.amount),0);
       acc = acc + income - expense;
-      return { key, incomeItems, expenseItems, income, expense, balance: acc };
+      return { key, incomeItems, expenseItems, transferItems, income, expense, balance: acc };
     });
   }, [dayList, byDay, saldoBeforeRange]);
 
@@ -1653,6 +1741,41 @@ export function LgCashflowView({
     }).then((ok) => { if (ok) resetMut.mutate(); });
   };
 
+  // Transferência = par com o mesmo transfer_id (saída no Balance + entrada na conta).
+  const transferAccounts = balanceByShop.map((b) => ({ id: b.id, name: shopNamesMap[b.id] ?? "Loja", amount: b.amount }));
+  const transferPair = (id: string) => entries.filter((e) => e.transfer_id === id);
+  const createTransfer = (v: { shop_id: string; amount: number; date: string; description: string | null }) => {
+    const transfer_id = crypto.randomUUID();
+    const base = { shop_id: v.shop_id, amount: v.amount, date: v.date, category: "Transferência", description: v.description ?? "Balance → conta", transfer_id };
+    return Promise.all([
+      createFn({ data: { ...base, kind: "expense", via_balance: true, balance_shop_id: v.shop_id } }),
+      createFn({ data: { ...base, kind: "income", via_balance: false, balance_shop_id: null } }),
+    ]);
+  };
+  const saveTransfer = (v: { shop_id: string; amount: number; date: string; description: string | null }) => {
+    const item = transfer?.item;
+    setTransfer(null);
+    let job: Promise<unknown>;
+    if (!item?.transfer_id) job = createTransfer(v);
+    else {
+      const pair = transferPair(item.transfer_id);
+      // Trocou a loja: o shop_id não muda por edição — recria o par.
+      job = (item.shop_id ?? "") !== v.shop_id
+        ? Promise.all(pair.map((e) => deleteFn({ data: { id: e.id } }))).then(() => createTransfer(v))
+        : Promise.all(pair.map((e) => updateFn({ data: { id: e.id, patch: { amount: v.amount, date: v.date, description: v.description ?? "Balance → conta" } } })));
+    }
+    job.then(() => { toast.success(item ? "Transferência atualizada" : "Transferência lançada"); refresh(); })
+      .catch((err: any) => { toast.error(String(err?.message ?? err)); refresh(); });
+  };
+  const deleteTransfer = () => {
+    const item = transfer?.item;
+    setTransfer(null);
+    if (!item?.transfer_id) return;
+    Promise.all(transferPair(item.transfer_id).map((e) => deleteFn({ data: { id: e.id } })))
+      .then(() => { toast.success("Transferência excluída"); refresh(); })
+      .catch((err: any) => { toast.error(String(err?.message ?? err)); refresh(); });
+  };
+
   if (isLoading) return <div className="text-sm text-muted-foreground">Carregando...</div>;
 
   return (
@@ -1780,6 +1903,12 @@ export function LgCashflowView({
         <Button variant="outline" size="sm" className="text-neutral-600 dark:text-neutral-400 border-neutral-400/30 hover:bg-neutral-500/5" onClick={() => setQuickAdd({ date:todayKey, kind:"expense" })}>
           <Plus className="size-3.5" /> Saída
         </Button>
+        {transferAccounts.length > 0 && (
+          <Button variant="outline" size="sm" className="text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setTransfer({})}
+            title="Passar dinheiro do Shopify Balance pra conta bancária">
+            <ArrowLeftRight className="size-3.5" /> Transferir
+          </Button>
+        )}
 
         <Popover>
           <PopoverTrigger asChild>
@@ -1822,7 +1951,7 @@ export function LgCashflowView({
       </div>
 
       {showResumo ? (
-        <CaixaResumo items={expanded} opening={opening} todayKey={todayKey}
+        <CaixaResumo items={expanded.filter((e) => !e.transfer_id)} opening={opening} todayKey={todayKey}
           shopIds={shopIds} shopNamesMap={shopNamesMap} perShopReceivable={perShopReceivable} lucroDia={lucroDiaQuery.isLoading ? undefined : lucroDiaQuery.data?.lucroDia ?? null}
           saldoAtual={future}
           alert={reconcileAlert && { ...reconcileAlert, onClick: () => { setView("semana"); reconcileAlert.onClick?.(); } }} />
@@ -1862,7 +1991,7 @@ export function LgCashflowView({
               const weekday  = weekdayFromKey(dd.key);
               const isToday  = dd.key === todayKey;
               const isWeekend = weekday===0 || weekday===6;
-              const props = { dd, weekday, isToday, todayKey, onEdit:setEditing, onToggleReconciled:(e:DayItem) => updateMut.mutate({ id:e.id, patch:{ reconciled:!e.reconciled } }), shopNamesMap, isConsolidated, simplified };
+              const props = { dd, weekday, isToday, todayKey, onEdit:setEditing, onEditTransfer:(e:DayItem) => setTransfer({ item:e }), onToggleReconciled:(e:DayItem) => updateMut.mutate({ id:e.id, patch:{ reconciled:!e.reconciled } }), shopNamesMap, isConsolidated, simplified };
               return isWeekend
                 ? <WeekendDayCell key={dd.key} {...props} />
                 : <WeekdayDayCell key={dd.key} {...props} />;
@@ -1912,6 +2041,15 @@ export function LgCashflowView({
             }
             setEditing(null);
           }}
+        />
+      )}
+      {transfer && (
+        <TransferModal
+          accounts={transferAccounts} todayKey={todayKey}
+          initial={transfer.item ? { shop_id: transfer.item.shop_id ?? "", amount: Number(transfer.item.amount), date: transfer.item.originalDate ?? transfer.item.date, description: transfer.item.description === "Balance → conta" ? null : transfer.item.description } : undefined}
+          onClose={() => setTransfer(null)}
+          onSave={saveTransfer}
+          onDelete={transfer.item ? deleteTransfer : undefined}
         />
       )}
       {manageCats && (

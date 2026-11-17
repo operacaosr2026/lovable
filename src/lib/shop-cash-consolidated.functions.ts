@@ -54,6 +54,7 @@ async function findOrCreateOverride(supabase: any, ownerId: string, id: string) 
     reconciled: source.reconciled ?? false,
     via_balance: source.via_balance ?? false,
     balance_shop_id: source.balance_shop_id ?? null,
+    transfer_id: source.transfer_id ?? null,
   }).select().single();
   if (insErr) throw new Error(insErr.message);
   return created;
@@ -131,6 +132,7 @@ export const listShopCashConsolidated = createServerFn({ method: "GET" })
         reconciled: o.reconciled,
         via_balance: o.via_balance ?? false,
         balance_shop_id: o.balance_shop_id ?? null,
+        transfer_id: o.transfer_id ?? null,
         created_at: o.created_at ?? null,
       });
     }
@@ -165,6 +167,7 @@ export const createConsolidatedCashEntry = createServerFn({ method: "POST" })
       recurrence_until: z.string().nullable().optional(),
       via_balance: z.boolean().optional(),
       balance_shop_id: z.string().uuid().nullable().optional(),
+      transfer_id: z.string().uuid().nullable().optional(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -182,6 +185,7 @@ export const createConsolidatedCashEntry = createServerFn({ method: "POST" })
       reconciled: true,
       via_balance: data.via_balance ?? false,
       balance_shop_id: data.balance_shop_id ?? null,
+      transfer_id: data.transfer_id ?? null,
     }).select().single();
     if (error) throw new Error(error.message);
     return { entry: row };
