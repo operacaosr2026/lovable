@@ -410,8 +410,16 @@ const STEP_TONES = [
 function DunningMetrics({ rows, sends, settings, period: detailPeriod }: {
   rows: AlertRow[]; sends: { step: number; sentAt: string }[]; settings: ChargebackSettings | undefined; period: Period;
 }) {
-  const total = settings?.dunningSteps.filter((st) => st.subject && st.body).length ?? 0;
-  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+  const activeSteps = settings?.dunningSteps.filter((st) => st.subject && st.body) ?? [];
+  const total = activeSteps.length;
+  // Quando cada e-mail sai (mesma regra do envio: o 1º conta da entrega, os outros do anterior).
+  const whenLabel = (n: number) => {
+    const st = activeSteps[n - 1];
+    if (!st) return null;
+    const d = st.days === 0 ? "No dia" : `${st.days} dia${st.days === 1 ? "" : "s"}`;
+    return n === 1 ? `${d}${st.days === 0 ? " da entrega" : " após a entrega"}` : `${d}${st.days === 0 ? " do e-mail anterior" : " após o e-mail " + (n - 1)}`;
+  };
+  const pct =(a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
 
   // Detalhamento por e-mail, no período escolhido.
   const dSince = sinceOf(detailPeriod);
@@ -433,7 +441,7 @@ function DunningMetrics({ rows, sends, settings, period: detailPeriod }: {
             <table className="w-full min-w-[640px] text-sm table-fixed">
               <thead>
                 <tr className="text-xs font-semibold text-foreground/80 bg-muted/60">
-                  <th className="py-3 px-4 text-left rounded-l-lg w-[20%]">E-mail</th>
+                  <th className="py-3 px-4 text-left rounded-l-lg w-[24%]">E-mail</th>
                   <th className="py-3 px-3 text-center">Enviados</th>
                   <th className="py-3 px-3 text-center">Respostas</th>
                   <th className="py-3 px-3 text-center">Recuperados</th>
@@ -450,9 +458,12 @@ function DunningMetrics({ rows, sends, settings, period: detailPeriod }: {
                   return (
                     <tr key={n} className="border-b border-border/60 last:border-0">
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center gap-3 font-semibold">
+                        <span className="inline-flex items-center gap-3">
                           <span className={`size-8 rounded-lg grid place-items-center shrink-0 ${STEP_TONES[(n - 1) % STEP_TONES.length]}`}><Mail className="size-4" /></span>
-                          E-mail {n}
+                          <span className="min-w-0">
+                            <span className="block font-semibold">E-mail {n}</span>
+                            {whenLabel(n) && <span className="block text-xs text-muted-foreground font-normal">{whenLabel(n)}</span>}
+                          </span>
                         </span>
                       </td>
                       <td className="py-3 px-3 tabular-nums text-center">{sent}</td>
