@@ -39,7 +39,7 @@ export const listShopCash = createServerFn({ method: "GET" })
       context.supabase.from("shops").select("id, name")
         .eq("user_id", context.ownerId).eq("payouts_to_balance", true).order("name"),
       // Gasto de outra loja cobrado no Balance de uma destas: desconta do Balance dela.
-      selectAll(context.supabase.from("shop_cash_entries").select("kind, amount, balance_shop_id")
+      selectAll(context.supabase.from("shop_cash_entries").select("kind, amount, balance_shop_id, date")
         .eq("user_id", context.ownerId).in("balance_shop_id", data.shop_ids)
         .eq("via_balance", true).eq("reconciled", true)
         .not("shop_id", "in", `(${data.shop_ids.join(",")})`)),

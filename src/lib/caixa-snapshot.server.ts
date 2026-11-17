@@ -30,7 +30,7 @@ export async function runCaixaSnapshots() {
     const ids = ownerShops.map((s) => s.id as string);
     const [{ data: entries }, receivable] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id,kind,amount,auto_kind")
-        .eq("user_id", ownerId).in("shop_id", ids).eq("reconciled", true)
+        .eq("user_id", ownerId).in("shop_id", ids).eq("reconciled", true).lte("date", date)
         .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync")),
       computeShopsReceivable(supabaseAdmin, ownerId, ids).catch(async (e) => {
         console.error("caixa-snapshot: a receber falhou", ownerId, e);

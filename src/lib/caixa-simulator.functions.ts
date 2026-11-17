@@ -247,7 +247,8 @@ export const getCaixaSimulation = createServerFn({ method: "POST" })
       const [openingRes, reconciledRes, futureRes] = await Promise.all([
         supabaseAdmin.from("shops").select("opening_balance").in("id", shopIds),
         selectAll(supabaseAdmin.from("shop_cash_entries").select("kind, amount")
-          .in("shop_id", shopIds).eq("reconciled", true)
+          // Até hoje: o que vem depois já entra em futureRes (senão contava 2x).
+          .in("shop_id", shopIds).eq("reconciled", true).lte("date", today)
           .neq("source", "shopify_fees_sync").neq("source", "shopify_auto_sync")),
         selectAll(supabaseAdmin.from("shop_cash_entries").select("date, kind, amount, category, source, description")
           .in("shop_id", shopIds).gt("date", today).gte("date", data.from).lte("date", data.to)),

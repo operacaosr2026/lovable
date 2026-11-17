@@ -1530,14 +1530,16 @@ export function LgCashflowView({
   }, [dayList, byDay, saldoBeforeRange]);
 
   // KPIs: only Saldo atual + A receber
+  // Só até hoje: lançamento manual (ex.: transferência Balance → conta marcada
+  // pra quarta) já nasce conciliado e não pode mexer no saldo antes do dia.
   const future = useMemo(() => {
     let acc = opening;
     for (const e of expanded) {
-      if (e.virtual) continue;
+      if (e.virtual || e.date > todayKey) continue;
       if (e.reconciled) acc += e.kind==="income" ? Number(e.amount) : -Number(e.amount);
     }
     return acc;
-  }, [expanded, opening]);
+  }, [expanded, opening, todayKey]);
 
   // Parte do Saldo atual que está no Shopify Balance: repasses que caíram lá
   // menos o que foi pago com o cartão dele (mesma regra: só conciliados).
@@ -1547,19 +1549,20 @@ export function LgCashflowView({
     const m = new Map<string, number>();
     for (const id of data?.balance_shop_ids ?? []) m.set(id, 0);
     for (const e of expanded) {
-      if (e.virtual || !e.reconciled || !e.via_balance) continue;
+      if (e.virtual || !e.reconciled || !e.via_balance || e.date > todayKey) continue;
       // Sai da conta escolhida; cobrada numa loja fora desta visão, não é Balance daqui.
       const id = e.balance_shop_id ?? e.shop_id ?? shopId;
       if (!shopIds.includes(id)) continue;
       m.set(id, (m.get(id) ?? 0) + (e.kind==="income" ? Number(e.amount) : -Number(e.amount)));
     }
-    for (const c of ((data as any)?.balance_charges_elsewhere ?? []) as { kind: string; amount: number; balance_shop_id: string }[]) {
+    for (const c of ((data as any)?.balance_charges_elsewhere ?? []) as { kind: string; amount: number; balance_shop_id: string; date?: string }[]) {
+      if (c.date && c.date > todayKey) continue;
       m.set(c.balance_shop_id, (m.get(c.balance_shop_id) ?? 0) + (c.kind==="income" ? Number(c.amount) : -Number(c.amount)));
     }
     return [...m.entries()]
       .map(([id, amount]) => ({ id, amount }))
       .sort((a, b) => (shopNamesMap[a.id] ?? "").localeCompare(shopNamesMap[b.id] ?? "", "pt-BR", { numeric: true, sensitivity: "base" }));
-  }, [expanded, data, shopId, shopIds, shopNamesMap]);
+  }, [expanded, data, shopId, shopIds, shopNamesMap, todayKey]);
   const balanceAmount = balanceByShop.reduce((s, b) => s + b.amount, 0);
   const balanceAccounts = ((data as any)?.balance_accounts ?? []) as BalanceAccount[];
 
