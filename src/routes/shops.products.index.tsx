@@ -67,15 +67,16 @@ function ProductsIndex() {
         actions={
           <button
             onClick={() => { setEditing(null); setEditorOpen(true); }}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
+            className="hidden sm:flex h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium items-center gap-1.5"
           >
             <Plus className="size-4" /> Novo produto
           </button>
         }
       />
 
+      {/* Celular: 2 linhas — busca + Novo produto; status + visualização. */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
-        <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-[220px]">
+        <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-0 sm:min-w-[220px]">
           <Search className="size-3.5 text-muted-foreground" />
           <input
             value={search}
@@ -84,39 +85,47 @@ function ProductsIndex() {
             className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
           />
         </div>
+        <button
+          onClick={() => { setEditing(null); setEditorOpen(true); }}
+          className="sm:hidden h-9 px-3 shrink-0 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
+        >
+          <Plus className="size-4" /> Novo produto
+        </button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
         <select
           value={fStatus}
           onChange={(e) => setFStatus(e.target.value)}
-          className="h-9 px-2 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
+          className="h-9 px-2 min-w-0 shrink rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
         >
           <option value="all">Status</option>
           {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <div className="flex items-center rounded-lg border border-border bg-surface p-0.5">
+        <div className="flex items-center rounded-lg border border-border bg-surface p-0.5 ml-auto sm:ml-0 shrink-0">
           <button
             onClick={() => navigate({ search: { view: "esteira" } })}
-            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "esteira" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "esteira" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            <Columns3 className="size-3.5" /> Esteira
+            <Columns3 className="size-3.5" /> <span className={view === "esteira" ? "" : "hidden sm:inline"}>Esteira</span>
           </button>
           <button
             onClick={() => navigate({ search: { view: "galeria" } })}
-            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "galeria" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "galeria" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            <LayoutGrid className="size-3.5" /> Galeria
+            <LayoutGrid className="size-3.5" /> <span className={view === "galeria" ? "" : "hidden sm:inline"}>Galeria</span>
           </button>
           <button
             onClick={() => navigate({ search: { view: "lista" } })}
-            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "lista" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "lista" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            <List className="size-3.5" /> Lista
+            <List className="size-3.5" /> <span className={view === "lista" ? "" : "hidden sm:inline"}>Lista</span>
           </button>
           <button
             onClick={() => navigate({ search: { view: "aprendizados" } })}
-            className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "aprendizados" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "aprendizados" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            <FlaskConical className="size-3.5" /> Aprendizados
+            <FlaskConical className="size-3.5" /> <span className={view === "aprendizados" ? "" : "hidden sm:inline"}>Aprendizados</span>
           </button>
+        </div>
         </div>
       </div>
 

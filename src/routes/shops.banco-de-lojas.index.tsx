@@ -127,7 +127,7 @@ function BancoDeLojasIndex() {
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-10 w-44 shrink-0 px-3 rounded-xl border border-border bg-card text-sm flex items-center gap-2 hover:border-primary/40">
+              <button className="h-10 flex-1 min-w-0 sm:flex-none sm:w-44 sm:shrink-0 px-3 rounded-xl border border-border bg-card text-sm flex items-center gap-2 hover:border-primary/40">
                 <Filter className="size-4 text-muted-foreground shrink-0" />
                 <span className="flex-1 text-left truncate">{filterLabel}</span>
                 <ChevronDown className="size-4 text-muted-foreground shrink-0" />
@@ -145,7 +145,8 @@ function BancoDeLojasIndex() {
           </DropdownMenu>
           <button
             onClick={() => setOpenConnect(true)}
-            className="h-10 px-4 shrink-0 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center gap-1.5 shadow-sm hover:bg-primary/90 whitespace-nowrap"
+            // Celular: filtro e Nova loja dividem a 2ª linha meio a meio, alinhados com a de cima.
+            className="h-10 px-4 flex-1 sm:flex-none sm:shrink-0 rounded-xl bg-primary text-primary-foreground text-sm font-medium sm:font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 whitespace-nowrap"
           >
             <Plus className="size-4" /> Nova loja
           </button>

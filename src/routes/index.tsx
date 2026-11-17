@@ -25,6 +25,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { redirect } from "@tanstack/react-router";
 import { isoTodayUS, US_TIME_ZONE } from "@/lib/timezone";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -350,10 +351,11 @@ const overlaps = (a: [number, number], b: [number, number]) => a[0] < b[1] && b[
 // A etiqueta tenta ficar acima da linha; se bater no valor da barra, na
 // projeção ou no selo de %, vai pra baixo da linha e, se ainda bater, pro lado.
 function MetaLineShape(props: any) {
-  const { x, y, width, height, payload } = props;
+  const { x, y, width, height, payload, compact } = props;
   if (!width || y == null || !payload?.meta || !height) return null;
-  const label = `$${Math.round(payload.meta).toLocaleString("en-US")}`;
-  const w = Math.max(44, label.length * 6.4 + 12);
+  // Celular: valor curto ($10k) — o "$10,000" ficava mais largo que a coluna.
+  const label = compact ? fmtK(payload.meta) : `$${Math.round(payload.meta).toLocaleString("en-US")}`;
+  const w = compact ? label.length * 6.4 + 10 : Math.max(44, label.length * 6.4 + 12);
 
   // Faixas ocupadas (em pixels) pelo que já está desenhado na coluna.
   const realTop = valueToY(props, Math.max(0, payload.realizado));
@@ -375,6 +377,10 @@ function MetaLineShape(props: any) {
   const below: [number, number] = [y + 5, y + 22];
   const free = (r: [number, number]) => !busy.some((b) => overlaps(r, b));
   const pos = free(above) ? "above" : free(below) ? "below" : "side";
+  const line = <line x1={x - 12} x2={x + width + 12} y1={y} y2={y} stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="6 4" />;
+  // No celular não há espaço ao lado (cairia em cima da coluna vizinha): só a
+  // linha; o valor da meta está no resumo do mês e no toque na barra.
+  if (pos === "side" && compact) return <g>{line}</g>;
 
   // Ao lado: à direita, menos na última coluna (não tem espaço depois dela).
   const sideX = payload.last ? x - 14 - w : x + width + 14;
@@ -383,7 +389,7 @@ function MetaLineShape(props: any) {
     : { x: x + width / 2 - w / 2, y: pos === "above" ? y - 22 : y + 5, tx: x + width / 2, ty: pos === "above" ? y - 10 : y + 17 };
   return (
     <g>
-      <line x1={x - 12} x2={x + width + 12} y1={y} y2={y} stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="6 4" />
+      {line}
       <rect x={box.x} y={box.y} width={w} height={17} rx={5} fill="var(--color-card)" />
       <rect x={box.x} y={box.y} width={w} height={17} rx={5} fill="var(--color-primary)" fillOpacity={0.12} />
       <text x={box.tx} y={box.ty} textAnchor="middle" fontSize={10} fontWeight={600} fill="var(--color-primary)">{label}</text>
@@ -483,6 +489,7 @@ function PctPill(props: any) {
 }
 
 function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: boolean }) {
+  const isMobile = useIsMobile();
   if (loading) return <div className="flex-1 min-h-[200px] bg-muted animate-pulse rounded-xl" />;
   const months = (data?.months ?? []).map((m, i, all) => {
     const projExtra = m.atual && m.projecao != null ? Math.max(0, m.projecao - m.realizado) : 0;
@@ -498,17 +505,19 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
   const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((st) => rawMax / st <= 4.5) ?? 10 * mag;
   const yMax = Math.ceil(rawMax / step) * step;
   // Mês no prejuízo: o eixo desce abaixo de zero, com folga pro selo embaixo da barra.
-  const rawMin = Math.min(0, ...months.map((m) => m.realizado)) * 1.22;
+  // (1,4×: o selo de % embaixo da barra negativa batia no nome do mês.)
+  const rawMin = Math.min(0, ...months.map((m) => m.realizado)) * (isMobile ? 1.4 : 1.22);
   const yMin = rawMin < 0 ? Math.floor(rawMin / step) * step : 0;
   const yTicks = Array.from({ length: Math.round((yMax - yMin) / step) + 1 }, (_, i) => yMin + i * step);
-  const BAR = 44;
+  const BAR = isMobile ? 36 : 44;
   return (
     <div className="flex-1 min-h-[200px] flex flex-col">
       {months.length === 0 ? (
         <p className="flex-1 grid place-items-center text-xs text-muted-foreground py-8">Nenhuma meta cadastrada ainda.</p>
       ) : (
         <>
-          <div className="flex-1 min-h-[140px]">
+          {/* Celular: mais alto — com 140px os selos, valores e a meta se atropelavam. */}
+          <div className="flex-1 min-h-[260px] md:min-h-[140px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={months} margin={{ top: 26, right: 14, left: -14, bottom: 0 }} barGap={-BAR} barCategoryGap="22%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
@@ -534,7 +543,7 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
                 <Bar dataKey="realizado" stackId="lucro" barSize={BAR} shape={<RealizadoShape />} isAnimationActive={false} />
                 <Bar dataKey="projExtra" stackId="lucro" barSize={BAR} shape={<ProjecaoShape />} isAnimationActive={false} />
                 {/* Meta por cima das barras (a linha aparece mesmo quando o lucro passa dela) */}
-                <Bar dataKey="meta" barSize={BAR} shape={<MetaLineShape />} isAnimationActive={false} />
+                <Bar dataKey="meta" barSize={BAR} shape={<MetaLineShape compact={isMobile} />} isAnimationActive={false} />
                 {/* Camada invisível só pro selo de % no topo (realizado + projeção) */}
                 <Bar dataKey="pillBase" barSize={BAR} shape={() => <g />} isAnimationActive={false}>
                   <LabelList dataKey="pillBase" content={<PctPill data={months} />} />
@@ -900,13 +909,14 @@ function Dashboard() {
     // vez de uma área de rolagem própria com a barra no meio da tela.
     <PageShell>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+      {/* Saudação e filtro na mesma linha (no celular também, pra ocupar menos altura). */}
+      <div className="flex flex-row md:flex-col lg:flex-row items-center md:items-stretch lg:items-center justify-between gap-3 md:gap-4 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">
             {greeting}{firstName && <>, <span className="text-gradient-primary">{firstName}</span></>}
           </h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end md:justify-start gap-2 shrink-0">
           <span className="hidden sm:inline-flex items-center gap-1.5 h-8 px-3 rounded-xl border border-border bg-card text-xs text-muted-foreground">
             <CalendarDays className="size-3.5" /> {fmtDate(from)} → {fmtDate(to)}
           </span>
@@ -1058,7 +1068,8 @@ function Dashboard() {
           ) : (
             <>
               {/* Donut ocupa o espaço livre do card (a linha é tão alta quanto a coluna de indicadores) */}
-              <div className="relative flex-1 min-h-[220px] max-h-[340px]">
+              {/* Celular: altura fixa menor — com a largura toda o donut ficava enorme. */}
+              <div className="relative h-[190px] md:h-auto md:flex-1 md:min-h-[220px] md:max-h-[340px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                     <Pie data={slices} dataKey="faturamento" nameKey="shop_name" innerRadius="66%" outerRadius="100%" paddingAngle={2} strokeWidth={0}>

@@ -140,11 +140,12 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
       )}
 
       {/* ── Projeção ── */}
-      <div className="rounded-2xl border border-border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+      {/* Celular: só os números em blocos (sem gráfico nem legenda). */}
+      <div className="rounded-2xl border border-border bg-card p-4 md:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 md:mb-3">
           <div>
-            <p className="text-sm font-semibold">Projeção de saldo · próximos {DAYS_AHEAD} dias</p>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] text-muted-foreground">
+            <p className="text-sm font-semibold"><span className="md:hidden">Saldo</span><span className="hidden md:inline">Projeção de saldo · próximos {DAYS_AHEAD} dias</span></p>
+            <div className="hidden md:flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: LINE }} />Lançado no caixa</span>
               {estReady && (
                 <span className="flex items-center gap-1.5" title="Saldo total de hoje (saldo + a receber) + lucro médio por dia dos últimos 7 dias fechados (hoje não entra: ainda está em andamento). Saídas fora do lucro (retiradas, ferramentas) não entram.">
@@ -153,15 +154,20 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
               )}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-x-5 gap-y-2 w-full sm:w-auto sm:flex sm:flex-wrap sm:text-right">
-            <Stat label="Saldo atual" value={money(saldoAtual)} />
+          <div className="grid grid-cols-2 gap-2 w-full md:w-auto md:flex md:flex-wrap md:gap-x-5 md:gap-y-2 md:text-right">
+            <Stat label="Saldo atual" value={money(saldoAtual)} tone="blue" />
             <Stat label="A receber" value={money(receivableTotal)} />
-            <Stat label="Saldo total" value={money(saldoAtual + receivableTotal)} />
-            <Stat label={`Em ${dm(last.key)}${estReady ? " · est." : ""}`} value={money(estReady ? last.estimado : last.saldo)} />
+            <Stat label="Saldo total" value={money(saldoAtual + receivableTotal)} tone="green" />
+            <Stat label={`Em ${dm(last.key)}${estReady ? " · est." : ""}`} value={money(estReady ? last.estimado : last.saldo)} tone="violet" />
           </div>
+          {estReady && (
+            <p className="md:hidden w-full text-[11px] text-muted-foreground leading-snug">
+              Estimativa: saldo total + lucro médio de 7 dias sem reembolsos (~{money(lucroDia!)}/dia).
+            </p>
+          )}
         </div>
 
-        <div className="h-[220px]">
+        <div className="hidden md:block h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={points} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
               <defs>
@@ -261,11 +267,18 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
   );
 }
 
-function Stat({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+// No celular vira um bloco colorido (tone); no computador, só rótulo + valor.
+const STAT_TONES = {
+  blue: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  green: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  violet: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  none: "bg-muted/70 text-foreground",
+} as const;
+function Stat({ label, value, danger, tone = "none" }: { label: string; value: string; danger?: boolean; tone?: keyof typeof STAT_TONES }) {
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`text-sm font-bold tabular-nums ${danger ? "text-destructive" : ""}`}>{value}</p>
+    <div className={`min-w-0 rounded-xl px-3 py-2.5 ${STAT_TONES[tone]} md:bg-transparent md:p-0 md:rounded-none md:text-foreground`}>
+      <p className="text-[10px] uppercase tracking-wide opacity-70 md:opacity-100 md:text-muted-foreground truncate">{label}</p>
+      <p className={`text-base md:text-sm font-bold tabular-nums truncate ${danger ? "text-destructive" : ""}`}>{value}</p>
     </div>
   );
 }

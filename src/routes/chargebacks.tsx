@@ -242,14 +242,15 @@ function ChargebacksPage() {
   return (
     <PageShell wide>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">Chargebacks</h1>
+      {/* Celular: título numa linha; abas + filtro juntos na de baixo. */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5 max-sm:flex-row max-sm:flex-wrap max-sm:items-center max-sm:gap-2">
+        <div className="flex flex-wrap items-center gap-3 max-sm:contents">
+          <h1 className="text-2xl font-bold tracking-tight max-sm:w-full">Chargebacks</h1>
           <Seg value={tab} options={[["chargebacks", "Disputas"], ["alertas", "Alertas"], ["config", "Configurações"]] as const} onChange={setTab} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={`flex flex-wrap items-center gap-2 ${tab === "chargebacks" ? "max-sm:flex-1 max-sm:min-w-0" : "max-sm:w-full"}`}>
           {tab === "chargebacks" && <>
-            <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44" />
+            <Select value={period} onChange={(v) => { setPeriod(v as any); setFilter(null); }} options={PERIODS.map(([k, l]) => [k, l] as const)} className="w-44 max-sm:w-full max-sm:min-w-0" />
           </>}
           {tab === "alertas" && <>
             <PeriodSelect value={alertsPeriod} onChange={setAlertsPeriod} />
@@ -269,9 +270,10 @@ function ChargebacksPage() {
       ) : (
         <div className="space-y-4">
           {/* ── Cards ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {/* Celular: cards compactos em 2 colunas (o total ocupa a linha toda). */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 sm:gap-4">
             <Stat icon={ShieldAlert} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400"
-              label="Chargebacks"
+              label="Chargebacks" className="max-sm:col-span-2"
               value={String(base.length)} sub={money(sum(base))} delta={mom(() => true)} badIfUp
               spark={seriesOf(() => true)} sparkKind="bars" />
             <Stat icon={Hourglass} tone="bg-amber-500/10 text-amber-600 dark:text-amber-400" label="Aguardando resposta"
@@ -664,7 +666,7 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
     <div className="flex items-center rounded-xl border border-border bg-card p-1 h-10 shrink-0">
       {options.map(([k, label]) => (
         <button key={k} onClick={() => onChange(k)}
-          className={`h-full px-3.5 rounded-lg text-sm font-medium transition-colors ${value === k ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+          className={`h-full px-3.5 max-sm:px-2.5 rounded-lg text-sm max-sm:text-[13px] font-medium transition-colors ${value === k ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
           {label}
         </button>
       ))}
@@ -704,8 +706,8 @@ function Empty({ text = "Sem chargebacks no período" }: { text?: string }) {
   return <p className="text-sm text-muted-foreground text-center py-10">{text}</p>;
 }
 
-function Stat({ icon: Icon, tone, label, value, sub, delta, badIfUp, spark, sparkKind = "area", sparkColor = "var(--color-primary)", onClick, active }: {
-  icon: typeof ShieldAlert; tone: string; label: string; value: string; sub: string;
+function Stat({ icon: Icon, tone, label, value, sub, delta, badIfUp, spark, sparkKind = "area", sparkColor = "var(--color-primary)", onClick, active, className = "" }: {
+  icon: typeof ShieldAlert; tone: string; label: string; value: string; sub: string; className?: string;
   delta?: number | null; badIfUp?: boolean; spark: { k: string; v: number }[]; sparkKind?: "area" | "bars"; sparkColor?: string;
   onClick?: () => void; active?: boolean;
 }) {
@@ -714,23 +716,23 @@ function Stat({ icon: Icon, tone, label, value, sub, delta, badIfUp, spark, spar
   const id = `sp-${label.replace(/\W/g, "")}`;
   return (
     <Tag onClick={onClick} title={onClick ? (active ? "Clique para tirar o filtro" : `Mostrar na lista: ${label}`) : undefined}
-      className={`${CARD} relative overflow-hidden p-5 flex items-start gap-3.5 min-w-0 text-left transition-colors ${active ? "ring-2 ring-primary/30 border-primary/50" : ""} ${onClick ? "hover:border-primary/40 cursor-pointer" : ""}`}>
-      <div className={`size-12 rounded-2xl grid place-items-center shrink-0 ${tone}`}><Icon className="size-6" /></div>
+      className={`${CARD} relative overflow-hidden p-5 max-sm:p-3.5 flex items-start gap-3.5 max-sm:gap-2.5 min-w-0 text-left transition-colors ${className} ${active ? "ring-2 ring-primary/30 border-primary/50" : ""} ${onClick ? "hover:border-primary/40 cursor-pointer" : ""}`}>
+      <div className={`size-12 max-sm:size-9 rounded-2xl max-sm:rounded-xl grid place-items-center shrink-0 ${tone}`}><Icon className="size-6 max-sm:size-4.5" /></div>
       <div className="min-w-0 relative z-10">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground/80 truncate">{label}</p>
+        <p className="text-[11px] max-sm:text-[10px] font-semibold uppercase tracking-wide text-foreground/80 truncate">{label}</p>
         <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-3xl font-bold tracking-tight leading-none">{value}</p>
+          <p className="text-3xl max-sm:text-2xl font-bold tracking-tight leading-none">{value}</p>
           {delta != null && delta !== 0 && (
             <span className={`inline-flex items-center text-xs font-semibold ${bad ? "text-rose-600" : "text-emerald-600"}`} title="vs mês anterior">
               {delta > 0 ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}{Math.abs(delta)}%
             </span>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-1.5 truncate">{sub}</p>
+        <p className="text-xs max-sm:text-[11px] text-muted-foreground mt-1.5 max-sm:mt-1 truncate">{sub}</p>
       </div>
       {/* Minigráfico decorativo (mês a mês), no canto. */}
       {spark.length > 1 && (
-        <div className="absolute right-0 bottom-0 w-28 h-16 opacity-80 pointer-events-none" aria-hidden>
+        <div className="absolute right-0 bottom-0 w-28 h-16 opacity-80 pointer-events-none max-sm:hidden" aria-hidden>
           <ResponsiveContainer width="100%" height="100%">
             {sparkKind === "bars" ? (
               <BarChart data={spark} margin={{ top: 4, right: 10, left: 0, bottom: 8 }}>

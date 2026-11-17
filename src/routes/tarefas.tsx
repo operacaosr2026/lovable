@@ -286,10 +286,9 @@ function TasksPage() {
   return (
     <PageShell>
       {/* Celular: título + botão na mesma linha e um card só de resumo. */}
-      <div className="sm:hidden flex items-start justify-between gap-3 mb-4">
+      <div className="sm:hidden flex items-center justify-between gap-3 mb-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight leading-tight">Tarefas</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Organize e acompanhe suas atividades</p>
         </div>
         <button
           onClick={() => setEditing("new")}
