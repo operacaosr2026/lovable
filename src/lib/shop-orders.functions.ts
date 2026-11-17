@@ -2433,7 +2433,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
 
     function delta(curr: number, prev: number) {
       if (prev === 0) return 0;
-      return Math.round(((curr - prev) / prev) * 100 * 10) / 10;
+      // |prev|: saindo de prejuízo (prev < 0) pra lucro é alta, não queda.
+      return Math.round(((curr - prev) / Math.abs(prev)) * 100 * 10) / 10;
     }
 
     // Daily chart data grouped by order_date. O lucro por dia desconta taxas,

@@ -633,7 +633,8 @@ const emptyDashboardOverview = {
 
 function dashboardDelta(curr: number, prev: number) {
   if (prev === 0) return 0;
-  return Math.round(((curr - prev) / prev) * 100 * 10) / 10;
+  // |prev|: saindo de prejuízo (prev < 0) pra lucro é alta, não queda.
+  return Math.round(((curr - prev) / Math.abs(prev)) * 100 * 10) / 10;
 }
 
 export const getDashboardOverview = createServerFn({ method: "GET" })

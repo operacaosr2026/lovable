@@ -107,7 +107,7 @@ async function campaignSpendByDate(ownerId: string, campaigns: Campaign[], since
   return { spend, errors };
 }
 
-const delta = (curr: number, prev: number) => (prev === 0 ? 0 : Math.round(((curr - prev) / prev) * 1000) / 10);
+const delta = (curr: number, prev: number) => (prev === 0 ? 0 : Math.round(((curr - prev) / Math.abs(prev)) * 1000) / 10); // |prev|: prejuízo → lucro é alta
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // Faturamento, custo e unidades só dos itens deste produto no pedido (null se
