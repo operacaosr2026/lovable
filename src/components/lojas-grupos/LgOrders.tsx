@@ -16,9 +16,10 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle, Mail, Loader2, MessageSquareReply,
+  RefreshCw, ChevronRight, CheckCircle2, Store, Settings2, Check, Calendar, Copy, Search, X, AlertTriangle, Mail, Loader2, MessageSquareReply, RotateCw, PenLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { isoTodayUS, isoDateUS } from "@/lib/timezone";
 
@@ -82,6 +83,7 @@ export function LgOrders({
 }) {
   const cacheKey = shopIds.slice().sort().join(",");
   const qc       = useQueryClient();
+  const confirmDialog = useConfirm();
   const isConsolidated = shopIds.length > 1;
 
   // Padrão 5 dias: pagamento ao fornecedor é diário, e 30 dias pesava a abertura da aba.
@@ -247,6 +249,14 @@ export function LgOrders({
   const repeatedIds = useMemo(() => [...new Set([...loadedOrders, ...((heldQuery.data ?? []) as any[])]
     .filter((o) => !o.tracking_code && repeatedItems(o.raw?.line_items).length)
     .map((o) => o.id as string))], [loadedOrders, heldQuery.data]);
+  // Já mandou a confirmação: mandar de novo pergunta antes (o cliente recebe outro e-mail igual).
+  const resendConfirm = (o: any) => {
+    confirmDialog({
+      title: `Reenviar confirmação do ${orderLabel(o)}?`,
+      description: "O cliente recebe de novo o mesmo e-mail pedindo pra confirmar os itens repetidos (pela fila de Notificações). Pra escrever uma mensagem diferente, use \"Escrever e-mail\".",
+      confirmText: "Reenviar",
+    }).then((ok) => { if (ok) confirmRepeated.mutate(o.id); });
+  };
   const confirmStatusFn = useServerFn(repeatedConfirmStatus);
   const confirmStatus = useQuery({
     queryKey: ["repeated-confirm", repeatedIds.join(",")],
@@ -658,11 +668,12 @@ export function LgOrders({
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                   {st?.reply && <ReplyBadge reply={st.reply} />}
-                  {confirmLabel ? (
+                  {confirmLabel ? (<>
                     <span className="text-[11px] px-2 py-1 rounded-md border font-medium bg-emerald-500/10 text-emerald-600 border-emerald-500/20 inline-flex items-center gap-1">
                       <Check className="size-3" /> {confirmLabel}
                     </span>
-                  ) : (
+                    <EmailMoreButtons order={orderLabel(o)} queued={st?.status !== "enviado"} busy={sending} onResend={() => resendConfirm(o)} />
+                  </>) : (
                     <Button size="sm" variant="outline" onClick={() => confirmRepeated.mutate(o.id)} disabled={sending}
                       title="E-mail pro cliente confirmar os itens repetidos (fila de Notificações)">
                       {sending ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
@@ -870,6 +881,7 @@ export function LgOrders({
                                           <Check className="size-3" /> {sentLabel}
                                         </span>
                                         {st?.reply && <ReplyBadge reply={st.reply} small />}
+                                        <EmailMoreButtons order={orderLabel(o)} queued={st?.status !== "enviado"} busy={busy} onResend={() => resendConfirm(o)} small />
                                       </>
                                     ) : (
                                       <button onClick={() => confirmRepeated.mutate(o.id)} disabled={busy}
@@ -1057,5 +1069,26 @@ Abrir no Atendimento` : "Abrir no Atendimento"}
         small ? "text-[10px] px-1.5 py-0.5" : "text-[11px] px-2 py-1")}>
       <MessageSquareReply className="size-3" /> Cliente respondeu {fmtDayMonth(isoDateUS(Date.parse(reply.at)))}
     </a>
+  );
+}
+
+// Depois da confirmação enviada: reenviar a mesma mensagem ou escrever um
+// e-mail livre (abre a Nova mensagem do Atendimento já com o pedido buscado).
+function EmailMoreButtons({ order, queued, busy, onResend, small }: { order: string; queued: boolean; busy: boolean; onResend: () => void; small?: boolean }) {
+  const cls = cn("rounded-md border font-medium border-border text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 disabled:opacity-50",
+    small ? "text-[10px] px-1.5 py-0.5" : "text-[11px] px-2 py-1");
+  const icon = small ? "size-3" : "size-3.5";
+  return (
+    <>
+      {!queued && (
+        <button type="button" onClick={onResend} disabled={busy} className={cls} title="Mandar de novo o e-mail de confirmação">
+          {busy ? <Loader2 className={cn(icon, "animate-spin")} /> : <RotateCw className={icon} />} Reenviar
+        </button>
+      )}
+      <a href={`/atendimento?novo=${encodeURIComponent(order)}`} target="_blank" rel="noreferrer" className={cls}
+        title="Escrever um e-mail livre pro cliente (Atendimento › Nova mensagem, já com o pedido)">
+        <PenLine className={icon} /> Escrever e-mail
+      </a>
+    </>
   );
 }
