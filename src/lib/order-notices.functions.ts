@@ -213,6 +213,9 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
     for (const o of orders) {
       const t = trackBy.get(o.id);
       if (t?.delivered_at) continue;   // 17track já viu a entrega
+      // Pedido com chargeback (qualquer situação) não recebe aviso de atraso —
+      // igual ao reembolsado na Shopify, que já fica fora da consulta.
+      if (disputeBy.has(`${o.shop_id}:${o.external_id}`)) continue;
       const email = emailOf(o);
       const first = String(o.first_name || o.ship_first || "").trim().split(/\s+/)[0] ?? "";
       const name = [o.first_name || o.ship_first, o.last_name || o.ship_last].filter(Boolean).join(" ").trim();
