@@ -97,11 +97,17 @@ export function computeLogisticsKpis(orders: any[], nowMs: number, cal?: Posting
     .filter((o) => o.order_date && o.shipped_at && String(o.shipped_at).slice(0, 10) >= String(o.order_date).slice(0, 10))
     .map((o) => businessDaysBetween(o.order_date, o.shipped_at, cal));
 
-  // Tempo médio de entrega: dias entre postagem (shipped_at) e entrega (delivered_at)
+  // Tempo médio de entrega: dias entre postagem e entrega (delivered_at).
+  // Reenvio (código trocado): shipped_at é a postagem do pacote ORIGINAL e a
+  // entrega é do pacote novo — conta da postagem do reenvio (resent_posted_at,
+  // 1º evento real do código novo); sem ela, o pedido fica fora da média (antes
+  // somava o tempo perdido do pacote antigo, ex.: 70 dias num reenvio de 3 semanas).
   const deliveryDurations = kpiOrders
-    .filter((o) => o.shipped_at && o.delivered_at)
-    .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
-    .filter((d) => d >= 0);
+    .map((o) => {
+      const posted = o.resent_at ? o.resent_posted_at : o.shipped_at;
+      return posted && o.delivered_at ? (new Date(o.delivered_at).getTime() - new Date(posted).getTime()) / 86_400_000 : null;
+    })
+    .filter((d): d is number => d != null && d >= 0);
 
   // Tempo que o cliente sente: dias corridos da compra (order_date) até a
   // entrega (delivered_at) — postagem + transporte juntos.
@@ -170,9 +176,11 @@ export function computeLogisticsTrend(orders: any[], nowMs: number, today: strin
     const posting = kpiOrders
       .filter((o) => o.order_date && dayOf(o.shipped_at) && dayOf(o.shipped_at)! <= d && dayOf(o.shipped_at)! >= dayOf(o.order_date)!)
       .map((o) => businessDaysBetween(o.order_date, o.shipped_at, cal));
+    // Reenvio: da postagem do reenvio (mesma regra do computeLogisticsKpis).
     const delivery = kpiOrders
-      .filter((o) => dayOf(o.shipped_at) && dayOf(o.delivered_at) && dayOf(o.delivered_at)! <= d)
-      .map((o) => (new Date(o.delivered_at).getTime() - new Date(o.shipped_at).getTime()) / 86_400_000)
+      .map((o) => ({ o, posted: o.resent_at ? o.resent_posted_at : o.shipped_at }))
+      .filter(({ o, posted }) => dayOf(posted) && dayOf(o.delivered_at) && dayOf(o.delivered_at)! <= d)
+      .map(({ o, posted }) => (new Date(o.delivered_at).getTime() - new Date(posted).getTime()) / 86_400_000)
       .filter((x) => x >= 0);
     return {
       date: d,
