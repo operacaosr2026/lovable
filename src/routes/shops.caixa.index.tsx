@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Wallet, FlaskConical, ShieldAlert } from "lucide-react";
+import { Wallet, FlaskConical, ShieldAlert, Landmark } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
 import { listCaixaShops } from "@/lib/lg-cards.functions";
 import { LgCashflowView } from "@/components/lojas-grupos/LgCashflowView";
 import { CaixaSimulator } from "@/components/caixa/CaixaSimulator";
 import { ChargebackSimulator } from "@/components/caixa/ChargebackSimulator";
+import { WiseCash } from "@/components/caixa/WiseCash";
 
-type Tab = "caixa" | "simulador" | "chargeback";
-const VALID_TABS: Tab[] = ["caixa", "simulador", "chargeback"];
+type Tab = "caixa" | "wise" | "simulador" | "chargeback";
+const VALID_TABS: Tab[] = ["caixa", "wise", "simulador", "chargeback"];
 
 export const Route = createFileRoute("/shops/caixa/")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -42,8 +43,11 @@ function CaixaIndex() {
       {/* shrink-0: no layout de tela cheia (fit), conteúdo alto (Simulador) encolhia esta linha até sumir. */}
       <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto shrink-0">
         <TabBtn active={tab === "caixa"} onClick={() => setTab("caixa")} icon={Wallet}>Caixa</TabBtn>
+        <TabBtn active={tab === "wise"} onClick={() => setTab("wise")} icon={Landmark}>Wise (R$)</TabBtn>
         <TabBtn active={tab === "simulador"} onClick={() => setTab("simulador")} icon={FlaskConical}>Simulador de Caixa</TabBtn>
         <TabBtn active={tab === "chargeback"} onClick={() => setTab("chargeback")} icon={ShieldAlert}>Simulador Chargeback</TabBtn>
+        {/* Ações da aba ativa (a Wise põe mês + Entrada/Saída aqui). */}
+        <div id="caixa-tab-actions" className="ml-auto pl-4 pb-1 shrink-0" />
       </div>
 
       {isLoading ? (
@@ -55,6 +59,8 @@ function CaixaIndex() {
         </div>
       ) : tab === "simulador" ? (
         <CaixaSimulator />
+      ) : tab === "wise" ? (
+        <WiseCash />
       ) : tab === "chargeback" ? (
         <ChargebackSimulator />
       ) : (

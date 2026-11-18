@@ -386,34 +386,38 @@ export function CaixaSimulator() {
       }));
   }, [series, from, extratoWeeks]);
 
+  // Liga/desliga o Modo Isolado: fica no canto do card Saldo atual (é ele que muda).
+  const isolatedToggle = (
+    <button
+      onClick={() => {
+        // Ao ligar, parte do saldo real que está na tela, pra só ajustar.
+        if (!isolated && simulation) {
+          const real = Math.round(Number(simulation.startingBalance) * 100) / 100;
+          setManualBalance(real);
+          setBalanceDraft(String(real));
+        }
+        setIsolated((v) => !v);
+      }}
+      className={`shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded-md border text-[11px] font-medium normal-case tracking-normal transition-colors ${
+        isolated ? "border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "border-border text-muted-foreground hover:text-foreground"
+      }`}
+      title={isolated ? "Voltar a usar o saldo real do Caixa" : "Usar um saldo atual digitado à mão em vez do saldo real do Caixa"}
+    >
+      <Unplug className="size-3" /> {isolated ? "Isolado" : "Modo isolado"}
+    </button>
+  );
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          onClick={() => {
-            // Ao ligar, parte do saldo real que está na tela, pra só ajustar.
-            if (!isolated && simulation) {
-              const real = Math.round(Number(simulation.startingBalance) * 100) / 100;
-              setManualBalance(real);
-              setBalanceDraft(String(real));
-            }
-            setIsolated((v) => !v);
-          }}
-          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-            isolated ? "border-amber-500/40 bg-amber-500/10 text-amber-600" : "border-border text-muted-foreground hover:text-foreground"
-          }`}
-          title="Usa um saldo atual digitado à mão em vez do saldo real do Caixa"
-        >
-          <Unplug className="size-3.5" /> Modo Isolado {isolated ? "ligado" : "desligado"}
-        </button>
-      </div>
-
       {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {isolated ? (
           <div className="rounded-2xl border border-dashed border-amber-500/50 bg-amber-500/5 p-4">
-            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-amber-600 font-medium mb-1">
-              <Unplug className="size-3.5" /> Saldo atual · manual
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-amber-600 font-medium">
+                <Unplug className="size-3.5" /> Saldo atual · manual
+              </div>
+              {isolatedToggle}
             </div>
             <div className="flex items-center gap-1 text-xl font-semibold">
               <span className="text-muted-foreground">$</span>
@@ -430,7 +434,10 @@ export function CaixaSimulator() {
           </div>
         ) : (
           <div className="rounded-2xl border border-border bg-surface p-4">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Saldo atual</div>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Saldo atual</div>
+              {isolatedToggle}
+            </div>
             <div className="text-xl font-semibold">{simulation ? fmt(simulation.startingBalance) : "—"}</div>
           </div>
         )}

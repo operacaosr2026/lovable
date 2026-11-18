@@ -7,7 +7,7 @@ import {
   TrendingUp, Megaphone, Package, Wallet, RotateCcw,
   ArrowUpRight, ArrowDownRight, BarChart3,
   CalendarDays, ChevronDown, PieChart as PieChartIcon,
-  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target, ShoppingBag, Trophy,
+  CheckSquare, AlertTriangle, Clock, Truck, ChevronRight, Target, ShoppingBag, Trophy, Landmark,
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, LabelList,
@@ -20,6 +20,7 @@ import { listLogisticsOrders } from "@/lib/lg-logistics.functions";
 import { listTasks } from "@/lib/tasks.functions";
 import { computeLogisticsKpis, computeLogisticsTrend, postingCalendar } from "@/lib/logistics-kpis";
 import { listPostingHolidays } from "@/lib/posting-holidays.functions";
+import { getDashboardBalances } from "@/lib/wise-cash.functions";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -1048,6 +1049,29 @@ function MobileOpsTile({ icon: Icon, accent, label, value, trend, loading, onCli
   );
 }
 
+// Saldo do Caixa Geral (US$) e da Wise (R$) no cabeçalho; clique abre a aba.
+// Sem acesso ao Caixa, não aparece.
+function BalanceChips() {
+  const fn = useServerFn(getDashboardBalances);
+  const navigate = useNavigate();
+  const { data } = useQuery({ queryKey: ["dashboard-balances"], queryFn: () => fn(), staleTime: 60_000 });
+  if (!data || (data.caixa == null && data.wise == null)) return null;
+  const chip = (icon: ReactNode, label: string, value: string, negative: boolean, tab: "caixa" | "wise") => (
+    <button onClick={() => navigate({ to: "/shops/caixa", search: { tab } as any })}
+      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl border border-border bg-card text-xs hover:border-primary/50 whitespace-nowrap">
+      {icon}<span className="text-muted-foreground">{label}</span>
+      <span className={`font-semibold tabular-nums ${negative ? "text-destructive" : "text-foreground"}`}>{value}</span>
+    </button>
+  );
+  return (
+    <>
+      {data.caixa != null && chip(<Wallet className="size-3.5 text-muted-foreground" />, "Caixa", fmtMoney(data.caixa), data.caixa < 0, "caixa")}
+      {data.wise != null && chip(<Landmark className="size-3.5 text-muted-foreground" />, "Wise",
+        data.wise.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), data.wise < 0, "wise")}
+    </>
+  );
+}
+
 function Dashboard() {
   const { session } = useAuth();
   const getDashboardOverviewFn = useServerFn(getDashboardOverview);
@@ -1182,6 +1206,7 @@ function Dashboard() {
           </h1>
         </div>
         <div className="flex flex-wrap items-center justify-end md:justify-start gap-2 shrink-0">
+          <div className="hidden md:contents"><BalanceChips /></div>
           <span className="hidden sm:inline-flex items-center gap-1.5 h-8 px-3 rounded-xl border border-border bg-card text-xs text-muted-foreground">
             <CalendarDays className="size-3.5" /> {fmtDate(from)} → {fmtDate(to)}
           </span>
@@ -1194,6 +1219,7 @@ function Dashboard() {
 
       {/* ── Celular ── */}
       <div className="md:hidden space-y-3 mb-3">
+        <div className="flex gap-2 overflow-x-auto empty:hidden"><BalanceChips /></div>
         <MobileLucroHero value={lucroShown} delta={semCb ? (totals.lucroSemCbDelta ?? totals.lucroDelta) : totals.lucroDelta}
           compareLabel={compareLabel} chartData={lucroChart} sparkKey={semCb ? "lucroSemCb" : "lucro"}
           semCb={semCb} onToggleSemCb={toggleSemCb} loading={isLoading}
