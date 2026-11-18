@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Briefcase,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  GraduationCap, Send, Swords, MessageCircle,
+  GraduationCap, Send, Swords, MessageCircle, ShoppingBag,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -37,6 +37,7 @@ export const navItems: NavItem[] = [
   { to: "/concorrentes", label: "Concorrentes", icon: Swords, section: "concorrentes" },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
+  { to: "/pedidos", label: "Pedidos", icon: ShoppingBag, section: "pedidos" },
   { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks" },
   { to: "/notificacoes", label: "Notificações", icon: Send, section: "avisos_clientes" },
@@ -69,6 +70,7 @@ const ALL_PAGES = [
   { to: "/concorrentes", label: "Concorrentes", icon: Swords },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
+  { to: "/pedidos", label: "Pedidos", icon: ShoppingBag },
   { to: "/atendimento", label: "Atendimento", icon: Headphones },
   { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert },
   { to: "/notificacoes", label: "Notificações", icon: Send },

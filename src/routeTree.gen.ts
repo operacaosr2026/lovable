@@ -20,6 +20,7 @@ import { Route as InteligenciaRouteImport } from "./routes/inteligencia";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as MetasRouteImport } from "./routes/metas";
 import { Route as NotificacoesRouteImport } from "./routes/notificacoes";
+import { Route as PedidosRouteImport } from "./routes/pedidos";
 import { Route as ProjectsRouteImport } from "./routes/projects";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ShopsRouteImport } from "./routes/shops";
@@ -125,6 +126,11 @@ const MetasRoute = MetasRouteImport.update({
 const NotificacoesRoute = NotificacoesRouteImport.update({
   id: "/notificacoes",
   path: "/notificacoes",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const PedidosRoute = PedidosRouteImport.update({
+  id: "/pedidos",
+  path: "/pedidos",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -408,6 +414,7 @@ export interface FileRoutesByFullPath {
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/notificacoes": typeof NotificacoesRoute;
+  "/pedidos": typeof PedidosRoute;
   "/projects": typeof ProjectsRouteWithChildren;
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
@@ -472,6 +479,7 @@ export interface FileRoutesByTo {
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/notificacoes": typeof NotificacoesRoute;
+  "/pedidos": typeof PedidosRoute;
   "/tarefas": typeof TarefasRoute;
   "/academia/$trackId": typeof AcademiaTrackIdRoute;
   "/invite/$token": typeof InviteTokenRoute;
@@ -530,6 +538,7 @@ export interface FileRoutesById {
   "/login": typeof LoginRoute;
   "/metas": typeof MetasRoute;
   "/notificacoes": typeof NotificacoesRoute;
+  "/pedidos": typeof PedidosRoute;
   "/projects": typeof ProjectsRouteWithChildren;
   "/settings": typeof SettingsRouteWithChildren;
   "/shops": typeof ShopsRouteWithChildren;
@@ -596,6 +605,7 @@ export interface FileRouteTypes {
     | "/login"
     | "/metas"
     | "/notificacoes"
+    | "/pedidos"
     | "/projects"
     | "/settings"
     | "/shops"
@@ -660,6 +670,7 @@ export interface FileRouteTypes {
     | "/login"
     | "/metas"
     | "/notificacoes"
+    | "/pedidos"
     | "/tarefas"
     | "/academia/$trackId"
     | "/invite/$token"
@@ -717,6 +728,7 @@ export interface FileRouteTypes {
     | "/login"
     | "/metas"
     | "/notificacoes"
+    | "/pedidos"
     | "/projects"
     | "/settings"
     | "/shops"
@@ -782,6 +794,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute;
   MetasRoute: typeof MetasRoute;
   NotificacoesRoute: typeof NotificacoesRoute;
+  PedidosRoute: typeof PedidosRoute;
   ProjectsRoute: typeof ProjectsRouteWithChildren;
   SettingsRoute: typeof SettingsRouteWithChildren;
   ShopsRoute: typeof ShopsRouteWithChildren;
@@ -887,6 +900,13 @@ declare module "@tanstack/react-router" {
       path: "/notificacoes";
       fullPath: "/notificacoes";
       preLoaderRoute: typeof NotificacoesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/pedidos": {
+      id: "/pedidos";
+      path: "/pedidos";
+      fullPath: "/pedidos";
+      preLoaderRoute: typeof PedidosRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/projects": {
@@ -1377,6 +1397,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
   NotificacoesRoute: NotificacoesRoute,
+  PedidosRoute: PedidosRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   ShopsRoute: ShopsRouteWithChildren,

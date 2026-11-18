@@ -22,6 +22,8 @@ export const SECTIONS = [
   "lojas_grupos",
   "atendimento",
   "chargebacks",
+  // Aba Pedidos (todos os pedidos de todas as lojas).
+  "pedidos",
   // Notificações: e-mail manual pro cliente de pedido atrasado.
   "avisos_clientes",
   "consultor",

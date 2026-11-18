@@ -53,6 +53,7 @@ const SECTION_LABELS: Record<Section, string> = {
   lojas_grupos: "Lojas e Grupos",
   atendimento: "Atendimento",
   chargebacks: "Chargebacks",
+  pedidos: "Pedidos",
   avisos_clientes: "Notificações (e-mail pro cliente)",
   consultor: "Inteligência",
   academia: "Academia",
@@ -123,7 +124,7 @@ const SUB_HINTS: Partial<Record<Section, string>> = {
 const SUBTABS: Partial<Record<Section, Section[]>> = { banco_lojas: BL_SUBTABS, academia: AC_SUBTABS, lojas_grupos: LG_SUBTABS, atendimento: AT_SUBTABS, notificacoes: NT_TYPES };
 
 // Abas do menu (liga/desliga a aba inteira), na ordem do menu lateral.
-const TAB_SECTIONS: Section[] = ["dashboard", "gerencial", "caixa", "banco_lojas", "produtos", "concorrentes", "lojas_grupos", "tarefas", "atendimento", "chargebacks", "avisos_clientes", "academia", "notificacoes"];
+const TAB_SECTIONS: Section[] = ["dashboard", "gerencial", "caixa", "banco_lojas", "produtos", "concorrentes", "lojas_grupos", "tarefas", "pedidos", "atendimento", "chargebacks", "avisos_clientes", "academia", "notificacoes"];
 
 // Permissões que ainda podem ser limitadas a itens (lojas, projetos, SOPs).
 const VISIBLE_SECTIONS = SECTIONS.filter((s): s is "shops" | "projects" | "sops" =>
@@ -299,7 +300,7 @@ function MembersPage() {
 
 const SECTION_ICONS: Partial<Record<Section, any>> = {
   dashboard: LayoutDashboard, gerencial: Briefcase, metas: Target, tarefas: CheckSquare, produtos: Package, concorrentes: Swords, caixa: Wallet,
-  banco_lojas: Database, lojas_grupos: Layers, atendimento: Headphones, chargebacks: ShieldAlert, avisos_clientes: Mail, consultor: Lightbulb, academia: GraduationCap, notificacoes: Bell,
+  banco_lojas: Database, lojas_grupos: Layers, pedidos: ShoppingBag, atendimento: Headphones, chargebacks: ShieldAlert, avisos_clientes: Mail, consultor: Lightbulb, academia: GraduationCap, notificacoes: Bell,
   lg_dashboard: LayoutDashboard, lg_diario: StickyNote, lg_caixa: Wallet, lg_pedidos: ShoppingBag,
   lg_rastreamento: Truck, lg_integracoes: Plug,
   at_caixa: Inbox, at_kpi: BarChart3, at_imagens: Images, at_config: Settings, at_aprovacoes: ClipboardCheck, at_aprovar: BadgeCheck, bl_indicadores: BarChart3, ac_editar: PenLine,
