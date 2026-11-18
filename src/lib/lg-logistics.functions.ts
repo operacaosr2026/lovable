@@ -8,6 +8,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { firstCarrierEventDateUS } from "@/lib/tracking-rules.server";
 import { updateFulfillmentTrackingNumber } from "@/lib/shopify-fulfillment-status.server";
 import { refundedResendIds } from "@/lib/refunded-resends.server";
+import { supplierRefundedIds } from "@/lib/supplier-refunds.server";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -71,6 +72,14 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
   const refundedResends = await refundedResendIds(ownerId, rows.map((o: any) => o.id as string));
   if (refundedResends.size) rows.splice(0, rows.length, ...rows.filter((o: any) => !refundedResends.has(o.id)));
 
+  // Já reembolsado pelo fornecedor (Atendimento › Reembolso, confirmado) e não
+  // entregue: o pacote não é mais problema de logística — sai da aba (e do
+  // Dashboard). Se foi entregue, fica: conta nos tempos médios.
+  if (rows.length) {
+    const supRefunded = await supplierRefundedIds(ownerId, rows.map((o: any) => o.id as string));
+    if (supRefunded.size) rows.splice(0, rows.length, ...rows.filter((o: any) => !supRefunded.has(o.id) || !!o.delivered_at || o.delivery_status === "delivered"));
+  }
+
   // Data do último evento real de rastreio (17track), quando o pedido tem
   // integração ativa — mais confiável que shipped_at pra saber se o rastreio
   // "parou" de andar, já que shipped_at não muda depois da postagem.
@@ -80,15 +89,18 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
   // Quando o sync conferiu esse rastreio pela última vez (updated_at é
   // regravado a cada consulta ao 17track, mesmo sem evento novo).
   const checkedAtMap = new Map<string, string | null>();
+  // Rastreio já cadastrado no 17track (pra saber se "sem evento" é etiqueta esperando a transportadora).
+  const registeredMap = new Map<string, boolean>();
   if (orderIds.length) {
     const { data: trackingRows } = await selectAllIn<any>(orderIds, (ids) => supabaseAdmin
       .from("shop_order_tracking")
-      .select("order_id,last_event_at,last_event_label,tracking_status,updated_at")
+      .select("order_id,last_event_at,last_event_label,tracking_status,updated_at,registered_17track_at")
       .in("order_id", ids));
     for (const t of trackingRows ?? []) {
       lastEventMap.set(t.order_id, t.last_event_at);
       lastLabelMap.set(t.order_id, t.tracking_status ?? t.last_event_label);
       checkedAtMap.set(t.order_id, t.updated_at);
+      registeredMap.set(t.order_id, !!t.registered_17track_at);
     }
   }
   // Data de Reenvio: 1ª movimentação do pacote novo (mesma regra da Data
@@ -141,7 +153,10 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     const history = Array.isArray(o.tracking_code_history) ? o.tracking_code_history : [];
     const resentAt: string | null = history[history.length - 1]?.until ?? o.tracking_code_manual_at ?? null;
     let shippedAt = o.shipped_at;
-    if (status === "shipped" && isInfoReceivedOnly(lastLabelMap.get(o.id))) {
+    // Também quando o rastreio já está no 17track mas a transportadora ainda não
+    // registrou nenhum evento (só a etiqueta existe). Pedido sem rastreio cadastrado
+    // (ex.: loja antiga sem 17track) fica como a Shopify diz — não temos o dado.
+    if (status === "shipped" && (isInfoReceivedOnly(lastLabelMap.get(o.id)) || (registeredMap.get(o.id) && !lastEventMap.get(o.id)))) {
       status = "pending_shipment";
       if (!resentAt) shippedAt = null;
     }

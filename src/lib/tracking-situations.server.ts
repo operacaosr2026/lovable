@@ -6,6 +6,7 @@ import { carrierLabel, carrierOf, parseEvents } from "@/lib/carrier-stats";
 import { phaseResolver, type Phase } from "@/lib/tracking-phases";
 import { localLegOf } from "@/lib/local-carriers";
 import { refundedResendIds } from "@/lib/refunded-resends.server";
+import { supplierRefundedIds } from "@/lib/supplier-refunds.server";
 import { supplierReplyAlertKey, supplierReplyTitle } from "@/lib/supplier-replies";
 
 // Situações de rastreio que viram alerta no Gerencial (e a lista de pedidos da
@@ -90,7 +91,9 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   // problema de rastreio — nem o reenvio de um pedido reembolsado.
   const notRefunded = openRes.data.filter((o) => !o.cancelled && !["refunded", "partially_refunded", "voided"].includes(String(o.shopify_financial_status ?? "")));
   const refundedResends = await refundedResendIds(ownerId, notRefunded.map((o) => o.id as string));
-  const open = notRefunded.filter((o) => !refundedResends.has(o.id));
+  // Já reembolsado pelo fornecedor (e não entregue): também sai.
+  const supRefunded = await supplierRefundedIds(ownerId, notRefunded.map((o) => o.id as string));
+  const open = notRefunded.filter((o) => !refundedResends.has(o.id) && (!supRefunded.has(o.id) || !!o.delivered_at || o.delivery_status === "delivered"));
   const phaseOf = phaseResolver(new Map(((phaseRows.data ?? []) as any[]).map((r) => [r.text_key as string, r.phase as Phase])));
 
   const tracks = await selectAllIn<any>(open.map((o) => o.id as string), (c) => supabaseAdmin.from("shop_order_tracking")

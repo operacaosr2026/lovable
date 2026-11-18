@@ -8,6 +8,7 @@ import { costProductsFor } from "@/lib/product-links.server";
 import { selectAll, selectAllIn } from "@/lib/select-all";
 import { isoDateUS } from "@/lib/timezone";
 import { CUSTOMS_STUCK_DAYS, customsLabel, isCustomsHold } from "@/lib/tracking-rules.server";
+import { supplierRefundedIds } from "@/lib/supplier-refunds.server";
 
 export type NotificationLevel = "info" | "warning" | "error";
 // targetUserId: o push vai só pra essa pessoa (o aviso no sino continua do workspace).
@@ -61,6 +62,8 @@ const META_TOKEN_WARN_DAYS = 7;
 // Abre (ou reabre, se estava resolvida) a notificação do problema `key`. Se ela
 // já está aberta, só atualiza o texto — sem voltar a ficar "não lida" nem
 // reaparecer se o usuário já tinha dispensado.
+const REOPEN_PUSH_COOLDOWN_MS = 60 * 60_000;
+
 export async function raiseNotification(ownerId: string, key: string, n: NotificationInput) {
   const { data: existing } = await supabaseAdmin.from("app_notifications")
     .select("id,resolved_at").eq("user_id", ownerId).eq("key", key).maybeSingle();
@@ -77,8 +80,12 @@ export async function raiseNotification(ownerId: string, key: string, n: Notific
       .update({ ...fields, created_at: now, resolved_at: null, read_at: null, dismissed_at: null })
       .eq("id", existing.id);
     await broadcast(ownerId, "notifications");
-    // Problema que voltou: avisa de novo no celular.
-    await notifyPeople(ownerId, { key, ...n });
+    // Problema que voltou: avisa de novo no celular — mas não se ele tinha sido
+    // resolvido há menos de 1h. Duas versões do sistema discordando (ex.: servidor
+    // local com código novo + produção) ficavam resolvendo/reabrindo a mesma chave
+    // a cada refresh do sino e mandavam push a cada segundo (18/11/2026).
+    const resolvedAgo = Date.now() - Date.parse(existing.resolved_at);
+    if (!(resolvedAgo >= 0 && resolvedAgo < REOPEN_PUSH_COOLDOWN_MS)) await notifyPeople(ownerId, { key, ...n });
   } else {
     await supabaseAdmin.from("app_notifications").update(fields).eq("id", existing.id);
   }
@@ -484,7 +491,9 @@ export async function refreshSystemNotifications(ownerId: string) {
     const stalledBefore = new Date(Date.now() - STALLED_LOT_DAYS * 86_400_000).toISOString();
     const shipped = must(await selectAll(supabaseAdmin.from("shop_orders").select("id,order_number")
       .eq("user_id", ownerId).in("shop_id", activeShopIds).in("delivery_status", ["shipped", "in_transit"])) as any, "pedidos enviados") as any[];
-    const numberOf = new Map((shipped ?? []).map((o) => [o.id as string, (o.order_number as string | null) ?? "sem número"]));
+    // Já reembolsado pelo fornecedor: o pacote não é mais problema — fica fora do aviso.
+    const supRefunded = await supplierRefundedIds(ownerId, (shipped ?? []).map((o) => o.id as string));
+    const numberOf = new Map((shipped ?? []).filter((o) => !supRefunded.has(o.id)).map((o) => [o.id as string, (o.order_number as string | null) ?? "sem número"]));
     const ids = [...numberOf.keys()];
     if (ids.length) {
       const { data: tracks } = await selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking")
