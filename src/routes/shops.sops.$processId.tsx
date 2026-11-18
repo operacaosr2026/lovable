@@ -798,7 +798,7 @@ function ListView({ steps, color, onSelect, updStepFn, refresh }: any) {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-2">
+    <div className="max-w-3xl p-4 sm:p-6 md:px-8 md:py-6 space-y-2">
       {roots.map((s, i) => renderRow(s, 0, i))}
     </div>
   );

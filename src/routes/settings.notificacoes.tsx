@@ -58,7 +58,7 @@ function NotificacoesPage() {
   });
 
   return (
-    <div className="p-6 md:p-10 max-w-5xl mx-auto pb-20 space-y-6">
+    <div className="p-4 sm:p-6 md:px-8 md:py-6 max-w-5xl pb-20 space-y-6">
       <header>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Notificações</h1>
         <p className="text-sm text-muted-foreground mt-1">
