@@ -7,6 +7,7 @@ import { buildTrackingUrl } from "@/lib/tracking-url";
 import { sanitizeEvents } from "@/lib/tracking-display";
 import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { costProductsFor } from "@/lib/product-links.server";
+import { firstCarrierEventDateUS } from "@/lib/tracking-rules.server";
 // supplier_refunds ainda não está nos tipos gerados do Supabase (por isso o "as any").
 import { needsAttention, attentionReason, businessDaysSince, postingCalendar, type PostingCalendar } from "@/lib/logistics-kpis";
 import { isoDateUS, isoTodayUS } from "@/lib/timezone";
@@ -35,6 +36,8 @@ export type OrderListRow = {
   id: string; shopId: string; shopName: string; externalId: string; orderNumber: string; orderDate: string | null;
   customerName: string | null; customerEmail: string | null; product: string | null; itemsQty: number;
   revenue: number; currency: string | null; financialStatus: string | null;
+  // Reembolso feito pelo app Disputifier (alerta Ethoca/CDRN): tipo do alerta, ou null.
+  disputifier: string | null;
   // Status de envio efetivo (mesma regra do Rastreamento).
   deliveryStatus: string | null;
   supplierStatus: string | null; supplierPaidAt: string | null;
@@ -119,6 +122,19 @@ async function localCarriers(orders: any[]) {
     out.set(o.id, { label: leg ? localCarrierLabel(leg.key) : "Transportadora local", number: shown, url: localTrackingUrl(n) });
   }
   return out;
+}
+
+// Reembolso feito pelo app Disputifier: a transação vem com source_name = id do
+// app na Shopify (3643375) e a nota "Ethoca Alert" / "CDRN Alert". Reembolso de
+// alerta feito à mão pelo admin (source 1830279) não conta.
+const DISPUTIFIER_APP_ID = "3643375";
+function disputifierAlert(refunds: any[] | null | undefined): string | null {
+  for (const r of refunds ?? []) {
+    if (!((r?.transactions ?? []) as any[]).some((t) => String(t?.source_name ?? "") === DISPUTIFIER_APP_ID)) continue;
+    const note = String(r?.note ?? "");
+    return /ethoca/i.test(note) ? "Ethoca" : /cdrn/i.test(note) ? "CDRN" : /rdr/i.test(note) ? "RDR" : "Alerta";
+  }
+  return null;
 }
 
 export const listAllOrders = createServerFn({ method: "GET" })
@@ -254,7 +270,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
     const ids = pageRows.map((o) => o.id);
     const { data: rows } = ids.length
       ? await supabaseAdmin.from("shop_orders")
-          .select("id,shop_id,external_id,order_number,order_date,revenue,currency,shopify_financial_status,payment_status,payment_batch_id,paid_at,tracking_code,tracking_url,notice_note,delivery_status,delivered_at,"
+          .select("id,shop_id,external_id,order_number,order_date,revenue,currency,shopify_financial_status,payment_status,payment_batch_id,paid_at,tracking_code,tracking_url,notice_note,delivery_status,delivered_at,refunds:raw->refunds,"
             + "email:raw->>email,cust_email:raw->customer->>email,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,"
             + "ship_name:raw->shipping_address->>name,items:raw->line_items")
           .in("id", ids)
@@ -308,6 +324,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
         customerName: fullName(o.first_name, o.last_name) ?? o.ship_name ?? null, customerEmail: email,
         product: productSummary(items), itemsQty: items.reduce((n, li) => n + Number(li?.quantity ?? 0), 0),
         revenue: Number(o.revenue ?? 0), currency: o.currency, financialStatus: o.shopify_financial_status,
+        disputifier: disputifierAlert(o.refunds),
         deliveryStatus: s.status, supplierStatus: o.payment_status, trackingCode: o.tracking_code,
         supplierRefund: refundBy.get(o.id) ?? null,
         // Antigo (até o corte): fornecedor conta como pago.
@@ -339,7 +356,7 @@ async function loadOrderDetail(ownerId: string, id: string, supabase: any) {
     supabaseAdmin.from("shops").select("name").eq("id", o.shop_id).maybeSingle(),
     supabaseAdmin.from("shop_order_settings").select("shopify_store_id,default_unit_cost").eq("user_id", ownerId).eq("shop_id", o.shop_id).maybeSingle(),
     supabaseAdmin.from("track123_integrations").select("tracking_link_template").eq("shop_id", o.shop_id).maybeSingle(),
-    supabaseAdmin.from("shop_order_tracking").select("tracking_number,carrier,tracking_status,last_event_at,last_event_label,timeline,shipped_at,delivered_at,problem_at,edd_from,edd_to,replaced_packages,extra_packages").eq("order_id", o.id).maybeSingle(),
+    supabaseAdmin.from("shop_order_tracking").select("tracking_number,carrier,tracking_status,last_event_at,last_event_label,timeline,shipped_at,delivered_at,problem_at,edd_from,edd_to,replaced_packages,extra_packages,local_tracking_number").eq("order_id", o.id).maybeSingle(),
     supabaseAdmin.from("shop_order_disputes").select("type,status,reason,amount,initiated_at,evidence_due_by,finalized_on").eq("user_id", ownerId).eq("shop_id", o.shop_id).eq("order_external_id", o.external_id).order("initiated_at", { ascending: false }),
     supabaseAdmin.from("chargeback_alert_followups").select("status,dunning_step,dunning_last_at,dunning_stop_reason,recovered_amount,recovered_at,recovery_order_name,recovery_invoice_url,excluded_at").eq("shop_id", o.shop_id).eq("order_external_id", o.external_id).maybeSingle(),
     o.payment_batch_id ? supabaseAdmin.from("shop_order_payment_batches").select("batch_number,payment_date,total_amount,total_orders").eq("id", o.payment_batch_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -357,13 +374,27 @@ async function loadOrderDetail(ownerId: string, id: string, supabase: any) {
     : null;
   const t = trackRes.data as any;
   const local = (await localCarriers([o])).get(o.id) ?? null;
+  // Reenvio (código trocado, à mão ou pela Shopify): a "postagem" gravada é a do
+  // pacote original. A do reenvio é o 1º evento real da transportadora no código
+  // atual (mesma regra da Data de Reenvio do Rastreamento).
+  const codeHistory = Array.isArray(o.tracking_code_history) ? (o.tracking_code_history as any[]) : [];
+  const resentAt: string | null = codeHistory[codeHistory.length - 1]?.until ?? (o.tracking_code_manual_at as string | null) ?? null;
+  const trackIsCurrent = !!t && String(t.tracking_number ?? "").toUpperCase() === String(o.tracking_code ?? "").trim().toUpperCase();
+  const resentPostedAt = resentAt && trackIsCurrent ? firstCarrierEventDateUS(t.timeline as any[]) : null;
   const timeline = sanitizeEvents(((Array.isArray(t?.timeline) ? t.timeline : []) as any[]).map((e) => ({
     at: e.event_time_utc ?? e.event_time ?? null, description: String(e.event_detail ?? ""), location: e.event_location ?? null,
-  })).filter((e) => e.description)).slice(-8).reverse();
+  })).filter((e) => e.description))
+    // Mais recente primeiro (a ordem que vem do 17track não é garantida). Todos os
+    // eventos: a tela mostra os 3 últimos e expande o resto.
+    .sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
 
   const refunded = ((raw.refunds ?? []) as any[]).flatMap((r) => r.transactions ?? [])
     .filter((x: any) => x.kind === "refund" && x.status === "success")
     .reduce((s: number, x: any) => s + Number(x.amount ?? 0), 0);
+  // Quando o cliente foi reembolsado (o reembolso mais recente com valor).
+  const refundedAt = ((raw.refunds ?? []) as any[])
+    .filter((r) => ((r.transactions ?? []) as any[]).some((x: any) => x.kind === "refund" && x.status === "success"))
+    .map((r) => String(r.processed_at ?? r.created_at ?? "")).filter(Boolean).sort().pop() ?? null;
   const refundedQty = new Map<string, number>();
   for (const r of (raw.refunds ?? []) as any[]) for (const rli of r.refund_line_items ?? []) {
     const k = String(rli.line_item_id); refundedQty.set(k, (refundedQty.get(k) ?? 0) + Number(rli.quantity ?? 0));
@@ -382,6 +413,7 @@ async function loadOrderDetail(ownerId: string, id: string, supabase: any) {
     orderDate: o.order_date as string | null, createdAt: (raw.created_at ?? o.created_at_shopify) as string | null,
     adminUrl: store?.shop_domain ? `https://${store.shop_domain}/admin/orders/${o.external_id}` : null,
     tags: String(raw.tags ?? "").split(",").map((x: string) => x.trim()).filter(Boolean),
+    disputifier: disputifierAlert(raw.refunds),
     teamNote: (o.notice_note as string | null) || null,
     note: (raw.note as string | null) ?? null,
     customer: {
@@ -398,15 +430,19 @@ async function loadOrderDetail(ownerId: string, id: string, supabase: any) {
     money: {
       currency: (o.currency ?? raw.currency ?? "USD") as string,
       subtotal: Number(raw.subtotal_price ?? 0), shipping: Number(raw.total_shipping_price_set?.shop_money?.amount ?? 0),
-      discounts: Number(raw.total_discounts ?? 0), total: Number(raw.total_price ?? o.revenue ?? 0), refunded,
+      discounts: Number(raw.total_discounts ?? 0), total: Number(raw.total_price ?? o.revenue ?? 0), refunded, refundedAt,
       financialStatus: o.shopify_financial_status as string | null, discountCodes: ((raw.discount_codes ?? []) as any[]).map((d) => d.code).filter(Boolean) as string[],
       gateway: ((raw.payment_gateway_names ?? []) as string[]).join(", ") || null,
     },
     shipping: {
       deliveryStatus: (legacyDelivered ? "delivered" : o.delivery_status) as string | null, carrier: (o.carrier ?? t?.carrier ?? null) as string | null,
       trackingCode: o.tracking_code as string | null, local,
+      // Código local gravado (à mão ou pelo sync) e se dá pra editar (precisa do rastreio cadastrado no código atual).
+      localStored: (t?.local_tracking_number as string | null) ?? null,
+      localEditable: !!t && String(t.tracking_number ?? "").toUpperCase() === String(o.tracking_code ?? "").trim().toUpperCase(),
       trackingUrl: (o.tracking_code ? buildTrackingUrl(integRes.data?.tracking_link_template, o.tracking_code) : null) ?? (o.tracking_url as string | null),
       history: ((o.tracking_code_history ?? []) as any[]).map((h) => ({ code: String(h?.code ?? ""), until: (h?.until as string | null) ?? null })).filter((h) => h.code),
+      resentAt, resentPostedAt,
       shippedAt: (o.shipped_at ?? t?.shipped_at ?? null) as string | null, deliveredAt: (o.delivered_at ?? t?.delivered_at ?? null) as string | null,
       problemAt: (o.problem_at ?? t?.problem_at ?? null) as string | null,
       lastEvent: cleanLabel(t?.last_event_label), lastEventAt: (t?.last_event_at as string | null) ?? null,
@@ -453,4 +489,22 @@ export const updateOrderNote = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true, note };
+  });
+
+// Código da transportadora local (ex.: GFUS… da GOFO) colado à mão — a GOFO não
+// acha pacote da Transfly/SHJX pelo nosso código, então só o fornecedor sabe o
+// número. O sync do 17track mantém o gravado enquanto o código principal não muda.
+export const updateLocalTrackingNumber = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ id: z.string().uuid(), number: z.string().max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { data: o } = await supabaseAdmin.from("shop_orders").select("id,tracking_code").eq("user_id", context.ownerId).eq("id", data.id).maybeSingle();
+    if (!o?.tracking_code) throw new Error("Pedido sem código de rastreio");
+    const number = data.number.replace(/\s+/g, "").toUpperCase() || null;
+    const { data: rows, error } = await supabaseAdmin.from("shop_order_tracking").update({ local_tracking_number: number })
+      .eq("order_id", o.id).ilike("tracking_number", String(o.tracking_code).trim()).select("order_id");
+    if (error) throw new Error(error.message);
+    if (!rows?.length) throw new Error("Rastreio ainda não cadastrado no 17track — tente depois do próximo sync");
+    return { ok: true, number };
   });

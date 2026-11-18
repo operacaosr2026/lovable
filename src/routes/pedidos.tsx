@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { listAllOrders, getOrderDetail, updateOrderNote, type OrderListRow, type OrderFilter, type OrderCounts } from "@/lib/all-orders.functions";
+import { listAllOrders, getOrderDetail, updateOrderNote, updateLocalTrackingNumber, type OrderListRow, type OrderFilter, type OrderCounts } from "@/lib/all-orders.functions";
 
 // Aba Pedidos: todos os pedidos de todas as lojas, com busca (nº, cliente,
 // e-mail, rastreio), contadores por situação e o detalhe completo num painel
@@ -268,7 +268,10 @@ function PedidosPage() {
                         <p className="tabular-nums font-bold">{money(r.revenue, r.currency ?? "USD")}</p>
                         <p className="text-[11px] text-muted-foreground">{r.itemsQty} {r.itemsQty === 1 ? "item" : "itens"}</p>
                       </td>
-                      <td className="py-2.5 px-3 text-center"><Pill map={FINANCIAL} value={r.financialStatus} /></td>
+                      <td className="py-2.5 px-3 text-center">
+                        <Pill map={FINANCIAL} value={r.financialStatus} />
+                        {r.disputifier && <p className="text-[10px] font-semibold text-violet-700 dark:text-violet-400 mt-0.5" title={`Reembolsado pelo Disputifier (alerta ${r.disputifier})`}><ShieldAlert className="size-3 inline -mt-0.5 mr-0.5" />Disputifier · {r.disputifier}</p>}
+                      </td>
                       <td className="py-2.5 px-3 text-center">
                         {r.supplierRefund?.status === "confirmado" ? <>
                           <Pill map={SUPPLIER} value="refunded" />
@@ -287,15 +290,6 @@ function PedidosPage() {
                               ? <a href={r.trackingUrl} target="_blank" rel="noreferrer" className="hover:text-primary hover:underline">{r.trackingCode}</a>
                               : <span>{r.trackingCode}</span>}
                             <button onClick={() => copy(r.trackingCode!, "Rastreio copiado")} title="Copiar rastreio" className="hover:text-foreground"><Copy className="size-3" /></button>
-                          </div>
-                        )}
-                        {r.local?.number && (
-                          <div className="flex items-center justify-center gap-1 mt-0.5 text-[11px] font-mono text-muted-foreground" title={`Código local (${r.local.label})`}>
-                            <span className="font-sans font-medium text-[10px] px-1 rounded bg-muted">{r.local.label}</span>
-                            {r.local.url
-                              ? <a href={r.local.url} target="_blank" rel="noreferrer" className="hover:text-primary hover:underline">{r.local.number}</a>
-                              : <span>{r.local.number}</span>}
-                            <button onClick={() => copy(r.local!.number!, "Código local copiado")} title="Copiar código local" className="hover:text-foreground"><Copy className="size-3" /></button>
                           </div>
                         )}
                       </td>
@@ -464,11 +458,12 @@ function MobileRow({ r, today, onOpen }: { r: OrderListRow; today: string; onOpe
         </div>
       </div>
       {r.attention && r.attentionWhy && <p className="text-[11px] text-orange-600 dark:text-orange-400 font-medium mt-1">{r.attentionWhy}</p>}
-      {r.trackingCode && <p className="text-[11px] font-mono text-muted-foreground mt-1">{r.trackingCode}{r.local?.number ? ` · ${r.local.label} ${r.local.number}` : ""}</p>}
+      {r.trackingCode && <p className="text-[11px] font-mono text-muted-foreground mt-1">{r.trackingCode}</p>}
       {r.lastEvent && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{r.lastEvent}{r.lastEventAt ? ` · ${fmtDateTime(r.lastEventAt)}` : ""}</p>}
       {r.note && <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1"><StickyNote className="size-3 inline -mt-0.5 mr-1" />{r.note}</p>}
       <div className="flex flex-wrap gap-1 mt-2">
         <Pill map={FINANCIAL} value={r.financialStatus} />
+        {r.disputifier && <span className="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-[11px] font-medium bg-violet-500/10 text-violet-700 dark:text-violet-400"><ShieldAlert className="size-3.5" />Disputifier · {r.disputifier}</span>}
         <Pill map={DELIVERY} value={r.deliveryStatus} />
         <Pill map={SUPPLIER} value={r.supplierRefund?.status === "confirmado" ? "refunded" : r.supplierStatus} prefix="Fornecedor" />
       </div>
@@ -499,6 +494,67 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+// Código local no painel: mostra (com link) e deixa colar/editar à mão.
+function LocalCodeRow({ orderId, label, number, url, editable }: { orderId: string; label: string; number: string | null; url: string | null; editable: boolean }) {
+  const qc = useQueryClient();
+  const fn = useServerFn(updateLocalTrackingNumber);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(number ?? "");
+  useEffect(() => setValue(number ?? ""), [number]);
+  const save = useMutation({
+    mutationFn: () => fn({ data: { id: orderId, number: value } }),
+    onSuccess: () => { toast.success("Código local salvo"); setEditing(false); qc.invalidateQueries({ queryKey: ["order-detail", orderId] }); },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao salvar"),
+  });
+  if (editing) return (
+    <div className="flex items-center gap-1.5 py-1">
+      <span className="text-xs text-muted-foreground shrink-0">Código local</span>
+      <input value={value} onChange={(e) => setValue(e.target.value)} autoFocus placeholder="Ex.: GFUS01081039613699"
+        onKeyDown={(e) => { if (e.key === "Enter") save.mutate(); if (e.key === "Escape") setEditing(false); }}
+        className="flex-1 min-w-0 h-7 px-2 rounded-md border border-border bg-background text-xs font-mono outline-none focus:border-primary" />
+      <button onClick={() => save.mutate()} disabled={save.isPending} className="h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">
+        {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : "Salvar"}
+      </button>
+      <button onClick={() => { setEditing(false); setValue(number ?? ""); }} className="h-7 px-1.5 text-muted-foreground hover:text-foreground"><X className="size-3.5" /></button>
+    </div>
+  );
+  return (
+    <Row label={`Código local (${label})`}>
+      <span className="inline-flex items-center gap-1.5 font-mono">
+        {number ? (url ? <a href={url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{number}</a> : number) : <span className="font-sans text-muted-foreground">ainda sem número</span>}
+        {number && <button onClick={() => copy(number)} title="Copiar" className="text-muted-foreground hover:text-foreground"><Copy className="size-3" /></button>}
+        {editable && <button onClick={() => setEditing(true)} title={number ? "Editar código local" : "Adicionar código local"} className="font-sans text-[11px] text-primary hover:underline">{number ? "editar" : "adicionar"}</button>}
+      </span>
+    </Row>
+  );
+}
+
+// Eventos do rastreio: mais recente em cima, só os 3 últimos até expandir.
+function Timeline({ events }: { events: { at: string | null; description: string; location: string | null }[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? events : events.slice(0, 3);
+  return (
+    <div className="mt-2.5 border-t border-border pt-2">
+      <ol className="space-y-1.5">
+        {shown.map((e, i) => (
+          <li key={i} className="text-xs flex gap-2">
+            <span className={`size-1.5 rounded-full mt-1.5 shrink-0 ${i === 0 ? "bg-primary" : "bg-muted-foreground/40"}`} />
+            <div className="min-w-0">
+              <p className={i === 0 ? "font-medium" : "text-muted-foreground"}>{e.description}</p>
+              <p className="text-[10px] text-muted-foreground">{fmtDateTime(e.at)}{e.location ? ` · ${e.location}` : ""}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {events.length > 3 && (
+        <button onClick={() => setAll((v) => !v)} className="mt-2 text-xs text-primary hover:underline inline-flex items-center gap-1">
+          {all ? <><ChevronUp className="size-3.5" />Mostrar menos</> : <><ChevronDown className="size-3.5" />Ver todos os {events.length} eventos</>}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function OrderSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
   const fn = useServerFn(getOrderDetail);
   const q = useQuery({ queryKey: ["order-detail", id], queryFn: () => fn({ data: { id: id! } }), enabled: !!id });
@@ -507,11 +563,12 @@ function OrderSheet({ id, onClose }: { id: string | null; onClose: () => void })
     <Sheet open={!!id} onOpenChange={(o) => { if (!o) onClose(); }}>
       <SheetContent side="right" className="w-full sm:max-w-xl p-0 flex flex-col">
         <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
-          <SheetTitle className="flex items-center gap-2 flex-wrap">
+          <SheetTitle className="flex items-baseline gap-2 flex-wrap">
             {d ? orderLabel(d.orderNumber) : "Pedido"}
-            {d && <span className="text-sm font-normal text-muted-foreground">· {d.shopName}</span>}
+            {d && <span className="text-xs font-normal text-muted-foreground">Feito em {fmtDateTime(d.createdAt)} (NY)</span>}
           </SheetTitle>
-          <SheetDescription>{d ? `Feito em ${fmtDateTime(d.createdAt)} (NY)` : " "}</SheetDescription>
+          {/* Descrição só pra acessibilidade (a data já está ao lado do número). */}
+          <SheetDescription className="sr-only">{d ? `Pedido ${orderLabel(d.orderNumber)}` : "Pedido"}</SheetDescription>
           {d && (
             <div className="flex flex-wrap gap-1.5 pt-1">
               <Pill map={FINANCIAL} value={d.money.financialStatus} />
@@ -559,20 +616,6 @@ function OrderSheet({ id, onClose }: { id: string | null; onClose: () => void })
                   </div>
                 ))}
               </div>
-              <div className="border-t border-border mt-2.5 pt-2">
-                <Row label="Subtotal">{money(d.money.subtotal, d.money.currency)}</Row>
-                {d.money.shipping > 0 && <Row label="Frete">{money(d.money.shipping, d.money.currency)}</Row>}
-                {d.money.discounts > 0 && <Row label={`Desconto${d.money.discountCodes.length ? ` (${d.money.discountCodes.join(", ")})` : ""}`}>-{money(d.money.discounts, d.money.currency)}</Row>}
-                <Row label="Total"><b>{money(d.money.total, d.money.currency)}</b></Row>
-                {d.money.refunded > 0 && <Row label="Reembolsado"><span className="text-rose-600 font-semibold">-{money(d.money.refunded, d.money.currency)}</span></Row>}
-                {d.money.gateway && <Row label="Pagamento">{d.money.gateway}</Row>}
-              </div>
-              {(d.tags.length > 0 || d.note) && (
-                <div className="border-t border-border mt-2 pt-2 space-y-1">
-                  {d.tags.length > 0 && <div className="flex flex-wrap gap-1">{d.tags.map((t) => <span key={t} className="px-1.5 py-0.5 rounded bg-muted text-[10px]">{t}</span>)}</div>}
-                  {d.note && <p className="text-xs text-muted-foreground">Nota: {d.note}</p>}
-                </div>
-              )}
             </Section>
 
             {/* Envio e rastreio */}
@@ -583,40 +626,30 @@ function OrderSheet({ id, onClose }: { id: string | null; onClose: () => void })
                 ? <span className="inline-flex items-center gap-1 font-mono">{d.shipping.trackingCode}<button onClick={() => copy(d.shipping.trackingCode!)} className="text-muted-foreground hover:text-foreground"><Copy className="size-3" /></button></span>
                 : "Sem rastreio"}</Row>
               {d.shipping.carrier && <Row label="Transportadora">{d.shipping.carrier}</Row>}
-              {d.shipping.local && <Row label={`Código local (${d.shipping.local.label})`}>{d.shipping.local.number
-                ? <span className="inline-flex items-center gap-1 font-mono">
-                    {d.shipping.local.url ? <a href={d.shipping.local.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{d.shipping.local.number}</a> : d.shipping.local.number}
-                    <button onClick={() => copy(d.shipping.local!.number!)} className="text-muted-foreground hover:text-foreground"><Copy className="size-3" /></button>
-                  </span>
-                : <span className="text-muted-foreground">ainda sem número</span>}</Row>}
+              {(d.shipping.local || d.shipping.localEditable) && (
+                <LocalCodeRow orderId={d.id} label={d.shipping.local?.label ?? "Transportadora local"}
+                  number={d.shipping.local?.number ?? d.shipping.localStored} url={d.shipping.local?.url ?? null} editable={d.shipping.localEditable} />
+              )}
               {d.shipping.history.length > 0 && <Row label="Códigos antigos">{d.shipping.history.map((h) => h.code).join(", ")}</Row>}
-              <Row label="Postado">{fmtDateTime(d.shipping.shippedAt)}</Row>
+              {d.shipping.resentAt ? <>
+                <Row label="Postado (envio original)">{fmtDateTime(d.shipping.shippedAt)}</Row>
+                <Row label="Reenviado em">{fmtDateTime(d.shipping.resentAt)}</Row>
+                <Row label="Reenvio postado">{d.shipping.resentPostedAt ? fmtDate(d.shipping.resentPostedAt) : <span className="text-muted-foreground">aguardando postagem</span>}</Row>
+              </> : <Row label="Postado">{fmtDateTime(d.shipping.shippedAt)}</Row>}
               <Row label="Entregue">{fmtDateTime(d.shipping.deliveredAt)}</Row>
               {d.shipping.problemAt && <Row label="Problema"><span className="text-rose-600">{fmtDateTime(d.shipping.problemAt)}</span></Row>}
               {(d.shipping.eddFrom || d.shipping.eddTo) && !d.shipping.deliveredAt && <Row label="Previsão">{fmtDate(d.shipping.eddFrom)}{d.shipping.eddTo && d.shipping.eddTo !== d.shipping.eddFrom ? ` a ${fmtDate(d.shipping.eddTo)}` : ""}</Row>}
               {d.shipping.customerNotifiedAt && <Row label="Cliente avisado">{fmtDateTime(d.shipping.customerNotifiedAt)}</Row>}
               {d.shipping.note && <p className="text-xs text-muted-foreground mt-1.5">Nota: {d.shipping.note}</p>}
-              {d.shipping.timeline.length > 0 && (
-                <ol className="mt-2.5 border-t border-border pt-2 space-y-1.5">
-                  {d.shipping.timeline.map((e, i) => (
-                    <li key={i} className="text-xs flex gap-2">
-                      <span className={`size-1.5 rounded-full mt-1.5 shrink-0 ${i === 0 ? "bg-primary" : "bg-muted-foreground/40"}`} />
-                      <div className="min-w-0">
-                        <p className={i === 0 ? "font-medium" : "text-muted-foreground"}>{e.description}</p>
-                        <p className="text-[10px] text-muted-foreground">{fmtDateTime(e.at)}{e.location ? ` · ${e.location}` : ""}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
+              {d.shipping.timeline.length > 0 && <Timeline events={d.shipping.timeline} />}
             </Section>
 
             {/* Fornecedor e custo */}
             <Section icon={Factory} title="Fornecedor e custo">
               <Row label="Custo do pedido">{d.supplier.cost > 0 ? money(d.supplier.cost) : "$0 (sem custo)"}</Row>
               <Row label="Situação"><Pill map={SUPPLIER} value={d.supplier.status} /></Row>
-              {d.supplier.batch && <Row label="Lote">#{d.supplier.batch.number} · pago em {fmtDate(d.supplier.batch.date)} · {d.supplier.batch.orders} pedidos · {money(d.supplier.batch.total)}</Row>}
-              {!d.supplier.batch && d.supplier.paidAt && <Row label="Pago em">{fmtDateTime(d.supplier.paidAt)}</Row>}
+              {/* Data do pagamento: a do lote (a que se ajusta em "Alterar data de pagamento"); sem lote, quando foi marcado pago. */}
+              {(d.supplier.batch || d.supplier.paidAt) && <Row label="Pago em">{d.supplier.batch ? fmtDate(d.supplier.batch.date) : fmtDate(d.supplier.paidAt)}</Row>}
               {d.supplier.refunds.map((x, i) => (
                 <div key={i} className="mt-2 pt-2 border-t border-border">
                   <Row label="Reembolso do fornecedor">
@@ -629,13 +662,14 @@ function OrderSheet({ id, onClose }: { id: string | null; onClose: () => void })
                   {x.note && <Row label="Obs.">{x.note}</Row>}
                 </div>
               ))}
-              <Row label="Margem bruta">{money(d.money.total - d.money.refunded - d.supplier.cost + d.supplier.refunds.filter((x) => x.status === "confirmado").reduce((t, x) => t + x.amount, 0))}</Row>
             </Section>
 
             {/* Reembolso, chargeback e alerta */}
             {(d.money.refunded > 0 || d.disputes.length > 0 || d.alert) && (
               <Section icon={RotateCcw} title="Reembolso e chargeback">
                 {d.money.refunded > 0 && <Row label="Reembolsado">{money(d.money.refunded, d.money.currency)}</Row>}
+                {d.money.refunded > 0 && d.money.refundedAt && <Row label="Reembolsado em">{fmtDateTime(d.money.refundedAt)}</Row>}
+                {d.disputifier && <Row label="Reembolsado por"><span className="font-semibold text-violet-700 dark:text-violet-400">Disputifier · alerta {d.disputifier}</span></Row>}
                 {d.disputes.map((x, i) => (
                   <div key={i} className="text-xs border-t border-border first:border-0 pt-1.5 mt-1.5 first:mt-0 first:pt-0">
                     <Row label={x.type === "inquiry" ? "Inquiry" : "Chargeback"}><b>{DISPUTE_STATUS[x.status ?? ""] ?? x.status ?? "—"}</b> · {money(x.amount)}</Row>

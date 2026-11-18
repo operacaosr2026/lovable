@@ -9,6 +9,8 @@ const ORDER_QUERY_KEYS = [
   "lg-card-metrics", "lg-orders", "lg-logistics", "lg-acc-lucro", "company-goal-current", "company-goals",
   "lg-note-metrics", "shop-cash", "shop-cash-standalone", "shop-cash-pending", "shop-cash-last-synced", "shop-group-cash-pending", "caixa-simulation",
   "product-sales", "store-avg-orders", "goals-history-overview",
+  // Aba Pedidos (lista e painel do pedido).
+  "all-orders", "order-detail",
 ];
 const KEYS_BY_EVENT: Record<string, string[]> = {
   orders: ORDER_QUERY_KEYS,
