@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, CheckCircle2, Copy, ExternalLink, Factory, MapPin, Loader2, Package, Pencil, Repeat, Sparkles, Truck, Undo2, X } from "lucide-react";
+import { Check, CheckCircle2, Copy, ExternalLink, Factory, MapPin, Loader2, Package, Pencil, Repeat, ShoppingCart, Sparkles, Truck, Undo2, X } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getSupportConversation, getSupportCustomer, listSupportShops, updateSupportConversations,
@@ -14,6 +14,7 @@ import { TrackingCodeDialog } from "./TrackingCodeDialog";
 import { listSupplierRefundsForOrders, type SupplierRefund } from "@/lib/supplier-refund.functions";
 import { releaseSupplierHold } from "@/lib/shop-orders.functions";
 import { SupplierRefundCard } from "./SupplierRefund";
+import { NewOrderDialog, phoneFromMessages } from "./NewOrderDialog";
 import { useIsDemo } from "./demo";
 import { Avatar, displayName, formatMoney, fullTime } from "./utils";
 import { useSupportFn } from "./demo";
@@ -137,6 +138,13 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
     queryFn: () => supplierFn({ data: { orderIds } }),
     enabled: orderIds.length > 0 && !demo, staleTime: 30_000,
   });
+  const [newOrder, setNewOrder] = useState(false);
+  const newOrderButton = !demo && c && (
+    <button onClick={() => setNewOrder(true)}
+      className="h-8 w-full rounded-lg border border-dashed border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary inline-flex items-center justify-center gap-1.5">
+      <ShoppingCart className="size-3.5" /> Gerar pedido
+    </button>
+  );
   const [trackingOrder, setTrackingOrder] = useState<{ id: string; number: string | null; tracking: string | null } | null>(null);
   // Item repetido: a mesma liberação de Pedidos › "Aguardando confirmação do cliente".
   const releaseFn = useServerFn(releaseSupplierHold);
@@ -232,9 +240,12 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
           customer.isLoading ? (
             <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}</div>
           ) : !customer.data?.orders.length ? (
-            <div className="text-center py-10">
-              <Package className="size-6 mx-auto text-muted-foreground/60" />
-              <p className="text-xs text-muted-foreground mt-2">Nenhum pedido com este e-mail</p>
+            <div className="space-y-4">
+              <div className="text-center pt-10">
+                <Package className="size-6 mx-auto text-muted-foreground/60" />
+                <p className="text-xs text-muted-foreground mt-2">Nenhum pedido com este e-mail</p>
+              </div>
+              {newOrderButton}
             </div>
           ) : (
             <div className="space-y-2">
@@ -396,6 +407,15 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
           </div>
         )}
       </div>
+      {newOrder && c && (
+        <NewOrderDialog open onClose={() => setNewOrder(false)} conversationId={c.id}
+          shopId={c.shop_id}
+          customer={{
+            email: c.customer_email, name: c.customer_name ?? customer.data?.name ?? null,
+            phone: customer.data?.phone ?? phoneFromMessages(conv.data?.messages ?? []),
+          }}
+          onLink={(url) => window.dispatchEvent(new CustomEvent("support:append-reply", { detail: { conversationId: c.id, text: url } }))} />
+      )}
     </div>
   );
 }

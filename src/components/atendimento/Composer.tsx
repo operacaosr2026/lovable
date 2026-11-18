@@ -434,7 +434,8 @@ function useTrackingLabels() {
 export type SendMode = "em_atendimento" | "resolvido";
 
 export function Composer({ customerName, customerEmail, conversationId, onSend, sending, inject }: {
-  inject?: { text: string; n: number } | null;   // "Usar" na sugestão da IA
+  // "Usar" na sugestão da IA (troca o texto) ou link do Gerar pedido (append: soma ao que já tem).
+  inject?: { text: string; n: number; append?: boolean } | null;
   customerName: string;
   customerEmail?: string | null;
   conversationId?: string | null;
@@ -444,7 +445,10 @@ export function Composer({ customerName, customerEmail, conversationId, onSend, 
   const track = useTrackingLabels();
   const [text, setRawText] = useState("");
   const setText = (t: string) => setRawText(track.collapse(t));
-  useEffect(() => { if (inject) setText(inject.text); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!inject) return;
+    setText(inject.append && text.trim() ? `${text.replace(/\s+$/, "")}\n\n${inject.text}` : inject.text);
+  }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const att = useAttachments();
   const fileRef = useRef<HTMLInputElement>(null);
 

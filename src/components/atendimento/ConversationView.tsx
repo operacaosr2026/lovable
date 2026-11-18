@@ -93,7 +93,16 @@ export function ConversationView({ id, allTags, onBack, onChanged, onDeleted }: 
 
   const [sending, setSending] = useState(false);
   // "Usar" na sugestão da IA: joga o texto na caixa de resposta.
-  const [inject, setInject] = useState<{ text: string; n: number } | null>(null);
+  const [inject, setInject] = useState<{ text: string; n: number; append?: boolean } | null>(null);
+  // Link de pagamento do "Gerar pedido" (painel do cliente) entra na resposta desta conversa.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ conversationId: string; text: string }>).detail;
+      if (d?.conversationId === id) setInject((p) => ({ text: d.text, n: (p?.n ?? 0) + 1, append: true }));
+    };
+    window.addEventListener("support:append-reply", on);
+    return () => window.removeEventListener("support:append-reply", on);
+  }, [id]);
   const onSend = async (text: string, attachments: any[], mode: SendMode) => {
     setSending(true);
     try {
