@@ -7,17 +7,24 @@ import {
   Copy, MapPin, Mail, Phone, User, Factory, RotateCcw, Box, Check, CircleCheck, AlertTriangle, RefreshCw, Plane, CreditCard,
   CalendarDays, Eye, MoreHorizontal, X, Store, Clock, StickyNote, Send, MessageSquare,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isoDateUS } from "@/lib/timezone";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Switch } from "@/components/ui/switch";
+
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { listAllOrders, getOrderDetail, updateOrderNote, updateLocalTrackingNumber, type OrderListRow, type OrderFilter, type OrderCounts } from "@/lib/all-orders.functions";
+import { listAllOrders, getOrderDetail, updateOrderNote, updateLocalTrackingNumber, markSupplierMessageCopied, type OrderListRow, type OrderFilter, type OrderCounts, type AttentionKind } from "@/lib/all-orders.functions";
+
+// Grupos do filtro "Com atenção" (mesma ordem do servidor).
+const ATTENTION_GROUPS: { key: AttentionKind; label: string; icon: typeof Clock }[] = [
+  { key: "sem_postagem", label: "Sem postagem", icon: Clock },
+  { key: "parado",       label: "Rastreio parado", icon: Truck },
+  { key: "nao_entregue", label: "Ainda não entregue", icon: CalendarDays },
+  { key: "problema",     label: "Problema no rastreio", icon: AlertTriangle },
+];
 
 // Aba Pedidos: todos os pedidos de todas as lojas, com busca (nº, cliente,
 // e-mail, rastreio), contadores por situação e o detalhe completo num painel
@@ -44,6 +51,7 @@ const TABS: { key: OrderFilter; label: string; icon: typeof Box; tone: string }[
   { key: "reembolsado", label: "Reemb. cliente", icon: RefreshCw,   tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
   { key: "reemb_fornecedor", label: "Reemb. fornecedor", icon: Factory, tone: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
   { key: "chargeback",  label: "Chargeback",   icon: ShieldAlert,   tone: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
+  { key: "reembolsos",  label: "Reembolsos e chargebacks", icon: RefreshCw, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
 ];
 
 const money = (n: number, cur = "USD") => n.toLocaleString("en-US", { style: "currency", currency: cur || "USD" });
@@ -137,23 +145,21 @@ function supplierMessageFor(rows: OrderListRow[]): string {
   return ["Verificar os pedidos abaixo, por favor:", "", ...lines].join("\n");
 }
 
-function SupplierMessageDialog({ text, onClose }: { text: string; onClose: () => void }) {
-  const [value, setValue] = useState(text);
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><MessageSquare className="size-4" /> Mensagem pro fornecedor</DialogTitle></DialogHeader>
-        <p className="text-xs text-muted-foreground -mt-1">Dá pra editar antes de copiar. *texto* sai em negrito no WhatsApp.</p>
-        <textarea value={value} onChange={(e) => setValue(e.target.value)} rows={14}
-          className="w-full rounded-xl border border-border bg-background p-3 text-sm font-mono leading-relaxed outline-none focus:border-primary resize-y" />
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="h-9 px-3 rounded-lg border border-border text-sm hover:bg-muted">Fechar</button>
-          <button onClick={() => { copy(value, "Mensagem copiada"); onClose(); }}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"><Copy className="size-4" /> Copiar</button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+// "Mensagem pro fornecedor": copia o texto direto e grava
+// "Enviado para o fornecedor em …" na nota de cada pedido.
+function useCopySupplierMessage() {
+  const qc = useQueryClient();
+  const markFn = useServerFn(markSupplierMessageCopied);
+  const mark = useMutation({
+    mutationFn: (ids: string[]) => markFn({ data: { ids } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["all-orders"] }); qc.invalidateQueries({ queryKey: ["order-detail"] }); },
+    onError: (e: any) => toast.error(`Mensagem copiada, mas a nota não foi salva: ${e?.message ?? "erro"}`),
+  });
+  return (rows: OrderListRow[]) => {
+    if (!rows.length) return;
+    copy(supplierMessageFor(rows), "Mensagem copiada · anotado nos pedidos");
+    mark.mutate(rows.map((r) => r.id));
+  };
 }
 
 function PedidosPage() {
@@ -162,22 +168,24 @@ function PedidosPage() {
   const [q, setQ] = useState(initialQ);
   const [filter, setFilter] = useState<OrderFilter>("todos");
   const [attention, setAttention] = useState(false);
+  const [attentionKind, setAttentionKind] = useState<AttentionKind | null>(null);
+  useEffect(() => { if (!attention) setAttentionKind(null); }, [attention]);
   const [shopId, setShopId] = useState<string>("");
   const [sort, setSort] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [openId, setOpenId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [supplierMsg, setSupplierMsg] = useState<string | null>(null);
+  const copySupplierMessage = useCopySupplierMessage();
 
   // Busca enquanto digita (espera 350ms parado).
   useEffect(() => { const t = setTimeout(() => setQ(input.trim()), 350); return () => clearTimeout(t); }, [input]);
-  useEffect(() => { setPage(0); setSelected(new Set()); }, [q, filter, attention, shopId, sort, pageSize]);
+  useEffect(() => { setPage(0); setSelected(new Set()); }, [q, filter, attention, attentionKind, shopId, sort, pageSize]);
 
   const listFn = useServerFn(listAllOrders);
   const list = useQuery({
-    queryKey: ["all-orders", q, filter, attention, shopId, sort, page, pageSize],
-    queryFn: () => listFn({ data: { q: q.length >= 2 ? q : undefined, filter, attention, shopId: shopId || null, sort, page, pageSize } }),
+    queryKey: ["all-orders", q, filter, attention, attentionKind, shopId, sort, page, pageSize],
+    queryFn: () => listFn({ data: { q: q.length >= 2 ? q : undefined, filter, attention, attentionKind, shopId: shopId || null, sort, page, pageSize } }),
     placeholderData: keepPreviousData,
   });
   const rows = list.data?.rows ?? [];
@@ -186,7 +194,7 @@ function PedidosPage() {
   const today = list.data?.today ?? new Date().toISOString().slice(0, 10);
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const hasFilters = filter !== "todos" || attention || !!shopId || !!input;
-  const clearFilters = () => { setFilter("todos"); setAttention(false); setShopId(""); setInput(""); };
+  const clearFilters = () => { setFilter("todos"); setAttention(false); setAttentionKind(null); setShopId(""); setInput(""); };
 
   const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const toggleAll = () => setSelected(allOnPage ? new Set() : new Set(rows.map((r) => r.id)));
@@ -215,12 +223,6 @@ function PedidosPage() {
             </select>
             <ChevronDown className="size-4 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          <label className="h-10 px-3 rounded-xl border border-border bg-card inline-flex items-center gap-2 cursor-pointer text-[13px] shrink-0 whitespace-nowrap">
-            <Switch checked={attention} onCheckedChange={setAttention} />
-            <AlertTriangle className="size-4 text-orange-500" />
-            <span className="hidden sm:inline">Apenas com atenção</span>
-            {counts ? <span className="text-muted-foreground">({counts.atencao})</span> : null}
-          </label>
           {hasFilters && (
             <button onClick={clearFilters} title="Limpar filtros"
               className="h-10 px-3 rounded-xl text-[13px] text-primary inline-flex items-center gap-1 hover:bg-primary/10 shrink-0 whitespace-nowrap">
@@ -231,20 +233,51 @@ function PedidosPage() {
       </div>
 
       {/* ── Contadores ── */}
-      <div className="flex md:grid md:grid-cols-4 xl:grid-cols-8 gap-2.5 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 pb-1 mb-4">
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => setFilter(t.key)}
-            className={`${CARD} shrink-0 min-w-[150px] md:min-w-0 p-3 flex items-center gap-3 text-left transition-colors ${filter === t.key ? "ring-2 ring-primary/30 border-primary/50" : "hover:border-primary/30"}`}>
-            <span className={`size-11 rounded-xl grid place-items-center shrink-0 ${t.tone}`}><t.icon className="size-5" /></span>
-            <span className="min-w-0">
-              <span className="block text-xs text-muted-foreground truncate">{t.key === "todos" ? "Total de pedidos" : t.label}</span>
-              <span className={`block text-xl font-bold tabular-nums leading-tight ${t.key === "entregue" ? "text-emerald-600 dark:text-emerald-400" : ""}`}>
-                {counts ? (counts[t.key] ?? 0).toLocaleString("pt-BR") : "—"}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* Um card de cada vez: Com atenção mostra todos com atenção; outro card desliga a atenção. */}
+      <OrderCounters counts={counts} filter={filter} attention={attention}
+        onFilter={(k) => { setFilter(k); setAttention(false); }}
+        onAttention={(v) => { setAttention(v); if (v) setFilter("todos"); }} />
+
+      {/* Reembolsos e chargebacks: separa por tipo (cada um é um filtro da lista). */}
+      {REFUND_GROUP.includes(filter) && (
+        <div className="flex items-center gap-2 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 pb-1 mb-3">
+          <span className="text-xs text-muted-foreground shrink-0">Tipo:</span>
+          {REFUND_GROUP.map((k) => {
+            const t = TABS.find((x) => x.key === k)!;
+            const on = filter === k;
+            return (
+              <button key={k} onClick={() => setFilter(k)}
+                className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors ${on
+                  ? "bg-violet-600 text-white border-violet-600"
+                  : "bg-card border-border hover:border-violet-400 hover:text-violet-600"}`}>
+                <t.icon className="size-3.5" />{k === "reembolsos" ? "Todos" : t.label}
+                <span className={`tabular-nums ${on ? "text-white/85" : "text-muted-foreground"}`}>{counts ? (counts[k] ?? 0).toLocaleString("pt-BR") : "—"}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Com atenção ligado: agrupa pelo tipo do problema. */}
+      {attention && (
+        <div className="flex items-center gap-2 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 pb-1 mb-3">
+          <span className="text-xs text-muted-foreground shrink-0">Tipo de atenção:</span>
+          {[{ key: null as AttentionKind | null, label: "Todos", icon: AlertTriangle }, ...ATTENTION_GROUPS].map((g) => {
+            const n = g.key ? list.data?.attentionKinds?.[g.key] ?? 0 : Object.values(list.data?.attentionKinds ?? {}).reduce((a, b) => a + b, 0);
+            const on = attentionKind === g.key;
+            if (g.key && n === 0 && !on) return null;
+            return (
+              <button key={g.key ?? "todos"} onClick={() => setAttentionKind(g.key)}
+                className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors ${on
+                  ? "bg-orange-500 text-white border-orange-500"
+                  : "bg-card border-border hover:border-orange-400 hover:text-orange-600"}`}>
+                <g.icon className="size-3.5" />{g.label}
+                <span className={`tabular-nums ${on ? "text-white/85" : "text-muted-foreground"}`}>{n.toLocaleString("pt-BR")}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {selected.size > 0 && (
         <div className="flex items-center gap-3 mb-2 px-3 py-2 rounded-xl bg-primary/10 text-sm">
@@ -253,11 +286,10 @@ function PedidosPage() {
           {selectedRows.some((r) => r.trackingCode) && (
             <button onClick={() => copy(selectedRows.filter((r) => r.trackingCode).map((r) => `${orderLabel(r.orderNumber)}\t${r.trackingCode}`).join("\n"), "Rastreios copiados")} className="inline-flex items-center gap-1 text-primary hover:underline"><Truck className="size-3.5" />Copiar rastreios</button>
           )}
-          <button onClick={() => setSupplierMsg(supplierMessageFor(selectedRows))} className="inline-flex items-center gap-1 text-primary hover:underline"><MessageSquare className="size-3.5" />Mensagem pro fornecedor</button>
+          <button onClick={() => copySupplierMessage(selectedRows)} className="inline-flex items-center gap-1 text-primary hover:underline"><MessageSquare className="size-3.5" />Mensagem pro fornecedor</button>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
       )}
-      {supplierMsg != null && <SupplierMessageDialog text={supplierMsg} onClose={() => setSupplierMsg(null)} />}
 
       {/* ── Tabela ── */}
       <div className={`${CARD} overflow-hidden`}>
@@ -301,6 +333,7 @@ function PedidosPage() {
                           </span>}
                         </p>
                         <p className="text-[11px] text-muted-foreground">{fmtDate(r.orderDate)}</p>
+                        {attention && r.attentionWhy && <p className="text-[11px] text-orange-600 dark:text-orange-400 font-medium max-w-[200px] truncate" title={r.attentionWhy}>{r.attentionWhy}</p>}
                       </td>
                       <td className="py-2.5 px-3 text-center whitespace-nowrap" title={r.product ?? undefined}>
                         <p className="tabular-nums font-bold">{money(r.revenue, r.currency ?? "USD")}</p>
@@ -380,6 +413,122 @@ function PedidosPage() {
 
       <OrderSheet id={openId} onClose={() => setOpenId(null)} />
     </PageShell>
+  );
+}
+
+// "Reembolsos e chargebacks" (todos) e os 3 tipos que ele junta.
+const REFUND_GROUP: OrderFilter[] = ["reembolsos", "reembolsado", "reemb_fornecedor", "chargeback"];
+
+// Topo: Total (com % entregue), Andamento (a enviar / em trânsito / entregues)
+// e Pendências (reembolsos, chargebacks, com problema). Cada número filtra a lista.
+const tab = (k: OrderFilter) => TABS.find((t) => t.key === k)!;
+const PENDING_LABEL: Partial<Record<OrderFilter, string>> = {
+  reembolsos: "Reembolsos e chargebacks", problema: "Com problema",
+};
+
+function OrderCounters({ counts, filter, onFilter, attention, onAttention }: {
+  counts: OrderCounts | undefined; filter: OrderFilter; onFilter: (f: OrderFilter) => void;
+  attention: boolean; onAttention: (v: boolean) => void;
+}) {
+  const n = (k: OrderFilter) => (counts ? Number(counts[k] ?? 0) : null);
+  const fmt = (k: OrderFilter) => { const v = n(k); return v == null ? "—" : v.toLocaleString("pt-BR"); };
+  const total = n("todos") ?? 0;
+  const delivered = n("entregue") ?? 0;
+  const pct = total > 0 ? (delivered / total) * 100 : 0;
+  const active = (k: OrderFilter) => (filter === k || (k === "reembolsos" && REFUND_GROUP.includes(filter)) ?"bg-primary/[0.07] ring-1 ring-primary/30" : "hover:bg-muted/50");
+
+  const Tile = ({ icon: Icon, tone, label, value, valueCls = "", cls, onClick, title }: {
+    icon: typeof Box; tone: string; label: string; value: string; valueCls?: string; cls: string; onClick: () => void; title?: string;
+  }) => (
+    <button onClick={onClick} title={title}
+      className={`w-full min-w-0 flex items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors ${cls}`}>
+      <span className={`size-11 rounded-full grid place-items-center shrink-0 ${tone}`}><Icon className="size-5" /></span>
+      <span className="min-w-0">
+        <span className="block text-xs text-muted-foreground truncate">{label}</span>
+        <span className={`block text-2xl font-bold tabular-nums leading-tight ${valueCls}`}>{value}</span>
+      </span>
+    </button>
+  );
+  const Item = ({ k, label, valueCls = "" }: { k: OrderFilter; label: string; valueCls?: string }) => {
+    const t = tab(k);
+    return <Tile icon={t.icon} tone={t.tone} label={label} value={fmt(k)} valueCls={valueCls} cls={active(k)} onClick={() => onFilter(k)} />;
+  };
+  const attentionCount = counts ? Number(counts.atencao ?? 0) : null;
+
+  return (
+    <div className="space-y-3 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
+        {/* Total + entregues */}
+        <button onClick={() => onFilter("todos")}
+          className={`relative overflow-hidden rounded-2xl p-4 md:p-5 text-left text-white bg-gradient-to-br from-[#2a1466] via-[#3b1d8f] to-[#5b34c9] shadow-[0_6px_20px_rgba(59,29,143,0.25)] transition-shadow ${filter === "todos" && !attention ? "ring-2 ring-primary/50 ring-offset-2 ring-offset-background" : ""}`}>
+          <span className="pointer-events-none absolute -right-10 -bottom-16 size-56 rounded-full bg-white/[0.06]" />
+          <span className="pointer-events-none absolute right-16 -top-20 size-40 rounded-full bg-white/[0.04]" />
+          <span className="relative flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+            <span className="flex items-center gap-4">
+              <span className="size-14 md:size-16 rounded-full bg-white/15 grid place-items-center shrink-0"><Box className="size-7 md:size-8" /></span>
+              <span>
+                <span className="block text-sm font-medium text-white/85">Total de Pedidos</span>
+                <span className="block text-4xl md:text-[44px] font-bold tabular-nums leading-none mt-1">{fmt("todos")}</span>
+              </span>
+            </span>
+            <span className="hidden sm:block self-stretch w-px bg-white/15" />
+            <span className="flex-1 min-w-0">
+              <span className="flex items-end gap-3">
+                <span className="flex items-end gap-0.5 h-5 shrink-0" aria-hidden>
+                  <span className="w-1 h-2 rounded-sm bg-white/90" /><span className="w-1 h-3.5 rounded-sm bg-white/90" /><span className="w-1 h-5 rounded-sm bg-white/90" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs text-white/75">Entregues</span>
+                  <span className="block text-sm font-semibold tabular-nums">{fmt("entregue")} ({pct.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</span>
+                </span>
+              </span>
+              <span className="block mt-2.5 h-2.5 rounded-full bg-white/15 overflow-hidden">
+                <span className="block h-full rounded-full bg-emerald-400 transition-[width]" style={{ width: `${Math.min(100, pct)}%` }} />
+              </span>
+            </span>
+          </span>
+        </button>
+
+        {/* Andamento */}
+        <div className={`${CARD} p-3 md:p-4`}>
+          <p className="flex items-center gap-2 text-sm font-semibold px-1 mb-1.5"><Package className="size-4" />Andamento dos pedidos</p>
+          <div className="flex flex-col sm:flex-row sm:divide-x divide-border/70 gap-1 sm:gap-0">
+            <div className="flex-1 sm:pr-2"><Item k="a_enviar" label="A enviar" /></div>
+            <div className="flex-1 sm:px-2"><Item k="em_transito" label="Em trânsito" /></div>
+            <div className="flex-1 sm:pl-2"><Item k="entregue" label="Entregues" valueCls="text-emerald-600 dark:text-emerald-400" /></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Pendências */}
+      <div className="rounded-2xl border border-rose-200/60 dark:border-rose-500/20 bg-gradient-to-r from-rose-50/80 via-card to-violet-50/60 dark:from-rose-500/[0.06] dark:via-card dark:to-violet-500/[0.06] shadow-[0_1px_3px_rgba(16,24,40,0.04)] p-3 md:p-4">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-0 lg:divide-x divide-border/70">
+          <div className="flex items-start gap-3 px-1 lg:pr-5 lg:w-[260px] shrink-0">
+            <AlertTriangle className="size-6 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-base font-bold leading-tight">Pendências</p>
+              <p className="text-xs text-muted-foreground">Pedidos que precisam da sua atenção</p>
+            </div>
+          </div>
+          <div className="flex-1 grid grid-cols-2 lg:flex lg:divide-x divide-border/70 gap-1 lg:gap-0">
+            {(["reembolsos", "problema"] as OrderFilter[]).map((k) => (
+              <div key={k} className="flex-1 min-w-0 lg:px-2">
+                <Item k={k} label={PENDING_LABEL[k]!} valueCls={k === "problema" && (n(k) ?? 0) > 0 ? "text-rose-600 dark:text-rose-400" : ""} />
+              </div>
+            ))}
+            {/* Com atenção: liga/desliga o filtro (soma com a situação escolhida). */}
+            <div className="flex-1 min-w-0 lg:pl-2">
+              <Tile icon={AlertTriangle} tone="bg-orange-500/10 text-orange-600 dark:text-orange-400" label="Com atenção"
+                value={attentionCount == null ? "—" : attentionCount.toLocaleString("pt-BR")}
+                valueCls={(attentionCount ?? 0) > 0 ? "text-orange-600 dark:text-orange-400" : ""}
+                cls={attention ? "bg-orange-500/[0.08] ring-1 ring-orange-500/40" : "hover:bg-muted/50"}
+                title={attention ? "Clique pra mostrar todos" : "Mostrar só os pedidos que precisam de atenção"}
+                onClick={() => onAttention(!attention)} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

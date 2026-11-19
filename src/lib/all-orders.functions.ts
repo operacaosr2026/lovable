@@ -28,9 +28,12 @@ function assertAccess(ctx: { role: string; permissions: { section: string }[] })
 
 // Não exportar valores/funções comuns daqui (só server fns e tipos): o arquivo
 // importa client.server e quebraria o build da Vercel no cliente.
-const ORDER_FILTERS = ["todos", "a_enviar", "em_transito", "entregue", "problema", "reembolsado", "reemb_fornecedor", "chargeback"] as const;
+const ORDER_FILTERS = ["todos", "a_enviar", "em_transito", "entregue", "problema", "reembolsado", "reemb_fornecedor", "chargeback", "reembolsos"] as const;
 export type OrderFilter = (typeof ORDER_FILTERS)[number];
 export type OrderCounts = Record<OrderFilter, number> & { atencao: number };
+// Tipos de atenção (pra agrupar os iguais quando o filtro "Com atenção" está ligado).
+export const ATTENTION_KINDS = ["sem_postagem", "parado", "nao_entregue", "problema"] as const;
+export type AttentionKind = (typeof ATTENTION_KINDS)[number];
 
 export type OrderListRow = {
   id: string; shopId: string; shopName: string; externalId: string; orderNumber: string; orderDate: string | null;
@@ -146,6 +149,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
     shopId: z.string().uuid().nullable().optional(),
     filter: z.enum(ORDER_FILTERS).default("todos"),
     attention: z.boolean().default(false),
+    attentionKind: z.enum(ATTENTION_KINDS).nullable().optional(),
     sort: z.enum(["desc", "asc"]).default("desc"),
     page: z.number().int().min(0).max(2000).default(0),
     pageSize: z.number().int().min(10).max(100).default(10),
@@ -203,7 +207,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
     const { data: slim, error } = await selectAll<any>(base.order("id"));
     if (error) throw new Error(error.message);
 
-    type Slim = { id: string; date: string; created: string; status: string; refunded: boolean; deadline: string | null; attention: boolean; why: string | null; cb: boolean; sup: boolean; fin: string | null };
+    type Slim = { id: string; date: string; created: string; status: string; refunded: boolean; deadline: string | null; attention: boolean; why: string | null; kind: AttentionKind | null; cb: boolean; sup: boolean; fin: string | null };
     const all: Slim[] = (slim ?? []).map((o: any) => {
       const t = trackBy.get(o.id);
       const refunded = ["refunded", "partially_refunded", "voided"].includes(o.shopify_financial_status ?? "") || !!o.cancelled;
@@ -227,21 +231,26 @@ export const listAllOrders = createServerFn({ method: "GET" })
       const attention = logistic && needsAttention(row, nowMs, cal);
       // O que está errado (mostrado ao passar o mouse no aviso).
       let why: string | null = null;
+      let kind: AttentionKind | null = null;
       if (attention) {
         if (status === "pending_shipment") {
           const n = businessDaysSince(clockFrom, nowMs, cal);
           why = `${resentAt ? "Reenvio" : "Pedido"} sem postagem há ${n} dias úteis (prazo: 3)`;
+          kind = "sem_postagem";
         } else if (status === "problem") {
           why = `Problema no rastreio${o.logistics_note ? `: ${o.logistics_note}` : t?.last_event_label ? `: ${cleanLabel(t.last_event_label)}` : ""}`;
+          kind = "problema";
         } else {
           const r = attentionReason(row, nowMs);
-          why = r ? (r.includes("sem atualização") ? `Rastreio parado: ${r}` : `Ainda não entregue: ${r.replace("sem entrega", `desde o ${resentAt ? "reenvio" : "pedido"}`)}`) : null;
+          const parado = !!r && r.includes("sem atualização");
+          why = r ? (parado ? `Rastreio parado: ${r}` : `Ainda não entregue: ${r.replace("sem entrega", `desde o ${resentAt ? "reenvio" : "pedido"}`)}`) : null;
+          kind = parado ? "parado" : "nao_entregue";
         }
       }
       return {
         id: o.id, date: o.order_date ?? "", created: o.created_at_shopify ?? "", status: status ?? "pending_shipment", refunded,
         deadline: logistic && status === "pending_shipment" && clockFrom ? addBusinessDays(clockFrom, 3, cal) : null,
-        attention, why,
+        attention, why, kind,
         cb: disputeBy.has(`${o.shop_id}:${o.external_id}`), sup: supplierRefunded.has(o.id), fin: o.shopify_financial_status ?? null,
       };
     });
@@ -255,6 +264,8 @@ export const listAllOrders = createServerFn({ method: "GET" })
         case "reembolsado": return o.fin === "refunded" || o.fin === "partially_refunded";
         case "chargeback": return o.cb;
         case "reemb_fornecedor": return o.sup;
+        // Pendências: reembolso do cliente, do fornecedor ou chargeback (pedido com mais de um conta uma vez).
+        case "reembolsos": return o.fin === "refunded" || o.fin === "partially_refunded" || o.sup || o.cb;
         default: return true;
       }
     };
@@ -262,7 +273,12 @@ export const listAllOrders = createServerFn({ method: "GET" })
     counts.atencao = all.filter((o) => o.attention).length;
 
     const dir = data.sort === "asc" ? 1 : -1;
-    const filtered = all.filter((o) => inTab(o, data.filter) && (!data.attention || o.attention))
+    // Atenção por tipo, dentro da situação escolhida (os grupos do filtro "Com atenção").
+    const attentionKinds = Object.fromEntries(ATTENTION_KINDS.map((k) => [k, 0])) as Record<AttentionKind, number>;
+    for (const o of all) if (o.attention && o.kind && inTab(o, data.filter)) attentionKinds[o.kind]++;
+
+    const kindFilter = data.attention ? data.attentionKind ?? null : null;
+    const filtered = all.filter((o) => inTab(o, data.filter) && (!data.attention || o.attention) && (!kindFilter || o.kind === kindFilter))
       .sort((a, b) => (a.date === b.date ? a.created.localeCompare(b.created) : a.date.localeCompare(b.date)) * dir);
     const total = filtered.length;
     const pageRows = filtered.slice(data.page * data.pageSize, data.page * data.pageSize + data.pageSize);
@@ -342,7 +358,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
         conversations: email ? convCount.get(email) ?? 0 : 0, conversationId: email ? convLatest.get(email) ?? null : null,
       };
     });
-    return { rows: out, total, counts, shops: liveShops, today: isoTodayUS() };
+    return { rows: out, total, counts, attentionKinds, shops: liveShops, today: isoTodayUS() };
   });
 
 export type OrderDetail = Awaited<ReturnType<typeof loadOrderDetail>>;
@@ -491,6 +507,28 @@ export const updateOrderNote = createServerFn({ method: "POST" })
       .eq("user_id", context.ownerId).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true, note };
+  });
+
+// "Mensagem pro fornecedor" copiada: registra na nota de cada pedido (no fim,
+// sem apagar o que já tinha) a data e hora em NY.
+export const markSupplierMessageCopied = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+    const line = `Enviado para o fornecedor em ${stamp}`;
+    const { data: rows, error } = await supabaseAdmin.from("shop_orders").select("id,notice_note")
+      .eq("user_id", context.ownerId).in("id", data.ids);
+    if (error) throw new Error(error.message);
+    await Promise.all(((rows ?? []) as { id: string; notice_note: string | null }[]).map(async (r) => {
+      const prev = (r.notice_note ?? "").trim();
+      const note = (prev ? `${prev}\n${line}` : line).slice(-1000);
+      const { error: e } = await supabaseAdmin.from("shop_orders").update({ notice_note: note })
+        .eq("user_id", context.ownerId).eq("id", r.id);
+      if (e) throw new Error(e.message);
+    }));
+    return { ok: true, line, count: rows?.length ?? 0 };
   });
 
 // Código da transportadora local (ex.: GFUS… da GOFO) colado à mão — a GOFO não
