@@ -82,3 +82,21 @@ describe("custo do fornecedor", () => {
     expect(orderLineItemsCost([li("Georgetown", { qty: 2 }), li("Cheetah Print")], products, FALLBACK)).toBe(38 * 2 + 50);
   });
 });
+
+describe("preço de custo por data (Histórico de preços)", () => {
+  const p: CostProduct = { name: "X", shopify_product_ids: ["500"], cost: 11.5, history: [
+    { from: "2026-11-18", cost: 11.5 },
+    { from: "2026-11-05", cost: 12 },
+    { from: "1900-01-01", cost: 10 },
+  ] };
+  const item = { product_id: "500", quantity: 2, current_quantity: 2, fulfillment_status: null };
+  const at = (date: string) => orderLineItemsCost([item], [p], FALLBACK, null, { date });
+  it("cada pedido usa o preço que valia no dia; o dia da virada já é o preço novo", () => {
+    expect(at("2026-01-01")).toBe(20);
+    expect(at("2026-11-04")).toBe(20);
+    expect(at("2026-11-05")).toBe(24);
+    expect(at("2026-11-17")).toBe(24);
+    expect(at("2026-11-18")).toBe(23);
+    expect(at("2026-12-01")).toBe(23);
+  });
+});

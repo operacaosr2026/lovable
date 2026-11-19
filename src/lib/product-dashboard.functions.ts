@@ -656,6 +656,9 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
     const adsets = new Map<string, string>();   // id → nome (pra casar UTM antiga, só com nome)
     let activeAdsets: string[] | null = null;   // conjuntos rodando agora (filtro "Só ativos")
     let metaCampaignName: string | null = null;
+    // Alcance do período inteiro por grupo: o alcance de cada dia não soma
+    // (a mesma pessoa aparece em vários dias), então a Frequência do total usa este.
+    const periodReach: Record<string, number> = {};
 
     // Meta, Shopify, Clarity e Diário são buscados ao mesmo tempo; o casamento
     // da Shopify e do Clarity com os conjuntos vem depois (precisa dos nomes da Meta).
@@ -681,7 +684,21 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
         }
       })();
       const timeRange = encodeURIComponent(JSON.stringify({ since: data.from, until: data.to }));
-      let url: string | null = `${GRAPH}/${campaign.campaign_id}/insights?level=${data.level}&fields=campaign_name,adset_id,adset_name,spend,impressions,inline_link_clicks,actions&time_increment=1&time_range=${timeRange}&limit=500&access_token=${encodeURIComponent(token)}`;
+      const reachTask = (async () => {
+        try {
+          let next: string | null = `${GRAPH}/${campaign.campaign_id}/insights?level=${data.level}&fields=adset_id,reach&time_range=${timeRange}&limit=500&access_token=${encodeURIComponent(token)}`;
+          while (next) {
+            const r = await fetchWithRetry(next);
+            const json: any = await r.json();
+            if (!r.ok || json.error) throw new Error(json?.error?.message || `Falha (${r.status})`);
+            for (const d of (json.data ?? []) as any[]) periodReach[data.level === "adset" ? String(d.adset_id) : "all"] = Number(d.reach ?? 0);
+            next = json.paging?.next ?? null;
+          }
+        } catch (e) {
+          console.error("[experiment-metrics] alcance do período:", e);
+        }
+      })();
+      let url: string | null = `${GRAPH}/${campaign.campaign_id}/insights?level=${data.level}&fields=campaign_name,adset_id,adset_name,spend,impressions,reach,inline_link_clicks,actions&time_increment=1&time_range=${timeRange}&limit=500&access_token=${encodeURIComponent(token)}`;
       try {
         while (url) {
           const r = await fetchWithRetry(url);
@@ -694,6 +711,7 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
             const x = row(d.date_start, group, data.level === "adset" ? d.adset_name ?? group : "Campanha");
             x.spend += Number(d.spend ?? 0);
             x.impressions += Number(d.impressions ?? 0);
+            x.reach += Number(d.reach ?? 0);
             x.clicks += Number(d.inline_link_clicks ?? 0);
             x.lpv += actionCount(d.actions, ACTION_KEYS.lpv);
             x.ic += actionCount(d.actions, ACTION_KEYS.ic);
@@ -704,7 +722,7 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
       } catch (e: any) {
         errors.push(`Meta: ${String(e?.message ?? e)}`);
       }
-      await statusTask;
+      await Promise.all([statusTask, reachTask]);
     }
     };
 
@@ -735,7 +753,7 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
       const { data: entries } = await db("product_diary_entries").select("content,created_at").eq("user_id", ownerId).eq("product_id", exp.product_id)
         .eq("note_type_id", sys.id).or(`experiment_id.is.null,experiment_id.eq.${data.experiment_id}`).gte("created_at", `${data.from}T00:00:00-06:00`).lte("created_at", `${data.to}T23:59:59-03:00`)
         .order("created_at", { ascending: true });
-      return (entries ?? []).map((e) => ({ date: nyDate(e.created_at), content: e.content })).filter((e) => e.date >= data.from && e.date <= data.to);
+      return (entries ?? []).map((e) => ({ date: nyDate(e.created_at), at: e.created_at as string, content: e.content as string })).filter((e) => e.date >= data.from && e.date <= data.to);
     };
 
     // Clarity: projeto do produto. Campaign = utm_campaign, Medium = utm_medium
@@ -800,5 +818,6 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
       changes,
       partialDays: [...partialDays],
       activeAdsets: activeAdsets as string[] | null,
+      periodReach,
     };
   });

@@ -15,6 +15,7 @@ export const SOURCE_LABEL: Record<MetricSource, string> = { meta: "Meta", shopif
 export const METRIC_DEFS: MetricDef[] = [
   { key: "spend", label: "Gasto", source: "meta", format: "money", better: null, baseline: false },
   { key: "cpm", label: "CPM", source: "meta", format: "money", better: "down", baseline: true },
+  { key: "frequency", label: "Frequência", source: "meta", format: "num", better: null, baseline: true, hint: "Impressões ÷ alcance (quantas vezes, em média, cada pessoa viu o anúncio)" },
   { key: "ctr", label: "CTR (link)", source: "meta", format: "pct", better: "up", baseline: true },
   { key: "cpc", label: "CPC (link)", source: "meta", format: "money", better: "down", baseline: true },
   { key: "arrival_rate", label: "Taxa de chegada", source: "meta", format: "pct", better: "up", baseline: true, hint: "Visualizações da página ÷ cliques no link" },
@@ -47,7 +48,7 @@ export const FORMAT_UNIT: Record<MetricFormat, string> = { money: "US$", pct: "%
 // pelas sessões (c_time = Σ tempo × sessões...), pra média do total sair certa;
 // c_*_n são as sessões das linhas que tinham aquela métrica.
 export type RawCounts = {
-  spend: number; impressions: number; clicks: number; lpv: number; ic: number;
+  spend: number; impressions: number; reach: number; clicks: number; lpv: number; ic: number;
   purchases_meta: number; purchases_shop: number; revenue: number;
   c_sessions: number;
   c_time: number; c_time_n: number; c_scroll: number; c_scroll_n: number;
@@ -56,7 +57,7 @@ export type RawCounts = {
 };
 
 export const EMPTY_COUNTS: RawCounts = {
-  spend: 0, impressions: 0, clicks: 0, lpv: 0, ic: 0, purchases_meta: 0, purchases_shop: 0, revenue: 0,
+  spend: 0, impressions: 0, reach: 0, clicks: 0, lpv: 0, ic: 0, purchases_meta: 0, purchases_shop: 0, revenue: 0,
   c_sessions: 0, c_time: 0, c_time_n: 0, c_scroll: 0, c_scroll_n: 0, c_quickback: 0, c_quickback_n: 0,
   c_rage: 0, c_rage_n: 0, c_dead: 0, c_dead_n: 0, c_errors: 0, c_errors_n: 0,
 };
@@ -67,6 +68,7 @@ export function deriveMetrics(r: RawCounts): Record<string, number | null> {
   return {
     spend: r.spend,
     cpm: div(r.spend, r.impressions, 1000),
+    frequency: div(r.impressions, r.reach),
     ctr: div(r.clicks, r.impressions, 100),
     cpc: div(r.spend, r.clicks),
     arrival_rate: div(r.lpv, r.clicks, 100),

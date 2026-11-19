@@ -6,7 +6,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { repeatedItems } from "@/lib/repeated-items";
-import { orderLineItemsCost, costOpts, type CostProduct } from "@/lib/product-cost-match";
+import { orderLineItemsCost, costOpts, matchLineItemProduct, type CostProduct } from "@/lib/product-cost-match";
 import { costProductsFor } from "@/lib/product-links.server";
 import { US_TIME_ZONE, isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { selectAll, selectAllIn, chunk } from "@/lib/select-all";
@@ -1616,6 +1616,42 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
 export const recomputeOrderCostForecast = createServerOnlyFn(async (ownerId: string, shopId: string, orderDate: string) => {
   const paymentDays = await getShopPaymentDays(supabaseAdmin, shopId);
   return recomputeForShop({ supabase: supabaseAdmin, ownerId }, shopId, addDays(orderDate, paymentDays), undefined, paymentDays);
+});
+
+// Custo do produto mudou a partir de `from` (Histórico de preços do card):
+// refaz a previsão "Custo de produtos" do Caixa nos dias que têm pedido desse
+// produto ainda não pago ao fornecedor. Pedido já pago (lote) fica como foi pago.
+export const recomputeOrderCostForProduct = createServerOnlyFn(async (ownerId: string, productId: string, from: string) => {
+  const products = await costProductsFor(supabaseAdmin, ownerId);
+  const product = products.find((p) => p.id === productId);
+  if (!product) return { days: 0 };
+  const { data: rows, error } = await selectAll(supabaseAdmin.from("shop_orders")
+    .select("shop_id,order_date,line_items:raw->line_items")
+    .eq("user_id", ownerId).eq("payment_status", "pending").gte("order_date", from)
+    .filter("raw->>cancelled_at", "is", null));
+  if (error) throw new Error(error.message);
+  const byShop = new Map<string, Set<string>>();
+  for (const o of rows as any[]) {
+    if (!o.order_date || !(o.line_items ?? []).some((li: any) => matchLineItemProduct(li, products) === product)) continue;
+    const days = byShop.get(o.shop_id) ?? new Set<string>();
+    days.add(String(o.order_date).slice(0, 10));
+    byShop.set(o.shop_id, days);
+  }
+  let total = 0;
+  for (const [shopId, days] of byShop) {
+    const [{ data: settings }, paymentDays] = await Promise.all([
+      supabaseAdmin.from("shop_order_settings").select("*").eq("user_id", ownerId).eq("shop_id", shopId).maybeSingle(),
+      getShopPaymentDays(supabaseAdmin, shopId),
+    ]);
+    if (!settings) continue;
+    const list = [...days];
+    for (let i = 0; i < list.length; i += 10) {
+      await Promise.all(list.slice(i, i + 10).map((d) =>
+        recomputeForShop({ supabase: supabaseAdmin, ownerId }, shopId, addDays(d, paymentDays), settings, paymentDays, products)));
+    }
+    total += list.length;
+  }
+  return { days: total };
 });
 
 export const recomputeDay = createServerFn({ method: "POST" })

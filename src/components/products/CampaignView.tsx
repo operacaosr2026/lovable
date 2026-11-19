@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, Columns3, Loader2, Megaphone, Pencil, Settings2, StickyNote } from "lucide-react";
+import { AlertTriangle, Columns3, LineChart as LineChartIcon, Loader2, Table2, Megaphone, Pencil, Settings2, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,6 +17,9 @@ import {
 import { STATUS_STYLE, TagsPopover, daysLive, findStatus, fmtDate } from "@/components/products/ProductCampaigns";
 import { ProductDiary } from "@/components/products/ProductDiary";
 import { CampaignTemplateEditor } from "@/components/products/CampaignTemplate";
+import {
+  DiaryChangeHover, MAX_LINES, MetricPicker, MetricsChart, useLineColors, type ChartMode, type DiaryChange,
+} from "@/components/products/CampaignMetricsChart";
 
 // Janela da campanha (aba Campanhas do produto): Resumo (campos do template +
 // o que está testando), Métricas (dia a dia da campanha da Meta, linhas =
@@ -26,6 +29,10 @@ import { CampaignTemplateEditor } from "@/components/products/CampaignTemplate";
 const inputCls = "h-9 px-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
 const COLS_KEY = "experiment-columns-v2";
 const ACTIVE_ONLY_KEY = "experiment-adsets-active-only";
+const VIEW_KEY = "experiment-metrics-view";
+const CHART_KEY = "experiment-chart-lines";
+const CHART_MODE_KEY = "experiment-chart-mode";
+const DEFAULT_CHART: Record<string, number> = { spend: 0, cpm: 1, ctr: 2, frequency: 3 };
 const MAX_DAYS = 92;
 const AVAILABLE = METRIC_DEFS;
 // Do Clarity, só as 3 principais aparecem de início; o resto fica em Colunas.
@@ -38,6 +45,20 @@ const addDays = (d: string, n: number) => {
   return x.toISOString().slice(0, 10);
 };
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
+
+const readLS = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
+const writeLS = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignora */ } };
+
+// Métricas do gráfico → posição da cor (fica a mesma enquanto estiver marcada).
+function loadChartSlots(): Record<string, number> {
+  try {
+    const v = JSON.parse(readLS(CHART_KEY) ?? "null");
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return Object.fromEntries(Object.entries(v).filter(([k, n]) => AVAILABLE.some((m) => m.key === k) && typeof n === "number").slice(0, MAX_LINES)) as Record<string, number>;
+    }
+  } catch { /* usa o padrão */ }
+  return DEFAULT_CHART;
+}
 
 function loadCols(): string[] {
   try {
@@ -250,6 +271,23 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
     try { localStorage.setItem(ACTIVE_ONLY_KEY, next ? "1" : "0"); } catch { /* ignora */ }
   };
   const [cols, setCols] = useState<string[]>(loadCols);
+  const [view, setView] = useState<"table" | "chart">(() => (readLS(VIEW_KEY) === "chart" ? "chart" : "table"));
+  const [chartMode, setChartMode] = useState<ChartMode>(() => (readLS(CHART_MODE_KEY) === "overlay" ? "overlay" : "split"));
+  const [slots, setSlots] = useState<Record<string, number>>(loadChartSlots);
+  const { colorOf, changeColor, dark } = useLineColors(slots);
+  const chartMetrics = AVAILABLE.filter((m) => m.key in slots).sort((a, b) => slots[a.key] - slots[b.key]);
+  const saveSlots = (next: Record<string, number>) => { setSlots(next); writeLS(CHART_KEY, JSON.stringify(next)); };
+  const toggleLine = (key: string) => {
+    if (key in slots) {
+      const { [key]: _, ...rest } = slots;
+      saveSlots(rest);
+    } else if (Object.keys(slots).length < MAX_LINES) {
+      const used = new Set(Object.values(slots));
+      let free = 0;
+      while (used.has(free)) free++;
+      saveSlots({ ...slots, [key]: free });
+    }
+  };
 
   const rangeOk = from <= to && daysBetween(from, to) < MAX_DAYS;
   const { data, isLoading, isFetching, error } = useQuery({
@@ -292,8 +330,8 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
   }, [data, activeOnly]);
 
   const changesByDate = useMemo(() => {
-    const m = new Map<string, string[]>();
-    if (data?.configured) for (const c of data.changes) m.set(c.date, [...(m.get(c.date) ?? []), c.content]);
+    const m = new Map<string, DiaryChange[]>();
+    if (data?.configured) for (const c of data.changes) m.set(c.date, [...(m.get(c.date) ?? []), c]);
     return m;
   }, [data]);
 
@@ -328,7 +366,25 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
               <input type="checkbox" checked={activeOnly} onChange={toggleActiveOnly} /> Só ativos
             </label>
           )}
-          <Popover>
+          <div className="flex items-center rounded-lg border border-border p-0.5" role="tablist" aria-label="Visualização">
+            {([["table", "Tabela", Table2], ["chart", "Gráfico", LineChartIcon]] as const).map(([v, label, Icon]) => (
+              <button key={v} role="tab" aria-selected={view === v} onClick={() => { setView(v); writeLS(VIEW_KEY, v); }}
+                className={`h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                <Icon className="size-3.5" /> {label}
+              </button>
+            ))}
+          </div>
+          {view === "chart" && (
+            <div className="flex items-center rounded-lg border border-border p-0.5">
+              {([["split", "Separados", "Um gráfico por métrica, com o valor real"], ["overlay", "Sobrepostos", "Todas as linhas no mesmo gráfico, comparadas com a própria média"]] as const).map(([v, label, hint]) => (
+                <button key={v} title={hint} onClick={() => { setChartMode(v); writeLS(CHART_MODE_KEY, v); }}
+                  className={`h-8 px-3 rounded-md text-xs font-medium ${chartMode === v ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {view === "table" && <Popover>
             <PopoverTrigger asChild>
               <button className="h-9 px-3 rounded-lg border border-border text-sm flex items-center gap-1.5 hover:bg-muted">
                 <Columns3 className="size-3.5" /> Colunas
@@ -347,7 +403,7 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
                 </div>
               ))}
             </PopoverContent>
-          </Popover>
+          </Popover>}
           {isFetching && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
         </div>
         {!rangeOk && <p className="text-xs text-destructive mt-2">Escolha um período de até {MAX_DAYS} dias.</p>}
@@ -364,8 +420,14 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
               </div>
             )}
             {groups.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Nenhum conjunto ativo com dados no período.</p>}
-            {groups.map((g) => (
-              <MetricsTable key={g.id} title={level === "adset" ? g.name : null} dates={dates} rows={g.rows}
+            {view === "chart" && (
+              <MetricPicker available={AVAILABLE} selected={chartMetrics.map((m) => m.key)} colorOf={colorOf} onToggle={toggleLine} onClear={() => saveSlots({})} />
+            )}
+            {groups.map((g) => view === "chart" ? (
+              <MetricsChart key={g.id} id={g.id} title={level === "adset" ? g.name : null} dates={dates} rows={g.rows} periodReach={data.periodReach?.[g.id]}
+                metrics={chartMetrics} colorOf={colorOf} changeColor={changeColor} dark={dark} changes={changesByDate} partialDays={partialDays} mode={chartMode} />
+            ) : (
+              <MetricsTable key={g.id} title={level === "adset" ? g.name : null} dates={dates} rows={g.rows} periodReach={data.periodReach?.[g.id]}
                 shown={shown} sources={sources} changes={changesByDate} partialDays={partialDays} baseline={hasBase ? experiment.baseline : null} />
             ))}
             <p className="text-[11px] text-muted-foreground mt-3">
@@ -387,11 +449,14 @@ const SOURCE_STYLE: Record<MetricSource, { head: string; sub: string; cell: stri
   clarity: { head: "bg-violet-500/15 text-violet-700 dark:text-violet-300", sub: "bg-violet-500/[0.07]", cell: "bg-violet-500/[0.025]", foot: "bg-violet-500/[0.08]", dot: "bg-violet-500" },
 };
 
-function MetricsTable({ title, dates, rows, shown, sources, changes, partialDays, baseline }: {
-  title: string | null; dates: string[]; rows: Map<string, ExperimentRaw>; shown: MetricDef[];
-  sources: { s: MetricSource; n: number }[]; changes: Map<string, string[]>; partialDays: Set<string>; baseline: Record<string, number> | null;
+function MetricsTable({ title, dates, rows, periodReach, shown, sources, changes, partialDays, baseline }: {
+  title: string | null; dates: string[]; rows: Map<string, ExperimentRaw>; periodReach: number | undefined; shown: MetricDef[];
+  sources: { s: MetricSource; n: number }[]; changes: Map<string, DiaryChange[]>; partialDays: Set<string>; baseline: Record<string, number> | null;
 }) {
-  const total = deriveMetrics(sumCounts([...rows.values()] as RawCounts[]));
+  const sum = sumCounts([...rows.values()] as RawCounts[]);
+  const total = deriveMetrics(sum);
+  // Alcance não soma entre dias: a Frequência do total usa o alcance do período.
+  if (periodReach) total.frequency = sum.impressions / periodReach;
   // Linha grossa no começo de cada fonte.
   const edge = (i: number) => (i === 0 || shown[i - 1].source !== shown[i].source ? "border-l-2 border-l-border" : "");
   const td = "px-3 py-2 text-center tabular-nums whitespace-nowrap";
@@ -424,12 +489,19 @@ function MetricsTable({ title, dates, rows, shown, sources, changes, partialDays
               const v = r ? deriveMetrics(r) : null;
               const notes = changes.get(d);
               return (
-                <tr key={d} className="border-t border-border/50 hover:[&>td]:bg-muted/60" title={notes ? `Alteração: ${notes.join(" · ")}` : undefined}>
+                <tr key={d} className="border-t border-border/50 hover:[&>td]:bg-muted/60">
                   <td className={`${first} bg-card`}>
                     <span className="flex items-center gap-1.5">
                       {fmtDate(d)}
                       {partialDays.has(d) && <span className="text-amber-600" title="Clarity parcial: busca manual (últimas 24h)">*</span>}
-                      {notes && <StickyNote className="size-3.5 text-sky-500" aria-label={`Alteração: ${notes.join("; ")}`} />}
+                      {notes && (
+                        <DiaryChangeHover date={d} notes={notes}>
+                          <button type="button" className="relative -m-1 p-1 rounded hover:bg-sky-500/10 cursor-help" aria-label={`Alteração: ${notes.map((n) => n.content).join("; ")}`}>
+                            <StickyNote className="size-3.5 text-sky-500" />
+                            {notes.length > 1 && <span className="absolute -top-0.5 -right-0.5 text-[9px] font-bold text-sky-600">{notes.length}</span>}
+                          </button>
+                        </DiaryChangeHover>
+                      )}
                     </span>
                   </td>
                   {shown.map((m, i) => (

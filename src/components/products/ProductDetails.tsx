@@ -16,6 +16,7 @@ import { ProductPageTab } from "@/components/products/ProductPageTab";
 import { ProductCompetitors } from "@/components/products/ProductCompetitors";
 import { ProductAds } from "@/components/products/ProductAds";
 import { ProductSyncCard } from "@/components/products/ProductSyncCard";
+import { ProductCostField } from "@/components/products/ProductCostHistory";
 
 const GROUPS = [
   {
@@ -302,20 +303,13 @@ function Metric({ icon: Icon, accent, label, value, hint, negative, highlight }:
 // (Sincronizar Card) alimentam o custo dos pedidos no dashboard. Salvam ao sair do campo.
 function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) => void }) {
   const [name, setName] = useState(product.name);
-  const [cost, setCost] = useState(String(product.cost ?? 0));
   const { statuses } = useProductStatuses();
   useEffect(() => { setName(product.name); }, [product.name]);
-  useEffect(() => { setCost(String(product.cost ?? 0)); }, [product.cost]);
 
   const saveName = () => {
     const v = name.trim();
     if (!v) setName(product.name);
     else if (v !== product.name) onSave({ name: v });
-  };
-  const saveCost = () => {
-    const v = Number(cost.replace(",", "."));
-    if (!Number.isFinite(v) || v < 0) setCost(String(product.cost ?? 0));
-    else if (v !== Number(product.cost ?? 0)) onSave({ cost: v });
   };
   const inputCls = "w-full px-3 h-9 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50";
 
@@ -326,9 +320,7 @@ function FixedFields({ product, onSave }: { product: any; onSave: (patch: any) =
           <input value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className={inputCls} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Custo (USD)">
-            <input type="number" step="0.01" min="0" value={cost} onChange={(e) => setCost(e.target.value)} onBlur={saveCost} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className={`${inputCls} tabular-nums`} />
-          </Field>
+          <ProductCostField productId={product.id} cost={Number(product.cost ?? 0)} />
           <Field label="Status">
             <select value={product.board_column_id ?? ""} onChange={(e) => e.target.value && onSave({ board_column_id: e.target.value })} className={`${inputCls} cursor-pointer`}>
               {!product.board_column_id && <option value="">—</option>}
