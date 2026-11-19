@@ -1144,7 +1144,8 @@ function Dashboard() {
   const openTasks = allTasks.filter((t) => t.status !== "concluida");
   const todayUS = isoTodayUS();
   const overdueTasks = openTasks.filter((t) => t.due_date && t.due_date < todayUS).length;
-  const logisticsHref = opsCardIds.length === 1 ? `/shops/lojas-grupos/${opsCardIds[0]}?tab=logistica` : "/shops/lojas-grupos";
+  // Acompanhamento dos pedidos é na aba Pedidos (a subaba Rastreamento do grupo saiu).
+  const logisticsHref = "/pedidos";
   const opsLoading = isLoading || logisticsLoading;
   const totals = (data as any)?.totals ?? {
     faturamento: 0, faturamentoDelta: 0, anuncios: 0, anunciosDelta: 0,

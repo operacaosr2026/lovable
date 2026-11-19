@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell } from "@/components/PageHeader";
 import {
   ArrowLeft, Layers, MapPin, Store, ChevronDown,
-  LayoutDashboard, Wallet, ShoppingBag, Plug, Truck,
+  LayoutDashboard, Wallet, ShoppingBag, Plug,
 } from "lucide-react";
 import { getLgCard } from "@/lib/lg-cards.functions";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -14,14 +14,14 @@ import { LgDashboard }     from "@/components/lojas-grupos/LgDashboard";
 import { LgCaixa }         from "@/components/lojas-grupos/LgCaixa";
 import { LgOrders }        from "@/components/lojas-grupos/LgOrders";
 import { LgIntegrations }  from "@/components/lojas-grupos/LgIntegrations";
-import { LgLogistica }     from "@/components/lojas-grupos/LgLogistica";
 
-type Tab = "dashboard" | "caixa" | "pedidos" | "logistica" | "integracoes";
-const VALID_TABS: Tab[] = ["dashboard", "caixa", "pedidos", "logistica", "integracoes"];
+// A subaba Rastreamento saiu: o acompanhamento é na aba Pedidos (menu principal).
+type Tab = "dashboard" | "caixa" | "pedidos" | "integracoes";
+const VALID_TABS: Tab[] = ["dashboard", "caixa", "pedidos", "integracoes"];
 // Permissão de cada subaba (Configurações > Membros); admin vê todas.
 const TAB_SECTION: Record<Tab, Section> = {
   dashboard: "lg_dashboard", caixa: "lg_caixa",
-  pedidos: "lg_pedidos", logistica: "lg_rastreamento", integracoes: "lg_integracoes",
+  pedidos: "lg_pedidos", integracoes: "lg_integracoes",
 };
 
 const COUNTRIES: Record<string, string> = {
@@ -29,6 +29,10 @@ const COUNTRIES: Record<string, string> = {
 };
 
 export const Route = createFileRoute("/shops/lojas-grupos/$cardId")({
+  // Link antigo pra subaba Rastreamento (?tab=logistica) → aba Pedidos.
+  beforeLoad: ({ location }) => {
+    if ((location.search as Record<string, unknown>)?.tab === "logistica") throw redirect({ to: "/pedidos" });
+  },
   validateSearch: (s: Record<string, unknown>) => ({
     tab: (VALID_TABS.includes(s.tab as Tab) ? s.tab : "dashboard") as Tab,
   }),
@@ -192,11 +196,10 @@ function LgCardDetail() {
 
       {/* Tabs — à direita, os controles da aba ativa (Dashboard: data, sincronizar, período, moeda) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 border-b border-border">
-        <div className="flex items-center gap-1 overflow-x-auto">
+        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
           {allowedTabs.includes("dashboard") && <TabBtn active={tab === "dashboard"}   onClick={() => setTab("dashboard")}   icon={LayoutDashboard}>Dashboard</TabBtn>}
           {allowedTabs.includes("caixa") && <TabBtn active={tab === "caixa"}       onClick={() => setTab("caixa")}       icon={Wallet}>Caixa</TabBtn>}
           {allowedTabs.includes("pedidos") && <TabBtn active={tab === "pedidos"}     onClick={() => setTab("pedidos")}     icon={ShoppingBag}>Pedidos</TabBtn>}
-          {allowedTabs.includes("logistica") && <TabBtn active={tab === "logistica"} onClick={() => setTab("logistica")} icon={Truck}>Rastreamento</TabBtn>}
           {allowedTabs.includes("integracoes") && <TabBtn active={tab === "integracoes"} onClick={() => setTab("integracoes")} icon={Plug}>Integrações</TabBtn>}
         </div>
         <div ref={setTabActionsEl} className="ml-auto pb-1.5 empty:hidden" />
@@ -239,15 +242,6 @@ function LgCardDetail() {
             id:           s.shop_id,
             name:         shopNamesMap[s.shop_id] ?? s.shop_id,
             payment_days: s.payment_days ?? 7,
-          }))}
-        />
-      )}
-      {tab === "logistica" && allShopIds.length > 0 && (
-        <LgLogistica
-          shopIds={effectiveShopIds}
-          shops={shops.map((s: any) => ({
-            id:   s.shop_id,
-            name: shopNamesMap[s.shop_id] ?? s.shop_id,
           }))}
         />
       )}

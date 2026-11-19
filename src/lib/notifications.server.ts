@@ -372,7 +372,7 @@ export async function refreshSystemNotifications(ownerId: string) {
           level: "error",
           title: `Rastreio (17track) com erro — ${name(t.shop_id)}`,
           body: String(t.last_sync_error ?? "Falha ao sincronizar rastreios.").slice(0, 240),
-          link: linkFor(t.shop_id, "logistica"),
+          link: "/settings/rastreamento",
         });
       } else if (hrs > TRACKING_STALE_HOURS) {
         const h = Number.isFinite(hrs) ? Math.floor(hrs) : null;
@@ -380,7 +380,7 @@ export async function refreshSystemNotifications(ownerId: string) {
           level: "warning",
           title: `Rastreio sem atualizar${h != null ? ` há ${h}h` : ""} — ${name(t.shop_id)}`,
           body: "O 17track não sincroniza essa loja há mais tempo que o normal; status de entrega podem estar desatualizados.",
-          link: linkFor(t.shop_id, "logistica"),
+          link: "/settings/rastreamento",
         });
       }
     }

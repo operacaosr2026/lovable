@@ -41,7 +41,7 @@ function CaixaIndex() {
       />
 
       {/* shrink-0: no layout de tela cheia (fit), conteúdo alto (Simulador) encolhia esta linha até sumir. */}
-      <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto shrink-0">
+      <div className="flex items-center gap-1 mb-4 border-b border-border overflow-x-auto scrollbar-none shrink-0">
         <TabBtn active={tab === "caixa"} onClick={() => setTab("caixa")} icon={Wallet}>Caixa</TabBtn>
         <TabBtn active={tab === "wise"} onClick={() => setTab("wise")} icon={Landmark}>Wise (R$)</TabBtn>
         <TabBtn active={tab === "simulador"} onClick={() => setTab("simulador")} icon={FlaskConical}>Simulador de Caixa</TabBtn>
