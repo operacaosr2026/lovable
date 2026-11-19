@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Send, Loader2, Search, ChevronDown, Truck, Package, AlertTriangle, Hourglass, ShieldAlert, Headphones, Mail,
   Plus, Trash2, FileText, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Store, Tag, ListFilter, ArrowRight,
-  StickyNote, Copy, ListTodo, Workflow,
+  StickyNote, Copy, ListTodo, Workflow, Archive, ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue, saveNoticeNote,
+  listNoticeOrders, listNoticeTemplates, saveNoticeTemplate, deleteNoticeTemplate, queueOrderNotices, getNoticeQueue, cancelNoticeQueue, saveNoticeNote, setNoticeExcluded,
   type NoticeOrder, type NoticeTemplate, type NoticeQueue,
 } from "@/lib/order-notices.functions";
 import { NOTICE_STAGES, NOTICE_INTERVAL_MIN, stageOf, renderNotice, customerOrderNumber, type NoticeStageKey } from "@/lib/order-notices";
@@ -47,6 +47,7 @@ const TONE = {
   amber:  { badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",   active: "border-amber-400/60 bg-amber-500/[0.06]",   num: "text-amber-700 dark:text-amber-300",   pill: "bg-amber-500/10 text-amber-700 dark:text-amber-300" },
   orange: { badge: "bg-orange-500/10 text-orange-600 dark:text-orange-400", active: "border-orange-400/60 bg-orange-500/[0.06]", num: "text-orange-700 dark:text-orange-300", pill: "bg-orange-500/10 text-orange-700 dark:text-orange-300" },
   rose:   { badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400",       active: "border-rose-400/60 bg-rose-500/[0.06]",       num: "text-rose-700 dark:text-rose-300",       pill: "bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+  slate:  { badge: "bg-muted text-muted-foreground",                         active: "border-border bg-muted/60",                    num: "text-foreground",                       pill: "bg-muted text-muted-foreground" },
 } as const;
 type Tone = (typeof TONE)[keyof typeof TONE];
 const STAGE_LOOK: Record<NoticeStageKey, { tone: Tone; icon: typeof Truck }> = {
@@ -139,7 +140,8 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
   const q = useQuery({ queryKey: ["notice-orders"], queryFn: () => listFn(), refetchInterval: pendingCount ? 60_000 : false });
   const templates = useQuery({ queryKey: ["notice-templates"], queryFn: () => tplFn() });
 
-  const [stage, setStage] = useState<NoticeStageKey | "todos">("todos");
+  // "excluidos": pedidos marcados à mão como excluídos (fora das etapas).
+  const [stage, setStage] = useState<NoticeStageKey | "todos" | "excluidos">("todos");
   const [search, setSearch] = useState("");
   const [shop, setShop] = useState("todas");
   const [status, setStatus] = useState<"todos" | NoticeOrder["status"]>("todos");
@@ -149,6 +151,8 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
   const [hideWaiting, setHideWaiting] = useState(true);
   // Cliente que já escreveu pro suporte: a conversa segue pelo Atendimento.
   const [hideSupport, setHideSupport] = useState(true);
+  // Reembolsado pelo fornecedor (confirmado): aparece com o selo; dá pra esconder.
+  const [hideSupplier, setHideSupplier] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sendOpen, setSendOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -163,24 +167,44 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
     }
   };
 
-  const orders = q.data ?? [];
-  const shops = useMemo(() => [...new Map(orders.map((o) => [o.shopId, o.shopName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [orders]);
+  const allOrders = q.data ?? [];
+  const shops = useMemo(() => [...new Map(allOrders.map((o) => [o.shopId, o.shopName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [allOrders]);
 
   // Tudo menos a etapa (os cards de etapa contam com os outros filtros aplicados).
-  const base = useMemo(() => {
+  // Por que o pedido está fora da lista: marcado à mão ou por uma das Exclusões
+  // ligadas no menu. null = está na lista.
+  const exclusionWhy = (o: NoticeOrder): string | null => {
+    if (o.excludedAt) return "Excluído à mão";
+    if (hideDispute && o.dispute) return "Com chargeback";
+    if (hideSupplier && o.supplierRefund?.status === "confirmado") return "Reembolsado pelo fornecedor";
+    if (hideWaiting && o.status === "esperando_cliente") return "Esperando cliente";
+    if (hideSupport && o.supportAt) return "Escreveu pro suporte";
+    if (hideRecent && recentlyNotified(o)) return `Avisado há menos de ${RECENT_DAYS} dias`;
+    return null;
+  };
+  const matches = (o: NoticeOrder) => {
     const term = search.trim().toLowerCase().replace(/^#/, "");
-    return orders.filter((o) => {
-      if (shop !== "todas" && o.shopId !== shop) return false;
-      if (status !== "todos" && o.status !== status) return false;
-      if (hideRecent && recentlyNotified(o)) return false;
-      if (hideDispute && o.dispute) return false;
-      if (hideWaiting && o.status === "esperando_cliente") return false;
-      if (hideSupport && o.supportAt) return false;
-      if (term && !`${o.orderNumber} ${o.customerName} ${o.email ?? ""} ${o.trackingCode ?? ""} ${o.note ?? ""}`.toLowerCase().includes(term)) return false;
-      return true;
-    });
-  }, [orders, search, shop, status, hideRecent, hideDispute, hideWaiting, hideSupport]);
-  const rows = useMemo(() => (stage === "todos" ? base : base.filter((o) => stageOf(o.days) === stage)), [base, stage]);
+    return (shop === "todas" || o.shopId === shop) && (status === "todos" || o.status === status)
+      && (!term || `${o.orderNumber} ${o.customerName} ${o.email ?? ""} ${o.trackingCode ?? ""} ${o.note ?? ""}`.toLowerCase().includes(term));
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const base = useMemo(() => allOrders.filter((o) => matches(o) && !exclusionWhy(o)), [allOrders, search, shop, status, hideRecent, hideDispute, hideWaiting, hideSupport, hideSupplier]);
+  // Card "Excluídos": tudo que as Exclusões do menu esconderam + os marcados à mão.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const excludedRows = useMemo(() => allOrders.filter((o) => matches(o) && !!exclusionWhy(o)), [allOrders, search, shop, status, hideRecent, hideDispute, hideWaiting, hideSupport, hideSupplier]);
+  const rows = useMemo(() => (stage === "excluidos" ? excludedRows : stage === "todos" ? base : base.filter((o) => stageOf(o.days) === stage)), [base, excludedRows, stage]);
+
+  const qcList = useQueryClient();
+  const excludeFn = useServerFn(setNoticeExcluded);
+  const exclude = useMutation({
+    mutationFn: (v: { ids: string[]; excluded: boolean }) => excludeFn({ data: { orderIds: v.ids, excluded: v.excluded } }),
+    onSuccess: (_r, v) => {
+      toast.success(v.excluded ? `${v.ids.length} pedido${v.ids.length === 1 ? "" : "s"} em Excluídos` : `${v.ids.length} pedido${v.ids.length === 1 ? "" : "s"} de volta na lista`);
+      setSelected(new Set());
+      qcList.invalidateQueries({ queryKey: ["notice-orders"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // Seleção só do que está na tela (mudou o filtro, o que sumiu sai da seleção).
   useEffect(() => {
@@ -193,7 +217,7 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
 
   const selectedOrders = rows.filter((o) => selected.has(o.id));
   const allChecked = rows.length > 0 && selectedOrders.length === rows.length;
-  const hideCount = [hideRecent, hideDispute, hideWaiting, hideSupport].filter(Boolean).length;
+  const hideCount = [hideRecent, hideDispute, hideWaiting, hideSupport, hideSupplier].filter(Boolean).length;
   const showQueue = !!queue.data && (queue.data.pending.length > 0 || queue.data.failed.length > 0);
   const toggle = (id: string) => setSelected((cur) => {
     const next = new Set(cur);
@@ -212,7 +236,7 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
       </div>
 
       {/* Etapas */}
-      <div className={`${CARD} grid grid-cols-2 lg:grid-cols-5 gap-1 p-2 mb-4`}>
+      <div className={`${CARD} grid grid-cols-2 lg:grid-cols-6 gap-1 p-2 mb-4`}>
         <StageCard active={stage === "todos"} onClick={() => setStage("todos")} tone={TONE.violet} icon={Mail}
           label="Todos os atrasados" hint="5 dias ou mais desde a compra"
           count={base.length} notNotified={base.filter((o) => !o.notices.length).length} />
@@ -224,6 +248,8 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
               label={s.label} hint={s.hint} count={list.length} notNotified={list.filter((o) => !o.notices.length).length} />
           );
         })}
+        <StageCard active={stage === "excluidos"} onClick={() => setStage(stage === "excluidos" ? "todos" : "excluidos")} tone={TONE.slate} icon={Archive}
+          label="Excluídos" hint="Marcados pra não avisar" count={excludedRows.length} notNotified={0} />
       </div>
 
       {/* Filtros + fila */}
@@ -256,6 +282,8 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
                 hint='Status "Esperando cliente" no Rastreamento' />
               <ExclusionItem checked={hideSupport} onChange={setHideSupport} label="Escreveu pro suporte"
                 hint="A conversa já está no Atendimento" />
+              <ExclusionItem checked={hideSupplier} onChange={setHideSupplier} label="Reembolsado pelo fornecedor"
+                hint="O fornecedor já devolveu o valor (confirmado em Atendimento › Reembolso)" />
             </PopoverContent>
           </Popover>
         </div>
@@ -287,6 +315,23 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
             <Button variant="outline" disabled={!selectedOrders.length} onClick={() => setTaskOpen(true)}>
               <ListTodo className="size-4" /> Criar tarefa
             </Button>
+            {stage === "excluidos" ? (
+              <Button variant="outline" disabled={!selectedOrders.length || exclude.isPending}
+                onClick={() => {
+                  // Só os marcados à mão voltam; os das Exclusões do menu saem desmarcando a opção lá.
+                  const manual = selectedOrders.filter((o) => o.excludedAt).map((o) => o.id);
+                  const viaMenu = selectedOrders.length - manual.length;
+                  if (viaMenu) toast.info(`${viaMenu} pedido${viaMenu === 1 ? "" : "s"} saem pelas Exclusões do menu — desmarque a opção lá pra voltarem`);
+                  if (manual.length) exclude.mutate({ ids: manual, excluded: false });
+                }}>
+                <ArchiveRestore className="size-4" /> Restaurar
+              </Button>
+            ) : (
+              <Button variant="outline" disabled={!selectedOrders.length || exclude.isPending}
+                onClick={() => exclude.mutate({ ids: selectedOrders.map((o) => o.id), excluded: true })}>
+                <Archive className="size-4" /> Excluir
+              </Button>
+            )}
             <Button disabled={!selectedOrders.length} onClick={() => setSendOpen(true)}>
               <Send className="size-4" /> Enviar e-mail
             </Button>
@@ -356,7 +401,18 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
                         <div className="text-xs text-muted-foreground mt-1">{fmtDate(o.orderDate)}</div>
                       </td>
                       <td className="py-3 px-2">
+                        {stage === "excluidos" && exclusionWhy(o) && (
+                          <span className="mr-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium align-middle bg-muted text-muted-foreground">
+                            <Archive className="size-3" />{exclusionWhy(o)}
+                          </span>
+                        )}
                         <Pill cls={st.cls} icon={st.icon}>{st.label}</Pill>
+                        {o.supplierRefund && (
+                          <span className={`ml-1.5 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium align-middle ${o.supplierRefund.status === "confirmado" ? "bg-violet-500/10 text-violet-700 dark:text-violet-300" : "bg-muted text-muted-foreground"}`}
+                            title={o.supplierRefund.status === "confirmado" ? "O fornecedor já devolveu o valor deste pedido" : "Reembolso pedido ao fornecedor, ainda não confirmado"}>
+                            {o.supplierRefund.status === "confirmado" ? "Reemb. fornecedor" : "Reemb. fornecedor pendente"} ${o.supplierRefund.amount.toFixed(2)} · {fmtDate(o.supplierRefund.date)}
+                          </span>
+                        )}
                         {o.lastEvent && (
                           <div className="text-xs text-muted-foreground mt-1 line-clamp-2" title={o.lastEvent}>
                             {o.lastEventAt && <span className="text-foreground/80">{fmtDate(o.lastEventAt)} · </span>}{o.lastEvent}

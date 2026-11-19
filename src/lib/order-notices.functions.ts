@@ -131,6 +131,10 @@ export type NoticeOrder = {
   notices: { at: string; title: string }[];  // enviados, mais recente primeiro
   queued: boolean;            // tem e-mail esperando na fila
   note: string | null;        // nota da equipe (shop_orders.notice_note)
+  // Reembolso do fornecedor (Atendimento › Reembolso): pendente ou confirmado.
+  supplierRefund: { status: "pendente" | "confirmado"; amount: number; date: string } | null;
+  // Marcado à mão como excluído: sai das etapas e fica no card "Excluídos".
+  excludedAt: string | null;
 };
 
 const cleanLabel = (label: string | null | undefined) =>
@@ -160,7 +164,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
 
     // Em aberto: sem entrega/devolução, sem cancelamento nem reembolso.
     const { data: orders, error } = await selectAll<any>(supabaseAdmin.from("shop_orders")
-      .select("id,shop_id,external_id,order_number,order_date,tracking_code,tracking_url,delivery_status,shipped_at,problem_at,notice_note,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,ship_first:raw->shipping_address->>first_name,ship_last:raw->shipping_address->>last_name")
+      .select("id,shop_id,external_id,order_number,order_date,tracking_code,tracking_url,delivery_status,shipped_at,problem_at,notice_note,notice_excluded_at,email:raw->>email,cust:raw->customer->>email,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,ship_first:raw->shipping_address->>first_name,ship_last:raw->shipping_address->>last_name")
       .eq("user_id", ownerId)
       .in("shop_id", [...shops.keys()])
       .lte("order_date", day(NOTICE_MIN_DAYS))
@@ -176,7 +180,7 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
     const emailOf = (o: any) => String(o.email ?? o.cust ?? "").trim().toLowerCase() || null;
     const emails = [...new Set(orders.map(emailOf).filter(Boolean))] as string[];
     const externalIds = [...new Set(orders.map((o) => String(o.external_id)))];
-    const [tracking, notices, disputes, convs, integs] = await Promise.all([
+    const [tracking, notices, disputes, convs, integs, supRefunds] = await Promise.all([
       selectAllIn<any>(ids, (c) => supabaseAdmin.from("shop_order_tracking")
         .select("order_id,tracking_status,last_event_label,last_event_at,delivered_at").in("order_id", c)),
       selectAllIn<any>(ids, (c) => supabaseAdmin.from("order_notices")
@@ -186,7 +190,16 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
       selectAllIn<any>(emails, (c) => supabaseAdmin.from("support_conversations")
         .select("customer_email,last_inbound_at").eq("owner_id", ownerId).in("customer_email", c)),
       supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", [...shops.keys()]),
+      selectAllIn<any>(ids, (c) => (supabaseAdmin as any).from("supplier_refunds")
+        .select("order_id,status,amount,created_at,confirmed_at").eq("owner_id", ownerId).in("order_id", c)),
     ]);
+    // Confirmado vale sobre pendente (mais de um registro no mesmo pedido).
+    const supBy = new Map<string, { status: "pendente" | "confirmado"; amount: number; date: string }>();
+    for (const r of (supRefunds.data ?? []) as any[]) {
+      const cur = supBy.get(r.order_id);
+      if (cur?.status === "confirmado" && r.status !== "confirmado") continue;
+      supBy.set(r.order_id, { status: r.status, amount: Number(r.amount ?? 0), date: String(r.confirmed_at ?? r.created_at) });
+    }
     const trackBy = new Map(tracking.data.map((t) => [t.order_id, t]));
     const noticesBy = new Map<string, { at: string; title: string }[]>();
     const queued = new Set<string>();
@@ -246,9 +259,24 @@ export const listNoticeOrders = createServerFn({ method: "GET" })
         notices: noticesBy.get(o.id) ?? [],
         queued: queued.has(o.id),
         note: o.notice_note ?? null,
+        supplierRefund: supBy.get(o.id) ?? null,
+        excludedAt: o.notice_excluded_at ?? null,
       });
     }
     return out.sort((a, b) => b.days - a.days);
+  });
+
+// Excluir/restaurar pedidos da lista de avisos de atraso (card "Excluídos").
+export const setNoticeExcluded = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ orderIds: z.array(z.string().uuid()).min(1).max(500), excluded: z.boolean() }).parse(d))
+  .handler(async ({ data, context }) => {
+    assertAccess(context);
+    const { error } = await supabaseAdmin.from("shop_orders")
+      .update({ notice_excluded_at: data.excluded ? new Date().toISOString() : null })
+      .in("id", data.orderIds).eq("user_id", context.ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // Nota da equipe no pedido (vazia apaga). Só pedido de loja do workspace.
