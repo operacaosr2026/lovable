@@ -34,6 +34,8 @@ export type OrderCounts = Record<OrderFilter, number> & { atencao: number };
 
 export type OrderListRow = {
   id: string; shopId: string; shopName: string; externalId: string; orderNumber: string; orderDate: string | null;
+  // Domínio .myshopify da loja (cabeçalho da mensagem pro fornecedor).
+  shopDomain?: string | null;
   customerName: string | null; customerEmail: string | null; product: string | null; itemsQty: number;
   revenue: number; currency: string | null; financialStatus: string | null;
   // Reembolso feito pelo app Disputifier (alerta Ethoca/CDRN): tipo do alerta, ou null.
@@ -319,7 +321,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
       const items = (o.items ?? []) as any[];
       const domain = domainByShop.get(o.shop_id);
       return {
-        id: o.id, shopId: o.shop_id, shopName: shopName.get(o.shop_id) ?? "—", externalId: o.external_id,
+        id: o.id, shopId: o.shop_id, shopName: shopName.get(o.shop_id) ?? "—", externalId: o.external_id, shopDomain: domain ?? null,
         orderNumber: String(o.order_number ?? o.external_id), orderDate: o.order_date,
         customerName: fullName(o.first_name, o.last_name) ?? o.ship_name ?? null, customerEmail: email,
         product: productSummary(items), itemsQty: items.reduce((n, li) => n + Number(li?.quantity ?? 0), 0),

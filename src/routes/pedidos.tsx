@@ -5,8 +5,10 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Search, Loader2, ExternalLink, Truck, Package, ShieldAlert, ShieldCheck, Headphones, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   Copy, MapPin, Mail, Phone, User, Factory, RotateCcw, Box, Check, CircleCheck, AlertTriangle, RefreshCw, Plane, CreditCard,
-  CalendarDays, Eye, MoreHorizontal, X, Store, Clock, StickyNote, Send,
+  CalendarDays, Eye, MoreHorizontal, X, Store, Clock, StickyNote, Send, MessageSquare,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { isoDateUS } from "@/lib/timezone";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageHeader";
 import { requireAuth } from "@/lib/route-guards";
@@ -121,6 +123,39 @@ function Deadline({ date, today }: { date: string | null; today: string }) {
 
 const copy = (text: string, msg = "Copiado") => { navigator.clipboard?.writeText(text).then(() => toast.success(msg)).catch(() => {}); };
 
+// Mensagem pro fornecedor (WhatsApp) com os pedidos selecionados: um pedido por
+// linha (sem separar por loja), com rastreio, situação e última movimentação.
+function supplierMessageFor(rows: OrderListRow[]): string {
+  const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const num = (r: OrderListRow) => Number(String(r.orderNumber).match(/(\d+)\s*$/)?.[1] ?? 0);
+  const lines = [...rows].sort((a, b) => num(a) - num(b)).map((r) => {
+    const situacao = r.attentionWhy || (r.deliveryStatus ? DELIVERY[r.deliveryStatus]?.[0] : null) || "verificar";
+    const local = r.local?.number && r.local.number !== "0" ? ` (local ${r.local.label} ${r.local.number})` : "";
+    const last = r.lastEvent ? ` (último: ${r.lastEvent}${r.lastEventAt ? ` em ${ddmm(isoDateUS(r.lastEventAt))}` : ""})` : "";
+    return `${orderLabel(r.orderNumber)} - ${r.trackingCode ?? "sem rastreio"} - ${situacao}${local}${last}`;
+  });
+  return ["Verificar os pedidos abaixo, por favor:", "", ...lines].join("\n");
+}
+
+function SupplierMessageDialog({ text, onClose }: { text: string; onClose: () => void }) {
+  const [value, setValue] = useState(text);
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><MessageSquare className="size-4" /> Mensagem pro fornecedor</DialogTitle></DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-1">Dá pra editar antes de copiar. *texto* sai em negrito no WhatsApp.</p>
+        <textarea value={value} onChange={(e) => setValue(e.target.value)} rows={14}
+          className="w-full rounded-xl border border-border bg-background p-3 text-sm font-mono leading-relaxed outline-none focus:border-primary resize-y" />
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="h-9 px-3 rounded-lg border border-border text-sm hover:bg-muted">Fechar</button>
+          <button onClick={() => { copy(value, "Mensagem copiada"); onClose(); }}
+            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"><Copy className="size-4" /> Copiar</button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PedidosPage() {
   const initialQ = Route.useSearch().q ?? "";
   const [input, setInput] = useState(initialQ);
@@ -133,6 +168,7 @@ function PedidosPage() {
   const [pageSize, setPageSize] = useState(10);
   const [openId, setOpenId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [supplierMsg, setSupplierMsg] = useState<string | null>(null);
 
   // Busca enquanto digita (espera 350ms parado).
   useEffect(() => { const t = setTimeout(() => setQ(input.trim()), 350); return () => clearTimeout(t); }, [input]);
@@ -217,9 +253,11 @@ function PedidosPage() {
           {selectedRows.some((r) => r.trackingCode) && (
             <button onClick={() => copy(selectedRows.filter((r) => r.trackingCode).map((r) => `${orderLabel(r.orderNumber)}\t${r.trackingCode}`).join("\n"), "Rastreios copiados")} className="inline-flex items-center gap-1 text-primary hover:underline"><Truck className="size-3.5" />Copiar rastreios</button>
           )}
+          <button onClick={() => setSupplierMsg(supplierMessageFor(selectedRows))} className="inline-flex items-center gap-1 text-primary hover:underline"><MessageSquare className="size-3.5" />Mensagem pro fornecedor</button>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
       )}
+      {supplierMsg != null && <SupplierMessageDialog text={supplierMsg} onClose={() => setSupplierMsg(null)} />}
 
       {/* ── Tabela ── */}
       <div className={`${CARD} overflow-hidden`}>
