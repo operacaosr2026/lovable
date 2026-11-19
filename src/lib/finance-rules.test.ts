@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  aggregateRefundsAndChargebacks, refundsOnFirstOfMonth, netRevenue, profit,
+  aggregateRefundsAndChargebacks, refundsOnFirstOfMonth, netRevenue, profit, closedDebtPayoutIds,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, comparisonPeriod,
   payoutLagDays,
 } from "@/lib/finance-rules";
@@ -43,6 +43,30 @@ describe("reembolso e chargeback", () => {
     expect(sep.cbAmt).toBeCloseTo(99.9);
     expect(oct.cbAmt).toBeCloseTo(-99.9);
     expect(oct.cbByDate["2026-10-10"]).toBeCloseTo(-99.9);
+  });
+
+  it("12b. loja encerrada: reembolso/chargeback a partir de closed_on não conta; antes continua", () => {
+    const src = {
+      ...empty,
+      refundOrders: [refundedOrder("2026-11-17", 50), refundedOrder("2026-11-18", 70)],
+      disputes: [{ shop_id: SHOP, amount: 30, initiated_at: "2026-11-10" }, { shop_id: SHOP, amount: 40, initiated_at: "2026-11-20" }],
+      // Ganho de chargeback aberto depois do encerramento também não volta.
+      wonDisputes: [{ shop_id: SHOP, amount: 40, finalized_on: "2026-11-25", initiated_at: "2026-11-20" }],
+      closedOn: { [SHOP]: "2026-11-18" },
+    };
+    const r = aggregateRefundsAndChargebacks([SHOP], "2026-11-01", "2026-11-30", src)[0];
+    expect(r.refAmt).toBeCloseTo(50);
+    expect(r.cbAmt).toBeCloseTo(30);
+  });
+
+  it("12c. loja encerrada: repasse negativo depois do encerramento (cobrança da dívida) fica fora; positivo e anterior ficam", () => {
+    const payouts = [
+      { id: 1, date: "2026-11-20", amount: "-884.25" },
+      { id: 2, date: "2026-11-21", amount: "50.00" },
+      { id: 3, date: "2026-11-10", amount: "-20.00" },
+    ];
+    expect([...closedDebtPayoutIds(payouts, "2026-11-18")]).toEqual(["1"]);
+    expect(closedDebtPayoutIds(payouts, null).size).toBe(0);
   });
 
   it("13. pagamento da cobrança do alerta abate o reembolso no dia do pagamento", () => {

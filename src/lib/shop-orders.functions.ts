@@ -18,7 +18,7 @@ import { beforeCashflowStart, shopifyOrderRow, shopifyTrackingPatch } from "@/li
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
 import {
-  aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, refundsOnFirstOfMonth, monthsBetween, monthEndCapped,
+  aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, closedDebtPayoutIds, refundsOnFirstOfMonth, monthsBetween, monthEndCapped,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, roundCents, payoutLagDays,
 } from "@/lib/finance-rules";
 // Hora local (0-23) de um timestamp, no fuso de referência do app (o mesmo
@@ -959,6 +959,14 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
     const { data: dismissedRows } = await context.supabase.from("shop_cash_dismissed_payouts")
       .select("shopify_payout_id").eq("user_id", context.ownerId).eq("shop_id", data.shop_id);
     const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
+    // Loja encerrada: cobrança da dívida (repasse negativo) fica fora e sai do Caixa se já entrou.
+    const { data: closedShopRow } = await supabaseAdmin.from("shops").select("closed_on").eq("id", data.shop_id).maybeSingle();
+    const debtIds = closedDebtPayoutIds(payouts as any[], closedShopRow?.closed_on);
+    if (debtIds.size) {
+      await supabaseAdmin.from("shop_cash_entries").delete()
+        .eq("user_id", context.ownerId).eq("shop_id", data.shop_id).eq("reconciled", false).in("shopify_payout_id", [...debtIds]);
+      for (const id of debtIds) dismissedIds.add(id);
+    }
     const relevant = relevantPayouts(payouts as any[], dismissedIds as Set<string>);
 
     if (!relevant.length) return { synced: 0 };
@@ -1031,9 +1039,13 @@ export const syncShopifyPayouts = createServerFn({ method: "POST" })
         }
         byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
       }
-      const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
-        amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
-      }));
+      const { data: closedShop } = await supabaseAdmin.from("shops").select("closed_on").eq("id", data.shop_id).maybeSingle();
+      const provisionals = Array.from(byDate.entries())
+        // Loja encerrada: previsto zerado/negativo (dívida com a Shopify) não entra no Caixa.
+        .filter(([, amount]) => !closedShop?.closed_on || roundCents(amount) > 0)
+        .map(([date, amount]) => ({
+          amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
+        }));
       const { error: pendErr } = await supabaseAdmin.rpc("replace_pending_payouts", {
         p_user_id: context.ownerId, p_shop_id: data.shop_id, p_rows: provisionals,
       });
@@ -1248,7 +1260,7 @@ const REFUND_LOOKBACK_DAYS = 180;
 async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: string, toISO: string): Promise<RefundCbSources> {
   const lookback = new Date(`${fromISO}T00:00:00Z`);
   lookback.setUTCDate(lookback.getUTCDate() - REFUND_LOOKBACK_DAYS);
-  const [refundOrders, disputes, wonDisputes, recoveries] = await Promise.all([
+  const [refundOrders, disputes, wonDisputes, recoveries, closedShops] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_orders")
       .select("shop_id,external_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
       .eq("user_id", ownerId).in("shop_id", shopIds)
@@ -1259,13 +1271,15 @@ async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: 
       .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback")
       .gte("initiated_at", fromISO).lte("initiated_at", toISO)),
     selectAll(supabaseAdmin.from("shop_order_disputes")
-      .select("shop_id,order_external_id,amount,finalized_on,reason")
+      .select("shop_id,order_external_id,amount,finalized_on,initiated_at,reason")
       .eq("user_id", ownerId).in("shop_id", shopIds).eq("type", "chargeback").eq("status", "won")
       .gte("finalized_on", fromISO).lte("finalized_on", toISO)),
     selectAll(supabaseAdmin.from("chargeback_alert_followups")
       .select("id,shop_id,order_external_id,recovered_amount,recovery_paid_at")
       .eq("user_id", ownerId).in("shop_id", shopIds).not("recovery_order_id", "is", null)
       .gte("recovery_paid_at", `${fromISO}T00:00:00Z`).lte("recovery_paid_at", `${toISO}T23:59:59Z`)),
+    // Loja encerrada: reembolso/chargeback depois de closed_on não conta.
+    supabaseAdmin.from("shops").select("id,closed_on").eq("user_id", ownerId).in("id", shopIds).not("closed_on", "is", null),
   ]);
   if (refundOrders.error) throw new Error(refundOrders.error.message);
   if (disputes.error) throw new Error(disputes.error.message);
@@ -1296,6 +1310,7 @@ async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: 
     disputes: (disputes.data ?? []) as any[],
     wonDisputes: (wonDisputes.data ?? []) as any[],
     recoveries: recs,
+    closedOn: Object.fromEntries(((closedShops.data ?? []) as any[]).map((s) => [s.id as string, s.closed_on as string])),
   };
 }
 
@@ -1452,6 +1467,12 @@ export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof
         .select("shop_id,shopify_store_id")
         .eq("user_id", context.ownerId).in("shop_id", data.shop_ids),
     ]);
+    // Loja encerrada (shops.closed_on): saldo devedor na Shopify não será pago —
+    // o "a receber" dela nunca fica negativo.
+    const { data: closedRows } = await supabaseAdmin.from("shops").select("id")
+      .eq("user_id", context.ownerId).in("id", data.shop_ids).not("closed_on", "is", null);
+    const closedIds = new Set(((closedRows ?? []) as any[]).map((r) => r.id as string));
+    const floor = (shopId: string, v: number) => (closedIds.has(shopId) ? Math.max(0, v) : v);
 
     const connectedIds = new Set((settings ?? []).filter(s => s.shopify_store_id).map(s => s.shop_id));
     const connected = connectedIds.size > 0;
@@ -1461,6 +1482,7 @@ export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof
       const id = e.shop_id as string;
       byShop.set(id, (byShop.get(id) ?? 0) + Number(e.amount ?? 0));
     }
+    for (const id of closedIds) if (byShop.has(id)) byShop.set(id, floor(id, byShop.get(id)!));
     const pending = Array.from(byShop.values()).reduce((a, b) => a + b, 0);
 
     // Per-shop breakdown: prefer the live Shopify Payments balance (accurate,
@@ -1489,7 +1511,9 @@ export const computeShopsReceivable = createServerOnlyFn(async (supabase: typeof
           // cria o payout e só voltam a contar quando caem no banco.
           // Sem saldo ao vivo (loja sem Payments), usa a soma dos payouts.
           shop_id: shopId,
-          amount: live ? live.amount : pendingSum,
+          amount: floor(shopId, live ? live.amount : pendingSum),
+          // Loja encerrada: dívida com a Shopify que não entra no total (só pra mostrar).
+          ignored: (live ? live.amount : pendingSum) - floor(shopId, live ? live.amount : pendingSum),
           pending: pendingSum,
           connected: true,
           live: live != null,

@@ -4977,6 +4977,7 @@ export type Database = {
       shops: {
         Row: {
           archived: boolean;
+          closed_on: string | null;
           country: string | null;
           created_at: string;
           description: string | null;
@@ -4998,6 +4999,7 @@ export type Database = {
         };
         Insert: {
           archived?: boolean;
+          closed_on?: string | null;
           country?: string | null;
           created_at?: string;
           description?: string | null;
@@ -5019,6 +5021,7 @@ export type Database = {
         };
         Update: {
           archived?: boolean;
+          closed_on?: string | null;
           country?: string | null;
           created_at?: string;
           description?: string | null;

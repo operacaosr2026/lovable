@@ -19,7 +19,7 @@ import { beforeCashflowStart, shopifyOrderRow, shopifyTrackingPatch } from "@/li
 import { broadcast } from "@/lib/realtime.server";
 import { isoTodayUS } from "@/lib/timezone";
 import { recordCronRun } from "@/lib/cron-runs.server";
-import { relevantPayouts, payoutPatch, roundCents } from "@/lib/finance-rules";
+import { relevantPayouts, payoutPatch, roundCents, closedDebtPayoutIds } from "@/lib/finance-rules";
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(date: string, days: number) {
@@ -162,6 +162,14 @@ async function syncPayoutsForShop(shopId: string, userId: string, domain: string
   const { data: dismissedRows } = await supabaseAdmin.from("shop_cash_dismissed_payouts")
     .select("shopify_payout_id").eq("user_id", userId).eq("shop_id", shopId);
   const dismissedIds = new Set((dismissedRows ?? []).map((r: any) => r.shopify_payout_id));
+  // Loja encerrada: cobrança da dívida (repasse negativo) fica fora e sai do Caixa se já entrou.
+  const { data: closedShop } = await supabaseAdmin.from("shops").select("closed_on").eq("id", shopId).maybeSingle();
+  const debtIds = closedDebtPayoutIds(payouts as any[], closedShop?.closed_on);
+  if (debtIds.size) {
+    await supabaseAdmin.from("shop_cash_entries").delete()
+      .eq("user_id", userId).eq("shop_id", shopId).eq("reconciled", false).in("shopify_payout_id", [...debtIds]);
+    for (const id of debtIds) dismissedIds.add(id);
+  }
   const relevant = relevantPayouts(payouts, dismissedIds as Set<string>);
   if (!relevant.length) return 0;
 
@@ -239,9 +247,13 @@ async function syncPendingTransactionsForShop(shopId: string, userId: string, do
     }
     byDate.set(key, (byDate.get(key) ?? 0) + Number(t.net ?? 0));
   }
-  const provisionals = Array.from(byDate.entries()).map(([date, amount]) => ({
-    amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
-  }));
+  const { data: closedShop } = await supabaseAdmin.from("shops").select("closed_on").eq("id", shopId).maybeSingle();
+  const provisionals = Array.from(byDate.entries())
+    // Loja encerrada: previsto zerado/negativo (dívida com a Shopify) não entra no Caixa.
+    .filter(([, amount]) => !closedShop?.closed_on || roundCents(amount) > 0)
+    .map(([date, amount]) => ({
+      amount: roundCents(amount), date, category: PAYOUT_CATEGORY, description: `Payout Shopify · previsto`,
+    }));
   // Apaga e recria numa transação só, com trava por loja (botão e cron juntos duplicavam).
   const { error } = await supabaseAdmin.rpc("replace_pending_payouts", { p_user_id: userId, p_shop_id: shopId, p_rows: provisionals });
   if (error) throw new Error(`Previsto do Caixa: ${error.message}`);

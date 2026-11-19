@@ -43,7 +43,8 @@ const labelOf = (e: ResumoItem) => {
 export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, perShopReceivable, lucroDia, saldoAtual, alert }: {
   items: ResumoItem[]; opening: number; todayKey: string;
   shopIds: string[]; shopNamesMap: Record<string, string>;
-  perShopReceivable: { shop_id: string; amount: number }[];
+  // ignored: parte negativa de loja encerrada (dívida com a Shopify) — aparece, mas não soma.
+  perShopReceivable: { shop_id: string; amount: number; ignored?: number }[];
   // Lucro médio por dia (últimos 7 dias fechados).
   // undefined = carregando; null = sem lojas na meta.
   lucroDia: number | null | undefined;
@@ -121,14 +122,15 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
 
   const byShop = useMemo(() => {
     const rec = new Map(perShopReceivable.map((p) => [p.shop_id, Number(p.amount ?? 0)]));
+    const owed = new Map(perShopReceivable.filter((p) => Number(p.ignored ?? 0) < 0).map((p) => [p.shop_id, Number(p.ignored)]));
     const ids = [...shopIds];
     if (inRange.some((e) => !e.shop_id || !shopIds.includes(e.shop_id))) ids.push("");
     return ids.map((id) => {
       const list = inRange.filter((e) => (id ? e.shop_id === id : !e.shop_id || !shopIds.includes(e.shop_id)));
       const entradas = list.filter((e) => e.kind === "income").reduce((s, e) => s + Number(e.amount), 0);
       const saidas = list.filter((e) => e.kind === "expense").reduce((s, e) => s + Number(e.amount), 0);
-      return { id, name: id ? shopNamesMap[id] ?? id : "Sem loja", entradas, saidas, resultado: entradas - saidas, receber: rec.get(id) ?? 0 };
-    }).filter((r) => r.entradas || r.saidas || r.receber)
+      return { id, name: id ? shopNamesMap[id] ?? id : "Sem loja", entradas, saidas, resultado: entradas - saidas, receber: rec.get(id) ?? 0, owed: owed.get(id) ?? 0 };
+    }).filter((r) => r.entradas || r.saidas || r.receber || r.owed)
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" }));
   }, [inRange, perShopReceivable, shopIds, shopNamesMap]);
 
@@ -301,7 +303,11 @@ export function CaixaResumo({ items, opening, todayKey, shopIds, shopNamesMap, p
                       <td className="text-right tabular-nums hidden sm:table-cell">{r.entradas ? money(r.entradas) : "—"}</td>
                       <td className="text-right tabular-nums hidden sm:table-cell">{r.saidas ? money(r.saidas) : "—"}</td>
                       <td className={`text-right tabular-nums font-semibold ${r.resultado < 0 ? "text-rose-600" : "text-emerald-600"}`}>{r.entradas || r.saidas ? signed(r.resultado) : "—"}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">{r.receber ? money(r.receber) : "—"}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">
+                        {r.owed < 0 ? (
+                          <span className="line-through decoration-muted-foreground/60" title="Loja encerrada: dívida com a Shopify que não será paga — não entra no Caixa nem no lucro">{money(r.owed)}</span>
+                        ) : r.receber ? money(r.receber) : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

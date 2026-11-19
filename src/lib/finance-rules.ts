@@ -88,28 +88,34 @@ export type RefundCbItem = {
 export type RefundCbSources = {
   refundOrders: any[];   // shop_id, external_id, refunds, total_price, current_total_price
   disputes: { shop_id: string; order_external_id?: string | null; amount: any; initiated_at: string | null; status?: string | null; reason?: string | null }[];
-  wonDisputes: { shop_id: string; order_external_id?: string | null; amount: any; finalized_on: string; reason?: string | null }[];
+  wonDisputes: { shop_id: string; order_external_id?: string | null; amount: any; finalized_on: string; initiated_at?: string | null; reason?: string | null }[];
   recoveries: { shop_id: string; order_external_id?: string | null; recovered_amount: any; recovery_paid_at: string }[];
+  // Loja encerrada (shops.closed_on): reembolso/chargeback a partir dessa data
+  // não conta (dívida com a Shopify que não será paga). Ganho de chargeback
+  // aberto depois também não (o chargeback não descontou).
+  closedOn?: Record<string, string>;
 };
 export function refundChargebackItems(shopIds: string[], fromISO: string, toISO: string, src: RefundCbSources): RefundCbItem[] {
   const shops = new Set(shopIds);
+  const closed = (shop: string, date: string) => { const c = src.closedOn?.[shop]; return !!c && date >= c; };
   const out: RefundCbItem[] = [];
   for (const o of src.refundOrders) {
     if (!shops.has(o.shop_id)) continue;
     const { byDate } = orderRefundAmountByDate(o, toISO);
     for (const [d, amt] of Object.entries(byDate)) {
-      if (d < fromISO || d > toISO) continue;
+      if (d < fromISO || d > toISO || closed(o.shop_id, d)) continue;
       out.push({ kind: "reembolso", shop_id: o.shop_id, order_external_id: o.external_id != null ? String(o.external_id) : null, date: d, amount: amt });
     }
   }
   for (const d of src.disputes) {
     if (!shops.has(d.shop_id)) continue;
     const date = String(d.initiated_at ?? "").slice(0, 10) || toISO;
-    if (date < fromISO || date > toISO) continue;
+    if (date < fromISO || date > toISO || closed(d.shop_id, date)) continue;
     out.push({ kind: "chargeback", shop_id: d.shop_id, order_external_id: d.order_external_id ?? null, date, amount: Number(d.amount ?? 0), status: d.status ?? null, reason: d.reason ?? null });
   }
   for (const d of src.wonDisputes) {
     if (!shops.has(d.shop_id) || d.finalized_on < fromISO || d.finalized_on > toISO) continue;
+    if (d.initiated_at && closed(d.shop_id, String(d.initiated_at).slice(0, 10))) continue;
     out.push({ kind: "chargeback_ganho", shop_id: d.shop_id, order_external_id: d.order_external_id ?? null, date: d.finalized_on, amount: -Number(d.amount ?? 0), status: "won", reason: d.reason ?? null });
   }
   for (const r of src.recoveries) {
@@ -280,6 +286,14 @@ export const PAYOUT_STATUS_LABEL: Record<string, string> = {
 export function relevantPayouts<P extends { id: any; status: string }>(payouts: P[], dismissedIds: Set<string>): P[] {
   return payouts.filter((p) => p.id != null && !dismissedIds.has(String(p.id))
     && ["paid", "in_transit", "scheduled", "pending"].includes(p.status));
+}
+
+// Loja encerrada (shops.closed_on): repasse NEGATIVO a partir do encerramento é
+// a Shopify cobrando a dívida da conta — não vai ser pago, então não entra no
+// Caixa. Repasse positivo (dinheiro que cai de verdade) continua.
+export function closedDebtPayoutIds<P extends { id: any; date: string; amount: any }>(payouts: P[], closedOn: string | null | undefined): Set<string> {
+  if (!closedOn) return new Set();
+  return new Set(payouts.filter((p) => p.id != null && p.date >= closedOn && Number(p.amount ?? 0) < 0).map((p) => String(p.id)));
 }
 
 // Atualização de um depósito que já está no Caixa: status sempre; data e valor

@@ -1827,7 +1827,14 @@ export function LgCashflowView({
                   <div key={p.shop_id} className="flex items-center gap-1.5 min-w-0 text-[11px]">
                     <span className={`grid size-3.5 shrink-0 place-items-center rounded-full text-[8px] font-semibold ${SHOP_BADGE_TONES[i % SHOP_BADGE_TONES.length]}`}>{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate text-muted-foreground">{shopNamesMap[p.shop_id] ?? p.shop_id}</span>
-                    <span className="shrink-0 font-medium tabular-nums">{fmtMoneyGrouped(Number(p.amount ?? 0))}</span>
+                    {/* Loja encerrada: dívida com a Shopify aparece riscada (não soma no total). */}
+                    {Number((p as { ignored?: number }).ignored ?? 0) < 0 ? (
+                      <span className="shrink-0 font-medium tabular-nums text-muted-foreground line-through" title="Loja encerrada: dívida com a Shopify que não será paga — não entra no Caixa nem no lucro">
+                        {fmtMoneyGrouped(Number(p.amount ?? 0) + Number((p as { ignored?: number }).ignored))}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 font-medium tabular-nums">{fmtMoneyGrouped(Number(p.amount ?? 0))}</span>
+                    )}
                   </div>
                 ))}
               </div>
