@@ -1260,7 +1260,7 @@ const REFUND_LOOKBACK_DAYS = 180;
 async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: string, toISO: string): Promise<RefundCbSources> {
   const lookback = new Date(`${fromISO}T00:00:00Z`);
   lookback.setUTCDate(lookback.getUTCDate() - REFUND_LOOKBACK_DAYS);
-  const [refundOrders, disputes, wonDisputes, recoveries, closedShops] = await Promise.all([
+  const [refundOrders, disputes, wonDisputes, recoveries, closedShops, supplierRefunds] = await Promise.all([
     selectAll(supabaseAdmin.from("shop_orders")
       .select("shop_id,external_id,refunds:raw->refunds,total_price:raw->>total_price,current_total_price:raw->>current_total_price")
       .eq("user_id", ownerId).in("shop_id", shopIds)
@@ -1280,6 +1280,11 @@ async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: 
       .gte("recovery_paid_at", `${fromISO}T00:00:00Z`).lte("recovery_paid_at", `${toISO}T23:59:59Z`)),
     // Loja encerrada: reembolso/chargeback depois de closed_on não conta.
     supabaseAdmin.from("shops").select("id,closed_on").eq("user_id", ownerId).in("id", shopIds).not("closed_on", "is", null),
+    // Reembolso do fornecedor confirmado: abate o custo dos pedidos (folga de 1 dia pro fuso de NY).
+    selectAll((supabaseAdmin as any).from("supplier_refunds")
+      .select("shop_id,amount,confirmed_at")
+      .eq("owner_id", ownerId).in("shop_id", shopIds).eq("status", "confirmado")
+      .gte("confirmed_at", `${fromISO}T00:00:00Z`).lte("confirmed_at", `${addDays(toISO, 1)}T12:00:00Z`)),
   ]);
   if (refundOrders.error) throw new Error(refundOrders.error.message);
   if (disputes.error) throw new Error(disputes.error.message);
@@ -1310,6 +1315,7 @@ async function loadRefundCbSources(ownerId: string, shopIds: string[], fromISO: 
     disputes: (disputes.data ?? []) as any[],
     wonDisputes: (wonDisputes.data ?? []) as any[],
     recoveries: recs,
+    supplierRefunds: ((supplierRefunds as any).data ?? []) as any[],
     closedOn: Object.fromEntries(((closedShops.data ?? []) as any[]).map((s) => [s.id as string, s.closed_on as string])),
   };
 }
@@ -2356,7 +2362,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       withPrev ? getPanelRefundsAndChargebacks(ownerId, shop_ids, prev_from, prev_to) : Promise.resolve([] as any[]),
     ]).then(([curr, prev]) => (curr as any[]).map((c: any) => {
       const p = (prev as any[]).find((x: any) => x.shop_id === c.shop_id);
-      return { refAmt: c.refAmt, prevRefAmt: p?.refAmt ?? 0, cbAmt: c.cbAmt, prevCbAmt: p?.cbAmt ?? 0, refByDate: c.refByDate, cbByDate: c.cbByDate };
+      return { refAmt: c.refAmt, prevRefAmt: p?.refAmt ?? 0, cbAmt: c.cbAmt, prevCbAmt: p?.cbAmt ?? 0, refByDate: c.refByDate, cbByDate: c.cbByDate,
+        supAmt: c.supAmt ?? 0, prevSupAmt: p?.supAmt ?? 0, supByDate: c.supByDate ?? {} };
     }));
 
     const [ordersRes, prevOrdersRes, settingsRes, goalRes, feesRes, prevFeesRes, adsRes, prevAdsRes, shopifyResults, costProducts] = await Promise.all([
@@ -2404,9 +2411,14 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const prevReembolsos  = shopifyResults.reduce((acc: number, r: any) => acc + r.prevRefAmt, 0);
     const chargebacks     = shopifyResults.reduce((acc: number, r: any) => acc + r.cbAmt, 0);
     const prevChargebacks = shopifyResults.reduce((acc: number, r: any) => acc + r.prevCbAmt, 0);
+    // Reembolso do fornecedor confirmado abate o custo dos pedidos (dinheiro do custo que voltou).
+    const fornecedor      = shopifyResults.reduce((acc: number, r: any) => acc + Number(r.supAmt ?? 0), 0);
+    const prevFornecedor  = shopifyResults.reduce((acc: number, r: any) => acc + Number(r.prevSupAmt ?? 0), 0);
     const refundsByDate = new Map<string, number>();
     const chargebacksByDate = new Map<string, number>();
+    const supByDate = new Map<string, number>();
     for (const r of shopifyResults as any[]) {
+      for (const [d, amt] of Object.entries((r.supByDate ?? {}) as Record<string, number>)) supByDate.set(d, (supByDate.get(d) ?? 0) + amt);
       for (const [d, amt] of Object.entries(r.refByDate as Record<string, number>)) refundsByDate.set(d, (refundsByDate.get(d) ?? 0) + amt);
       for (const [d, amt] of Object.entries(r.cbByDate as Record<string, number>)) chargebacksByDate.set(d, (chargebacksByDate.get(d) ?? 0) + amt);
     }
@@ -2428,7 +2440,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const faturamento  = ordersRevenue;
     const pedidos      = orders.length;
     const unidades     = orders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
-    const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0);
+    const custoProduto = orders.reduce((s, o) => s + orderCost(o), 0) - fornecedor;
     const custoTotal   = custoProduto + taxas + anuncios;
     const lucro        = faturamento - reembolsos - chargebacks - custoProduto - taxas - anuncios;
     const margem       = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
@@ -2445,7 +2457,7 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const prevFaturamento = prevOrdersRevenue;
     const prevPedidos     = prevOrders.length;
     const prevUnidades    = prevOrders.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
-    const prevCusto       = prevOrders.reduce((s, o) => s + orderCost(o), 0);
+    const prevCusto       = prevOrders.reduce((s, o) => s + orderCost(o), 0) - prevFornecedor;
     const prevCustoTotal  = prevCusto + prevTaxas + prevAnuncios;
     const prevLucro       = prevFaturamento - prevReembolsos - prevChargebacks - prevCusto - prevTaxas - prevAnuncios;
     const prevMargem      = prevFaturamento > 0 ? (prevLucro / prevFaturamento) * 100 : 0;
@@ -2482,6 +2494,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     for (const d of adsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of refundsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of chargebacksByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const [d, amt] of supByDate) {
+      const cur = byDate.get(d) ?? { faturamento: 0, custo: 0 };
+      byDate.set(d, { ...cur, custo: cur.custo - amt });
+    }
 
     const chartData = Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
@@ -2521,7 +2537,10 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
     const todayUS = isoTodayUS();
     const mes = (to < todayUS ? to : todayUS).slice(0, 7);
     const mesTotals = !withCosts ? undefined : await getGroupRefundsAndChargebacks(ownerId, shop_ids, `${mes}-01`, monthEndCapped(mes, todayUS))
-      .then((rows: any[]) => ({ reembolsos: rows.reduce((t, r) => t + r.refAmt, 0), chargebacks: rows.reduce((t, r) => t + r.cbAmt, 0) }));
+      .then((rows: any[]) => ({
+        reembolsos: rows.reduce((t, r) => t + r.refAmt, 0), chargebacks: rows.reduce((t, r) => t + r.cbAmt, 0),
+        fornecedor: rows.reduce((t, r) => t + Number(r.supAmt ?? 0), 0),
+      }));
 
     const goalsData = goalRes.data ?? [];
     const aggregatedGoal = goalsData.length === 0 ? null : {
@@ -2543,6 +2562,8 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
         chargebacks,       chargebacksDelta:  delta(chargebacks, prevChargebacks),
         mesReembolsos:     mesTotals?.reembolsos ?? 0,
         mesChargebacks:    mesTotals?.chargebacks ?? 0,
+        // Reembolso do fornecedor confirmado no mês (abate o custo dos pedidos no lucro).
+        mesFornecedor:     mesTotals?.fornecedor ?? 0,
         cpa,               cpaDelta:          delta(cpa, prevCpa),
         roas,              roasDelta:         delta(roas, prevRoas),
         roi,

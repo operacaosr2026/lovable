@@ -11,7 +11,12 @@ import { isoDateUS } from "@/lib/timezone";
 export type RefundCbRow = {
   shop_id: string; refAmt: number; cbAmt: number;
   refByDate: Record<string, number>; cbByDate: Record<string, number>;
+  // Reembolso do fornecedor confirmado (Atendimento › Reembolso): dinheiro do
+  // custo do produto que voltou — abate o custo dos pedidos no lucro, no dia da
+  // confirmação. Fica separado dos reembolsos ao cliente (não é custo adicional).
+  supAmt: number; supByDate: Record<string, number>;
 };
+const emptyRow = (shop_id: string): RefundCbRow => ({ shop_id, refAmt: 0, cbAmt: 0, refByDate: {}, cbByDate: {}, supAmt: 0, supByDate: {} });
 
 // Valor em centavos antes de gravar: somas em JS deixavam resíduo de ponto
 // flutuante no banco (2502.4000000000005), e conferência por igual falhava.
@@ -94,6 +99,7 @@ export type RefundCbSources = {
   // não conta (dívida com a Shopify que não será paga). Ganho de chargeback
   // aberto depois também não (o chargeback não descontou).
   closedOn?: Record<string, string>;
+  supplierRefunds?: { shop_id: string; amount: any; confirmed_at: string }[];
 };
 export function refundChargebackItems(shopIds: string[], fromISO: string, toISO: string, src: RefundCbSources): RefundCbItem[] {
   const shops = new Set(shopIds);
@@ -128,7 +134,14 @@ export function refundChargebackItems(shopIds: string[], fromISO: string, toISO:
 // Totais por loja e por dia — a soma dos itens acima (reembolso + recuperado
 // em refAmt; chargeback + ganho em cbAmt).
 export function aggregateRefundsAndChargebacks(shopIds: string[], fromISO: string, toISO: string, src: RefundCbSources): RefundCbRow[] {
-  const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, { shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {}, cbByDate: {} }]));
+  const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, emptyRow(id)]));
+  for (const r of src.supplierRefunds ?? []) {
+    const row = byShop.get(r.shop_id);
+    const date = r.confirmed_at ? orderDateFor(r.confirmed_at) : "";
+    if (!row || !date || date < fromISO || date > toISO) continue;
+    row.supAmt += Number(r.amount ?? 0);
+    row.supByDate[date] = (row.supByDate[date] ?? 0) + Number(r.amount ?? 0);
+  }
   for (const it of refundChargebackItems(shopIds, fromISO, toISO, src)) {
     const row = byShop.get(it.shop_id)!;
     if (it.kind === "reembolso" || it.kind === "recuperado") {
@@ -163,12 +176,13 @@ export function refundsOnFirstOfMonth(
   monthly: { m: string; rows: RefundCbRow[] }[],
 ) {
   const end = toISO < today ? toISO : today;
-  const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, { shop_id: id, refAmt: 0, cbAmt: 0, refByDate: {}, cbByDate: {} }]));
-  const monthTotals: Record<string, { reembolsos: number; chargebacks: number }> = {};
+  const byShop = new Map<string, RefundCbRow>(shopIds.map((id) => [id, emptyRow(id)]));
+  const monthTotals: Record<string, { reembolsos: number; chargebacks: number; fornecedor: number }> = {};
   for (const { m, rows } of monthly) {
     monthTotals[m] = {
       reembolsos: rows.reduce((t, r) => t + r.refAmt, 0),
       chargebacks: rows.reduce((t, r) => t + r.cbAmt, 0),
+      fornecedor: rows.reduce((t, r) => t + (r.supAmt ?? 0), 0),
     };
     const day = `${m}-01`;
     if (day < fromISO || day > end) continue;
@@ -177,6 +191,7 @@ export function refundsOnFirstOfMonth(
       if (!row) continue;
       if (r.refAmt) { row.refAmt += r.refAmt; row.refByDate[day] = (row.refByDate[day] ?? 0) + r.refAmt; }
       if (r.cbAmt) { row.cbAmt += r.cbAmt; row.cbByDate[day] = (row.cbByDate[day] ?? 0) + r.cbAmt; }
+      if (r.supAmt) { row.supAmt += r.supAmt; row.supByDate[day] = (row.supByDate[day] ?? 0) + r.supAmt; }
     }
   }
   return { rows: [...byShop.values()], monthTotals };

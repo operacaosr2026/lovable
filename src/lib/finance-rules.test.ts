@@ -69,6 +69,21 @@ describe("reembolso e chargeback", () => {
     expect(closedDebtPayoutIds(payouts, null).size).toBe(0);
   });
 
+  it("12d. reembolso do fornecedor confirmado vai pra supAmt no dia da confirmação (NY), fora dos reembolsos ao cliente", () => {
+    const src = {
+      ...empty,
+      supplierRefunds: [
+        { shop_id: SHOP, amount: 35, confirmed_at: "2026-11-10T02:00:00Z" }, // 09/11 em NY
+        { shop_id: SHOP, amount: 40, confirmed_at: "2026-11-15T15:00:00Z" },
+        { shop_id: SHOP, amount: 99, confirmed_at: "2026-12-01T15:00:00Z" }, // fora do período
+      ],
+    };
+    const r = aggregateRefundsAndChargebacks([SHOP], "2026-11-01", "2026-11-30", src)[0];
+    expect(r.supAmt).toBeCloseTo(75);
+    expect(r.supByDate["2026-11-09"]).toBeCloseTo(35);
+    expect(r.refAmt).toBe(0);
+  });
+
   it("13. pagamento da cobrança do alerta abate o reembolso no dia do pagamento", () => {
     const src = {
       ...empty,
@@ -81,7 +96,7 @@ describe("reembolso e chargeback", () => {
   });
 
   it("14. total do mês cai inteiro no dia 1º; outros dias sem desconto", () => {
-    const monthly = [{ m: "2026-09", rows: [{ shop_id: SHOP, refAmt: 300, cbAmt: 50, refByDate: {}, cbByDate: {} }] }];
+    const monthly = [{ m: "2026-09", rows: [{ shop_id: SHOP, refAmt: 300, cbAmt: 50, refByDate: {}, cbByDate: {}, supAmt: 0, supByDate: {} }] }];
     const { rows } = refundsOnFirstOfMonth([SHOP], "2026-09-01", "2026-09-30", "2026-10-15", monthly);
     expect(rows[0].refByDate["2026-09-01"]).toBeCloseTo(300);
     expect(rows[0].cbByDate["2026-09-01"]).toBeCloseTo(50);
@@ -96,7 +111,7 @@ describe("reembolso e chargeback", () => {
   });
 
   it("14b. período que não contém o dia 1º não desconta o mês", () => {
-    const monthly = [{ m: "2026-10", rows: [{ shop_id: SHOP, refAmt: 80, cbAmt: 0, refByDate: {}, cbByDate: {} }] }];
+    const monthly = [{ m: "2026-10", rows: [{ shop_id: SHOP, refAmt: 80, cbAmt: 0, refByDate: {}, cbByDate: {}, supAmt: 0, supByDate: {} }] }];
     const { rows } = refundsOnFirstOfMonth([SHOP], "2026-10-02", "2026-10-10", "2026-10-10", monthly);
     expect(rows[0].refAmt).toBe(0);
   });

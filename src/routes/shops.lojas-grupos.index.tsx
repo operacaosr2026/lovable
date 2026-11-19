@@ -13,6 +13,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { listClosedShops } from "@/lib/store-board.functions";
 
 export const Route = createFileRoute("/shops/lojas-grupos/")({
   component: LojasGruposIndex,
@@ -159,6 +160,9 @@ function LojasGruposIndex() {
 // ─── Card item ───────────────────────────────────────────────────────────────
 
 function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void; onDelete: () => void }) {
+  // Loja encerrada (dívida com a Shopify não paga): selo ao lado do nome.
+  const closedFn = useServerFn(listClosedShops);
+  const { data: closedMap } = useQuery({ queryKey: ["closed-shops"], queryFn: () => closedFn(), staleTime: 60_000 });
   const st = STATUS_META[card.status] ?? STATUS_META.ativo;
   const shops: any[] = card.card_shops ?? [];
   const country = COUNTRIES.find((c) => c.code === card.country);
@@ -272,7 +276,15 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
                       const e = metrics.estornoPorLoja.find((x: any) => x.shop_id === p.shop_id);
                       return (
                         <Fragment key={p.shop_id}>
-                          <span className="text-[10px] text-foreground/70 truncate">{p.shopName}</span>
+                          <span className="text-[10px] text-foreground/70 truncate flex items-center gap-1 min-w-0">
+                            <span className="truncate">{p.shopName}</span>
+                            {closedMap?.[p.shop_id] && (
+                              <span className="shrink-0 text-[8px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                                title="Dívida com a Shopify não será paga: reembolso, chargeback e repasse negativo a partir desta data ficam fora do Caixa e do lucro">
+                                Encerrada {closedMap[p.shop_id].slice(8, 10)}/{closedMap[p.shop_id].slice(5, 7)}
+                              </span>
+                            )}
+                          </span>
                           <span className={`justify-self-end text-[10px] font-medium px-1.5 py-0.5 rounded-md ${
                             e && e.totalPedidos > 0
                               ? e.totalEstornos > 0

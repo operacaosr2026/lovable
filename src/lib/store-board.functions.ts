@@ -200,3 +200,42 @@ export const setStoreBoardNote = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// Loja encerrada (shops.closed_on): dívida com a Shopify que não será paga — o
+// saldo negativo conta $0 no Caixa e reembolso/chargeback/repasse negativo a
+// partir da data saem do Caixa e do lucro. Selo e menu no card do Banco de Lojas.
+// Chave = id da loja Shopify (o card do board).
+export const listClosedStores = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { data } = await supabaseAdmin.from("shops").select("shopify_store_id,closed_on")
+      .eq("user_id", context.ownerId).not("closed_on", "is", null).not("shopify_store_id", "is", null);
+    return Object.fromEntries(((data ?? []) as any[]).map((s) => [s.shopify_store_id as string, s.closed_on as string])) as Record<string, string>;
+  });
+
+export const setStoreClosed = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    storeId: z.string().uuid(),
+    closedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    // Mexe no Caixa e no lucro: só quem tem o Caixa.
+    if (context.role !== "admin" && !context.permissions.some((p) => p.section === "caixa")) {
+      throw new Error("Sem permissão: precisa de acesso ao Caixa");
+    }
+    const { data: rows, error } = await supabaseAdmin.from("shops").update({ closed_on: data.closedOn })
+      .eq("user_id", context.ownerId).eq("shopify_store_id", data.storeId).select("id");
+    if (error) throw new Error(error.message);
+    if (!rows?.length) throw new Error("Loja não encontrada no Caixa");
+    return { ok: true };
+  });
+
+// Mesmo dado por id da loja (shops.id) — Lojas e Grupos lista as lojas assim.
+export const listClosedShops = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { data } = await supabaseAdmin.from("shops").select("id,closed_on")
+      .eq("user_id", context.ownerId).not("closed_on", "is", null);
+    return Object.fromEntries(((data ?? []) as any[]).map((s) => [s.id as string, s.closed_on as string])) as Record<string, string>;
+  });

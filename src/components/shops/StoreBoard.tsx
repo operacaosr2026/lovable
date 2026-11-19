@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import {
   listBoardColumns, createBoardColumn, renameBoardColumn, deleteBoardColumn,
-  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setBoardColumnSyncPaused, setBoardColumnColor, setStoreBoardNote,
+  reorderBoardColumns, moveBoardStores, setBoardColumnFeatures, setBoardColumnExcludedFromCaixa, setBoardColumnSyncPaused, setBoardColumnColor, setStoreBoardNote, listClosedStores, setStoreClosed,
   BOARD_COLUMN_COLORS, type BOARD_COLUMN_FEATURES,
 } from "@/lib/store-board.functions";
 import { listShopifyStores, createPlaceholderStore } from "@/lib/shop-orders.functions";
@@ -28,6 +28,8 @@ import { listProductionProgress } from "@/lib/store-production.functions";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { isoTodayUS } from "@/lib/timezone";
 
 type Store = {
   id: string;
@@ -696,6 +698,18 @@ function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
   const domain = store.shop_domain ?? "";
   const storeUrl = domain ? `https://${domain}` : null;
   const t = tone ?? DEFAULT_TONE;
+  // Loja encerrada (dívida com a Shopify que não será paga): selo + menu.
+  const closedFn = useServerFn(listClosedStores);
+  const { data: closedMap } = useQuery({ queryKey: ["closed-stores"], queryFn: () => closedFn(), staleTime: 60_000, enabled: !dragging });
+  const closedOn = closedMap?.[store.id] ?? null;
+  const [closing, setClosing] = useState(false);
+  const qc = useQueryClient();
+  const setClosedFn = useServerFn(setStoreClosed);
+  const reopen = useMutation({
+    mutationFn: () => setClosedFn({ data: { storeId: store.id, closedOn: null } }),
+    onSuccess: () => { toast.success("Loja reaberta"); qc.invalidateQueries({ queryKey: ["closed-stores"] }); qc.invalidateQueries({ queryKey: ["closed-shops"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const style = dragging ? undefined : {
     transform: CSS.Transform.toString(transform),
@@ -704,6 +718,7 @@ function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
   };
 
   return (
+    <>
     <div
       ref={dragging ? undefined : setNodeRef}
       style={style}
@@ -721,6 +736,12 @@ function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
               Aguardando Shopify
             </span>
           ) : domain && <div className="text-xs text-muted-foreground truncate mt-0.5">{domain}</div>}
+          {closedOn && (
+            <span className="mt-1 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-300"
+              title="Dívida com a Shopify não será paga: saldo negativo conta $0 no Caixa; reembolso, chargeback e repasse negativo a partir desta data ficam fora do Caixa e do lucro">
+              Encerrada {closedOn.slice(8, 10)}/{closedOn.slice(5, 7)}
+            </span>
+          )}
         </div>
         {!dragging && (
           <div className="flex items-center shrink-0 -mr-1" onPointerDown={(e) => e.stopPropagation()}>
@@ -748,6 +769,16 @@ function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  {!store.is_placeholder && (closedOn ? (
+                    <DropdownMenuItem onSelect={() => reopen.mutate()}>
+                      <Store3 className="size-3.5" /> Reabrir loja
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onSelect={() => setClosing(true)}>
+                      <Store3 className="size-3.5" /> Marcar como encerrada…
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
                     <Trash2 className="size-3.5" /> Excluir loja
                   </DropdownMenuItem>
@@ -773,6 +804,43 @@ function StoreDragCard({ store, tone, features, onDelete, onOpen, dragging }: {
         </div>
       )}
     </div>
+    {/* Fora do card: o diálogo não pode disparar o clique/arrasto dele. */}
+    {closing && <CloseStoreDialog storeId={store.id} name={store.name || domain} onClose={() => setClosing(false)} />}
+    </>
+  );
+}
+
+// Marcar loja como encerrada a partir de uma data (o que veio antes continua valendo).
+function CloseStoreDialog({ storeId, name, onClose }: { storeId: string; name: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const fn = useServerFn(setStoreClosed);
+  const [date, setDate] = useState(isoTodayUS());
+  const save = useMutation({
+    mutationFn: () => fn({ data: { storeId, closedOn: date } }),
+    onSuccess: () => { toast.success("Loja marcada como encerrada"); qc.invalidateQueries({ queryKey: ["closed-stores"] }); qc.invalidateQueries({ queryKey: ["closed-shops"] }); onClose(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-sm" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+        <DialogHeader><DialogTitle>Encerrar {name}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Pra loja com dívida na Shopify que não vai ser paga. A partir da data: saldo negativo conta $0 no Caixa, e reembolso,
+            chargeback e repasse negativo (cobrança na conta) ficam fora do Caixa e do lucro. O que veio antes continua igual.
+          </p>
+          <label className="block">
+            <span className="block text-xs text-muted-foreground mb-1">Encerrada desde</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus:border-primary" />
+          </label>
+          <button onClick={() => save.mutate()} disabled={!date || save.isPending}
+            className="h-9 w-full rounded-lg bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50">
+            Marcar como encerrada
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

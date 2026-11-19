@@ -69,7 +69,9 @@ async function computeAccumulatedLucro(
   const reembolsos = refundsAndChargebacks.reduce((s: number, r: any) => s + r.refAmt, 0);
   const chargebacks = refundsAndChargebacks.reduce((s: number, r: any) => s + r.cbAmt, 0);
   const revenue = ordersRevenue - reembolsos - chargebacks;
-  const custo = orders.reduce((s: number, o: any) => s + orderCost(o), 0);
+  // Reembolso do fornecedor confirmado abate o custo (dinheiro do custo que voltou).
+  const fornecedor = refundsAndChargebacks.reduce((s: number, r: any) => s + Number(r.supAmt ?? 0), 0);
+  const custo = orders.reduce((s: number, o: any) => s + orderCost(o), 0) - fornecedor;
   const anuncios = (adsRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
   const taxas = (feesRes.data ?? []).reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0);
   const lucro = revenue - custo - taxas - anuncios;
@@ -99,6 +101,9 @@ async function computeAccumulatedLucro(
     }
     for (const [d, amt] of Object.entries(r.cbByDate ?? {})) {
       lucroByDate.set(d, (lucroByDate.get(d) ?? 0) - Number(amt));
+    }
+    for (const [d, amt] of Object.entries(r.supByDate ?? {})) {
+      lucroByDate.set(d, (lucroByDate.get(d) ?? 0) + Number(amt));
     }
   }
 

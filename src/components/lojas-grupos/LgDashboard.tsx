@@ -29,6 +29,9 @@ import { toast } from "sonner";
 import { isoTodayUS, US_TIME_ZONE, localDateKey } from "@/lib/timezone";
 import { comparisonPeriod } from "@/lib/finance-rules";
 
+// % da meta sempre pra baixo: 99,6% mostra 99% (arredondar mostrava 100% sem ter batido).
+const metaPct = (v: number) => Math.floor(v + 1e-9);
+
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
 const isoToday = isoTodayUS;
@@ -851,6 +854,12 @@ export function LgDashboard({
                 value: isLoading ? "—" : (m?.mesChargebacks ? fmt(m.mesChargebacks) : "—"),
                 color: m?.mesChargebacks ? "text-destructive" : "text-muted-foreground",
               },
+              {
+                // Dinheiro que o fornecedor devolveu (confirmado): volta pro lucro, não é custo.
+                label: "Reembolso fornecedor",
+                value: isLoading ? "—" : ((m as any)?.mesFornecedor ? `+${fmt((m as any).mesFornecedor)}` : "—"),
+                color: (m as any)?.mesFornecedor ? "text-emerald-600" : "text-muted-foreground",
+              },
               (() => {
                 // Média por dia do mês do card: total ÷ dias corridos (mês atual
                 // até hoje, contando hoje; mês fechado = todos os dias).
@@ -1006,7 +1015,7 @@ function MonthGoalCard({ fmt }: { fmt: (n: number) => string }) {
       ) : (
         <>
           <div className="flex items-baseline justify-between gap-2 mb-1.5">
-            <span className={`text-sm font-bold tabular-nums ${tone(pct)}`}>{pct.toFixed(0)}%</span>
+            <span className={`text-sm font-bold tabular-nums ${tone(pct)}`}>{metaPct(pct)}%</span>
             <span className="text-[11px] text-muted-foreground tabular-nums">{fmt(realizado)} de lucro</span>
           </div>
           <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
@@ -1014,7 +1023,7 @@ function MonthGoalCard({ fmt }: { fmt: (n: number) => string }) {
           </div>
           <div className="space-y-0.5">
             {[
-              { label: "Projeção no mês", value: g.projecao != null ? fmt(g.projecao) : "—", extra: projPct != null ? `${projPct.toFixed(0)}%` : null, cls: projPct != null ? tone(projPct) : "" },
+              { label: "Projeção no mês", value: g.projecao != null ? fmt(g.projecao) : "—", extra: projPct != null ? `${metaPct(projPct)}%` : null, cls: projPct != null ? tone(projPct) : "" },
               { label: "Média últimos 3 dias", value: g.media3 != null ? `${fmt(g.media3)}/dia` : "—", extra: null, cls: "" },
             ].map((r) => (
               <div key={r.label} className="flex items-center gap-2 py-2 border-b border-border last:border-0">

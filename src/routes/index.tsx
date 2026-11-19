@@ -81,6 +81,8 @@ function fmtDate(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
+// % da meta sempre pra baixo: 99,6% mostra 99% (arredondar mostrava 100% sem ter batido).
+const metaPct = (v: number) => Math.floor(v + 1e-9);
 function fmtMoney(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0);
 }
@@ -476,7 +478,7 @@ function PctPill(props: any) {
   if (!d || !d.meta || x == null || y == null) return null;
   const pct = d.pctShown;
   const tone = pctTone(pct);
-  const label = `${Math.round(pct)}%`;
+  const label = `${metaPct(pct)}%`;
   const w = label.length * 7 + 14;
   const cx = x + width / 2;
   // Barra negativa: o selo vai embaixo dela.
@@ -536,7 +538,7 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
                         <p className="text-muted-foreground">Realizado: <span className="font-semibold text-foreground">{fmtMoney(p.realizado)}</span></p>
                         {p.atual && p.projecao != null && <p className="text-muted-foreground">Projeção: <span className="font-semibold text-foreground">{fmtMoney(p.projecao)}</span></p>}
                         <p className="text-muted-foreground">Meta: <span className="font-semibold text-foreground">{fmtMoney(p.meta)}</span></p>
-                        <p className="font-semibold" style={{ color: pctTone(p.pctShown).text }}>{Math.round(p.pctShown)}% da meta{p.atual ? " (projetado)" : ""}</p>
+                        <p className="font-semibold" style={{ color: pctTone(p.pctShown).text }}>{metaPct(p.pctShown)}% da meta{p.atual ? " (projetado)" : ""}</p>
                       </div>
                     );
                   }}
@@ -578,7 +580,7 @@ function GoalsHistoryChart({ data, loading }: { data?: GoalsHistory; loading: bo
                 <p className="text-[10px] text-muted-foreground">Projeção no mês</p>
               </div>
               <div className="min-w-0 border-l border-border pl-3">
-                <p className="text-sm font-bold tabular-nums" style={{ color: pctTone(atual.pctShown).text }}>{Math.round(atual.pctShown)}%</p>
+                <p className="text-sm font-bold tabular-nums" style={{ color: pctTone(atual.pctShown).text }}>{metaPct(atual.pctShown)}%</p>
                 <p className="text-[10px] text-muted-foreground">Projeção da meta</p>
               </div>
             </div>
@@ -869,7 +871,7 @@ function MobileLucroHero({ value, delta, compareLabel, chartData, sparkKey, semC
           </div>
           <div className="min-w-0 px-1">
             <p className="flex items-center justify-center gap-1 text-[10px] text-white/80"><Trophy className="size-3" />Da meta</p>
-            <p className="text-sm font-bold tabular-nums truncate">{pct != null ? `${Math.round(pct)}%` : "—"}</p>
+            <p className="text-sm font-bold tabular-nums truncate">{pct != null ? `${metaPct(pct)}%` : "—"}</p>
           </div>
         </div>
       )}

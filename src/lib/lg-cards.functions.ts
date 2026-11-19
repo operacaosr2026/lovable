@@ -837,6 +837,9 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
       for (const [d, amt] of Object.entries(r.refByDate ?? {})) refundsByDate.set(d, (refundsByDate.get(d) ?? 0) + (amt as number));
       for (const [d, amt] of Object.entries(r.cbByDate ?? {})) chargebacksByDate.set(d, (chargebacksByDate.get(d) ?? 0) + (amt as number));
     }
+    // Reembolso do fornecedor confirmado abate o custo dos pedidos (dinheiro do custo que voltou).
+    const supByShop = new Map<string, number>(refundsAndChargebacks.map((r: any) => [r.shop_id, Number(r.supAmt ?? 0)]));
+    const prevSupByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, Number(r.supAmt ?? 0)]));
     const prevReembolsosByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, r.refAmt]));
     const prevChargebacksByShop = new Map<string, number>(prevRefundsAndChargebacks.map((r: any) => [r.shop_id, r.cbAmt]));
 
@@ -858,11 +861,11 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
     for (const id of shopIds) {
       faturamento += revenueByShop.get(id) ?? 0;
       liquido += (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
-      custoProduto += custoByShop.get(id) ?? 0;
+      custoProduto += (custoByShop.get(id) ?? 0) - (supByShop.get(id) ?? 0);
       taxas += feesByShop.get(id) ?? 0;
       prevFaturamento += prevRevenueByShop.get(id) ?? 0;
       prevLiquido += (prevRevenueByShop.get(id) ?? 0) - (prevReembolsosByShop.get(id) ?? 0) - (prevChargebacksByShop.get(id) ?? 0);
-      prevCustoProduto += prevCustoByShop.get(id) ?? 0;
+      prevCustoProduto += (prevCustoByShop.get(id) ?? 0) - (prevSupByShop.get(id) ?? 0);
       prevTaxas += prevFeesByShop.get(id) ?? 0;
       totalPedidosEstorno += totalOrdersByShop.get(id) ?? 0;
       totalEstornosEstorno += totalEstornosByShop.get(id) ?? 0;
@@ -881,6 +884,12 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
     for (const d of adsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of refundsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of chargebacksByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    for (const r of refundsAndChargebacks as any[]) {
+      for (const [d, amt] of Object.entries(r.supByDate ?? {})) {
+        const cur = byDate.get(d) ?? { faturamento: 0, custo: 0 };
+        byDate.set(d, { ...cur, custo: cur.custo - (amt as number) });
+      }
+    }
 
     const chartData = Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
@@ -1018,11 +1027,13 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const faturamento   = ordersRevenue - reembolsos - chargebacks;
     // Mesmo cálculo por produto (card ligado na Shopify) usado no Dashboard (orderLineItemsCost),
     // pra "lucro" bater entre as duas telas em vez de items_count × custo fixo da loja.
+    // Reembolso do fornecedor confirmado abate o custo (dinheiro do custo que voltou).
+    const fornecedorDevolveu = refundsAndChargebacks.reduce((s: number, r: any) => s + Number(r.supAmt ?? 0), 0);
     const custoProduto  = orders.reduce((s: number, o: any) => {
       const shopCost = costByShop.get(o.shop_id as string);
       const fallback = shopCost != null && shopCost > 0 ? shopCost : avgCost;
       return s + orderLineItemsCost(o.line_items, costProducts, fallback, o.tags, costOpts(o));
-    }, 0);
+    }, 0) - fornecedorDevolveu;
     const taxas    = sumAmt(fees);
     const anuncios = adsRes.reduce((s, r) => s + r.amount, 0);
     const lucro    = faturamento - custoProduto - taxas - anuncios;
