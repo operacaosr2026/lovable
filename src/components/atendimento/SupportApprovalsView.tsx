@@ -26,6 +26,7 @@ type Base = {
   order_id: string; order_number: string | null; store: string | null; customer_name: string | null; customer_email: string | null;
   conversation_id: string | null; requestedByName: string | null; decidedByName: string | null; reject_reason: string | null;
   product: { title: string; variant: string | null; image: string | null } | null;
+  supplierRefund?: { status: "pendente" | "confirmado"; amount: number; date: string } | null;
 };
 type RefundItem = Base & {
   kind: "reembolso"; mode: RefundMode; reason: string | null; line_items: RefundLine[]; include_shipping: boolean; amount: number; currency: string;
@@ -118,7 +119,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
   // Painel aberto: tabela enxuta (loja embaixo do cliente, sem a coluna Tipo,
   // Recusar no menu) pra caber ao lado sem cortar.
   const compact = !!openItem;
-  const headers = compact ? ["Pedido", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Tipo", "Valor", "Motivo", "Solicitado em", "Status"];
+  const headers = compact ? ["Pedido", "Valor", "Motivo", "Solicitado em", "Status"] : ["Pedido", "Tipo", "Valor", "Motivo", "Solicitado em", "Status", "Reemb. fornecedor"];
 
   return (
     <div className="space-y-4 pb-6">
@@ -224,6 +225,7 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                           <p className="text-[11px] text-muted-foreground">há {ago(i.created_at)}</p>
                         </td>
                         <td className="px-2 py-2.5"><StatusBadge status={i.status} /></td>
+                        {!compact && <td className="px-2 py-2.5"><SupplierRefundCell r={i.supplierRefund ?? null} /></td>}
                         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <RowActions i={i} canApprove={canApprove} actions={actions} compact={compact} onOpen={() => setOpenId(i.id)} onOpenConversation={onOpenConversation} />
                         </td>
@@ -380,6 +382,20 @@ function KindBadge({ kind }: { kind: Item["kind"] }) {
   return kind === "reembolso"
     ? <span className="inline-flex items-center gap-1 rounded-md border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-600 whitespace-nowrap"><Undo2 className="size-3" />Reembolso</span>
     : <span className="inline-flex items-center gap-1 rounded-md border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 whitespace-nowrap"><Repeat className="size-3" />Troca</span>;
+}
+
+// Reembolso do fornecedor (Atendimento › Reembolso): confirmado = já devolveu; pendente = pedido, sem confirmação.
+function SupplierRefundCell({ r }: { r: Item["supplierRefund"] | null }) {
+  if (!r) return <span className="text-muted-foreground">—</span>;
+  const ok = r.status === "confirmado";
+  return (
+    <div className="whitespace-nowrap" title={ok ? "O fornecedor já devolveu o valor deste pedido" : "Reembolso pedido ao fornecedor, ainda não confirmado"}>
+      <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${ok ? "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300" : "border-border bg-muted text-muted-foreground"}`}>
+        {ok ? <Check className="size-3" /> : <Clock className="size-3" />}{ok ? "Reembolsado" : "Pendente"} {formatMoney(r.amount, "USD")}
+      </span>
+      <p className="text-[11px] text-muted-foreground mt-0.5">{day(r.date)}</p>
+    </div>
+  );
 }
 
 function StatusBadge({ status, long }: { status: string; long?: boolean }) {

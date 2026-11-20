@@ -60,13 +60,24 @@ export const listSupportApprovals = createServerFn({ method: "GET" })
 
     const all = [...refunds, ...exchanges];
     const orderIds = [...new Set(all.map((r) => r.order_id).filter(Boolean))] as string[];
-    const [name, shops, orders] = await Promise.all([
+    const [name, shops, orders, supRefunds] = await Promise.all([
       personNames(all.flatMap((r) => [r.requested_by, r.decided_by])),
       supabaseAdmin.from("shops").select("id,name").in("id", [...new Set(all.map((r) => r.shop_id).filter(Boolean))] as string[]),
       orderIds.length
         ? supabaseAdmin.from("shop_orders").select("id,line_items:raw->line_items").in("id", orderIds)
         : Promise.resolve({ data: [] as any[] }),
+      // Reembolso do fornecedor (Atendimento › Reembolso) — supplier_refunds fora dos tipos gerados.
+      orderIds.length
+        ? (supabaseAdmin as any).from("supplier_refunds").select("order_id,status,amount,created_at,confirmed_at")
+            .eq("owner_id", ctx.ownerId).in("order_id", orderIds)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
+    // Confirmado vale sobre pendente (mais de um registro no mesmo pedido) — mesma regra das Notificações.
+    const supBy = new Map<string, { status: "pendente" | "confirmado"; amount: number; date: string }>();
+    for (const r of ((supRefunds as any).data ?? []) as any[]) {
+      if (supBy.get(r.order_id)?.status === "confirmado" && r.status !== "confirmado") continue;
+      supBy.set(r.order_id, { status: r.status, amount: Number(r.amount ?? 0), date: String(r.confirmed_at ?? r.created_at) });
+    }
     const shopName = new Map((shops.data ?? []).map((s) => [s.id, s.name]));
     const firstLine = new Map(((orders.data ?? []) as any[]).map((o) => [o.id as string, orderLines(o.line_items)[0] ?? null]));
     const images = await productImages(ctx.ownerId, [...new Set([...firstLine.values()].map((l) => l?.productId).filter(Boolean))] as string[]);
@@ -78,6 +89,7 @@ export const listSupportApprovals = createServerFn({ method: "GET" })
         requestedByName: name.get(r.requested_by) ?? null,
         decidedByName: r.decided_by ? name.get(r.decided_by) ?? null : null,
         product: line ? { title: line.title, variant: line.variant, image: line.productId ? images.get(line.productId) ?? null : null } : null,
+        supplierRefund: supBy.get(r.order_id) ?? null,
       };
     };
     return {
