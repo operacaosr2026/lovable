@@ -12,6 +12,7 @@ import {
   createCompetitor, deleteCompetitor, deleteCompetitorTemplate, getProductCompetitors, listCompetitorTemplates,
   saveCompetitorTemplate, updateCompetitor, type Competitor, type CompetitorTemplate,
 } from "@/lib/product-competitors.functions";
+import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 const newId = () => crypto.randomUUID();
 const inputCls = "h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary/50";
@@ -38,7 +39,7 @@ export function ProductCompetitors({ productId }: { productId: string }) {
     onError: (e: any) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <TabSkeleton />;
   if (error || !data) return <p className="text-sm text-destructive">{(error as any)?.message ?? "Não foi possível carregar os concorrentes."}</p>;
 
   const def = data.templates.find((t) => t.is_default) ?? data.templates[0];
@@ -78,7 +79,7 @@ export function ProductCompetitors({ productId }: { productId: string }) {
         <div className="size-9 rounded-xl grid place-items-center shrink-0 bg-primary/10 text-primary"><Swords className="size-4.5" /></div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-tight">Concorrentes</h3>
-          <p className="text-[11px] text-muted-foreground truncate">
+          <p className="text-xs text-muted-foreground truncate">
             Um quadro por concorrente — templates em{" "}
             <Link to="/settings/templates" search={{ tipo: "concorrentes" }} className="text-primary hover:underline">Configurações › Templates</Link>
           </p>
@@ -106,10 +107,10 @@ export function ProductCompetitors({ productId }: { productId: string }) {
 const AVATAR_TONES = ["bg-primary/10 text-primary", "bg-info/10 text-info", "bg-success/10 text-success", "bg-amber-500/10 text-amber-600"];
 const toneFor = (seed: string) => AVATAR_TONES[[...seed].reduce((n, ch) => n + ch.charCodeAt(0), 0) % AVATAR_TONES.length]!;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("") || "?";
-const hostOf = (raw: string) => {
+export const hostOf = (raw: string) => {
   try { return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.replace(/^www\./, ""); } catch { return null; }
 };
-const hrefOf = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+export const hrefOf = (raw: string) => (/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
 const fmtUsd = (v: string) => {
   const n = Number(v);
   return Number.isFinite(n) ? n.toLocaleString("en-US", { style: "currency", currency: "USD" }) : v;
@@ -124,7 +125,7 @@ function timeAgo(iso: string) {
   return d < 30 ? `há ${d} ${d === 1 ? "dia" : "dias"}` : new Date(iso).toLocaleDateString("pt-BR");
 }
 
-function CompetitorAvatar({ name, host }: { name: string; host: string | null }) {
+export function CompetitorAvatar({ name, host }: { name: string; host: string | null }) {
   const [broken, setBroken] = useState(false);
   useEffect(() => { setBroken(false); }, [host]);
   if (host && !broken) {
@@ -178,7 +179,7 @@ function CompetitorBoard({ competitor, autoFocus, queryKey }: { competitor: Comp
   const iconBtn = "size-8 rounded-lg grid place-items-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors";
 
   return (
-    <section className="premium-card overflow-hidden">
+    <section className="rounded-2xl border border-border bg-card soft-shadow-sm overflow-hidden">
       <div className="flex items-center gap-3 p-4">
         <CompetitorAvatar name={competitor.name} host={host} />
         <div className="min-w-0 flex-1">
@@ -200,7 +201,7 @@ function CompetitorBoard({ competitor, autoFocus, queryKey }: { competitor: Comp
 
         {price && (
           <div className="hidden sm:flex flex-col items-end shrink-0 px-3 py-1 rounded-lg bg-success/10">
-            <span className="text-[10px] uppercase tracking-wide text-success/80 font-medium">{price.label}</span>
+            <span className="text-xs text-success/80 font-medium">{price.label}</span>
             <span className="text-sm font-semibold text-success tabular-nums">{fmtUsd(value(price))}</span>
           </div>
         )}
@@ -271,7 +272,7 @@ function CompetitorBoard({ competitor, autoFocus, queryKey }: { competitor: Comp
               ))}
             </div>
           )}
-          <p className="text-[11px] text-muted-foreground/70 mt-3 text-right">Atualizado {timeAgo(competitor.updated_at)}</p>
+          <p className="text-xs text-muted-foreground/70 mt-3 text-right">Atualizado {timeAgo(competitor.updated_at)}</p>
         </div>
       )}
     </section>
@@ -347,12 +348,12 @@ export function CompetitorTemplates() {
   const { data = [], isLoading } = useQuery({ queryKey: TEMPLATES_QK, queryFn: () => listFn() });
   const [selected, setSelected] = useState<string | "new" | null>(null);
 
-  if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <TabSkeleton />;
   const current = selected === "new" ? emptyDraft() : (data.find((t) => t.id === selected) ?? data[0]);
   const activeId = selected === "new" ? "new" : current?.id;
 
   return (
-    <section className="premium-card p-6">
+    <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-6">
       <SectionTitle action={<AddBtn onClick={() => setSelected("new")}>Template</AddBtn>}>Templates de concorrentes</SectionTitle>
       <p className="text-xs text-muted-foreground mb-4">
         Campos de cada quadro de concorrente (aba Concorrentes do produto). O quadro copia os campos do template ao ser

@@ -36,7 +36,7 @@ export function ProductCostField({ productId, cost }: { productId: string; cost:
       <button type="button" onClick={() => setOpen(true)} title="Ver e alterar o preço de custo por data"
         className="w-full h-9 px-3 rounded-lg bg-background border border-border text-sm flex items-center justify-between gap-2 hover:border-primary/40 hover:bg-muted/40 transition-colors">
         <span className="tabular-nums font-medium">{USD.format(cost)}</span>
-        <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><History className="size-3.5" /> Histórico</span>
+        <span className="flex items-center gap-1 text-xs text-muted-foreground"><History className="size-3.5" /> Histórico</span>
       </button>
       {open && <CostHistoryDialog productId={productId} onClose={() => setOpen(false)} />}
     </div>
@@ -111,7 +111,7 @@ function CostHistoryDialog({ productId, onClose }: { productId: string; onClose:
             {current && (
               <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Preço atual</p>
+                  <p className="text-xs font-semibold text-muted-foreground">Preço atual</p>
                   <p className="text-2xl font-bold tabular-nums tracking-tight">{USD.format(current.cost)}</p>
                 </div>
                 <p className="text-xs text-muted-foreground text-right">{current.valid_from === COST_START ? "desde o início" : `desde ${fmtDay(current.valid_from)}`}</p>
@@ -122,12 +122,12 @@ function CostHistoryDialog({ productId, onClose }: { productId: string; onClose:
               <p className="text-sm font-medium mb-2 flex items-center gap-1.5"><Plus className="size-4" /> Novo preço</p>
               <div className="flex flex-wrap items-end gap-2">
                 <label className="flex-1 min-w-[110px]">
-                  <span className="block text-[11px] text-muted-foreground mb-1">Custo (US$)</span>
+                  <span className="block text-xs text-muted-foreground mb-1">Custo (US$)</span>
                   <input value={newCost} onChange={(e) => setNewCost(e.target.value)} inputMode="decimal" placeholder="0,00" autoFocus
                     onKeyDown={(e) => { if (e.key === "Enter") addNew(); }} className={`${inputCls} w-full`} />
                 </label>
                 <label className="flex-1 min-w-[140px]">
-                  <span className="block text-[11px] text-muted-foreground mb-1">Vale a partir de</span>
+                  <span className="block text-xs text-muted-foreground mb-1">Vale a partir de</span>
                   <input type="date" value={from} max={today} onChange={(e) => setNewFrom(e.target.value)} className={`${inputCls} w-full`} />
                 </label>
                 <button onClick={addNew} disabled={busy || !newCost.trim()}
@@ -135,15 +135,15 @@ function CostHistoryDialog({ productId, onClose }: { productId: string; onClose:
                   {save.isPending && !editing ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} Salvar
                 </button>
               </div>
-              <p className="text-[11px] text-muted-foreground mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 {clash
-                  ? <span className="text-amber-600 dark:text-amber-400">Já existe um preço começando em {fmtDay(from)} ({USD.format(clash.cost)}). Salvar substitui ele.</span>
+                  ? <span className="text-warning">Já existe um preço começando em {fmtDay(from)} ({USD.format(clash.cost)}). Salvar substitui ele.</span>
                   : `Pedidos de ${from ? fmtDay(from) : "—"} em diante passam a usar este preço${onlyStart && entries[0].cost === 0 ? ". Se o produto sempre custou isso, corrija o preço \"Desde o início\" abaixo" : ""}.`}
               </p>
             </div>
 
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Histórico</p>
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5">Histórico</p>
               <ul className="rounded-xl border border-border divide-y divide-border">
                 {entries.map((e, i) => {
                   const newer = entries[i - 1];
@@ -161,11 +161,11 @@ function CostHistoryDialog({ productId, onClose }: { productId: string; onClose:
                       <div className="min-w-0 flex-1">
                         <p className="text-sm">
                           {start} <span className="text-muted-foreground">→ {end}</span>
-                          {isCurrent && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">atual</span>}
+                          {isCurrent && <span className="ml-2 text-xs font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary">atual</span>}
                         </p>
                       </div>
                       {older && diff !== 0 && (
-                        <span className={`text-[11px] tabular-nums flex items-center ${diff > 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}
+                        <span className={`text-xs tabular-nums flex items-center ${diff > 0 ? "text-destructive" : "text-success"}`}
                           title={diff > 0 ? "Ficou mais caro que o preço anterior" : "Ficou mais barato que o preço anterior"}>
                           {diff > 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}{USD.format(Math.abs(diff))}
                         </span>

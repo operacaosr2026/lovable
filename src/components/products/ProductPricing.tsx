@@ -97,7 +97,7 @@ export function ProductPricing({ product, pricing }: { product: any; pricing: an
 function Section({ title, children, highlight }: { title: string; children: React.ReactNode; highlight?: boolean }) {
   return (
     <div className={`rounded-2xl border p-4 ${highlight ? "border-primary/30 bg-primary/5" : "border-border bg-surface"}`}>
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">{title}</div>
+      <div className="text-xs text-muted-foreground font-semibold mb-3">{title}</div>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -128,7 +128,7 @@ function Stat({ label, value, sub, accent }: { label: string; value: string; sub
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="text-right">
         <div className={`text-sm font-semibold tabular-nums ${color}`}>{value}</div>
-        {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
+        {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
       </div>
     </div>
   );

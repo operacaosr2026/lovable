@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { SHOPIFY_SCOPES, startShopifyOAuth } from "@/lib/shop-orders.functions";
+import { CONNECT_SCOPES, startShopifyOAuth } from "@/lib/shop-orders.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -69,7 +69,7 @@ export function ConnectStoreDialog({ open, onClose, onConnected, initialName, re
             </ol>
             <CopyBlock text={CALLBACK_URL} label="URL" />
             <p>Em <strong>Admin API access scopes</strong>, marque (os mesmos que o sistema pede na conexão):</p>
-            <CopyBlock text={SHOPIFY_SCOPES} preview={`${SHOPIFY_SCOPES.split(",").length} escopos (${SHOPIFY_SCOPES.split(",").slice(0, 2).join(", ")}, …)`} label="Escopos" />
+            <CopyBlock text={CONNECT_SCOPES} preview={`${CONNECT_SCOPES.split(",").length} escopos (${CONNECT_SCOPES.split(",").slice(0, 2).join(", ")}, …)`} label="Escopos" />
             <p>Salve, vá em <strong>API credentials</strong> e copie <strong>Client ID</strong> e <strong>Client secret</strong>.</p>
           </div>
           <div>

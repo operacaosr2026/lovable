@@ -1,31 +1,53 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PageShell, PageHeader } from "@/components/PageHeader";
-import { Plus, Search, Package, X, Upload, LayoutGrid, List, Columns3, FlaskConical } from "lucide-react";
+import {
+  Plus, Search, Package, X, Upload, LayoutGrid, List, FlaskConical, Pickaxe, Wrench, TrendingUp, ChevronRight, LayoutList, type LucideIcon,
+} from "lucide-react";
 import {
   listProducts, createProduct, updateProduct, deleteProduct,
 } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { StatusBadge, useProductStatuses, usd, type ProductStatus } from "@/components/products/product-status";
-import { ProductBoard } from "@/components/products/ProductBoard";
+import { PLACEMENTS_KEY, ProductBoard, usePipelinePlacements } from "@/components/products/ProductBoard";
 import { ProductDetailsDialog } from "@/components/products/ProductDetails";
 import { ProductLearnings } from "@/components/products/ProductLearnings";
+import { PIPELINES, PIPELINE_LABEL, type Pipeline } from "@/lib/product-pipelines";
 
-type ViewMode = "esteira" | "galeria" | "lista" | "aprendizados";
+type Tab = Pipeline | "todos";
+type AllView = "galeria" | "lista" | "aprendizados";
+type ProductsSearch = { tab?: Tab; view?: AllView };
+
+const PIPELINE_ICON: Record<Pipeline, LucideIcon> = { mineracao: Pickaxe, producao: Wrench, validacao: FlaskConical, escala: TrendingUp };
+const ALL_VIEWS: { id: AllView; label: string; icon: LucideIcon }[] = [
+  { id: "galeria", label: "Galeria", icon: LayoutGrid },
+  { id: "lista", label: "Lista", icon: List },
+  { id: "aprendizados", label: "Aprendizados", icon: FlaskConical },
+];
 
 export const Route = createFileRoute("/shops/products/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    view: (search.view === "lista" || search.view === "galeria" || search.view === "aprendizados" ? search.view : "esteira") as ViewMode,
-  }),
+  validateSearch: (search: Record<string, unknown>): ProductsSearch => {
+    const view = ALL_VIEWS.some((v) => v.id === search.view) ? (search.view as AllView) : undefined;
+    // Links antigos: ?view=esteira era o quadro de status (hoje Validação).
+    if (search.view === "esteira") return { tab: "validacao" };
+    if ((PIPELINES as readonly string[]).includes(search.tab as string) || search.tab === "todos") {
+      return { tab: search.tab as Tab, ...(search.tab === "todos" && view ? { view } : {}) };
+    }
+    return view ? { tab: "todos", view } : {};
+  },
   component: ProductsIndex,
 });
 
 function ProductsIndex() {
-  const { view } = Route.useSearch();
+  const search_ = Route.useSearch();
+  const tab: Tab = search_.tab ?? "mineracao";
+  const view: AllView = search_.view ?? "galeria";
+  const isPipeline = tab !== "todos";
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
   const list = useServerFn(listProducts);
@@ -34,47 +56,123 @@ function ProductsIndex() {
   const deleteFn = useServerFn(deleteProduct);
   const confirm = useConfirm();
   const { statuses, byId } = useProductStatuses();
+  const { data: placements } = usePipelinePlacements();
 
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState<string>("all");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [newColumnId, setNewColumnId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
 
   const { data } = useQuery({ queryKey: ["products"], queryFn: () => list() });
   const products = (data?.products ?? []) as any[];
 
+  const counts = useMemo(() => {
+    const ids = new Set(products.map((p) => p.id));
+    const c: Record<Pipeline, number> = { mineracao: 0, producao: 0, validacao: 0, escala: 0 };
+    for (const pl of placements ?? []) if (ids.has(pl.product_id)) c[pl.pipeline]++;
+    return c;
+  }, [products, placements]);
+
   const matches = (p: any) => {
-    if (fStatus !== "all" && view !== "esteira" && p.board_column_id !== fStatus) return false;
+    if (fStatus !== "all" && !isPipeline && p.board_column_id !== fStatus) return false;
     if (search) {
       const s = search.toLowerCase();
       if (!p.name.toLowerCase().includes(s) && !(p.niche ?? "").toLowerCase().includes(s)) return false;
     }
     return true;
   };
-  const filtered = useMemo(() => products.filter(matches), [products, search, fStatus, view]);
+  const filtered = useMemo(() => products.filter(matches), [products, search, fStatus, tab]);
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ["products"] });
-  const create = useMutation({ mutationFn: (input: any) => createFn({ data: input }), onSuccess: refresh });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["products"] });
+    qc.invalidateQueries({ queryKey: PLACEMENTS_KEY });
+  };
+  // Card novo aparece na hora (cópia temporária no cache) e o servidor confirma depois.
+  const create = useMutation({
+    mutationFn: (input: any) => createFn({ data: input }),
+    onMutate: async (input: any) => {
+      await Promise.all([qc.cancelQueries({ queryKey: ["products"] }), qc.cancelQueries({ queryKey: PLACEMENTS_KEY })]);
+      const pl: Pipeline = input.pipeline ?? "validacao";
+      const cols = qc.getQueryData<any[]>(pl === "validacao" ? ["product-board-columns"] : ["product-board-columns", pl]) ?? [];
+      const columnId: string | undefined = input.board_column_id ?? input.pipeline_column_id ?? cols[0]?.id;
+      const id = `temp-${crypto.randomUUID()}`;
+      qc.setQueryData(["products"], (old: any) => old && ({
+        ...old,
+        products: [{
+          id, name: input.name, main_image_url: input.main_image_url ?? null, cost: 0, sale_price: 0, niche: null,
+          board_column_id: pl === "validacao" ? columnId ?? null : null, board_position: 1e6, created_at: new Date().toISOString(),
+        }, ...old.products],
+      }));
+      if (columnId) qc.setQueryData(PLACEMENTS_KEY, (old: any[] | undefined) => [...(old ?? []), { product_id: id, pipeline: pl, column_id: columnId, position: 1e6 }]);
+    },
+    onError: (e: any) => toast.error(e.message),
+    onSettled: refresh,
+  });
   const update = useMutation({ mutationFn: ({ id, patch }: any) => updateFn({ data: { id, patch } }), onSuccess: refresh });
   const remove = useMutation({ mutationFn: (id: string) => deleteFn({ data: { id } }), onSuccess: refresh });
 
+  const openNew = (columnId: string | null = null) => { setEditing(null); setNewColumnId(columnId); setEditorOpen(true); };
+  const goTab = (t: Tab) => { setFStatus("all"); navigate({ search: t === "todos" ? { tab: t, view } : { tab: t } }); };
+
   return (
-    <PageShell fit={view === "esteira"} wide={view === "esteira"}>
+    <PageShell fit={isPipeline} wide={isPipeline}>
       <PageHeader
-        title="Produtos"
-        subtitle={`${filtered.length} ${filtered.length === 1 ? "produto" : "produtos"}`}
+        title="Esteira de produtos"
+        subtitle={`${products.length} ${products.length === 1 ? "produto" : "produtos"}`}
         actions={
-          <button
-            onClick={() => { setEditing(null); setEditorOpen(true); }}
-            className="hidden sm:flex h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium items-center gap-1.5"
-          >
+          <button onClick={() => openNew()} className="hidden sm:flex h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium items-center gap-1.5">
             <Plus className="size-4" /> Novo produto
           </button>
         }
       />
 
-      {/* Celular: 2 linhas — busca + Novo produto; status + visualização. */}
+      {/* Abas principais: as esteiras em sequência + Todos à parte. */}
+      <div className="flex items-stretch gap-1.5 sm:gap-2 mb-5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0">
+        {PIPELINES.map((pl, i) => {
+          const Icon = PIPELINE_ICON[pl];
+          const active = tab === pl;
+          return (
+            <Fragment key={pl}>
+              {i > 0 && <ChevronRight className="size-4 self-center shrink-0 text-muted-foreground/60" />}
+              <button
+                onClick={() => goTab(pl)}
+                className={`group flex items-center gap-2.5 rounded-xl border px-3 py-2.5 min-w-[150px] sm:min-w-[180px] text-left transition-colors shrink-0 ${
+                  active ? "border-primary bg-primary/10" : "border-border bg-surface hover:border-primary/40"
+                }`}
+              >
+                <span className={`size-9 rounded-lg grid place-items-center shrink-0 ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:text-foreground"}`}>
+                  <Icon className="size-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-[10px] font-semibold uppercase tracking-wider ${active ? "text-primary" : "text-muted-foreground"}`}>Etapa {i + 1}</span>
+                  <span className="block text-sm font-semibold leading-tight">{PIPELINE_LABEL[pl]}</span>
+                  <span className="block text-[11px] text-muted-foreground tabular-nums">
+                    {counts[pl]} {counts[pl] === 1 ? "produto" : "produtos"}
+                  </span>
+                </span>
+              </button>
+            </Fragment>
+          );
+        })}
+        <div className="w-px bg-border mx-1 sm:mx-2 shrink-0" />
+        <button
+          onClick={() => goTab("todos")}
+          className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 min-w-[130px] text-left transition-colors shrink-0 ${
+            tab === "todos" ? "border-primary bg-primary/10" : "border-border bg-surface hover:border-primary/40"
+          }`}
+        >
+          <span className={`size-9 rounded-lg grid place-items-center shrink-0 ${tab === "todos" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+            <LayoutList className="size-4" />
+          </span>
+          <span>
+            <span className="block text-sm font-semibold leading-tight">Todos</span>
+            <span className="block text-[11px] text-muted-foreground tabular-nums">{products.length} {products.length === 1 ? "produto" : "produtos"}</span>
+          </span>
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 mb-5">
         <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface border border-border flex-1 min-w-0 sm:min-w-[220px]">
           <Search className="size-3.5 text-muted-foreground" />
@@ -85,69 +183,52 @@ function ProductsIndex() {
             className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
           />
         </div>
-        <button
-          onClick={() => { setEditing(null); setEditorOpen(true); }}
-          className="sm:hidden h-9 px-3 shrink-0 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5"
-        >
+        <button onClick={() => openNew()} className="sm:hidden h-9 px-3 shrink-0 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-1.5">
           <Plus className="size-4" /> Novo produto
         </button>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-        <select
-          value={fStatus}
-          onChange={(e) => setFStatus(e.target.value)}
-          className="h-9 px-2 min-w-0 shrink rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
-        >
-          <option value="all">Status</option>
-          {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <div className="flex items-center rounded-lg border border-border bg-surface p-0.5 ml-auto sm:ml-0 shrink-0">
-          <button
-            onClick={() => navigate({ search: { view: "esteira" } })}
-            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "esteira" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            <Columns3 className="size-3.5" /> <span className={view === "esteira" ? "" : "hidden sm:inline"}>Esteira</span>
-          </button>
-          <button
-            onClick={() => navigate({ search: { view: "galeria" } })}
-            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "galeria" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            <LayoutGrid className="size-3.5" /> <span className={view === "galeria" ? "" : "hidden sm:inline"}>Galeria</span>
-          </button>
-          <button
-            onClick={() => navigate({ search: { view: "lista" } })}
-            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "lista" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            <List className="size-3.5" /> <span className={view === "lista" ? "" : "hidden sm:inline"}>Lista</span>
-          </button>
-          <button
-            onClick={() => navigate({ search: { view: "aprendizados" } })}
-            className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === "aprendizados" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            <FlaskConical className="size-3.5" /> <span className={view === "aprendizados" ? "" : "hidden sm:inline"}>Aprendizados</span>
-          </button>
-        </div>
-        </div>
+        {!isPipeline && (
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <select
+              value={fStatus}
+              onChange={(e) => setFStatus(e.target.value)}
+              className="h-9 px-2 min-w-0 shrink rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
+            >
+              <option value="all">Status</option>
+              {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <div className="flex items-center rounded-lg border border-border bg-surface p-0.5 ml-auto sm:ml-0 shrink-0">
+              {ALL_VIEWS.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => navigate({ search: { tab: "todos", view: id } })}
+                  className={`h-8 px-2.5 sm:px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${view === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Icon className="size-3.5" /> <span className={view === id ? "" : "hidden sm:inline"}>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {view === "aprendizados" ? (
-        <ProductLearnings search={search} onOpen={setViewingId} />
-      ) : view === "esteira" ? (
+      {isPipeline ? (
         <ProductBoard
+          key={tab}
+          pipeline={tab}
           products={products}
           visible={matches}
-          columnFilter={fStatus === "all" ? null : fStatus}
-          onOpen={(p) => setViewingId(p.id)}
+          onOpen={(p) => { if (!p.id.startsWith("temp-")) setViewingId(p.id); }}
           onEdit={(p) => { setEditing(p); setEditorOpen(true); }}
-          onDelete={async (p) => { if (await confirm(`Excluir "${p.name}"?`)) remove.mutate(p.id); }}
+          onDelete={async (p) => { if (await confirm(`Excluir "${p.name}"? Ele sai de todas as esteiras.`)) remove.mutate(p.id); }}
+          onCreate={(columnId) => openNew(columnId)}
         />
+      ) : view === "aprendizados" ? (
+        <ProductLearnings search={search} onOpen={setViewingId} />
       ) : filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-12 text-center">
           <Package className="size-10 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">Nenhum produto cadastrado ainda.</p>
-          <button
-            onClick={() => { setEditing(null); setEditorOpen(true); }}
-            className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
-          >
+          <button onClick={() => openNew()} className="mt-4 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5">
             <Plus className="size-4" /> Criar primeiro produto
           </button>
         </div>
@@ -173,14 +254,16 @@ function ProductsIndex() {
         <ProductEditor
           product={editing}
           statuses={statuses}
+          pipeline={tab === "todos" ? "validacao" : tab}
+          columnId={newColumnId}
           onClose={() => setEditorOpen(false)}
           onSave={async (patch) => {
             if (editing) await update.mutateAsync({ id: editing.id, patch });
-            else await create.mutateAsync(patch);
+            else create.mutate(patch);
             setEditorOpen(false);
           }}
           onDelete={editing ? async () => {
-            if (await confirm(`Excluir "${editing.name}"?`)) {
+            if (await confirm(`Excluir "${editing.name}"? Ele sai de todas as esteiras.`)) {
               await remove.mutateAsync(editing.id);
               setEditorOpen(false);
             }
@@ -267,15 +350,20 @@ function ProductListView({ products, statusById, onOpen }: {
   );
 }
 
-function ProductEditor({ product, statuses, onClose, onSave, onDelete }: {
+// Produto novo nasce na esteira da aba aberta; o status (Validação) só
+// aparece quando ele nasce na Validação ou já tem status.
+function ProductEditor({ product, statuses, pipeline, columnId, onClose, onSave, onDelete }: {
   product: any;
   statuses: ProductStatus[];
+  pipeline: Pipeline;
+  columnId: string | null;
   onClose: () => void;
   onSave: (patch: any) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
 }) {
   const [name, setName] = useState(product?.name ?? "");
-  const [statusId, setStatusId] = useState<string>(product?.board_column_id ?? statuses[0]?.id ?? "");
+  const [statusId, setStatusId] = useState<string>(product ? product.board_column_id ?? "" : (pipeline === "validacao" ? columnId : null) ?? statuses[0]?.id ?? "");
+  const showStatus = product ? true : pipeline === "validacao";
   const [imageUrl, setImageUrl] = useState<string>(product?.main_image_url ?? "");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -308,8 +396,9 @@ function ProductEditor({ product, statuses, onClose, onSave, onDelete }: {
     if (!name.trim() && !product) return;
     onSave({
       name: name.trim() || (product?.name ?? "Novo produto"),
-      ...(statusId && statusId !== product?.board_column_id ? { board_column_id: statusId } : {}),
+      ...(showStatus && statusId && statusId !== product?.board_column_id ? { board_column_id: statusId } : {}),
       main_image_url: imageUrl || null,
+      ...(product ? {} : { pipeline, ...(pipeline !== "validacao" && columnId ? { pipeline_column_id: columnId } : {}) }),
     });
   };
 
@@ -349,13 +438,17 @@ function ProductEditor({ product, statuses, onClose, onSave, onDelete }: {
             placeholder="Nome do produto"
             className="w-full px-3 h-10 rounded-lg bg-surface border border-border text-sm outline-none focus:border-primary/50"
           />
-          <select
+          {!showStatus && (
+            <p className="text-xs text-muted-foreground">Entra em {PIPELINE_LABEL[pipeline]}.</p>
+          )}
+          {showStatus && <select
             value={statusId}
             onChange={(e) => setStatusId(e.target.value)}
             className="w-full px-2 h-10 rounded-lg bg-surface border border-border text-sm outline-none cursor-pointer"
           >
+            {!statusId && <option value="">Sem status (fora da Validação)</option>}
             {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          </select>}
         </div>
 
         <div className="flex justify-between items-center px-5 py-3 border-t border-border">

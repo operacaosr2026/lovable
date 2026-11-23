@@ -68,7 +68,7 @@ export function ProductSales({ productId }: { productId: string }) {
 
       {/* Colunas em px fixo não cabem em mobile; rola horizontal em vez de
           cortar (mesmo ajuste já feito em Pedidos/Rastreamento). */}
-      <div className="rounded-2xl border border-border bg-surface overflow-x-auto">
+      <div className="rounded-2xl border border-border bg-card soft-shadow-sm overflow-x-auto">
         {isLoading && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             <RefreshCw className="size-4 animate-spin mx-auto mb-2" />
@@ -86,7 +86,7 @@ export function ProductSales({ productId }: { productId: string }) {
 
         {!isLoading && rows.length > 0 && (
         <div className="min-w-[480px]">
-        <div className="grid grid-cols-[1fr_100px_100px_120px] gap-3 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <div className="grid grid-cols-[1fr_100px_100px_120px] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b border-border">
           <div>Mês</div>
           <div className="text-right">Pedidos</div>
           <div className="text-right">Unidades</div>
@@ -119,7 +119,7 @@ export function ProductSales({ productId }: { productId: string }) {
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border bg-surface px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">{label}</div>
+      <div className="text-xs text-muted-foreground font-medium mb-1">{label}</div>
       <div className="text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );

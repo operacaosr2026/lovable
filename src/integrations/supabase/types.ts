@@ -1743,6 +1743,7 @@ export type Database = {
           created_at: string;
           id: string;
           name: string;
+          pipeline: string;
           position: number;
           updated_at: string;
           user_id: string;
@@ -1752,6 +1753,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           name: string;
+          pipeline?: string;
           position?: number;
           updated_at?: string;
           user_id: string;
@@ -1761,6 +1763,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           name?: string;
+          pipeline?: string;
           position?: number;
           updated_at?: string;
           user_id?: string;
@@ -1997,6 +2000,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      product_pipeline_items: {
+        Row: {
+          column_id: string;
+          created_at: string;
+          pipeline: string;
+          position: number;
+          product_id: string;
+          user_id: string;
+        };
+        Insert: {
+          column_id: string;
+          created_at?: string;
+          pipeline: string;
+          position?: number;
+          product_id: string;
+          user_id: string;
+        };
+        Update: {
+          column_id?: string;
+          created_at?: string;
+          pipeline?: string;
+          position?: number;
+          product_id?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       product_test_pipeline_checks: {
         Row: {
           checked_at: string;
@@ -2209,10 +2239,16 @@ export type Database = {
       };
       product_creatives: {
         Row: {
+          board_column_id: string | null;
+          board_position: number;
           created_at: string;
           description: string | null;
           descriptions: Json;
+          drive_file_id: string | null;
+          drive_url: string | null;
           id: string;
+          last_used_at: string | null;
+          link_descriptions: Json;
           media_kind: string | null;
           media_path: string | null;
           media_url: string | null;
@@ -2221,16 +2257,24 @@ export type Database = {
           product_id: string;
           status: string;
           texts: Json;
+          thumb_path: string | null;
+          thumb_url: string | null;
           title: string;
           titles: Json;
           updated_at: string;
           user_id: string;
         };
         Insert: {
+          board_column_id?: string | null;
+          board_position?: number;
           created_at?: string;
           description?: string | null;
           descriptions?: Json;
+          drive_file_id?: string | null;
+          drive_url?: string | null;
           id?: string;
+          last_used_at?: string | null;
+          link_descriptions?: Json;
           media_kind?: string | null;
           media_path?: string | null;
           media_url?: string | null;
@@ -2239,16 +2283,24 @@ export type Database = {
           product_id: string;
           status?: string;
           texts?: Json;
+          thumb_path?: string | null;
+          thumb_url?: string | null;
           title?: string;
           titles?: Json;
           updated_at?: string;
           user_id: string;
         };
         Update: {
+          board_column_id?: string | null;
+          board_position?: number;
           created_at?: string;
           description?: string | null;
           descriptions?: Json;
+          drive_file_id?: string | null;
+          drive_url?: string | null;
           id?: string;
+          last_used_at?: string | null;
+          link_descriptions?: Json;
           media_kind?: string | null;
           media_path?: string | null;
           media_url?: string | null;
@@ -2257,6 +2309,8 @@ export type Database = {
           product_id?: string;
           status?: string;
           texts?: Json;
+          thumb_path?: string | null;
+          thumb_url?: string | null;
           title?: string;
           titles?: Json;
           updated_at?: string;
@@ -5183,6 +5237,7 @@ export type Database = {
           color: string;
           created_at: string;
           description: string | null;
+          diagram: Json | null;
           icon: string | null;
           id: string;
           is_template: boolean;
@@ -5196,6 +5251,7 @@ export type Database = {
           color?: string;
           created_at?: string;
           description?: string | null;
+          diagram?: Json | null;
           icon?: string | null;
           id?: string;
           is_template?: boolean;
@@ -5209,6 +5265,7 @@ export type Database = {
           color?: string;
           created_at?: string;
           description?: string | null;
+          diagram?: Json | null;
           icon?: string | null;
           id?: string;
           is_template?: boolean;

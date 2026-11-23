@@ -147,3 +147,100 @@ export const deleteCompetitor = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ── Página Concorrentes ──
+// Todos os concorrentes da conta (com ou sem produto). Cadastro direto pela
+// página: só nome + link da Biblioteca de anúncios, produto opcional.
+
+export const AD_LIBRARY_FIELD: ProductionField = { id: "biblioteca_anuncios", label: "Biblioteca de anúncios", type: "link" };
+
+export type CompetitorListItem = Competitor & {
+  product_id: string | null;
+  product: { id: string; name: string; main_image_url: string | null } | null;
+  created_at: string;
+};
+
+export const listAllCompetitors = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { ownerId } = context;
+    const [rows, products] = await Promise.all([
+      db("product_competitors").select("id,name,fields,values,position,updated_at,created_at,product_id")
+        .eq("user_id", ownerId).order("created_at", { ascending: false }),
+      db("products").select("id,name,main_image_url").eq("user_id", ownerId).eq("archived", false).order("name"),
+    ]);
+    if (rows.error) throw new Error(rows.error.message);
+    if (products.error) throw new Error(products.error.message);
+    const byId = new Map((products.data ?? []).map((p) => [p.id, p]));
+    const missing = [...new Set((rows.data ?? []).map((r) => r.product_id).filter((id): id is string => !!id && !byId.has(id)))];
+    if (missing.length) {
+      const { data } = await db("products").select("id,name,main_image_url").eq("user_id", ownerId).in("id", missing);
+      for (const p of data ?? []) byId.set(p.id, p);
+    }
+    return {
+      products: products.data ?? [],
+      competitors: (rows.data ?? []).map((r) => ({
+        ...r, product: r.product_id ? byId.get(r.product_id) ?? null : null,
+      })) as unknown as CompetitorListItem[],
+    };
+  });
+
+export const addCompetitor = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    name: z.string().trim().min(1).max(160),
+    ad_library: z.string().trim().max(5000),
+    product_id: z.string().uuid().nullable(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { ownerId } = context;
+    let position = 0;
+    if (data.product_id) {
+      await assertProduct(ownerId, data.product_id);
+      const { count } = await db("product_competitors").select("id", { count: "exact", head: true })
+        .eq("user_id", ownerId).eq("product_id", data.product_id);
+      position = count ?? 0;
+    }
+    const { data: row, error } = await db("product_competitors").insert({
+      user_id: ownerId, product_id: data.product_id, name: data.name, position,
+      fields: [AD_LIBRARY_FIELD], values: data.ad_library ? { [AD_LIBRARY_FIELD.id]: data.ad_library } : {},
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: row.id as string };
+  });
+
+// Edição pela página: nome, link da Biblioteca e produto. O campo da
+// Biblioteca entra no quadro se ele ainda não tiver.
+export const editCompetitor = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(160).optional(),
+    ad_library: z.string().trim().max(5000).optional(),
+    product_id: z.string().uuid().nullable().optional(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { ownerId } = context;
+    const { data: cur } = await db("product_competitors").select("fields,values,product_id")
+      .eq("id", data.id).eq("user_id", ownerId).maybeSingle();
+    if (!cur) throw new Error("Concorrente não encontrado");
+    const patch: Database["public"]["Tables"]["product_competitors"]["Update"] = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.ad_library !== undefined) {
+      const fields = (cur.fields ?? []) as unknown as ProductionField[];
+      if (!fields.some((f) => f.id === AD_LIBRARY_FIELD.id)) patch.fields = [...fields, AD_LIBRARY_FIELD];
+      patch.values = { ...((cur.values ?? {}) as Record<string, string>), [AD_LIBRARY_FIELD.id]: data.ad_library };
+    }
+    if (data.product_id !== undefined && data.product_id !== cur.product_id) {
+      patch.product_id = data.product_id;
+      if (data.product_id) {
+        await assertProduct(ownerId, data.product_id);
+        const { count } = await db("product_competitors").select("id", { count: "exact", head: true })
+          .eq("user_id", ownerId).eq("product_id", data.product_id);
+        patch.position = count ?? 0;
+      }
+    }
+    const { error } = await db("product_competitors").update(patch).eq("id", data.id).eq("user_id", ownerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

@@ -13,21 +13,12 @@ export const listSopProcesses = createServerFn({ method: "GET" })
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    // Compute progress per process
-    const ids = (data ?? []).map((p: any) => p.id);
-    let stepsByProcess: Record<string, { total: number; done: number }> = {};
-    if (ids.length) {
-      const { data: steps } = await supabase
-        .from("sop_steps")
-        .select("process_id,status")
-        .in("process_id", ids);
-      for (const s of (steps ?? []) as any[]) {
-        const b = (stepsByProcess[s.process_id] ||= { total: 0, done: 0 });
-        b.total += 1;
-        if (s.status === "done") b.done += 1;
-      }
-    }
-    return { processes: (data ?? []).map((p: any) => ({ ...p, ...(stepsByProcess[p.id] ?? { total: 0, done: 0 }) })) };
+    const processes = (data ?? []).map((p: any) => {
+      const nodes = Array.isArray(p.diagram?.nodes) ? p.diagram.nodes : [];
+      const { diagram: _d, ...rest } = p;
+      return { ...rest, nodeCount: nodes.filter((n: any) => n.type !== "frame").length };
+    });
+    return { processes };
   });
 
 export const getSopProcess = createServerFn({ method: "GET" })
@@ -86,6 +77,19 @@ export const updateSopProcess = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const saveSopDiagram = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { id: string; diagram: { nodes: unknown[]; edges: unknown[] } }) => {
+    if (!i?.id || !Array.isArray(i.diagram?.nodes) || !Array.isArray(i.diagram?.edges)) throw new Error("Diagrama inválido");
+    return i;
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("sop_processes").update({ diagram: data.diagram as any }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const deleteSopProcess = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { id: string }) => i)
@@ -112,6 +116,8 @@ export const duplicateSopProcess = createServerFn({ method: "POST" })
         color: src.color,
         icon: src.icon,
         is_template: false,
+        layout_type: src.layout_type,
+        diagram: src.diagram,
       })
       .select("*")
       .single();

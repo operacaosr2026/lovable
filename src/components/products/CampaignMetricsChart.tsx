@@ -41,13 +41,13 @@ const nyTime = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: "Am
 export function DiaryChangesList({ date, notes }: { date: string; notes: DiaryChange[] }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5 mb-1.5">
+      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-1.5">
         <StickyNote className="size-3.5 text-sky-500" /> {notes.length === 1 ? "Alteração no diário" : `${notes.length} alterações no diário`} · {fmtDate(date)}
       </p>
       <ul className="space-y-2 max-h-60 overflow-y-auto">
         {notes.map((n, i) => (
           <li key={i} className="text-[13px] leading-snug">
-            <span className="text-[11px] text-muted-foreground tabular-nums mr-1.5">{nyTime(n.at)}</span>
+            <span className="text-xs text-muted-foreground tabular-nums mr-1.5">{nyTime(n.at)}</span>
             <span className="whitespace-pre-wrap">{n.content}</span>
           </li>
         ))}
@@ -95,7 +95,7 @@ export function MetricPicker({ available, selected, colorOf, onToggle, onClear }
         if (!list.length) return null;
         return (
           <div key={src} className="flex flex-wrap items-center gap-1.5">
-            <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{SOURCE_LABEL[src]}</span>
+            <span className="w-16 shrink-0 text-xs font-semibold text-muted-foreground">{SOURCE_LABEL[src]}</span>
             {list.map((m) => {
               const on = selected.includes(m.key);
               const blocked = !on && full;
@@ -113,7 +113,7 @@ export function MetricPicker({ available, selected, colorOf, onToggle, onClear }
           </div>
         );
       })}
-      <div className="flex items-center justify-between pt-1 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
         <span>{selected.length ? `${selected.length} de até ${MAX_LINES} métricas no gráfico` : "Marque as métricas que quer ver como linha"}</span>
         {selected.length > 0 && (
           <button onClick={onClear} className="flex items-center gap-1 hover:text-foreground"><X className="size-3" /> Desmarcar todas</button>
@@ -181,7 +181,7 @@ export function MetricsChart({ id, title, dates, rows, periodReach, metrics, col
     if (!notes) return null;
     return (
       <div className="mt-2 pt-2 border-t border-border">
-        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400 flex items-center gap-1 mb-0.5"><StickyNote className="size-3" /> Diário</p>
+        <p className="text-[10.5px] font-semibold text-sky-600 dark:text-sky-400 flex items-center gap-1 mb-0.5"><StickyNote className="size-3" /> Diário</p>
         {notes.map((n, i) => <p key={i} className="line-clamp-3 leading-snug">{n.content}</p>)}
       </div>
     );
@@ -253,7 +253,7 @@ export function MetricsChart({ id, title, dates, rows, periodReach, metrics, col
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-1 px-1">
+          <p className="text-xs text-muted-foreground mt-1 px-1">
             {single ? "Valor real da métrica em cada dia." : "Cada linha é comparada com a própria média no período (100 = média; 120 = 20% acima). Passe o mouse para ver os valores reais."}
             {" "}Bolinha azul = alteração do diário (passe o mouse para ler).
           </p>
@@ -307,7 +307,7 @@ export function MetricsChart({ id, title, dates, rows, periodReach, metrics, col
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-muted-foreground mt-2">Passe o mouse em um gráfico e o mesmo dia aparece marcado em todos. Bolinha azul = alteração do diário (passe o mouse para ler).</p>
+      <p className="text-xs text-muted-foreground mt-2">Passe o mouse em um gráfico e o mesmo dia aparece marcado em todos. Bolinha azul = alteração do diário (passe o mouse para ler).</p>
     </section>
   );
 }

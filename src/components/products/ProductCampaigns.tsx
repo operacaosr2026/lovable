@@ -20,6 +20,7 @@ import { ProductDiary } from "@/components/products/ProductDiary";
 import { ProductClarityBar } from "@/components/products/ProductClarityBar";
 import { ProductTestPipeline } from "@/components/products/ProductTestPipeline";
 import { BASELINE_METRICS, FORMAT_UNIT, SOURCE_LABEL, type MetricSource } from "@/lib/experiment-metrics";
+import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 // Aba Inteligência › Campanhas do produto (substitui Diário e Testes): listas
 // por status (editáveis no ⋯ ao lado do nome), como no ClickUp, com tags e busca.
@@ -146,7 +147,7 @@ function CampaignLists({ productId }: { productId: string }) {
       && (!term || [e.title, e.campaign_name ?? "", e.hypothesis, ...e.tags].some((s) => s.toLowerCase().includes(term))));
   }, [experiments, q, tagFilter]);
 
-  if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <TabSkeleton />;
   if (error || !data) return <p className="text-sm text-destructive">{(error as Error)?.message ?? "Não foi possível carregar as campanhas."}</p>;
 
   const statuses = data.statuses;
@@ -204,13 +205,13 @@ function CampaignLists({ productId }: { productId: string }) {
                   className="size-6 rounded-md grid place-items-center text-muted-foreground hover:bg-muted" title={isCollapsed ? "Abrir" : "Recolher"}>
                   {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
                 </button>
-                <span className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${STATUS_STYLE[st.color].pill}`}>{st.name}</span>
+                <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[st.color].pill}`}>{st.name}</span>
                 <StatusEditor statuses={statuses} experiments={experiments} onSaved={refresh} />
                 <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
               </div>
               {!isCollapsed && (
                 <div className="rounded-xl border border-border overflow-hidden">
-                  <div className="hidden md:grid grid-cols-[minmax(0,1fr)_220px_200px_80px_56px] gap-3 px-3 h-8 items-center border-b border-border bg-muted/40 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="hidden md:grid grid-cols-[minmax(0,1fr)_220px_200px_80px_56px] gap-3 px-3 h-8 items-center border-b border-border bg-muted/40 text-xs font-medium text-muted-foreground">
                     <span className="pl-6">Nome</span><span>Campanha Meta</span><span>Tags</span><span>Início</span><span>Dias</span>
                   </div>
                   {items.map((e) => (
@@ -236,7 +237,7 @@ function CampaignLists({ productId }: { productId: string }) {
         )}
       </DragOverlay>
       </DndContext>
-      <p className="text-[11px] text-muted-foreground mt-3">Arraste uma campanha para outra lista para mudar o status. Ao preencher a data de início, um registro entra sozinho no diário dela, nessa data.</p>
+      <p className="text-xs text-muted-foreground mt-3">Arraste uma campanha para outra lista para mudar o status. Ao preencher a data de início, um registro entra sozinho no diário dela, nessa data.</p>
 
       {viewing && (
         <CampaignView experiment={viewing} statuses={statuses} kinds={data.kinds} productId={productId} allTags={data.allTags}
@@ -339,7 +340,7 @@ function StatusEditor({ statuses, experiments, onSaved }: { statuses: CampaignSt
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[340px] max-w-[calc(100vw-32px)] p-3">
         <p className="text-sm font-semibold">Status das campanhas</p>
-        <p className="text-[11px] text-muted-foreground mb-2">Valem para todos os produtos. Clique na bolinha para trocar a cor.</p>
+        <p className="text-xs text-muted-foreground mb-2">Valem para todos os produtos. Clique na bolinha para trocar a cor.</p>
         <div className="space-y-1.5">
           {list.map((s, i) => (
             <div key={s.id} className="flex items-center gap-1.5">
@@ -367,7 +368,7 @@ function StatusEditor({ statuses, experiments, onSaved }: { statuses: CampaignSt
           <Plus className="size-3.5" /> Adicionar status
         </button>
         {removedCount > 0 && list[0] && (
-          <p className="text-[11px] text-amber-600 mt-2">
+          <p className="text-xs text-amber-600 mt-2">
             {removedCount} {removedCount === 1 ? "campanha deste produto está" : "campanhas deste produto estão"} em status excluído e
             {removedCount === 1 ? " vai" : " vão"} para "{list[0].name.trim() || "o primeiro"}" (o mesmo vale para os outros produtos).
           </p>
@@ -505,8 +506,8 @@ function CampaignDialog({ productId, initial, statuses, kinds, shops, campaigns,
               {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             {!campaigns.length
-              ? <p className="text-[11px] text-muted-foreground mt-1">Ligue as campanhas do produto em Inteligência › Vendas.</p>
-              : needsCampaign && <p className="text-[11px] text-muted-foreground mt-1">Escolha a campanha da Meta (só pode ficar sem enquanto não tem data de início).</p>}
+              ? <p className="text-xs text-muted-foreground mt-1">Ligue as campanhas do produto em Inteligência › Vendas.</p>
+              : needsCampaign && <p className="text-xs text-muted-foreground mt-1">Escolha a campanha da Meta (só pode ficar sem enquanto não tem data de início).</p>}
           </Field>
           <Field label="Nome" full>
             <input value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="Ex.: CBO vídeo UGC, ADV+ ligado" className={`${inputCls} w-full`} />
@@ -575,14 +576,14 @@ function CampaignDialog({ productId, initial, statuses, kinds, shops, campaigns,
                 <p className="text-xs text-muted-foreground">Os números de referência (ex.: os da campanha atual). As métricas da campanha são comparadas com eles. Preencha só os que importam.</p>
                 {(["meta", "shopify", "clarity"] as MetricSource[]).map((src) => (
                   <div key={src}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{SOURCE_LABEL[src]}</p>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5">{SOURCE_LABEL[src]}</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {BASELINE_METRICS.filter((m) => m.source === src).map((m) => {
                         const v = f.baseline[m.key] ?? "";
                         const bad = v.trim() !== "" && !Number.isFinite(num(v));
                         return (
                           <label key={m.key} className="block" title={m.hint}>
-                            <span className="text-[11px] text-muted-foreground line-clamp-1">{m.label}{FORMAT_UNIT[m.format] && ` (${FORMAT_UNIT[m.format]})`}</span>
+                            <span className="text-xs text-muted-foreground line-clamp-1">{m.label}{FORMAT_UNIT[m.format] && ` (${FORMAT_UNIT[m.format]})`}</span>
                             <input inputMode="decimal" value={v} onChange={(e) => set("baseline", { ...f.baseline, [m.key]: e.target.value })}
                               className={`${inputCls} w-full mt-0.5 ${bad ? "border-destructive" : ""}`} />
                           </label>
@@ -597,7 +598,7 @@ function CampaignDialog({ productId, initial, statuses, kinds, shops, campaigns,
           <Field label="O que você aprendeu (opcional)" full>
             <textarea rows={3} value={f.learning} onChange={(e) => set("learning", e.target.value)}
               placeholder="Ex.: vídeo UGC baixou o CPA de $32 para $21; usar nos outros produtos de casa" className={`${areaCls} w-full`} />
-            <p className="text-[11px] text-muted-foreground mt-1">Com isso preenchido, a campanha aparece em Produtos › Aprendizados.</p>
+            <p className="text-xs text-muted-foreground mt-1">Com isso preenchido, a campanha aparece em Produtos › Aprendizados.</p>
           </Field>
           <div className="sm:col-span-2 flex items-center gap-2 pt-1">
             {existing && (
@@ -653,7 +654,7 @@ function KindEditor({ kinds, productId, onCreated }: { kinds: CampaignKind[]; pr
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-3">
         <p className="text-sm font-semibold">O que está testando</p>
-        <p className="text-[11px] text-muted-foreground mb-2">Opções para todas as campanhas.</p>
+        <p className="text-xs text-muted-foreground mb-2">Opções para todas as campanhas.</p>
         <div className="space-y-1.5 max-h-64 overflow-y-auto">
           {list.map((k, i) => (
             <div key={k.id} className="flex items-center gap-1.5">
@@ -675,7 +676,7 @@ function KindEditor({ kinds, productId, onCreated }: { kinds: CampaignKind[]; pr
             <Plus className="size-3.5" />
           </button>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-2">Excluir não muda as campanhas que já usam a opção.</p>
+        <p className="text-xs text-muted-foreground mt-2">Excluir não muda as campanhas que já usam a opção.</p>
         <div className="flex justify-end gap-2 mt-3">
           <button type="button" onClick={() => setOpen(false)} className="h-8 px-3 rounded-lg border border-border text-sm hover:bg-muted">Cancelar</button>
           <button type="button" disabled={!canSave || save.isPending} onClick={() => save.mutate(list)}

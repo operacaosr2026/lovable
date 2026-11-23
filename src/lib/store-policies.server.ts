@@ -16,16 +16,18 @@ const LABEL: Record<string, string> = {
   "refund-policy": "Reembolso", "privacy-policy": "Privacidade", "terms-of-service": "Termos de serviço",
   "shipping-policy": "Frete", "contact-information": "Informações de contato", "legal-notice": "Aviso legal",
 };
-const label = (h: string) => LABEL[h] ?? h;
+export const policyLabel = (h: string) => LABEL[h] ?? h;
 
 const normalize = (html: string) => html
   .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'")
   .replace(/\s+/g, " ").trim();
 
-type Store = { id: string; name: string | null; shop_domain: string | null; access_token: string | null };
-type Snapshot = {
+export type Store = { id: string; name: string | null; shop_domain: string | null; access_token: string | null };
+export type Snapshot = {
   policies: Record<string, string>; apps: string[] | null;   // null = app sem permissão pra ler os apps
-  email: string | null; address: string; addressKey: string; password: boolean;
+  email: string | null; storeEmail: string | null; address: string; addressKey: string; password: boolean;
+  phone: string | null; currency: string | null; timezone: string | null; locale: string | null;
+  plan: string | null; planLabel: string | null; domain: string | null; myshopifyDomain: string | null;
 };
 
 async function api(s: Store, path: string) {
@@ -40,7 +42,7 @@ async function gql(s: Store, query: string, variables: Record<string, unknown> =
 }
 
 // null = sem acesso à loja agora (não dá pra conferir).
-async function snapshot(s: Store): Promise<Snapshot | null> {
+export async function snapshot(s: Store): Promise<Snapshot | null> {
   const [pol, shop, apps] = await Promise.all([
     api(s, "policies.json"), api(s, "shop.json"), gql(s, `{ appInstallations(first: 100) { nodes { app { title } } } }`),
   ]);
@@ -50,9 +52,12 @@ async function snapshot(s: Store): Promise<Snapshot | null> {
     policies: Object.fromEntries(((pol.policies ?? []) as any[]).map((p) => [String(p.handle), normalize(String(p.body ?? ""))]).filter(([, t]) => t)),
     apps: apps?.appInstallations ? ((apps.appInstallations.nodes ?? []) as any[]).map((n) => String(n.app?.title ?? "")).filter(Boolean) : null,
     email: sh.customer_email || sh.email || null,
+    storeEmail: sh.email || null,
     address: [sh.address1, sh.address2, sh.city, sh.province_code, sh.zip].filter(Boolean).join(", "),
     addressKey: addressKey(sh.address1, sh.zip),
     password: !!sh.password_enabled,
+    phone: sh.phone || null, currency: sh.currency || null, timezone: sh.iana_timezone || null, locale: sh.primary_locale || null,
+    plan: sh.plan_name || null, planLabel: sh.plan_display_name || null, domain: sh.domain || null, myshopifyDomain: sh.myshopify_domain || null,
   };
 }
 
@@ -70,7 +75,7 @@ const addressKey = (line1: string | null, zip: string | null) => {
   const z = String(zip ?? "").match(/\d{5}/)?.[0] ?? String(line1 ?? "").match(/\b\d{5}\b/)?.[0] ?? "";
   return `${street}|${z}`;
 };
-const same = (a: string | null, b: string | null) => (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+export const same = (a: string | null, b: string | null) => (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 
 // Notificações ao cliente: a API não mostra se estão ligadas, então confere nos
 // eventos do pedido mais recente (confirmação) e do último enviado (envio).
@@ -93,6 +98,9 @@ async function customerEmails(ownerId: string, s: Store) {
   return { order, shipping, orderNumber: placed?.order_number ?? null, shippedNumber: shipped?.order_number ?? null };
 }
 
+export const missingApps = (ref: Snapshot, cur: Snapshot) =>
+  ref.apps && cur.apps ? ref.apps.filter((a) => !cur.apps!.some((b) => same(a, b))) : null;
+
 export async function checkStoreSetup(ownerId: string, storeId: string) {
   const { data: stores } = await supabaseAdmin.from("shopify_stores")
     .select("id,name,shop_domain,access_token,policy_base,is_placeholder,setup_check_until").eq("user_id", ownerId);
@@ -107,14 +115,14 @@ export async function checkStoreSetup(ownerId: string, storeId: string) {
 
   const lines: string[] = [];
   for (const h of Object.keys(ref.policies)) {
-    if (!(h in cur.policies)) lines.push(`${label(h)}: falta na loja`);
+    if (!(h in cur.policies)) lines.push(`${policyLabel(h)}: falta na loja`);
     else if (cur.policies[h] !== ref.policies[h]) {
       const c = changed(ref.policies[h], cur.policies[h]);
-      lines.push(`${label(h)}: "${c.store}" (na base: "${c.base}")`);
+      lines.push(`${policyLabel(h)}: "${c.store}" (na base: "${c.base}")`);
     }
   }
-  const missingApps = ref.apps && cur.apps ? ref.apps.filter((a) => !cur.apps!.some((b) => same(a, b))) : [];
-  if (missingApps.length) lines.push(`Apps que faltam: ${missingApps.join(", ")}`);
+  const apps = missingApps(ref, cur) ?? [];
+  if (apps.length) lines.push(`Apps que faltam: ${apps.join(", ")}`);
   if (!same(cur.email, ref.email)) lines.push(`E-mail de atendimento: "${cur.email ?? "—"}" (na base: "${ref.email ?? "—"}")`);
   if (cur.addressKey !== ref.addressKey) lines.push(`Endereço da empresa: "${cur.address || "—"}" (na base: "${ref.address || "—"}")`);
   if (cur.password) lines.push("Loja com senha (fechada pro público)");

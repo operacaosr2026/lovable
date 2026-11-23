@@ -8,7 +8,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchWithRetry } from "@/lib/http";
 import { isRecoveryOrder } from "@/lib/recovery-order";
 import { orderDateFor } from "@/lib/order-date";
-import { firstProductColumnId } from "@/lib/product-board.server";
+import { firstProductColumnId, placeInPipeline } from "@/lib/product-board.server";
+import { PIPELINES } from "@/lib/product-pipelines";
 import { applyPreset } from "@/lib/store-production.server";
 import { isVideoMime } from "@/lib/product-page";
 import { linksByProduct } from "@/lib/product-links.server";
@@ -87,8 +88,13 @@ export const getProduct = createServerFn({ method: "GET" })
 
 export const createProduct = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => ProductInput.parse(d))
+  .inputValidator((d) => ProductInput.extend({
+    // Esteira onde o produto nasce (Validação = status). Fora da Validação ele nasce sem status.
+    pipeline: z.enum(PIPELINES).default("validacao"),
+    pipeline_column_id: z.string().uuid().optional(),
+  }).parse(d))
   .handler(async ({ context, data }) => {
+    const inValidation = data.pipeline === "validacao";
     const { data: row, error } = await context.supabase.from("products").insert({
       user_id: context.ownerId,
       name: data.name,
@@ -101,14 +107,16 @@ export const createProduct = createServerFn({ method: "POST" })
       main_image_url: data.main_image_url ?? null,
       keywords: data.keywords,
       // Sem status escolhido entra no primeiro da esteira.
-      board_column_id: data.board_column_id ?? await firstProductColumnId(context.ownerId),
+      board_column_id: inValidation ? data.board_column_id ?? data.pipeline_column_id ?? await firstProductColumnId(context.ownerId) : null,
     }).select().single();
     if (error) throw new Error(error.message);
-    // create empty pricing row
-    await context.supabase.from("product_pricing").insert({ product_id: row.id, user_id: context.ownerId });
-    // Produto novo já nasce com o template padrão de produção. Falha aqui não
-    // impede o cadastro (dá pra aplicar pela aba Produção).
-    await applyPreset("product", context.ownerId, row.id).catch((e) => console.error("[produção] template produto", e));
+    // Em paralelo pra o card aparecer rápido. O template de produção não
+    // impede o cadastro se falhar (dá pra aplicar pela aba Produção).
+    await Promise.all([
+      inValidation ? null : placeInPipeline(context.ownerId, row.id, data.pipeline, data.pipeline_column_id),
+      context.supabase.from("product_pricing").insert({ product_id: row.id, user_id: context.ownerId }),
+      applyPreset("product", context.ownerId, row.id).catch((e) => console.error("[produção] template produto", e)),
+    ]);
     return { product: row };
   });
 
@@ -478,11 +486,17 @@ const CreativeInput = z.object({
   title: z.string().max(200).default(""),
   description: z.string().max(2000).nullable().optional(),
   titles: z.array(z.string().max(500)).max(50).optional(),
-  descriptions: z.array(z.string().max(2000)).max(50).optional(),
+  descriptions: z.array(z.string().max(5000)).max(50).optional(),
+  link_descriptions: z.array(z.string().max(500)).max(50).optional(),
   status: z.enum(CREATIVE_STATUSES).default("lancar"),
   media_url: z.string().max(2_000_000).nullable().optional(),
   media_path: z.string().max(500).nullable().optional(),
   media_kind: z.enum(["video", "image"]).nullable().optional(),
+  // Do Drive (Importar do Drive). Só vão como null, ao trocar a mídia por um upload.
+  drive_file_id: z.null().optional(),
+  drive_url: z.null().optional(),
+  thumb_url: z.null().optional(),
+  thumb_path: z.null().optional(),
 });
 
 export const listCreatives = createServerFn({ method: "GET" })
@@ -545,10 +559,15 @@ export const duplicateCreative = createServerFn({ method: "POST" })
       description: src.description,
       titles: src.titles ?? [],
       descriptions: src.descriptions ?? [],
+      link_descriptions: src.link_descriptions ?? [],
       status: src.status,
       media_url: src.media_url,
       media_path: src.media_path,
       media_kind: src.media_kind,
+      drive_file_id: src.drive_file_id ?? null,
+      drive_url: src.drive_url ?? null,
+      thumb_url: src.thumb_url ?? null,
+      // Miniatura fica com o original (apagar a cópia não apaga o arquivo dele).
       position,
     }).select().single();
     if (error) throw new Error(error.message);
@@ -571,8 +590,14 @@ export const deleteCreative = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { data: c } = await context.supabase.from("product_creatives").select("media_path").eq("id", data.id).maybeSingle();
-    if (c?.media_path) await context.supabase.storage.from("project-attachments").remove([c.media_path]);
+    const { data: c } = await (context.supabase as any).from("product_creatives").select("media_path,thumb_path,media_url").eq("id", data.id).maybeSingle();
+    // Mídia/miniatura usada por outra cópia (Duplicar) continua no storage.
+    const paths = [c?.media_path, c?.thumb_path].filter(Boolean) as string[];
+    if (paths.length) {
+      const { data: shared } = await (context.supabase as any).from("product_creatives").select("id").neq("id", data.id)
+        .or(paths.map((p) => `media_path.eq.${p},thumb_path.eq.${p}`).join(",")).limit(1);
+      if (!shared?.length) await context.supabase.storage.from("project-attachments").remove(paths);
+    }
     await context.supabase.from("product_creatives").delete().eq("id", data.id);
     return { ok: true };
   });

@@ -84,8 +84,8 @@ export function CampaignView({ experiment, statuses, kinds, productId, allTags, 
         <div className="flex flex-wrap items-start gap-3 pr-8">
           <div className="min-w-0 flex-1">
             <DialogTitle className="text-lg font-semibold tracking-tight">{experiment.title}</DialogTitle>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground">
-              <span className={`font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${STATUS_STYLE[status.color].pill}`}>{status.name}</span>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+              <span className={`font-semibold px-1.5 py-0.5 rounded-md ${STATUS_STYLE[status.color].pill}`}>{status.name}</span>
               {experiment.campaign_name && <span className="px-1.5 py-0.5 rounded-md bg-muted flex items-center gap-1"><Megaphone className="size-3" /> {experiment.campaign_name}</span>}
               {experiment.started_at && <span>Início {fmtDate(experiment.started_at)}{experiment.ended_at ? ` · Fim ${fmtDate(experiment.ended_at)}` : ""}{days ? ` · ${days} ${days === 1 ? "dia" : "dias"}` : ""}</span>}
             </div>
@@ -190,7 +190,7 @@ function CampaignSummary({ experiment, kinds, productId, onEdit }: { experiment:
             <dl className="space-y-2.5">
               {testing.map(([k, v]) => (
                 <div key={k}>
-                  <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{k}</dt>
+                  <dt className="text-xs font-medium text-muted-foreground">{k}</dt>
                   <dd className="text-sm whitespace-pre-wrap">{v}</dd>
                 </div>
               ))}
@@ -393,7 +393,7 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
             <PopoverContent align="start" className="w-64 p-3 max-h-[60vh] overflow-y-auto">
               {(["meta", "shopify", "clarity"] as MetricSource[]).map((src) => (
                 <div key={src} className="mb-2 last:mb-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">{SOURCE_LABEL[src]}</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">{SOURCE_LABEL[src]}</p>
                   {AVAILABLE.filter((m) => m.source === src).map((m) => (
                     <label key={m.key} className="flex items-center gap-2 py-0.5 text-sm cursor-pointer">
                       <input type="checkbox" checked={cols.includes(m.key)} onChange={() => toggleCol(m.key)} />
@@ -430,7 +430,7 @@ function CampaignMetrics({ experiment }: { experiment: Experiment }) {
               <MetricsTable key={g.id} title={level === "adset" ? g.name : null} dates={dates} rows={g.rows} periodReach={data.periodReach?.[g.id]}
                 shown={shown} sources={sources} changes={changesByDate} partialDays={partialDays} baseline={hasBase ? experiment.baseline : null} />
             ))}
-            <p className="text-[11px] text-muted-foreground mt-3">
+            <p className="text-xs text-muted-foreground mt-3">
               Compras (Shopify) são os pedidos deste produto com a UTM da campanha. A Meta conta a compra até 7 dias depois do clique e a Shopify no dia do pedido, por isso os números não batem 100%.
               Clarity: por campanha e conjunto (utm_campaign e utm_medium), a partir do dia em que o Clarity do produto foi conectado (barra no topo da aba Campanhas); dia com * é parcial (busca manual, últimas 24h).
             </p>
@@ -471,7 +471,7 @@ function MetricsTable({ title, dates, rows, periodReach, shown, sources, changes
             <tr>
               <th className={`${first} bg-card`} />
               {sources.map(({ s, n }) => (
-                <th key={s} colSpan={n} className={`px-3 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wider border-l-2 border-l-border ${SOURCE_STYLE[s].head}`}>
+                <th key={s} colSpan={n} className={`px-3 py-1.5 text-center text-xs font-semibold border-l-2 border-l-border ${SOURCE_STYLE[s].head}`}>
                   <span className="inline-flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${SOURCE_STYLE[s].dot}`} />{SOURCE_LABEL[s]}</span>
                 </th>
               ))}

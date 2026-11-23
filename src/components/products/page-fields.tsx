@@ -20,9 +20,9 @@ const softBtn = "h-9 px-3.5 rounded-xl border border-border bg-background text-x
 export function Field({ label, hint, className = "", children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
     <label className={`block min-w-0 ${className}`}>
-      <span className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{label}</span>
+      <span className="block text-xs font-semibold text-muted-foreground mb-1.5">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-muted-foreground mt-1.5">{hint}</span>}
+      {hint && <span className="block text-xs text-muted-foreground mt-1.5">{hint}</span>}
     </label>
   );
 }
@@ -132,7 +132,7 @@ export function ReviewsEditor({ value, onChange, productName }: {
             >
               <Wand2 className="size-3.5" /> Montar {parsed.reviews.length || ""} depoimentos
             </button>
-            {value.reviews.length > 0 && <span className="text-[11px] text-muted-foreground ml-3">Substitui os {value.reviews.length} atuais.</span>}
+            {value.reviews.length > 0 && <span className="text-xs text-muted-foreground ml-3">Substitui os {value.reviews.length} atuais.</span>}
           </Step>
         </div>
       ) : (
@@ -181,7 +181,7 @@ export function ReviewsEditor({ value, onChange, productName }: {
                     value={r.text} onChange={(e) => update(r.id, { text: e.target.value })} placeholder="O que o cliente disse..."
                     className="mt-1 w-full min-h-16 bg-transparent text-sm leading-relaxed text-muted-foreground outline-none resize-none placeholder:text-muted-foreground/50"
                   />
-                  <div className="mt-2 text-[10px] font-semibold text-muted-foreground/70">#{i + 1}</div>
+                  <div className="mt-2 text-[11px] font-semibold text-muted-foreground/70">#{i + 1}</div>
                 </div>
               ))}
             </div>
@@ -202,7 +202,7 @@ export function ReviewsEditor({ value, onChange, productName }: {
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <span className="size-6 rounded-full bg-primary text-primary-foreground text-[11px] font-bold grid place-items-center shrink-0 mt-0.5">{n}</span>
+      <span className="size-6 rounded-full bg-primary text-primary-foreground text-xs font-bold grid place-items-center shrink-0 mt-0.5">{n}</span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium mb-2">{title}</p>
         {children}
@@ -245,7 +245,7 @@ function ProductSearch({ options, onPick }: { options: ProductOption[]; onPick: 
                 {p.image ? <img src={p.image} alt="" className="w-full h-full object-cover" /> : <ImageOff className="size-3.5 text-muted-foreground" />}
               </span>
               <span className="flex-1 min-w-0 text-sm truncate">{p.name}</span>
-              {!p.link && <span className="text-[10px] font-semibold text-warning shrink-0">sem link</span>}
+              {!p.link && <span className="text-[11px] font-semibold text-warning shrink-0">sem link</span>}
             </button>
           ))}
         </div>
@@ -286,7 +286,7 @@ export function RecsEditor({ title, recs, products, onChange, toolbar, emptyText
               <div key={r.product_id} className="group rounded-2xl border border-border bg-background p-3 shadow-xs flex gap-3 hover:border-foreground/20 transition">
                 <div className="relative size-16 shrink-0 rounded-xl overflow-hidden bg-muted grid place-items-center">
                   {p?.image ? <img src={p.image} alt="" className="w-full h-full object-cover" /> : <ImageOff className="size-5 text-muted-foreground" />}
-                  <span className="absolute top-1 left-1 size-5 rounded-full bg-background/90 text-[10px] font-bold grid place-items-center shadow-sm">{i + 1}</span>
+                  <span className="absolute top-1 left-1 size-5 rounded-full bg-background/90 text-[11px] font-bold grid place-items-center shadow-sm">{i + 1}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start gap-1">
@@ -312,7 +312,7 @@ export function RecsEditor({ title, recs, products, onChange, toolbar, emptyText
           })}
         </div>
       )}
-      <p className="text-[11px] text-muted-foreground">Nome, foto principal e preço (com o riscado e o % de desconto) saem da ficha de cada produto na hora de gerar.</p>
+      <p className="text-xs text-muted-foreground">Nome, foto principal e preço (com o riscado e o % de desconto) saem da ficha de cada produto na hora de gerar.</p>
     </div>
   );
 }

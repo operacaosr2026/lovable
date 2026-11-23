@@ -16,6 +16,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { isVideoMime, type PageStory, type PageTestimonial, type ProductPageData } from "@/lib/product-page";
 import { AutoTextarea } from "@/components/shops/StoreProduction";
 import { Field, RecsEditor, ReviewsEditor, areaCls, inputCls, move } from "@/components/products/page-fields";
+import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 type Page = Omit<ProductPageData, "cdn">;
 type SectionKey = "carousel" | "details" | "stories" | "testimonials" | "reviews" | "final" | "recs";
@@ -73,7 +74,7 @@ export function ProductPageTab({ productId }: { productId: string }) {
     onError: (e: any) => toast.error(e.message),
   });
 
-  if (isLoading || !page) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading || !page) return <TabSkeleton />;
   if (error || !data) return <p className="text-sm text-destructive">{(error as any)?.message ?? "Não foi possível carregar."}</p>;
 
   const set = (patch: Partial<Page>) => setPage((p) => ({ ...p!, ...patch }));
@@ -323,7 +324,7 @@ export function ProductPageTab({ productId }: { productId: string }) {
               />
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground">Enter = nova linha; **texto** = negrito. Campo vazio mantém o texto do modelo.</p>
+          <p className="text-xs text-muted-foreground">Enter = nova linha; **texto** = negrito. Campo vazio mantém o texto do modelo.</p>
         </div>
       ),
     },
@@ -430,7 +431,7 @@ function Drawer({ icon: Icon, title, done, hint, open, onToggle, children }: {
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-sm font-semibold truncate">{title}</span>
-          {hint && <span className="block text-[11px] text-muted-foreground truncate">{hint}</span>}
+          {hint && <span className="block text-xs text-muted-foreground truncate">{hint}</span>}
         </span>
         <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${done ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
           {done ? "Concluída" : "Pendente"}
@@ -465,7 +466,7 @@ function Tile({ n, src, video, onLeft, onRight, onRemove }: {
       {!src ? <ImageOff className="size-5 m-auto mt-[40%] text-muted-foreground" />
         : video ? <video src={`${src}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover bg-black" />
         : <img src={src} alt="" className="w-full h-full object-cover" />}
-      <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{n + 1}</span>
+      <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">{n + 1}</span>
       {video && <Film className="absolute top-1.5 right-1.5 size-3.5 text-white drop-shadow" />}
       <div className="absolute inset-x-0 bottom-0 flex justify-between p-1 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-black/50">
         <button onClick={onLeft} title="Pra esquerda" className="size-6 rounded bg-background/90 grid place-items-center"><ArrowLeft className="size-3.5" /></button>
@@ -526,7 +527,7 @@ function StoriesEditor({ heading, stories, thumbs, busy, count, onFiles, onChang
             {thumbs[v.id]
               ? <video src={`${thumbs[v.id]}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover" />
               : <Film className="size-5 m-auto mt-[60%] text-white/60" />}
-            <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold grid place-items-center">{i + 1}</span>
+            <span className="absolute top-1 left-1 size-5 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">{i + 1}</span>
           </div>
           <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
             <Field label="Nome da pessoa">
@@ -606,11 +607,11 @@ function TemplateBox({ template, onChanged }: { template: TemplateInfo; onChange
             {template.title ? ` · título "${template.title.slice(0, 50)}"` : ""}
           </p>
           {template.missing.length > 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1">
+            <p className="text-xs text-warning mt-1 flex items-start gap-1">
               <AlertTriangle className="size-3.5 shrink-0 mt-px" /> Não achei no modelo (fica como está no arquivo): {template.missing.join(", ")}.
             </p>
           )}
-          <p className="text-[11px] text-muted-foreground mt-1">Vale pra todos os produtos. Mudou a página no PageFly? Exporte de novo e troque aqui.</p>
+          <p className="text-xs text-muted-foreground mt-1">Vale pra todos os produtos. Mudou a página no PageFly? Exporte de novo e troque aqui.</p>
         </div>
         <input ref={fileRef} type="file" accept=".pagefly" hidden onChange={(e) => { send(e.target.files?.[0]); e.target.value = ""; }} />
         <div className="flex gap-2 shrink-0">

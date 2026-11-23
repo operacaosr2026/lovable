@@ -557,11 +557,16 @@ function resolveAppOrigin(): string {
 // write_fulfillments: mandar o status do rastreio (em trânsito, entregue…) pro envio do pedido.
 // write_products/inventory/publications/files + read_locations: criar produto nas lojas (Produtos > Publicar nas lojas).
 export const SHOPIFY_SCOPES = "read_orders,write_orders,read_all_orders,write_products,write_inventory,write_publications,write_files,read_locations,read_reports,read_shopify_payments_payouts,read_shopify_payments_disputes,write_draft_orders,write_customers,write_merchant_managed_fulfillment_orders,write_fulfillments";
+// Conferência e "Montar loja" da aba Produção (apps, Markets, frete, idioma,
+// políticas). Pedidos na conexão, mas fora da conta de "permissões que
+// faltam": lojas antigas seguem funcionando e a Conferência pede pra marcar na mão.
+export const SETUP_SCOPES = "read_apps,read_markets,write_markets,write_shipping,read_locales,write_legal_policies";
+export const CONNECT_SCOPES = `${SHOPIFY_SCOPES},${SETUP_SCOPES}`;
 
 function shopifyAuthorizeUrl(domain: string, clientId: string, state: string) {
   const redirectUri = `${resolveAppOrigin()}/api/public/shopify/callback`;
   return `https://${domain}/admin/oauth/authorize?client_id=${encodeURIComponent(clientId)}` +
-    `&scope=${encodeURIComponent(SHOPIFY_SCOPES)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(CONNECT_SCOPES)}&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&state=${encodeURIComponent(state)}`;
 }
 

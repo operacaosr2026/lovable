@@ -41,7 +41,7 @@ const SECTION_LABELS: Record<Section, string> = {
   shops: "Lojas que pode ver",
   projects: "Projetos",
   journal: "Diário",
-  sops: "SOPs & Processos",
+  sops: "Processos",
   dashboard: "Dashboard",
   gerencial: "Gerencial",
   metas: "Metas",

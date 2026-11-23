@@ -45,7 +45,7 @@ const ACCENT: Record<Accent, string> = {
 };
 
 export function ProductDashboard({ productId }: { productId: string }) {
-  const [period, setPeriod] = useState("mes");
+  const [period, setPeriod] = useState("hoje");
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | undefined>();
   const [configOpen, setConfigOpen] = useState(false);
   const range = periodRange(period, customRange);
@@ -109,10 +109,10 @@ export function ProductDashboard({ productId }: { productId: string }) {
           >
             <div className="flex items-center gap-2.5 mb-2">
               <div className={`size-9 rounded-xl grid place-items-center shrink-0 ${ACCENT.destructive}`}><Megaphone className="size-4.5" /></div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Anúncios</p>
+              <p className="text-xs font-semibold text-muted-foreground">Anúncios</p>
             </div>
             <p className="text-sm font-semibold text-primary flex items-center gap-1.5"><Settings2 className="size-3.5" /> Configurar campanhas</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Escolha as campanhas da Meta deste produto pra ver gasto, ROAS, CPA e lucro.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Escolha as campanhas da Meta deste produto pra ver gasto, ROAS, CPA e lucro.</p>
           </button>
         )}
 
@@ -126,7 +126,7 @@ export function ProductDashboard({ productId }: { productId: string }) {
           stats={configured ? [{ label: "CPA", value: t && t.pedidos > 0 ? fmtMoney(cpa) : "—" }, { label: "ROAS de equilíbrio", value: t && t.faturamento - t.custo > 0 ? `${(t.faturamento / (t.faturamento - t.custo)).toFixed(2)}x` : "—" }] : undefined} />
       </div>
 
-      <section className="rounded-2xl border border-border bg-card p-4">
+      <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-4 sm:p-5">
         <div className="flex items-center gap-4 mb-3 text-xs">
           <span className="font-semibold text-sm mr-auto">Por dia</span>
           <Legend color="var(--color-primary)" label="Faturamento" />
@@ -180,12 +180,12 @@ function CreativesTable({ productId, range }: { productId: string; range: { from
   const td = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-4">
+    <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-4 sm:p-5">
       <div className="flex items-center gap-2 mb-1">
         <span className="font-semibold text-sm">Por criativo</span>
         {isFetching && !isLoading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
       </div>
-      <p className="text-[11px] text-muted-foreground mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Pela UTM do pedido (utm_content = ID do anúncio). Nome e gasto vêm da Meta{configured ? "" : " — configure as campanhas pra ver gasto, ROAS e lucro"}.
       </p>
       {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
@@ -220,7 +220,7 @@ function CreativesTable({ productId, range }: { productId: string; range: { from
                   <tr key={r.key} className="hover:bg-muted/30">
                     <td className="px-3 py-2 max-w-[280px]">
                       <p className={`truncate font-medium ${r.key === "none" ? "text-muted-foreground" : ""}`} title={r.nome}>{r.nome}</p>
-                      {r.ad_id && <p className="text-[10px] text-muted-foreground truncate">{r.utm_medium && r.utm_medium !== r.nome ? `${r.utm_medium} · ` : ""}{r.ad_id}</p>}
+                      {r.ad_id && <p className="text-[11px] text-muted-foreground truncate">{r.utm_medium && r.utm_medium !== r.nome ? `${r.utm_medium} · ` : ""}{r.ad_id}</p>}
                     </td>
                     <td className={td}>{fmtInt(r.pedidos)}</td>
                     <td className={td}>{fmtMoney(r.faturamento)}</td>
@@ -265,7 +265,7 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
   const prevRate = prev && prev.sessions > 0 ? prev.orders / prev.sessions : null;
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-4">
+    <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-4 sm:p-5">
       <div className="flex items-center gap-2 mb-1">
         <span className="font-semibold text-sm">Funil de conversão</span>
         {isFetching && !isLoading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
@@ -273,7 +273,7 @@ function FunnelCard({ productId, range }: { productId: string; range: { from: st
           <Settings2 className="size-3.5" /> Pixels
         </button>
       </div>
-      <p className="text-[11px] text-muted-foreground mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Sessões: visitantes da página do produto na matriz (1 por dia). Checkout: checkouts iniciados nas sublojas com o produto. Concluído: pedidos do produto.
         {data?.installed && ` Contando desde ${data.since.slice(8, 10)}/${data.since.slice(5, 7)}.`}
       </p>
@@ -348,7 +348,7 @@ function FunnelPages({ productId, pages }: { productId: string; pages: string[] 
 
   return (
     <div className="mb-3 rounded-xl border border-border bg-muted/30 px-3 py-2 space-y-2">
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Páginas da matriz (link do PageFly que vai no anúncio). Sem página ligada, as sessões são achadas pelo título da página.
       </p>
       {pages.length > 0 && (
@@ -383,7 +383,7 @@ function FunnelDelta({ curr, prev }: { curr: number; prev: number }) {
   const up = pct >= 0;
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${up ? "text-success" : "text-muted-foreground"}`}>
+    <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${up ? "text-success" : "text-muted-foreground"}`}>
       <Icon className="size-3" />{Math.abs(pct)}%
     </span>
   );
@@ -410,7 +410,7 @@ function PixelDialog({ onClose }: { onClose: () => void }) {
               <div key={b.role} className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{b.title}</span>
-                  <span className="text-[11px] text-muted-foreground">{b.hint}</span>
+                  <span className="text-xs text-muted-foreground">{b.hint}</span>
                   <button
                     onClick={() => navigator.clipboard.writeText(code).then(() => toast.success("Código copiado"))}
                     className="ml-auto text-xs text-primary hover:underline flex items-center gap-1"
@@ -418,7 +418,7 @@ function PixelDialog({ onClose }: { onClose: () => void }) {
                     <Copy className="size-3.5" /> Copiar
                   </button>
                 </div>
-                <pre className="rounded-xl border border-border bg-muted/40 p-3 text-[11px] leading-relaxed overflow-x-auto">{code}</pre>
+                <pre className="rounded-xl border border-border bg-muted/40 p-3 text-xs leading-relaxed overflow-x-auto">{code}</pre>
               </div>
             );
           })}
@@ -456,9 +456,9 @@ function Kpi({ icon: Icon, accent, label, value, delta, invert, stats, note, loa
     <div className="rounded-2xl border border-border bg-card p-4 soft-shadow-sm min-w-0 flex flex-col">
       <div className="flex items-center gap-2.5 mb-2 min-w-0">
         <div className={`size-9 rounded-xl grid place-items-center shrink-0 ${ACCENT[accent]}`}><Icon className="size-4.5" /></div>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">{label}</p>
+        <p className="text-xs font-semibold text-muted-foreground truncate flex-1">{label}</p>
         {onConfigure && (
-          <button onClick={onConfigure} title="Configurar campanhas" className="h-7 px-2 rounded-lg text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted flex items-center gap-1 shrink-0">
+          <button onClick={onConfigure} title="Configurar campanhas" className="h-7 px-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted flex items-center gap-1 shrink-0">
             <Settings2 className="size-3.5" /> {configureLabel}
           </button>
         )}
@@ -469,19 +469,19 @@ function Kpi({ icon: Icon, accent, label, value, delta, invert, stats, note, loa
           <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${good ? "text-success" : "text-destructive"}`}>
             <Arrow className="size-3" />{delta >= 0 ? "+" : ""}{delta}%
           </span>
-          <span className="text-[11px] text-muted-foreground">vs. período anterior</span>
+          <span className="text-xs text-muted-foreground">vs. período anterior</span>
         </div>
       )}
       {stats ? (
         <div className="mt-3 pt-2 border-t border-border grid grid-cols-2 gap-2">
           {stats.map((s) => (
             <div key={s.label} className="min-w-0">
-              <p className="text-[10px] text-muted-foreground truncate">{s.label}</p>
+              <p className="text-[11px] text-muted-foreground truncate">{s.label}</p>
               <p className="text-xs font-semibold truncate">{s.value}</p>
             </div>
           ))}
         </div>
-      ) : note ? <p className="mt-3 pt-2 border-t border-border text-[11px] text-muted-foreground">{note}</p> : null}
+      ) : note ? <p className="mt-3 pt-2 border-t border-border text-xs text-muted-foreground">{note}</p> : null}
     </div>
   );
 }
@@ -576,7 +576,7 @@ function CampaignsDialog({ productId, onClose }: { productId: string; onClose: (
                     <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40">
                       <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} className="accent-primary" />
                       <span className="flex-1 min-w-0 truncate">{c.name}</span>
-                      <span className={`text-[10px] uppercase tracking-wide shrink-0 ${c.status === "ACTIVE" ? "text-success" : "text-muted-foreground"}`}>
+                      <span className={`text-xs font-medium shrink-0 ${c.status === "ACTIVE" ? "text-success" : "text-muted-foreground"}`}>
                         {c.status === "ACTIVE" ? "Ativa" : c.status === "PAUSED" || c.status === "CAMPAIGN_PAUSED" ? "Pausada" : c.status?.toLowerCase()}
                       </span>
                     </label>

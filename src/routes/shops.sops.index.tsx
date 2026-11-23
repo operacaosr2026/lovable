@@ -43,8 +43,8 @@ function SopList() {
   return (
     <PageShell>
       <PageHeader
-        title="SOPs & Processos"
-        subtitle="Fluxos visuais, onboarding e passo a passo operacional"
+        title="Processos"
+        subtitle="Fluxogramas e mapas mentais de como a empresa funciona"
         actions={
           <button
             onClick={() => setCreating(true)}
@@ -69,7 +69,7 @@ function SopList() {
         <div className="rounded-2xl border border-dashed border-border p-12 text-center">
           <Workflow className="size-10 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground mb-1">Nenhum processo ainda.</p>
-          <p className="text-xs text-muted-foreground mb-4">Crie um fluxo visual para documentar passo a passo qualquer operação.</p>
+          <p className="text-xs text-muted-foreground mb-4">Crie um fluxograma pra desenhar, passo a passo, como cada operação funciona.</p>
           <button
             onClick={() => setCreating(true)}
             className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
@@ -80,7 +80,6 @@ function SopList() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((p) => {
-            const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
             return (
               <div key={p.id} className="group relative rounded-2xl border border-border bg-surface hover:border-primary/40 transition-colors overflow-hidden">
                 <Link to="/shops/sops/$processId" params={{ processId: p.id }} className="block p-5">
@@ -104,14 +103,8 @@ function SopList() {
                     </div>
                   </div>
 
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-                      <span>{p.done}/{p.total} etapas</span>
-                      <span className="tabular-nums font-medium text-foreground">{pct}%</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: p.color }} />
-                    </div>
+                  <div className="mt-4 text-[11px] text-muted-foreground">
+                    {p.nodeCount === 1 ? "1 caixinha" : `${p.nodeCount ?? 0} caixinhas`}
                   </div>
                 </Link>
                 <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

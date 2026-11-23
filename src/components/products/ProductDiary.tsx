@@ -12,6 +12,7 @@ import {
   createDiaryNoteType, updateDiaryNoteType, deleteDiaryNoteType,
   DIARY_COLORS, type DiaryColor, type DiaryEntry, type DiaryNoteType,
 } from "@/lib/product-diary.functions";
+import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 // Diário do produto — mesma ideia do diário de campanha do Scalemoon: teste
 // atual + última alteração no topo, filtro por tipo de nota, linha do tempo
@@ -95,7 +96,7 @@ export function ProductDiary({ productId, experimentId = null }: { productId: st
   );
   const toggle = (id: string) => setFilters((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
 
-  if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <TabSkeleton />;
   if (error || !data) return <p className="text-sm text-destructive">{(error as Error)?.message ?? "Não foi possível carregar o diário."}</p>;
 
   return (
@@ -103,14 +104,14 @@ export function ProductDiary({ productId, experimentId = null }: { productId: st
       <div className="rounded-xl border border-border bg-gradient-to-b from-muted/50 to-muted/20 p-3.5 space-y-3">
         {!inCampaign && data.runningTests.length > 0 && (
           <div className="min-w-0">
-            <div className="flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="flex items-center gap-1 text-[10.5px] font-medium text-muted-foreground">
               <FlaskConical className="size-3" /> Campanhas no ar
             </div>
             <ul className="mt-0.5 space-y-0.5 px-1.5">
               {data.runningTests.map((t) => (
                 <li key={t.id} className="flex items-baseline gap-1.5 text-[12.5px]">
                   <span className="min-w-0 truncate text-foreground/90">{t.title}</span>
-                  {t.started_at && <span className="shrink-0 text-[11px] text-muted-foreground">{daysAgoLabel(daysSince(`${t.started_at}T00:00:00`)).replace("há", "no ar há")}</span>}
+                  {t.started_at && <span className="shrink-0 text-xs text-muted-foreground">{daysAgoLabel(daysSince(`${t.started_at}T00:00:00`)).replace("há", "no ar há")}</span>}
                 </li>
               ))}
             </ul>
@@ -121,17 +122,17 @@ export function ProductDiary({ productId, experimentId = null }: { productId: st
           <History className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">Última alteração</span>
+              <span className="text-[10.5px] font-medium text-muted-foreground">Última alteração</span>
               {lastChange && (() => {
                 const n = daysSince(lastChange.created_at);
                 const cls = n >= 7 ? "bg-rose-500/10 text-rose-600 dark:text-rose-400" : n >= 1 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-                return <span className={`rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ${cls}`}>{daysAgoLabel(n)}</span>;
+                return <span className={`rounded px-1.5 py-px text-xs font-semibold ${cls}`}>{daysAgoLabel(n)}</span>;
               })()}
             </div>
             {lastChange ? (
               <div className="mt-0.5 flex items-baseline gap-1.5">
                 <p className="min-w-0 truncate text-[12.5px] text-foreground/90">{lastChange.content}</p>
-                <span className="shrink-0 text-[11px] text-muted-foreground">{fmtWhen(lastChange.created_at)}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{fmtWhen(lastChange.created_at)}</span>
               </div>
             ) : (
               <p className="mt-0.5 text-[12px] italic text-muted-foreground">Nenhuma alteração registrada ainda. Use o tipo "Alteração" nos registros.</p>
@@ -207,7 +208,7 @@ function FocusField({ value, onSave }: { value: string | null; onSave: (v: strin
   };
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1 text-[10.5px] font-medium text-muted-foreground">
         <Target className="size-3" /> Teste atual
       </div>
       {editing ? (
@@ -576,7 +577,7 @@ function NoteTypeRow({ type, onRename, onRecolor, onDelete }: {
           className={`flex-1 text-left text-[13px] ${locked ? "cursor-default" : ""}`}>{type.name}</button>
       )}
       {locked ? (
-        <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-px text-xs font-medium text-muted-foreground">
           <Lock className="size-2.5" /> Fixo
         </span>
       ) : (

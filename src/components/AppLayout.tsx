@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Briefcase,
   Search, LogOut, Package, Menu, Users, Database, Settings as SettingsIcon, Heart, Loader2, Check, PanelLeftClose, PanelLeftOpen, Layers, Wallet, CheckSquare, Headphones, ShieldAlert,
-  GraduationCap, Send, Swords, MessageCircle, ShoppingBag,
+  GraduationCap, Send, Swords, MessageCircle, ShoppingBag, Workflow,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useMyAccess } from "@/hooks/useMyAccess";
@@ -25,23 +25,34 @@ type NavItem = {
   icon: typeof LayoutDashboard;
   section?: Section;
   activePrefix?: string;   // marca como ativo em todo esse prefixo (ex.: /settings)
+  group?: NavGroup;
 };
+
+type NavGroup = "topo" | "operacao" | "lojas" | "gestao" | "rodape";
+const NAV_GROUPS: { id: NavGroup; title?: string }[] = [
+  { id: "topo" },
+  { id: "operacao", title: "Operação" },
+  { id: "lojas", title: "Lojas e Produtos" },
+  { id: "gestao", title: "Gestão" },
+  { id: "rodape" },
+];
 
 // Cada aba tem sua permissão (Configurações > Membros); admin vê tudo.
 export const navItems: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard" },
-  { to: "/gerencial", label: "Gerencial", icon: Briefcase, section: "gerencial" },
-  { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet, section: "caixa" },
-  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas" },
-  { to: "/shops/products", label: "Produtos", icon: Package, section: "produtos" },
-  { to: "/concorrentes", label: "Concorrentes", icon: Swords, section: "concorrentes" },
-  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos" },
-  { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas" },
-  { to: "/pedidos", label: "Pedidos", icon: ShoppingBag, section: "pedidos" },
-  { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento" },
-  { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks" },
-  { to: "/notificacoes", label: "Notificações", icon: Send, section: "avisos_clientes" },
-  { to: "/academia", label: "Academia", icon: GraduationCap, section: "academia" },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, section: "dashboard", group: "topo" },
+  { to: "/tarefas", label: "Tarefas", icon: CheckSquare, section: "tarefas", group: "topo" },
+  { to: "/notificacoes", label: "Notificações", icon: Send, section: "avisos_clientes", group: "topo" },
+  { to: "/pedidos", label: "Pedidos", icon: ShoppingBag, section: "pedidos", group: "operacao" },
+  { to: "/atendimento", label: "Atendimento", icon: Headphones, section: "atendimento", group: "operacao" },
+  { to: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, section: "chargebacks", group: "operacao" },
+  { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers, section: "lojas_grupos", group: "lojas" },
+  { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database, section: "banco_lojas", group: "lojas" },
+  { to: "/shops/products", label: "Esteira de produtos", icon: Package, section: "produtos", group: "lojas" },
+  { to: "/concorrentes", label: "Concorrentes", icon: Swords, section: "concorrentes", group: "lojas" },
+  { to: "/gerencial", label: "Gerencial", icon: Briefcase, section: "gerencial", group: "gestao" },
+  { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet, section: "caixa", group: "gestao" },
+  { to: "/shops/sops", label: "Processos", icon: Workflow, section: "sops", group: "gestao" },
+  { to: "/academia", label: "Academia", icon: GraduationCap, section: "academia", group: "operacao" },
 ];
 
 // Aba do menu dona do endereço (pra bloquear quem abre o link direto sem permissão).
@@ -65,8 +76,9 @@ const ALL_PAGES = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/gerencial", label: "Gerencial", icon: Briefcase },
   { to: "/shops/caixa", label: "Caixa Geral", icon: Wallet },
+  { to: "/shops/sops", label: "Processos", icon: Workflow },
   { to: "/shops/banco-de-lojas", label: "Banco de Lojas", icon: Database },
-  { to: "/shops/products", label: "Produtos", icon: Package },
+  { to: "/shops/products", label: "Esteira de produtos", icon: Package },
   { to: "/concorrentes", label: "Concorrentes", icon: Swords },
   { to: "/shops/lojas-grupos", label: "Lojas e Grupos", icon: Layers },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare },
@@ -363,12 +375,31 @@ export function AppLayout() {
 
 
         <nav className="px-2 mt-4 flex-1 overflow-y-auto scrollbar-thin space-y-0.5">
-          {visibleNavItems.map(renderItem)}
-          {role === "admin" && adminNav.map(renderItem)}
-          {role !== "admin" && (() => {
+          {(() => {
             // Vai direto pra 1ª página liberada (/settings sozinho leva pra Membros, do admin).
-            const first = MEMBER_SETTINGS_PAGES.find((p) => canAccessSection(p.section));
-            return first ? renderItem({ ...memberSettingsNav, to: first.path, activePrefix: "/settings" }) : null;
+            const firstMemberPage = MEMBER_SETTINGS_PAGES.find((p) => canAccessSection(p.section));
+            const settingsItems: NavItem[] =
+              role === "admin"
+                ? adminNav
+                : firstMemberPage
+                  ? [{ ...memberSettingsNav, to: firstMemberPage.path, activePrefix: "/settings" }]
+                  : [];
+            return NAV_GROUPS.map((g) => {
+              const items = visibleNavItems.filter((i) => i.group === g.id);
+              if (g.id === "rodape") items.push(...settingsItems);
+              if (!items.length) return null;
+              return (
+                <div key={g.id}>
+                  {g.id === "rodape" && <div className="mx-3 my-3 border-t border-sidebar-border" />}
+                  {g.title && (
+                    <div className="px-3 pt-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-fg-muted">
+                      {g.title}
+                    </div>
+                  )}
+                  {items.map(renderItem)}
+                </div>
+              );
+            });
           })()}
         </nav>
 

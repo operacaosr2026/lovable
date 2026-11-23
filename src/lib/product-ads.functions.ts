@@ -3,40 +3,74 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metaTokenForAccount } from "@/lib/lg-card-ad-spend.server";
+import { driveDownload, drivePublicDownloadUrl } from "@/lib/drive.server";
+import { creativeFeaturesSpec, textOptimizationOn } from "@/lib/ad-ai-features";
+import { ATTRIBUTION_KEYS, LIFECYCLE_KEYS, RETENTION_DAYS, adSetGoal, attributionSpec, type Attribution, type Lifecycle } from "@/lib/ad-schedule";
+import { MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAdset } from "@/lib/ad-plan";
 
 // Aba Anúncios do produto: publica uma campanha na Meta com os criativos da aba
-// Criativos. O cliente conduz os passos (campanha → mídia de cada criativo →
-// conjunto + anúncio), pra mostrar o progresso e não segurar uma requisição
+// Criativos. O navegador monta a árvore (campanha › conjuntos › anúncios, já com
+// os nomes — src/lib/ad-plan.ts) e conduz os passos (campanha → mídias →
+// conjunto → anúncio), pra mostrar o progresso e não segurar uma requisição
 // longa enquanto a Meta processa os vídeos.
 
 const GRAPH = "https://graph.facebook.com/v23.0";
+// Formato flexível (creative_asset_groups_spec) segue a versão da documentação dele.
+const GRAPH_FLEX = "https://graph.facebook.com/v27.0";
 const BUCKET = "project-attachments";
 // Moedas sem centavos na Meta (orçamento vai na unidade inteira).
 const NO_CENTS = new Set(["CLP", "COP", "CRC", "HUF", "ISK", "IDR", "JPY", "KRW", "PYG", "TWD", "VND"]);
 const EU = new Set(["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"]);
 
+export type CreativeText = { title?: string; body?: string; title_id?: string; body_id?: string };
+
+export const GENDERS = ["all", "male", "female"] as const;
+export type Gender = typeof GENDERS[number];
+
 export const AD_CTAS = ["SHOP_NOW", "LEARN_MORE", "ORDER_NOW", "BUY_NOW", "GET_OFFER", "SIGN_UP"] as const;
 
 export type AdPublicationConfig = {
   // card_id: conta vem do card de Lojas e Grupos. shop_id só nas publicações antigas.
-  card_id?: string; shop_id?: string; ad_account_id: string; page_id: string; page_name: string; pixel_id: string;
-  instagram_user_id?: string; instagram_username?: string;
-  campaign_name: string; link: string; url_tags: string; countries: string[]; daily_budget: number;
-  structure: "single" | "per_creative"; cta: typeof AD_CTAS[number]; status: "PAUSED" | "ACTIVE";
+  card_id?: string; shop_id?: string; ad_account_id: string;
+  // Campanha
+  campaign_name: string; budget_mode?: "CBO" | "ABO"; daily_budget: number; status: "PAUSED" | "ACTIVE";
+  // Conjunto
+  countries: string[]; age_min?: number; age_max?: number; pixel_id: string;
+  genders?: Gender; age_suggestion?: boolean; gender_suggestion?: boolean;
+  advantage_audience?: boolean; // publicações antigas (Advantage+ = idade como sugestão)
+  // Anúncio
+  page_id: string; page_name: string; instagram_user_id?: string; instagram_username?: string;
+  link: string; url_tags: string; cta: typeof AD_CTAS[number];
+  distribution?: Distribution; multi_format?: MultiFormat; custom?: Record<string, string>;
+  // Textos escolhidos do banco (Títulos e Descrições) pra cada criativo. body = descrição (a copy).
+  creative_texts?: Record<string, CreativeText>;
+  // Melhorias de IA da Meta ligadas (chave → true). Ausente/false = desligada.
+  ai_features?: Record<string, boolean>;
+  multi_advertiser?: boolean; // "Anúncios com vários anunciantes"
+  attribution?: Attribution; lifecycle?: Lifecycle; retention_days?: number;
+  start_time?: string; // ISO com fuso da conta; vazio = começa ao publicar
+  display_link?: string; // link de exibição (ex.: voultie.com)
+  texts?: { mode: "creative" | "shared"; bodies: string[]; titles: string[]; descriptions: string[] }; // publicações antigas
+  plan?: PlanAdset[];
+  structure?: "single" | "per_creative"; // publicações antigas
 };
-export type AdResult = { creative_id: string; name: string; adset_id?: string; ad_id?: string; error?: string };
+// key = nó da árvore (publicações antigas usam creative_id).
+export type AdResult = {
+  key?: string; creative_id?: string; creative_ids?: string[]; name: string; adset_name?: string;
+  adset_id?: string; ad_id?: string; error?: string;
+};
 export type AdMedia = { kind: "image"; image_hash: string } | { kind: "video"; video_id: string; thumbnail_url?: string };
 
 const db = (table: string) => (supabaseAdmin as any).from(table);
 
-async function graph<T = any>(path: string, token: string, params: Record<string, unknown> = {}, method: "GET" | "POST" = "GET"): Promise<T> {
+async function graph<T = any>(path: string, token: string, params: Record<string, unknown> = {}, method: "GET" | "POST" = "GET", base = GRAPH): Promise<T> {
   const body = new URLSearchParams({ access_token: token });
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) body.set(k, typeof v === "string" ? v : JSON.stringify(v));
   }
   const res = method === "GET"
-    ? await fetch(`${GRAPH}/${path}?${body}`, { signal: AbortSignal.timeout(60_000) })
-    : await fetch(`${GRAPH}/${path}`, { method: "POST", body, signal: AbortSignal.timeout(120_000) });
+    ? await fetch(`${base}/${path}?${body}`, { signal: AbortSignal.timeout(60_000) })
+    : await fetch(`${base}/${path}`, { method: "POST", body, signal: AbortSignal.timeout(120_000) });
   const json = await res.json().catch(() => ({}));
   if (json?.error) throw new Error(json.error.error_user_msg || json.error.error_user_title || json.error.message || "Erro na Meta");
   if (!res.ok) throw new Error(`Meta respondeu ${res.status}`);
@@ -64,8 +98,15 @@ async function loadCreative(ownerId: string, productId: string, creativeId: stri
 }
 
 async function saveAdResult(pubId: string, ads: AdResult[], result: AdResult) {
-  const next = [...ads.filter((a) => a.creative_id !== result.creative_id), result];
+  const next = [...ads.filter((a) => a.key !== result.key), result];
   await db("product_ad_publications").update({ ads: next }).eq("id", pubId);
+}
+
+// Valor em reais/dólares → unidade da Meta (centavos, menos nas moedas sem centavos).
+async function toMetaMoney(ownerId: string, adAccountId: string, value: number) {
+  const { data: acc } = await db("lg_card_meta_accounts").select("currency")
+    .eq("user_id", ownerId).eq("ad_account_id", adAccountId).not("currency", "is", null).limit(1).maybeSingle();
+  return Math.round(value * (NO_CENTS.has(String(acc?.currency ?? "USD").toUpperCase()) ? 1 : 100));
 }
 
 // ── Leitura ──
@@ -75,7 +116,7 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ product_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
-    const [accounts, pubs, shopifyPubs] = await Promise.all([
+    const [accounts, pubs, shopifyPubs, product, pubCount] = await Promise.all([
       // Mesmas contas da integração Meta dos cards de Lojas e Grupos (cards ativos).
       db("lg_card_meta_accounts").select("card_id,ad_account_id,account_name,currency,enabled,lg_cards!inner(name,status)")
         .eq("user_id", ownerId).eq("enabled", true).eq("lg_cards.status", "ativo"),
@@ -83,6 +124,8 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
         .eq("product_id", data.product_id).eq("user_id", ownerId).order("created_at", { ascending: false }).limit(30),
       supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,handle,role,status")
         .eq("product_id", data.product_id).eq("user_id", ownerId).eq("status", "ok"),
+      supabaseAdmin.from("products").select("name").eq("id", data.product_id).maybeSingle(),
+      db("product_ad_publications").select("id", { count: "exact", head: true }).eq("product_id", data.product_id).eq("user_id", ownerId),
     ]);
 
     const storeIds = (shopifyPubs.data ?? []).map((p) => p.shopify_store_id);
@@ -100,6 +143,8 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
       .sort((a, b) => Number(b!.matriz) - Number(a!.matriz)) as { label: string; url: string; matriz: boolean }[];
 
     return {
+      product_name: ((product.data as any)?.name ?? "") as string,
+      publication_count: (pubCount.count ?? 0) as number,
       accounts: dedupeAccounts((accounts.data ?? []) as any[]),
       links,
       publications: (pubs.data ?? []) as {
@@ -152,7 +197,7 @@ export const getAdAccountAssets = createServerFn({ method: "GET" })
       track("Suas páginas", graph<List<AdPage & { access_token?: string }>>("me/accounts", token, { fields: "id,name,access_token", limit: 200 })),
       graph<List<{ id: string; name: string }>>(`${act}/adspixels`, token, { fields: "id,name", limit: 100 }),
       track("Instagram da conta de anúncio", graph<List<Ig>>(`${act}/instagram_accounts`, token, { fields: "id,username", limit: 100 })),
-      track("BM da conta", graph<{ business?: { id: string } }>(act, token, { fields: "business{id}" }), (r) => (r?.business ? 1 : 0)),
+      track("BM da conta", graph<{ business?: { id: string }; timezone_name?: string }>(act, token, { fields: "business{id},timezone_name" }), (r) => (r?.business ? 1 : 0)),
       track("Instagram conectado à conta", graph<List<Ig>>(`${act}/connected_instagram_accounts`, token, { fields: "id,username", limit: 100 })),
     ]);
     // Páginas e Instagram da BM dona da conta.
@@ -215,29 +260,64 @@ export const getAdAccountAssets = createServerFn({ method: "GET" })
       pages: [...pages.values()].sort((a, b) => a.name.localeCompare(b.name)),
       instagrams: [...igs.values()].sort((a, b) => rank(a) - rank(b) || (a.username || a.page_name || a.id).localeCompare(b.username || b.page_name || b.id)),
       pixels: pixels.data ?? [],
+      timezone: acc?.timezone_name ?? "America/New_York",
       debug,
     };
   });
 
 // ── Publicação (passo a passo) ──
 
+const PlanInput = z.array(z.object({
+  key: z.string().min(1).max(20),
+  name: z.string().trim().min(1).max(250),
+  ads: z.array(z.object({
+    key: z.string().min(1).max(20),
+    name: z.string().trim().min(1).max(250),
+    format: z.enum(["single", "flexible", "carousel"]),
+    creative_ids: z.array(z.string().uuid()).min(1).max(MULTI_MAX),
+  }).refine((a) => a.format === "single" ? a.creative_ids.length === 1 : a.creative_ids.length >= MULTI_MIN, "Quantidade de criativos inválida pro formato"))
+    .min(1).max(50),
+})).min(1).max(50);
+
 const ConfigInput = z.object({
   card_id: z.string().uuid(),
   ad_account_id: z.string().min(1).max(60),
+  campaign_name: z.string().trim().min(1).max(250),
+  budget_mode: z.enum(["CBO", "ABO"]),
+  daily_budget: z.number().positive().max(1_000_000),
+  status: z.enum(["PAUSED", "ACTIVE"]),
+  countries: z.array(z.string().trim().length(2).toUpperCase()).min(1).max(50),
+  age_min: z.number().int().min(18).max(65),
+  age_max: z.number().int().min(18).max(65),
+  genders: z.enum(GENDERS),
+  age_suggestion: z.boolean(),
+  gender_suggestion: z.boolean(),
+  pixel_id: z.string().min(1).max(60),
   page_id: z.string().min(1).max(60),
   page_name: z.string().max(200).default(""),
   instagram_user_id: z.string().max(60).optional(),
   instagram_username: z.string().max(200).optional(),
-  pixel_id: z.string().min(1).max(60),
-  campaign_name: z.string().trim().min(1).max(200),
   link: z.string().trim().url().max(2000),
   url_tags: z.string().trim().max(1000).default(""),
-  countries: z.array(z.string().trim().length(2).toUpperCase()).min(1).max(50),
-  daily_budget: z.number().positive().max(1_000_000),
-  structure: z.enum(["single", "per_creative"]),
   cta: z.enum(AD_CTAS),
-  status: z.enum(["PAUSED", "ACTIVE"]),
-});
+  distribution: z.enum(["per_creative", "together", "single_ad"]),
+  multi_format: z.enum(["flexible", "carousel"]),
+  custom: z.record(z.string().max(100)).default({}),
+  creative_texts: z.record(z.object({
+    title: z.string().max(500).optional(),
+    body: z.string().max(5000).optional(),
+    title_id: z.string().uuid().optional(),
+    body_id: z.string().uuid().optional(),
+  })).default({}),
+  ai_features: z.record(z.boolean()).default({}),
+  multi_advertiser: z.boolean().default(false),
+  attribution: z.enum(ATTRIBUTION_KEYS).default("default"),
+  lifecycle: z.enum(LIFECYCLE_KEYS).default("all"),
+  retention_days: z.number().int().refine((n) => (RETENTION_DAYS as readonly number[]).includes(n)).default(180),
+  start_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/).optional(),
+  display_link: z.string().trim().max(200).default(""),
+  plan: PlanInput,
+}).refine((c) => c.age_min <= c.age_max, "Idade mínima maior que a máxima");
 
 export const startAdPublication = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -254,13 +334,17 @@ export const startAdPublication = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     try {
+      // CBO: orçamento e lance na campanha (a Meta divide entre os conjuntos).
+      const budget = config.budget_mode === "CBO"
+        ? { daily_budget: await toMetaMoney(ownerId, config.ad_account_id, config.daily_budget), bid_strategy: "LOWEST_COST_WITHOUT_CAP" }
+        : { is_adset_budget_sharing_enabled: false };
       const campaign = await graph<{ id: string }>(`${config.ad_account_id}/campaigns`, token, {
         name: config.campaign_name,
         objective: "OUTCOME_SALES",
         status: config.status,
         special_ad_categories: [],
         buying_type: "AUCTION",
-        is_adset_budget_sharing_enabled: false,
+        ...budget,
       }, "POST");
       await db("product_ad_publications").update({ campaign_id: campaign.id }).eq("id", pub.id);
       return { publication_id: pub.id as string, campaign_id: campaign.id };
@@ -276,27 +360,38 @@ export const uploadAdMedia = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<AdMedia> => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
     const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
-    if (!c.media_path) throw new Error("Criativo sem mídia");
+    if (!c.media_path && !c.drive_file_id) throw new Error("Criativo sem mídia");
     const token = await tokenFor(context.ownerId, pub.ad_account_id);
-    try {
+    await db("product_creatives").update({ last_used_at: new Date().toISOString() }).eq("id", c.id);
+
+    // Do Drive: a Meta baixa o vídeo direto do link público; a imagem passa pelo servidor.
+    if (!c.media_path && c.drive_file_id) {
       if (c.media_kind === "video") {
-        const { data: signed } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(c.media_path, 60 * 60 * 3);
-        if (!signed?.signedUrl) throw new Error("Não foi possível gerar o link do vídeo");
-        const v = await graph<{ id: string }>(`${pub.ad_account_id}/advideos`, token, { file_url: signed.signedUrl, name: c.name || "Criativo" }, "POST");
+        const v = await graph<{ id: string }>(`${pub.ad_account_id}/advideos`, token, { file_url: drivePublicDownloadUrl(c.drive_file_id), name: c.name || "Criativo" }, "POST");
         return { kind: "video", video_id: v.id };
       }
-      const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET).download(c.media_path);
-      if (error || !blob) throw new Error("Não foi possível ler a imagem");
-      const bytes = Buffer.from(await blob.arrayBuffer()).toString("base64");
-      const img = await graph<{ images: Record<string, { hash: string }> }>(`${pub.ad_account_id}/adimages`, token, { bytes }, "POST");
-      const hash = Object.values(img.images ?? {})[0]?.hash;
-      if (!hash) throw new Error("A Meta não devolveu o hash da imagem");
-      return { kind: "image", image_hash: hash };
-    } catch (e: any) {
-      await saveAdResult(pub.id, pub.ads, { creative_id: c.id, name: c.name, error: e.message });
-      throw e;
+      const bytes = Buffer.from(await driveDownload(c.drive_file_id)).toString("base64");
+      return { kind: "image", image_hash: await uploadImageBytes(pub.ad_account_id, token, bytes) };
     }
+
+    if (c.media_kind === "video") {
+      const { data: signed } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(c.media_path, 60 * 60 * 3);
+      if (!signed?.signedUrl) throw new Error("Não foi possível gerar o link do vídeo");
+      const v = await graph<{ id: string }>(`${pub.ad_account_id}/advideos`, token, { file_url: signed.signedUrl, name: c.name || "Criativo" }, "POST");
+      return { kind: "video", video_id: v.id };
+    }
+    const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET).download(c.media_path);
+    if (error || !blob) throw new Error("Não foi possível ler a imagem");
+    const bytes = Buffer.from(await blob.arrayBuffer()).toString("base64");
+    return { kind: "image", image_hash: await uploadImageBytes(pub.ad_account_id, token, bytes) };
   });
+
+async function uploadImageBytes(adAccountId: string, token: string, bytes: string) {
+  const img = await graph<{ images: Record<string, { hash: string }> }>(`${adAccountId}/adimages`, token, { bytes }, "POST");
+  const hash = Object.values(img.images ?? {})[0]?.hash;
+  if (!hash) throw new Error("A Meta não devolveu o hash da imagem");
+  return hash;
+}
 
 export const checkAdVideo = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -318,81 +413,195 @@ const MediaInput = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("video"), video_id: z.string().min(1), thumbnail_url: z.string().url().optional() }),
 ]);
 
-export const createAdForCreative = createServerFn({ method: "POST" })
+function findAdset(pub: { config: AdPublicationConfig }, adsetKey: string) {
+  const set = pub.config.plan?.find((s) => s.key === adsetKey);
+  if (!set) throw new Error("Conjunto não encontrado na publicação");
+  return set;
+}
+
+export const createAdset = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ publication_id: z.string().uuid(), adset_key: z.string().min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const pub = await loadPublication(context.ownerId, data.publication_id);
+    const cfg = pub.config;
+    const set = findAdset(pub, data.adset_key);
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
+    const eu = cfg.countries.some((cc) => EU.has(cc));
+    // Idade/gênero como sugestão = a Meta pode ir além pra achar compradores
+    // (targeting_automation.individual_setting). Desmarcado = só quem está dentro.
+    const gender = cfg.genders ?? "all";
+    const ageSuggestion = cfg.age_suggestion ?? cfg.advantage_audience !== false;
+    const genderSuggestion = gender !== "all" && !!cfg.gender_suggestion;
+    const individual = { ...(ageSuggestion ? { age: 1 } : {}), ...(genderSuggestion ? { gender: 1 } : {}) };
+    const params = {
+      name: set.name,
+      campaign_id: pub.campaign_id,
+      ...(cfg.budget_mode === "CBO"
+        ? {}
+        : { daily_budget: await toMetaMoney(context.ownerId, pub.ad_account_id, cfg.daily_budget), bid_strategy: "LOWEST_COST_WITHOUT_CAP" }),
+      billing_event: "IMPRESSIONS",
+      optimization_goal: "OFFSITE_CONVERSIONS",
+      promoted_object: { pixel_id: cfg.pixel_id, custom_event_type: "PURCHASE" },
+      targeting: {
+        geo_locations: { countries: cfg.countries },
+        age_min: cfg.age_min ?? 18,
+        age_max: cfg.age_max ?? 65,
+        ...(gender !== "all" ? { genders: [gender === "male" ? 1 : 2] } : {}),
+        targeting_automation: { advantage_audience: 0, ...(Object.keys(individual).length ? { individual_setting: individual } : {}) },
+      },
+      ...(eu ? { dsa_beneficiary: cfg.page_name || set.name, dsa_payor: cfg.page_name || set.name } : {}),
+      attribution_spec: attributionSpec(cfg.attribution ?? "default"),
+      ...(cfg.start_time ? { start_time: cfg.start_time } : {}),
+      status: cfg.status,
+    };
+    // Ciclo de vida do cliente (ad_set_goal) é recente na API: se a Meta recusar
+    // o campo, cria sem ele e avisa (o resto do conjunto vale).
+    const goal = adSetGoal(cfg.lifecycle ?? "all", cfg.retention_days ?? 180);
+    try {
+      const adset = await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, { ...params, ad_set_goal: goal }, "POST");
+      return { adset_id: adset.id, warning: null as string | null };
+    } catch (e: any) {
+      if (!/ad_set_goal|goal|lifecycle|ciclo de vida/i.test(String(e.message))) throw e;
+      const adset = await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, params, "POST");
+      return { adset_id: adset.id, warning: `Ciclo de vida do cliente não aplicado: ${e.message}` };
+    }
+  });
+
+export const createAdInAdset = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     publication_id: z.string().uuid(),
-    creative_id: z.string().uuid(),
-    media: MediaInput,
-    adset_id: z.string().optional(),
+    adset_key: z.string().min(1),
+    ad_key: z.string().min(1),
+    adset_id: z.string().min(1),
+    media: z.record(MediaInput),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
-    const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
     const cfg = pub.config;
+    const set = findAdset(pub, data.adset_key);
+    const ad = set.ads.find((a) => a.key === data.ad_key);
+    if (!ad) throw new Error("Anúncio não encontrado na publicação");
     const token = await tokenFor(context.ownerId, pub.ad_account_id);
-    const name = (c.name || "Criativo") as string;
+    const base: AdResult = { key: ad.key, name: ad.name, adset_name: set.name, creative_ids: ad.creative_ids, adset_id: data.adset_id };
 
     try {
-      let adsetId = data.adset_id;
-      if (!adsetId) {
-        const { data: acc } = await db("lg_card_meta_accounts").select("currency")
-          .eq("user_id", context.ownerId).eq("ad_account_id", pub.ad_account_id).not("currency", "is", null).limit(1).maybeSingle();
-        const cents = NO_CENTS.has(String(acc?.currency ?? "USD").toUpperCase()) ? 1 : 100;
-        const eu = cfg.countries.some((cc) => EU.has(cc));
-        const adset = await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, {
-          name: cfg.structure === "single" ? cfg.campaign_name : `${cfg.campaign_name} · ${name}`,
-          campaign_id: pub.campaign_id,
-          daily_budget: Math.round(cfg.daily_budget * cents),
-          billing_event: "IMPRESSIONS",
-          optimization_goal: "OFFSITE_CONVERSIONS",
-          bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-          promoted_object: { pixel_id: cfg.pixel_id, custom_event_type: "PURCHASE" },
-          targeting: { geo_locations: { countries: cfg.countries }, age_min: 18, age_max: 65, targeting_automation: { advantage_audience: 1 } },
-          ...(eu ? { dsa_beneficiary: cfg.page_name || name, dsa_payor: cfg.page_name || name } : {}),
+      const creatives = await Promise.all(ad.creative_ids.map((id) => loadCreative(context.ownerId, pub.product_id, id)));
+      const media = ad.creative_ids.map((id) => {
+        const m = data.media[id];
+        if (!m) throw new Error("Mídia do criativo não foi enviada pra Meta");
+        return m;
+      });
+      const identity = { page_id: cfg.page_id, ...(cfg.instagram_user_id ? { instagram_user_id: cfg.instagram_user_id } : {}) };
+      let adId: string;
+
+      if (ad.format === "flexible") {
+        // Formato flexível: um grupo com todas as mídias e textos; a Meta escolhe o que mostrar.
+        const t = textsFor(cfg, creatives);
+        const r = await graph<{ id: string }>(`${pub.ad_account_id}/ads`, token, {
+          name: ad.name,
+          adset_id: data.adset_id,
           status: cfg.status,
+          creative: {
+            name: ad.name, object_story_spec: identity,
+            ...creativeExtras(cfg, t),
+            ...(cfg.url_tags ? { url_tags: cfg.url_tags } : {}),
+          },
+          creative_asset_groups_spec: {
+            groups: [{
+              images: media.filter((m) => m.kind === "image").map((m) => ({ hash: (m as any).image_hash })),
+              videos: media.filter((m) => m.kind === "video").map((m) => ({ video_id: (m as any).video_id })),
+              texts: [
+                ...t.bodies.map((text) => ({ text, text_type: "primary_text" })),
+                ...t.titles.map((text) => ({ text, text_type: "headline" })),
+                ...t.descriptions.map((text) => ({ text, text_type: "description" })),
+              ],
+              call_to_action: { type: cfg.cta, value: { link: cfg.link } },
+            }],
+          },
+        }, "POST", GRAPH_FLEX);
+        adId = r.id;
+      } else {
+        const t = textsFor(cfg, creatives);
+        const spec = ad.format === "carousel"
+          ? carouselSpec(creatives, media, cfg, identity)
+          : creativeSpec(media[0], cfg, identity, t);
+        const creative = await graph<{ id: string }>(`${pub.ad_account_id}/adcreatives`, token, {
+          name: ad.name,
+          url_tags: cfg.url_tags || undefined,
+          ...spec,
+          ...creativeExtras(cfg, ad.format === "carousel" ? { titles: [], bodies: [], descriptions: [] } : t),
         }, "POST");
-        adsetId = adset.id;
+        const r = await graph<{ id: string }>(`${pub.ad_account_id}/ads`, token, {
+          name: ad.name, adset_id: data.adset_id, creative: { creative_id: creative.id }, status: cfg.status,
+        }, "POST");
+        adId = r.id;
       }
 
-      const creative = await graph<{ id: string }>(`${pub.ad_account_id}/adcreatives`, token, {
-        name,
-        url_tags: cfg.url_tags || undefined,
-        ...creativeSpec(c, data.media, cfg),
-      }, "POST");
-
-      const ad = await graph<{ id: string }>(`${pub.ad_account_id}/ads`, token, {
-        name,
-        adset_id: adsetId,
-        creative: { creative_id: creative.id },
-        status: cfg.status,
-      }, "POST");
-
-      await saveAdResult(pub.id, pub.ads, { creative_id: c.id, name, adset_id: adsetId, ad_id: ad.id });
-      return { adset_id: adsetId, ad_id: ad.id };
+      await saveAdResult(pub.id, pub.ads, { ...base, ad_id: adId });
+      return { ad_id: adId };
     } catch (e: any) {
-      await saveAdResult(pub.id, pub.ads, { creative_id: c.id, name, error: e.message });
+      await saveAdResult(pub.id, pub.ads, { ...base, error: e.message });
       throw e;
     }
   });
 
-// Títulos do criativo = títulos do anúncio; descrições = texto principal.
-// Com mais de um texto vai como "várias opções de texto" (asset_feed_spec).
-function creativeSpec(c: any, media: z.infer<typeof MediaInput>, cfg: AdPublicationConfig) {
-  const clean = (arr: unknown, fallback: unknown) => {
-    const list = (Array.isArray(arr) ? arr : []).map((s) => String(s ?? "").trim()).filter(Boolean);
-    if (!list.length && typeof fallback === "string" && fallback.trim()) list.push(fallback.trim());
-    return list.slice(0, 5);
-  };
-  const titles = clean(c.titles, c.title);
-  const bodies = clean(c.descriptions, c.description);
-  const cta = { type: cfg.cta, value: { link: cfg.link } };
-  const identity = { page_id: cfg.page_id, ...(cfg.instagram_user_id ? { instagram_user_id: cfg.instagram_user_id } : {}) };
+function cleanList(arr: unknown, fallback?: unknown) {
+  const list = (Array.isArray(arr) ? arr : []).map((s) => String(s ?? "").trim()).filter(Boolean);
+  if (!list.length && typeof fallback === "string" && fallback.trim()) list.push(fallback.trim());
+  return list;
+}
 
-  if (titles.length <= 1 && bodies.length <= 1) {
+type AdTexts = { bodies: string[]; titles: string[]; descriptions: string[] };
+const uniq5 = (l: string[]) => [...new Set(l)].slice(0, 5);
+
+// Textos do criativo: titles = título (headline), descriptions = texto principal
+// (a copy), link_descriptions = descrição. Vários criativos: junta sem repetir, até 5.
+function creativeTexts(c: any): AdTexts {
+  return { titles: cleanList(c.titles, c.title), bodies: cleanList(c.descriptions, c.description), descriptions: cleanList(c.link_descriptions) };
+}
+
+function textsFor(cfg: AdPublicationConfig, creatives: any[]): AdTexts {
+  if (cfg.creative_texts) {
+    const picks = creatives.map((c) => cfg.creative_texts?.[c.id] ?? {});
+    return {
+      titles: uniq5(cleanList(picks.map((p) => p.title))),
+      bodies: uniq5(cleanList(picks.map((p) => p.body))),
+      descriptions: [],
+    };
+  }
+  if (cfg.texts?.mode === "shared") {
+    return { bodies: uniq5(cleanList(cfg.texts.bodies)), titles: uniq5(cleanList(cfg.texts.titles)), descriptions: uniq5(cleanList(cfg.texts.descriptions)) };
+  }
+  const all = creatives.map(creativeTexts);
+  return {
+    bodies: uniq5(all.flatMap((t) => t.bodies)),
+    titles: uniq5(all.flatMap((t) => t.titles)),
+    descriptions: uniq5(all.flatMap((t) => t.descriptions)),
+  };
+}
+
+type Identity = { page_id: string; instagram_user_id?: string };
+
+// Melhorias da Meta (tudo desligado menos o escolhido; "otimizar texto por pessoa"
+// liga sozinho com mais de um título/descrição) e anúncios com vários anunciantes.
+function creativeExtras(cfg: AdPublicationConfig, t: AdTexts) {
+  return {
+    degrees_of_freedom_spec: creativeFeaturesSpec(cfg.ai_features, textOptimizationOn(t.titles.length, t.bodies.length)),
+    contextual_multi_ads: { enroll_status: cfg.multi_advertiser ? "OPT_IN" : "OPT_OUT" },
+  };
+}
+
+// Um texto de cada: anúncio simples. Mais de um: "várias opções de texto" (asset_feed_spec).
+function creativeSpec(media: z.infer<typeof MediaInput>, cfg: AdPublicationConfig, identity: Identity, t: AdTexts) {
+  const caption = cfg.display_link?.trim() || undefined;
+  const cta = { type: cfg.cta, value: { link: cfg.link } };
+
+  if (t.titles.length <= 1 && t.bodies.length <= 1 && t.descriptions.length <= 1) {
     const object_story_spec = media.kind === "video"
-      ? { ...identity, video_data: { video_id: media.video_id, image_url: media.thumbnail_url, message: bodies[0], title: titles[0], call_to_action: cta } }
-      : { ...identity, link_data: { image_hash: media.image_hash, link: cfg.link, message: bodies[0], name: titles[0], call_to_action: cta } };
+      ? { ...identity, video_data: { video_id: media.video_id, image_url: media.thumbnail_url, message: t.bodies[0], title: t.titles[0], link_description: t.descriptions[0], call_to_action: { type: cfg.cta, value: { link: cfg.link, ...(caption ? { link_caption: caption } : {}) } } } }
+      : { ...identity, link_data: { image_hash: media.image_hash, link: cfg.link, message: t.bodies[0], name: t.titles[0], description: t.descriptions[0], caption, call_to_action: cta } };
     return { object_story_spec };
   }
 
@@ -402,11 +611,31 @@ function creativeSpec(c: any, media: z.infer<typeof MediaInput>, cfg: AdPublicat
       ...(media.kind === "video"
         ? { videos: [{ video_id: media.video_id, thumbnail_url: media.thumbnail_url }], ad_formats: ["SINGLE_VIDEO"] }
         : { images: [{ hash: media.image_hash }], ad_formats: ["SINGLE_IMAGE"] }),
-      ...(titles.length ? { titles: titles.map((text) => ({ text })) } : {}),
-      ...(bodies.length ? { bodies: bodies.map((text) => ({ text })) } : {}),
-      link_urls: [{ website_url: cfg.link }],
+      ...(t.titles.length ? { titles: t.titles.map((text) => ({ text })) } : {}),
+      ...(t.bodies.length ? { bodies: t.bodies.map((text) => ({ text })) } : {}),
+      ...(t.descriptions.length ? { descriptions: t.descriptions.map((text) => ({ text })) } : {}),
+      link_urls: [{ website_url: cfg.link, ...(caption ? { display_url: caption } : {}) }],
       call_to_action_types: [cfg.cta],
       optimization_type: "DEGREES_OF_FREEDOM",
+    },
+  };
+}
+
+// Carrossel: um cartão por criativo, com o título escolhido pra ele; o texto
+// principal do anúncio é a descrição (copy) do primeiro criativo que tiver uma.
+function carouselSpec(creatives: any[], media: z.infer<typeof MediaInput>[], cfg: AdPublicationConfig, identity: Identity) {
+  const cta = { type: cfg.cta, value: { link: cfg.link } };
+  const shared = cfg.texts?.mode === "shared" && !cfg.creative_texts ? textsFor(cfg, creatives) : null;
+  const child_attachments = creatives.map((c, i) => {
+    const m = media[i];
+    const t = cfg.creative_texts ? textsFor(cfg, [c]) : shared ?? creativeTexts(c);
+    const card = { link: cfg.link, name: t.titles[0], description: t.descriptions[0], call_to_action: cta };
+    return m.kind === "video" ? { ...card, video_id: m.video_id, picture: m.thumbnail_url } : { ...card, image_hash: m.image_hash };
+  });
+  return {
+    object_story_spec: {
+      ...identity,
+      link_data: { link: cfg.link, message: textsFor(cfg, creatives).bodies[0], caption: cfg.display_link?.trim() || undefined, child_attachments, call_to_action: cta, multi_share_optimized: true, multi_share_end_card: false },
     },
   };
 }
@@ -415,13 +644,15 @@ export const finishAdPublication = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     publication_id: z.string().uuid(),
-    // Falhas que só o navegador viu (ex.: vídeo que a Meta não processou).
-    failures: z.array(z.object({ creative_id: z.string().uuid(), name: z.string().max(200), error: z.string().max(1000) })).max(200).default([]),
+    // Falhas que só o navegador viu (mídia que não subiu, vídeo que a Meta não processou, conjunto que falhou).
+    failures: z.array(z.object({
+      key: z.string().max(20), name: z.string().max(250), adset_name: z.string().max(250).optional(), error: z.string().max(1000),
+    })).max(500).default([]),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
-    const known = new Set(pub.ads.map((a) => a.creative_id));
-    const ads: AdResult[] = [...pub.ads, ...data.failures.filter((f) => !known.has(f.creative_id))];
+    const known = new Set(pub.ads.map((a) => a.key));
+    const ads: AdResult[] = [...pub.ads, ...data.failures.filter((f) => !known.has(f.key))];
     const ok = ads.filter((a) => a.ad_id).length;
     const status = ok === 0 ? "error" : ok < ads.length ? "partial" : "ok";
     await db("product_ad_publications").update({ ads, status, error: ok === 0 ? "Nenhum anúncio foi criado" : null }).eq("id", pub.id);

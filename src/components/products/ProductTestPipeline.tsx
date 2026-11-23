@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   getTestPipeline, getTestPipelineItems, saveTestPipelineItems, setTestPipelineCheck, type PipelineItem,
 } from "@/lib/test-pipeline.functions";
+import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 // Esteira de Testes: lista de testes que dá pra fazer, igual em todos os
 // produtos. No produto (Inteligência › Esteira de Testes) só se marca o ✓, que
@@ -36,7 +37,7 @@ export function ProductTestPipeline({ productId }: { productId: string }) {
     onError: (e: any) => { toast.error(e.message); qc.invalidateQueries({ queryKey: QK }); },
   });
 
-  if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading) return <TabSkeleton />;
   if (error || !data) return <p className="text-sm text-destructive">{(error as Error)?.message ?? "Não foi possível carregar a esteira."}</p>;
 
   const { items, checked } = data;
@@ -97,7 +98,7 @@ export function TestPipelineTemplateEditor() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  if (isLoading || !items) return <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (isLoading || !items) return <TabSkeleton />;
 
   const valid = items.every((i) => i.text.trim());
   const setAt = (i: number, text: string) => setItems(items.map((x, j) => (j === i ? { ...x, text } : x)));
@@ -113,7 +114,7 @@ export function TestPipelineTemplateEditor() {
         Os testes que dá pra fazer num produto, na ordem em que aparecem. A lista é a mesma em todos os produtos (produto › Inteligência › Esteira de Testes);
         lá você marca o que já fez em cada um. Tirar um teste daqui tira de todos os produtos.
       </p>
-      <section className="premium-card p-4">
+      <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-4 sm:p-5">
         <div className="space-y-2">
           {items.map((item, i) => (
             <div key={item.id} className="flex items-center gap-2">
