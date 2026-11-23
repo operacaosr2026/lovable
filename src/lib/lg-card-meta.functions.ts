@@ -30,11 +30,11 @@ export const getCardMetaSetup = createServerFn({ method: "GET" })
         .eq("user_id", ownerId).eq("card_id", data.card_id).order("created_at", { ascending: true }),
     ]);
     if (error) throw new Error(error.message);
-    const available = new Map<string, { id: string; name: string | null; currency: string | null }>();
+    const available = new Map<string, { id: string; name: string | null; currency: string | null; business_name: string | null }>();
     for (const t of (tokens ?? []) as any[]) {
       for (const a of (t.ad_accounts ?? []) as any[]) {
         const id = String(a.id ?? `act_${a.account_id}`);
-        if (!available.has(id)) available.set(id, { id, name: a.name ?? null, currency: a.currency ?? null });
+        if (!available.has(id)) available.set(id, { id, name: a.name ?? null, currency: a.currency ?? null, business_name: a.business?.name ?? null });
       }
     }
     return {
@@ -116,4 +116,60 @@ export const syncCardMetaSpend = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertCard(context.ownerId, data.card_id);
     return syncCardAdSpend(context.ownerId, data.card_id, data);
+  });
+
+// A lista de contas de cada conexão Meta era tirada só ao conectar o Facebook —
+// conta ou BM criada depois não aparecia. Busca de novo: contas do usuário +
+// contas próprias e de clientes de cada BM que ele administra.
+async function fetchAllPages(url: string): Promise<any[]> {
+  const out: any[] = [];
+  let next: string | null = url;
+  while (next) {
+    const r = await fetchWithRetry(next);
+    const json: any = await r.json();
+    if (!r.ok || json.error) throw new Error(json?.error?.message || `Falha (${r.status})`);
+    out.push(...(json.data ?? []));
+    next = json.paging?.next ?? null;
+  }
+  return out;
+}
+
+export const refreshMetaAdAccounts = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const { ownerId } = context;
+    const { data: tokens } = await supabaseAdmin.from("shop_meta_tokens").select("shop_id, access_token").eq("user_id", ownerId);
+    const FIELDS = "id,name,account_id,account_status,currency,business{id,name}";
+    const seen = new Set<string>();
+    const errors: string[] = [];
+    for (const t of (tokens ?? []) as any[]) {
+      if (!t.access_token) continue;
+      const tk = encodeURIComponent(t.access_token);
+      try {
+        const byId = new Map<string, any>();
+        for (const a of await fetchAllPages(`${META_GRAPH}/me/adaccounts?fields=${FIELDS}&limit=200&access_token=${tk}`)) byId.set(a.id, a);
+        const bms = await fetchAllPages(`${META_GRAPH}/me/businesses?fields=id,name&limit=100&access_token=${tk}`).catch(() => []);
+        for (const bm of bms) {
+          for (const edge of ["owned_ad_accounts", "client_ad_accounts"]) {
+            const list = await fetchAllPages(`${META_GRAPH}/${bm.id}/${edge}?fields=${FIELDS}&limit=200&access_token=${tk}`).catch(() => []);
+            for (const a of list) {
+              const cur = byId.get(a.id);
+              if (!cur) byId.set(a.id, { ...a, business: a.business ?? { id: bm.id, name: bm.name } });
+              else if (!cur.business) cur.business = a.business ?? { id: bm.id, name: bm.name };
+            }
+          }
+        }
+        const accounts = [...byId.values()];
+        await supabaseAdmin.from("shop_meta_tokens").update({ ad_accounts: accounts }).eq("user_id", ownerId).eq("shop_id", t.shop_id);
+        for (const a of accounts) {
+          await db("lg_card_meta_accounts").update({ account_name: a.name ?? null, currency: a.currency ?? null })
+            .eq("user_id", ownerId).eq("ad_account_id", a.id);
+        }
+        for (const a of accounts) seen.add(a.id);
+      } catch (e: any) {
+        errors.push(e.message);
+      }
+    }
+    if (!seen.size && errors.length) throw new Error(errors[0]);
+    return { accounts: seen.size };
   });

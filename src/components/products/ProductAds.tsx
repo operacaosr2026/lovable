@@ -57,13 +57,13 @@ export function ProductAds({ productId }: { productId: string }) {
   useEffect(() => {
     if (initialized || !setup.data) return;
     const last = setup.data.publications[0]?.config;
-    const acc = setup.data.accounts.find((a) => a.ad_account_id === last?.ad_account_id && a.shop_id === last?.shop_id) ?? setup.data.accounts[0];
+    const acc = setup.data.accounts.find((a) => a.ad_account_id === last?.ad_account_id) ?? setup.data.accounts[0];
     setCfg({
       ...DEFAULTS,
       ...last,
       // UTM padrão antiga (sem id) vira o padrão novo; UTM editada à mão fica.
       url_tags: !last?.url_tags || last.url_tags === OLD_DEFAULT_URL_TAGS ? STANDARD_URL_TAGS : last.url_tags,
-      shop_id: acc?.shop_id, ad_account_id: acc?.ad_account_id,
+      shop_id: undefined, card_id: acc?.card_id, ad_account_id: acc?.ad_account_id,
       link: last?.link ?? setup.data.links[0]?.url ?? "",
       campaign_name: "",
     });
@@ -71,22 +71,29 @@ export function ProductAds({ productId }: { productId: string }) {
     setInitialized(true);
   }, [setup.data, initialized]);
 
-  const account = setup.data?.accounts.find((a) => a.shop_id === cfg.shop_id && a.ad_account_id === cfg.ad_account_id);
+  const account = setup.data?.accounts.find((a) => a.ad_account_id === cfg.ad_account_id);
   const assets = useQuery({
-    queryKey: ["ad-account-assets", cfg.shop_id, cfg.ad_account_id],
-    enabled: !!cfg.shop_id && !!cfg.ad_account_id,
-    queryFn: () => assetsFn({ data: { shop_id: cfg.shop_id!, ad_account_id: cfg.ad_account_id! } }),
+    queryKey: ["ad-account-assets", cfg.ad_account_id],
+    enabled: !!cfg.ad_account_id,
+    queryFn: () => assetsFn({ data: { ad_account_id: cfg.ad_account_id! } }),
     staleTime: 5 * 60_000,
   });
 
-  // Página e pixel: mantém a escolha se ainda existir na conta, senão pega a primeira.
+  // Instagram ligado à página; sem ligação, mantém o escolhido (ou nenhum).
+  const igForPage = (pageId: string | undefined, currentIg?: string) => {
+    const igs = assets.data?.instagrams ?? [];
+    return igs.find((i) => i.page_id && i.page_id === pageId) ?? igs.find((i) => i.id === currentIg);
+  };
+
+  // Página, Instagram e pixel: mantém a escolha se ainda existir na conta, senão pega a primeira.
   useEffect(() => {
     if (!assets.data) return;
-    const { pages, pixels } = assets.data;
+    const { pages, pixels, instagrams } = assets.data;
     setCfg((p) => {
       const page = pages.find((x) => x.id === p.page_id) ?? pages[0];
       const pixel = pixels.find((x) => x.id === p.pixel_id) ?? pixels[0];
-      return { ...p, page_id: page?.id, page_name: page?.name ?? "", pixel_id: pixel?.id };
+      const ig = instagrams.find((i) => i.id === p.instagram_user_id) ?? instagrams.find((i) => i.page_id && i.page_id === page?.id);
+      return { ...p, page_id: page?.id, page_name: page?.name ?? "", pixel_id: pixel?.id, instagram_user_id: ig?.id, instagram_username: ig ? igLabel(ig) : undefined };
     });
   }, [assets.data]);
 
@@ -182,7 +189,7 @@ export function ProductAds({ productId }: { productId: string }) {
       <div className="rounded-2xl border border-dashed border-border py-16 text-center">
         <Megaphone className="size-8 text-muted-foreground mx-auto mb-2" />
         <div className="text-sm font-semibold">Nenhuma conta de anúncio conectada</div>
-        <div className="text-xs text-muted-foreground mt-1">Conecte a Meta e uma conta de anúncio em uma loja (Integrações) pra publicar campanhas.</div>
+        <div className="text-xs text-muted-foreground mt-1">Ligue uma conta de anúncio na integração Meta de um card em Lojas e Grupos pra publicar campanhas.</div>
       </div>
     );
   }
@@ -190,26 +197,47 @@ export function ProductAds({ productId }: { productId: string }) {
   return (
     <div className="space-y-5">
       <Section n={1} title="Conta">
-        <div className="grid sm:grid-cols-3 gap-3">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Field label="Conta de anúncio">
             <select
-              value={account ? `${account.shop_id}|${account.ad_account_id}` : ""}
-              onChange={(e) => { const [shop_id, ad_account_id] = e.target.value.split("|"); set({ shop_id, ad_account_id }); }}
+              value={account?.ad_account_id ?? ""}
+              onChange={(e) => { const a = data.accounts.find((x) => x.ad_account_id === e.target.value); set({ card_id: a?.card_id, ad_account_id: a?.ad_account_id }); }}
               className={inputCls}
             >
               {data.accounts.map((a) => (
-                <option key={`${a.shop_id}|${a.ad_account_id}`} value={`${a.shop_id}|${a.ad_account_id}`}>{a.account_name} · {a.shop_name}</option>
+                <option key={a.ad_account_id} value={a.ad_account_id}>{a.account_name} · {a.card_name}</option>
               ))}
             </select>
           </Field>
           <Field label="Página do Facebook">
             <select value={cfg.page_id ?? ""} disabled={assets.isLoading} onChange={(e) => {
               const page = assets.data?.pages.find((p) => p.id === e.target.value);
-              set({ page_id: page?.id, page_name: page?.name ?? "" });
+              const ig = igForPage(page?.id, cfg.instagram_user_id);
+              set({ page_id: page?.id, page_name: page?.name ?? "", instagram_user_id: ig?.id, instagram_username: ig ? igLabel(ig) : undefined });
             }} className={inputCls}>
               {assets.isLoading && <option>Carregando...</option>}
               {assets.data?.pages.length === 0 && <option value="">Nenhuma página nesta conta</option>}
               {assets.data?.pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Instagram">
+            <select value={cfg.instagram_user_id ?? ""} disabled={assets.isLoading} onChange={(e) => {
+              const ig = assets.data?.instagrams.find((i) => i.id === e.target.value);
+              set({ instagram_user_id: ig?.id, instagram_username: ig ? igLabel(ig) : undefined });
+            }} className={inputCls}>
+              {assets.isLoading && <option>Carregando...</option>}
+              {!assets.isLoading && <option value="">Usar a página do Facebook</option>}
+              {(() => {
+                const igs = assets.data?.instagrams ?? [];
+                const linked = igs.filter((i) => i.username || i.page_name);
+                const others = igs.filter((i) => !i.username && !i.page_name);
+                return (
+                  <>
+                    {linked.length > 0 && <optgroup label="Identificados">{linked.map((i) => <option key={i.id} value={i.id}>{igLabel(i)}</option>)}</optgroup>}
+                    {others.length > 0 && <optgroup label="Sem nome (a Meta não informou)">{others.map((i) => <option key={i.id} value={i.id}>{igLabel(i)}</option>)}</optgroup>}
+                  </>
+                );
+              })()}
             </select>
           </Field>
           <Field label="Pixel (otimiza pra compra)">
@@ -221,6 +249,19 @@ export function ProductAds({ productId }: { productId: string }) {
           </Field>
         </div>
         {assets.error && <p className="text-xs text-destructive mt-2">{(assets.error as Error).message}</p>}
+        {assets.data && (assets.data.pages.length === 0 || assets.data.instagrams.length === 0) && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
+            Não achei {assets.data.pages.length === 0 ? "páginas" : "contas do Instagram"} nesta conta. Reconecte o Facebook (Integrações da loja) e marque as páginas e o Instagram na janela da Meta.
+          </p>
+        )}
+        {assets.data && (
+          <details className="mt-2 text-[11px] text-muted-foreground">
+            <summary className="cursor-pointer hover:text-foreground">Detalhes da busca ({assets.data.pages.length} página(s), {assets.data.instagrams.length} Instagram(s))</summary>
+            <ul className="mt-1.5 space-y-0.5 pl-3">
+              {assets.data.debug.map((d) => <li key={d.source}><span className="text-foreground">{d.source}:</span> {d.result}</li>)}
+            </ul>
+          </details>
+        )}
       </Section>
 
       <Section
@@ -369,6 +410,12 @@ export function ProductAds({ productId }: { productId: string }) {
       )}
     </div>
   );
+}
+
+function igLabel(i: { id: string; username: string; page_name?: string }) {
+  if (i.username) return `@${i.username}${i.page_name ? ` · ${i.page_name}` : ""}`;
+  if (i.page_name) return `Instagram da página ${i.page_name}`;
+  return `Instagram …${i.id.slice(-5)}`;
 }
 
 function StatusIcon({ status }: { status: string }) {

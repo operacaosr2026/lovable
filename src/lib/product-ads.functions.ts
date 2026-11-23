@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { metaTokenForAccount } from "@/lib/lg-card-ad-spend.server";
 
 // Aba Anúncios do produto: publica uma campanha na Meta com os criativos da aba
 // Criativos. O cliente conduz os passos (campanha → mídia de cada criativo →
@@ -17,7 +18,9 @@ const EU = new Set(["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", 
 export const AD_CTAS = ["SHOP_NOW", "LEARN_MORE", "ORDER_NOW", "BUY_NOW", "GET_OFFER", "SIGN_UP"] as const;
 
 export type AdPublicationConfig = {
-  shop_id: string; ad_account_id: string; page_id: string; page_name: string; pixel_id: string;
+  // card_id: conta vem do card de Lojas e Grupos. shop_id só nas publicações antigas.
+  card_id?: string; shop_id?: string; ad_account_id: string; page_id: string; page_name: string; pixel_id: string;
+  instagram_user_id?: string; instagram_username?: string;
   campaign_name: string; link: string; url_tags: string; countries: string[]; daily_budget: number;
   structure: "single" | "per_creative"; cta: typeof AD_CTAS[number]; status: "PAUSED" | "ACTIVE";
 };
@@ -40,17 +43,17 @@ async function graph<T = any>(path: string, token: string, params: Record<string
   return json as T;
 }
 
-async function tokenFor(ownerId: string, shopId: string) {
-  const { data } = await supabaseAdmin.from("shop_meta_tokens").select("access_token")
-    .eq("user_id", ownerId).eq("shop_id", shopId).maybeSingle();
-  if (!data?.access_token) throw new Error("Conta Meta não conectada nesta loja");
-  return data.access_token as string;
+// Token da conexão Meta (de qualquer loja) que enxerga a conta de anúncio.
+async function tokenFor(ownerId: string, adAccountId: string) {
+  const token = await metaTokenForAccount(ownerId, adAccountId);
+  if (!token) throw new Error("Nenhuma conexão com o Facebook enxerga esta conta de anúncio");
+  return token;
 }
 
 async function loadPublication(ownerId: string, id: string) {
   const { data } = await db("product_ad_publications").select("*").eq("id", id).eq("user_id", ownerId).maybeSingle();
   if (!data) throw new Error("Publicação não encontrada");
-  return data as { id: string; product_id: string; shop_id: string; ad_account_id: string; campaign_id: string; config: AdPublicationConfig; ads: AdResult[] };
+  return data as { id: string; product_id: string; ad_account_id: string; campaign_id: string; config: AdPublicationConfig; ads: AdResult[] };
 }
 
 async function loadCreative(ownerId: string, productId: string, creativeId: string) {
@@ -72,15 +75,15 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ product_id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
-    const [accounts, shops, pubs, shopifyPubs] = await Promise.all([
-      supabaseAdmin.from("shop_meta_ad_accounts").select("shop_id,ad_account_id,account_name,currency,enabled").eq("user_id", ownerId),
-      supabaseAdmin.from("shops").select("id,name").eq("user_id", ownerId),
+    const [accounts, pubs, shopifyPubs] = await Promise.all([
+      // Mesmas contas da integração Meta dos cards de Lojas e Grupos (cards ativos).
+      db("lg_card_meta_accounts").select("card_id,ad_account_id,account_name,currency,enabled,lg_cards!inner(name,status)")
+        .eq("user_id", ownerId).eq("enabled", true).eq("lg_cards.status", "ativo"),
       db("product_ad_publications").select("id,campaign_id,campaign_name,ad_account_id,status,config,ads,error,created_at")
         .eq("product_id", data.product_id).eq("user_id", ownerId).order("created_at", { ascending: false }).limit(30),
       supabaseAdmin.from("product_shopify_publications").select("shopify_store_id,handle,role,status")
         .eq("product_id", data.product_id).eq("user_id", ownerId).eq("status", "ok"),
     ]);
-    const shopName = new Map((shops.data ?? []).map((s) => [s.id, s.name]));
 
     const storeIds = (shopifyPubs.data ?? []).map((p) => p.shopify_store_id);
     const { data: stores } = storeIds.length
@@ -97,13 +100,7 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
       .sort((a, b) => Number(b!.matriz) - Number(a!.matriz)) as { label: string; url: string; matriz: boolean }[];
 
     return {
-      accounts: (accounts.data ?? []).filter((a) => a.enabled !== false).map((a) => ({
-        shop_id: a.shop_id as string,
-        shop_name: (shopName.get(a.shop_id) ?? "Loja") as string,
-        ad_account_id: a.ad_account_id as string,
-        account_name: (a.account_name ?? a.ad_account_id) as string,
-        currency: (a.currency ?? "USD") as string,
-      })),
+      accounts: dedupeAccounts((accounts.data ?? []) as any[]),
       links,
       publications: (pubs.data ?? []) as {
         id: string; campaign_id: string | null; campaign_name: string; ad_account_id: string; status: "running" | "ok" | "partial" | "error";
@@ -112,25 +109,125 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
     };
   });
 
+// Conta ligada em mais de um card aparece uma vez, com os nomes dos cards.
+function dedupeAccounts(rows: any[]) {
+  const by = new Map<string, { card_id: string; card_name: string; ad_account_id: string; account_name: string; currency: string }>();
+  for (const r of rows) {
+    const cardName = String(r.lg_cards?.name ?? "Card");
+    const cur = by.get(r.ad_account_id);
+    if (cur) { if (!cur.card_name.split(", ").includes(cardName)) cur.card_name += `, ${cardName}`; continue; }
+    by.set(r.ad_account_id, {
+      card_id: r.card_id, card_name: cardName, ad_account_id: r.ad_account_id,
+      account_name: r.account_name ?? r.ad_account_id, currency: r.currency ?? "USD",
+    });
+  }
+  return [...by.values()].sort((a, b) => a.account_name.localeCompare(b.account_name));
+}
+
+export type AdPage = { id: string; name: string };
+// username vazio quando a Meta não entrega o @ (exige permissão que o app não tem).
+export type AdInstagram = { id: string; username: string; page_id?: string; page_name?: string };
+
+export type AssetsDebug = { source: string; result: string }[];
+
 export const getAdAccountAssets = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ shop_id: z.string().uuid(), ad_account_id: z.string().min(1) }).parse(d))
+  .inputValidator((d) => z.object({ ad_account_id: z.string().min(1) }).parse(d))
   .handler(async ({ context, data }) => {
-    const token = await tokenFor(context.ownerId, data.shop_id);
-    const [pages, pixels] = await Promise.all([
-      graph<{ data: { id: string; name: string }[] }>(`${data.ad_account_id}/promote_pages`, token, { fields: "id,name", limit: 100 }),
-      graph<{ data: { id: string; name: string }[] }>(`${data.ad_account_id}/adspixels`, token, { fields: "id,name", limit: 100 }),
+    const act = data.ad_account_id;
+    const token = await tokenFor(context.ownerId, act);
+    type List<T> = { data?: T[] };
+    type Ig = { id: string; username?: string };
+
+    // Cada fonte que falha (permissão que falta, edge que a conta não tem) não
+    // derruba as outras; o resultado de cada uma vai em "Detalhes da busca".
+    const debug: AssetsDebug = [];
+    const track = async <T,>(source: string, p: Promise<T>, count: (r: T) => number = (r: any) => r?.data?.length ?? 0) => {
+      try { const r = await p; debug.push({ source, result: `${count(r)} encontrado(s)` }); return r; }
+      catch (e: any) { debug.push({ source, result: `erro: ${String(e.message).slice(0, 160)}` }); return null; }
+    };
+
+    const [promote, mine, pixels, actIg, acc, actConnectedIg] = await Promise.all([
+      track("Páginas da conta de anúncio", graph<List<AdPage>>(`${act}/promote_pages`, token, { fields: "id,name", limit: 200 })),
+      track("Suas páginas", graph<List<AdPage & { access_token?: string }>>("me/accounts", token, { fields: "id,name,access_token", limit: 200 })),
+      graph<List<{ id: string; name: string }>>(`${act}/adspixels`, token, { fields: "id,name", limit: 100 }),
+      track("Instagram da conta de anúncio", graph<List<Ig>>(`${act}/instagram_accounts`, token, { fields: "id,username", limit: 100 })),
+      track("BM da conta", graph<{ business?: { id: string } }>(act, token, { fields: "business{id}" }), (r) => (r?.business ? 1 : 0)),
+      track("Instagram conectado à conta", graph<List<Ig>>(`${act}/connected_instagram_accounts`, token, { fields: "id,username", limit: 100 })),
     ]);
-    return { pages: pages.data ?? [], pixels: pixels.data ?? [] };
+    // Páginas e Instagram da BM dona da conta.
+    const bm = acc?.business?.id;
+    const [bmOwned, bmClient, bmIg, bmOwnedIg] = bm ? await Promise.all([
+      track("Páginas da BM", graph<List<AdPage>>(`${bm}/owned_pages`, token, { fields: "id,name", limit: 200 })),
+      track("Páginas de clientes da BM", graph<List<AdPage>>(`${bm}/client_pages`, token, { fields: "id,name", limit: 200 })),
+      track("Instagram da BM", graph<List<Ig>>(`${bm}/instagram_accounts`, token, { fields: "id,username", limit: 200 })),
+      track("Instagram próprio da BM", graph<List<Ig>>(`${bm}/owned_instagram_accounts`, token, { fields: "id,username", limit: 200 })),
+    ]) : [null, null, null, null];
+
+    const pages = new Map<string, AdPage>();
+    for (const list of [promote, bmOwned, bmClient, mine]) for (const p of list?.data ?? []) if (!pages.has(p.id)) pages.set(p.id, { id: p.id, name: p.name });
+    const pageToken = new Map((mine?.data ?? []).filter((p) => p.access_token).map((p) => [p.id, p.access_token!]));
+
+    const igs = new Map<string, AdInstagram>();
+    const addIg = (id: string, username: string | undefined, page_id?: string) => {
+      const cur = igs.get(id);
+      if (cur) { if (page_id && !cur.page_id) cur.page_id = page_id; if (username && !cur.username) cur.username = username; return; }
+      igs.set(id, { id, username: username ?? "", page_id });
+    };
+
+    // Instagram de cada página — é assim que o Gerenciador acha o Instagram ligado
+    // só à página (sem BM). Usa a chave da própria página quando a Meta dá uma.
+    // Cada campo em chamada separada: um campo sem permissão derruba a chamada inteira.
+    const perPage: Record<string, { found: number; errors: Set<string> }> = {};
+    const pageCall = async (label: string, pageId: string, fn: (tk: string) => Promise<Ig[]>) => {
+      const stat = (perPage[label] ??= { found: 0, errors: new Set() });
+      try { const list = await fn(pageToken.get(pageId) ?? token); stat.found += list.length; for (const ig of list) addIg(ig.id, ig.username, pageId); }
+      catch (e: any) { stat.errors.add(String(e.message).slice(0, 120)); }
+    };
+    const field = (name: string) => async (tk: string, pageId: string) => {
+      const r = await graph<Record<string, Ig | undefined>>(pageId, tk, { fields: `${name}{id,username}` });
+      return r[name] ? [r[name]!] : [];
+    };
+    const ids = [...pages.keys()].slice(0, 40);
+    for (let i = 0; i < ids.length; i += 8) {
+      await Promise.all(ids.slice(i, i + 8).flatMap((id) => [
+        pageCall("Página › Instagram profissional", id, (tk) => field("instagram_business_account")(tk, id)),
+        pageCall("Página › Instagram conectado", id, (tk) => field("connected_instagram_account")(tk, id)),
+        pageCall("Página › Instagrams da página", id, (tk) => graph<List<Ig>>(`${id}/instagram_accounts`, tk, { fields: "id,username" }).then((r) => r.data ?? [])),
+        pageCall("Página › Instagram criado pela página", id, (tk) => graph<List<Ig>>(`${id}/page_backed_instagram_accounts`, tk, { fields: "id,username" }).then((r) => r.data ?? [])),
+      ]));
+    }
+    for (const [source, st] of Object.entries(perPage)) {
+      debug.push({ source, result: `${st.found} encontrado(s)${st.errors.size ? ` · erro: ${[...st.errors][0]}` : ""}` });
+    }
+    for (const list of [actIg, actConnectedIg, bmIg, bmOwnedIg]) for (const ig of list?.data ?? []) addIg(ig.id, ig.username);
+
+    // Sem @: tenta ler com a chave da página ligada ao Instagram.
+    const unnamed = [...igs.values()].filter((ig) => !ig.username && ig.page_id && pageToken.has(ig.page_id)).slice(0, 40);
+    await Promise.all(unnamed.map(async (ig) => {
+      const r = await graph<{ username?: string }>(ig.id, pageToken.get(ig.page_id!)!, { fields: "username" }).catch(() => null);
+      if (r?.username) ig.username = r.username;
+    }));
+    for (const ig of igs.values()) if (ig.page_id) ig.page_name = pages.get(ig.page_id)?.name;
+
+    const rank = (ig: AdInstagram) => (ig.username ? 0 : ig.page_name ? 1 : 2);
+    return {
+      pages: [...pages.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      instagrams: [...igs.values()].sort((a, b) => rank(a) - rank(b) || (a.username || a.page_name || a.id).localeCompare(b.username || b.page_name || b.id)),
+      pixels: pixels.data ?? [],
+      debug,
+    };
   });
 
 // ── Publicação (passo a passo) ──
 
 const ConfigInput = z.object({
-  shop_id: z.string().uuid(),
+  card_id: z.string().uuid(),
   ad_account_id: z.string().min(1).max(60),
   page_id: z.string().min(1).max(60),
   page_name: z.string().max(200).default(""),
+  instagram_user_id: z.string().max(60).optional(),
+  instagram_username: z.string().max(200).optional(),
   pixel_id: z.string().min(1).max(60),
   campaign_name: z.string().trim().min(1).max(200),
   link: z.string().trim().url().max(2000),
@@ -148,10 +245,10 @@ export const startAdPublication = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
     const { config } = data;
-    const token = await tokenFor(ownerId, config.shop_id);
+    const token = await tokenFor(ownerId, config.ad_account_id);
 
     const { data: pub, error } = await db("product_ad_publications").insert({
-      user_id: ownerId, product_id: data.product_id, shop_id: config.shop_id, ad_account_id: config.ad_account_id,
+      user_id: ownerId, product_id: data.product_id, card_id: config.card_id, ad_account_id: config.ad_account_id,
       campaign_name: config.campaign_name, config, status: "running",
     }).select("id").single();
     if (error) throw new Error(error.message);
@@ -180,7 +277,7 @@ export const uploadAdMedia = createServerFn({ method: "POST" })
     const pub = await loadPublication(context.ownerId, data.publication_id);
     const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
     if (!c.media_path) throw new Error("Criativo sem mídia");
-    const token = await tokenFor(context.ownerId, pub.shop_id);
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
     try {
       if (c.media_kind === "video") {
         const { data: signed } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(c.media_path, 60 * 60 * 3);
@@ -206,7 +303,7 @@ export const checkAdVideo = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ publication_id: z.string().uuid(), video_id: z.string().min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
-    const token = await tokenFor(context.ownerId, pub.shop_id);
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
     const v = await graph<{ status?: { video_status?: string } }>(data.video_id, token, { fields: "status" });
     const status = v.status?.video_status;
     if (status === "error") return { state: "error" as const };
@@ -233,15 +330,15 @@ export const createAdForCreative = createServerFn({ method: "POST" })
     const pub = await loadPublication(context.ownerId, data.publication_id);
     const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
     const cfg = pub.config;
-    const token = await tokenFor(context.ownerId, pub.shop_id);
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
     const name = (c.name || "Criativo") as string;
 
     try {
       let adsetId = data.adset_id;
       if (!adsetId) {
-        const { data: acc } = await supabaseAdmin.from("shop_meta_ad_accounts").select("currency")
-          .eq("shop_id", pub.shop_id).eq("ad_account_id", pub.ad_account_id).maybeSingle();
-        const cents = NO_CENTS.has((acc?.currency ?? "USD").toUpperCase()) ? 1 : 100;
+        const { data: acc } = await db("lg_card_meta_accounts").select("currency")
+          .eq("user_id", context.ownerId).eq("ad_account_id", pub.ad_account_id).not("currency", "is", null).limit(1).maybeSingle();
+        const cents = NO_CENTS.has(String(acc?.currency ?? "USD").toUpperCase()) ? 1 : 100;
         const eu = cfg.countries.some((cc) => EU.has(cc));
         const adset = await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, {
           name: cfg.structure === "single" ? cfg.campaign_name : `${cfg.campaign_name} · ${name}`,
@@ -290,16 +387,17 @@ function creativeSpec(c: any, media: z.infer<typeof MediaInput>, cfg: AdPublicat
   const titles = clean(c.titles, c.title);
   const bodies = clean(c.descriptions, c.description);
   const cta = { type: cfg.cta, value: { link: cfg.link } };
+  const identity = { page_id: cfg.page_id, ...(cfg.instagram_user_id ? { instagram_user_id: cfg.instagram_user_id } : {}) };
 
   if (titles.length <= 1 && bodies.length <= 1) {
     const object_story_spec = media.kind === "video"
-      ? { page_id: cfg.page_id, video_data: { video_id: media.video_id, image_url: media.thumbnail_url, message: bodies[0], title: titles[0], call_to_action: cta } }
-      : { page_id: cfg.page_id, link_data: { image_hash: media.image_hash, link: cfg.link, message: bodies[0], name: titles[0], call_to_action: cta } };
+      ? { ...identity, video_data: { video_id: media.video_id, image_url: media.thumbnail_url, message: bodies[0], title: titles[0], call_to_action: cta } }
+      : { ...identity, link_data: { image_hash: media.image_hash, link: cfg.link, message: bodies[0], name: titles[0], call_to_action: cta } };
     return { object_story_spec };
   }
 
   return {
-    object_story_spec: { page_id: cfg.page_id },
+    object_story_spec: identity,
     asset_feed_spec: {
       ...(media.kind === "video"
         ? { videos: [{ video_id: media.video_id, thumbnail_url: media.thumbnail_url }], ad_formats: ["SINGLE_VIDEO"] }

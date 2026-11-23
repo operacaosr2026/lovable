@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getCardMetaSetup, connectCardMetaAccount, disconnectCardMetaAccount,
-  getCardMetaCampaigns, saveCardMetaCampaigns, syncCardMetaSpend,
+  getCardMetaCampaigns, saveCardMetaCampaigns, syncCardMetaSpend, refreshMetaAdAccounts,
 } from "@/lib/lg-card-meta.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2, Megaphone, RefreshCw, Plus, X, Check, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { MetaReconnectLink } from "@/components/shops/MetaAdsIntegration";
+import { MetaReconnectLink, RefreshListButton } from "@/components/shops/MetaAdsIntegration";
+import { MetaAccountGroups } from "@/components/shops/MetaAccountGroups";
 
 export const cardMetaSetupKey = (cardId: string) => ["card-meta-setup", cardId];
 
@@ -27,6 +28,7 @@ export function CardMetaAdsDialog({
   const getCampaignsFn  = useServerFn(getCardMetaCampaigns);
   const saveCampaignsFn = useServerFn(saveCardMetaCampaigns);
   const syncFn          = useServerFn(syncCardMetaSpend);
+  const refreshFn       = useServerFn(refreshMetaAdAccounts);
 
   const [showPicker, setShowPicker] = useState(false);
   const [campaignsAccountId, setCampaignsAccountId] = useState<string | null>(null);
@@ -94,6 +96,14 @@ export function CardMetaAdsDialog({
     },
     onError: (e: any) => { toast.error(e.message); invalidate(); },
   });
+
+  // Busca as contas de novo na Meta (BM ou conta criada depois de conectar).
+  const refresh = useMutation({
+    mutationFn: () => refreshFn(),
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["product-ads"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const openPicker = () => { setShowPicker(true); refresh.mutate(); };
 
   const toggle = (id: string) => setSelected((prev) => {
     const next = new Set(prev);
@@ -174,27 +184,20 @@ export function CardMetaAdsDialog({
 
           {!campaignsAccountId && showPicker && (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Selecione uma conta de anúncios:</p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {available.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Todas as contas já estão no card.</p>
-                )}
-                {available.map((acc) => (
-                  <button
-                    key={acc.id}
-                    onClick={() => connect.mutate(acc)}
-                    disabled={connect.isPending}
-                    className="w-full flex items-center justify-between rounded-xl border border-border hover:border-primary/40 px-4 py-3 text-left transition-all"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{acc.name ?? acc.id}</p>
-                      <p className="text-xs text-muted-foreground">{acc.id}{acc.currency ? ` · ${acc.currency}` : ""}</p>
-                    </div>
-                    {connect.isPending && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">Selecione uma conta de anúncios:</p>
+                <RefreshListButton pending={refresh.isPending} onClick={() => refresh.mutate()} />
               </div>
-              {shopId && <MetaReconnectLink shopId={shopId} onAuthenticated={invalidate} />}
+              <MetaAccountGroups
+                accounts={available.map((acc) => ({
+                  id: acc.id, name: acc.name ?? acc.id, business_name: acc.business_name,
+                  detail: [acc.id, acc.currency].filter(Boolean).join(" · "),
+                }))}
+                onPick={(id) => { const acc = available.find((a) => a.id === id); if (acc) connect.mutate(acc); }}
+                pending={connect.isPending}
+                emptyText="Todas as contas já estão no card."
+              />
+              {shopId && <MetaReconnectLink shopId={shopId} onAuthenticated={() => refresh.mutate()} />}
               <Button variant="outline" className="w-full" onClick={() => setShowPicker(false)}>Cancelar</Button>
             </div>
           )}
@@ -230,7 +233,7 @@ export function CardMetaAdsDialog({
                 );
               })}
 
-              <Button variant="outline" className="w-full gap-2" onClick={() => setShowPicker(true)}>
+              <Button variant="outline" className="w-full gap-2" onClick={openPicker}>
                 <Plus className="size-4" /> Adicionar conta
               </Button>
 

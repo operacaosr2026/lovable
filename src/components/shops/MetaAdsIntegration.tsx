@@ -6,6 +6,8 @@ import {
   connectMetaAdAccount, disconnectMetaAdAccount, disconnectMeta,
   getMetaCampaigns, saveMetaCampaigns, syncMetaAdsSpend, syncMetaAdsActivities,
 } from "@/lib/meta-ads.functions";
+import { refreshMetaAdAccounts } from "@/lib/lg-card-meta.functions";
+import { MetaAccountGroups } from "@/components/shops/MetaAccountGroups";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +29,7 @@ export function MetaAdsIntegrationDialog({
   const syncActivitiesFn = useServerFn(syncMetaAdsActivities);
   const getCampaignsFn   = useServerFn(getMetaCampaigns);
   const saveCampaignsFn  = useServerFn(saveMetaCampaigns);
+  const refreshAccountsFn = useServerFn(refreshMetaAdAccounts);
 
   const [authUrl, setAuthUrl]             = useState<string | null>(null);
   const [copied, setCopied]               = useState(false);
@@ -70,6 +73,12 @@ export function MetaAdsIntegrationDialog({
     qc.invalidateQueries({ queryKey: ["meta-token", shopId] });
     qc.invalidateQueries({ queryKey: ["meta-ad-accounts", shopId] });
   };
+  // Busca as contas de novo na Meta (com a BM de cada uma).
+  const refreshAccounts = useMutation({
+    mutationFn: () => refreshAccountsFn(),
+    onSuccess: refresh,
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const campaigns = useQuery({
     queryKey: ["meta-campaigns", shopId, campaignsAccountId],
@@ -260,27 +269,20 @@ export function MetaAdsIntegrationDialog({
           {/* ── Seletor de contas para adicionar ── */}
           {connected && showPicker && !campaignsAccountId && (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Selecione uma conta de anúncios para conectar:</p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {availableAccounts.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Todas as contas do perfil já estão conectadas.</p>
-                )}
-                {availableAccounts.map((acc: any) => (
-                  <button
-                    key={acc.id}
-                    onClick={() => connectAccount.mutate(acc.id)}
-                    disabled={connectAccount.isPending}
-                    className="w-full flex items-center justify-between rounded-xl border border-border hover:border-primary/40 px-4 py-3 text-left transition-all"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{acc.name}</p>
-                      <p className="text-xs text-muted-foreground">{acc.account_id} · {acc.currency}</p>
-                    </div>
-                    {connectAccount.isPending && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">Selecione uma conta de anúncios para conectar:</p>
+                <RefreshListButton pending={refreshAccounts.isPending} onClick={() => refreshAccounts.mutate()} />
               </div>
-              <MetaReconnectLink shopId={shopId} onAuthenticated={refresh} />
+              <MetaAccountGroups
+                accounts={availableAccounts.map((acc: any) => ({
+                  id: acc.id, name: acc.name ?? acc.id, business_name: acc.business?.name ?? null,
+                  detail: [acc.account_id, acc.currency].filter(Boolean).join(" · "),
+                }))}
+                onPick={(id) => connectAccount.mutate(id)}
+                pending={connectAccount.isPending}
+                emptyText="Todas as contas do perfil já estão conectadas."
+              />
+              <MetaReconnectLink shopId={shopId} onAuthenticated={() => refreshAccounts.mutate()} />
               <Button variant="outline" className="w-full" onClick={() => setShowPicker(false)}>Cancelar</Button>
             </div>
           )}
@@ -325,7 +327,7 @@ export function MetaAdsIntegrationDialog({
                 );
               })}
 
-              <Button variant="outline" className="w-full gap-2" onClick={() => setShowPicker(true)}>
+              <Button variant="outline" className="w-full gap-2" onClick={() => { setShowPicker(true); refreshAccounts.mutate(); }}>
                 <Plus className="size-4" /> Adicionar conta
               </Button>
 
@@ -351,6 +353,15 @@ export function MetaAdsIntegrationDialog({
 
 // Refaz o OAuth pra trazer contas de outra BM; o callback só atualiza a lista
 // do perfil, as contas já conectadas ficam como estão.
+export function RefreshListButton({ pending, onClick }: { pending: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} disabled={pending} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 shrink-0 disabled:opacity-60">
+      <RefreshCw className={cn("size-3", pending && "animate-spin")} />
+      {pending ? "Buscando na Meta..." : "Atualizar lista"}
+    </button>
+  );
+}
+
 export function MetaReconnectLink({ shopId, onAuthenticated }: { shopId: string; onAuthenticated: () => void }) {
   const createUrlFn = useServerFn(createMetaOAuthUrl);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
@@ -372,12 +383,12 @@ export function MetaReconnectLink({ shopId, onAuthenticated }: { shopId: string;
   return (
     <div className="rounded-xl border border-dashed border-border p-3 space-y-2">
       <p className="text-xs text-muted-foreground">
-        Não achou a conta? Autentique de novo e, na tela da Meta, clique em <strong className="text-foreground">Editar acesso</strong> para marcar a outra BM e as contas dela.
+        Não achou a conta, a página ou o Instagram? Autentique de novo e, na tela da Meta, clique em <strong className="text-foreground">Editar acesso</strong> e marque as BMs, contas, páginas e Instagrams.
       </p>
       {!authUrl && (
         <Button variant="outline" size="sm" className="w-full" onClick={() => generateUrl.mutate()} disabled={generateUrl.isPending}>
           {generateUrl.isPending && <Loader2 className="size-4 animate-spin" />}
-          Gerar link para incluir outra BM
+          Reconectar Facebook (BMs, páginas e Instagram)
         </Button>
       )}
       {authUrl && (

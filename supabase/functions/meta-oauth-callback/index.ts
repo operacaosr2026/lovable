@@ -67,7 +67,7 @@ serve(async (req) => {
   const adAccounts: unknown[] = [];
   let next: string | undefined =
     `https://graph.facebook.com/v19.0/me/adaccounts` +
-    `?fields=id,name,account_id,account_status,currency&limit=100&access_token=${token}`;
+    `?fields=id,name,account_id,account_status,currency,business{id,name}&limit=100&access_token=${token}`;
   while (next) {
     const adJson = await (await fetch(next)).json();
     adAccounts.push(...(adJson.data ?? []));

@@ -32,7 +32,7 @@ export const createMetaOAuthUrl = createServerFn({ method: "POST" })
       client_id:     META_APP_ID,
       redirect_uri:  CALLBACK_URI,
       state:         stateRow.id,
-      scope:         "ads_read,ads_management,business_management",
+      scope:         "ads_read,ads_management,business_management,pages_show_list,pages_read_engagement,instagram_basic",
       response_type: "code",
       auth_type:     "rerequest",
     });
