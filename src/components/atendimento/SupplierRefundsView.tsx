@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CircleCheck, Factory, Hourglass, Loader2, Search, Timer, X } from "lucide-react";
+import { CircleCheck, Factory, Hourglass, Loader2, Plus, Search, Timer, X } from "lucide-react";
+import { SupplierRefundRequestDialog } from "./SupplierRefundRequest";
 import { listSupplierRefunds, type SupplierRefund } from "@/lib/supplier-refund.functions";
 import { SupplierRefundActions } from "./SupplierRefund";
 import { formatMoney, fullTime } from "./utils";
@@ -20,6 +21,7 @@ export function SupplierRefundsView({ onOpenConversation }: { onOpenConversation
   const q = useQuery({ queryKey: ["supplier-refunds"], queryFn: () => listFn(), refetchInterval: 60_000 });
   const [tab, setTab] = useState<"pendente" | "confirmado">("pendente");
   const [search, setSearch] = useState("");
+  const [requesting, setRequesting] = useState(false);
 
   const rows = q.data ?? [];
   const pending = useMemo(() => rows.filter((r) => r.status === "pendente"), [rows]);
@@ -38,6 +40,7 @@ export function SupplierRefundsView({ onOpenConversation }: { onOpenConversation
 
   return (
     <div className="space-y-4">
+      <SupplierRefundRequestDialog open={requesting} onClose={() => setRequesting(false)} />
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <Kpi icon={Hourglass} cls="bg-amber-500/10 text-amber-600" label="Fornecedor devendo"
           value={q.data ? formatMoney(sum(pending), "USD") : "…"} sub={q.data ? `${pending.length} pedido${pending.length === 1 ? "" : "s"}` : ""} />
@@ -57,7 +60,11 @@ export function SupplierRefundsView({ onOpenConversation }: { onOpenConversation
               {label} <span className="text-muted-foreground">({n})</span>
             </button>
           ))}
-          <div className="relative ml-auto mb-2 w-full sm:w-64">
+          <button onClick={() => setRequesting(true)}
+            className="ml-auto mb-2 h-8 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-medium inline-flex items-center gap-1.5 hover:bg-primary/90 whitespace-nowrap">
+            <Plus className="size-3.5" /> Pedir reembolso
+          </button>
+          <div className="relative mb-2 w-full sm:w-64">
             <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar pedido, cliente, loja…"
               className="w-full h-8 pl-8 pr-7 rounded-xl bg-background border border-border text-xs outline-none focus:border-primary" />
@@ -78,7 +85,7 @@ export function SupplierRefundsView({ onOpenConversation }: { onOpenConversation
             <Factory className="size-6 mx-auto text-muted-foreground/60" />
             <p className="text-xs text-muted-foreground mt-2">
               {search ? "Nada encontrado" : tab === "pendente"
-                ? "Nenhum reembolso esperando o fornecedor. Marque ao reembolsar o pedido no Atendimento (Reembolsar › Fornecedor tem que reembolsar)."
+                ? "Nenhum reembolso esperando o fornecedor. Use “Pedir reembolso” ou marque ao reembolsar o pedido no Atendimento (Reembolsar › Fornecedor tem que reembolsar)."
                 : "Nenhum reembolso do fornecedor confirmado nos últimos 90 dias."}
             </p>
           </div>

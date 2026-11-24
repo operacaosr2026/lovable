@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { costProductsFor } from "@/lib/product-links.server";
+import { supplierCostByOrder } from "@/lib/supplier-cost.server";
 import {
   assertSupportAccess as assertAccess, customerOf, db, loadSupportOrder as loadOrder, personNames, type SupportCtx as Ctx,
 } from "@/lib/support-approval.server";
@@ -82,6 +84,81 @@ export const requestSupplierRefund = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.code === "23505" ? "Esse pedido já está marcado pro fornecedor reembolsar" : error.message);
     return { ok: true };
+  });
+
+// Aba Reembolso › Pedir reembolso: acha os pedidos pelo número (cola uma lista)
+// e sugere o custo do fornecedor de cada um. Avisa o que não dá pra marcar.
+export type SupplierRefundLookup = {
+  input: string; orderId: string | null; order_number: string | null; shopName: string | null;
+  customer_name: string | null; cost: number | null; already: "pendente" | "confirmado" | null;
+};
+
+const normNumber = (s: string) => {
+  const t = s.trim().toUpperCase();
+  return t ? (t.startsWith("#") ? t : `#${t}`) : "";
+};
+
+export const lookupSupplierRefundOrders = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ numbers: z.array(z.string().trim().min(1).max(40)).min(1).max(200) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as Ctx;
+    assertAccess(ctx);
+    const numbers = [...new Set(data.numbers.map(normNumber).filter(Boolean))];
+    const { data: orders, error } = await supabaseAdmin.from("shop_orders")
+      .select("id,shop_id,order_number,order_date,customer:raw->customer,line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier")
+      .eq("user_id", ctx.ownerId).in("order_number", numbers);
+    if (error) throw new Error(error.message);
+    const list = (orders ?? []) as any[];
+    const ids = list.map((o) => o.id as string);
+    const [products, existing, shops] = await Promise.all([
+      costProductsFor(supabaseAdmin, ctx.ownerId),
+      ids.length ? db("supplier_refunds").select("order_id,status").eq("owner_id", ctx.ownerId).in("order_id", ids) : Promise.resolve({ data: [] }),
+      list.length ? supabaseAdmin.from("shops").select("id,name").in("id", [...new Set(list.map((o) => o.shop_id as string))]) : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const costs = await supplierCostByOrder(supabaseAdmin, ctx.ownerId, list, products);
+    const status = new Map(((existing as any).data ?? []).map((r: any) => [r.order_id, r.status]));
+    const shopName = new Map(((shops as any).data ?? []).map((s: any) => [s.id, s.name]));
+    const byNumber = new Map(list.map((o) => [o.order_number as string, o]));
+    return numbers.map((n): SupplierRefundLookup => {
+      const o = byNumber.get(n);
+      if (!o) return { input: n, orderId: null, order_number: null, shopName: null, customer_name: null, cost: null, already: null };
+      const name = [o.customer?.first_name, o.customer?.last_name].filter(Boolean).join(" ").trim();
+      return {
+        input: n, orderId: o.id, order_number: o.order_number, shopName: (shopName.get(o.shop_id) as string | undefined) ?? null,
+        customer_name: name || null, cost: costs.get(o.id) ?? 0, already: (status.get(o.id) as any) ?? null,
+      };
+    });
+  });
+
+// Marca vários de uma vez (mesmo motivo). Pedido já marcado é pulado.
+export const requestSupplierRefunds = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    items: z.array(z.object({ orderId: z.string().uuid(), amount: z.number().min(0).max(100_000) })).min(1).max(200),
+    note: z.string().trim().max(1000).nullable(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as Ctx;
+    assertAccess(ctx);
+    const { data: orders, error } = await supabaseAdmin.from("shop_orders")
+      .select("id,shop_id,order_number,customer:raw->customer")
+      .eq("user_id", ctx.ownerId).in("id", data.items.map((i) => i.orderId));
+    if (error) throw new Error(error.message);
+    const byId = new Map(((orders ?? []) as any[]).map((o) => [o.id as string, o]));
+    const rows = data.items.filter((i) => byId.has(i.orderId)).map((i) => {
+      const o = byId.get(i.orderId);
+      const name = [o.customer?.first_name, o.customer?.last_name].filter(Boolean).join(" ").trim();
+      return {
+        owner_id: ctx.ownerId, shop_id: o.shop_id, order_id: o.id, order_number: o.order_number, conversation_id: null,
+        customer_name: name || null, amount: Math.round(i.amount * 100) / 100, note: data.note || null, requested_by: ctx.userId,
+      };
+    });
+    if (!rows.length) return { inserted: 0 };
+    const { data: ins, error: e2 } = await db("supplier_refunds")
+      .upsert(rows, { onConflict: "order_id", ignoreDuplicates: true }).select("id");
+    if (e2) throw new Error(e2.message);
+    return { inserted: (ins ?? []).length };
   });
 
 // OK de que o fornecedor reembolsou (ou desfazer o OK). Dá pra acertar o valor

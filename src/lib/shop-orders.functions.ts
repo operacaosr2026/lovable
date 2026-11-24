@@ -18,6 +18,7 @@ import { raiseNotification, resolveNotification } from "@/lib/notifications.serv
 import { beforeCashflowStart, shopifyOrderRow, shopifyTrackingPatch } from "@/lib/shopify-order-apply";
 import { buildTrackingUrl } from "@/lib/tracking-url";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
+import { unitCostFor } from "@/lib/supplier-cost.server";
 import {
   aggregateRefundsAndChargebacks, refundChargebackItems, type RefundCbSources, closedDebtPayoutIds, refundsOnFirstOfMonth, monthsBetween, monthEndCapped,
   supplierForecastOrders, orderCostGuard, orderCostWrite, relevantPayouts, payoutPatch, roundCents, payoutLagDays,
@@ -301,19 +302,6 @@ async function ensureCostCategory(supabase: any, ownerId: string, shopId: string
   await supabase.from("shop_cash_categories").insert({
     user_id: ownerId, shop_id: shopId, kind: "expense", name: COST_CATEGORY, position: 999,
   });
-}
-
-async function unitCostFor(supabase: any, ownerId: string, shopId: string, date: string, fallback: number) {
-  const { data } = await supabase.from("shop_product_cost_history").select("unit_cost,valid_from,valid_to")
-    .eq("user_id", ownerId).eq("shop_id", shopId)
-    .or(`valid_from.is.null,valid_from.lte.${date}`)
-    .order("valid_from", { ascending: false, nullsFirst: false });
-  for (const r of data ?? []) {
-    const okFrom = !r.valid_from || r.valid_from <= date;
-    const okTo = !r.valid_to || r.valid_to >= date;
-    if (okFrom && okTo) return Number(r.unit_cost);
-  }
-  return Number(fallback ?? 0);
 }
 
 // Produtos com histórico de custo pra telas que calculam o custo no navegador
