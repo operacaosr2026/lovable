@@ -21,6 +21,7 @@ import { useProductCopies } from "@/components/products/ProductCopies";
 import { useTrafficColumns } from "@/components/products/TrafficBoard";
 import type { ProductCopy, TrafficColumn } from "@/lib/traffic-board.functions";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AI_FEATURES, AI_GROUP_LABEL, type AiFeature } from "@/lib/ad-ai-features";
 import { ATTRIBUTIONS, ATTRIBUTION_KEYS, LIFECYCLES, LIFECYCLE_KEYS, RETENTION_DAYS, zonedToIso, type Attribution, type Lifecycle } from "@/lib/ad-schedule";
 import { STANDARD_URL_TAGS } from "@/lib/utm";
@@ -60,7 +61,9 @@ const DEFAULT_FORM: Form = {
   schedule: "now", start_local: "",
 };
 
-type TextPick = { title?: string; body?: string };
+// Ids de product_copies escolhidos pra um criativo (até 5 de cada).
+type TextPick = { titles: string[]; bodies: string[] };
+const MAX_TEXTS = 5;
 type NodeState = { state: "running" | "ok" | "error"; label: string };
 
 const inputCls = "w-full px-3 h-9 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50 disabled:opacity-60";
@@ -96,7 +99,10 @@ function formFromLast(last: AdPublicationConfig | undefined): Partial<Form> {
     ai_features: last.ai_features ?? {},
     multi_advertiser: last.multi_advertiser ?? false, display_link: last.display_link ?? "",
     attribution: last.attribution ?? "default", lifecycle: last.lifecycle ?? "all", retention_days: last.retention_days ?? 180,
-    picks: Object.fromEntries(Object.entries(last.creative_texts ?? {}).map(([id, t]) => [id, { title: t.title_id, body: t.body_id }])),
+    picks: Object.fromEntries(Object.entries(last.creative_texts ?? {}).map(([id, t]) => [id, {
+      titles: t.title_ids ?? (t.title_id ? [t.title_id] : []),
+      bodies: t.body_ids ?? (t.body_id ? [t.body_id] : []),
+    }])),
   };
 }
 
@@ -209,13 +215,13 @@ export function ProductAds({ productId }: { productId: string }) {
   const copyById = useMemo(() => new Map(copies.map((c) => [c.id, c])), [copies]);
   // Escolha que aponta pra texto apagado do banco conta como vazia.
   const pickOf = (id: string): TextPick => {
-    const p = form.picks[id] ?? {};
-    return { title: p.title && copyById.has(p.title) ? p.title : undefined, body: p.body && copyById.has(p.body) ? p.body : undefined };
+    const p = form.picks[id];
+    return { titles: (p?.titles ?? []).filter((x) => copyById.has(x)), bodies: (p?.bodies ?? []).filter((x) => copyById.has(x)) };
   };
   const timezone = assets.data?.timezone ?? "America/New_York";
   const startIso = form.schedule === "later" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(form.start_local) ? zonedToIso(form.start_local, timezone) : undefined;
   if (form.schedule === "later" && (!startIso || new Date(startIso).getTime() <= Date.now())) missing.push("data de início no futuro");
-  const withoutBody = chosen.filter((c) => !pickOf(c.id).body).length;
+  const withoutBody = chosen.filter((c) => !pickOf(c.id).bodies.length).length;
   if (form.distribution === "single_ad" && chosen.length > 0 && (chosen.length < MULTI_MIN || chosen.length > MULTI_MAX)) {
     missing.push(`de ${MULTI_MIN} a ${MULTI_MAX} criativos no anúncio`);
   }
@@ -243,8 +249,8 @@ export function ProductAds({ productId }: { productId: string }) {
       creative_texts: Object.fromEntries(chosen.map((c) => {
         const p = pickOf(c.id);
         return [c.id, {
-          ...(p.title ? { title_id: p.title, title: copyById.get(p.title)!.text } : {}),
-          ...(p.body ? { body_id: p.body, body: copyById.get(p.body)!.text } : {}),
+          title_ids: p.titles, titles: p.titles.map((x) => copyById.get(x)!.text),
+          body_ids: p.bodies, bodies: p.bodies.map((x) => copyById.get(x)!.text),
         }];
       })),
       plan: plan.adsets,
@@ -753,10 +759,11 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-// Lançamentos › Textos: um título e uma descrição (copy) do banco pra cada criativo.
+// Lançamentos › Textos: até 5 títulos e 5 descrições (copy) do banco pra cada criativo.
+// Com mais de um, a Meta testa as combinações ("otimizar texto por pessoa").
 function TextPicker({ creatives, copies, columns, pickOf, onPick }: {
   creatives: any[]; copies: ProductCopy[]; columns: TrafficColumn[];
-  pickOf: (id: string) => TextPick; onPick: (creativeIds: string[], patch: TextPick) => void;
+  pickOf: (id: string) => TextPick; onPick: (creativeIds: string[], patch: Partial<TextPick>) => void;
 }) {
   const titles = copies.filter((c) => c.kind === "title");
   const bodies = copies.filter((c) => c.kind === "body");
@@ -769,62 +776,114 @@ function TextPicker({ creatives, copies, columns, pickOf, onPick }: {
       </div>
     );
   }
-  if (!creatives.length) return <p className="text-xs text-muted-foreground">Marque os criativos acima para escolher o título e a descrição de cada um.</p>;
+  if (!creatives.length) return <p className="text-xs text-muted-foreground">Marque os criativos acima para escolher os títulos e as descrições de cada um.</p>;
 
   const all = creatives.map((c) => c.id);
-  const same = (k: keyof TextPick) => { const v = pickOf(all[0])[k]; return all.every((id) => pickOf(id)[k] === v) ? v ?? "" : "__mixed"; };
+  const key = (l: string[]) => [...l].sort().join(",");
+  // Igual em todos → mostra a lista; diferente → null ("vários diferentes").
+  const common = (k: keyof TextPick) => { const first = pickOf(all[0])[k]; return all.every((id) => key(pickOf(id)[k]) === key(first)) ? first : null; };
+  const grid = "grid sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)_minmax(0,1.4fr)] gap-2";
 
   return (
     <div className="space-y-2">
-      <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] gap-2 px-1 text-xs text-muted-foreground font-medium">
-        <span>Criativo</span><span>Título</span><span>Descrição (copy)</span>
+      <div className={`hidden sm:grid ${grid.replace("grid ", "")} px-1 text-xs text-muted-foreground font-medium`}>
+        <span>Criativo</span><span>Títulos (até {MAX_TEXTS})</span><span>Descrições / copy (até {MAX_TEXTS})</span>
       </div>
       {creatives.length > 1 && (
-        <div className="grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] gap-2 items-center rounded-lg bg-primary/5 border border-primary/20 px-2 py-1.5">
-          <span className="text-xs font-medium text-primary px-1">Aplicar a todos</span>
-          <CopySelect items={titles} columns={columns} value={same("title")} mixed onChange={(v) => onPick(all, { title: v })} placeholder="Sem título" />
-          <CopySelect items={bodies} columns={columns} value={same("body")} mixed onChange={(v) => onPick(all, { body: v })} placeholder="Sem descrição" />
+        <div className={`${grid} items-start rounded-lg bg-primary/5 border border-primary/20 px-2 py-2`}>
+          <span className="text-xs font-medium text-primary px-1 pt-1.5">Aplicar a todos</span>
+          <CopyMulti items={titles} columns={columns} value={common("titles")} onChange={(v) => onPick(all, { titles: v })} empty="Sem título" />
+          <CopyMulti items={bodies} columns={columns} value={common("bodies")} onChange={(v) => onPick(all, { bodies: v })} empty="Sem descrição" />
         </div>
       )}
       {creatives.map((c) => {
         const p = pickOf(c.id);
-        const body = bodies.find((b) => b.id === p.body);
         return (
-          <div key={c.id} className="grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] gap-2 items-start rounded-lg border border-border bg-background px-2 py-1.5">
+          <div key={c.id} className={`${grid} items-start rounded-lg border border-border bg-background px-2 py-2`}>
             <div className="flex items-center gap-2 min-w-0">
               <div className="relative w-7 aspect-[9/16] rounded overflow-hidden bg-muted shrink-0"><Media c={c} className="absolute inset-0 w-full h-full object-cover" /></div>
               <span className="text-xs font-medium truncate">{c.name || "Criativo"}</span>
             </div>
-            <CopySelect items={titles} columns={columns} value={p.title ?? ""} onChange={(v) => onPick([c.id], { title: v })} placeholder="Sem título" />
-            <div className="min-w-0">
-              <CopySelect items={bodies} columns={columns} value={p.body ?? ""} onChange={(v) => onPick([c.id], { body: v })} placeholder="Sem descrição" />
-              {body && <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line">{body.text}</p>}
-            </div>
+            <CopyMulti items={titles} columns={columns} value={p.titles} onChange={(v) => onPick([c.id], { titles: v })} empty="Sem título" />
+            <CopyMulti items={bodies} columns={columns} value={p.bodies} onChange={(v) => onPick([c.id], { bodies: v })} empty="Sem descrição" long />
           </div>
         );
       })}
+      <p className="text-xs text-muted-foreground">Com mais de um título ou descrição, a Meta testa as combinações e mostra a melhor para cada pessoa.</p>
     </div>
   );
 }
 
-// Select com os textos agrupados pela coluna da esteira (na ordem das colunas).
-function CopySelect({ items, columns, value, onChange, placeholder, mixed }: {
-  items: ProductCopy[]; columns: TrafficColumn[]; value: string; onChange: (v: string | undefined) => void; placeholder: string; mixed?: boolean;
+// Etiquetas dos textos escolhidos + "Adicionar" (lista do banco agrupada pelas colunas da esteira).
+// value null = criativos com escolhas diferentes (só no "Aplicar a todos").
+function CopyMulti({ items, columns, value, onChange, empty, long }: {
+  items: ProductCopy[]; columns: TrafficColumn[]; value: string[] | null; onChange: (v: string[]) => void; empty: string; long?: boolean;
 }) {
+  const [q, setQ] = useState("");
+  const selected = value ?? [];
+  const byId = new Map(items.map((i) => [i.id, i]));
   const first = columns[0]?.id;
-  const groups = columns.map((col) => ({ col, list: items.filter((i) => (i.column_id && columns.some((c) => c.id === i.column_id) ? i.column_id : first) === col.id).sort((a, b) => a.position - b.position) }))
+  const term = q.trim().toLowerCase();
+  const groups = columns
+    .map((col) => ({
+      col,
+      list: items
+        .filter((i) => (i.column_id && columns.some((c) => c.id === i.column_id) ? i.column_id : first) === col.id)
+        .filter((i) => !term || i.text.toLowerCase().includes(term))
+        .sort((a, b) => a.position - b.position),
+    }))
     .filter((g) => g.list.length);
-  const short = (t: string) => { const one = t.replace(/\s+/g, " ").trim(); return one.length > 70 ? `${one.slice(0, 70)}…` : one; };
+  const short = (t: string, n = 60) => { const one = t.replace(/\s+/g, " ").trim(); return one.length > n ? `${one.slice(0, n)}…` : one; };
+  const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : selected.length < MAX_TEXTS ? [...selected, id] : selected);
+
   return (
-    <select value={value} onChange={(e) => { if (e.target.value !== "__mixed") onChange(e.target.value || undefined); }} className={cn(inputCls, "h-8 text-xs")}>
-      {mixed && value === "__mixed" && <option value="__mixed">Vários diferentes</option>}
-      <option value="">{placeholder}</option>
-      {groups.map((g) => (
-        <optgroup key={g.col.id} label={g.col.name}>
-          {g.list.map((i) => <option key={i.id} value={i.id}>{short(i.text)}</option>)}
-        </optgroup>
+    <div className="flex flex-wrap items-center gap-1 min-w-0">
+      {value === null && <span className="text-xs text-muted-foreground italic px-1">Vários diferentes</span>}
+      {selected.map((id) => (
+        <span key={id} title={byId.get(id)?.text} className={cn("inline-flex items-center gap-1 max-w-full rounded-md bg-muted px-2 py-1 text-xs", !long && "font-medium")}>
+          <span className="truncate">{short(byId.get(id)?.text ?? "", long ? 70 : 45)}</span>
+          <button type="button" onClick={() => onChange(selected.filter((x) => x !== id))} className="text-muted-foreground hover:text-destructive shrink-0" title="Tirar">
+            <XCircle className="size-3" />
+          </button>
+        </span>
       ))}
-    </select>
+      {value !== null && !selected.length && <span className="text-xs text-muted-foreground px-1">{empty}</span>}
+      <Popover onOpenChange={(o) => !o && setQ("")}>
+        <PopoverTrigger asChild>
+          <button type="button" disabled={selected.length >= MAX_TEXTS && value !== null}
+            className="h-7 px-2 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:text-primary hover:border-primary/40 disabled:opacity-40">
+            {value === null ? "Escolher para todos" : selected.length ? "+ Adicionar" : "+ Escolher"}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[26rem] max-w-[90vw] p-0">
+          <div className="p-2 border-b border-border">
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" className={cn(inputCls, "h-8 text-xs")} />
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1.5 space-y-2">
+            {groups.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Nada encontrado.</p>}
+            {groups.map((g) => (
+              <div key={g.col.id}>
+                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{g.col.name}</div>
+                {g.list.map((i) => {
+                  const on = selected.includes(i.id);
+                  const full = !on && selected.length >= MAX_TEXTS;
+                  return (
+                    <button key={i.id} type="button" disabled={full} onClick={() => toggle(i.id)}
+                      className={cn("w-full flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-40", on && "bg-primary/5")}>
+                      <span className={cn("mt-0.5 size-3.5 rounded border grid place-items-center shrink-0", on ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/50")}>
+                        {on && <Check className="size-2.5" />}
+                      </span>
+                      <span className="line-clamp-3 whitespace-pre-line break-words">{i.text}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div className="px-3 py-2 border-t border-border text-[11px] text-muted-foreground">{selected.length} de {MAX_TEXTS} escolhido(s)</div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 

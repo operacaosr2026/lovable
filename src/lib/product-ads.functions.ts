@@ -22,7 +22,11 @@ const BUCKET = "project-attachments";
 const NO_CENTS = new Set(["CLP", "COP", "CRC", "HUF", "ISK", "IDR", "JPY", "KRW", "PYG", "TWD", "VND"]);
 const EU = new Set(["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"]);
 
-export type CreativeText = { title?: string; body?: string; title_id?: string; body_id?: string };
+// Até 5 títulos e 5 descrições (copy) por criativo. title/body: publicações antigas (um só).
+export type CreativeText = {
+  titles?: string[]; bodies?: string[]; title_ids?: string[]; body_ids?: string[];
+  title?: string; body?: string; title_id?: string; body_id?: string;
+};
 
 export const GENDERS = ["all", "male", "female"] as const;
 export type Gender = typeof GENDERS[number];
@@ -304,10 +308,10 @@ const ConfigInput = z.object({
   multi_format: z.enum(["flexible", "carousel"]),
   custom: z.record(z.string().max(100)).default({}),
   creative_texts: z.record(z.object({
-    title: z.string().max(500).optional(),
-    body: z.string().max(5000).optional(),
-    title_id: z.string().uuid().optional(),
-    body_id: z.string().uuid().optional(),
+    titles: z.array(z.string().max(500)).max(5).default([]),
+    bodies: z.array(z.string().max(5000)).max(5).default([]),
+    title_ids: z.array(z.string().uuid()).max(5).default([]),
+    body_ids: z.array(z.string().uuid()).max(5).default([]),
   })).default({}),
   ai_features: z.record(z.boolean()).default({}),
   multi_advertiser: z.boolean().default(false),
@@ -566,8 +570,8 @@ function textsFor(cfg: AdPublicationConfig, creatives: any[]): AdTexts {
   if (cfg.creative_texts) {
     const picks = creatives.map((c) => cfg.creative_texts?.[c.id] ?? {});
     return {
-      titles: uniq5(cleanList(picks.map((p) => p.title))),
-      bodies: uniq5(cleanList(picks.map((p) => p.body))),
+      titles: uniq5(cleanList(picks.flatMap((p) => p.titles ?? [p.title]))),
+      bodies: uniq5(cleanList(picks.flatMap((p) => p.bodies ?? [p.body]))),
       descriptions: [],
     };
   }
