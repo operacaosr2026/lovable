@@ -562,7 +562,72 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
     );
   }
 
-  // Saída automática do grupo (Fornecedor…): só o total, sem lista por loja; o
+  // Fornecedor: igual ao Facebook Ads — total por fora; dentro, um lançamento por
+  // linha com o próprio check (lote pago conciliado × previsão de pedidos ainda
+  // não pagos de outra loja no mesmo dia). Clique na linha edita o lançamento.
+  if (group.collapsed && /^fornecedor$/i.test(group.label)) {
+    const lineLabel = (e: DayItem) => {
+      const lote = (e.description ?? "").match(/^Lote #\d+/)?.[0];
+      const what = lote ?? (e.reconciled ? "Pago" : "Previsto");
+      const shop = isConsolidated && shopNamesMap && e.shop_id ? shopNamesMap[e.shop_id] : null;
+      return shop ? `${shop} · ${what}` : what;
+    };
+    const sorted = [...group.entries].sort((a, b) => Number(!!b.reconciled) - Number(!!a.reconciled) || Number(b.amount) - Number(a.amount));
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className={chipClasses}>
+            <span className="flex items-center gap-1.5 min-w-0 truncate">
+              {reconcilable.length > 0 && (
+                <span role="checkbox" aria-checked={allReconciled}
+                  title={allReconciled ? "Conciliado" : "Marcar todos como conciliados"}
+                  onClick={(ev) => {
+                    ev.stopPropagation(); ev.preventDefault();
+                    const target = !allReconciled;
+                    for (const e of reconcilable) if (Boolean(e.reconciled) !== target) onToggleReconciled(e);
+                  }}
+                  onPointerDown={(ev) => { ev.stopPropagation(); ev.preventDefault(); }}
+                  className={cn("shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                    allReconciled ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current")}>
+                  {allReconciled && <Check className="size-2.5" />}
+                </span>
+              )}
+              <span className="truncate">{group.label}</span>
+            </span>
+            <span className="font-semibold tabular-nums shrink-0">-{fmtMoney(group.total)}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-72 p-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 mb-1">
+            {group.label} · {group.entries.length} lançamentos
+          </div>
+          {sorted.map((e) => {
+            const canRec = !e.virtual && e.date <= todayKey;
+            return (
+              <button key={`${e.id}:${e.date}`} type="button" onClick={() => onEdit(e)} title={e.description ?? undefined}
+                className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-left">
+                <span className="flex items-center gap-1.5 min-w-0 truncate text-muted-foreground">
+                  {canRec && (
+                    <span role="checkbox" aria-checked={!!e.reconciled} title={e.reconciled ? "Conciliado" : "Marcar como conciliado"}
+                      onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); onToggleReconciled(e); }}
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      className={cn("shrink-0 size-3.5 rounded-sm border grid place-items-center transition-colors",
+                        e.reconciled ? "bg-primary border-primary text-primary-foreground" : "border-current/40 hover:border-current")}>
+                      {e.reconciled && <Check className="size-2.5" />}
+                    </span>
+                  )}
+                  <span className="truncate">{lineLabel(e)}</span>
+                </span>
+                <span className="font-semibold tabular-nums shrink-0">-{fmtMoney(Number(e.amount))}</span>
+              </button>
+            );
+          })}
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  // Outras saídas automáticas do grupo: só o total, sem lista por loja; o
   // clique edita o total.
   if (group.collapsed) return groupChip;
 
