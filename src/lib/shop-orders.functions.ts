@@ -1414,6 +1414,29 @@ export const getPanelRefundsAndChargebacks = createServerOnlyFn(async (
   return refundsOnFirstOfMonth(shopIds, fromISO, toISO, today, monthly).rows;
 });
 
+// Taxas Shopify dos painéis: as taxas por venda (sync da Shopify) ficam no dia
+// de cada venda; as lançadas à mão (fatura, app, assinatura) seguem a regra dos
+// reembolsos/chargebacks — o total do mês cai inteiro no dia 1º. Período que
+// contém o dia 1º de um mês desconta as manuais do mês todo (o corrente, até hoje).
+// Mesmo formato do select de shop_cash_entries ({ data: [{ shop_id, date, amount }] }).
+export const getPanelFees = createServerOnlyFn(async (ownerId: string, shopIds: string[], fromISO: string, toISO: string) => {
+  const today = isoTodayUS();
+  const end = toISO < today ? toISO : today;
+  const months = fromISO > end ? [] : monthsBetween(fromISO, end).filter((m) => `${m}-01` >= fromISO);
+  const base = () => supabaseAdmin.from("shop_cash_entries").select("shop_id,amount,date")
+    .eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify");
+  const [sales, ...manual] = await Promise.all([
+    selectAll(base().neq("source", "manual").gte("date", fromISO).lte("date", toISO)),
+    ...months.map((m) => selectAll(base().eq("source", "manual").gte("date", `${m}-01`).lte("date", monthEndCapped(m, today)))),
+  ]);
+  for (const r of [sales, ...manual]) if (r.error) throw new Error(r.error.message);
+  const rows = ((sales.data ?? []) as any[]).map((r) => ({ shop_id: r.shop_id as string, amount: Number(r.amount ?? 0), date: r.date as string }));
+  manual.forEach((r, i) => {
+    for (const x of (r.data ?? []) as any[]) rows.push({ shop_id: x.shop_id, amount: Number(x.amount ?? 0), date: `${months[i]}-01` });
+  });
+  return { data: rows, error: null };
+});
+
 // Tempo médio de repasse: calculado 1x/dia pela automação (sync-shop-orders cron)
 // e guardado em shop_order_settings, para não depender de chamada lenta à Shopify
 // a cada carregamento de tela.
@@ -2468,13 +2491,9 @@ export const getShopDashboardMetrics = createServerFn({ method: "GET" })
       settingsPromise,
       supabase.from("shop_profit_goals").select("target_profit,total_revenue,currency")
         .in("shop_id", shop_ids),
-      // Taxas Shopify Payments no período
-      withCosts ? selectAll(supabase.from("shop_cash_entries").select("amount,date")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", from).lte("date", to)) : empty,
-      withPrev ? selectAll(supabase.from("shop_cash_entries").select("amount")
-        .eq("user_id", ownerId).in("shop_id", shop_ids).eq("category", "Taxas Shopify")
-        .gte("date", prev_from).lte("date", prev_to)) : empty,
+      // Taxas Shopify: por venda no dia da venda; lançadas à mão no dia 1º (igual reembolsos).
+      withCosts ? getPanelFees(ownerId, shop_ids, from, to) : empty,
+      withPrev ? getPanelFees(ownerId, shop_ids, prev_from, prev_to) : empty,
       // Gasto de anúncios é do card que contém as lojas (lg_card_ad_spend).
       withCosts ? adSpendForShops(ownerId, shop_ids, from, to).then((data) => ({ data })) : empty,
       withPrev ? adSpendForShops(ownerId, shop_ids, prev_from, prev_to).then((data) => ({ data })) : empty,

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { isoTodayUS } from "@/lib/timezone";
 import { adSpendForShops } from "@/lib/lg-card-ad-spend.server";
-import { getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks } from "@/lib/shop-orders.functions";
+import { getGroupRefundsAndChargebacks, getPanelFees, getPanelRefundsAndChargebacks } from "@/lib/shop-orders.functions";
 import { costProductsFor } from "@/lib/product-links.server";
 import { orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { selectAll } from "@/lib/select-all";
@@ -36,10 +36,12 @@ async function computeAccumulatedLucro(
       .gte("order_date", start_date).lte("order_date", end_date)),
     // Gasto de anúncios é do card que contém as lojas (lg_card_ad_spend).
     adSpendForShops(ownerId, shop_ids, start_date, end_date).then((data) => ({ data })),
-    selectAll(supabase.from("shop_cash_entries").select("amount,date")
-      .eq("user_id", ownerId).in("shop_id", shop_ids)
-      .eq("category", "Taxas Shopify")
-      .gte("date", start_date).lte("date", end_date)),
+    // Painéis: taxas lançadas à mão no dia 1º (igual reembolsos); as por venda e, fora dos painéis, todas no dia real.
+    opts.panelRefunds ? getPanelFees(ownerId, shop_ids, start_date, end_date)
+      : selectAll(supabase.from("shop_cash_entries").select("amount,date")
+        .eq("user_id", ownerId).in("shop_id", shop_ids)
+        .eq("category", "Taxas Shopify")
+        .gte("date", start_date).lte("date", end_date)),
     supabase.from("shop_order_settings").select("shop_id,default_unit_cost")
       .eq("user_id", ownerId).in("shop_id", shop_ids),
     costProductsFor(supabase, ownerId),

@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getEstornoStats } from "@/lib/estorno-daily.server";
 import { costProductsFor } from "@/lib/product-links.server";
-import { attachLiveShopifyNames, getGroupRefundsAndChargebacks, getPanelRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
+import { attachLiveShopifyNames, getGroupRefundsAndChargebacks, getPanelFees, getPanelRefundsAndChargebacks, recomputeShopAutomation } from "@/lib/shop-orders.functions";
 import { matchLineItemProduct, orderLineItemsCost, costOpts } from "@/lib/product-cost-match";
 import { profit, comparisonPeriod } from "@/lib/finance-rules";
 import { isoTodayUS, isoMonthStartUS } from "@/lib/timezone";
@@ -702,8 +702,9 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
       // Mesma fonte do card de Lojas e Grupos (getLgCardQuickMetrics).
       getEstornoStats(ownerId, shopIds),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
-      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, date, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", from).lte("date", to)),
-      selectAll(supabaseAdmin.from("shop_cash_entries").select("shop_id, amount").eq("user_id", ownerId).in("shop_id", shopIds).eq("category", "Taxas Shopify").gte("date", prevFrom).lte("date", prevTo)),
+      // Taxas Shopify: por venda no dia da venda; lançadas à mão no dia 1º (igual reembolsos).
+      getPanelFees(ownerId, shopIds, from, to),
+      getPanelFees(ownerId, shopIds, prevFrom, prevTo),
       // Gasto de anúncios é do card (lg_card_ad_spend), não das lojas.
       adSpendForCards(ownerId, cardIds, from, to),
       adSpendForCards(ownerId, cardIds, prevFrom, prevTo),
