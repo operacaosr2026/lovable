@@ -236,7 +236,13 @@ export function ProductAds({ productId }: { productId: string }) {
   const publish = async () => {
     if (missing.length || running) return;
     const statusText = form.status === "ACTIVE" ? "ATIVOS (já começam a gastar)" : "pausados";
-    const ok = await confirm(`Criar "${plan.campaign_name}" com ${plan.adsets.length} conjunto(s) e ${adCount} anúncio(s) ${statusText}?`);
+    const ok = await confirm({
+      title: "Publicar campanha",
+      description: `Criar "${plan.campaign_name}" com ${plan.adsets.length} conjunto(s) e ${adCount} anúncio(s) ${statusText}?`,
+      confirmText: "Publicar",
+      cancelText: "Voltar",
+      variant: "default",
+    });
     if (!ok) return;
 
     const config = {
@@ -318,11 +324,20 @@ export function ProductAds({ productId }: { productId: string }) {
     // Espera os vídeos ficarem prontos (todos juntos), mostrando o andamento.
     const deadline = Date.now() + 20 * 60_000;
     let pending = [...media.entries()].filter(([, m]) => m.kind === "video");
+    const checkErrors = new Map<string, number>();
     while (pending.length) {
       const next: typeof pending = [];
       for (const [id, m] of pending) {
         if (m.kind !== "video") continue;
-        const r = await checkFn({ data: { publication_id, video_id: m.video_id } }).catch(() => ({ state: "processing" as const, progress: null }));
+        // Erro ao consultar a Meta: tolera falha passageira, mas na 3ª seguida mostra o motivo.
+        const r = await checkFn({ data: { publication_id, video_id: m.video_id } }).then(
+          (x) => { checkErrors.delete(id); return x; },
+          (e: any) => {
+            const n = (checkErrors.get(id) ?? 0) + 1;
+            checkErrors.set(id, n);
+            return n >= 3 ? { state: "error" as const, error: `Erro ao consultar o vídeo na Meta: ${e.message}` } : { state: "processing" as const, progress: null };
+          },
+        );
         if (r.state === "ready") { media.set(id, { ...m, thumbnail_url: r.thumbnail_url }); mark(`m:${id}`, "Vídeo pronto", "ok"); }
         else if (r.state === "error") { media.delete(id); mediaError.set(id, r.error); mark(`m:${id}`, r.error, "error"); }
         else if (Date.now() > deadline) { media.delete(id); mediaError.set(id, "O vídeo demorou demais pra processar na Meta"); mark(`m:${id}`, "Demorou demais na Meta", "error"); }

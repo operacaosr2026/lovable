@@ -467,16 +467,22 @@ export const checkAdVideo = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
     const token = await tokenFor(context.ownerId, pub.ad_account_id);
-    const v = await graph<{ status?: { video_status?: string; processing_progress?: number; processing_phase?: { status?: string; errors?: { message?: string }[] }; uploading_phase?: { status?: string; errors?: { message?: string }[] } } }>(data.video_id, token, { fields: "status" });
+    type VideoStatus = { video_status?: string; processing_progress?: number; processing_phase?: { status?: string; errors?: { message?: string }[] }; uploading_phase?: { status?: string; errors?: { message?: string }[] } };
+    // Miniatura vem no mesmo pedido (picture); a lista de thumbnails é só reserva
+    // e não pode travar: antes, erro nela fazia o vídeo parecer "processando" pra sempre.
+    const v = await graph<{ status?: VideoStatus; picture?: string }>(data.video_id, token, { fields: "status,picture" });
     const status = v.status?.video_status;
     if (status === "error") {
       const why = v.status?.processing_phase?.errors?.[0]?.message ?? v.status?.uploading_phase?.errors?.[0]?.message;
       return { state: "error" as const, error: why ? `A Meta não conseguiu processar o vídeo: ${why}` : "A Meta não conseguiu processar o vídeo" };
     }
     if (status !== "ready") return { state: "processing" as const, progress: v.status?.processing_progress ?? null };
-    const thumbs = await graph<{ data: { uri: string; is_preferred: boolean }[] }>(`${data.video_id}/thumbnails`, token, { fields: "uri,is_preferred" });
-    const thumb = thumbs.data?.find((t) => t.is_preferred) ?? thumbs.data?.[0];
-    return { state: "ready" as const, thumbnail_url: thumb?.uri };
+    let thumbnail_url = v.picture;
+    if (!thumbnail_url) {
+      const thumbs = await graph<{ data: { uri: string; is_preferred: boolean }[] }>(`${data.video_id}/thumbnails`, token, { fields: "uri,is_preferred" }).catch(() => null);
+      thumbnail_url = (thumbs?.data?.find((t) => t.is_preferred) ?? thumbs?.data?.[0])?.uri;
+    }
+    return { state: "ready" as const, thumbnail_url };
   });
 
 const MediaInput = z.discriminatedUnion("kind", [
