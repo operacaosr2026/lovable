@@ -10,7 +10,7 @@ import {
 import { listCreatives } from "@/lib/products.functions";
 import { getNamingTemplate } from "@/lib/naming.functions";
 import {
-  AD_CTAS, CONVERSION_EVENTS, getProductAdsSetup, getAdAccountAssets, startAdPublication, uploadAdMedia, checkAdVideos,
+  AD_CTAS, CONVERSION_EVENTS, getProductAdsSetup, getAdAccountAssets, getProfilePages, startAdPublication, uploadAdMedia, checkAdVideos,
   createAdset, createAdInAdset, finishAdPublication, deleteAdPublication,
   startDriveVideoUpload, transferDriveVideoChunk, finishDriveVideoUpload,
   type AdPublicationConfig, type ConversionEvent, type AdMedia, type AdInstagram, type AdResult, type Gender, type VideoCheck,
@@ -99,6 +99,33 @@ const COUNTRIES: [string, string][] = [
   ["SE", "Suécia"], ["NO", "Noruega"], ["DK", "Dinamarca"], ["BR", "Brasil"], ["MX", "México"],
 ];
 const COUNTRY_NAME = new Map(COUNTRIES);
+
+type ProfilePages = Awaited<ReturnType<typeof getProfilePages>>;
+const PROFILE_PAGES_QK = ["meta-profile-pages"];
+const PROFILE_PAGES_KEY = "srx:meta-profile-pages:v1";
+const PROFILE_PAGES_TTL = 24 * 60 * 60_000;
+function loadProfilePages(): ProfilePages | undefined {
+  try {
+    const v = JSON.parse(localStorage.getItem(PROFILE_PAGES_KEY) ?? "null") as ProfilePages | null;
+    return v && Date.now() - Date.parse(v.fetched_at) < PROFILE_PAGES_TTL ? v : undefined;
+  } catch { return undefined; }
+}
+// Grupos da lista de páginas: BM da conta escolhida primeiro, depois as outras BMs, por fim as só do perfil.
+function pageGroups(pages: ProfilePages["pages"], accountBm?: string | null) {
+  const by = new Map<string, { label: string; order: number; pages: ProfilePages["pages"] }>();
+  for (const p of pages) {
+    const key = p.business_id ?? "";
+    const g = by.get(key) ?? { label: !key ? "Só do perfil (sem BM)" : key === accountBm ? `${p.business} · BM desta conta` : p.business ?? "BM", order: key === accountBm ? 0 : key ? 1 : 2, pages: [] };
+    g.pages.push(p);
+    by.set(key, g);
+  }
+  return [...by.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+const ago = (iso: string) => {
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  return min < 1 ? "agora" : min < 60 ? `há ${min} min` : `há ${Math.round(min / 60)} h`;
+};
+function saveProfilePages(v: ProfilePages) { try { localStorage.setItem(PROFILE_PAGES_KEY, JSON.stringify(v)); } catch { /* sem espaço */ } }
 const flag = (cc: string) => String.fromCodePoint(...[...cc].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 const money = (v: number, cur?: string) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}${cur ? ` ${cur}` : ""}`;
 
@@ -141,6 +168,7 @@ export function ProductAds({ productId }: { productId: string }) {
   const confirm = useConfirm();
   const setupFn = useServerFn(getProductAdsSetup);
   const assetsFn = useServerFn(getAdAccountAssets);
+  const profileFn = useServerFn(getProfilePages);
   const creativesFn = useServerFn(listCreatives);
   const namingFn = useServerFn(getNamingTemplate);
   const startFn = useServerFn(startAdPublication);
@@ -187,9 +215,20 @@ export function ProductAds({ productId }: { productId: string }) {
     queryKey: ["ad-account-assets", form.ad_account_id],
     enabled: !!form.ad_account_id,
     queryFn: () => assetsFn({ data: { ad_account_id: form.ad_account_id! } }),
-    staleTime: 5 * 60_000,
+    staleTime: 30 * 60_000,
   });
-  const igs = assets.data?.instagrams ?? [];
+  // Páginas e Instagram do perfil inteiro: guardados no navegador por 24h (não muda com a conta).
+  const profile = useQuery({
+    queryKey: PROFILE_PAGES_QK,
+    queryFn: async () => { const r = await profileFn(); saveProfilePages(r); return r; },
+    initialData: loadProfilePages,
+    initialDataUpdatedAt: () => loadProfilePages()?.fetched_at ? Date.parse(loadProfilePages()!.fetched_at) : 0,
+    staleTime: PROFILE_PAGES_TTL,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+  const pagesList = profile.data?.pages ?? [];
+  const igs = profile.data?.instagrams ?? [];
   const timezone = assets.data?.timezone ?? "America/New_York";
 
   // Agendada por padrão: amanhã 00h no fuso da conta (preenche quando o fuso chega ou a data ficou no passado).
@@ -205,17 +244,24 @@ export function ProductAds({ productId }: { productId: string }) {
   const igForPage = (pageId: string | undefined, current?: string) =>
     igs.find((i) => i.page_id && i.page_id === pageId) ?? igs.find((i) => i.id === current);
 
-  // Página, Instagram e pixel: mantém a escolha se ainda existir na conta, senão pega a primeira.
+  // Pixel: mantém a escolha se ainda existir na conta, senão pega o primeiro.
   useEffect(() => {
     if (!assets.data) return;
-    const { pages, pixels, instagrams } = assets.data;
-    setForm((p) => {
-      const page = pages.find((x) => x.id === p.page_id) ?? pages[0];
-      const pixel = pixels.find((x) => x.id === p.pixel_id) ?? pixels[0];
-      const ig = instagrams.find((i) => i.id === p.instagram_user_id) ?? instagrams.find((i) => i.page_id && i.page_id === page?.id);
-      return { ...p, page_id: page?.id, page_name: page?.name ?? "", pixel_id: pixel?.id, instagram_user_id: ig?.id, instagram_username: ig?.username || undefined };
-    });
+    const { pixels } = assets.data;
+    setForm((p) => ({ ...p, pixel_id: (pixels.find((x) => x.id === p.pixel_id) ?? pixels[0])?.id }));
   }, [assets.data]);
+
+  // Página e Instagram: mantém a escolha; sem escolha, sugere a primeira página da BM da conta.
+  const accountBm = assets.data?.business_id;
+  useEffect(() => {
+    if (!profile.data) return;
+    const { pages, instagrams } = profile.data;
+    setForm((p) => {
+      const page = pages.find((x) => x.id === p.page_id) ?? pages.find((x) => accountBm && x.business_id === accountBm) ?? pages[0];
+      const ig = instagrams.find((i) => i.id === p.instagram_user_id) ?? instagrams.find((i) => i.page_id && i.page_id === page?.id);
+      return { ...p, page_id: page?.id, page_name: page?.name ?? "", instagram_user_id: ig?.id, instagram_username: ig?.username || undefined };
+    });
+  }, [profile.data, accountBm]);
 
   // Nomes editados à mão valem pra árvore atual; mudou a montagem, voltam pro modelo.
   const shapeKey = `${selected.join(",")}|${form.distribution}|${form.multi_format}`;
@@ -700,18 +746,28 @@ export function ProductAds({ productId }: { productId: string }) {
           <Step n={3} tone="ad" icon={ImageIcon} title="Anúncios" summary={chosen.length ? `${chosen.length} criativo(s) · ${pageLabel}` : undefined}>
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Página do Facebook">
-                <select value={form.page_id ?? ""} disabled={assets.isLoading} onChange={(e) => {
-                  const page = assets.data?.pages.find((p) => p.id === e.target.value);
+                <select value={form.page_id ?? ""} disabled={!profile.data} onChange={(e) => {
+                  const page = pagesList.find((p) => p.id === e.target.value);
                   const ig = igForPage(page?.id, form.instagram_user_id);
                   set({ page_id: page?.id, page_name: page?.name ?? "", instagram_user_id: ig?.id, instagram_username: ig?.username || undefined });
                 }} className={inputCls}>
-                  {assets.isLoading && <option>Carregando...</option>}
-                  {assets.data?.pages.length === 0 && <option value="">Nenhuma página nesta conta</option>}
-                  {assets.data?.pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {!profile.data && <option>{profile.isFetching ? "Buscando suas páginas..." : "—"}</option>}
+                  {profile.data && pagesList.length === 0 && <option value="">Nenhuma página encontrada</option>}
+                  {profile.data && pageGroups(pagesList, accountBm).map((g) => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
+                <div className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground">
+                  <span>{profile.data ? `${pagesList.length} página(s) de todas as suas BMs · atualizado ${ago(profile.data.fetched_at)}` : ""}</span>
+                  <button type="button" onClick={() => profile.refetch()} disabled={profile.isFetching} className="ml-auto inline-flex items-center gap-1 hover:text-foreground disabled:opacity-50">
+                    <RotateCcw className={cn("size-3", profile.isFetching && "animate-spin")} /> Atualizar páginas
+                  </button>
+                </div>
               </Field>
               <Field label="Instagram">
-                <InstagramSelect igs={igs} loading={assets.isLoading} value={form.instagram_user_id} onChange={(ig) => set({ instagram_user_id: ig?.id, instagram_username: ig?.username || undefined })} />
+                <InstagramSelect igs={igs} loading={!profile.data} value={form.instagram_user_id} onChange={(ig) => set({ instagram_user_id: ig?.id, instagram_username: ig?.username || undefined })} />
               </Field>
               <Field label="Link de destino">
                 <input value={form.link} onChange={(e) => set({ link: e.target.value })} placeholder="https://..." className={inputCls} list="product-ad-links" />
@@ -727,9 +783,14 @@ export function ProductAds({ productId }: { productId: string }) {
               </Field>
             </div>
             {assets.error && <p className="text-xs text-destructive">{(assets.error as Error).message}</p>}
-            {assets.data && (assets.data.pages.length === 0 || igs.length === 0) && (
+            {profile.error && <p className="text-xs text-destructive">{(profile.error as Error).message}</p>}
+            {profile.data?.debug.some((d) => /limit reached|\(#(4|17|32|613)\)/i.test(d.result)) ? (
               <p className="text-xs text-warning">
-                Não achei {assets.data.pages.length === 0 ? "páginas" : "contas do Instagram"} nesta conta. Reconecte o Facebook (Integrações da loja) e marque as páginas e o Instagram na janela da Meta.
+                A Meta bloqueou por excesso de chamadas, então nem todas as páginas vieram. Libera sozinho em até 1 hora; depois clique em "Atualizar páginas".
+              </p>
+            ) : profile.data && (pagesList.length === 0 || igs.length === 0) && (
+              <p className="text-xs text-warning">
+                Não achei {pagesList.length === 0 ? "páginas" : "contas do Instagram"}. Reconecte o Facebook (Integrações da loja) e marque as páginas e o Instagram na janela da Meta.
               </p>
             )}
             <details className="text-xs text-muted-foreground group">
@@ -740,10 +801,10 @@ export function ProductAds({ productId }: { productId: string }) {
                 <Field label="Parâmetros de URL (UTM)">
                   <input value={form.url_tags} onChange={(e) => set({ url_tags: e.target.value })} className={inputCls} />
                 </Field>
-                {assets.data && (
+                {profile.data && (
                   <ul className="space-y-0.5 pl-1">
-                    <li className="text-foreground font-medium">Busca na Meta: {assets.data.pages.length} página(s), {igs.length} Instagram(s)</li>
-                    {assets.data.debug.map((d) => <li key={d.source}><span className="text-foreground">{d.source}:</span> {d.result}</li>)}
+                    <li className="text-foreground font-medium">Busca na Meta: {pagesList.length} página(s), {igs.length} Instagram(s)</li>
+                    {profile.data.debug.map((d, i) => <li key={i}><span className="text-foreground">{d.source}:</span> {d.result}</li>)}
                   </ul>
                 )}
               </div>

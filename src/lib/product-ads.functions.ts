@@ -192,86 +192,115 @@ function dedupeAccounts(rows: any[]) {
   return [...by.values()].sort((a, b) => a.account_name.localeCompare(b.account_name));
 }
 
-export type AdPage = { id: string; name: string };
+// own = da conta de anúncio / BM dela; profile = de outra BM ou do seu perfil.
+// business = BM dona da página (vazio = página só do perfil).
+export type AdPage = { id: string; name: string; business_id?: string; business?: string };
 // username vazio quando a Meta não entrega o @ (exige permissão que o app não tem).
 export type AdInstagram = { id: string; username: string; page_id?: string; page_name?: string };
 
 export type AssetsDebug = { source: string; result: string }[];
 
+// Ao trocar de conta: só o que é da conta (pixel, fuso, BM dona) — 1 chamada.
 export const getAdAccountAssets = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ ad_account_id: z.string().min(1) }).parse(d))
   .handler(async ({ context, data }) => {
-    const act = data.ad_account_id;
-    const token = await tokenFor(context.ownerId, act);
-    type List<T> = { data?: T[] };
-    type Ig = { id: string; username?: string };
-
-    // Cada fonte que falha (permissão que falta, edge que a conta não tem) não
-    // derruba as outras; o resultado de cada uma vai em "Detalhes da busca".
-    const debug: AssetsDebug = [];
-    const track = async <T,>(source: string, p: Promise<T>, count: (r: T) => number = (r: any) => r?.data?.length ?? 0) => {
-      try { const r = await p; debug.push({ source, result: `${count(r)} encontrado(s)` }); return r; }
-      catch (e: any) { debug.push({ source, result: `erro: ${String(e.message).slice(0, 160)}` }); return null; }
+    const token = await tokenFor(context.ownerId, data.ad_account_id);
+    const acc = await graph<{ timezone_name?: string; business?: { id: string }; adspixels?: { data?: { id: string; name: string }[] } }>(
+      data.ad_account_id, token, { fields: "timezone_name,business{id},adspixels.limit(100){id,name}" },
+    );
+    return {
+      pixels: acc.adspixels?.data ?? [],
+      timezone: acc.timezone_name ?? "America/New_York",
+      business_id: acc.business?.id ?? null,
     };
+  });
 
-    const [promote, mine, pixels, actIg, acc, actConnectedIg] = await Promise.all([
-      track("Páginas da conta de anúncio", graph<List<AdPage>>(`${act}/promote_pages`, token, { fields: "id,name", limit: 200 })),
-      track("Suas páginas", graph<List<AdPage & { access_token?: string }>>("me/accounts", token, { fields: "id,name,access_token", limit: 200 })),
-      graph<List<{ id: string; name: string }>>(`${act}/adspixels`, token, { fields: "id,name", limit: 100 }),
-      track("Instagram da conta de anúncio", graph<List<Ig>>(`${act}/instagram_accounts`, token, { fields: "id,username", limit: 100 })),
-      track("BM da conta", graph<{ business?: { id: string }; timezone_name?: string }>(act, token, { fields: "business{id},timezone_name" }), (r) => (r?.business ? 1 : 0)),
-      track("Instagram conectado à conta", graph<List<Ig>>(`${act}/connected_instagram_accounts`, token, { fields: "id,username", limit: 100 })),
-    ]);
-    // Páginas e Instagram da BM dona da conta.
-    const bm = acc?.business?.id;
-    const [bmOwned, bmClient, bmIg, bmOwnedIg] = bm ? await Promise.all([
-      track("Páginas da BM", graph<List<AdPage>>(`${bm}/owned_pages`, token, { fields: "id,name", limit: 200 })),
-      track("Páginas de clientes da BM", graph<List<AdPage>>(`${bm}/client_pages`, token, { fields: "id,name", limit: 200 })),
-      track("Instagram da BM", graph<List<Ig>>(`${bm}/instagram_accounts`, token, { fields: "id,username", limit: 200 })),
-      track("Instagram próprio da BM", graph<List<Ig>>(`${bm}/owned_instagram_accounts`, token, { fields: "id,username", limit: 200 })),
-    ]) : [null, null, null, null];
+// Páginas e Instagram de todos os perfis do Facebook conectados (de todas as BMs),
+// independente da conta. Pesado: a tela guarda o resultado por 24h e só busca de novo
+// no botão "Atualizar páginas".
+export const getProfilePages = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    type List<T> = { data?: T[]; paging?: { next?: string } };
+    type Ig = { id: string; username?: string };
+    type PageRow = AdPage & { access_token?: string; instagram_business_account?: Ig; connected_instagram_account?: Ig };
+    const debug: AssetsDebug = [];
+    const isLimit = (m: string) => /\(#(4|17|32|613)\)|limit reached/i.test(m);
+
+    const { data: tokenRows } = await supabaseAdmin.from("shop_meta_tokens").select("access_token").eq("user_id", context.ownerId);
+    const tokens = [...new Set(((tokenRows ?? []) as any[]).map((r) => r.access_token as string).filter(Boolean))];
+    if (!tokens.length) throw new Error("Nenhuma conexão com o Facebook");
+
+    // Mesmo perfil conectado em várias lojas = um só.
+    const profiles = new Map<string, { token: string; name: string }>();
+    for (const t of tokens) {
+      const me = await graph<{ id: string; name?: string }>("me", t, { fields: "id,name" }).catch((e) => { debug.push({ source: "Perfil", result: `erro: ${String(e.message).slice(0, 160)}` }); return null; });
+      if (me && !profiles.has(me.id)) profiles.set(me.id, { token: t, name: me.name ?? me.id });
+    }
 
     const pages = new Map<string, AdPage>();
-    for (const list of [promote, bmOwned, bmClient, mine]) for (const p of list?.data ?? []) if (!pages.has(p.id)) pages.set(p.id, { id: p.id, name: p.name });
-    const pageToken = new Map((mine?.data ?? []).filter((p) => p.access_token).map((p) => [p.id, p.access_token!]));
-
     const igs = new Map<string, AdInstagram>();
-    const addIg = (id: string, username: string | undefined, page_id?: string) => {
-      const cur = igs.get(id);
-      if (cur) { if (page_id && !cur.page_id) cur.page_id = page_id; if (username && !cur.username) cur.username = username; return; }
-      igs.set(id, { id, username: username ?? "", page_id });
+    const pageToken = new Map<string, string>();
+    const addIg = (ig: Ig, page_id?: string) => {
+      const cur = igs.get(ig.id);
+      if (cur) { if (page_id && !cur.page_id) cur.page_id = page_id; if (ig.username && !cur.username) cur.username = ig.username; return; }
+      igs.set(ig.id, { id: ig.id, username: ig.username ?? "", page_id });
     };
 
-    // Instagram de cada página — é assim que o Gerenciador acha o Instagram ligado
-    // só à página (sem BM). Usa a chave da própria página quando a Meta dá uma.
-    // Cada campo em chamada separada: um campo sem permissão derruba a chamada inteira.
-    const perPage: Record<string, { found: number; errors: Set<string> }> = {};
-    const pageCall = async (label: string, pageId: string, fn: (tk: string) => Promise<Ig[]>) => {
-      const stat = (perPage[label] ??= { found: 0, errors: new Set() });
-      try { const list = await fn(pageToken.get(pageId) ?? token); stat.found += list.length; for (const ig of list) addIg(ig.id, ig.username, pageId); }
-      catch (e: any) { stat.errors.add(String(e.message).slice(0, 120)); }
-    };
-    const field = (name: string) => async (tk: string, pageId: string) => {
-      const r = await graph<Record<string, Ig | undefined>>(pageId, tk, { fields: `${name}{id,username}` });
-      return r[name] ? [r[name]!] : [];
-    };
-    const ids = [...pages.keys()].slice(0, 40);
-    for (let i = 0; i < ids.length; i += 8) {
-      await Promise.all(ids.slice(i, i + 8).flatMap((id) => [
-        pageCall("Página › Instagram profissional", id, (tk) => field("instagram_business_account")(tk, id)),
-        pageCall("Página › Instagram conectado", id, (tk) => field("connected_instagram_account")(tk, id)),
-        pageCall("Página › Instagrams da página", id, (tk) => graph<List<Ig>>(`${id}/instagram_accounts`, tk, { fields: "id,username" }).then((r) => r.data ?? [])),
-        pageCall("Página › Instagram criado pela página", id, (tk) => graph<List<Ig>>(`${id}/page_backed_instagram_accounts`, tk, { fields: "id,username" }).then((r) => r.data ?? [])),
-      ]));
-    }
-    for (const [source, st] of Object.entries(perPage)) {
-      debug.push({ source, result: `${st.found} encontrado(s)${st.errors.size ? ` · erro: ${[...st.errors][0]}` : ""}` });
-    }
-    for (const list of [actIg, actConnectedIg, bmIg, bmOwnedIg]) for (const ig of list?.data ?? []) addIg(ig.id, ig.username);
+    for (const { token, name: who } of profiles.values()) {
+      let limited = false;
+      const all = async <T,>(path: string, params: Record<string, unknown>, max = 1000): Promise<T[]> => {
+        const first = await graph<List<T>>(path, token, params);
+        const out = [...(first.data ?? [])];
+        let next = first.paging?.next;
+        while (next && out.length < max) {
+          const json = (await (await fetch(next, { signal: AbortSignal.timeout(60_000) })).json().catch(() => ({}))) as List<T> & { error?: unknown };
+          if (json.error) break;
+          out.push(...(json.data ?? []));
+          next = json.paging?.next;
+        }
+        return out;
+      };
+      const safe = async <T,>(source: string, fn: () => Promise<T[]>): Promise<T[]> => {
+        if (limited) return [];
+        try { const r = await fn(); debug.push({ source: `${who} › ${source}`, result: `${r.length} encontrado(s)` }); return r; }
+        catch (e: any) { const m = String(e.message); if (isLimit(m)) limited = true; debug.push({ source: `${who} › ${source}`, result: `erro: ${m.slice(0, 160)}` }); return []; }
+      };
 
-    // Sem @: tenta ler com a chave da página ligada ao Instagram.
-    const unnamed = [...igs.values()].filter((ig) => !ig.username && ig.page_id && pageToken.has(ig.page_id)).slice(0, 40);
+      // Descobre uma vez se a Meta deixa trazer o Instagram junto da página; depois não tenta de novo.
+      let igFields = ",instagram_business_account{id,username},connected_instagram_account{id,username}";
+      const pagesOf = async (path: string, extra = ""): Promise<PageRow[]> => {
+        try { return await all<PageRow>(path, { fields: `id,name${extra}${igFields}`, limit: 100 }); }
+        catch (e: any) {
+          if (isLimit(String(e.message)) || !igFields) throw e;
+          igFields = "";
+          return all<PageRow>(path, { fields: `id,name${extra}`, limit: 100 });
+        }
+      };
+      const take = (rows: PageRow[], business?: { id: string; name: string }) => {
+        for (const p of rows) {
+          const cur = pages.get(p.id);
+          if (!cur) pages.set(p.id, { id: p.id, name: p.name, ...(business ? { business_id: business.id, business: business.name } : {}) });
+          else if (business && !cur.business_id) Object.assign(cur, { business_id: business.id, business: business.name });
+          if (p.access_token) pageToken.set(p.id, p.access_token);
+          if (p.instagram_business_account) addIg(p.instagram_business_account, p.id);
+          if (p.connected_instagram_account) addIg(p.connected_instagram_account, p.id);
+        }
+      };
+
+      take(await safe("Suas páginas", () => pagesOf("me/accounts", ",access_token")));
+      const bms = await safe("Suas BMs", () => all<{ id: string; name: string }>("me/businesses", { fields: "id,name", limit: 100 }, 200));
+      for (const b of bms.slice(0, 30)) {
+        take(await safe(`${b.name} › páginas`, () => pagesOf(`${b.id}/owned_pages`)), b);
+        take(await safe(`${b.name} › páginas de clientes`, () => pagesOf(`${b.id}/client_pages`)), b);
+        // Sem o Instagram junto da página: pega o Instagram da BM (1 chamada por BM).
+        if (!igFields) for (const ig of await safe(`${b.name} › Instagram`, () => all<Ig>(`${b.id}/owned_instagram_accounts`, { fields: "id,username", limit: 100 }))) addIg(ig);
+      }
+    }
+
+    // Sem @: tenta ler com a chave da página ligada ao Instagram (no máximo 10).
+    const unnamed = [...igs.values()].filter((ig) => !ig.username && ig.page_id && pageToken.has(ig.page_id)).slice(0, 10);
     await Promise.all(unnamed.map(async (ig) => {
       const r = await graph<{ username?: string }>(ig.id, pageToken.get(ig.page_id!)!, { fields: "username" }).catch(() => null);
       if (r?.username) ig.username = r.username;
@@ -282,9 +311,8 @@ export const getAdAccountAssets = createServerFn({ method: "GET" })
     return {
       pages: [...pages.values()].sort((a, b) => a.name.localeCompare(b.name)),
       instagrams: [...igs.values()].sort((a, b) => rank(a) - rank(b) || (a.username || a.page_name || a.id).localeCompare(b.username || b.page_name || b.id)),
-      pixels: pixels.data ?? [],
-      timezone: acc?.timezone_name ?? "America/New_York",
       debug,
+      fetched_at: new Date().toISOString(),
     };
   });
 
