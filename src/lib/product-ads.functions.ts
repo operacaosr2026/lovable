@@ -4,7 +4,7 @@ import { requireOwnerContext } from "@/integrations/supabase/workspace-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metaTokenForAccount } from "@/lib/lg-card-ad-spend.server";
 import { driveDownload, driveDownloadRange, driveFileMeta } from "@/lib/drive.server";
-import { creativeFeaturesSpec, textOptimizationOn } from "@/lib/ad-ai-features";
+import { creativeFeaturesSpec } from "@/lib/ad-ai-features";
 import { ATTRIBUTION_KEYS, LIFECYCLE_KEYS, RETENTION_DAYS, adSetGoal, attributionSpec, type Attribution, type Lifecycle } from "@/lib/ad-schedule";
 import { MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAdset } from "@/lib/ad-plan";
 
@@ -676,7 +676,7 @@ export const createAdInAdset = createServerFn({ method: "POST" })
           status: cfg.status,
           creative: {
             name: ad.name, object_story_spec: identity,
-            ...creativeExtras(cfg, t),
+            ...creativeExtras(cfg),
             ...(cfg.url_tags ? { url_tags: cfg.url_tags } : {}),
           },
           creative_asset_groups_spec: {
@@ -702,7 +702,7 @@ export const createAdInAdset = createServerFn({ method: "POST" })
           name: ad.name,
           url_tags: cfg.url_tags || undefined,
           ...spec,
-          ...creativeExtras(cfg, ad.format === "carousel" ? { titles: [], bodies: [], descriptions: [] } : t),
+          ...creativeExtras(cfg),
         }, "POST");
         const r = await graph<{ id: string }>(`${pub.ad_account_id}/ads`, token, {
           name: ad.name, adset_id: data.adset_id, creative: { creative_id: creative.id }, status: cfg.status,
@@ -755,11 +755,10 @@ function textsFor(cfg: AdPublicationConfig, creatives: any[]): AdTexts {
 
 type Identity = { page_id: string; instagram_user_id?: string };
 
-// Melhorias da Meta (tudo desligado menos o escolhido; "otimizar texto por pessoa"
-// liga sozinho com mais de um título/descrição) e anúncios com vários anunciantes.
-function creativeExtras(cfg: AdPublicationConfig, t: AdTexts) {
+// Melhorias da Meta (tudo desligado menos o escolhido) e anúncios com vários anunciantes.
+function creativeExtras(cfg: AdPublicationConfig) {
   return {
-    degrees_of_freedom_spec: creativeFeaturesSpec(cfg.ai_features, textOptimizationOn(t.titles.length, t.bodies.length)),
+    degrees_of_freedom_spec: creativeFeaturesSpec(cfg.ai_features),
     contextual_multi_ads: { enroll_status: cfg.multi_advertiser ? "OPT_IN" : "OPT_OUT" },
   };
 }

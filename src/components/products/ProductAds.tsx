@@ -1027,7 +1027,6 @@ function AiFeaturesPanel({ value, onChange, multiAdvertiser, onMultiAdvertiser }
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             Advantage+ criativo e afins: a Meta mexe na mídia, nos textos ou adiciona coisas ao anúncio. Tudo vai <strong className="text-foreground font-medium">desligado</strong>, menos o que você ligar aqui; fica salvo para a próxima campanha.
-            <span className="block mt-1"><strong className="text-foreground font-medium">Otimizar texto por pessoa</strong> liga sozinho quando o anúncio tem mais de um título ou descrição.</span>
           </p>
           {on.length > 0 && <button type="button" onClick={() => { onChange({}); onMultiAdvertiser(false); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0">Desligar tudo</button>}
         </div>
@@ -1123,7 +1122,7 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 // Lançamentos › Textos: até 5 títulos e 5 descrições (copy) do banco pra cada criativo.
-// Com mais de um, a Meta testa as combinações ("otimizar texto por pessoa").
+// Com mais de um, a Meta só combina se "Melhorias no texto" estiver ligado.
 function TextPicker({ creatives, copies, columns, pickOf, onPick }: {
   creatives: any[]; copies: ProductCopy[]; columns: TrafficColumn[];
   pickOf: (id: string) => TextPick; onPick: (creativeIds: string[], patch: Partial<TextPick>) => void;

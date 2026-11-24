@@ -2,13 +2,12 @@
 // Vão em degrees_of_freedom_spec.creative_features_spec como OPT_IN/OPT_OUT. Sem
 // mandar, a Meta usa o padrão dela (várias ligadas); aqui tudo vai desligado,
 // menos o que a pessoa ligar. ai: true = gera mídia/texto novo com IA.
-// "Otimizar texto por pessoa" (text_optimizations) não está aqui: liga sozinho
-// quando o anúncio tem mais de um título ou descrição (ver textOptimizationOn).
 
 export type AiFeature = { key: string; label: string; help: string; group: AiGroup; ai?: boolean };
 export type AiGroup = "text" | "site" | "media" | "translate" | "extras";
 
 export const AI_FEATURES: AiFeature[] = [
+  { group: "text", key: "text_optimizations", label: "Melhorias no texto", help: "Com vários títulos e textos, a Meta combina e mostra pra cada pessoa o que funciona melhor com ela." },
   { group: "text", key: "text_generation", label: "Geração de texto (Advantage+)", help: "A Meta cria variações do seu texto com IA.", ai: true },
   { group: "text", key: "enhance_cta", label: "Melhorar botão", help: "Junta frases do anúncio ao botão de ação." },
   { group: "text", key: "description_automation", label: "Descrição automática", help: "Cria a descrição abaixo do título sozinha." },
@@ -46,16 +45,12 @@ export const AI_GROUP_LABEL: Record<AiGroup, string> = {
   text: "Texto", site: "Site e produtos", media: "Mídia", translate: "Tradução", extras: "Outros",
 };
 
-// Ligado quando o anúncio tem mais de um título ou mais de uma descrição.
-export const textOptimizationOn = (titles: number, bodies: number) => titles > 1 || bodies > 1;
-
 // on = chaves ligadas; o resto vai explicitamente desligado.
-export function creativeFeaturesSpec(on: Record<string, boolean> | undefined, textOptimization: boolean) {
+export function creativeFeaturesSpec(on: Record<string, boolean> | undefined) {
   const status = (v: boolean) => ({ enroll_status: v ? "OPT_IN" : "OPT_OUT" });
   return {
     creative_features_spec: {
       ...Object.fromEntries(AI_FEATURES.map((f) => [f.key, status(!!on?.[f.key])])),
-      text_optimizations: status(textOptimization),
     },
   };
 }
