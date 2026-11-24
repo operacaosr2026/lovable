@@ -140,7 +140,8 @@ function supplierMessageFor(rows: OrderListRow[]): string {
     const situacao = r.attentionWhy || (r.deliveryStatus ? DELIVERY[r.deliveryStatus]?.[0] : null) || "verificar";
     const local = r.local?.number && r.local.number !== "0" ? ` (local ${r.local.label} ${r.local.number})` : "";
     const last = r.lastEvent ? ` (último: ${r.lastEvent}${r.lastEventAt ? ` em ${ddmm(isoDateUS(r.lastEventAt))}` : ""})` : "";
-    return `${orderLabel(r.orderNumber)} - ${r.trackingCode ?? "sem rastreio"} - ${situacao}${local}${last}`;
+    const troca = r.exchangeFrom ? ` (troca do ${orderLabel(r.exchangeFrom)})` : "";
+    return `${orderLabel(r.orderNumber)}${troca} - ${r.trackingCode ?? "sem rastreio"} - ${situacao}${local}${last}`;
   });
   return ["Verificar os pedidos abaixo, por favor:", "", ...lines].join("\n");
 }

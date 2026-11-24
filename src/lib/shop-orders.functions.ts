@@ -760,9 +760,16 @@ export const listOrders = createServerFn({ method: "GET" })
       : { data: [] as { shop_id: string; order_external_id: string; status: string }[] };
     const chargebackStatus = new Map<string, string>();
     for (const d of cbs ?? []) if (d.status !== "won") chargebackStatus.set(`${d.shop_id}:${d.order_external_id}`, d.status);
+    // Troca gerada pelo Atendimento (tag REENVIO-*): de qual pedido veio — vai na mensagem pro fornecedor.
+    const exGids = ((rows ?? []) as any[]).filter((o) => /reenvio/i.test(o.tags ?? "")).map((o) => `gid://shopify/Order/${o.external_id}`);
+    const { data: exch } = exGids.length
+      ? await (supabaseAdmin as any).from("support_exchange_requests").select("new_order_id,order_number").eq("owner_id", context.ownerId).in("new_order_id", exGids)
+      : { data: [] as any[] };
+    const exchangeFrom = new Map(((exch ?? []) as any[]).map((x) => [String(x.new_order_id).split("/").pop()!, x.order_number as string]));
     return ((rows ?? []) as any[]).map(({ line_items, raw_financial_status, tags, cancelled_at, ...o }) => ({
       ...o,
       chargeback_status: chargebackStatus.get(`${o.shop_id}:${o.external_id}`) ?? null,
+      exchange_from: exchangeFrom.get(String(o.external_id)) ?? null,
       raw: {
         financial_status: raw_financial_status ?? null,
         tags: tags ?? null,

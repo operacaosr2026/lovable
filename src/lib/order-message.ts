@@ -17,7 +17,12 @@ function trailingOrderNumber(label: string): number {
 // esticam o intervalo — senão o fornecedor enviaria de novo o que ficou no meio;
 // o que cair fora dele vai numa linha própria.
 export type SupplierDontSend = { label: string; reason: string };
-export type SupplierMessageBlock = { shopName: string; shopDomain: string | null; orderLabels: string[]; looseLabels?: string[]; supplierResends?: string[]; dontSend?: SupplierDontSend[] };
+// exchangeFrom: pedido de troca (Atendimento) → pedido de origem; aparece entre
+// parênteses na Obs. ("#L6-1507 (troca do #L6-1064)").
+export type SupplierMessageBlock = {
+  shopName: string; shopDomain: string | null; orderLabels: string[]; looseLabels?: string[]; supplierResends?: string[]; dontSend?: SupplierDontSend[];
+  exchangeFrom?: Record<string, string>;
+};
 
 export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: string): string {
   const live = blocks.filter((b) => b.orderLabels.length > 0);
@@ -39,9 +44,14 @@ export function buildSupplierMessage(blocks: SupplierMessageBlock[], total?: str
     })
     .join("\n\n");
   if (!body) return "";
-  const resends = live.flatMap((b) => [...(b.supplierResends ?? [])].sort((a, c) => trailingOrderNumber(a) - trailingOrderNumber(c)));
+  const withOrigin = (b: SupplierMessageBlock, l: string) => (b.exchangeFrom?.[l] ? `${l} (troca do ${b.exchangeFrom[l]})` : l);
+  const byNum = (a: string, c: string) => trailingOrderNumber(a) - trailingOrderNumber(c);
+  const resends = live.flatMap((b) => [...(b.supplierResends ?? [])].sort(byNum).map((l) => withOrigin(b, l)));
+  // Outras trocas (erro da empresa — pagas normalmente) também dizem de onde vieram.
+  const exchanges = live.flatMap((b) => b.orderLabels.filter((l) => b.exchangeFrom?.[l] && !(b.supplierResends ?? []).includes(l)).sort(byNum).map((l) => `${l} é troca do ${b.exchangeFrom![l]}`));
   const head = `Enviar os pedidos abaixo, já pagos! Favor enviar imediatamente:${total ? `\n\n*Valor total: ${total}*` : ""}`;
-  const obs = resends.length ? `\n\n*Obs.: reenvio fornecedor (custo $0.00): ${resends.join(", ")}*` : "";
+  const obs = (resends.length ? `\n\n*Obs.: reenvio fornecedor (custo $0.00): ${resends.join(", ")}*` : "")
+    + (exchanges.length ? `\n\n*Obs.: ${exchanges.join("; ")}*` : "");
   const holdObs = blockedInRange.length
     ? `\n\n*Obs.: NÃO enviar ${blockedInRange.length === 1 ? "o pedido" : "os pedidos"} ${blockedInRange.map((h) => `${h.label} (${h.reason})`).join(", ")}.*`
     : "";

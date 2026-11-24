@@ -413,17 +413,18 @@ export function LgOrders({
 
   // Texto pro fornecedor: agrupa os pedidos selecionados por loja com o range de números.
   const supplierSelection = useMemo(() => {
-    const byShop = new Map<string, { labels: string[]; resends: string[]; loose: string[] }>();
+    const byShop = new Map<string, { labels: string[]; resends: string[]; loose: string[]; exchangeFrom: Record<string, string> }>();
     const orderIds: string[] = [];
     for (const group of groups) {
       for (const [shopId, orders] of group.byShop.entries()) {
         for (const o of orders) {
           if (!selected.has(o.id)) continue;
-          if (!byShop.has(shopId)) byShop.set(shopId, { labels: [], resends: [], loose: [] });
+          if (!byShop.has(shopId)) byShop.set(shopId, { labels: [], resends: [], loose: [], exchangeFrom: {} });
           const b = byShop.get(shopId)!;
           b.labels.push(orderLabel(o));
           if (o.supplier_hold_released_at) b.loose.push(orderLabel(o));
           if (orderTags(o).some((t) => t.toLowerCase() === "reenvio-fornecedor")) b.resends.push(orderLabel(o));
+          if (o.exchange_from) b.exchangeFrom[orderLabel(o)] = orderLabel({ order_number: o.exchange_from });
           orderIds.push(o.id);
         }
       }
@@ -435,6 +436,7 @@ export function LgOrders({
       orderLabels: b.labels,
       looseLabels: b.loose,
       supplierResends: b.resends,
+      exchangeFrom: b.exchangeFrom,
       // O que não é pra enviar (separado, reembolsado, chargeback): o que cair
       // dentro do intervalo vira "NÃO enviar" no fim da mensagem.
       dontSend: [
