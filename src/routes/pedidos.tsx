@@ -350,7 +350,7 @@ function PedidosPage() {
                           <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDate(r.supplierRefund.date)}</p>
                         </> : <>
                           <Pill map={SUPPLIER} value={r.supplierStatus} />
-                          {r.supplierPaidAt && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDate(r.supplierPaidAt)}</p>}
+                          {r.supplierPaidAt && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDate(r.supplierPaidAt)}{r.supplierName ? ` · ${r.supplierName}` : ""}</p>}
                           {r.supplierRefund?.status === "pendente" && <p className="text-[10px] text-orange-600 dark:text-orange-400 font-medium">Reembolso pendente</p>}
                         </>}
                       </td>
@@ -841,6 +841,7 @@ function OrderSheet({ id, onClose }: { id: string | null; onClose: () => void })
             <Section icon={Factory} title="Fornecedor e custo">
               <Row label="Custo do pedido">{d.supplier.cost > 0 ? money(d.supplier.cost) : "$0 (sem custo)"}</Row>
               <Row label="Situação"><Pill map={SUPPLIER} value={d.supplier.status} /></Row>
+              {d.supplier.batch?.supplier && <Row label="Fornecedor"><span className="font-semibold">{d.supplier.batch.supplier}</span></Row>}
               {/* Data do pagamento: a do lote (a que se ajusta em "Alterar data de pagamento"); sem lote, quando foi marcado pago. */}
               {(d.supplier.batch || d.supplier.paidAt) && <Row label="Pago em">{d.supplier.batch ? fmtDate(d.supplier.batch.date) : fmtDate(d.supplier.paidAt)}</Row>}
               {d.supplier.refunds.map((x, i) => (

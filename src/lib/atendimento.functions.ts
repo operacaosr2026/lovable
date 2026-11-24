@@ -835,7 +835,7 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
     let orders: any[] = [];
     if (idList.length) {
       const { data: rows, error } = await supabaseAdmin.from("shop_orders")
-        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at,cancel_reason:raw->>cancel_reason,payment_status,supplier_hold_released_at,line_items:raw->line_items")
+        .select("id,shop_id,external_id,order_number,created_at_shopify,revenue,currency,shopify_financial_status,delivery_status,delivered_at,problem_at,tracking_code,tracking_url,tracking_code_history,carrier,phone:raw->customer->>phone,ship_phone:raw->shipping_address->>phone,first_name:raw->customer->>first_name,last_name:raw->customer->>last_name,cancelled_at:raw->>cancelled_at,cancel_reason:raw->>cancel_reason,payment_status,payment_batch_id,supplier_hold_released_at,line_items:raw->line_items")
         .eq("user_id", context.ownerId).in("id", idList)
         .order("created_at_shopify", { ascending: false });
       if (error) throw new Error(error.message);
@@ -852,6 +852,12 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
       ? await supabaseAdmin.from("track123_integrations").select("shop_id,tracking_link_template").in("shop_id", shopIds)
       : { data: [] as { shop_id: string; tracking_link_template: string | null }[] };
     const templateByShop = new Map((integs ?? []).map((i) => [i.shop_id, i.tracking_link_template]));
+    // Fornecedor que recebeu o pagamento do pedido (do lote).
+    const batchIds = [...new Set(orders.map((o) => o.payment_batch_id).filter(Boolean))] as string[];
+    const { data: batchRows } = batchIds.length
+      ? await supabaseAdmin.from("shop_order_payment_batches").select("id,supplier,payment_date").in("id", batchIds)
+      : { data: [] as { id: string; supplier: string | null; payment_date: string }[] };
+    const batchBy = new Map((batchRows ?? []).map((b) => [b.id, b]));
     // Chargeback/inquiry do pedido (o mais recente), pra aparecer no card.
     const extIds = orders.map((o) => o.external_id).filter(Boolean);
     const { data: disputes } = extIds.length
@@ -900,6 +906,8 @@ export const getSupportCustomer = createServerFn({ method: "GET" })
         // Códigos anteriores (trocados à mão ou pela Shopify), mais recente primeiro.
         trackingHistory: (Array.isArray(o.tracking_code_history) ? [...o.tracking_code_history].reverse() : []) as { code: string; until: string }[],
         local: localBy.get(o.id) ?? null,
+        supplier: o.payment_status === "paid" && o.payment_batch_id && batchBy.get(o.payment_batch_id)?.supplier
+          ? { name: batchBy.get(o.payment_batch_id)!.supplier as string, paidAt: batchBy.get(o.payment_batch_id)!.payment_date } : null,
         carrier: o.carrier, cancelled: !!o.cancelled_at, cancelReason: o.cancelled_at ? (o.cancel_reason ?? null) : null,
         dispute: disputeBy.get(`${o.shop_id}:${o.external_id}`) ?? null,
         // Item repetido ainda sem rastreio (mesma regra de Pedidos › "Aguardando

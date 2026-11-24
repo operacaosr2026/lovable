@@ -47,7 +47,9 @@ export type OrderListRow = {
   deliveryStatus: string | null;
   supplierStatus: string | null; supplierPaidAt: string | null;
   // Reembolso do fornecedor (Atendimento › Reembolso): confirmado troca o "Pago" por "Reembolsado".
-  supplierRefund: { status: "pendente" | "confirmado"; amount: number; date: string } | null; trackingCode: string | null; trackingUrl: string | null; lastEvent: string | null; lastEventAt: string | null;
+  supplierRefund: { status: "pendente" | "confirmado"; amount: number; date: string } | null;
+  // Fornecedor que recebeu o pagamento (do lote: Alice, FlowBorder…).
+  supplierName: string | null; trackingCode: string | null; trackingUrl: string | null; lastEvent: string | null; lastEventAt: string | null;
   // Transportadora local dos EUA (GOFO, USPS…) e o código dela — mesma regra do Atendimento.
   local: { label: string; number: string | null; url: string | null } | null;
   // Prazo de postagem (3 dias úteis da compra/reenvio), só pra quem ainda vai ser enviado.
@@ -302,9 +304,10 @@ export const listAllOrders = createServerFn({ method: "GET" })
     // Data do pagamento ao fornecedor: a do lote (a que se ajusta em "Alterar data de pagamento").
     const batchIds = [...new Set(list.map((o) => o.payment_batch_id).filter(Boolean))] as string[];
     const { data: batches } = batchIds.length
-      ? await supabaseAdmin.from("shop_order_payment_batches").select("id,payment_date").in("id", batchIds)
+      ? await supabaseAdmin.from("shop_order_payment_batches").select("id,payment_date,supplier").in("id", batchIds)
       : { data: [] as any[] };
     const batchDate = new Map((batches ?? []).map((b: any) => [b.id as string, b.payment_date as string]));
+    const batchSupplier = new Map((batches ?? []).map((b: any) => [b.id as string, (b.supplier as string | null) ?? null]));
     const localBy = await localCarriers(list);
     // Reembolso do fornecedor do pedido (confirmado tem prioridade; senão o pendente mais recente).
     const { data: sRefunds } = ids.length
@@ -353,6 +356,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
         disputifier: disputifierAlert(o.refunds),
         deliveryStatus: s.status, supplierStatus: o.payment_status, trackingCode: o.tracking_code,
         supplierRefund: refundBy.get(o.id) ?? null,
+        supplierName: o.payment_status === "paid" && o.payment_batch_id ? batchSupplier.get(o.payment_batch_id) ?? null : null,
         // Antigo (até o corte): fornecedor conta como pago.
         ...(o.order_date && o.order_date <= LEGACY_CUTOFF && o.payment_status !== "paid" ? { supplierStatus: "paid" } : {}),
         supplierPaidAt: o.payment_status === "paid" ? (batchDate.get(o.payment_batch_id) ?? (o.paid_at ? isoDateUS(o.paid_at) : null)) : null,
@@ -386,7 +390,7 @@ async function loadOrderDetail(ownerId: string, id: string, supabase: any) {
     supabaseAdmin.from("shop_order_tracking").select("tracking_number,carrier,tracking_status,last_event_at,last_event_label,timeline,shipped_at,delivered_at,problem_at,edd_from,edd_to,replaced_packages,extra_packages,local_tracking_number").eq("order_id", o.id).maybeSingle(),
     supabaseAdmin.from("shop_order_disputes").select("type,status,reason,amount,initiated_at,evidence_due_by,finalized_on").eq("user_id", ownerId).eq("shop_id", o.shop_id).eq("order_external_id", o.external_id).order("initiated_at", { ascending: false }),
     supabaseAdmin.from("chargeback_alert_followups").select("status,dunning_step,dunning_last_at,dunning_stop_reason,recovered_amount,recovered_at,recovery_order_name,recovery_invoice_url,excluded_at").eq("shop_id", o.shop_id).eq("order_external_id", o.external_id).maybeSingle(),
-    o.payment_batch_id ? supabaseAdmin.from("shop_order_payment_batches").select("batch_number,payment_date,total_amount,total_orders").eq("id", o.payment_batch_id).maybeSingle() : Promise.resolve({ data: null }),
+    o.payment_batch_id ? supabaseAdmin.from("shop_order_payment_batches").select("batch_number,payment_date,total_amount,total_orders,supplier").eq("id", o.payment_batch_id).maybeSingle() : Promise.resolve({ data: null }),
     email ? supabaseAdmin.from("support_conversations").select("id,subject,status,last_message_at,message_count").eq("owner_id", ownerId).eq("customer_email", email).order("last_message_at", { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
     costProductsFor(supabase, ownerId).catch(() => []),
   ]);
@@ -478,7 +482,7 @@ async function loadOrderDetail(ownerId: string, id: string, supabase: any) {
     },
     supplier: {
       status: (legacy && o.payment_status !== "paid" ? "paid" : o.payment_status) as string | null, paidAt: (o.paid_at as string | null) ?? null, cost,
-      batch: batchRes.data ? { number: (batchRes.data as any).batch_number as number, date: (batchRes.data as any).payment_date as string, total: Number((batchRes.data as any).total_amount ?? 0), orders: Number((batchRes.data as any).total_orders ?? 0) } : null,
+      batch: batchRes.data ? { number: (batchRes.data as any).batch_number as number, date: (batchRes.data as any).payment_date as string, total: Number((batchRes.data as any).total_amount ?? 0), orders: Number((batchRes.data as any).total_orders ?? 0), supplier: ((batchRes.data as any).supplier as string | null) ?? null } : null,
       holdReleasedAt: (o.supplier_hold_released_at as string | null) ?? null,
       refunds: ((sRefunds ?? []) as any[]).map((r) => ({
         status: r.status as "pendente" | "confirmado", amount: Number(r.amount ?? 0), note: (r.note as string | null) ?? null,

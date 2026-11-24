@@ -268,6 +268,12 @@ export function CustomerPanel({ conversationId, allTags, onChanged }: {
                     {/* Cancelado antes de enviar: "Pendente envio" não vale mais (#L6-1195). */}
                     {o.delivery && !o.tracking && !o.cancelled && <DeliveryBadge status={o.delivery} />}
                   </div>
+                  {o.supplier && (
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground">
+                      <Factory className="size-3 shrink-0" />
+                      <span>Fornecedor: <span className="font-medium text-foreground">{o.supplier.name}</span> · pago {formatDateUS(o.supplier.paidAt, { day: "2-digit", month: "2-digit" })}</span>
+                    </div>
+                  )}
                   {(o.cancelled || o.dispute) && <div className="flex flex-wrap gap-1 mt-2">
                     {o.cancelled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">
                       Cancelado{o.cancelReason ? ` · ${CANCEL_REASON[o.cancelReason] ?? o.cancelReason}` : ""}
