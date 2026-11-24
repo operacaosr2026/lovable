@@ -25,7 +25,7 @@ function assertCaixa(ctx: Ctx) {
 
 export type WiseEntry = {
   id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null;
-  reconciled: boolean; usd_amount: number | null; source_cash_id: string | null; closes_transfer: boolean; created_at: string;
+  reconciled: boolean; usd_amount: number | null; source_cash_id: string | null; closes_transfer: boolean; note: string | null; created_at: string;
 };
 // converted = US$ já convertido em entradas ligadas a este envio; remaining = o que falta.
 export type WisePendingTransfer = {
@@ -97,6 +97,7 @@ const EntryInput = z.object({
   usd_amount: z.number().positive().max(10_000_000).nullable().default(null),
   source_cash_id: z.string().uuid().nullable().default(null),
   closes_transfer: z.boolean().default(false),
+  note: z.string().trim().max(2000).nullable().default(null),
 });
 
 const addMonths = (iso: string, n: number) => {

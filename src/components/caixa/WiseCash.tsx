@@ -6,7 +6,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   ArrowDown, ArrowDownLeft, ArrowRight, ArrowUp, ArrowUpDown, ArrowUpRight, BarChart3, CheckCircle2, ChevronLeft, ChevronRight,
-  Circle, Landmark, Layers, List as ListIcon, Loader2, Pencil, PieChart as PieIcon, Plus, Search, Tag, Trash2, TrendingDown, TrendingUp, Wallet,
+  Circle, Landmark, Layers, StickyNote, List as ListIcon, Loader2, Pencil, PieChart as PieIcon, Plus, Search, Tag, Trash2, TrendingDown, TrendingUp, Wallet,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,7 @@ const EXPENSE_CATS = ["Funcionário", "Contabilidade", "Impostos", "Ferramentas"
 const INCOME_CATS = ["Envio do caixa (US$)", "Saldo inicial", "Outros"];
 
 type Draft = {
-  id?: string; kind: "income" | "expense"; amount: string; date: string; category: string; description: string;
+  id?: string; kind: "income" | "expense"; amount: string; date: string; category: string; description: string; note: string;
   reconciled: boolean; usd: string; source_cash_id: string | null; repeat: number;
   // Envio do caixa sendo convertido (só pra mostrar quanto falta no diálogo).
   closes_transfer: boolean; transfer?: WisePendingTransfer;
@@ -119,7 +119,7 @@ export function WiseCash() {
     const words = search.toLowerCase().split(/\s+/).filter(Boolean);
     return stats.inMonth
       .filter((e) => filter === "todos" || (filter === "aberto" ? !e.reconciled : e.kind === filter))
-      .filter((e) => !words.length || words.every((w) => `${e.description ?? ""} ${e.category ?? ""}`.toLowerCase().includes(w)))
+      .filter((e) => !words.length || words.every((w) => `${e.description ?? ""} ${e.category ?? ""} ${e.note ?? ""}`.toLowerCase().includes(w)))
       .sort((a, b) => (asc ? 1 : -1) * (a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at)));
   }, [stats.inMonth, search, filter, asc]);
 
@@ -134,7 +134,7 @@ export function WiseCash() {
     return max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
   })();
   const newDraft = (kind: "income" | "expense", over: Partial<Draft> = {}): Draft => ({
-    kind, amount: "", date: today, category: kind === "expense" ? "" : "Envio do caixa (US$)", description: "",
+    kind, amount: "", date: today, category: kind === "expense" ? "" : "Envio do caixa (US$)", description: "", note: "",
     reconciled: true, usd: "", source_cash_id: null, repeat: 1, closes_transfer: false, ...over,
   });
   const fromTransfer = (t: WisePendingTransfer) => newDraft("income", {
@@ -375,6 +375,7 @@ export function WiseCash() {
                           {!e.reconciled && <span className="shrink-0 text-[10px] text-amber-600">{e.kind === "expense" ? "a pagar" : "a confirmar"}</span>}
                         </div>
                         {e.usd_amount ? <p className="text-[11px] text-muted-foreground truncate">{usd(e.usd_amount)} • Câmbio {rate(e.amount / e.usd_amount)}</p> : null}
+                        {e.note ? <p className="text-[11px] text-amber-700 dark:text-amber-400 truncate" title={e.note}><StickyNote className="size-3 inline -mt-0.5 mr-1" />{e.note}</p> : null}
                       </td>
                       <td className={`py-2 pr-2 text-right font-semibold tabular-nums whitespace-nowrap ${e.kind === "income" ? "text-emerald-600" : "text-rose-600"}`}>
                         {e.kind === "income" ? "+" : "−"}{brl(e.amount)}
@@ -382,7 +383,7 @@ export function WiseCash() {
                       <td className="py-2 pr-3 whitespace-nowrap text-right">
                         <button onClick={() => setDraft({
                           id: e.id, kind: e.kind, amount: e.amount.toFixed(2).replace(".", ","), date: e.date, category: e.category ?? "",
-                          description: e.description ?? "", reconciled: e.reconciled, usd: e.usd_amount ? e.usd_amount.toFixed(2) : "",
+                          description: e.description ?? "", note: e.note ?? "", reconciled: e.reconciled, usd: e.usd_amount ? e.usd_amount.toFixed(2) : "",
                           source_cash_id: e.source_cash_id, repeat: 1, closes_transfer: e.closes_transfer,
                         })} className="size-7 inline-grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Editar">
                           <Pencil className="size-3.5" />
@@ -488,6 +489,7 @@ function EntryDialog({ draft, categories, onClose, onSaved }: { draft: Draft; ca
     mutationFn: async () => {
       const body = {
         kind: d.kind, amount, date: d.date, category: d.category.trim() || null, description: d.description.trim() || null,
+        note: d.note.trim() || null,
         reconciled: d.reconciled, usd_amount: usdAmount, source_cash_id: d.source_cash_id,
         closes_transfer: !!d.source_cash_id && d.closes_transfer,
       };
@@ -540,6 +542,10 @@ function EntryDialog({ draft, categories, onClose, onSaved }: { draft: Draft; ca
             </div>
           </Field>
           <Field label="Descrição (opcional)"><input value={d.description} onChange={(e) => set({ description: e.target.value })} maxLength={300} placeholder={income ? "" : "Ex.: salário João — novembro"} className={INPUT} /></Field>
+          <Field label="Nota (opcional)">
+            <textarea value={d.note} onChange={(e) => set({ note: e.target.value })} maxLength={2000} rows={3}
+              placeholder="Detalhes, combinados, pra que foi…" className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm outline-none focus:border-primary resize-y" />
+          </Field>
           <label className="flex items-center gap-2 text-xs cursor-pointer">
             <input type="checkbox" checked={d.reconciled} onChange={(e) => set({ reconciled: e.target.checked })} className="size-3.5 accent-primary" />
             {income ? "Já caiu na Wise (conciliado)" : "Já saiu da Wise (conciliado)"}
