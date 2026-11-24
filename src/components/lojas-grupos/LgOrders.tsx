@@ -315,6 +315,10 @@ export function LgOrders({
       if (pending && o.raw?.cancelled_at) continue;
       // Item repetido sem confirmação do cliente: vai pra seção separada.
       if (isHeld(o)) continue;
+      // A pagar mostra só o que falta pagar; Pagos só o já pago (dia parcial
+      // aparece nas duas abas, cada uma com a sua parte). Todos/busca: tudo.
+      if (!term && payFilter === "a_pagar" && !pending) continue;
+      if (!term && payFilter === "pagos" && pending) continue;
       const day = o.order_date as string;
       if (!byDate.has(day)) byDate.set(day, { totalOrders: 0, totalItems: 0, totalCost: 0, paidCount: 0, pendingCount: 0, byShop: new Map() });
       const d = byDate.get(day)!;
@@ -337,7 +341,7 @@ export function LgOrders({
           (shopNames[a] ?? "").localeCompare(shopNames[b] ?? "", "pt-BR", { numeric: true, sensitivity: "base" })));
         return { date, ...agg, byShop, dayStatus };
       });
-  }, [allOrders, costByShop, costProducts, shops]);
+  }, [allOrders, costByShop, costProducts, shops, payFilter, term]);
 
   // Separados (item repetido): mesmas regras de saída da fila (reembolso/chargeback).
   const heldAll = useMemo(() => ((heldQuery.data ?? []) as any[])
@@ -707,7 +711,7 @@ export function LgOrders({
         {!loading && filteredGroups.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
             {term ? `Nenhum pedido com "${search.trim()}" no período — aumente o período pra procurar mais pra trás.`
-              : groups.length === 0 ? "Nenhum pedido no período selecionado."
+              : allOrders.length === 0 ? "Nenhum pedido no período selecionado."
               : payFilter === "pagos" ? "Nenhum pedido pago no período — aumente o período pra ver o histórico."
               : "Todos os pedidos do período estão pagos. Veja em \"Pagos\"."}
           </div>
