@@ -530,7 +530,7 @@ export const markSupplierMessageCopied = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     assertAccess(context);
     const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/New_York", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "");
-    const line = `Enviado para o fornecedor em ${stamp}`;
+    const line = `Cobrança ao fornecedor em ${stamp}`;
     const { data: rows, error } = await supabaseAdmin.from("shop_orders").select("id,notice_note")
       .eq("user_id", context.ownerId).in("id", data.ids);
     if (error) throw new Error(error.message);

@@ -147,7 +147,7 @@ function supplierMessageFor(rows: OrderListRow[]): string {
 }
 
 // "Mensagem pro fornecedor": copia o texto direto e grava
-// "Enviado para o fornecedor em …" na nota de cada pedido.
+// "Cobrança ao fornecedor em …" na nota de cada pedido.
 function useCopySupplierMessage() {
   const qc = useQueryClient();
   const markFn = useServerFn(markSupplierMessageCopied);
