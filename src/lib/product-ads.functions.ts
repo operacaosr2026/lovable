@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metaTokenForAccount } from "@/lib/lg-card-ad-spend.server";
-import { driveDownload, drivePublicDownloadUrl } from "@/lib/drive.server";
+import { driveDownload, driveDownloadRange, driveFileMeta } from "@/lib/drive.server";
 import { creativeFeaturesSpec, textOptimizationOn } from "@/lib/ad-ai-features";
 import { ATTRIBUTION_KEYS, LIFECYCLE_KEYS, RETENTION_DAYS, adSetGoal, attributionSpec, type Attribution, type Lifecycle } from "@/lib/ad-schedule";
 import { MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAdset } from "@/lib/ad-plan";
@@ -15,6 +15,8 @@ import { MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAds
 // longa enquanto a Meta processa os vídeos.
 
 const GRAPH = "https://graph.facebook.com/v23.0";
+// Envio de vídeo em partes vai pro domínio de vídeo da Meta.
+const GRAPH_VIDEO = "https://graph-video.facebook.com/v23.0";
 // Formato flexível (creative_asset_groups_spec) segue a versão da documentação dele.
 const GRAPH_FLEX = "https://graph.facebook.com/v27.0";
 const BUCKET = "project-attachments";
@@ -56,6 +58,7 @@ export type AdPublicationConfig = {
   display_link?: string; // link de exibição (ex.: voultie.com)
   texts?: { mode: "creative" | "shared"; bodies: string[]; titles: string[]; descriptions: string[] }; // publicações antigas
   plan?: PlanAdset[];
+  adset_ids?: Record<string, string>; // conjuntos já criados (chave do plano → id na Meta), pra "tentar de novo"
   structure?: "single" | "per_creative"; // publicações antigas
 };
 // key = nó da árvore (publicações antigas usam creative_id).
@@ -132,6 +135,9 @@ export const getProductAdsSetup = createServerFn({ method: "GET" })
       db("product_ad_publications").select("id", { count: "exact", head: true }).eq("product_id", data.product_id).eq("user_id", ownerId),
     ]);
 
+    // Falha de conexão não pode virar "nenhuma conta conectada".
+    const failed = accounts.error ?? pubs.error;
+    if (failed) throw new Error(`Não consegui falar com o banco de dados agora (${failed.message}). Tente de novo em instantes.`);
     const storeIds = (shopifyPubs.data ?? []).map((p) => p.shopify_store_id);
     const { data: stores } = storeIds.length
       ? await supabaseAdmin.from("shopify_stores").select("id,name,shop_domain").in("id", storeIds)
@@ -370,10 +376,7 @@ export const uploadAdMedia = createServerFn({ method: "POST" })
 
     // Do Drive: a Meta baixa o vídeo direto do link público; a imagem passa pelo servidor.
     if (!c.media_path && c.drive_file_id) {
-      if (c.media_kind === "video") {
-        const v = await graph<{ id: string }>(`${pub.ad_account_id}/advideos`, token, { file_url: drivePublicDownloadUrl(c.drive_file_id), name: c.name || "Criativo" }, "POST");
-        return { kind: "video", video_id: v.id };
-      }
+      if (c.media_kind === "video") throw new Error("Vídeo do Drive vai em partes (startDriveVideoUpload)");
       const bytes = Buffer.from(await driveDownload(c.drive_file_id)).toString("base64");
       return { kind: "image", image_hash: await uploadImageBytes(pub.ad_account_id, token, bytes) };
     }
@@ -397,16 +400,80 @@ async function uploadImageBytes(adAccountId: string, token: string, bytes: strin
   return hash;
 }
 
+// ── Vídeo do Drive em partes (upload resumível da Meta) ──
+// O servidor lê cada parte do Drive e entrega direto pra Meta: nada fica guardado
+// aqui e não depende da Meta conseguir baixar do Drive (que trava com vídeo grande).
+
+async function graphVideo<T = any>(path: string, token: string, form: FormData): Promise<T> {
+  form.set("access_token", token);
+  const res = await fetch(`${GRAPH_VIDEO}/${path}`, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
+  const json: any = await res.json().catch(() => ({}));
+  if (json?.error) throw new Error(json.error.error_user_msg || json.error.error_user_title || json.error.message || "Erro na Meta");
+  if (!res.ok) throw new Error(`Meta respondeu ${res.status}`);
+  return json as T;
+}
+
+const fields = (o: Record<string, string | number>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, String(v)); return f; };
+
+export const startDriveVideoUpload = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ publication_id: z.string().uuid(), creative_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const pub = await loadPublication(context.ownerId, data.publication_id);
+    const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
+    if (!c.drive_file_id) throw new Error("Criativo não é do Drive");
+    const meta = await driveFileMeta(c.drive_file_id);
+    const size = Number(meta.size ?? 0);
+    if (!size) throw new Error("O Drive não informou o tamanho do vídeo");
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
+    await db("product_creatives").update({ last_used_at: new Date().toISOString() }).eq("id", c.id);
+    const r = await graphVideo<{ upload_session_id: string; video_id: string; start_offset: string; end_offset: string }>(
+      `${pub.ad_account_id}/advideos`, token, fields({ upload_phase: "start", file_size: size }),
+    );
+    return { upload_session_id: r.upload_session_id, video_id: r.video_id, start_offset: Number(r.start_offset), end_offset: Number(r.end_offset), size };
+  });
+
+export const transferDriveVideoChunk = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    publication_id: z.string().uuid(), creative_id: z.string().uuid(), upload_session_id: z.string().min(1),
+    start_offset: z.number().int().min(0), end_offset: z.number().int().min(1),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const pub = await loadPublication(context.ownerId, data.publication_id);
+    const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
+    const bytes = await driveDownloadRange(c.drive_file_id, data.start_offset, data.end_offset);
+    const form = fields({ upload_phase: "transfer", upload_session_id: data.upload_session_id, start_offset: data.start_offset });
+    form.set("video_file_chunk", new Blob([bytes]), "chunk.mp4");
+    const r = await graphVideo<{ start_offset: string; end_offset: string }>(`${pub.ad_account_id}/advideos`, token, form);
+    return { start_offset: Number(r.start_offset), end_offset: Number(r.end_offset) };
+  });
+
+export const finishDriveVideoUpload = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ publication_id: z.string().uuid(), creative_id: z.string().uuid(), upload_session_id: z.string().min(1) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const pub = await loadPublication(context.ownerId, data.publication_id);
+    const c = await loadCreative(context.ownerId, pub.product_id, data.creative_id);
+    const token = await tokenFor(context.ownerId, pub.ad_account_id);
+    await graphVideo(`${pub.ad_account_id}/advideos`, token, fields({ upload_phase: "finish", upload_session_id: data.upload_session_id, title: c.name || "Criativo" }));
+    return { ok: true };
+  });
+
 export const checkAdVideo = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ publication_id: z.string().uuid(), video_id: z.string().min(1) }).parse(d))
   .handler(async ({ context, data }) => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
     const token = await tokenFor(context.ownerId, pub.ad_account_id);
-    const v = await graph<{ status?: { video_status?: string } }>(data.video_id, token, { fields: "status" });
+    const v = await graph<{ status?: { video_status?: string; processing_progress?: number; processing_phase?: { status?: string; errors?: { message?: string }[] }; uploading_phase?: { status?: string; errors?: { message?: string }[] } } }>(data.video_id, token, { fields: "status" });
     const status = v.status?.video_status;
-    if (status === "error") return { state: "error" as const };
-    if (status !== "ready") return { state: "processing" as const };
+    if (status === "error") {
+      const why = v.status?.processing_phase?.errors?.[0]?.message ?? v.status?.uploading_phase?.errors?.[0]?.message;
+      return { state: "error" as const, error: why ? `A Meta não conseguiu processar o vídeo: ${why}` : "A Meta não conseguiu processar o vídeo" };
+    }
+    if (status !== "ready") return { state: "processing" as const, progress: v.status?.processing_progress ?? null };
     const thumbs = await graph<{ data: { uri: string; is_preferred: boolean }[] }>(`${data.video_id}/thumbnails`, token, { fields: "uri,is_preferred" });
     const thumb = thumbs.data?.find((t) => t.is_preferred) ?? thumbs.data?.[0];
     return { state: "ready" as const, thumbnail_url: thumb?.uri };
@@ -462,14 +529,17 @@ export const createAdset = createServerFn({ method: "POST" })
     // Ciclo de vida do cliente (ad_set_goal) é recente na API: se a Meta recusar
     // o campo, cria sem ele e avisa (o resto do conjunto vale).
     const goal = adSetGoal(cfg.lifecycle ?? "all", cfg.retention_days ?? 180);
+    let adsetId: string;
+    let warning: string | null = null;
     try {
-      const adset = await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, { ...params, ad_set_goal: goal }, "POST");
-      return { adset_id: adset.id, warning: null as string | null };
+      adsetId = (await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, { ...params, ad_set_goal: goal }, "POST")).id;
     } catch (e: any) {
       if (!/ad_set_goal|goal|lifecycle|ciclo de vida/i.test(String(e.message))) throw e;
-      const adset = await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, params, "POST");
-      return { adset_id: adset.id, warning: `Ciclo de vida do cliente não aplicado: ${e.message}` };
+      adsetId = (await graph<{ id: string }>(`${pub.ad_account_id}/adsets`, token, params, "POST")).id;
+      warning = `Ciclo de vida do cliente não aplicado: ${e.message}`;
     }
+    await db("product_ad_publications").update({ config: { ...cfg, adset_ids: { ...(cfg.adset_ids ?? {}), [set.key]: adsetId } } }).eq("id", pub.id);
+    return { adset_id: adsetId, warning };
   });
 
 export const createAdInAdset = createServerFn({ method: "POST" })

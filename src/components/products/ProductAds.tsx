@@ -12,9 +12,10 @@ import { getNamingTemplate } from "@/lib/naming.functions";
 import {
   AD_CTAS, getProductAdsSetup, getAdAccountAssets, startAdPublication, uploadAdMedia, checkAdVideo,
   createAdset, createAdInAdset, finishAdPublication, deleteAdPublication,
+  startDriveVideoUpload, transferDriveVideoChunk, finishDriveVideoUpload,
   type AdPublicationConfig, type AdMedia, type AdInstagram, type AdResult, type Gender,
 } from "@/lib/product-ads.functions";
-import { buildPlan, MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAd } from "@/lib/ad-plan";
+import { buildPlan, MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAd, type PlanAdset } from "@/lib/ad-plan";
 import { DEFAULT_TEMPLATES, codeLabel, codesIn, customCodes } from "@/lib/naming";
 import { NAMING_QK } from "@/components/products/Naming";
 import { useProductCopies } from "@/components/products/ProductCopies";
@@ -120,6 +121,9 @@ export function ProductAds({ productId }: { productId: string }) {
   const adFn = useServerFn(createAdInAdset);
   const finishFn = useServerFn(finishAdPublication);
   const deleteFn = useServerFn(deleteAdPublication);
+  const startVideoFn = useServerFn(startDriveVideoUpload);
+  const chunkFn = useServerFn(transferDriveVideoChunk);
+  const finishVideoFn = useServerFn(finishDriveVideoUpload);
 
   const setup = useQuery({ queryKey: ["product-ads", productId], queryFn: () => setupFn({ data: { product_id: productId } }) });
   const creativesQ = useQuery({ queryKey: ["creatives", productId], queryFn: () => creativesFn({ data: { product_id: productId } }) });
@@ -258,79 +262,10 @@ export function ProductAds({ productId }: { productId: string }) {
 
     setRunning(true);
     setNodes({ campaign: { state: "running", label: "Criando campanha" } });
-    const failures: { key: string; name: string; adset_name?: string; error: string }[] = [];
     try {
       const { publication_id } = await startFn({ data: { product_id: productId, config } });
       mark("campaign", "Campanha criada", "ok");
-
-      // 1) Mídias: sobe todas primeiro — a Meta processa os vídeos em paralelo.
-      const media = new Map<string, AdMedia>();
-      const mediaError = new Map<string, string>();
-      for (const c of chosen) {
-        mark(`m:${c.id}`, c.media_kind === "video" ? "Enviando vídeo" : "Enviando imagem");
-        try {
-          media.set(c.id, await uploadFn({ data: { publication_id, creative_id: c.id } }));
-          mark(`m:${c.id}`, c.media_kind === "video" ? "Meta processando" : "Imagem enviada", c.media_kind === "video" ? "running" : "ok");
-        } catch (e: any) {
-          mediaError.set(c.id, e.message);
-          mark(`m:${c.id}`, e.message, "error");
-        }
-      }
-
-      // 2) Espera os vídeos ficarem prontos (todos juntos).
-      const deadline = Date.now() + 15 * 60_000;
-      let pending = [...media.entries()].filter(([, m]) => m.kind === "video");
-      while (pending.length) {
-        const next: typeof pending = [];
-        for (const [id, m] of pending) {
-          if (m.kind !== "video") continue;
-          const r = await checkFn({ data: { publication_id, video_id: m.video_id } }).catch(() => ({ state: "processing" as const, thumbnail_url: undefined }));
-          if (r.state === "ready") { media.set(id, { ...m, thumbnail_url: r.thumbnail_url }); mark(`m:${id}`, "Vídeo pronto", "ok"); }
-          else if (r.state === "error") { media.delete(id); mediaError.set(id, "A Meta não conseguiu processar o vídeo"); mark(`m:${id}`, "A Meta não conseguiu processar o vídeo", "error"); }
-          else if (Date.now() > deadline) { media.delete(id); mediaError.set(id, "O vídeo demorou demais pra processar na Meta"); mark(`m:${id}`, "Demorou demais na Meta", "error"); }
-          else next.push([id, m]);
-        }
-        pending = next;
-        if (pending.length) await sleep(5000);
-      }
-
-      // 3) Conjuntos e anúncios.
-      for (const set of plan.adsets) {
-        const ready = set.ads.filter((ad) => ad.creative_ids.every((id) => media.has(id)));
-        for (const ad of set.ads.filter((a) => !ready.includes(a))) {
-          const err = ad.creative_ids.map((id) => mediaError.get(id)).find(Boolean) ?? "Mídia não enviada";
-          mark(ad.key, err, "error");
-          failures.push({ key: ad.key, name: ad.name, adset_name: set.name, error: err });
-        }
-        if (!ready.length) { mark(set.key, "Sem anúncios prontos", "error"); continue; }
-
-        mark(set.key, "Criando conjunto");
-        let adsetId: string;
-        try {
-          const r = await adsetFn({ data: { publication_id, adset_key: set.key } });
-          adsetId = r.adset_id;
-          mark(set.key, r.warning ? `Conjunto criado. ${r.warning}` : "Conjunto criado", "ok");
-          if (r.warning) toast.warning(r.warning);
-        } catch (e: any) {
-          mark(set.key, e.message, "error");
-          for (const ad of ready) { mark(ad.key, "Conjunto não foi criado", "error"); failures.push({ key: ad.key, name: ad.name, adset_name: set.name, error: e.message }); }
-          continue;
-        }
-        for (const ad of ready) {
-          mark(ad.key, "Criando anúncio");
-          try {
-            await adFn({ data: { publication_id, adset_key: set.key, ad_key: ad.key, adset_id: adsetId, media: pickMedia(media, ad) } });
-            mark(ad.key, "Anúncio criado", "ok");
-          } catch (e: any) {
-            mark(ad.key, e.message, "error");
-          }
-        }
-      }
-
-      const { status } = await finishFn({ data: { publication_id, failures } });
-      if (status === "ok") toast.success("Campanha publicada");
-      else if (status === "partial") toast.warning("Campanha publicada, mas alguns anúncios falharam");
-      else toast.error("Nenhum anúncio foi criado");
+      const status = await execute(publication_id, plan.adsets, chosen, {});
       if (status !== "error") { setSelected([]); setOverrides({}); }
     } catch (e: any) {
       mark("campaign", e.message, "error");
@@ -341,8 +276,139 @@ export function ProductAds({ productId }: { productId: string }) {
     }
   };
 
+  // Sobe uma mídia pra Meta. Vídeo do Drive vai em partes (o servidor lê do Drive e
+  // entrega à Meta); o resto vai inteiro.
+  const sendMedia = async (publication_id: string, c: any): Promise<AdMedia> => {
+    const key = `m:${c.id}`;
+    if (c.media_kind === "video" && !c.media_path && c.drive_file_id) {
+      mark(key, "Enviando vídeo 0%");
+      const s = await startVideoFn({ data: { publication_id, creative_id: c.id } });
+      let { start_offset, end_offset } = s;
+      while (start_offset < end_offset) {
+        const r = await chunkFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id, start_offset, end_offset } });
+        start_offset = r.start_offset;
+        end_offset = r.end_offset;
+        mark(key, `Enviando vídeo ${Math.min(100, Math.round((start_offset / s.size) * 100))}%`);
+      }
+      await finishVideoFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id } });
+      return { kind: "video", video_id: s.video_id };
+    }
+    mark(key, c.media_kind === "video" ? "Enviando vídeo" : "Enviando imagem");
+    return uploadFn({ data: { publication_id, creative_id: c.id } });
+  };
+
+  // Mídias → espera os vídeos → conjuntos → anúncios. Usado ao publicar e no
+  // "Tentar de novo" (adsetIds = conjuntos que já existem na Meta).
+  const execute = async (publication_id: string, adsets: PlanAdset[], creativesToSend: any[], adsetIds: Record<string, string>, nodePrefix = "") => {
+    const node = (key: string, label: string, state: NodeState["state"] = "running") => mark(nodePrefix + key, label, state);
+    const failures: { key: string; name: string; adset_name?: string; error: string }[] = [];
+    const media = new Map<string, AdMedia>();
+    const mediaError = new Map<string, string>();
+    for (const c of creativesToSend) {
+      try {
+        const m = await sendMedia(publication_id, c);
+        media.set(c.id, m);
+        mark(`m:${c.id}`, m.kind === "video" ? "Meta processando" : "Imagem enviada", m.kind === "video" ? "running" : "ok");
+      } catch (e: any) {
+        mediaError.set(c.id, e.message);
+        mark(`m:${c.id}`, e.message, "error");
+      }
+    }
+
+    // Espera os vídeos ficarem prontos (todos juntos), mostrando o andamento.
+    const deadline = Date.now() + 20 * 60_000;
+    let pending = [...media.entries()].filter(([, m]) => m.kind === "video");
+    while (pending.length) {
+      const next: typeof pending = [];
+      for (const [id, m] of pending) {
+        if (m.kind !== "video") continue;
+        const r = await checkFn({ data: { publication_id, video_id: m.video_id } }).catch(() => ({ state: "processing" as const, progress: null }));
+        if (r.state === "ready") { media.set(id, { ...m, thumbnail_url: r.thumbnail_url }); mark(`m:${id}`, "Vídeo pronto", "ok"); }
+        else if (r.state === "error") { media.delete(id); mediaError.set(id, r.error); mark(`m:${id}`, r.error, "error"); }
+        else if (Date.now() > deadline) { media.delete(id); mediaError.set(id, "O vídeo demorou demais pra processar na Meta"); mark(`m:${id}`, "Demorou demais na Meta", "error"); }
+        else { mark(`m:${id}`, r.progress != null ? `Meta processando ${r.progress}%` : "Meta processando"); next.push([id, m]); }
+      }
+      pending = next;
+      if (pending.length) await sleep(5000);
+    }
+
+    for (const set of adsets) {
+      const ready = set.ads.filter((ad) => ad.creative_ids.every((id) => media.has(id)));
+      for (const ad of set.ads.filter((a) => !ready.includes(a))) {
+        const err = ad.creative_ids.map((id) => mediaError.get(id)).find(Boolean) ?? "Mídia não enviada";
+        node(ad.key, err, "error");
+        failures.push({ key: ad.key, name: ad.name, adset_name: set.name, error: err });
+      }
+      if (!ready.length) { node(set.key, "Sem anúncios prontos", "error"); continue; }
+
+      let adsetId = adsetIds[set.key];
+      if (!adsetId) {
+        node(set.key, "Criando conjunto");
+        try {
+          const r = await adsetFn({ data: { publication_id, adset_key: set.key } });
+          adsetId = r.adset_id;
+          node(set.key, r.warning ? `Conjunto criado. ${r.warning}` : "Conjunto criado", "ok");
+          if (r.warning) toast.warning(r.warning);
+        } catch (e: any) {
+          node(set.key, e.message, "error");
+          for (const ad of ready) { node(ad.key, "Conjunto não foi criado", "error"); failures.push({ key: ad.key, name: ad.name, adset_name: set.name, error: e.message }); }
+          continue;
+        }
+      }
+      for (const ad of ready) {
+        node(ad.key, "Criando anúncio");
+        try {
+          await adFn({ data: { publication_id, adset_key: set.key, ad_key: ad.key, adset_id: adsetId, media: pickMedia(media, ad) } });
+          node(ad.key, "Anúncio criado", "ok");
+        } catch (e: any) {
+          node(ad.key, e.message, "error");
+        }
+      }
+    }
+
+    const { status } = await finishFn({ data: { publication_id, failures } });
+    if (status === "ok") toast.success("Campanha publicada");
+    else if (status === "partial") toast.warning("Campanha publicada, mas alguns anúncios falharam");
+    else toast.error("Nenhum anúncio foi criado");
+    return status;
+  };
+
+  // Publicadas › "Tentar de novo": cria só os anúncios que faltaram, na mesma campanha.
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const retry = async (p: { id: string; config: AdPublicationConfig; ads: AdResult[] }) => {
+    if (running || retrying) return;
+    const done = new Set(p.ads.filter((a) => a.ad_id && a.key).map((a) => a.key!));
+    const adsets = (p.config.plan ?? []).map((s) => ({ ...s, ads: s.ads.filter((a) => !done.has(a.key)) })).filter((s) => s.ads.length);
+    const ids = [...new Set(adsets.flatMap((s) => s.ads.flatMap((a) => a.creative_ids)))];
+    const toSend = ids.map((id) => creatives.find((c) => c.id === id)).filter(Boolean);
+    if (toSend.length < ids.length) { toast.error("Algum criativo dessa campanha foi apagado; não dá pra tentar de novo."); return; }
+    setRetrying(p.id);
+    setNodes({});
+    try {
+      // Conjuntos que já existem: anotados na publicação ou deduzidos dos anúncios que deram certo
+      // (chave do anúncio "s0a1" → conjunto "s0"); publicações antigas não anotavam.
+      const known: Record<string, string> = {};
+      for (const ad of p.ads) if (ad.key && ad.adset_id) known[ad.key.replace(/a\d+$/, "")] = ad.adset_id;
+      await execute(p.id, adsets, toSend, { ...known, ...(p.config.adset_ids ?? {}) }, `r:${p.id}:`);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setRetrying(null);
+      qc.invalidateQueries({ queryKey: ["product-ads", productId] });
+    }
+  };
+
   if (setup.isLoading) return <TabSkeleton />;
-  if (setup.error) return <div className="text-sm text-destructive">{(setup.error as Error).message}</div>;
+  if (setup.error) {
+    return (
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-6 text-center space-y-3">
+        <p className="text-sm text-destructive">{(setup.error as Error).message}</p>
+        <button onClick={() => setup.refetch()} className="h-8 px-3 rounded-lg border border-border bg-background text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted">
+          <RotateCcw className="size-3.5" /> Tentar de novo
+        </button>
+      </div>
+    );
+  }
   const data = setup.data!;
 
   if (!data.accounts.length) {
@@ -670,6 +736,10 @@ export function ProductAds({ productId }: { productId: string }) {
       {data.publications.length > 0 && (
         <History
           publications={data.publications}
+          nodes={nodes}
+          retrying={retrying}
+          busy={running || !!retrying}
+          onRetry={retry}
           onDelete={(id) => confirm("Tirar do histórico? A campanha continua na Meta.").then(async (yes) => {
             if (!yes) return;
             await deleteFn({ data: { id } });
@@ -1031,9 +1101,11 @@ function StateIcon({ state, className }: { state: NodeState["state"]; className?
   return <Loader2 className={cn(className, "animate-spin")} />;
 }
 
-function History({ publications, onDelete }: {
-  publications: { id: string; campaign_id: string | null; campaign_name: string; ad_account_id: string; status: string; config: AdPublicationConfig; ads: AdResult[]; error: string | null; created_at: string }[];
-  onDelete: (id: string) => void;
+type Publication = { id: string; campaign_id: string | null; campaign_name: string; ad_account_id: string; status: string; config: AdPublicationConfig; ads: AdResult[]; error: string | null; created_at: string };
+
+function History({ publications, onDelete, onRetry, nodes, retrying, busy }: {
+  publications: Publication[]; onDelete: (id: string) => void; onRetry: (p: Publication) => void;
+  nodes: Record<string, NodeState>; retrying: string | null; busy: boolean;
 }) {
   return (
     <div>
@@ -1042,6 +1114,8 @@ function History({ publications, onDelete }: {
         {publications.map((p) => {
           const ok = p.ads.filter((a) => a.ad_id).length;
           const failed = p.ads.filter((a) => a.error && !a.ad_id);
+          const canRetry = !!p.campaign_id && !!p.config?.plan?.length && failed.some((a) => a.key);
+          const live = retrying === p.id;
           const sets = new Set(p.ads.map((a) => a.adset_id ?? a.adset_name).filter(Boolean)).size;
           return (
             <div key={p.id} className="px-3 py-2.5 flex items-start gap-3">
@@ -1056,9 +1130,24 @@ function History({ publications, onDelete }: {
                   {p.config?.daily_budget ? ` · ${p.config.daily_budget}/dia` : ""}
                 </div>
                 {p.error && <div className="text-xs text-destructive mt-0.5">{p.error}</div>}
-                {failed.map((a, i) => (
-                  <div key={a.key ?? a.creative_id ?? i} className="text-xs text-destructive mt-0.5">{a.adset_name ? `${a.adset_name} › ` : ""}{a.name}: {a.error}</div>
-                ))}
+                {failed.map((a, i) => {
+                  const n = live && a.key ? nodes[`r:${p.id}:${a.key}`] : undefined;
+                  return (
+                    <div key={a.key ?? a.creative_id ?? i} className={cn("text-xs mt-0.5 flex items-start gap-1", n ? (n.state === "ok" ? "text-success" : n.state === "error" ? "text-destructive" : "text-muted-foreground") : "text-destructive")}>
+                      {n && <StateIcon state={n.state} className="size-3 mt-0.5 shrink-0" />}
+                      <span>{a.adset_name ? `${a.adset_name} › ` : ""}{a.name}: {n ? n.label : a.error}</span>
+                    </div>
+                  );
+                })}
+                {canRetry && (
+                  <button
+                    onClick={() => onRetry(p)} disabled={busy}
+                    className="mt-1.5 h-7 px-2.5 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+                  >
+                    {live ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+                    {live ? "Tentando de novo… não feche a aba" : `Tentar de novo os que falharam (${failed.filter((a) => a.key).length})`}
+                  </button>
+                )}
               </div>
               {p.campaign_id && (
                 <a href={adsManagerUrl(p.ad_account_id, p.campaign_id)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary inline-flex items-center gap-1 shrink-0 hover:underline">

@@ -84,6 +84,14 @@ export async function driveDownload(id: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+// Um pedaço do arquivo (bytes start..end-1), pra mandar vídeo à Meta em partes.
+export async function driveDownloadRange(id: string, start: number, end: number): Promise<ArrayBuffer> {
+  const qs = new URLSearchParams({ alt: "media", key: key(), supportsAllDrives: "true" });
+  const res = await fetch(`${API}/files/${id}?${qs}`, { headers: { Range: `bytes=${start}-${end - 1}` }, signal: AbortSignal.timeout(60_000) });
+  if (!res.ok && res.status !== 206) throw new Error(res.status === 404 || res.status === 403 ? NOT_SHARED : `Não consegui ler o vídeo do Drive (${res.status})`);
+  return res.arrayBuffer();
+}
+
 // Miniatura pequena do arquivo (vídeo ou imagem), ou null se o Drive ainda não gerou.
 export async function driveThumbnail(file: Pick<DriveFile, "id" | "thumbnailLink">): Promise<{ bytes: ArrayBuffer; type: string } | null> {
   const urls = [
