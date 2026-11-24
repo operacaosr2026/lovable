@@ -275,6 +275,43 @@ export const getAdAccountAssets = createServerFn({ method: "GET" })
     };
   });
 
+// ── Uso do limite de chamadas da Meta ──
+// A Meta manda em cada resposta quanto do limite já foi usado (cabeçalhos
+// X-App-Usage, X-Ad-Account-Usage, X-Business-Use-Case-Usage) e, quando estoura,
+// em quantos minutos libera. Uma chamada leve (id da conta) lê isso.
+
+export type MetaUsage = { pct: number; regain_minutes: number; tier: string | null; limited: boolean };
+
+function parseUsage(res: Response, limited: boolean): MetaUsage {
+  const json = (h: string) => { try { return JSON.parse(res.headers.get(h) ?? "null"); } catch { return null; } };
+  const app = json("x-app-usage");
+  const acc = json("x-ad-account-usage");
+  const buc = json("x-business-use-case-usage");
+  const pcts: number[] = [];
+  let regain = 0;
+  if (app) pcts.push(Number(app.call_count ?? 0), Number(app.total_cputime ?? 0), Number(app.total_time ?? 0));
+  if (acc) { pcts.push(Number(acc.acc_id_util_pct ?? 0)); regain = Math.max(regain, Math.ceil(Number(acc.reset_time_duration ?? 0) / 60)); }
+  for (const list of Object.values((buc ?? {}) as Record<string, any[]>)) {
+    for (const u of list ?? []) {
+      pcts.push(Number(u.call_count ?? 0), Number(u.total_cputime ?? 0), Number(u.total_time ?? 0));
+      regain = Math.max(regain, Number(u.estimated_time_to_regain_access ?? 0));
+    }
+  }
+  const pct = Math.min(100, Math.round(Math.max(0, ...pcts.filter((n) => Number.isFinite(n)))));
+  return { pct: limited ? 100 : pct, regain_minutes: regain, tier: acc?.ads_api_access_tier ?? null, limited: limited || pct >= 100 };
+}
+
+export const getMetaUsage = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({ ad_account_id: z.string().min(1) }).parse(d))
+  .handler(async ({ context, data }): Promise<MetaUsage> => {
+    const token = await tokenFor(context.ownerId, data.ad_account_id);
+    const res = await fetch(`${GRAPH}/${data.ad_account_id}?fields=id&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(20_000) });
+    const body: any = await res.json().catch(() => ({}));
+    const code = body?.error?.code;
+    return parseUsage(res, [4, 17, 32, 613, 80004].includes(Number(code)));
+  });
+
 // ── Publicação (passo a passo) ──
 
 const PlanInput = z.array(z.object({
@@ -461,28 +498,40 @@ export const finishDriveVideoUpload = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const checkAdVideo = createServerFn({ method: "POST" })
+type VideoStatus = { video_status?: string; processing_progress?: number; processing_phase?: { status?: string; errors?: { message?: string }[] }; uploading_phase?: { status?: string; errors?: { message?: string }[] } };
+export type VideoCheck =
+  | { state: "ready"; thumbnail_url?: string }
+  | { state: "processing"; progress: number | null }
+  | { state: "error"; error: string };
+
+// Status de vários vídeos numa chamada só (poupa o limite de chamadas da Meta).
+// A capa (picture) vem junto; a lista de thumbnails é só reserva.
+export const checkAdVideos = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
-  .inputValidator((d) => z.object({ publication_id: z.string().uuid(), video_id: z.string().min(1) }).parse(d))
-  .handler(async ({ context, data }) => {
+  .inputValidator((d) => z.object({ publication_id: z.string().uuid(), video_ids: z.array(z.string().min(1)).min(1).max(50) }).parse(d))
+  .handler(async ({ context, data }): Promise<Record<string, VideoCheck>> => {
     const pub = await loadPublication(context.ownerId, data.publication_id);
     const token = await tokenFor(context.ownerId, pub.ad_account_id);
-    type VideoStatus = { video_status?: string; processing_progress?: number; processing_phase?: { status?: string; errors?: { message?: string }[] }; uploading_phase?: { status?: string; errors?: { message?: string }[] } };
-    // Miniatura vem no mesmo pedido (picture); a lista de thumbnails é só reserva
-    // e não pode travar: antes, erro nela fazia o vídeo parecer "processando" pra sempre.
-    const v = await graph<{ status?: VideoStatus; picture?: string }>(data.video_id, token, { fields: "status,picture" });
-    const status = v.status?.video_status;
-    if (status === "error") {
-      const why = v.status?.processing_phase?.errors?.[0]?.message ?? v.status?.uploading_phase?.errors?.[0]?.message;
-      return { state: "error" as const, error: why ? `A Meta não conseguiu processar o vídeo: ${why}` : "A Meta não conseguiu processar o vídeo" };
+    const res = await graph<Record<string, { status?: VideoStatus; picture?: string }>>("", token, { ids: data.video_ids.join(","), fields: "status,picture" });
+    const out: Record<string, VideoCheck> = {};
+    for (const id of data.video_ids) {
+      const v = res[id] ?? {};
+      const status = v.status?.video_status;
+      if (status === "error") {
+        const why = v.status?.processing_phase?.errors?.[0]?.message ?? v.status?.uploading_phase?.errors?.[0]?.message;
+        out[id] = { state: "error", error: why ? `A Meta não conseguiu processar o vídeo: ${why}` : "A Meta não conseguiu processar o vídeo" };
+      } else if (status !== "ready") {
+        out[id] = { state: "processing", progress: v.status?.processing_progress ?? null };
+      } else {
+        let thumbnail_url = v.picture;
+        if (!thumbnail_url) {
+          const thumbs = await graph<{ data: { uri: string; is_preferred: boolean }[] }>(`${id}/thumbnails`, token, { fields: "uri,is_preferred" }).catch(() => null);
+          thumbnail_url = (thumbs?.data?.find((t) => t.is_preferred) ?? thumbs?.data?.[0])?.uri;
+        }
+        out[id] = { state: "ready", thumbnail_url };
+      }
     }
-    if (status !== "ready") return { state: "processing" as const, progress: v.status?.processing_progress ?? null };
-    let thumbnail_url = v.picture;
-    if (!thumbnail_url) {
-      const thumbs = await graph<{ data: { uri: string; is_preferred: boolean }[] }>(`${data.video_id}/thumbnails`, token, { fields: "uri,is_preferred" }).catch(() => null);
-      thumbnail_url = (thumbs?.data?.find((t) => t.is_preferred) ?? thumbs?.data?.[0])?.uri;
-    }
-    return { state: "ready" as const, thumbnail_url };
+    return out;
   });
 
 const MediaInput = z.discriminatedUnion("kind", [

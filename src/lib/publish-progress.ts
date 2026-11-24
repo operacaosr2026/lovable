@@ -16,7 +16,14 @@ export type Job = {
   status: "running" | "ok" | "partial" | "error";
   open: boolean; steps: Step[];
   managerUrl?: string; onRetry?: () => void;
+  adAccountId?: string; // pra mostrar o uso do limite da Meta
+  videoDeadline?: number; // até quando espera os vídeos processarem
+  cancelled?: boolean;
 };
+
+export class PublishCancelled extends Error {
+  constructor() { super("Cancelado por você"); }
+}
 
 let jobs: Job[] = [];
 const listeners = new Set<() => void>();
@@ -44,7 +51,20 @@ export const publishProgress = {
   open(id: string, open: boolean) { patchJob(id, (j) => ({ ...j, open })); },
   dismiss(id: string) { jobs = jobs.filter((j) => j.id !== id); emit(); },
   running: () => jobs.some((j) => j.status === "running"),
+  cancel(id: string) { patchJob(id, (j) => ({ ...j, cancelled: true })); },
+  isCancelled: (id: string) => !!jobs.find((j) => j.id === id)?.cancelled,
+  // Espera em passos de 1s; se cancelarem no meio, para na hora.
+  async nap(id: string, ms: number) {
+    for (let left = ms; left > 0; left -= 1000) {
+      if (publishProgress.isCancelled(id)) throw new PublishCancelled();
+      await new Promise((r) => setTimeout(r, Math.min(1000, left)));
+    }
+    if (publishProgress.isCancelled(id)) throw new PublishCancelled();
+  },
+  guard(id: string) { if (publishProgress.isCancelled(id)) throw new PublishCancelled(); },
 };
+
+export const getPublishJob = (id: string) => jobs.find((j) => j.id === id);
 
 export function usePublishJobs() {
   return useSyncExternalStore(

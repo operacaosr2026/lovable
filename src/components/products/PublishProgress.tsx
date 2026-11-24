@@ -3,6 +3,8 @@ import { CheckCircle2, Circle, ExternalLink, Film, Loader2, Megaphone, Minimize2
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { publishProgress, usePublishJobs, type Job, type Step, type StepGroup } from "@/lib/publish-progress";
 import { cn } from "@/lib/utils";
+import { MetaUsageBadge } from "@/components/products/MetaUsageBadge";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // Janela "Publicando campanha" + bolinha no canto quando minimizada. Montada no
 // layout raiz: aparece em qualquer página enquanto a publicação roda.
@@ -70,6 +72,7 @@ function Chip({ job }: { job: Job }) {
 }
 
 function ProgressDialog({ job, now }: { job: Job; now: number }) {
+  const confirm = useConfirm();
   const s = summary(job);
   const running = job.status === "running";
   const groups = (["campaign", "media", "adset", "ad"] as const).map((g) => ({ g, steps: job.steps.filter((x) => x.group === g) })).filter((x) => x.steps.length);
@@ -100,7 +103,17 @@ function ProgressDialog({ job, now }: { job: Job; now: number }) {
               <span className="tabular-nums">{elapsed((job.finishedAt ?? now) - job.startedAt)}</span>
             </div>
           </div>
-          {running && <p className="text-xs text-muted-foreground">Pode minimizar e usar o sistema normalmente. Só não feche nem recarregue esta aba do navegador.</p>}
+          {running && job.videoDeadline && (
+            <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs flex items-center justify-between gap-2">
+              <span>Espera máxima pelos vídeos na Meta: <strong className="font-semibold">até {new Date(job.videoDeadline).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</strong></span>
+              <span className="text-muted-foreground tabular-nums">faltam {elapsed(job.videoDeadline - now)}</span>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {running ? <p className="text-xs text-muted-foreground">Pode minimizar e usar o sistema. Só não feche nem recarregue esta aba.</p> : <span />}
+            <MetaUsageBadge adAccountId={job.adAccountId} live={running} />
+          </div>
+          {job.cancelled && running && <p className="text-xs text-warning">Cancelando… termina a etapa atual e para.</p>}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
@@ -129,6 +142,18 @@ function ProgressDialog({ job, now }: { job: Job; now: number }) {
           {!running && s.adsFailed > 0 && job.onRetry && (
             <button onClick={() => { publishProgress.dismiss(job.id); job.onRetry!(); }} className="h-9 px-3 rounded-lg border border-border text-sm font-medium inline-flex items-center gap-1.5 hover:bg-muted">
               <RotateCcw className="size-3.5" /> Tentar de novo os que falharam
+            </button>
+          )}
+          {running && !job.cancelled && (
+            <button
+              onClick={() => confirm({
+                title: "Cancelar publicação?",
+                description: "O sistema para depois da etapa atual. O que já foi criado (campanha, conjuntos, anúncios) continua na Meta; dá para apagar no Gerenciador ou completar depois com \"Tentar de novo\".",
+                confirmText: "Cancelar publicação", cancelText: "Continuar publicando", variant: "destructive",
+              }).then((yes) => yes && publishProgress.cancel(job.id))}
+              className="h-9 px-3 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10"
+            >
+              Cancelar publicação
             </button>
           )}
           <div className="ml-auto">

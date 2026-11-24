@@ -10,14 +10,15 @@ import {
 import { listCreatives } from "@/lib/products.functions";
 import { getNamingTemplate } from "@/lib/naming.functions";
 import {
-  AD_CTAS, getProductAdsSetup, getAdAccountAssets, startAdPublication, uploadAdMedia, checkAdVideo,
+  AD_CTAS, getProductAdsSetup, getAdAccountAssets, startAdPublication, uploadAdMedia, checkAdVideos,
   createAdset, createAdInAdset, finishAdPublication, deleteAdPublication,
   startDriveVideoUpload, transferDriveVideoChunk, finishDriveVideoUpload,
-  type AdPublicationConfig, type AdMedia, type AdInstagram, type AdResult, type Gender,
+  type AdPublicationConfig, type AdMedia, type AdInstagram, type AdResult, type Gender, type VideoCheck,
 } from "@/lib/product-ads.functions";
 import { buildPlan, MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAd, type PlanAdset } from "@/lib/ad-plan";
 import { DEFAULT_TEMPLATES, codeLabel, codesIn, customCodes } from "@/lib/naming";
 import { NAMING_QK } from "@/components/products/Naming";
+import { MetaUsageBadge } from "@/components/products/MetaUsageBadge";
 import { useProductCopies } from "@/components/products/ProductCopies";
 import { useTrafficColumns } from "@/components/products/TrafficBoard";
 import type { ProductCopy, TrafficColumn } from "@/lib/traffic-board.functions";
@@ -27,7 +28,7 @@ import { AI_FEATURES, AI_GROUP_LABEL, type AiFeature } from "@/lib/ad-ai-feature
 import { ATTRIBUTIONS, ATTRIBUTION_KEYS, LIFECYCLES, LIFECYCLE_KEYS, RETENTION_DAYS, zonedToIso, type Attribution, type Lifecycle } from "@/lib/ad-schedule";
 import { STANDARD_URL_TAGS } from "@/lib/utm";
 import { cn } from "@/lib/utils";
-import { publishProgress, usePublishJobs, type Step, type StepState } from "@/lib/publish-progress";
+import { publishProgress, usePublishJobs, getPublishJob, PublishCancelled, type Step, type StepState } from "@/lib/publish-progress";
 import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 const CTA_LABELS: Record<typeof AD_CTAS[number], string> = {
@@ -117,7 +118,7 @@ export function ProductAds({ productId }: { productId: string }) {
   const namingFn = useServerFn(getNamingTemplate);
   const startFn = useServerFn(startAdPublication);
   const uploadFn = useServerFn(uploadAdMedia);
-  const checkFn = useServerFn(checkAdVideo);
+  const checkFn = useServerFn(checkAdVideos);
   const adsetFn = useServerFn(createAdset);
   const adFn = useServerFn(createAdInAdset);
   const finishFn = useServerFn(finishAdPublication);
@@ -279,13 +280,13 @@ export function ProductAds({ productId }: { productId: string }) {
     try {
       const { publication_id, campaign_id } = await startFn({ data: { product_id: productId, config } });
       step("campaign", "Campanha criada", "ok");
-      publishProgress.set(jobId, { managerUrl: adsManagerUrl(config.ad_account_id, campaign_id) });
+      publishProgress.set(jobId, { managerUrl: adsManagerUrl(config.ad_account_id, campaign_id), adAccountId: config.ad_account_id });
       const status = await execute(jobId, publication_id, plan.adsets, chosen, {});
       if (status !== "error") { setSelected([]); setOverrides({}); }
     } catch (e: any) {
       step("campaign", e.message, "error");
       publishProgress.finish(jobId, "error");
-      toast.error(e.message);
+      if (!(e instanceof PublishCancelled)) toast.error(e.message);
     } finally {
       setRunning(false);
       qc.invalidateQueries({ queryKey: ["product-ads", productId] });
@@ -309,20 +310,21 @@ export function ProductAds({ productId }: { productId: string }) {
     const mark = (k: string, detail: string, progress: number | null = null) => publishProgress.step(jobId, k, { detail, state: "running", progress });
     if (c.media_kind === "video" && !c.media_path && c.drive_file_id) {
       mark(key, "Enviando vídeo 0%", 0);
-      const s = await startVideoFn({ data: { publication_id, creative_id: c.id } });
+      const wait = (msg: string) => mark(key, msg);
+      const s = await withLimit(jobId, () => startVideoFn({ data: { publication_id, creative_id: c.id } }), wait);
       let { start_offset, end_offset } = s;
       while (start_offset < end_offset) {
-        const r = await chunkFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id, start_offset, end_offset } });
+        const r = await withLimit(jobId, () => chunkFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id, start_offset, end_offset } }), wait);
         start_offset = r.start_offset;
         end_offset = r.end_offset;
         const pct = Math.min(100, Math.round((start_offset / s.size) * 100));
         mark(key, `Enviando vídeo ${pct}%`, pct);
       }
-      await finishVideoFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id } });
+      await withLimit(jobId, () => finishVideoFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id } }), wait);
       return { kind: "video", video_id: s.video_id };
     }
     mark(key, c.media_kind === "video" ? "Enviando vídeo" : "Enviando imagem");
-    return uploadFn({ data: { publication_id, creative_id: c.id } });
+    return withLimit(jobId, () => uploadFn({ data: { publication_id, creative_id: c.id } }), (msg) => mark(key, msg));
   };
 
   // Mídias → espera os vídeos → conjuntos → anúncios. Usado ao publicar e no
@@ -330,44 +332,60 @@ export function ProductAds({ productId }: { productId: string }) {
   const execute = async (jobId: string, publication_id: string, adsets: PlanAdset[], creativesToSend: any[], adsetIds: Record<string, string>) => {
     const node = (key: string, detail: string, state: StepState = "running", progress: number | null = null) => publishProgress.step(jobId, key, { detail, state, progress });
     const failures: { key: string; name: string; adset_name?: string; error: string }[] = [];
+    const created = new Set<string>();
     const media = new Map<string, AdMedia>();
     const mediaError = new Map<string, string>();
+    let cancelled = false;
+    try {
     for (const c of creativesToSend) {
+      publishProgress.guard(jobId);
       try {
         const m = await sendMedia(jobId, publication_id, c);
         media.set(c.id, m);
         node(`m:${c.id}`, m.kind === "video" ? "Meta processando" : "Imagem enviada", m.kind === "video" ? "running" : "ok");
       } catch (e: any) {
+        if (e instanceof PublishCancelled) throw e;
         mediaError.set(c.id, e.message);
         node(`m:${c.id}`, e.message, "error");
       }
     }
 
-    // Espera os vídeos ficarem prontos (todos juntos), mostrando o andamento.
-    const deadline = Date.now() + 20 * 60_000;
-    let pending = [...media.entries()].filter(([, m]) => m.kind === "video");
-    const checkErrors = new Map<string, number>();
+    // Espera os vídeos ficarem prontos: todos numa consulta só, a cada 15s (poupa o
+    // limite de chamadas). Limite atingido = espera e continua; outro erro 3x = mostra.
+    const deadline = Date.now() + 25 * 60_000;
+    let pending = [...media.entries()].filter(([, m]) => m.kind === "video") as [string, Extract<AdMedia, { kind: "video" }>][];
+    if (pending.length) publishProgress.set(jobId, { videoDeadline: deadline });
+    let checkErrors = 0;
     while (pending.length) {
+      let res: Record<string, VideoCheck>;
+      try {
+        res = await checkFn({ data: { publication_id, video_ids: pending.map(([, m]) => m.video_id) } });
+        checkErrors = 0;
+      } catch (e: any) {
+        if (isRateLimit(e)) {
+          for (const [id] of pending) node(`m:${id}`, "Limite de chamadas da Meta: esperando 1 min…");
+          await publishProgress.nap(jobId, 60_000);
+          continue;
+        }
+        if (++checkErrors >= 3) {
+          for (const [id] of pending) { media.delete(id); mediaError.set(id, `Erro ao consultar o vídeo na Meta: ${e.message}`); node(`m:${id}`, `Erro ao consultar o vídeo na Meta: ${e.message}`, "error"); }
+          break;
+        }
+        await publishProgress.nap(jobId, 15_000);
+        continue;
+      }
       const next: typeof pending = [];
       for (const [id, m] of pending) {
-        if (m.kind !== "video") continue;
-        // Erro ao consultar a Meta: tolera falha passageira, mas na 3ª seguida mostra o motivo.
-        const r = await checkFn({ data: { publication_id, video_id: m.video_id } }).then(
-          (x) => { checkErrors.delete(id); return x; },
-          (e: any) => {
-            const n = (checkErrors.get(id) ?? 0) + 1;
-            checkErrors.set(id, n);
-            return n >= 3 ? { state: "error" as const, error: `Erro ao consultar o vídeo na Meta: ${e.message}` } : { state: "processing" as const, progress: null };
-          },
-        );
+        const r = res[m.video_id] ?? { state: "processing" as const, progress: null };
         if (r.state === "ready") { media.set(id, { ...m, thumbnail_url: r.thumbnail_url }); node(`m:${id}`, "Vídeo pronto", "ok"); }
         else if (r.state === "error") { media.delete(id); mediaError.set(id, r.error); node(`m:${id}`, r.error, "error"); }
         else if (Date.now() > deadline) { media.delete(id); mediaError.set(id, "O vídeo demorou demais pra processar na Meta"); node(`m:${id}`, "Demorou demais na Meta", "error"); }
         else { node(`m:${id}`, r.progress != null ? `Meta processando ${r.progress}%` : "Meta processando", "running", r.progress ?? null); next.push([id, m]); }
       }
       pending = next;
-      if (pending.length) await sleep(5000);
+      if (pending.length) await publishProgress.nap(jobId, 15_000);
     }
+    publishProgress.set(jobId, { videoDeadline: undefined });
 
     for (const set of adsets) {
       const ready = set.ads.filter((ad) => ad.creative_ids.every((id) => media.has(id)));
@@ -378,16 +396,18 @@ export function ProductAds({ productId }: { productId: string }) {
       }
       if (!ready.length) { node(set.key, "Sem anúncios prontos", "error"); continue; }
 
+      publishProgress.guard(jobId);
       let adsetId = adsetIds[set.key];
       if (adsetId) node(set.key, "Já existia na campanha", "ok");
       if (!adsetId) {
         node(set.key, "Criando conjunto");
         try {
-          const r = await adsetFn({ data: { publication_id, adset_key: set.key } });
+          const r = await withLimit(jobId, () => adsetFn({ data: { publication_id, adset_key: set.key } }), (msg) => node(set.key, msg));
           adsetId = r.adset_id;
           node(set.key, r.warning ? `Conjunto criado. ${r.warning}` : "Conjunto criado", "ok");
           if (r.warning) toast.warning(r.warning);
         } catch (e: any) {
+          if (e instanceof PublishCancelled) throw e;
           node(set.key, e.message, "error");
           for (const ad of ready) { node(ad.key, "Conjunto não foi criado", "error"); failures.push({ key: ad.key, name: ad.name, adset_name: set.name, error: e.message }); }
           continue;
@@ -396,15 +416,33 @@ export function ProductAds({ productId }: { productId: string }) {
       for (const ad of ready) {
         node(ad.key, "Criando anúncio");
         try {
-          await adFn({ data: { publication_id, adset_key: set.key, ad_key: ad.key, adset_id: adsetId, media: pickMedia(media, ad) } });
+          await withLimit(jobId, () => adFn({ data: { publication_id, adset_key: set.key, ad_key: ad.key, adset_id: adsetId!, media: pickMedia(media, ad) } }), (msg) => node(ad.key, msg));
           node(ad.key, "Anúncio criado", "ok");
+          created.add(ad.key);
         } catch (e: any) {
+          if (e instanceof PublishCancelled) throw e;
           node(ad.key, e.message, "error");
         }
       }
     }
+    } catch (e) {
+      if (!(e instanceof PublishCancelled)) throw e;
+      // Cancelado: o que já foi criado na Meta fica; o resto é registrado como cancelado.
+      cancelled = true;
+      const noted = new Set(failures.map((f) => f.key));
+      for (const set of adsets) for (const ad of set.ads) {
+        if (created.has(ad.key) || noted.has(ad.key)) continue;
+        failures.push({ key: ad.key, name: ad.name, adset_name: set.name, error: "Cancelado por você" });
+      }
+      for (const st of [...creativesToSend.map((c) => `m:${c.id}`), ...adsets.map((x) => x.key), ...adsets.flatMap((x) => x.ads.map((a) => a.key))]) {
+        const cur = getPublishJob(jobId)?.steps.find((x) => x.key === st);
+        if (cur && cur.state !== "ok" && cur.state !== "error") node(st, "Cancelado", "error");
+      }
+      publishProgress.set(jobId, { videoDeadline: undefined });
+    }
 
     const { status } = await finishFn({ data: { publication_id, failures } });
+    if (cancelled) toast.message("Publicação cancelada. O que já tinha sido criado ficou na Meta.");
     publishProgress.finish(jobId, status, {
       // Tentar de novo direto da janela: busca a publicação atualizada e refaz só o que faltou.
       onRetry: async () => {
@@ -413,6 +451,7 @@ export function ProductAds({ productId }: { productId: string }) {
         if (pub) retry(pub);
       },
     });
+    if (cancelled) return status;
     if (status === "ok") toast.success("Campanha publicada");
     else if (status === "partial") toast.warning("Campanha publicada, mas alguns anúncios falharam");
     else toast.error("Nenhum anúncio foi criado");
@@ -430,7 +469,7 @@ export function ProductAds({ productId }: { productId: string }) {
     if (toSend.length < ids.length) { toast.error("Algum criativo dessa campanha foi apagado; não dá pra tentar de novo."); return; }
     setRetrying(p.id);
     const jobId = publishProgress.start(`${(p as any).campaign_name ?? "Campanha"} (tentar de novo)`, progressSteps(adsets, toSend));
-    if ((p as any).campaign_id) publishProgress.set(jobId, { managerUrl: adsManagerUrl((p as any).ad_account_id, (p as any).campaign_id) });
+    publishProgress.set(jobId, { adAccountId: p.ad_account_id, ...(p.campaign_id ? { managerUrl: adsManagerUrl(p.ad_account_id, p.campaign_id) } : {}) });
     try {
       // Conjuntos que já existem: anotados na publicação ou deduzidos dos anúncios que deram certo
       // (chave do anúncio "s0a1" → conjunto "s0"); publicações antigas não anotavam.
@@ -734,6 +773,7 @@ export function ProductAds({ productId }: { productId: string }) {
                 <Pencil className="size-3" /> Modelo de nomes
               </Link>
             </div>
+            <MetaUsageBadge adAccountId={form.ad_account_id} className="mt-2" />
             <div className="grid grid-cols-3 gap-2 mt-3">
               <Stat label="Conjuntos" value={String(plan.adsets.length)} />
               <Stat label="Anúncios" value={String(adCount)} />
@@ -1022,6 +1062,24 @@ function without(o: Record<string, string>, key: string) {
   const next = { ...o };
   delete next[key];
   return next;
+}
+
+// "Limite de chamadas" da Meta (códigos 4, 17, 32, 613, 80004): não é erro do anúncio,
+// é só esperar. withLimit espera 1, 2, 3… min (até 5) e tenta de novo, até 8 vezes.
+const isRateLimit = (e: any) => /request limit|limit reached|too many calls|\(#(4|17|32|613|80004)\)/i.test(String(e?.message ?? ""));
+async function withLimit<T>(jobId: string, fn: () => Promise<T>, onWait: (msg: string) => void): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    publishProgress.guard(jobId);
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRateLimit(e) || attempt > 8) throw e;
+      for (let left = Math.min(300, 60 * attempt); left > 0; left -= 5) {
+        onWait(`Limite de chamadas da Meta: tentando de novo em ${left}s…`);
+        await publishProgress.nap(jobId, 5000);
+      }
+    }
+  }
 }
 
 function pickMedia(all: Map<string, AdMedia>, ad: PlanAd) {
