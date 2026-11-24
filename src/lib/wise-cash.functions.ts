@@ -6,8 +6,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // Caixa Geral › Wise (R$). A Wise é a conta no Brasil: recebe o dinheiro que sai
 // do caixa em dólar (lançado lá como saída "Retirada Empresa") e paga
 // funcionário, contabilidade etc. em reais. Tudo manual; Saldo atual = só os
-// conciliados. Envio do caixa em US$ que ainda não tem entrada aqui aparece
-// como "chegou quanto em R$?" — a entrada guarda o valor em dólar (câmbio).
+// conciliados. Envio do caixa em US$ que ainda não foi todo convertido aparece
+// como "chegou quanto em R$?" — cada conversão vira uma entrada com o valor em
+// dólar (câmbio). Dá pra converter aos poucos: o envio some quando a soma em
+// dólar cobre o enviado, ou quando uma entrada encerra o envio (resto = taxa).
 
 // Saída do caixa em dólar que é dinheiro indo pra Wise.
 const TO_WISE = /^\s*retirada empresa\s*$|wise/i;
@@ -23,9 +25,13 @@ function assertCaixa(ctx: Ctx) {
 
 export type WiseEntry = {
   id: string; kind: "income" | "expense"; amount: number; date: string; category: string | null; description: string | null;
-  reconciled: boolean; usd_amount: number | null; source_cash_id: string | null; created_at: string;
+  reconciled: boolean; usd_amount: number | null; source_cash_id: string | null; closes_transfer: boolean; created_at: string;
 };
-export type WisePendingTransfer = { id: string; date: string; amount: number; shop: string | null; description: string | null };
+// converted = US$ já convertido em entradas ligadas a este envio; remaining = o que falta.
+export type WisePendingTransfer = {
+  id: string; date: string; amount: number; shop: string | null; description: string | null;
+  converted: number; remaining: number; parts: number;
+};
 
 export const getWiseCash = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -56,11 +62,26 @@ export const getWiseCash = createServerFn({ method: "GET" })
     }
     for (const o of ov) if (!o.source_entry_id && !o.deleted) cash.push(o);
 
-    const linked = new Set(list.map((r) => r.source_cash_id).filter(Boolean));
+    const linked = new Map<string, { usd: number; parts: number; closed: boolean }>();
+    for (const r of list) {
+      if (!r.source_cash_id) continue;
+      const l = linked.get(r.source_cash_id) ?? { usd: 0, parts: 0, closed: false };
+      l.usd += r.usd_amount ?? 0; l.parts += 1; l.closed ||= !!r.closes_transfer;
+      linked.set(r.source_cash_id, l);
+    }
     const shopName = new Map(((shops.data ?? []) as any[]).map((s) => [s.id, s.name as string]));
     const pending: WisePendingTransfer[] = cash
-      .filter((c) => c.kind === "expense" && TO_WISE.test(c.category ?? "") && !linked.has(c.id))
-      .map((c) => ({ id: c.id, date: c.date, amount: Number(c.amount), shop: shopName.get(c.shop_id) ?? null, description: c.description }))
+      .filter((c) => c.kind === "expense" && TO_WISE.test(c.category ?? ""))
+      .map((c) => {
+        const l = linked.get(c.id);
+        const amount = Number(c.amount);
+        const converted = Math.round((l?.usd ?? 0) * 100) / 100;
+        // Entrada antiga sem valor em dólar ligada ao envio = envio inteiro (regra de antes).
+        const legacyWhole = !!l && l.usd === 0;
+        const remaining = l?.closed || legacyWhole ? 0 : Math.max(0, Math.round((amount - converted) * 100) / 100);
+        return { id: c.id, date: c.date, amount, shop: shopName.get(c.shop_id) ?? null, description: c.description, converted, remaining, parts: l?.parts ?? 0 };
+      })
+      .filter((t) => t.remaining >= 0.01)
       .sort((a, b) => a.date.localeCompare(b.date));
 
     return { entries: list, pending };
@@ -75,6 +96,7 @@ const EntryInput = z.object({
   reconciled: z.boolean(),
   usd_amount: z.number().positive().max(10_000_000).nullable().default(null),
   source_cash_id: z.string().uuid().nullable().default(null),
+  closes_transfer: z.boolean().default(false),
 });
 
 const addMonths = (iso: string, n: number) => {
@@ -95,9 +117,10 @@ export const createWiseEntry = createServerFn({ method: "POST" })
     const rows = Array.from({ length: repeatMonths }, (_, i) => ({
       ...e, owner_id: ctx.ownerId, created_by: ctx.userId, date: addMonths(e.date, i),
       reconciled: i === 0 ? e.reconciled : false, source_cash_id: i === 0 ? e.source_cash_id : null,
+      closes_transfer: i === 0 ? e.closes_transfer : false,
     }));
     const { error } = await db().insert(rows);
-    if (error) throw new Error(/wise_cash_entries_source_idx/.test(error.message) ? "Esse envio já foi registrado na Wise" : error.message);
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 

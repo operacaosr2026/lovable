@@ -44,6 +44,8 @@ const INCOME_CATS = ["Envio do caixa (US$)", "Saldo inicial", "Outros"];
 type Draft = {
   id?: string; kind: "income" | "expense"; amount: string; date: string; category: string; description: string;
   reconciled: boolean; usd: string; source_cash_id: string | null; repeat: number;
+  // Envio do caixa sendo convertido (só pra mostrar quanto falta no diálogo).
+  closes_transfer: boolean; transfer?: WisePendingTransfer;
 };
 
 export function WiseCash() {
@@ -133,10 +135,12 @@ export function WiseCash() {
   })();
   const newDraft = (kind: "income" | "expense", over: Partial<Draft> = {}): Draft => ({
     kind, amount: "", date: today, category: kind === "expense" ? "" : "Envio do caixa (US$)", description: "",
-    reconciled: true, usd: "", source_cash_id: null, repeat: 1, ...over,
+    reconciled: true, usd: "", source_cash_id: null, repeat: 1, closes_transfer: false, ...over,
   });
   const fromTransfer = (t: WisePendingTransfer) => newDraft("income", {
-    date: t.date, usd: t.amount.toFixed(2), source_cash_id: t.id, description: `Envio do caixa ${dm(t.date)}${t.shop ? ` (${t.shop})` : ""}`,
+    // Converte aos poucos: já vem com o que falta em dólar; a data é hoje (o dia da conversão).
+    date: t.parts ? today : t.date, usd: t.remaining.toFixed(2).replace(".", ","), source_cash_id: t.id, transfer: t,
+    description: `Envio do caixa ${dm(t.date)}${t.shop ? ` (${t.shop})` : ""}`,
   });
 
   // Mês + Entrada/Saída na linha das abas do Caixa Geral (shops.caixa.index.tsx).
@@ -176,15 +180,20 @@ export function WiseCash() {
       {pending.length > 0 && (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4 space-y-2">
           <p className="text-sm font-semibold">Envios do caixa que ainda não chegaram na Wise</p>
-          <p className="text-xs text-muted-foreground">Saídas "Retirada Empresa" do caixa em dólar. Registre quanto caiu em reais pra entrar no saldo (e ver o câmbio).</p>
+          <p className="text-xs text-muted-foreground">Saídas "Retirada Empresa" do caixa em dólar. Registre quanto caiu em reais pra entrar no saldo (e ver o câmbio). Pode converter aos poucos: o envio fica aqui até converter tudo.</p>
           <div className="space-y-1.5">
             {pending.map((t) => (
               <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-background/70 border border-border px-3 py-2 text-sm">
                 <span className="font-medium tabular-nums">{dm(t.date)}</span>
                 <span className="font-semibold tabular-nums">{usd(t.amount)}</span>
                 {t.shop && <span className="text-xs text-muted-foreground">{t.shop}</span>}
+                {t.converted > 0 && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    Convertido {usd(t.converted)} ({t.parts} {t.parts === 1 ? "vez" : "vezes"}) • <span className="font-semibold text-amber-700 dark:text-amber-400">falta {usd(t.remaining)}</span>
+                  </span>
+                )}
                 <button onClick={() => setDraft(fromTransfer(t))}
-                  className="ml-auto h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-xs font-medium">Chegou quanto em R$?</button>
+                  className="ml-auto h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-xs font-medium">{t.converted > 0 ? "Converti mais" : "Chegou quanto em R$?"}</button>
               </div>
             ))}
           </div>
@@ -374,7 +383,7 @@ export function WiseCash() {
                         <button onClick={() => setDraft({
                           id: e.id, kind: e.kind, amount: e.amount.toFixed(2).replace(".", ","), date: e.date, category: e.category ?? "",
                           description: e.description ?? "", reconciled: e.reconciled, usd: e.usd_amount ? e.usd_amount.toFixed(2) : "",
-                          source_cash_id: e.source_cash_id, repeat: 1,
+                          source_cash_id: e.source_cash_id, repeat: 1, closes_transfer: e.closes_transfer,
                         })} className="size-7 inline-grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Editar">
                           <Pencil className="size-3.5" />
                         </button>
@@ -472,11 +481,15 @@ function EntryDialog({ draft, categories, onClose, onSaved }: { draft: Draft; ca
   const amount = parseMoney(d.amount);
   const usdAmount = d.kind === "income" && d.usd.trim() ? parseMoney(d.usd) : null;
   const ok = amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(d.date) && (usdAmount == null || usdAmount > 0);
+  // Conversão de um envio do caixa: quanto ainda sobraria depois desta.
+  const t = d.transfer;
+  const sobra = t && usdAmount ? Math.round((t.remaining - usdAmount) * 100) / 100 : null;
   const save = useMutation({
     mutationFn: async () => {
       const body = {
         kind: d.kind, amount, date: d.date, category: d.category.trim() || null, description: d.description.trim() || null,
         reconciled: d.reconciled, usd_amount: usdAmount, source_cash_id: d.source_cash_id,
+        closes_transfer: !!d.source_cash_id && d.closes_transfer,
       };
       if (d.id) return updateFn({ data: { id: d.id, patch: body } });
       return createFn({ data: { ...body, repeatMonths: d.kind === "expense" ? d.repeat : 1 } });
@@ -496,11 +509,25 @@ function EntryDialog({ draft, categories, onClose, onSaved }: { draft: Draft; ca
             <Field label="Valor (R$)"><input autoFocus value={d.amount} onChange={(e) => set({ amount: e.target.value })} inputMode="decimal" placeholder="0,00" className={INPUT} /></Field>
             <Field label="Data"><input type="date" value={d.date} onChange={(e) => set({ date: e.target.value })} className={INPUT} /></Field>
           </div>
+          {t && (
+            <div className="rounded-lg bg-muted/50 border border-border px-3 py-2 text-xs text-muted-foreground">
+              Envio de {dm(t.date)}: <span className="font-semibold text-foreground tabular-nums">{usd(t.amount)}</span>
+              {t.converted > 0 && <> • já convertido {usd(t.converted)}</>} • falta <span className="font-semibold text-foreground tabular-nums">{usd(t.remaining)}</span>
+            </div>
+          )}
           {income && (
-            <Field label="Valor enviado em dólar (opcional, pro câmbio)">
+            <Field label={t ? "Quanto converteu agora em dólar" : "Valor enviado em dólar (opcional, pro câmbio)"}>
               <input value={d.usd} onChange={(e) => set({ usd: e.target.value })} inputMode="decimal" placeholder="US$" className={INPUT} />
               {usdAmount && amount > 0 ? <p className="text-[11px] text-muted-foreground mt-1">Câmbio: {rate(amount / usdAmount)}</p> : null}
+              {sobra != null && sobra > 0.005 && !d.closes_transfer && <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">Sobram {usd(sobra)} pra converter depois (o envio continua na lista).</p>}
+              {sobra != null && sobra < -0.005 && <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">Passa {usd(-sobra)} do que falta converter neste envio.</p>}
             </Field>
+          )}
+          {income && d.source_cash_id && (!t || (sobra != null && sobra > 0.005) || d.closes_transfer) && (
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={d.closes_transfer} onChange={(e) => set({ closes_transfer: e.target.checked })} className="size-3.5 accent-primary" />
+              Encerrar este envio (o resto foi taxa / não vou converter)
+            </label>
           )}
           <Field label="Categoria">
             <input value={d.category} onChange={(e) => set({ category: e.target.value })} list="wise-cats" placeholder={income ? "Envio do caixa (US$)" : "Funcionário, Contabilidade…"} className={INPUT} />
