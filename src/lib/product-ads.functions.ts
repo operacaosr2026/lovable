@@ -597,29 +597,27 @@ function creativeExtras(cfg: AdPublicationConfig, t: AdTexts) {
   };
 }
 
-// Um texto de cada: anúncio simples. Mais de um: "várias opções de texto" (asset_feed_spec).
+// O anúncio vai sempre completo (mídia, link, botão, link de exibição) com o
+// primeiro texto de cada. Com mais de um título/descrição, as outras opções vão
+// em asset_feed_spec só com os textos ("várias opções de texto", como no
+// Gerenciador) — o link fica no object_story_spec, senão a Meta recusa
+// ("O campo de link é obrigatório").
 function creativeSpec(media: z.infer<typeof MediaInput>, cfg: AdPublicationConfig, identity: Identity, t: AdTexts) {
   const caption = cfg.display_link?.trim() || undefined;
   const cta = { type: cfg.cta, value: { link: cfg.link } };
 
-  if (t.titles.length <= 1 && t.bodies.length <= 1 && t.descriptions.length <= 1) {
-    const object_story_spec = media.kind === "video"
-      ? { ...identity, video_data: { video_id: media.video_id, image_url: media.thumbnail_url, message: t.bodies[0], title: t.titles[0], link_description: t.descriptions[0], call_to_action: { type: cfg.cta, value: { link: cfg.link, ...(caption ? { link_caption: caption } : {}) } } } }
-      : { ...identity, link_data: { image_hash: media.image_hash, link: cfg.link, message: t.bodies[0], name: t.titles[0], description: t.descriptions[0], caption, call_to_action: cta } };
-    return { object_story_spec };
-  }
+  const object_story_spec = media.kind === "video"
+    ? { ...identity, video_data: { video_id: media.video_id, image_url: media.thumbnail_url, message: t.bodies[0], title: t.titles[0], link_description: t.descriptions[0], call_to_action: { type: cfg.cta, value: { link: cfg.link, ...(caption ? { link_caption: caption } : {}) } } } }
+    : { ...identity, link_data: { image_hash: media.image_hash, link: cfg.link, message: t.bodies[0], name: t.titles[0], description: t.descriptions[0], caption, call_to_action: cta } };
+
+  if (t.titles.length <= 1 && t.bodies.length <= 1 && t.descriptions.length <= 1) return { object_story_spec };
 
   return {
-    object_story_spec: identity,
+    object_story_spec,
     asset_feed_spec: {
-      ...(media.kind === "video"
-        ? { videos: [{ video_id: media.video_id, thumbnail_url: media.thumbnail_url }], ad_formats: ["SINGLE_VIDEO"] }
-        : { images: [{ hash: media.image_hash }], ad_formats: ["SINGLE_IMAGE"] }),
       ...(t.titles.length ? { titles: t.titles.map((text) => ({ text })) } : {}),
       ...(t.bodies.length ? { bodies: t.bodies.map((text) => ({ text })) } : {}),
       ...(t.descriptions.length ? { descriptions: t.descriptions.map((text) => ({ text })) } : {}),
-      link_urls: [{ website_url: cfg.link, ...(caption ? { display_url: caption } : {}) }],
-      call_to_action_types: [cfg.cta],
       optimization_type: "DEGREES_OF_FREEDOM",
     },
   };
