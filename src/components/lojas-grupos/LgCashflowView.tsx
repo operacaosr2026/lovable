@@ -1225,8 +1225,10 @@ function TransferModal({ accounts, todayKey, initial, onClose, onSave, onDelete 
   );
 }
 
-function EditGroupTotal({ group, balanceAccounts, shopNamesMap, onClose, onSave }: {
+function EditGroupTotal({ group, balanceAccounts, shopNamesMap, onClose, onSave, onDelete }: {
   group: EntryGroup; balanceAccounts: BalanceAccount[]; shopNamesMap?: Record<string, string>; onClose: () => void;
+  // Exclui todos os lançamentos do grupo (ex.: uma cobrança da Meta dividida entre as lojas).
+  onDelete?: () => void;
   onSave: (total: number, viaBalance: boolean, balanceShopId?: string | null, date?: string, balanceAmounts?: Record<string, number>) => void;
 }) {
   const [amount, setAmount] = useState(String(Number(group.total.toFixed(2))));
@@ -1308,6 +1310,11 @@ function EditGroupTotal({ group, balanceAccounts, shopNamesMap, onClose, onSave 
         )}
       </div>
       <div className="flex justify-end gap-2 mt-4">
+        {onDelete && (
+          <Button variant="ghost" size="sm" onClick={onDelete} className="text-destructive mr-auto">
+            <Trash2 className="size-4" /> Excluir
+          </Button>
+        )}
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
         <Button onClick={save} disabled={blocked}>Salvar</Button>
       </div>
@@ -2140,6 +2147,21 @@ export function LgCashflowView({
           balanceAccounts={balanceAccounts}
           shopNamesMap={shopNamesMap}
           onClose={() => setEditingGroup(null)}
+          // Sem excluir: previsão de custo de pedidos (order_cost — voltaria no
+          // recálculo; zera pelo lançamento) e série recorrente / dia virtual.
+          onDelete={editingGroup.entries.some((e) => e.virtual || e.auto_kind === "order_cost" || (e.recurrence && e.recurrence !== "none")) ? undefined : () => {
+            const g = editingGroup;
+            const n = g.entries.length;
+            confirm({
+              title: `Excluir ${g.label}`,
+              description: `Apaga ${n === 1 ? "o lançamento" : `os ${n} lançamentos (${fmtMoney(g.total)} no total)`} deste dia. Não volta no sync.`,
+              confirmText: "Excluir", variant: "destructive",
+            }).then((ok) => {
+              if (!ok) return;
+              for (const e of g.entries) deleteMut.mutate(e.id);
+              setEditingGroup(null);
+            });
+          }}
           onSave={(total, viaBalance, balanceShopId, date, balanceAmounts) => {
             const entries = editingGroup.entries;
             const shares = splitAmountProportionally(total, entries.map((e) => Math.round(Number(e.amount) * 100)));
