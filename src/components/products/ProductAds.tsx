@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, Film, GalleryHorizontal, Image as ImageIcon, LayoutGrid,
-  Layers, Loader2, Megaphone, Pencil, Rows3, RotateCcw, Shuffle, Trash2, Users, XCircle,
+  Copy, Globe, Layers, Loader2, Megaphone, Pencil, Rows3, RotateCcw, Shuffle, Trash2, Users, XCircle,
 } from "lucide-react";
 import { listCreatives } from "@/lib/products.functions";
 import { getNamingTemplate } from "@/lib/naming.functions";
 import {
-  AD_CTAS, getProductAdsSetup, getAdAccountAssets, startAdPublication, uploadAdMedia, checkAdVideos,
+  AD_CTAS, CONVERSION_EVENTS, getProductAdsSetup, getAdAccountAssets, startAdPublication, uploadAdMedia, checkAdVideos,
   createAdset, createAdInAdset, finishAdPublication, deleteAdPublication,
   startDriveVideoUpload, transferDriveVideoChunk, finishDriveVideoUpload,
-  type AdPublicationConfig, type AdMedia, type AdInstagram, type AdResult, type Gender, type VideoCheck,
+  type AdPublicationConfig, type ConversionEvent, type AdMedia, type AdInstagram, type AdResult, type Gender, type VideoCheck,
 } from "@/lib/product-ads.functions";
 import { buildPlan, MULTI_MAX, MULTI_MIN, type Distribution, type MultiFormat, type PlanAd, type PlanAdset } from "@/lib/ad-plan";
 import { DEFAULT_TEMPLATES, codeLabel, codesIn, customCodes } from "@/lib/naming";
@@ -40,7 +40,7 @@ const OLD_DEFAULT_URL_TAGS = "utm_source=facebook&utm_medium=paid&utm_campaign={
 type Form = {
   card_id?: string; ad_account_id?: string;
   budget_mode: "CBO" | "ABO"; daily_budget?: number; status: "PAUSED" | "ACTIVE";
-  countriesText: string; age_min: number; age_max: number; pixel_id?: string;
+  countries: string[]; age_min: number; age_max: number; pixel_id?: string; conversion_event: ConversionEvent;
   genders: Gender; age_suggestion: boolean; gender_suggestion: boolean;
   page_id?: string; page_name: string; instagram_user_id?: string; instagram_username?: string;
   link: string; cta: typeof AD_CTAS[number]; url_tags: string;
@@ -54,14 +54,14 @@ type Form = {
 };
 const DEFAULT_FORM: Form = {
   budget_mode: "CBO", daily_budget: 50, status: "PAUSED",
-  countriesText: "US", age_min: 18, age_max: 65, genders: "all", age_suggestion: true, gender_suggestion: true,
+  countries: ["US"], conversion_event: "PURCHASE", age_min: 18, age_max: 65, genders: "all", age_suggestion: true, gender_suggestion: true,
   page_name: "", link: "", cta: "SHOP_NOW", url_tags: STANDARD_URL_TAGS,
   distribution: "per_creative", multi_format: "flexible", custom: {},
   picks: {},
   ai_features: {},
   multi_advertiser: false, display_link: "",
   attribution: "default", lifecycle: "all", retention_days: 180,
-  schedule: "now", start_local: "",
+  schedule: "later", start_local: "",
 };
 
 // Ids de product_copies escolhidos pra um criativo (até 5 de cada).
@@ -69,11 +69,37 @@ type TextPick = { titles: string[]; bodies: string[] };
 const MAX_TEXTS = 5;
 type NodeState = { state: "running" | "ok" | "error"; label: string };
 
-const inputCls = "w-full px-3 h-9 rounded-lg bg-background border border-border text-sm outline-none focus:border-primary/50 disabled:opacity-60";
+const inputCls = "w-full px-3 h-9 rounded-lg bg-card border border-border shadow-xs text-sm outline-none transition-colors hover:border-foreground/20 focus:border-primary/60 focus:ring-2 focus:ring-primary/10 disabled:opacity-60";
+// Uma cor por etapa, repetida na árvore da Revisão (campanha › conjunto › anúncio).
+const TONE = {
+  campaign: { chip: "bg-primary/10 text-primary" },
+  adset: { chip: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  ad: { chip: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+} as const;
+type Tone = keyof typeof TONE;
+// Bloco dentro de cada etapa (Criativos, Como montar, Textos...): fundo levemente cinza pra separar.
+const blockCls = "rounded-xl border border-border/60 bg-muted/35 p-3 sm:p-4";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const adsManagerUrl = (act: string, campaignId: string) =>
   `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${act.replace(/^act_/, "")}&selected_campaign_ids=${campaignId}`;
-const todayDM = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
+// "2026-11-25T00:00" = amanhã à meia-noite no fuso da conta de anúncio.
+const tomorrowIn = (timeZone: string) => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return `${d.toISOString().slice(0, 10)}T00:00`;
+};
+// "2026-11-25..." → "25/11/26"
+const dmy = (isoDate: string) => `${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}/${isoDate.slice(2, 4)}`;
+const todayIn = (timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const COUNTRIES: [string, string][] = [
+  ["US", "Estados Unidos"], ["CA", "Canadá"], ["GB", "Reino Unido"], ["AU", "Austrália"], ["NZ", "Nova Zelândia"],
+  ["IE", "Irlanda"], ["DE", "Alemanha"], ["FR", "França"], ["IT", "Itália"], ["ES", "Espanha"],
+  ["PT", "Portugal"], ["NL", "Holanda"], ["BE", "Bélgica"], ["CH", "Suíça"], ["AT", "Áustria"],
+  ["SE", "Suécia"], ["NO", "Noruega"], ["DK", "Dinamarca"], ["BR", "Brasil"], ["MX", "México"],
+];
+const COUNTRY_NAME = new Map(COUNTRIES);
+const flag = (cc: string) => String.fromCodePoint(...[...cc].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
 const money = (v: number, cur?: string) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}${cur ? ` ${cur}` : ""}`;
 
 export function igLabel(i: { id: string; username: string; page_name?: string }) {
@@ -89,7 +115,8 @@ function formFromLast(last: AdPublicationConfig | undefined): Partial<Form> {
     budget_mode: last.budget_mode ?? "ABO",
     daily_budget: last.daily_budget,
     status: "PAUSED",
-    countriesText: last.countries?.join(", ") || "US",
+    countries: last.countries?.length ? last.countries : ["US"],
+    conversion_event: last.conversion_event ?? "PURCHASE",
     age_min: last.age_min ?? 18, age_max: last.age_max ?? 65,
     genders: last.genders ?? "all", age_suggestion: last.age_suggestion ?? last.advantage_audience ?? true, gender_suggestion: last.gender_suggestion ?? true,
     pixel_id: last.pixel_id, page_id: last.page_id, page_name: last.page_name ?? "",
@@ -143,6 +170,7 @@ export function ProductAds({ productId }: { productId: string }) {
   const jobs = usePublishJobs();
   const running = localRunning || jobs.some((j) => j.status === "running");
   const [initialized, setInitialized] = useState(false);
+  const topRef = useRef<HTMLDivElement>(null);
   const set = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
 
   // Pré-preenche com a última publicação do produto (ou o padrão).
@@ -162,6 +190,17 @@ export function ProductAds({ productId }: { productId: string }) {
     staleTime: 5 * 60_000,
   });
   const igs = assets.data?.instagrams ?? [];
+  const timezone = assets.data?.timezone ?? "America/New_York";
+
+  // Agendada por padrão: amanhã 00h no fuso da conta (preenche quando o fuso chega ou a data ficou no passado).
+  const accountTz = assets.data?.timezone;
+  useEffect(() => {
+    if (!accountTz || !initialized) return;
+    setForm((p) => {
+      const valid = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(p.start_local) && new Date(zonedToIso(p.start_local, accountTz)).getTime() > Date.now();
+      return valid ? p : { ...p, start_local: tomorrowIn(accountTz) };
+    });
+  }, [accountTz, initialized, form.start_local === ""]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const igForPage = (pageId: string | undefined, current?: string) =>
     igs.find((i) => i.page_id && i.page_id === pageId) ?? igs.find((i) => i.id === current);
@@ -182,7 +221,7 @@ export function ProductAds({ productId }: { productId: string }) {
   const shapeKey = `${selected.join(",")}|${form.distribution}|${form.multi_format}`;
   useEffect(() => { setOverrides((o): Record<string, string> => (o.campaign ? { campaign: o.campaign } : {})); }, [shapeKey]);
 
-  const countries = useMemo(() => form.countriesText.split(/[\s,;]+/).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z]{2}$/.test(s)), [form.countriesText]);
+  const countries = form.countries;
   const chosen = useMemo(() => selected.map((id) => creatives.find((c) => c.id === id)).filter(Boolean) as any[], [selected, creatives]);
   const custom = customCodes(templates);
 
@@ -192,7 +231,7 @@ export function ProductAds({ productId }: { productId: string }) {
     conta: account?.account_name ?? "",
     estrutura: form.budget_mode,
     orcamento: form.daily_budget ? String(form.daily_budget) : "",
-    data: todayDM(),
+    data: dmy(form.schedule === "later" && form.start_local ? form.start_local : todayIn(timezone)),
     numero: String((setup.data?.publication_count ?? 0) + 1),
     paises: countries.join(","),
     idade: `${form.age_min}-${form.age_max}`,
@@ -226,7 +265,6 @@ export function ProductAds({ productId }: { productId: string }) {
     const p = form.picks[id];
     return { titles: (p?.titles ?? []).filter((x) => copyById.has(x)), bodies: (p?.bodies ?? []).filter((x) => copyById.has(x)) };
   };
-  const timezone = assets.data?.timezone ?? "America/New_York";
   const startIso = form.schedule === "later" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(form.start_local) ? zonedToIso(form.start_local, timezone) : undefined;
   if (form.schedule === "later" && (!startIso || new Date(startIso).getTime() <= Date.now())) missing.push("data de início no futuro");
   const withoutBody = chosen.filter((c) => !pickOf(c.id).bodies.length).length;
@@ -251,7 +289,7 @@ export function ProductAds({ productId }: { productId: string }) {
     const config = {
       card_id: form.card_id!, ad_account_id: form.ad_account_id!,
       campaign_name: plan.campaign_name, budget_mode: form.budget_mode, daily_budget: Number(form.daily_budget), status: form.status,
-      countries, age_min: form.age_min, age_max: form.age_max, pixel_id: form.pixel_id!,
+      countries, age_min: form.age_min, age_max: form.age_max, pixel_id: form.pixel_id!, conversion_event: form.conversion_event,
       genders: form.genders, age_suggestion: form.age_suggestion, gender_suggestion: form.gender_suggestion,
       page_id: form.page_id!, page_name: form.page_name, instagram_user_id: form.instagram_user_id, instagram_username: form.instagram_username,
       link: form.link.trim(), url_tags: form.url_tags.trim(), cta: form.cta,
@@ -485,6 +523,30 @@ export function ProductAds({ productId }: { productId: string }) {
     }
   };
 
+  // Publicadas › "Duplicar": copia tudo dessa campanha pros campos (nada vai pra Meta até publicar).
+  const duplicate = (p: Publication) => {
+    if (running) return;
+    const cfg = p.config;
+    const ids = cfg.plan?.length
+      ? cfg.plan.flatMap((s) => s.ads.flatMap((a) => a.creative_ids))
+      : [...Object.keys(cfg.creative_texts ?? {}), ...p.ads.flatMap((a) => a.creative_ids ?? (a.creative_id ? [a.creative_id] : []))];
+    const unique = [...new Set(ids)];
+    const found = unique.filter((id) => creatives.some((c) => c.id === id));
+    const acc = setup.data?.accounts.find((a) => a.ad_account_id === cfg.ad_account_id);
+    setForm({
+      ...DEFAULT_FORM, ...formFromLast(cfg),
+      status: cfg.status,
+      card_id: acc?.card_id ?? form.card_id, ad_account_id: acc?.ad_account_id ?? form.ad_account_id,
+      link: cfg.link || form.link,
+    });
+    setSelected(found);
+    setOverrides({});
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!acc) toast.warning("A conta de anúncio dessa campanha não está mais conectada; ficou a conta atual.");
+    if (found.length < unique.length) toast.warning(`${unique.length - found.length} criativo(s) dessa campanha foram apagados e ficaram de fora.`);
+    else toast.success("Campos preenchidos com a campanha. Ajuste o que quiser e publique.");
+  };
+
   if (setup.isLoading) return <TabSkeleton />;
   if (setup.error) {
     return (
@@ -514,11 +576,11 @@ export function ProductAds({ productId }: { productId: string }) {
   const igText = form.instagram_user_id ? (selectedIg ? igLabel(selectedIg) : "Instagram") : "Página do Facebook";
 
   return (
-    <div className="space-y-6">
+    <div ref={topRef} className="space-y-6 scroll-mt-4">
       <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
         <fieldset disabled={running} className="space-y-4 min-w-0">
           {/* ① Campanha */}
-          <Step n={1} icon={Megaphone} title="Campanha" summary={account ? `${account.account_name} · ${form.budget_mode}${form.daily_budget ? ` ${money(form.daily_budget, cur)}/dia` : ""}` : undefined}>
+          <Step n={1} tone="campaign" icon={Megaphone} title="Campanha" summary={account ? `${account.account_name} · ${form.budget_mode}${form.daily_budget ? ` ${money(form.daily_budget, cur)}/dia` : ""}` : undefined}>
             <Field label="Conta de anúncio">
               <select
                 value={account?.ad_account_id ?? ""}
@@ -561,16 +623,21 @@ export function ProductAds({ productId }: { productId: string }) {
           </Step>
 
           {/* ② Conjunto */}
-          <Step n={2} icon={Users} title="Conjunto" summary={`${countries.join(", ") || "—"} · ${values.idade}${form.age_suggestion ? " (sugestão)" : ""}${form.genders !== "all" ? ` · ${GENDER_LABEL[form.genders]}${form.gender_suggestion ? " (sugestão)" : ""}` : ""}`}>
+          <Step n={2} tone="adset" icon={Users} title="Conjunto" summary={`${countries.join(", ") || "—"} · ${values.idade}${form.age_suggestion ? " (sugestão)" : ""}${form.genders !== "all" ? ` · ${GENDER_LABEL[form.genders]}${form.gender_suggestion ? " (sugestão)" : ""}` : ""}`}>
             <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Países" hint="Códigos de 2 letras, separados por vírgula (US, CA, GB).">
-                <input value={form.countriesText} onChange={(e) => set({ countriesText: e.target.value })} placeholder="US, CA" className={inputCls} />
+              <Field label="Países">
+                <CountryPicker value={form.countries} onChange={(countries) => set({ countries })} />
               </Field>
-              <Field label="Pixel (otimiza para compra)">
+              <Field label="Pixel">
                 <select value={form.pixel_id ?? ""} disabled={assets.isLoading} onChange={(e) => set({ pixel_id: e.target.value })} className={inputCls}>
                   {assets.isLoading && <option>Carregando...</option>}
                   {assets.data?.pixels.length === 0 && <option value="">Nenhum pixel nesta conta</option>}
                   {assets.data?.pixels.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Evento de conversão" hint="O que a Meta procura no pixel. Padrão: compra.">
+                <select value={form.conversion_event} onChange={(e) => set({ conversion_event: e.target.value as ConversionEvent })} className={inputCls}>
+                  {(Object.keys(CONVERSION_EVENTS) as ConversionEvent[]).map((k) => <option key={k} value={k}>{CONVERSION_EVENTS[k]}</option>)}
                 </select>
               </Field>
               <Field label="Idade">
@@ -592,10 +659,10 @@ export function ProductAds({ productId }: { productId: string }) {
             </div>
             <p className="text-xs text-muted-foreground">
               <strong className="text-foreground font-medium">Como sugestão:</strong> a Meta pode mostrar para quem está fora dessa faixa se achar compradores.
-              Desmarcado: só para quem está dentro. Otimiza para compra no pixel, com posicionamentos automáticos.
+              Desmarcado: só para quem está dentro. Posicionamentos automáticos.
             </p>
 
-            <div className="border-t border-border pt-3 space-y-2">
+            <div className={cn(blockCls, "space-y-2")}>
               <Field label="Ciclo de vida do cliente">
                 <div className="grid sm:grid-cols-3 gap-2">
                   {LIFECYCLE_KEYS.map((k) => (
@@ -614,7 +681,7 @@ export function ProductAds({ productId }: { productId: string }) {
               )}
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3 border-t border-border pt-3">
+            <div className={cn(blockCls, "grid sm:grid-cols-2 gap-3")}>
               <Field label="Atribuição" hint="Não dá para mudar depois de publicar.">
                 <select value={form.attribution} onChange={(e) => set({ attribution: e.target.value as Attribution })} className={inputCls}>
                   {ATTRIBUTION_KEYS.map((k) => <option key={k} value={k}>{ATTRIBUTIONS[k].label}</option>)}
@@ -630,7 +697,7 @@ export function ProductAds({ productId }: { productId: string }) {
           </Step>
 
           {/* ③ Anúncios */}
-          <Step n={3} icon={ImageIcon} title="Anúncios" summary={chosen.length ? `${chosen.length} criativo(s) · ${pageLabel}` : undefined}>
+          <Step n={3} tone="ad" icon={ImageIcon} title="Anúncios" summary={chosen.length ? `${chosen.length} criativo(s) · ${pageLabel}` : undefined}>
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Página do Facebook">
                 <select value={form.page_id ?? ""} disabled={assets.isLoading} onChange={(e) => {
@@ -682,7 +749,7 @@ export function ProductAds({ productId }: { productId: string }) {
               </div>
             </details>
 
-            <div className="border-t border-border pt-4">
+            <div className={blockCls}>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[13px] font-semibold text-foreground">
                   Criativos {selected.length > 0 && <span className="text-primary normal-case tracking-normal">· {selected.length} marcado(s)</span>}
@@ -704,7 +771,7 @@ export function ProductAds({ productId }: { productId: string }) {
               )}
             </div>
 
-            <div className="border-t border-border pt-4 space-y-2">
+            <div className={cn(blockCls, "space-y-2")}>
               <div className="text-[13px] font-semibold text-foreground">Como montar</div>
               <div className="grid sm:grid-cols-3 gap-2">
                 <OptionCard icon={LayoutGrid} active={form.distribution === "per_creative"} onClick={() => set({ distribution: "per_creative" })}
@@ -724,7 +791,7 @@ export function ProductAds({ productId }: { productId: string }) {
               )}
             </div>
 
-            <div className="border-t border-border pt-4 space-y-3">
+            <div className={cn(blockCls, "space-y-3")}>
               <div className="text-[13px] font-semibold text-foreground">Textos</div>
               <TextPicker
                 creatives={chosen}
@@ -742,7 +809,7 @@ export function ProductAds({ productId }: { productId: string }) {
             />
 
             {custom.length > 0 && (
-              <div className="border-t border-border pt-4">
+              <div className={blockCls}>
                 <div className="text-[13px] font-semibold text-foreground">Códigos que você criou no modelo de nomes</div>
                 <p className="text-xs text-muted-foreground mt-0.5 mb-2">
                   O sistema não sabe preencher estes sozinho. Escreva o valor ou deixe vazio (some do nome).{" "}
@@ -766,7 +833,7 @@ export function ProductAds({ productId }: { productId: string }) {
 
         {/* Revisão */}
         <aside className="lg:sticky lg:top-0 rounded-2xl border border-border bg-card soft-shadow-sm overflow-hidden">
-          <div className="px-4 pt-4 pb-3 border-b border-border">
+          <div className="px-4 pt-4 pb-3 border-b border-border/70 bg-muted/30">
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm font-semibold">Revisão</div>
               <Link to="/settings/templates" search={{ tipo: "nomenclatura" }} className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1">
@@ -827,6 +894,7 @@ export function ProductAds({ productId }: { productId: string }) {
           retrying={retrying}
           busy={running || !!retrying}
           onRetry={retry}
+          onDuplicate={duplicate}
           onDelete={(id) => confirm("Tirar do histórico? A campanha continua na Meta.").then(async (yes) => {
             if (!yes) return;
             await deleteFn({ data: { id } });
@@ -902,6 +970,48 @@ function AiFeaturesPanel({ value, onChange, multiAdvertiser, onMultiAdvertiser }
 
 function displayFromLink(link: string) {
   try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return "ex.: sualoja.com"; }
+}
+
+function CountryPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const toggle = (cc: string) => onChange(value.includes(cc) ? value.filter((x) => x !== cc) : [...value, cc]);
+  // Países de publicações antigas que não estão na lista continuam aparecendo.
+  const extra = value.filter((cc) => !COUNTRY_NAME.has(cc)).map((cc): [string, string] => [cc, cc]);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className={cn(inputCls, "flex items-center gap-2 text-left")}>
+          <Globe className="size-3.5 text-muted-foreground shrink-0" />
+          <span className={cn("flex-1 truncate", !value.length && "text-muted-foreground")}>
+            {value.length ? value.map((cc) => `${flag(cc)} ${value.length > 2 ? cc : COUNTRY_NAME.get(cc) ?? cc}`).join(", ") : "Escolha os países"}
+          </span>
+          <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-1">
+        <div className="max-h-80 overflow-y-auto">
+          {[...extra, ...COUNTRIES].map(([cc, name]) => {
+            const on = value.includes(cc);
+            return (
+              <button key={cc} type="button" onClick={() => toggle(cc)} className={cn("w-full flex items-center gap-2 px-2 h-8 rounded-md text-sm text-left hover:bg-muted", on && "bg-primary/5")}>
+                <span className={cn("size-4 rounded border grid place-items-center shrink-0", on ? "bg-primary border-primary text-primary-foreground" : "border-border")}>
+                  {on && <Check className="size-3" />}
+                </span>
+                <span>{flag(cc)}</span>
+                <span className="flex-1 truncate">{name}</span>
+                <span className="text-[11px] text-muted-foreground">{cc}</span>
+              </button>
+            );
+          })}
+        </div>
+        {value.length > 0 && (
+          <div className="border-t border-border mt-1 pt-1 flex items-center justify-between px-2 h-8 text-xs text-muted-foreground">
+            <span>{value.length} selecionado(s)</span>
+            <button type="button" onClick={() => onChange([])} className="hover:text-foreground">Limpar</button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -1158,7 +1268,7 @@ function TreeRow({ icon: Icon, level, value, meta, edited, disabled, node, thumb
   node?: NodeState; thumbs?: any[]; onChange: (v: string) => void; onReset: () => void;
 }) {
   return (
-    <div className={cn("flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/50", level === 1 && "ml-3", level === 2 && "ml-7")}>
+    <div className={cn("flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/50", level === 1 && "ml-3 border-l-2 border-sky-500/30 rounded-l-none", level === 2 && "ml-7 border-l-2 border-violet-500/30 rounded-l-none")}>
       {thumbs ? (
         <div className="relative size-8 shrink-0">
           {thumbs.slice(0, 3).map((c, i) => (
@@ -1168,7 +1278,7 @@ function TreeRow({ icon: Icon, level, value, meta, edited, disabled, node, thumb
           ))}
         </div>
       ) : Icon ? (
-        <div className={cn("size-6 rounded-md grid place-items-center shrink-0 mt-0.5", level === 0 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+        <div className={cn("size-6 rounded-md grid place-items-center shrink-0 mt-0.5", level === 0 ? TONE.campaign.chip : level === 1 ? TONE.adset.chip : TONE.ad.chip)}>
           <Icon className="size-3.5" />
         </div>
       ) : null}
@@ -1208,8 +1318,8 @@ function StateIcon({ state, className }: { state: NodeState["state"]; className?
 
 type Publication = { id: string; campaign_id: string | null; campaign_name: string; ad_account_id: string; status: string; config: AdPublicationConfig; ads: AdResult[]; error: string | null; created_at: string };
 
-function History({ publications, onDelete, onRetry, retrying, busy }: {
-  publications: Publication[]; onDelete: (id: string) => void; onRetry: (p: Publication) => void;
+function History({ publications, onDelete, onRetry, onDuplicate, retrying, busy }: {
+  publications: Publication[]; onDelete: (id: string) => void; onRetry: (p: Publication) => void; onDuplicate: (p: Publication) => void;
   retrying: string | null; busy: boolean;
 }) {
   return (
@@ -1250,6 +1360,12 @@ function History({ publications, onDelete, onRetry, retrying, busy }: {
                   </button>
                 )}
               </div>
+              <button
+                onClick={() => onDuplicate(p)} disabled={busy} title="Preenche os campos do lançamento com esta campanha"
+                className="h-7 px-2.5 rounded-md border border-border bg-background text-xs font-medium inline-flex items-center gap-1.5 shrink-0 hover:bg-muted disabled:opacity-50"
+              >
+                <Copy className="size-3" /> Duplicar
+              </button>
               {p.campaign_id && (
                 <a href={adsManagerUrl(p.ad_account_id, p.campaign_id)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary inline-flex items-center gap-1 shrink-0 hover:underline">
                   Gerenciador <ExternalLink className="size-3" />
@@ -1273,13 +1389,16 @@ function StatusIcon({ status }: { status: string }) {
   return <XCircle className="size-4 text-destructive shrink-0 mt-0.5" />;
 }
 
-function Step({ n, icon: Icon, title, summary, children }: { n: number; icon: React.ComponentType<{ className?: string }>; title: string; summary?: string; children: React.ReactNode }) {
+function Step({ n, tone, icon: Icon, title, summary, children }: { n: number; tone: Tone; icon: React.ComponentType<{ className?: string }>; title: string; summary?: string; children: React.ReactNode }) {
+  const t = TONE[tone];
   return (
-    <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-4 sm:p-5 space-y-3">
-      <div className="flex items-center gap-2.5">
-        <span className="size-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold grid place-items-center shrink-0">{n}</span>
-        <Icon className="size-4 text-muted-foreground" />
-        <div className="text-[15px] font-semibold">{title}</div>
+    <section className="rounded-2xl border border-border bg-card soft-shadow-sm p-4 sm:p-5 space-y-4">
+      <div className="flex items-center gap-2.5 pb-3 border-b border-border/60">
+        <div className={cn("size-6 rounded-md grid place-items-center shrink-0", t.chip)}>
+          <Icon className="size-3.5" />
+        </div>
+        <div className="text-[15px] font-semibold tracking-tight">{title}</div>
+        <span className="text-xs tabular-nums text-muted-foreground/60">0{n}</span>
         {summary && <div className="ml-auto text-xs text-muted-foreground truncate max-w-[55%]">{summary}</div>}
       </div>
       {children}
@@ -1290,7 +1409,7 @@ function Step({ n, icon: Icon, title, summary, children }: { n: number; icon: Re
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <div className="text-xs text-muted-foreground font-medium mb-1.5">{label}</div>
+      <div className="text-xs text-foreground/75 font-medium mb-1.5">{label}</div>
       {children}
       {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
     </div>
@@ -1299,7 +1418,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-muted/50 px-2.5 py-1.5 min-w-0">
+    <div className="rounded-lg bg-card border border-border/70 px-2.5 py-1.5 min-w-0">
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className="text-sm font-semibold truncate">{value}</div>
     </div>
@@ -1316,7 +1435,7 @@ function OptionCard({ icon: Icon, title, text, active, compact, onClick }: {
       className={cn(
         "relative text-left rounded-xl border px-3 transition-all",
         compact ? "py-2" : "py-2.5",
-        active ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border bg-background hover:border-primary/40",
+        active ? "border-primary bg-primary/[0.06] ring-1 ring-primary/25 shadow-xs" : "border-border bg-card hover:border-primary/40 hover:bg-muted/30",
       )}
     >
       <div className="flex items-center gap-1.5 pr-5">
@@ -1331,7 +1450,7 @@ function OptionCard({ icon: Icon, title, text, active, compact, onClick }: {
 
 function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[] }) {
   return (
-    <div className="flex rounded-lg border border-border bg-background p-0.5">
+    <div className="flex rounded-lg border border-border bg-card shadow-xs p-0.5">
       {options.map((o) => (
         <button key={o.value} type="button" onClick={() => onChange(o.value)} className={`flex-1 h-8 rounded-md text-xs font-medium transition-colors ${value === o.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
           {o.label}

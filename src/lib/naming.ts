@@ -19,7 +19,7 @@ export const NAMING_CODES: NamingCode[] = [
   { level: "campaign", code: "conta", label: "Conta de anúncio", example: "CA 01" },
   { level: "campaign", code: "estrutura", label: "CBO ou ABO", example: "CBO" },
   { level: "campaign", code: "orcamento", label: "Orçamento/dia", example: "50" },
-  { level: "campaign", code: "data", label: "Data (dd/mm)", example: "23/11" },
+  { level: "campaign", code: "data", label: "Data de início (dd/mm/aa)", example: "25/11/26" },
   { level: "campaign", code: "numero", label: "Nº da campanha do produto", example: "4" },
   { level: "adset", code: "paises", label: "Países", example: "US" },
   { level: "adset", code: "idade", label: "Idade", example: "18-65" },

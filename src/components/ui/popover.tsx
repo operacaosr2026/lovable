@@ -23,6 +23,9 @@ const PopoverContent = React.forwardRef<
         className,
       )}
       {...props}
+      // Dentro de janela (Dialog), a trava de rolagem da janela engolia a rodinha do mouse nas listas.
+      onWheel={(e) => { e.stopPropagation(); props.onWheel?.(e); }}
+      onTouchMove={(e) => { e.stopPropagation(); props.onTouchMove?.(e); }}
     />
   </PopoverPrimitive.Portal>
 ));

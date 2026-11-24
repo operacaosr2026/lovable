@@ -35,13 +35,26 @@ export type Gender = typeof GENDERS[number];
 
 export const AD_CTAS = ["SHOP_NOW", "LEARN_MORE", "ORDER_NOW", "BUY_NOW", "GET_OFFER", "SIGN_UP"] as const;
 
+// Evento do pixel que o conjunto otimiza (promoted_object.custom_event_type).
+export const CONVERSION_EVENTS = {
+  PURCHASE: "Compra",
+  INITIATED_CHECKOUT: "Finalização de compra",
+  ADD_PAYMENT_INFO: "Informações de pagamento",
+  ADD_TO_CART: "Adição ao carrinho",
+  VIEW_CONTENT: "Visualização de conteúdo",
+  LEAD: "Lead",
+  COMPLETE_REGISTRATION: "Cadastro concluído",
+} as const;
+export type ConversionEvent = keyof typeof CONVERSION_EVENTS;
+const CONVERSION_KEYS = Object.keys(CONVERSION_EVENTS) as [ConversionEvent, ...ConversionEvent[]];
+
 export type AdPublicationConfig = {
   // card_id: conta vem do card de Lojas e Grupos. shop_id só nas publicações antigas.
   card_id?: string; shop_id?: string; ad_account_id: string;
   // Campanha
   campaign_name: string; budget_mode?: "CBO" | "ABO"; daily_budget: number; status: "PAUSED" | "ACTIVE";
   // Conjunto
-  countries: string[]; age_min?: number; age_max?: number; pixel_id: string;
+  countries: string[]; age_min?: number; age_max?: number; pixel_id: string; conversion_event?: ConversionEvent;
   genders?: Gender; age_suggestion?: boolean; gender_suggestion?: boolean;
   advantage_audience?: boolean; // publicações antigas (Advantage+ = idade como sugestão)
   // Anúncio
@@ -340,6 +353,7 @@ const ConfigInput = z.object({
   age_suggestion: z.boolean(),
   gender_suggestion: z.boolean(),
   pixel_id: z.string().min(1).max(60),
+  conversion_event: z.enum(CONVERSION_KEYS).default("PURCHASE"),
   page_id: z.string().min(1).max(60),
   page_name: z.string().max(200).default(""),
   instagram_user_id: z.string().max(60).optional(),
@@ -568,7 +582,7 @@ export const createAdset = createServerFn({ method: "POST" })
         : { daily_budget: await toMetaMoney(context.ownerId, pub.ad_account_id, cfg.daily_budget), bid_strategy: "LOWEST_COST_WITHOUT_CAP" }),
       billing_event: "IMPRESSIONS",
       optimization_goal: "OFFSITE_CONVERSIONS",
-      promoted_object: { pixel_id: cfg.pixel_id, custom_event_type: "PURCHASE" },
+      promoted_object: { pixel_id: cfg.pixel_id, custom_event_type: cfg.conversion_event ?? "PURCHASE" },
       targeting: {
         geo_locations: { countries: cfg.countries },
         age_min: cfg.age_min ?? 18,
