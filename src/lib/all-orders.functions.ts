@@ -54,6 +54,8 @@ export type OrderListRow = {
   deadline: string | null; attention: boolean; attentionWhy: string | null; adminUrl: string | null;
   // Nota da equipe (a mesma do Rastreamento e da aba Notificações).
   note: string | null;
+  // Pedido de troca gerado pelo Atendimento: de qual pedido veio (fica junto da nota).
+  exchangeFrom: string | null;
   dispute: { type: string; status: string | null } | null; conversations: number; conversationId: string | null;
 };
 
@@ -314,6 +316,12 @@ export const listAllOrders = createServerFn({ method: "GET" })
       const next = { status: r.status, amount: Number(r.amount ?? 0), date: isoDateUS(r.status === "confirmado" ? (r.confirmed_at ?? r.created_at) : r.created_at) };
       if (!cur || (cur.status !== "confirmado" && (next.status === "confirmado" || next.date > cur.date))) refundBy.set(r.order_id, next);
     }
+    // Trocas aprovadas no Atendimento que viraram estes pedidos (new_order_id = gid do pedido novo).
+    const gids = list.map((o) => `gid://shopify/Order/${o.external_id}`);
+    const { data: exch } = gids.length
+      ? await (supabaseAdmin as any).from("support_exchange_requests").select("new_order_id,order_number").eq("owner_id", ownerId).in("new_order_id", gids)
+      : { data: [] as any[] };
+    const exchangeFrom = new Map(((exch ?? []) as any[]).map((x) => [String(x.new_order_id).split("/").pop()!, x.order_number as string]));
     const [{ data: convs }, { data: settings }, { data: integs }] = await Promise.all([
       emails.length ? supabaseAdmin.from("support_conversations").select("id,customer_email,last_message_at").eq("owner_id", ownerId).in("customer_email", emails).order("last_message_at", { ascending: false }) : Promise.resolve({ data: [] as any[] }),
       pageShops.length ? supabaseAdmin.from("shop_order_settings").select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", pageShops) : Promise.resolve({ data: [] as any[] }),
@@ -353,6 +361,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
         lastEventAt: trackBy.get(o.id)?.last_event_at ?? null,
         local: localBy.get(o.id) ?? null,
         deadline: s.deadline, attention: s.attention, attentionWhy: s.why, note: (o.notice_note as string | null) || null,
+        exchangeFrom: exchangeFrom.get(String(o.external_id)) ?? null,
         adminUrl: domain ? `https://${domain}/admin/orders/${o.external_id}` : null,
         dispute: disputeBy.get(`${o.shop_id}:${o.external_id}`) ?? null,
         conversations: email ? convCount.get(email) ?? 0 : 0, conversationId: email ? convLatest.get(email) ?? null : null,

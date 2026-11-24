@@ -370,7 +370,7 @@ function PedidosPage() {
                           {r.lastEventAt && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDateTime(r.lastEventAt)}</p>}
                         </> : <span className="text-xs text-muted-foreground">—</span>}
                       </td>
-                      <td className="py-2.5 px-3 w-[200px] max-w-[220px]"><NoteCell id={r.id} note={r.note} /></td>
+                      <td className="py-2.5 px-3 w-[200px] max-w-[220px]"><NoteCell id={r.id} note={r.note} exchangeFrom={r.exchangeFrom} /></td>
                       <td className="py-2.5 pr-4 pl-3">
                         <div className="flex items-center justify-center gap-1.5">
                           <button onClick={() => setOpenId(r.id)} title="Ver pedido"
@@ -591,9 +591,12 @@ function NoteEditor({ id, note, onDone }: { id: string; note: string | null; onD
   );
 }
 
-function NoteCell({ id, note }: { id: string; note: string | null }) {
+function NoteCell({ id, note, exchangeFrom }: { id: string; note: string | null; exchangeFrom: string | null }) {
   const [open, setOpen] = useState(false);
   return (
+    <div className="space-y-1">
+    {/* Troca gerada pelo Atendimento: sempre mostra o pedido de origem (não depende da nota). */}
+    {exchangeFrom && <p className="text-xs font-medium text-sky-700 dark:text-sky-400 inline-flex items-center gap-1"><RefreshCw className="size-3" />Troca do {orderLabel(exchangeFrom)}</p>}
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         {note
@@ -606,6 +609,7 @@ function NoteCell({ id, note }: { id: string; note: string | null }) {
         <p className="text-[10px] text-muted-foreground mt-2">A mesma nota do Rastreamento e da aba Notificações.</p>
       </PopoverContent>
     </Popover>
+    </div>
   );
 }
 
@@ -647,6 +651,7 @@ function MobileRow({ r, today, onOpen }: { r: OrderListRow; today: string; onOpe
       {r.attention && r.attentionWhy && <p className="text-[11px] text-orange-600 dark:text-orange-400 font-medium mt-1">{r.attentionWhy}</p>}
       {r.trackingCode && <p className="text-[11px] font-mono text-muted-foreground mt-1">{r.trackingCode}</p>}
       {r.lastEvent && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{r.lastEvent}{r.lastEventAt ? ` · ${fmtDateTime(r.lastEventAt)}` : ""}</p>}
+      {r.exchangeFrom && <p className="text-[11px] font-medium text-sky-700 dark:text-sky-400 mt-1"><RefreshCw className="size-3 inline -mt-0.5 mr-1" />Troca do {orderLabel(r.exchangeFrom)}</p>}
       {r.note && <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1"><StickyNote className="size-3 inline -mt-0.5 mr-1" />{r.note}</p>}
       <div className="flex flex-wrap gap-1 mt-2">
         <Pill map={FINANCIAL} value={r.financialStatus} />
