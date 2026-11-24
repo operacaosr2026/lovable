@@ -491,7 +491,6 @@ function ProductDragCard({ product, tone, onOpen, onEdit, onDelete, dragging }: 
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">{product.name}</div>
-          {product.niche && <div className="mt-0.5 text-[11px] text-muted-foreground truncate">{product.niche}</div>}
           <div className="text-[11px] text-muted-foreground mt-1 tabular-nums">Custo: {usd(product.cost ?? 0)}</div>
           {chips.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
