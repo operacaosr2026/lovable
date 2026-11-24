@@ -3114,8 +3114,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      product_supplier_costs: {
+        Row: {
+          cost: number;
+          created_at: string;
+          id: string;
+          product_id: string;
+          supplier: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          cost: number;
+          created_at?: string;
+          id?: string;
+          product_id: string;
+          supplier: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          cost?: number;
+          created_at?: string;
+          id?: string;
+          product_id?: string;
+          supplier?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       products: {
         Row: {
+          default_supplier: string | null;
           archived: boolean;
           board_column_id: string | null;
           board_position: number;
@@ -3135,6 +3166,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          default_supplier?: string | null;
           archived?: boolean;
           board_column_id?: string | null;
           board_position?: number;
@@ -3154,6 +3186,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          default_supplier?: string | null;
           archived?: boolean;
           board_column_id?: string | null;
           board_position?: number;
@@ -4294,6 +4327,7 @@ export type Database = {
       };
       shop_orders: {
         Row: {
+          paid_supplier: string | null;
           carrier: string | null;
           connection_id: string | null;
           created_at: string;
@@ -4331,6 +4365,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          paid_supplier?: string | null;
           carrier?: string | null;
           connection_id?: string | null;
           created_at?: string;
@@ -4368,6 +4403,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          paid_supplier?: string | null;
           carrier?: string | null;
           connection_id?: string | null;
           created_at?: string;

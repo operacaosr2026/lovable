@@ -32,12 +32,20 @@ export async function withShopifyLinks<T extends { id: string }>(ownerId: string
 // a cada um: o custo de um pedido é o da data do pedido (productCostAt). Sem a
 // tabela/histórico, usa o atual.
 export async function costProductsFor(supabase: any, ownerId: string): Promise<CostProduct[]> {
-  const [{ data }, hist, links] = await Promise.all([
-    supabase.from("products").select("id,name,cost").eq("user_id", ownerId),
+  const [{ data }, hist, links, sup] = await Promise.all([
+    supabase.from("products").select("id,name,cost,default_supplier").eq("user_id", ownerId),
     supabase.from("product_cost_history").select("product_id,cost,valid_from").eq("user_id", ownerId)
       .order("valid_from", { ascending: false }),
     linksByProduct(ownerId),
+    // Preço em outro fornecedor (FlowBorder…).
+    supabase.from("product_supplier_costs").select("product_id,supplier,cost").eq("user_id", ownerId),
   ]);
+  const supBy = new Map<string, Record<string, number>>();
+  for (const r of ((sup?.error ? [] : sup?.data) ?? []) as any[]) {
+    const m = supBy.get(r.product_id) ?? {};
+    m[r.supplier] = Number(r.cost ?? 0);
+    supBy.set(r.product_id, m);
+  }
   const byProduct = new Map<string, { from: string; cost: number }[]>();
   if (!hist.error) {
     for (const h of (hist.data ?? []) as any[]) {
@@ -46,7 +54,11 @@ export async function costProductsFor(supabase: any, ownerId: string): Promise<C
       byProduct.set(h.product_id, list);
     }
   }
-  return (data ?? []).map((p: any) => ({ id: p.id, name: p.name, cost: p.cost, history: byProduct.get(p.id), ...(links.get(p.id) ?? NO_LINKS) }));
+  return (data ?? []).map((p: any) => ({
+    id: p.id, name: p.name, cost: p.cost, history: byProduct.get(p.id),
+    supplierCosts: supBy.get(p.id), defaultSupplier: (p.default_supplier as string | null) ?? null,
+    ...(links.get(p.id) ?? NO_LINKS),
+  }));
 }
 
 // Liga ao card um produto da Shopify ou um título de item sem produto (se já

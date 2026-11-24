@@ -1,13 +1,21 @@
+import { BASE_SUPPLIER } from "@/lib/suppliers";
 // `history`: custos com a data de início (product_cost_history), mais recente
 // primeiro. Mudar o custo de um produto vale da data da mudança pra frente —
 // pedidos antigos continuam com o custo da época.
+// `supplierCosts`: preço em outro fornecedor (FlowBorder…); `defaultSupplier`:
+// fornecedor padrão do produto (null = Alice, o preço de `cost`/`history`).
 export type CostProduct = LinkedProduct & {
   id?: string; name: string; cost: number;
   history?: { from: string; cost: number }[];
+  supplierCosts?: Record<string, number>; defaultSupplier?: string | null;
 };
 
 // Custo do produto na data do pedido (YYYY-MM-DD). Sem data ou sem histórico: o atual.
-export function productCostAt(p: CostProduct, date?: string | null): number {
+// `supplier`: quem recebeu o pagamento (pedido pago); sem ele, o fornecedor
+// padrão do produto. Fornecedor sem preço cadastrado cai no preço da Alice.
+export function productCostAt(p: CostProduct, date?: string | null, supplier?: string | null): number {
+  const s = supplier || p.defaultSupplier || BASE_SUPPLIER;
+  if (s !== BASE_SUPPLIER && p.supplierCosts?.[s] != null) return Number(p.supplierCosts[s]);
   if (date && p.history?.length) {
     const h = p.history.find((r) => r.from <= date);
     if (h) return h.cost;
@@ -16,9 +24,9 @@ export function productCostAt(p: CostProduct, date?: string | null): number {
 }
 
 // `li`: item do pedido como a Shopify manda (product_id).
-export function matchLineItemCost(li: any, products: CostProduct[], date?: string | null): number | null {
+export function matchLineItemCost(li: any, products: CostProduct[], date?: string | null, supplier?: string | null): number | null {
   const p = matchLineItemProduct(li, products);
-  return p ? productCostAt(p, date) : null;
+  return p ? productCostAt(p, date, supplier) : null;
 }
 
 // Tag do pedido na Shopify que zera o custo do fornecedor: reenvio que o
@@ -54,7 +62,8 @@ export function trackingCountsAsShipped(rawLineItems: any[] | undefined, hasTrac
   return hasTracking && !(rawLineItems ?? []).some((li) => lineItemCostQty(li) > 0);
 }
 
-export type OrderCostOpts = { date?: string | null; hasTracking?: boolean };
+// `supplier`: fornecedor do pagamento (pedido pago); sem ele, o padrão de cada produto.
+export type OrderCostOpts = { date?: string | null; hasTracking?: boolean; supplier?: string | null };
 
 // `tags` = tags do pedido (raw->>tags); com "reenvio-fornecedor" o custo é 0.
 // `opts.date` = data do pedido (custo da época); `opts.hasTracking` = tem código de rastreio.
@@ -65,7 +74,7 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
   for (const li of rawLineItems ?? []) {
     const qty = lineItemCostQty(li, tracked);
     if (!qty) continue;
-    const matched = matchLineItemCost(li, products, opts.date);
+    const matched = matchLineItemCost(li, products, opts.date, opts.supplier);
     total += qty * (matched ?? fallbackUnitCost);
   }
   return total;
@@ -75,7 +84,7 @@ export function orderLineItemsCost(rawLineItems: any[] | undefined, products: Co
 export function orderUsesDefaultCost(rawLineItems: any[] | undefined, products: CostProduct[], tags?: string | null, opts: OrderCostOpts = {}): boolean {
   if (isSupplierFree(tags)) return false;
   const tracked = trackingCountsAsShipped(rawLineItems, opts.hasTracking);
-  return (rawLineItems ?? []).some((li) => lineItemCostQty(li, tracked) > 0 && matchLineItemCost(li, products, opts.date) == null);
+  return (rawLineItems ?? []).some((li) => lineItemCostQty(li, tracked) > 0 && matchLineItemCost(li, products, opts.date, opts.supplier) == null);
 }
 
 // Quantidade de itens do pedido com a mesma regra do custo (item removido não conta).
@@ -85,8 +94,8 @@ export function orderItemsQty(rawLineItems: any[] | undefined, hasTracking = fal
 }
 
 // Opções a partir de uma linha de shop_orders (order_date + tracking_code no select).
-export const costOpts = (o: { order_date?: string | null; tracking_code?: string | null }): OrderCostOpts =>
-  ({ date: o.order_date ?? null, hasTracking: !!o.tracking_code });
+export const costOpts = (o: { order_date?: string | null; tracking_code?: string | null; paid_supplier?: string | null }): OrderCostOpts =>
+  ({ date: o.order_date ?? null, hasTracking: !!o.tracking_code, supplier: o.paid_supplier ?? null });
 
 // Card de Produto do item do pedido (product_shopify_links, botão "Sincronizar
 // Card"): o card ligado ao produto da Shopify do item; item sem product_id

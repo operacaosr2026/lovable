@@ -367,7 +367,7 @@ export const resetShopCash = createServerFn({ method: "POST" })
     const uid = context.ownerId;
     // Reset orders tied to payment batches back to pending
     await sb.from("shop_orders")
-      .update({ payment_status: "pending", paid_at: null, payment_batch_id: null, shipped_at: null })
+      .update({ payment_status: "pending", paid_at: null, payment_batch_id: null, paid_supplier: null, shipped_at: null })
       .eq("user_id", uid).eq("shop_id", data.shop_id).neq("payment_status", "pending");
     // Delete payment batches
     await sb.from("shop_order_payment_batches")

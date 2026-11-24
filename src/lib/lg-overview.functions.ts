@@ -31,7 +31,7 @@ async function computeAccumulatedLucro(
   const [ordersRes, adsRes, feesRes, settingsRes, costProducts, refundsAndChargebacks] = await Promise.all([
     // Só os produtos do pedido (raw->line_items), não o pedido inteiro da
     // Shopify (~9 KB cada): 4 MB -> 0,5 MB num mês de 440 pedidos.
-    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+    selectAll(supabase.from("shop_orders").select("revenue,items_count,shop_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier")
       .eq("user_id", ownerId).in("shop_id", shop_ids)
       .gte("order_date", start_date).lte("order_date", end_date)),
     // Gasto de anúncios é do card que contém as lojas (lg_card_ad_spend).

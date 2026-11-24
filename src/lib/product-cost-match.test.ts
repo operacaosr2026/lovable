@@ -100,3 +100,19 @@ describe("preço de custo por data (Histórico de preços)", () => {
     expect(at("2026-12-01")).toBe(23);
   });
 });
+
+describe("custo por fornecedor", () => {
+  const georgetown = { id: "g", name: "Georgetown", cost: 40.5, shopify_product_ids: ["1"], supplierCosts: { FlowBorder: 37.17 } };
+  const li = { product_id: 1, quantity: 1, title: "Air Jordan 1 Low Georgetown" };
+  it("pago: usa o fornecedor do pagamento", () => {
+    expect(orderLineItemsCost([li], [georgetown], 0, "", { supplier: "FlowBorder" })).toBeCloseTo(37.17);
+    expect(orderLineItemsCost([li], [georgetown], 0, "", { supplier: "Alice" })).toBeCloseTo(40.5);
+  });
+  it("não pago: usa o padrão do produto", () => {
+    expect(orderLineItemsCost([li], [georgetown], 0, "")).toBeCloseTo(40.5);
+    expect(orderLineItemsCost([li], [{ ...georgetown, defaultSupplier: "FlowBorder" }], 0, "")).toBeCloseTo(37.17);
+  });
+  it("fornecedor sem preço cai no da Alice", () => {
+    expect(orderLineItemsCost([li], [{ ...georgetown, supplierCosts: {} }], 0, "", { supplier: "FlowBorder" })).toBeCloseTo(40.5);
+  });
+});

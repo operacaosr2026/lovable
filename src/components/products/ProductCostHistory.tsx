@@ -8,6 +8,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   COST_START, deleteProductCostEntry, getProductCostHistory, saveProductCostEntry, type CostEntry,
 } from "@/lib/product-cost-history.functions";
+import { getProductSuppliers, saveProductSupplierCost, setProductDefaultSupplier } from "@/lib/product-supplier-costs.functions";
+import { BASE_SUPPLIER, SUPPLIERS } from "@/lib/suppliers";
 
 // Custo do produto no card: mostra o preço que vale hoje e abre o Histórico de
 // preços, onde cada preço vale a partir de uma data (data do pedido, horário de
@@ -30,6 +32,10 @@ const inputCls = "h-9 px-2.5 rounded-lg bg-background border border-border text-
 
 export function ProductCostField({ productId, cost }: { productId: string; cost: number }) {
   const [open, setOpen] = useState(false);
+  const supFn = useServerFn(getProductSuppliers);
+  const sup = useQuery({ queryKey: ["product-suppliers", productId], queryFn: () => supFn({ data: { product_id: productId } }) });
+  const def = sup.data?.defaultSupplier ?? BASE_SUPPLIER;
+  const defCost = def === BASE_SUPPLIER ? cost : sup.data?.costs[def];
   return (
     <div>
       <div className="text-xs text-muted-foreground mb-1">Custo (USD)</div>
@@ -38,6 +44,10 @@ export function ProductCostField({ productId, cost }: { productId: string; cost:
         <span className="tabular-nums font-medium">{USD.format(cost)}</span>
         <span className="flex items-center gap-1 text-xs text-muted-foreground"><History className="size-3.5" /> Histórico</span>
       </button>
+      {/* Preço da Alice acima; padrão em outro fornecedor = o preço que conta até pagar. */}
+      {sup.data && def !== BASE_SUPPLIER && (
+        <p className="text-[11px] text-muted-foreground mt-1">Padrão: <span className="font-medium text-foreground">{def}</span>{defCost != null ? ` · ${USD.format(defCost)}` : " · sem preço"}</p>
+      )}
       {open && <CostHistoryDialog productId={productId} onClose={() => setOpen(false)} />}
     </div>
   );
@@ -118,8 +128,10 @@ function CostHistoryDialog({ productId, onClose }: { productId: string; onClose:
               </div>
             )}
 
+            <SupplierCosts productId={productId} baseCost={current?.cost ?? 0} />
+
             <div className="rounded-xl border border-border p-3">
-              <p className="text-sm font-medium mb-2 flex items-center gap-1.5"><Plus className="size-4" /> Novo preço</p>
+              <p className="text-sm font-medium mb-2 flex items-center gap-1.5"><Plus className="size-4" /> Novo preço da {BASE_SUPPLIER}</p>
               <div className="flex flex-wrap items-end gap-2">
                 <label className="flex-1 min-w-[110px]">
                   <span className="block text-xs text-muted-foreground mb-1">Custo (US$)</span>
@@ -218,5 +230,77 @@ function EditRow({ entry, today, busy, onCancel, onSave }: {
       </button>
       <button onClick={onCancel} disabled={busy} className="h-9 px-2 rounded-lg text-muted-foreground hover:bg-muted" aria-label="Cancelar"><X className="size-4" /></button>
     </li>
+  );
+}
+
+// Fornecedores: preço em cada um e qual é o padrão do produto (o preço dele conta
+// no lucro e na previsão do Caixa até o pedido ser pago; pago, vale o fornecedor
+// escolhido no pagamento). O preço da Alice é o do Histórico, logo abaixo.
+function SupplierCosts({ productId, baseCost }: { productId: string; baseCost: number }) {
+  const qc = useQueryClient();
+  const getFn = useServerFn(getProductSuppliers);
+  const saveFn = useServerFn(saveProductSupplierCost);
+  const defFn = useServerFn(setProductDefaultSupplier);
+  const q = useQuery({ queryKey: ["product-suppliers", productId], queryFn: () => getFn({ data: { product_id: productId } }) });
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const done = (r: { cashDays: number; cashError: string | null }, msg: string) => {
+    qc.invalidateQueries();
+    if (r.cashError) toast.warning(`${msg}, mas a previsão do Caixa não foi refeita: ${r.cashError}`);
+    else toast.success(`${msg}${r.cashDays ? ` · previsão do Caixa refeita em ${r.cashDays} ${r.cashDays === 1 ? "dia" : "dias"}` : ""}.`);
+  };
+  const save = useMutation({
+    mutationFn: (v: { supplier: (typeof SUPPLIERS)[number]; cost: number | null }) => saveFn({ data: { product_id: productId, ...v } }),
+    onSuccess: (r, v) => { done(r, v.cost == null ? `Preço da ${v.supplier} apagado` : `Preço da ${v.supplier} salvo`); setDrafts((d) => ({ ...d, [v.supplier]: undefined as any })); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const setDef = useMutation({
+    mutationFn: (supplier: (typeof SUPPLIERS)[number]) => defFn({ data: { product_id: productId, supplier } }),
+    onSuccess: (r, s) => done(r, `${s} é o fornecedor padrão`),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  if (!q.data) return null;
+  const def = q.data.defaultSupplier;
+  const busy = save.isPending || setDef.isPending;
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <p className="text-sm font-medium mb-0.5">Fornecedores</p>
+      <p className="text-xs text-muted-foreground mb-2">O padrão conta no lucro e na previsão do Caixa até pagar; pago, vale o preço do fornecedor escolhido no pagamento.</p>
+      <ul className="space-y-1.5">
+        {SUPPLIERS.map((s) => {
+          const base = s === BASE_SUPPLIER;
+          const saved = base ? baseCost : q.data.costs[s];
+          const draft = drafts[s] ?? (saved != null && !base ? String(saved).replace(".", ",") : "");
+          const parsed = parseMoney(draft);
+          const dirty = !base && draft.trim() !== (saved != null ? String(saved).replace(".", ",") : "");
+          return (
+            <li key={s} className="flex items-center gap-2">
+              <button type="button" onClick={() => def !== s && setDef.mutate(s)} disabled={busy}
+                title={def === s ? "Fornecedor padrão" : "Usar como padrão"}
+                className={`h-6 px-2 rounded-md text-[11px] font-medium border ${def === s ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                {def === s ? "padrão" : "tornar padrão"}
+              </button>
+              <span className="flex-1 text-sm font-medium">{s}</span>
+              {base ? (
+                <span className="text-sm font-semibold tabular-nums w-24 text-right" title="Preço atual do Histórico abaixo">{USD.format(baseCost)}</span>
+              ) : (
+                <>
+                  <input value={draft} onChange={(e) => setDrafts((d) => ({ ...d, [s]: e.target.value }))} inputMode="decimal" placeholder="sem preço"
+                    onKeyDown={(e) => { if (e.key === "Enter" && dirty && (parsed != null || !draft.trim())) save.mutate({ supplier: s, cost: draft.trim() ? parsed : null }); }}
+                    className={`${inputCls} w-24 text-right`} aria-label={`Preço ${s}`} />
+                  <button onClick={() => save.mutate({ supplier: s, cost: draft.trim() ? parsed : null })}
+                    disabled={busy || !dirty || (!!draft.trim() && parsed == null)}
+                    className="h-9 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-40">
+                    {save.isPending && save.variables?.supplier === s ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                  </button>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {SUPPLIERS.some((s) => s !== BASE_SUPPLIER && def === s && q.data.costs[s] == null) && (
+        <p className="text-[11px] text-warning mt-2">O padrão está sem preço: até cadastrar, conta o preço da {BASE_SUPPLIER}.</p>
+      )}
+    </div>
   );
 }

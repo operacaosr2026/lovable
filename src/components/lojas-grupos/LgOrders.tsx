@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   listOrders, markOrdersPaid, markOrdersShipped, recomputeRange, releaseSupplierHold,
-  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts, supplierOrdersTotal,
+  getMultiOrderSettings, upsertOrderSettings, updateBatchPaymentDate, listShopDomains, listCostProducts, supplierOrdersTotal, supplierTotalsBySupplier,
 } from "@/lib/shop-orders.functions";
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
 import { orderLineItemsCost, orderItemsQty, orderUsesDefaultCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
-import { SUPPLIERS } from "@/lib/suppliers";
+import { BASE_SUPPLIER, SUPPLIERS } from "@/lib/suppliers";
 import { repeatedItems } from "@/lib/repeated-items";
 import { queueRepeatedConfirm, repeatedConfirmStatus } from "@/lib/order-notices.functions";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
@@ -458,6 +458,14 @@ export function LgOrders({
   // calculado no navegador ele podia sair com o custo padrão da loja em todos
   // os itens se os custos dos produtos não tivessem carregado ($646 × $631,50).
   const supplierTotalFn = useServerFn(supplierOrdersTotal);
+  // Confirmar pagamento: total com o preço de cada fornecedor (compara antes de escolher).
+  const totalsBySupplierFn = useServerFn(supplierTotalsBySupplier);
+  const payIds = useMemo(() => [...selectionByShop.values()].flat(), [selectionByShop]);
+  const supplierTotals = useQuery({
+    queryKey: ["supplier-totals", payIds],
+    queryFn: () => totalsBySupplierFn({ data: { order_ids: payIds } }),
+    enabled: payOpen && payIds.length > 0, staleTime: 30_000,
+  });
   const copySupplierMessage = async () => {
     const { blocks, orderIds } = supplierSelection;
     if (orderIds.length === 0) return;
@@ -957,13 +965,26 @@ export function LgOrders({
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Fornecedor</label>
               <div className="grid grid-cols-2 gap-2">
-                {SUPPLIERS.map((s) => (
-                  <button key={s} type="button" onClick={() => setPaySupplier(s)}
-                    className={`h-10 rounded-lg border text-sm font-medium transition-colors ${paySupplier === s ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}>
-                    {s}
-                  </button>
-                ))}
+                {SUPPLIERS.map((s) => {
+                  const t = supplierTotals.data?.find((x) => x.supplier === s);
+                  const cheapest = supplierTotals.data && t && supplierTotals.data.every((x) => x.total >= t.total) && supplierTotals.data.some((x) => x.total > t.total);
+                  return (
+                    <button key={s} type="button" onClick={() => setPaySupplier(s)}
+                      className={`h-14 rounded-lg border text-sm font-medium transition-colors flex flex-col items-center justify-center ${paySupplier === s ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}>
+                      <span>{s}</span>
+                      <span className="text-xs tabular-nums font-semibold text-muted-foreground">
+                        {supplierTotals.isLoading ? "…" : t ? fmtMoney(t.total) : "—"}
+                        {cheapest && <span className="ml-1 text-emerald-600">mais barato</span>}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
+              {paySupplier && (supplierTotals.data?.find((x) => x.supplier === paySupplier)?.missing.length ?? 0) > 0 && (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  Sem preço da {paySupplier} em: {supplierTotals.data!.find((x) => x.supplier === paySupplier)!.missing.join(", ")} — conta o preço da {BASE_SUPPLIER}. Cadastre no card do produto (Custo › Fornecedores).
+                </p>
+              )}
               {!paySupplier && <p className="text-[11px] text-muted-foreground mt-1">Escolha de qual fornecedor é este pagamento.</p>}
             </div>
             <div>

@@ -127,7 +127,7 @@ function productOrderTotals(o: any, catalog: { id: string; shopify_product_ids: 
       : Number(li?.total_discount ?? 0);
     unidades += qty;
     faturamento += Number(li?.price ?? 0) * qty - discount;
-    if (!free && myCost) custo += lineItemCostQty(li, tracked) * productCostAt(myCost, date);
+    if (!free && myCost) custo += lineItemCostQty(li, tracked) * productCostAt(myCost, date, o.paid_supplier ?? null);
   }
   return matched ? { faturamento, custo, unidades } : null;
 }
@@ -142,7 +142,7 @@ export const getProductDashboard = createServerFn({ method: "GET" })
 
     const [ordersRes, costProducts, campaigns] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_orders")
-        .select("order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+        .select("order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier")
         .eq("user_id", ownerId).gte("order_date", prevFrom).lte("order_date", data.to)),
       costProductsFor(supabaseAdmin, ownerId),
       loadCampaigns(ownerId, data.product_id),
@@ -357,7 +357,7 @@ export const getProductCreatives = createServerFn({ method: "GET" })
 
     const [ordersRes, costProducts, campaigns] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_orders")
-        .select("shop_id,external_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+        .select("shop_id,external_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier")
         .eq("user_id", ownerId).gte("order_date", data.from).lte("order_date", data.to)),
       costProductsFor(supabaseAdmin, ownerId),
       loadCampaigns(ownerId, data.product_id),
@@ -731,7 +731,7 @@ export const getExperimentMetrics = createServerFn({ method: "GET" })
     const shopifyTask = async () => {
     const [ordersRes, costProducts] = await Promise.all([
       selectAll(supabaseAdmin.from("shop_orders")
-        .select("shop_id,external_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code")
+        .select("shop_id,external_id,order_date,line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier")
         .eq("user_id", ownerId).gte("order_date", data.from).lte("order_date", data.to)),
       costProductsFor(supabaseAdmin, ownerId),
     ]);

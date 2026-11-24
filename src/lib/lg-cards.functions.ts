@@ -697,8 +697,8 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
           ownerId,
           (shopsRes.data ?? []).map((s: any) => ({ id: s.id as string, name: s.name as string })),
         )),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, external_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code,refunds:raw->refunds").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
-      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, external_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier,refunds:raw->refunds").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to)),
+      selectAll(supabaseAdmin.from("shop_orders").select("shop_id, order_date, revenue, line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier").eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", prevFrom).lte("order_date", prevTo)),
       // Mesma fonte do card de Lojas e Grupos (getLgCardQuickMetrics).
       getEstornoStats(ownerId, shopIds),
       supabaseAdmin.from("shop_order_settings").select("shop_id, default_unit_cost").eq("user_id", ownerId).in("shop_id", shopIds),
@@ -983,7 +983,7 @@ export const getLgCardQuickMetrics = createServerFn({ method: "GET" })
     const [ordersRes, settingsRes, feesRes, adsRes, refundsAndChargebacks, costProducts, patchedCardShops] = await Promise.all([
       selectAll(supabaseAdmin
         .from("shop_orders")
-        .select("revenue, items_count, shop_id, order_date, line_items:raw->line_items,tags:raw->>tags,tracking_code")
+        .select("revenue, items_count, shop_id, order_date, line_items:raw->line_items,tags:raw->>tags,tracking_code,paid_supplier")
         .eq("user_id", ownerId)
         .in("shop_id", shopIds)
         .gte("order_date", from)
