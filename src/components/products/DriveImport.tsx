@@ -17,8 +17,8 @@ const BATCH = 5;
 const fmtSize = (b: number | null) => (b == null ? "" : b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b > 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
 const fmtDur = (s: number | null) => (s == null ? "" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
 
-export function DriveImportDialog({ productId, open, onClose, onImported }: {
-  productId: string; open: boolean; onClose: () => void; onImported: () => void;
+export function DriveImportDialog({ productId, folderId, open, onClose, onImported }: {
+  productId: string; folderId?: string | null; open: boolean; onClose: () => void; onImported: () => void;
 }) {
   const listFn = useServerFn(listDriveFolder);
   const importFn = useServerFn(importDriveFiles);
@@ -63,7 +63,7 @@ export function DriveImportDialog({ productId, open, onClose, onImported }: {
     try {
       for (let i = 0; i < files.length; i += BATCH) {
         const batch = files.slice(i, i + BATCH);
-        const r = await importFn({ data: { product_id: productId, files: batch.map((f) => ({ id: f.id, name: f.name, kind: f.kind })) } });
+        const r = await importFn({ data: { product_id: productId, files: batch.map((f) => ({ id: f.id, name: f.name, kind: f.kind })), folder_id: folderId ?? null } });
         created += r.created;
         errors.push(...r.errors.map((e) => `${e.name}: ${e.error}`));
         setProgress({ done: Math.min(files.length, i + batch.length), total: files.length });

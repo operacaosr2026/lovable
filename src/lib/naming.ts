@@ -26,6 +26,7 @@ export const NAMING_CODES: NamingCode[] = [
   { level: "adset", code: "genero", label: "Gênero (H/M, vazio = todos)", example: "M" },
   { level: "adset", code: "numero_conjunto", label: "Nº do conjunto", example: "01" },
   { level: "ad", code: "nome_do_criativo", label: "Nome do criativo", example: "video-dor-costas" },
+  { level: "ad", code: "pasta", label: "Pasta do criativo", example: "Preto" },
   { level: "ad", code: "formato", label: "Formato (VID/IMG/FLEX/CAR)", example: "VID" },
   { level: "ad", code: "pagina", label: "Página", example: "Voultie" },
   { level: "ad", code: "instagram", label: "Instagram", example: "voultie" },
@@ -46,7 +47,7 @@ export const NAMING_SEPARATOR = "_";
 export const DEFAULT_TEMPLATES: NamingTemplates = {
   campaign: "{{produto}}_{{estrutura}}_{{data}}_#{{numero}}",
   adset: "{{paises}}_{{idade}}_{{numero_conjunto}}",
-  ad: "{{nome_do_criativo}}_{{formato}}",
+  ad: "{{nome_do_criativo}}_{{pasta}}_{{formato}}",
 };
 
 const CODE_RE = /\{\{\s*([a-z0-9_]+)\s*\}\}/gi;

@@ -2,14 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  DRIVE_FOLDER_MIME, driveFileMeta, driveListFolder, driveThumbnail, driveViewUrl, parseDriveLink, type DriveFile,
-} from "@/lib/drive.server";
+import { DRIVE_FOLDER_MIME, driveFileMeta, driveListFolder, parseDriveLink, type DriveFile } from "@/lib/drive.server";
+import { createCreativeFromDrive } from "@/lib/creative-drive.server";
 
 // Produção › Criativos › Importar do Drive: lista uma pasta pública e cria um
 // criativo por arquivo. O arquivo continua no Drive; aqui fica só a miniatura.
 
-const BUCKET = "project-attachments";
 const db = (table: string) => (supabaseAdmin as any).from(table);
 
 export type DriveEntry = {
@@ -63,6 +61,7 @@ export const importDriveFiles = createServerFn({ method: "POST" })
       name: z.string().max(500),
       kind: z.enum(["video", "image"]),
     })).min(1).max(20),
+    folder_id: z.string().uuid().nullable().optional(),
   }).parse(d))
   .handler(async ({ context, data }) => {
     const { ownerId } = context;
@@ -84,36 +83,7 @@ export const importDriveFiles = createServerFn({ method: "POST" })
       if (already.has(f.id)) continue;
       try {
         const meta = await driveFileMeta(f.id);
-        let thumb_path: string | null = null;
-        let thumb_url: string | null = null;
-        const t = await driveThumbnail(meta);
-        if (t) {
-          thumb_path = `${ownerId}/products/${data.product_id}/creatives/drive_${f.id}.${t.type.includes("png") ? "png" : "jpg"}`;
-          const up = await supabaseAdmin.storage.from(BUCKET).upload(thumb_path, t.bytes, { contentType: t.type, upsert: true });
-          if (up.error) thumb_path = null;
-          else {
-            const { data: signed } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(thumb_path, 60 * 60 * 24 * 365 * 5);
-            thumb_url = signed?.signedUrl ?? null;
-          }
-        }
-        const { error } = await db("product_creatives").insert({
-          user_id: ownerId,
-          product_id: data.product_id,
-          name: meta.name.replace(/\.[a-z0-9]{2,5}$/i, ""),
-          title: "",
-          titles: [],
-          descriptions: [],
-          status: "lancar",
-          media_kind: meta.mimeType.startsWith("video/") ? "video" : "image",
-          media_path: null,
-          media_url: thumb_url,
-          drive_file_id: f.id,
-          drive_url: driveViewUrl(f.id),
-          thumb_path,
-          thumb_url,
-          position: position--,
-        });
-        if (error) throw new Error(error.message);
+        await createCreativeFromDrive(ownerId, data.product_id, meta, { folder_id: data.folder_id ?? null, position: position-- });
         created++;
       } catch (e: any) {
         errors.push({ name: f.name, error: String(e.message).slice(0, 300) });

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable,
-  type DragEndEvent, type DragOverEvent, type DragStartEvent,
+  DndContext, DragOverlay, PointerSensor, closestCorners, pointerWithin, useSensor, useSensors, useDroppable,
+  type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent, type DropAnimation,
 } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -30,13 +31,24 @@ export function useTrafficColumns(board: Board) {
   return useQuery({ queryKey: trafficColumnsKey(board), queryFn: () => fn({ data: { board } }) });
 }
 
+// Alvos de soltar fora das colunas (ex.: pastas em cima da esteira) usam
+// useDroppable com data { type: "drop-target", ... } dentro de `header`.
+const collision: CollisionDetection = (args) => {
+  const targets = pointerWithin(args).filter((c) => c.data?.droppableContainer?.data.current?.type === "drop-target");
+  return targets.length ? targets : closestCorners(args);
+};
+const dropAnimation: DropAnimation = { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)" };
+
 export function TrafficBoard<T extends BoardItem>({
-  board, items, visible = () => true, renderCard, onAdd, addLabel, emptyText, onMoved, columnSubtitle,
+  board, items, visible = () => true, renderCard, onAdd, addLabel, emptyText, onMoved, columnSubtitle, header, onDropToTarget, sort,
 }: {
   board: Board; items: T[]; visible?: (item: T) => boolean;
   renderCard: (item: T, ctx: { tone: ColumnTone; dragging: boolean }) => ReactNode;
   onAdd?: (columnId: string) => void; addLabel: string; emptyText: string;
   onMoved: () => void; columnSubtitle?: (count: number) => string;
+  header?: ReactNode; onDropToTarget?: (itemId: string, target: Record<string, unknown>) => void;
+  // Ordem fixa dentro de cada coluna (ex.: AD01, AD02…). Com ela, arrastar só troca de coluna.
+  sort?: (a: T, b: T) => number;
 }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -53,6 +65,8 @@ export function TrafficBoard<T extends BoardItem>({
   const [lanes, setLanes] = useState<Record<string, T[]>>({});
   const dragActive = useRef(false);
   const dragSourceCol = useRef<string | null>(null);
+  const lanesAtStart = useRef<Record<string, T[]> | null>(null);
+  const [overlayWidth, setOverlayWidth] = useState<number | null>(null);
 
   useEffect(() => { if (!dragActive.current) setColumns(columnsData ?? []); }, [columnsData]);
 
@@ -63,7 +77,7 @@ export function TrafficBoard<T extends BoardItem>({
     if (!cols.length) { setLanes({}); return; }
     const grouped: Record<string, T[]> = Object.fromEntries(cols.map((c) => [c.id, [] as T[]]));
     for (const it of items) (grouped[it.column_id ?? ""] ?? grouped[cols[0].id]).push(it);
-    for (const id of Object.keys(grouped)) grouped[id].sort((a, b) => a.position - b.position || b.created_at.localeCompare(a.created_at));
+    for (const id of Object.keys(grouped)) grouped[id].sort(sort ?? ((a, b) => a.position - b.position || b.created_at.localeCompare(a.created_at)));
     setLanes(grouped);
   }, [columnsData, items]);
 
@@ -107,7 +121,8 @@ export function TrafficBoard<T extends BoardItem>({
     if (t === "column-drop") return over.data.current?.columnId as string;
     if (t === "card") return findColumnOf(String(over.id));
     if (t === "column") return String(over.id);
-    return null;
+    return null; // drop-target (pasta etc.) não mexe nas colunas
+
   };
 
   const onDragStart = (e: DragStartEvent) => {
@@ -115,6 +130,8 @@ export function TrafficBoard<T extends BoardItem>({
     if (e.active.data.current?.type === "column") { setActiveColumn(columns.find((c) => c.id === e.active.id) ?? null); return; }
     const colId = findColumnOf(String(e.active.id));
     dragSourceCol.current = colId;
+    lanesAtStart.current = lanes;
+    setOverlayWidth(e.active.rect.current.initial?.width ?? null);
     setActiveCard(colId ? lanes[colId].find((it) => it.id === e.active.id) ?? null : null);
   };
 
@@ -132,16 +149,38 @@ export function TrafficBoard<T extends BoardItem>({
       const to = [...(prev[dest] ?? [])];
       const overIdx = over.data.current?.type === "card" ? to.findIndex((it) => it.id === String(over.id)) : -1;
       to.splice(overIdx === -1 ? to.length : overIdx, 0, from[idx]);
+      if (sort) to.sort(sort);
       return { ...prev, [src]: from.filter((_, i) => i !== idx), [dest]: to };
     });
   };
 
-  const onDragEnd = (e: DragEndEvent) => {
+  const resetDrag = () => {
     dragActive.current = false;
     setActiveCard(null);
     setActiveColumn(null);
+  };
+
+  const onDragCancel = () => {
+    resetDrag();
+    if (lanesAtStart.current) setLanes(lanesAtStart.current);
+    lanesAtStart.current = null;
+    dragSourceCol.current = null;
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    resetDrag();
     const { active, over } = e;
-    if (!over) return;
+    if (!over) { onDragCancel(); return; }
+
+    // Soltou numa pasta (ou outro alvo de fora): o card volta pro lugar e quem chamou decide.
+    if (over.data.current?.type === "drop-target") {
+      if (lanesAtStart.current) setLanes(lanesAtStart.current);
+      lanesAtStart.current = null;
+      dragSourceCol.current = null;
+      onDropToTarget?.(String(active.id), over.data.current as Record<string, unknown>);
+      return;
+    }
+    lanesAtStart.current = null;
 
     if (active.data.current?.type === "column") {
       const oldIndex = columns.findIndex((c) => c.id === active.id);
@@ -158,7 +197,7 @@ export function TrafficBoard<T extends BoardItem>({
     const finalCol = findColumnOf(activeId);
     if (!finalCol) return;
     let list = lanes[finalCol] ?? [];
-    if (over.data.current?.type === "card" && String(over.id) !== activeId) {
+    if (!sort && over.data.current?.type === "card" && String(over.id) !== activeId) {
       const a = list.findIndex((it) => it.id === activeId);
       const b = list.findIndex((it) => it.id === String(over.id));
       if (a !== -1 && b !== -1 && a !== b) {
@@ -175,7 +214,8 @@ export function TrafficBoard<T extends BoardItem>({
   if (!columnsData) return <div className="h-64 rounded-2xl border border-border bg-card animate-pulse" />;
 
   return (
-    <DndContext sensors={sensors} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={onDragCancel}>
+      {header}
       <div className="flex gap-2.5 overflow-x-auto pb-2 items-stretch min-h-[460px]">
         <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
           {columns.map((col) => (
@@ -188,6 +228,7 @@ export function TrafficBoard<T extends BoardItem>({
               addLabel={addLabel}
               emptyText={emptyText}
               subtitle={columnSubtitle}
+              fixedOrder={!!sort}
               onRename={(name) => patchColumn(col.id, { name }, renameFn({ data: { id: col.id, name } }))}
               onColorChange={(color) => patchColumn(col.id, { color }, colorFn({ data: { id: col.id, color } }))}
               onDelete={() => deleteColumn(col)}
@@ -196,20 +237,29 @@ export function TrafficBoard<T extends BoardItem>({
         </SortableContext>
         <AddColumn onAdd={addColumn} />
       </div>
-      <DragOverlay>
-        {activeCard && (() => {
-          const c = columns.find((x) => x.id === dragSourceCol.current);
-          return <div className="w-[260px]">{renderCard(activeCard, { tone: columnTone(c?.name ?? "", c?.color), dragging: true })}</div>;
-        })()}
-        {activeColumn && <div className="rounded-2xl border border-primary/40 bg-card shadow-xl w-[260px] px-4 py-3 font-bold text-sm">{activeColumn.name}</div>}
-      </DragOverlay>
+      {/* Fora da janela do produto: dentro dela (que é centralizada com transform)
+          a cópia do card ficava deslocada do cursor. */}
+      {typeof document !== "undefined" && createPortal(
+        <DragOverlay dropAnimation={dropAnimation} zIndex={1000}>
+          {activeCard && (() => {
+            const c = columns.find((x) => x.id === dragSourceCol.current);
+            return (
+              <div style={{ width: overlayWidth ?? 260 }} className="cursor-grabbing rotate-[1.5deg] scale-[1.02] transition-transform">
+                {renderCard(activeCard, { tone: columnTone(c?.name ?? "", c?.color), dragging: true })}
+              </div>
+            );
+          })()}
+          {activeColumn && <div className="rounded-2xl border border-primary/40 bg-card shadow-xl w-[260px] px-4 py-3 font-bold text-sm cursor-grabbing">{activeColumn.name}</div>}
+        </DragOverlay>,
+        document.body,
+      )}
     </DndContext>
   );
 }
 
-function Lane<T extends BoardItem>({ column, items, renderCard, onAdd, addLabel, emptyText, subtitle, onRename, onColorChange, onDelete }: {
+function Lane<T extends BoardItem>({ column, items, renderCard, onAdd, addLabel, emptyText, subtitle, fixedOrder, onRename, onColorChange, onDelete }: {
   column: TrafficColumn; items: T[]; renderCard: (item: T, ctx: { tone: ColumnTone; dragging: boolean }) => ReactNode;
-  onAdd?: () => void; addLabel: string; emptyText: string; subtitle?: (count: number) => string;
+  onAdd?: () => void; addLabel: string; emptyText: string; subtitle?: (count: number) => string; fixedOrder?: boolean;
   onRename: (name: string) => void; onColorChange: (color: TrafficColumn["color"]) => void; onDelete: () => void;
 }) {
   const pending = column.id.startsWith("temp-");
@@ -278,7 +328,8 @@ function Lane<T extends BoardItem>({ column, items, renderCard, onAdd, addLabel,
       </div>
 
       <div ref={setDropRef} className={`flex-1 min-h-[160px] max-h-[68vh] overflow-y-auto p-2 space-y-2 transition-colors ${isOver ? "bg-primary/5" : tone.body}`}>
-        <SortableContext items={items.map((it) => it.id)} strategy={verticalListSortingStrategy}>
+        {/* Ordem fixa: os cards não abrem espaço ao passar por cima (o lugar é pela ordem). */}
+        <SortableContext items={items.map((it) => it.id)} strategy={fixedOrder ? () => null : verticalListSortingStrategy}>
           {items.map((it) => <SortableCard key={it.id} id={it.id}>{renderCard(it, { tone, dragging: false })}</SortableCard>)}
         </SortableContext>
         {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-6 px-2">{emptyText}</p>}
@@ -295,7 +346,8 @@ function Lane<T extends BoardItem>({ column, items, renderCard, onAdd, addLabel,
 function SortableCard({ id, children }: { id: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, data: { type: "card" } });
   return (
-    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }} {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+    <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), transition }} {...attributes} {...listeners}
+      className={isDragging ? "rounded-xl outline-2 outline-dashed outline-primary/30 [&>*]:invisible bg-primary/5" : "cursor-grab active:cursor-grabbing touch-none"}>
       {children}
     </div>
   );

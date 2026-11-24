@@ -5,9 +5,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, Film, GalleryHorizontal, Image as ImageIcon, LayoutGrid,
-  Copy, Globe, Layers, Loader2, Megaphone, Pencil, Rows3, RotateCcw, Shuffle, Trash2, Users, XCircle,
+  Copy, Folder, Globe, Layers, Loader2, Megaphone, Pencil, Rows3, RotateCcw, Shuffle, Trash2, Users, XCircle,
 } from "lucide-react";
 import { listCreatives } from "@/lib/products.functions";
+import { listCreativeFolders } from "@/lib/creative-folders.functions";
+import { byCreativeName, creativeFoldersKey } from "@/components/products/ProductCreatives";
 import { getNamingTemplate } from "@/lib/naming.functions";
 import {
   AD_CTAS, CONVERSION_EVENTS, getProductAdsSetup, getAdAccountAssets, getProfilePages, startAdPublication, uploadAdMedia, checkAdVideos,
@@ -170,6 +172,7 @@ export function ProductAds({ productId }: { productId: string }) {
   const assetsFn = useServerFn(getAdAccountAssets);
   const profileFn = useServerFn(getProfilePages);
   const creativesFn = useServerFn(listCreatives);
+  const foldersFn = useServerFn(listCreativeFolders);
   const namingFn = useServerFn(getNamingTemplate);
   const startFn = useServerFn(startAdPublication);
   const uploadFn = useServerFn(uploadAdMedia);
@@ -185,8 +188,18 @@ export function ProductAds({ productId }: { productId: string }) {
   const setup = useQuery({ queryKey: ["product-ads", productId], queryFn: () => setupFn({ data: { product_id: productId } }) });
   const creativesQ = useQuery({ queryKey: ["creatives", productId], queryFn: () => creativesFn({ data: { product_id: productId } }) });
   const naming = useQuery({ queryKey: NAMING_QK, queryFn: () => namingFn() });
-  const creatives = useMemo(() => ((creativesQ.data?.creatives ?? []) as any[]).filter((c) => c.media_path || c.drive_file_id), [creativesQ.data]);
+  const creatives = useMemo(() => ((creativesQ.data?.creatives ?? []) as any[]).filter((c) => c.media_path || c.drive_file_id).sort(byCreativeName), [creativesQ.data]);
   const templates = naming.data ?? DEFAULT_TEMPLATES;
+  const foldersQ = useQuery({ queryKey: creativeFoldersKey(productId), queryFn: () => foldersFn({ data: { product_id: productId } }) });
+  const folderName = useMemo(() => new Map((foldersQ.data?.folders ?? []).map((f) => [f.id, f.name])), [foldersQ.data]);
+  // Criativos separados por pasta (na ordem das pastas; "Sem pasta" no fim).
+  const creativeGroups = useMemo(() => {
+    const folders = foldersQ.data?.folders ?? [];
+    if (!folders.length) return [{ id: "", name: "", items: creatives }];
+    const groups = folders.map((f) => ({ id: f.id, name: f.name, items: creatives.filter((c) => c.folder_id === f.id) }));
+    const loose = creatives.filter((c) => !c.folder_id || !folderName.has(c.folder_id));
+    return [...groups, ...(loose.length ? [{ id: "none", name: "Sem pasta", items: loose }] : [])].filter((g) => g.items.length);
+  }, [creatives, foldersQ.data, folderName]);
   const { data: copies = [] } = useProductCopies(productId);
   const { data: copyColumns } = useTrafficColumns("copies");
 
@@ -289,9 +302,9 @@ export function ProductAds({ productId }: { productId: string }) {
   const valuesKey = JSON.stringify(values);
 
   const plan = useMemo(() => buildPlan({
-    creatives: chosen.map((c) => ({ id: c.id, name: c.name || "Criativo", kind: c.media_kind === "video" ? "video" : "image" })),
+    creatives: chosen.map((c) => ({ id: c.id, name: c.name || "Criativo", kind: c.media_kind === "video" ? "video" : "image", folder: folderName.get(c.folder_id) })),
     distribution: form.distribution, multiFormat: form.multi_format, templates, values, overrides,
-  }), [chosen, form.distribution, form.multi_format, templates, valuesKey, overrides]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [chosen, form.distribution, form.multi_format, templates, valuesKey, overrides, folderName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const adCount = plan.adsets.reduce((n, s) => n + s.ads.length, 0);
   const perDay = form.daily_budget ? (form.budget_mode === "CBO" ? form.daily_budget : form.daily_budget * plan.adsets.length) : 0;
@@ -824,10 +837,32 @@ export function ProductAds({ productId }: { productId: string }) {
               {creatives.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhum criativo com mídia. Suba vídeos ou imagens (ou importe do Drive) em Produção › Criativos.</p>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-6 gap-2.5">
-                  {creatives.map((c) => (
-                    <CreativeTile key={c.id} c={c} order={selected.indexOf(c.id)} onClick={() => toggle(c.id)} />
-                  ))}
+                <div className="space-y-4">
+                  {creativeGroups.map((g) => {
+                    const ids = g.items.map((c) => c.id);
+                    const all = ids.every((id) => selected.includes(id));
+                    return (
+                      <div key={g.id}>
+                        {g.name && (
+                          <div className="flex items-center gap-2 mb-2">
+                            <Folder className="size-3.5 text-primary/80" />
+                            <span className="text-xs font-semibold text-foreground">{g.name}</span>
+                            <span className="text-[11px] text-muted-foreground tabular-nums">{g.items.length}</span>
+                            <div className="flex-1 h-px bg-border/70" />
+                            <button type="button" onClick={() => setSelected((s) => (all ? s.filter((x) => !ids.includes(x)) : [...s, ...ids.filter((x) => !s.includes(x))]))}
+                              className="text-[11px] text-muted-foreground hover:text-foreground">
+                              {all ? "Desmarcar da pasta" : "Marcar todos da pasta"}
+                            </button>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-6 gap-2.5">
+                          {g.items.map((c) => (
+                            <CreativeTile key={c.id} c={c} order={selected.indexOf(c.id)} onClick={() => toggle(c.id)} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

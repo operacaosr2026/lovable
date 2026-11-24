@@ -497,6 +497,7 @@ const CreativeInput = z.object({
   drive_url: z.null().optional(),
   thumb_url: z.null().optional(),
   thumb_path: z.null().optional(),
+  folder_id: z.string().uuid().nullable().optional(),
 });
 
 export const listCreatives = createServerFn({ method: "GET" })
@@ -532,6 +533,7 @@ export const createCreative = createServerFn({ method: "POST" })
       media_url: data.media_url ?? null,
       media_path: data.media_path ?? null,
       media_kind: data.media_kind ?? null,
+      folder_id: data.folder_id ?? null,
       position,
     }).select().single();
     if (error) throw new Error(error.message);
@@ -567,6 +569,7 @@ export const duplicateCreative = createServerFn({ method: "POST" })
       drive_file_id: src.drive_file_id ?? null,
       drive_url: src.drive_url ?? null,
       thumb_url: src.thumb_url ?? null,
+      folder_id: src.folder_id ?? null,
       // Miniatura fica com o original (apagar a cópia não apaga o arquivo dele).
       position,
     }).select().single();

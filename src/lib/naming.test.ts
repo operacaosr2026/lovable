@@ -62,6 +62,17 @@ describe("buildPlan", () => {
     expect(p.campaign_name).toBe("Minha");
     expect(p.adsets[0].ads[1].name).toBe("Outro");
   });
+  it("{{pasta}} separa o mesmo nome de criativo em pastas diferentes", () => {
+    const cs = [
+      { id: "a", name: "AD1", kind: "video" as const, folder: "Preto" },
+      { id: "b", name: "AD1", kind: "video" as const, folder: "Branco" },
+    ];
+    const t = { ...templates, ad: "{{nome_do_criativo}}_{{pasta}}" };
+    const names = buildPlan({ creatives: cs, distribution: "together", multiFormat: "flexible", templates: t, values }).adsets[0].ads.map((a) => a.name);
+    expect(names).toEqual(["AD1_Preto", "AD1_Branco"]);
+    const multi = buildPlan({ creatives: cs, distribution: "single_ad", multiFormat: "flexible", templates: t, values }).adsets[0].ads[0].name;
+    expect(multi).toBe("AD1 + AD1_Preto + Branco");
+  });
   it("sem criativos, sem conjuntos", () => {
     expect(buildPlan({ creatives: [], distribution: "single_ad", multiFormat: "flexible", templates, values }).adsets).toEqual([]);
   });

@@ -2245,6 +2245,9 @@ export type Database = {
           description: string | null;
           descriptions: Json;
           drive_file_id: string | null;
+          drive_missing: boolean;
+          drive_parent_id: string | null;
+          folder_id: string | null;
           drive_url: string | null;
           id: string;
           last_used_at: string | null;
@@ -2271,6 +2274,9 @@ export type Database = {
           description?: string | null;
           descriptions?: Json;
           drive_file_id?: string | null;
+          drive_missing?: boolean;
+          drive_parent_id?: string | null;
+          folder_id?: string | null;
           drive_url?: string | null;
           id?: string;
           last_used_at?: string | null;
@@ -2297,6 +2303,9 @@ export type Database = {
           description?: string | null;
           descriptions?: Json;
           drive_file_id?: string | null;
+          drive_missing?: boolean;
+          drive_parent_id?: string | null;
+          folder_id?: string | null;
           drive_url?: string | null;
           id?: string;
           last_used_at?: string | null;
@@ -3151,6 +3160,9 @@ export type Database = {
           board_column_id: string | null;
           board_position: number;
           cost: number;
+          creatives_drive_folder_id: string | null;
+          creatives_drive_folder_name: string | null;
+          creatives_drive_synced_at: string | null;
           created_at: string;
           description: string | null;
           id: string;
@@ -3171,6 +3183,9 @@ export type Database = {
           board_column_id?: string | null;
           board_position?: number;
           cost?: number;
+          creatives_drive_folder_id?: string | null;
+          creatives_drive_folder_name?: string | null;
+          creatives_drive_synced_at?: string | null;
           created_at?: string;
           description?: string | null;
           id?: string;
@@ -3191,6 +3206,9 @@ export type Database = {
           board_column_id?: string | null;
           board_position?: number;
           cost?: number;
+          creatives_drive_folder_id?: string | null;
+          creatives_drive_folder_name?: string | null;
+          creatives_drive_synced_at?: string | null;
           created_at?: string;
           description?: string | null;
           id?: string;

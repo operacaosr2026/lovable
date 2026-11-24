@@ -7,7 +7,7 @@ export type Distribution = "per_creative" | "together" | "single_ad";
 export type MultiFormat = "flexible" | "carousel";
 export type AdFormat = "single" | MultiFormat;
 
-export type PlanCreative = { id: string; name: string; kind: "video" | "image" };
+export type PlanCreative = { id: string; name: string; kind: "video" | "image"; folder?: string };
 export type PlanAd = { key: string; name: string; format: AdFormat; creative_ids: string[] };
 export type PlanAdset = { key: string; name: string; ads: PlanAd[] };
 export type Plan = { campaign_name: string; adsets: PlanAdset[] };
@@ -47,6 +47,8 @@ export function buildPlan(input: PlanInput): Plan {
     return {
       nome_do_criativo: ad.creatives.length === 1 ? fileBaseName(first?.name ?? "") : ad.creatives.map((c) => fileBaseName(c.name)).join(" + ").slice(0, 120),
       formato: FORMAT_CODE[ad.format](first),
+      // Vários criativos de pastas diferentes no mesmo anúncio: "Preto + Branco".
+      pasta: [...new Set(ad.creatives.map((c) => c.folder).filter(Boolean))].join(" + "),
       numero_anuncio: pad2(adIndex + 1),
     };
   };
