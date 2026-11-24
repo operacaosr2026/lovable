@@ -17,6 +17,7 @@ import { AppSettingsProvider } from "@/lib/app-settings";
 import { useLocation, Navigate } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
+import { PublishProgressHost } from "@/components/products/PublishProgress";
 
 function NotFoundComponent() {
   return (
@@ -156,6 +157,7 @@ function RootComponent() {
           <ConfirmProvider>
             <AuthGate />
             <Toaster />
+            <PublishProgressHost />
           </ConfirmProvider>
         </AppSettingsProvider>
       </AuthProvider>

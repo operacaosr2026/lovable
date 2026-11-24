@@ -27,6 +27,7 @@ import { AI_FEATURES, AI_GROUP_LABEL, type AiFeature } from "@/lib/ad-ai-feature
 import { ATTRIBUTIONS, ATTRIBUTION_KEYS, LIFECYCLES, LIFECYCLE_KEYS, RETENTION_DAYS, zonedToIso, type Attribution, type Lifecycle } from "@/lib/ad-schedule";
 import { STANDARD_URL_TAGS } from "@/lib/utm";
 import { cn } from "@/lib/utils";
+import { publishProgress, usePublishJobs, type Step, type StepState } from "@/lib/publish-progress";
 import { TabSkeleton } from "@/components/products/TabSkeleton";
 
 const CTA_LABELS: Record<typeof AD_CTAS[number], string> = {
@@ -136,8 +137,10 @@ export function ProductAds({ productId }: { productId: string }) {
   const [form, setForm] = useState<Form>(DEFAULT_FORM);
   const [selected, setSelected] = useState<string[]>([]);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
-  const [nodes, setNodes] = useState<Record<string, NodeState>>({});
-  const [running, setRunning] = useState(false);
+  const [localRunning, setRunning] = useState(false);
+  // Publicação em andamento (desta tela ou de antes de fechar o produto) trava o botão.
+  const jobs = usePublishJobs();
+  const running = localRunning || jobs.some((j) => j.status === "running");
   const [initialized, setInitialized] = useState(false);
   const set = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
 
@@ -231,7 +234,6 @@ export function ProductAds({ productId }: { productId: string }) {
   }
 
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-  const mark = (key: string, label: string, state: NodeState["state"] = "running") => setNodes((n) => ({ ...n, [key]: { label, state } }));
 
   const publish = async () => {
     if (missing.length || running) return;
@@ -266,15 +268,23 @@ export function ProductAds({ productId }: { productId: string }) {
       plan: plan.adsets,
     };
 
+    // Andamento vai pra janela "Publicando campanha" (fica viva fora desta tela).
+    const jobId = publishProgress.start(plan.campaign_name, [
+      { key: "campaign", group: "campaign", label: plan.campaign_name },
+      ...progressSteps(plan.adsets, chosen),
+    ]);
+    const step = (key: string, detail: string, state: StepState = "running", progress: number | null = null) => publishProgress.step(jobId, key, { detail, state, progress });
     setRunning(true);
-    setNodes({ campaign: { state: "running", label: "Criando campanha" } });
+    step("campaign", "Criando campanha");
     try {
-      const { publication_id } = await startFn({ data: { product_id: productId, config } });
-      mark("campaign", "Campanha criada", "ok");
-      const status = await execute(publication_id, plan.adsets, chosen, {});
+      const { publication_id, campaign_id } = await startFn({ data: { product_id: productId, config } });
+      step("campaign", "Campanha criada", "ok");
+      publishProgress.set(jobId, { managerUrl: adsManagerUrl(config.ad_account_id, campaign_id) });
+      const status = await execute(jobId, publication_id, plan.adsets, chosen, {});
       if (status !== "error") { setSelected([]); setOverrides({}); }
     } catch (e: any) {
-      mark("campaign", e.message, "error");
+      step("campaign", e.message, "error");
+      publishProgress.finish(jobId, "error");
       toast.error(e.message);
     } finally {
       setRunning(false);
@@ -282,19 +292,31 @@ export function ProductAds({ productId }: { productId: string }) {
     }
   };
 
+  // Etapas da janela de andamento: mídias, conjuntos e anúncios, na ordem da Meta.
+  const progressSteps = (adsets: PlanAdset[], toSend: any[]): Omit<Step, "state">[] => [
+    ...toSend.map((c) => ({
+      key: `m:${c.id}`, group: "media" as const, label: c.name || "Criativo",
+      thumb: { url: !c.media_path && c.drive_file_id ? c.thumb_url : c.media_url, video: c.media_kind === "video" && !!c.media_path },
+    })),
+    ...adsets.map((s) => ({ key: s.key, group: "adset" as const, label: s.name })),
+    ...adsets.flatMap((s) => s.ads.map((a) => ({ key: a.key, group: "ad" as const, label: a.name }))),
+  ];
+
   // Sobe uma mídia pra Meta. Vídeo do Drive vai em partes (o servidor lê do Drive e
   // entrega à Meta); o resto vai inteiro.
-  const sendMedia = async (publication_id: string, c: any): Promise<AdMedia> => {
+  const sendMedia = async (jobId: string, publication_id: string, c: any): Promise<AdMedia> => {
     const key = `m:${c.id}`;
+    const mark = (k: string, detail: string, progress: number | null = null) => publishProgress.step(jobId, k, { detail, state: "running", progress });
     if (c.media_kind === "video" && !c.media_path && c.drive_file_id) {
-      mark(key, "Enviando vídeo 0%");
+      mark(key, "Enviando vídeo 0%", 0);
       const s = await startVideoFn({ data: { publication_id, creative_id: c.id } });
       let { start_offset, end_offset } = s;
       while (start_offset < end_offset) {
         const r = await chunkFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id, start_offset, end_offset } });
         start_offset = r.start_offset;
         end_offset = r.end_offset;
-        mark(key, `Enviando vídeo ${Math.min(100, Math.round((start_offset / s.size) * 100))}%`);
+        const pct = Math.min(100, Math.round((start_offset / s.size) * 100));
+        mark(key, `Enviando vídeo ${pct}%`, pct);
       }
       await finishVideoFn({ data: { publication_id, creative_id: c.id, upload_session_id: s.upload_session_id } });
       return { kind: "video", video_id: s.video_id };
@@ -305,19 +327,19 @@ export function ProductAds({ productId }: { productId: string }) {
 
   // Mídias → espera os vídeos → conjuntos → anúncios. Usado ao publicar e no
   // "Tentar de novo" (adsetIds = conjuntos que já existem na Meta).
-  const execute = async (publication_id: string, adsets: PlanAdset[], creativesToSend: any[], adsetIds: Record<string, string>, nodePrefix = "") => {
-    const node = (key: string, label: string, state: NodeState["state"] = "running") => mark(nodePrefix + key, label, state);
+  const execute = async (jobId: string, publication_id: string, adsets: PlanAdset[], creativesToSend: any[], adsetIds: Record<string, string>) => {
+    const node = (key: string, detail: string, state: StepState = "running", progress: number | null = null) => publishProgress.step(jobId, key, { detail, state, progress });
     const failures: { key: string; name: string; adset_name?: string; error: string }[] = [];
     const media = new Map<string, AdMedia>();
     const mediaError = new Map<string, string>();
     for (const c of creativesToSend) {
       try {
-        const m = await sendMedia(publication_id, c);
+        const m = await sendMedia(jobId, publication_id, c);
         media.set(c.id, m);
-        mark(`m:${c.id}`, m.kind === "video" ? "Meta processando" : "Imagem enviada", m.kind === "video" ? "running" : "ok");
+        node(`m:${c.id}`, m.kind === "video" ? "Meta processando" : "Imagem enviada", m.kind === "video" ? "running" : "ok");
       } catch (e: any) {
         mediaError.set(c.id, e.message);
-        mark(`m:${c.id}`, e.message, "error");
+        node(`m:${c.id}`, e.message, "error");
       }
     }
 
@@ -338,10 +360,10 @@ export function ProductAds({ productId }: { productId: string }) {
             return n >= 3 ? { state: "error" as const, error: `Erro ao consultar o vídeo na Meta: ${e.message}` } : { state: "processing" as const, progress: null };
           },
         );
-        if (r.state === "ready") { media.set(id, { ...m, thumbnail_url: r.thumbnail_url }); mark(`m:${id}`, "Vídeo pronto", "ok"); }
-        else if (r.state === "error") { media.delete(id); mediaError.set(id, r.error); mark(`m:${id}`, r.error, "error"); }
-        else if (Date.now() > deadline) { media.delete(id); mediaError.set(id, "O vídeo demorou demais pra processar na Meta"); mark(`m:${id}`, "Demorou demais na Meta", "error"); }
-        else { mark(`m:${id}`, r.progress != null ? `Meta processando ${r.progress}%` : "Meta processando"); next.push([id, m]); }
+        if (r.state === "ready") { media.set(id, { ...m, thumbnail_url: r.thumbnail_url }); node(`m:${id}`, "Vídeo pronto", "ok"); }
+        else if (r.state === "error") { media.delete(id); mediaError.set(id, r.error); node(`m:${id}`, r.error, "error"); }
+        else if (Date.now() > deadline) { media.delete(id); mediaError.set(id, "O vídeo demorou demais pra processar na Meta"); node(`m:${id}`, "Demorou demais na Meta", "error"); }
+        else { node(`m:${id}`, r.progress != null ? `Meta processando ${r.progress}%` : "Meta processando", "running", r.progress ?? null); next.push([id, m]); }
       }
       pending = next;
       if (pending.length) await sleep(5000);
@@ -357,6 +379,7 @@ export function ProductAds({ productId }: { productId: string }) {
       if (!ready.length) { node(set.key, "Sem anúncios prontos", "error"); continue; }
 
       let adsetId = adsetIds[set.key];
+      if (adsetId) node(set.key, "Já existia na campanha", "ok");
       if (!adsetId) {
         node(set.key, "Criando conjunto");
         try {
@@ -382,6 +405,14 @@ export function ProductAds({ productId }: { productId: string }) {
     }
 
     const { status } = await finishFn({ data: { publication_id, failures } });
+    publishProgress.finish(jobId, status, {
+      // Tentar de novo direto da janela: busca a publicação atualizada e refaz só o que faltou.
+      onRetry: async () => {
+        const fresh = await qc.fetchQuery({ queryKey: ["product-ads", productId], queryFn: () => setupFn({ data: { product_id: productId } }), staleTime: 0 });
+        const pub = fresh.publications.find((x) => x.id === publication_id);
+        if (pub) retry(pub);
+      },
+    });
     if (status === "ok") toast.success("Campanha publicada");
     else if (status === "partial") toast.warning("Campanha publicada, mas alguns anúncios falharam");
     else toast.error("Nenhum anúncio foi criado");
@@ -390,7 +421,7 @@ export function ProductAds({ productId }: { productId: string }) {
 
   // Publicadas › "Tentar de novo": cria só os anúncios que faltaram, na mesma campanha.
   const [retrying, setRetrying] = useState<string | null>(null);
-  const retry = async (p: { id: string; config: AdPublicationConfig; ads: AdResult[] }) => {
+  const retry = async (p: Publication) => {
     if (running || retrying) return;
     const done = new Set(p.ads.filter((a) => a.ad_id && a.key).map((a) => a.key!));
     const adsets = (p.config.plan ?? []).map((s) => ({ ...s, ads: s.ads.filter((a) => !done.has(a.key)) })).filter((s) => s.ads.length);
@@ -398,14 +429,16 @@ export function ProductAds({ productId }: { productId: string }) {
     const toSend = ids.map((id) => creatives.find((c) => c.id === id)).filter(Boolean);
     if (toSend.length < ids.length) { toast.error("Algum criativo dessa campanha foi apagado; não dá pra tentar de novo."); return; }
     setRetrying(p.id);
-    setNodes({});
+    const jobId = publishProgress.start(`${(p as any).campaign_name ?? "Campanha"} (tentar de novo)`, progressSteps(adsets, toSend));
+    if ((p as any).campaign_id) publishProgress.set(jobId, { managerUrl: adsManagerUrl((p as any).ad_account_id, (p as any).campaign_id) });
     try {
       // Conjuntos que já existem: anotados na publicação ou deduzidos dos anúncios que deram certo
       // (chave do anúncio "s0a1" → conjunto "s0"); publicações antigas não anotavam.
       const known: Record<string, string> = {};
       for (const ad of p.ads) if (ad.key && ad.adset_id) known[ad.key.replace(/a\d+$/, "")] = ad.adset_id;
-      await execute(p.id, adsets, toSend, { ...known, ...(p.config.adset_ids ?? {}) }, `r:${p.id}:`);
+      await execute(jobId, p.id, adsets, toSend, { ...known, ...(p.config.adset_ids ?? {}) });
     } catch (e: any) {
+      publishProgress.finish(jobId, "error");
       toast.error(e.message);
     } finally {
       setRetrying(null);
@@ -626,7 +659,7 @@ export function ProductAds({ productId }: { productId: string }) {
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-6 gap-2.5">
                   {creatives.map((c) => (
-                    <CreativeTile key={c.id} c={c} order={selected.indexOf(c.id)} node={nodes[`m:${c.id}`]} onClick={() => toggle(c.id)} />
+                    <CreativeTile key={c.id} c={c} order={selected.indexOf(c.id)} onClick={() => toggle(c.id)} />
                   ))}
                 </div>
               )}
@@ -710,7 +743,7 @@ export function ProductAds({ productId }: { productId: string }) {
 
           <div className="px-3 py-3 max-h-[52vh] overflow-y-auto space-y-1">
             <TreeRow
-              icon={Megaphone} level={0} node={nodes.campaign}
+              icon={Megaphone} level={0}
               value={plan.campaign_name} edited={!!overrides.campaign} disabled={running}
               onChange={(v) => setOverrides((o) => ({ ...o, campaign: v }))} onReset={() => setOverrides((o) => without(o, "campaign"))}
               meta={`${form.budget_mode}${form.budget_mode === "CBO" && form.daily_budget ? ` · ${money(form.daily_budget, cur)}/dia` : ""} · ${form.status === "ACTIVE" ? "ativa" : "pausada"}${startIso ? ` · início ${form.start_local.slice(8, 10)}/${form.start_local.slice(5, 7)} ${form.start_local.slice(11, 16)}` : ""}`}
@@ -719,14 +752,14 @@ export function ProductAds({ productId }: { productId: string }) {
             {plan.adsets.map((s) => (
               <div key={s.key} className="space-y-1">
                 <TreeRow
-                  icon={Users} level={1} node={nodes[s.key]}
+                  icon={Users} level={1}
                   value={s.name} edited={!!overrides[s.key]} disabled={running}
                   onChange={(v) => setOverrides((o) => ({ ...o, [s.key]: v }))} onReset={() => setOverrides((o) => without(o, s.key))}
                   meta={form.budget_mode === "ABO" && form.daily_budget ? `${money(form.daily_budget, cur)}/dia` : undefined}
                 />
                 {s.ads.map((ad) => (
                   <TreeRow
-                    key={ad.key} level={2} node={nodes[ad.key]}
+                    key={ad.key} level={2}
                     thumbs={ad.creative_ids.map((id) => creatives.find((c) => c.id === id)).filter(Boolean)}
                     value={ad.name} edited={!!overrides[ad.key]} disabled={running}
                     onChange={(v) => setOverrides((o) => ({ ...o, [ad.key]: v }))} onReset={() => setOverrides((o) => without(o, ad.key))}
@@ -751,7 +784,6 @@ export function ProductAds({ productId }: { productId: string }) {
       {data.publications.length > 0 && (
         <History
           publications={data.publications}
-          nodes={nodes}
           retrying={retrying}
           busy={running || !!retrying}
           onRetry={retry}
@@ -1118,9 +1150,9 @@ function StateIcon({ state, className }: { state: NodeState["state"]; className?
 
 type Publication = { id: string; campaign_id: string | null; campaign_name: string; ad_account_id: string; status: string; config: AdPublicationConfig; ads: AdResult[]; error: string | null; created_at: string };
 
-function History({ publications, onDelete, onRetry, nodes, retrying, busy }: {
+function History({ publications, onDelete, onRetry, retrying, busy }: {
   publications: Publication[]; onDelete: (id: string) => void; onRetry: (p: Publication) => void;
-  nodes: Record<string, NodeState>; retrying: string | null; busy: boolean;
+  retrying: string | null; busy: boolean;
 }) {
   return (
     <div>
@@ -1145,22 +1177,18 @@ function History({ publications, onDelete, onRetry, nodes, retrying, busy }: {
                   {p.config?.daily_budget ? ` · ${p.config.daily_budget}/dia` : ""}
                 </div>
                 {p.error && <div className="text-xs text-destructive mt-0.5">{p.error}</div>}
-                {failed.map((a, i) => {
-                  const n = live && a.key ? nodes[`r:${p.id}:${a.key}`] : undefined;
-                  return (
-                    <div key={a.key ?? a.creative_id ?? i} className={cn("text-xs mt-0.5 flex items-start gap-1", n ? (n.state === "ok" ? "text-success" : n.state === "error" ? "text-destructive" : "text-muted-foreground") : "text-destructive")}>
-                      {n && <StateIcon state={n.state} className="size-3 mt-0.5 shrink-0" />}
-                      <span>{a.adset_name ? `${a.adset_name} › ` : ""}{a.name}: {n ? n.label : a.error}</span>
-                    </div>
-                  );
-                })}
+                {failed.map((a, i) => (
+                  <div key={a.key ?? a.creative_id ?? i} className="text-xs mt-0.5 text-destructive">
+                    {a.adset_name ? `${a.adset_name} › ` : ""}{a.name}: {a.error}
+                  </div>
+                ))}
                 {canRetry && (
                   <button
                     onClick={() => onRetry(p)} disabled={busy}
                     className="mt-1.5 h-7 px-2.5 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
                   >
                     {live ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
-                    {live ? "Tentando de novo… não feche a aba" : `Tentar de novo os que falharam (${failed.filter((a) => a.key).length})`}
+                    {live ? "Tentando de novo… (veja a janela de andamento)" : `Tentar de novo os que falharam (${failed.filter((a) => a.key).length})`}
                   </button>
                 )}
               </div>
