@@ -8,6 +8,7 @@ import {
 import { updateLgCardShopConfig } from "@/lib/lg-cards.functions";
 import { orderLineItemsCost, orderItemsQty, orderUsesDefaultCost, costOpts, isSupplierFree, type CostProduct } from "@/lib/product-cost-match";
 import { buildSupplierMessage } from "@/lib/order-message";
+import { SUPPLIERS } from "@/lib/suppliers";
 import { repeatedItems } from "@/lib/repeated-items";
 import { queueRepeatedConfirm, repeatedConfirmStatus } from "@/lib/order-notices.functions";
 import { DateRangePicker } from "@/components/lojas-grupos/LgDashboard";
@@ -114,6 +115,8 @@ export function LgOrders({
   const term = search.trim().toLowerCase().replace(/#/g, "");
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen]     = useState(false);
+  // De qual fornecedor é o pagamento — escolha obrigatória a cada pagamento.
+  const [paySupplier, setPaySupplier] = useState("");
   const [payDate, setPayDate]     = useState(() => isoTodayUS());
   const [reDateOpen, setReDateOpen] = useState(false);
   const [reDate, setReDate]       = useState(() => isoTodayUS());
@@ -498,14 +501,14 @@ export function LgOrders({
     mutationFn: async () => {
       const results = [];
       for (const [shopId, orderIds] of selectionByShop.entries()) {
-        const r = await payFn({ data: { shop_id: shopId, order_ids: orderIds, payment_date: payDate } });
+        const r = await payFn({ data: { shop_id: shopId, order_ids: orderIds, payment_date: payDate, supplier: paySupplier } });
         results.push(r);
       }
       return results;
     },
     onSuccess: (results) => {
       const totalAmount = results.reduce((s, r: any) => s + Number(r.total_amount ?? 0), 0);
-      toast.success(`${selectedCount} pedidos marcados como pagos · ${fmtMoney(totalAmount)}`);
+      toast.success(`${selectedCount} pedidos marcados como pagos · ${paySupplier} · ${fmtMoney(totalAmount)}`);
       setSelected(new Set());
       setPayOpen(false);
       qc.invalidateQueries({ queryKey: ["lg-orders", cacheKey] });
@@ -629,7 +632,7 @@ export function LgOrders({
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Limpar</Button>
           {selectionMode === "pending" && (
-            <Button size="sm" onClick={() => { setPayDate(isoTodayUS()); setPayOpen(true); }}>
+            <Button size="sm" onClick={() => { setPayDate(isoTodayUS()); setPaySupplier(""); setPayOpen(true); }}>
               <CheckCircle2 className="size-4" /> Marcar como pago ({selectedCount})
             </Button>
           )}
@@ -952,13 +955,25 @@ export function LgOrders({
               O custo será lançado no caixa na data informada.
             </p>
             <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Fornecedor</label>
+              <div className="grid grid-cols-2 gap-2">
+                {SUPPLIERS.map((s) => (
+                  <button key={s} type="button" onClick={() => setPaySupplier(s)}
+                    className={`h-10 rounded-lg border text-sm font-medium transition-colors ${paySupplier === s ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              {!paySupplier && <p className="text-[11px] text-muted-foreground mt-1">Escolha de qual fornecedor é este pagamento.</p>}
+            </div>
+            <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Data de pagamento</label>
               <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className="w-full" />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayOpen(false)}>Cancelar</Button>
-            <Button onClick={() => pay.mutate()} disabled={pay.isPending}>
+            <Button onClick={() => pay.mutate()} disabled={pay.isPending || !paySupplier}>
               {pay.isPending && <RefreshCw className="size-4 animate-spin" />}
               Confirmar
             </Button>

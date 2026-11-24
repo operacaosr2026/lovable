@@ -567,7 +567,9 @@ function GroupedEntryChip({ group, onEdit, onToggleReconciled, shopNamesMap, isC
   // não pagos de outra loja no mesmo dia). Clique na linha edita o lançamento.
   if (group.collapsed && /^fornecedor$/i.test(group.label)) {
     const lineLabel = (e: DayItem) => {
-      const lote = (e.description ?? "").match(/^Lote #\d+/)?.[0];
+      // "Lote #23 · Alice · 2026-11-19 – …" → "Lote #23 · Alice" (lote antigo: só "Lote #23").
+      const m = (e.description ?? "").match(/^(Lote #\d+)(?: · ([^·]*?[^\d\s·–][^·]*?))? · \d{4}-/);
+      const lote = m ? (m[2] ? `${m[1]} · ${m[2]}` : m[1]) : (e.description ?? "").match(/^Lote #\d+/)?.[0];
       const what = lote ?? (e.reconciled ? "Pago" : "Previsto");
       const shop = isConsolidated && shopNamesMap && e.shop_id ? shopNamesMap[e.shop_id] : null;
       return shop ? `${shop} · ${what}` : what;

@@ -4053,6 +4053,7 @@ export type Database = {
           id: string;
           order_dates: string[];
           payment_date: string;
+          supplier: string | null;
           shop_id: string;
           total_amount: number;
           total_items: number;
@@ -4068,6 +4069,7 @@ export type Database = {
           id?: string;
           order_dates?: string[];
           payment_date: string;
+          supplier?: string | null;
           shop_id: string;
           total_amount?: number;
           total_items?: number;
@@ -4083,6 +4085,7 @@ export type Database = {
           id?: string;
           order_dates?: string[];
           payment_date?: string;
+          supplier?: string | null;
           shop_id?: string;
           total_amount?: number;
           total_items?: number;

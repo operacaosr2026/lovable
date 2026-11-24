@@ -1878,12 +1878,21 @@ export const supplierOrdersTotal = createServerFn({ method: "POST" })
     return { total: roundCents(total) };
   });
 
+// Descrição do lote (lote e lançamento do Caixa): "Lote #23 · Alice · 2026-11-19 – 2026-11-23".
+// Lote antigo sem fornecedor fica como antes.
+function lotLabel(n: number, dates: string[], supplier?: string | null) {
+  const range = dates.length <= 1 ? (dates[0] ?? "") : `${dates[0]} – ${dates[dates.length - 1]}`;
+  return `Lote #${n}${supplier ? ` · ${supplier}` : ""} · ${range}`;
+}
+
 export const markOrdersPaid = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({
     shop_id: z.string().uuid(),
     order_ids: z.array(z.string().uuid()).min(1).max(2000),
     payment_date: z.string(),
+    // De qual fornecedor é o pagamento (Alice, FlowBorder…).
+    supplier: z.string().trim().min(1).max(60),
   }).parse(d))
   .handler(async ({ context, data }) => {
     // Fetch pending orders only
@@ -1912,9 +1921,9 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       .from("shop_order_payment_batches")
       .select("id,batch_number,total_amount,total_items,total_orders,order_dates,cash_entry_id")
       .eq("user_id", context.ownerId).eq("shop_id", data.shop_id)
-      .eq("payment_date", data.payment_date)
+      .eq("payment_date", data.payment_date).eq("supplier", data.supplier)
       .not("cash_entry_id", "is", null)
-      .maybeSingle();
+      .order("created_at").limit(1).maybeSingle();
     if (existingErr) throw new Error(existingErr.message);
 
     let batchId: string;
@@ -1933,9 +1942,7 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       totalAmount = roundCents(totalAmount + Number(existingBatch.total_amount ?? 0));
       totalItems += Number(existingBatch.total_items ?? 0);
       const mergedTotalOrders = Number(existingBatch.total_orders ?? 0) + orders.length;
-      const mergedDesc = mergedOrderDates.length === 1
-        ? `Lote #${batchNumber} · ${mergedOrderDates[0]}`
-        : `Lote #${batchNumber} · ${mergedOrderDates[0]} – ${mergedOrderDates[mergedOrderDates.length - 1]}`;
+      const mergedDesc = lotLabel(batchNumber, mergedOrderDates, data.supplier);
 
       const { error: updBatchErr } = await supabaseAdmin.from("shop_order_payment_batches")
         .update({
@@ -1962,13 +1969,11 @@ export const markOrdersPaid = createServerFn({ method: "POST" })
       };
     } else {
       batchNumber = await nextBatchNumber(context, data.shop_id);
-      const desc = sortedDates.length === 1
-        ? `Lote #${batchNumber} · ${sortedDates[0]}`
-        : `Lote #${batchNumber} · ${sortedDates[0]} – ${sortedDates[sortedDates.length - 1]}`;
+      const desc = lotLabel(batchNumber, sortedDates, data.supplier);
 
       const { data: batch, error: bErr } = await supabaseAdmin.from("shop_order_payment_batches")
         .insert({
-          user_id: context.ownerId, shop_id: data.shop_id,
+          user_id: context.ownerId, shop_id: data.shop_id, supplier: data.supplier,
           batch_number: batchNumber,
           payment_date: data.payment_date,
           total_amount: totalAmount,
@@ -2130,26 +2135,28 @@ async function splitOrdersToPaymentDate(
   const movedCost = roundCents(await ordersSupplierCost(context, shopId, moved, products));
   const movedItems = moved.reduce((s, o) => s + Number(o.items_count ?? 0), 0);
   const movedIds = moved.map((o) => o.id as string);
-  const lotDesc = (n: number, dates: string[]) => dates.length <= 1
-    ? `Lote #${n} · ${dates[0] ?? ""}`
-    : `Lote #${n} · ${dates[0]} – ${dates[dates.length - 1]}`;
-  const cashDesc = (n: number, dates: string[], items: number, count: number) => `${lotDesc(n, dates)} · ${items} itens · ${count} pedidos`;
   const warnings: string[] = [];
 
   const { data: src, error: srcErr } = await supabaseAdmin.from("shop_order_payment_batches")
-    .select("id,batch_number,total_amount,total_items,total_orders,cash_entry_id")
+    .select("id,batch_number,total_amount,total_items,total_orders,cash_entry_id,supplier")
     .eq("id", fromBatchId).eq("user_id", owner).single();
   if (srcErr) throw new Error(srcErr.message);
+  // Os pedidos continuam do mesmo fornecedor: o lote de destino é o dele.
+  const supplier = (src.supplier as string | null) ?? null;
+  const lotDesc = (n: number, dates: string[]) => lotLabel(n, dates, supplier);
+  const cashDesc = (n: number, dates: string[], items: number, count: number) => `${lotDesc(n, dates)} · ${items} itens · ${count} pedidos`;
   const { data: srcCash } = src.cash_entry_id
     ? await supabaseAdmin.from("shop_cash_entries").select("id,amount,amount_locked,via_balance,balance_shop_id")
         .eq("id", src.cash_entry_id).eq("user_id", owner).maybeSingle()
     : { data: null as any };
 
   // Lote de destino: o que já existe na data nova, ou um novo.
-  const { data: existing } = await supabaseAdmin.from("shop_order_payment_batches")
+  let existingQ = supabaseAdmin.from("shop_order_payment_batches")
     .select("id,batch_number,total_amount,total_items,total_orders,order_dates,cash_entry_id")
     .eq("user_id", owner).eq("shop_id", shopId).eq("payment_date", paymentDate)
-    .not("cash_entry_id", "is", null).neq("id", fromBatchId).maybeSingle();
+    .not("cash_entry_id", "is", null).neq("id", fromBatchId);
+  existingQ = supplier ? existingQ.eq("supplier", supplier) : existingQ.is("supplier", null);
+  const { data: existing } = await existingQ.order("created_at").limit(1).maybeSingle();
   let targetId: string;
   if (existing) {
     targetId = existing.id;
@@ -2171,7 +2178,7 @@ async function splitOrdersToPaymentDate(
     const n = await nextBatchNumber(context, shopId);
     const dates = [...new Set(moved.map((o) => o.order_date as string))].sort();
     const { data: nb, error: nbErr } = await supabaseAdmin.from("shop_order_payment_batches").insert({
-      user_id: owner, shop_id: shopId, batch_number: n, payment_date: paymentDate,
+      user_id: owner, shop_id: shopId, batch_number: n, payment_date: paymentDate, supplier,
       total_amount: movedCost, total_items: movedItems, total_orders: moved.length,
       order_dates: dates, description: lotDesc(n, dates),
     }).select("id").single();
@@ -2320,9 +2327,7 @@ export const updateBatchPaymentDate = createServerFn({ method: "POST" })
       totalAmount = roundCents(totalAmount);
 
       const batchNumber = await nextBatchNumber(context, data.shop_id);
-      const desc = dates.length === 1
-        ? `Lote #${batchNumber} · ${dates[0]}`
-        : `Lote #${batchNumber} · ${dates[0]} – ${dates[dates.length - 1]}`;
+      const desc = lotLabel(batchNumber, dates);
 
       const { data: batch, error: bErr } = await supabaseAdmin.from("shop_order_payment_batches")
         .insert({
