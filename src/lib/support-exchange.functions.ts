@@ -64,6 +64,29 @@ const addressOf = (a: any): ExchangeAddress | null => a ? {
   city: a.city ?? "", province_code: a.province_code ?? null, zip: a.zip ?? "", country_code: a.country_code ?? "", phone: a.phone ?? null,
 } : null;
 
+const lineLabel = (title: string, variant: string | null) => `${title}${variant ? ` (${variant})` : ""}`;
+
+// Quanto de cada item do pedido já foi trocado (troca aguardando, gerando,
+// aprovada ou com erro — recusada não conta), pelo texto "Produto (variante)"
+// gravado em `replaces`. Um item não pode ser trocado duas vezes.
+async function exchangedByLine(ownerId: string, orderId: string) {
+  const { data, error } = await db("support_exchange_requests").select("items,status,new_order_name")
+    .eq("owner_id", ownerId).eq("order_id", orderId).neq("status", "recusado");
+  if (error) throw new Error(error.message);
+  const out = new Map<string, { qty: number; orders: string[] }>();
+  for (const r of (data ?? []) as any[]) {
+    for (const i of (r.items ?? []) as ExchangeItem[]) {
+      if (!i.replaces) continue;
+      const cur = out.get(i.replaces) ?? { qty: 0, orders: [] };
+      cur.qty += Number(i.quantity) || 0;
+      const tag = r.new_order_name ?? (r.status === "erro" ? "troca com erro" : "troca aguardando");
+      if (!cur.orders.includes(tag)) cur.orders.push(tag);
+      out.set(i.replaces, cur);
+    }
+  }
+  return out;
+}
+
 // Itens do pedido com as variantes do produto (pra escolher o tamanho novo).
 export const getExchangeSetup = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
@@ -81,6 +104,7 @@ export const getExchangeSetup = createServerFn({ method: "GET" })
       for (const p of (res?.nodes ?? []) as any[]) if (p?.id) products.set(p.id, toProduct(p));
     }
     const { data: shop } = await supabaseAdmin.from("shops").select("name").eq("id", o.shop_id).maybeSingle();
+    const done = await exchangedByLine(context.ownerId, o.id);
     return {
       orderNumber: o.order_number,
       store: shop?.name ?? null,
@@ -93,6 +117,8 @@ export const getExchangeSetup = createServerFn({ method: "GET" })
         variantId: l.variant_id ? `gid://shopify/ProductVariant/${l.variant_id}` : null,
         quantity: Number(l.current_quantity ?? l.quantity ?? 1),
         product: l.product_id ? products.get(`gid://shopify/Product/${l.product_id}`) ?? null : null,
+        exchanged: done.get(lineLabel(l.title, l.variant_title || null))?.qty ?? 0,
+        exchangedIn: done.get(lineLabel(l.title, l.variant_title || null))?.orders ?? [],
       })),
     };
   });
@@ -160,6 +186,27 @@ export const requestExchange = createServerFn({ method: "POST" })
     const { data: open } = await db("support_exchange_requests").select("id")
       .eq("owner_id", ctx.ownerId).eq("order_id", o.id).in("status", ["pendente", "gerando"]).limit(1);
     if (open?.length) throw new Error("Este pedido já tem uma troca aguardando aprovação");
+    // Mesmo item não troca duas vezes: soma o que já foi trocado + o pedido agora
+    // e não deixa passar da quantidade comprada.
+    const lines = ((o.raw?.line_items ?? []) as any[]).filter((l) => (l.current_quantity ?? l.quantity) > 0);
+    const bought = new Map<string, number>();
+    for (const l of lines) {
+      const k = lineLabel(l.title, l.variant_title || null);
+      bought.set(k, (bought.get(k) ?? 0) + Number(l.current_quantity ?? l.quantity ?? 1));
+    }
+    const done = await exchangedByLine(ctx.ownerId, o.id);
+    const asking = new Map<string, number>();
+    for (const i of data.items) if (i.replaces) asking.set(i.replaces, (asking.get(i.replaces) ?? 0) + i.quantity);
+    for (const [k, qty] of asking) {
+      const max = bought.get(k);
+      if (max == null) throw new Error(`${k} não está neste pedido`);
+      const prev = done.get(k);
+      if ((prev?.qty ?? 0) + qty > max) {
+        throw new Error(prev?.qty
+          ? `${k} já foi trocado (${prev.orders.join(", ")}). Não dá pra trocar o mesmo item de novo.`
+          : `${k}: o pedido só tem ${max} unidade${max > 1 ? "s" : ""}`);
+      }
+    }
     const customer = customerOf(o.raw);
     const { data: row, error } = await db("support_exchange_requests").insert({
       owner_id: ctx.ownerId, requested_by: ctx.userId, shop_id: o.shop_id, conversation_id: data.conversationId,

@@ -21,6 +21,8 @@ type Row = {
   product: ExchangeProduct | null;
   variantId: string;
   quantity: number;
+  max: number;                      // quanto ainda dá pra trocar deste item
+  exchangedIn: string[];            // trocas que já pegaram este item
   searching: boolean;
 };
 
@@ -53,15 +55,21 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
   useEffect(() => {
     if (!setup.data || rows.length) return;
     const lines = setup.data.lines;
-    setRows(lines.map((l, i) => ({
-      key: String(i),
-      include: lines.length === 1,
-      original: `${l.title}${l.variantTitle ? ` (${l.variantTitle})` : ""}`,
-      product: l.product,
-      variantId: "",
-      quantity: l.quantity,
-      searching: !l.product,
-    })));
+    const free = lines.filter((l) => l.quantity - l.exchanged > 0).length;
+    setRows(lines.map((l, i) => {
+      const max = Math.max(0, l.quantity - l.exchanged);
+      return {
+        key: String(i),
+        include: free === 1 && max > 0,
+        original: `${l.title}${l.variantTitle ? ` (${l.variantTitle})` : ""}`,
+        product: l.product,
+        variantId: "",
+        quantity: Math.max(1, max),
+        max,
+        exchangedIn: l.exchangedIn,
+        searching: !l.product,
+      };
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setup.data]);
 
@@ -86,6 +94,7 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
       if (res.status === "aprovado") toast.success(`Pedido ${res.orderName} gerado`);
       else toast.success("Troca enviada pra aprovação", { description: "Quem aprova recebe o aviso no sino." });
       qc.invalidateQueries({ queryKey: ["exchange-requests"] });
+      qc.invalidateQueries({ queryKey: ["exchange-setup"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
       qc.invalidateQueries({ queryKey: ["support-approvals"] });
       onClose();
@@ -112,12 +121,18 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
             <div className="space-y-2">
               <p className="text-xs font-semibold">Itens</p>
               {rows.map((r) => (
-                <div key={r.key} className={`rounded-xl border p-3 space-y-2 ${r.include ? "border-primary/50" : "border-border"}`}>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input type="checkbox" checked={r.include} onChange={(e) => patch(r.key, { include: e.target.checked })} className="mt-0.5" />
+                <div key={r.key} className={`rounded-xl border p-3 space-y-2 ${r.include ? "border-primary/50" : "border-border"} ${r.max === 0 ? "opacity-60" : ""}`}>
+                  <label className={`flex items-start gap-2 ${r.max === 0 ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                    <input type="checkbox" checked={r.include} disabled={r.max === 0}
+                      onChange={(e) => patch(r.key, { include: e.target.checked })} className="mt-0.5" />
                     <span className="text-xs">
                       <span className="text-muted-foreground">Pedido: </span>
                       <span className="font-medium">{r.original}</span>
+                      {r.exchangedIn.length > 0 && (
+                        <span className="block text-[11px] text-amber-600 mt-0.5">
+                          {r.max === 0 ? "Já trocado" : "Parte já trocada"} — {r.exchangedIn.join(", ")}
+                        </span>
+                      )}
                     </span>
                   </label>
                   {r.include && (
@@ -141,8 +156,8 @@ export function ExchangeDialog({ orderId, conversationId, open, onClose }: {
                               <option key={v.id} value={v.id}>{v.title === "Default Title" ? "Único" : v.title}{v.available ? "" : " (sem estoque)"}</option>
                             ))}
                           </select>
-                          <input type="number" min={1} max={20} value={r.quantity}
-                            onChange={(e) => patch(r.key, { quantity: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })}
+                          <input type="number" min={1} max={Math.max(1, r.max)} value={r.quantity}
+                            onChange={(e) => patch(r.key, { quantity: Math.max(1, Math.min(Math.max(1, r.max), Number(e.target.value) || 1)) })}
                             className="w-14 h-8 rounded-lg border border-border bg-background px-2 text-xs" aria-label="Quantidade" />
                         </div>
                       )}
@@ -311,6 +326,7 @@ export function ExchangeRequestCard({ r, canApprove }: { r: ExchangeRequestView;
     onError: (e: any) => toast.error(e.message ?? "Erro"),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["exchange-requests"] });
+      qc.invalidateQueries({ queryKey: ["exchange-setup"] });
       qc.invalidateQueries({ queryKey: ["support-customer"] });
       qc.invalidateQueries({ queryKey: ["support-approvals"] });
     },
