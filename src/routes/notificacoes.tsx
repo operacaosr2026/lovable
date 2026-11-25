@@ -350,16 +350,17 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
               Nenhum pedido atrasado com esses filtros.
             </div>
           ) : (
-            <table className="w-full text-sm min-w-[1080px] table-fixed">
+            <table className="w-full text-sm min-w-[1230px] table-fixed">
               {/* Larguras fixas; só Rastreio estica (com mínimo de ~230px pela largura mínima da tabela). */}
               <colgroup>
                 <col className="w-11" />
                 <col className="w-[130px]" />
                 <col className="w-[84px]" />
-                <col />
+                {/* Rastreio com largura fixa; a Nota fica com o resto da linha. */}
+                <col className="w-[400px]" />
                 <col className="w-[185px]" />
                 <col className="w-[165px]" />
-                <col className="w-[180px]" />
+                <col />
               </colgroup>
               <thead>
                 <tr className="text-xs text-muted-foreground bg-muted/40 border-b border-border/70 text-left">
