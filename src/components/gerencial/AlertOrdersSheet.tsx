@@ -8,6 +8,7 @@ import { flagOrderOutOfStock, getAlertOrders, resolveAlertOrder, type AlertOrder
 import { isSupplierReplyAlert } from "@/lib/supplier-replies";
 import { listNoticeTemplates, queueOrderNotices } from "@/lib/order-notices.functions";
 import { buildAlertSupplierMessage } from "@/lib/order-message";
+import { trackingEventPt } from "@/lib/tracking-pt";
 
 // Gerencial › Alertas › "Ver rastreio": gaveta com os pedidos do alerta
 // (entrega / lote parado / alfândega), o resumo do que foi analisado e a ação
@@ -242,7 +243,7 @@ function OrderRow({ o, on, onToggle, onResolve, busy, onFlagStock, flagLabel, fl
           </div>
           <p className={`text-xs font-medium mt-1 ${tone}`}>{o.reason}{o.phase !== "—" ? ` · ${o.phase}` : ""}</p>
           {o.supplierNote && <p className="text-xs mt-1 break-words rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 px-2 py-1">Fornecedor: {o.supplierNote}</p>}
-          {o.lastEvent && <p className="text-xs text-muted-foreground mt-0.5 break-words">Último: {o.lastEvent}{o.lastEventAt ? ` (${ddmm(o.lastEventAt)})` : ""}</p>}
+          {o.lastEvent && <p className="text-xs text-muted-foreground mt-0.5 break-words">Último: {trackingEventPt(o.lastEvent)}{o.lastEventAt ? ` (${ddmm(o.lastEventAt)})` : ""}</p>}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {onFlagStock && (

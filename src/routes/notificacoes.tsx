@@ -25,6 +25,7 @@ import { NOTICE_STAGES, NOTICE_INTERVAL_MIN, stageOf, renderNotice, customerOrde
 import { US_TIME_ZONE, isoTodayUS } from "@/lib/timezone";
 import { createTask, listTaskAssignees } from "@/lib/tasks.functions";
 import { EmailFlowsTab } from "@/components/notificacoes/EmailFlows";
+import { trackingEventPt } from "@/lib/tracking-pt";
 
 export const Route = createFileRoute("/notificacoes")({
   beforeLoad: requireAuth,
@@ -78,7 +79,7 @@ function supplierMessage(orders: NoticeOrder[]) {
     const parts = [`${customerOrderNumber(o.orderNumber)} (${o.shopName})`, `comprado ${fmtDate(o.orderDate)} · ${o.days} dias`];
     if (o.trackingCode) {
       parts.push(`${STATUS[o.status].label.toLowerCase()} · rastreio ${o.trackingCode}`);
-      if (o.lastEvent) parts.push(`último evento${o.lastEventAt ? ` ${fmtDate(o.lastEventAt)}` : ""}: ${o.lastEvent}`);
+      if (o.lastEvent) parts.push(`último evento${o.lastEventAt ? ` ${fmtDate(o.lastEventAt)}` : ""}: ${trackingEventPt(o.lastEvent)}`);
     } else {
       parts.push("ainda não enviado (sem rastreio)");
     }
@@ -415,7 +416,7 @@ function AvisosTab({ tabs }: { tabs: ReactNode }) {
                         )}
                         {o.lastEvent && (
                           <div className="text-xs text-muted-foreground mt-1 line-clamp-2" title={o.lastEvent}>
-                            {o.lastEventAt && <span className="text-foreground/80">{fmtDate(o.lastEventAt)} · </span>}{o.lastEvent}
+                            {o.lastEventAt && <span className="text-foreground/80">{fmtDate(o.lastEventAt)} · </span>}{trackingEventPt(o.lastEvent)}
                           </div>
                         )}
                       </td>

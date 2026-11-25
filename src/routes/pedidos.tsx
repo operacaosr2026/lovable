@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { listAllOrders, getOrderDetail, updateOrderNote, updateLocalTrackingNumber, markSupplierMessageCopied, type OrderListRow, type OrderFilter, type OrderCounts, type AttentionKind } from "@/lib/all-orders.functions";
+import { trackingEventPt } from "@/lib/tracking-pt";
 
 // Grupos do filtro "Com atenção" (mesma ordem do servidor).
 const ATTENTION_GROUPS: { key: AttentionKind; label: string; icon: typeof Clock }[] = [
@@ -139,7 +140,7 @@ function supplierMessageFor(rows: OrderListRow[]): string {
   const lines = [...rows].sort((a, b) => num(a) - num(b)).map((r) => {
     const situacao = r.attentionWhy || (r.deliveryStatus ? DELIVERY[r.deliveryStatus]?.[0] : null) || "verificar";
     const local = r.local?.number && r.local.number !== "0" ? ` (local ${r.local.label} ${r.local.number})` : "";
-    const last = r.lastEvent ? ` (último: ${r.lastEvent}${r.lastEventAt ? ` em ${ddmm(isoDateUS(r.lastEventAt))}` : ""})` : "";
+    const last = r.lastEvent ? ` (último: ${trackingEventPt(r.lastEvent)}${r.lastEventAt ? ` em ${ddmm(isoDateUS(r.lastEventAt))}` : ""})` : "";
     const troca = r.exchangeFrom ? ` (troca do ${orderLabel(r.exchangeFrom)})` : "";
     return `${orderLabel(r.orderNumber)}${troca} - ${r.trackingCode ?? "sem rastreio"} - ${situacao}${local}${last}`;
   });
@@ -367,7 +368,7 @@ function PedidosPage() {
                       </td>
                       <td className="py-2.5 px-3 w-[220px] max-w-[240px]">
                         {r.lastEvent ? <>
-                          <p className="text-xs line-clamp-2" title={r.lastEvent}>{r.lastEvent}</p>
+                          <p className="text-xs line-clamp-2" title={r.lastEvent}>{trackingEventPt(r.lastEvent)}</p>
                           {r.lastEventAt && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDateTime(r.lastEventAt)}</p>}
                         </> : <span className="text-xs text-muted-foreground">—</span>}
                       </td>
@@ -651,7 +652,7 @@ function MobileRow({ r, today, onOpen }: { r: OrderListRow; today: string; onOpe
       </div>
       {r.attention && r.attentionWhy && <p className="text-[11px] text-orange-600 dark:text-orange-400 font-medium mt-1">{r.attentionWhy}</p>}
       {r.trackingCode && <p className="text-[11px] font-mono text-muted-foreground mt-1">{r.trackingCode}</p>}
-      {r.lastEvent && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{r.lastEvent}{r.lastEventAt ? ` · ${fmtDateTime(r.lastEventAt)}` : ""}</p>}
+      {r.lastEvent && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{trackingEventPt(r.lastEvent)}{r.lastEventAt ? ` · ${fmtDateTime(r.lastEventAt)}` : ""}</p>}
       {r.exchangeFrom && <p className="text-[11px] font-medium text-sky-700 dark:text-sky-400 mt-1"><RefreshCw className="size-3 inline -mt-0.5 mr-1" />Troca do {orderLabel(r.exchangeFrom)}</p>}
       {r.note && <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1"><StickyNote className="size-3 inline -mt-0.5 mr-1" />{r.note}</p>}
       <div className="flex flex-wrap gap-1 mt-2">

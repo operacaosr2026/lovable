@@ -18,6 +18,7 @@ import { EVIDENCE_DOCS, downloadEvidenceDoc, type EvidenceDocKey } from "@/lib/d
 import { AlertsTab, DunningToggle, PeriodSelect, type AlertsPeriod } from "@/components/chargebacks/AlertsTab";
 import { SettingsTab } from "@/components/chargebacks/SettingsTab";
 import { US_TIME_ZONE, isoTodayUS, nyStartOfDay } from "@/lib/timezone";
+import { trackingEventPt } from "@/lib/tracking-pt";
 
 type ChargebacksTab = "chargebacks" | "alertas" | "config";
 
@@ -1006,7 +1007,7 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
                     <button onClick={() => copy(r.trackingCode!)} className="text-muted-foreground hover:text-foreground" title="Copiar"><Copy className="size-3.5" /></button>
                   </span>
                 ) : "—")}
-                {line("Último evento", r.lastEvent ? `${r.lastEvent}${r.lastEventAt ? ` · ${fmtDate(r.lastEventAt)}` : ""}` : "—")}
+                {line("Último evento", r.lastEvent ? `${trackingEventPt(r.lastEvent)}${r.lastEventAt ? ` · ${fmtDate(r.lastEventAt)}` : ""}` : "—")}
                 {line("Falou com o suporte", supportLabel(r))}
                 {line("Reembolso do fornecedor", <SupplierRefundPill r={r} />)}
               </div>
