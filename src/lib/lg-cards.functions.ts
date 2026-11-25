@@ -853,8 +853,10 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
     // ── Totais globais (soma de todas as lojas dos grupos ativos) + delta ──
     // Faturamento = bruto (o que foi vendido). Reembolsos e chargebacks saem só
     // do lucro (liquido = bruto − reembolsos − chargebacks).
-    let faturamento = 0, liquido = 0, custoProduto = 0, taxas = 0;
-    let prevFaturamento = 0, prevLiquido = 0, prevCustoProduto = 0, prevTaxas = 0;
+    // Gasto com pedidos é o custo cheio; o reembolso do fornecedor confirmado
+    // (`fornecedor`) é uma linha à parte que volta pro lucro.
+    let faturamento = 0, liquido = 0, custoProduto = 0, taxas = 0, fornecedor = 0;
+    let prevFaturamento = 0, prevLiquido = 0, prevCustoProduto = 0, prevTaxas = 0, prevFornecedor = 0;
     const anuncios = adsRes.reduce((s, r) => s + r.amount, 0);
     const prevAnuncios = prevAdsRes.reduce((s, r) => s + r.amount, 0);
     let totalPedidosEstorno = 0, totalEstornosEstorno = 0;
@@ -862,19 +864,21 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
     for (const id of shopIds) {
       faturamento += revenueByShop.get(id) ?? 0;
       liquido += (revenueByShop.get(id) ?? 0) - (reembolsosByShop.get(id) ?? 0) - (chargebacksByShop.get(id) ?? 0);
-      custoProduto += (custoByShop.get(id) ?? 0) - (supByShop.get(id) ?? 0);
+      custoProduto += custoByShop.get(id) ?? 0;
+      fornecedor += supByShop.get(id) ?? 0;
       taxas += feesByShop.get(id) ?? 0;
       prevFaturamento += prevRevenueByShop.get(id) ?? 0;
       prevLiquido += (prevRevenueByShop.get(id) ?? 0) - (prevReembolsosByShop.get(id) ?? 0) - (prevChargebacksByShop.get(id) ?? 0);
-      prevCustoProduto += (prevCustoByShop.get(id) ?? 0) - (prevSupByShop.get(id) ?? 0);
+      prevCustoProduto += prevCustoByShop.get(id) ?? 0;
+      prevFornecedor += prevSupByShop.get(id) ?? 0;
       prevTaxas += prevFeesByShop.get(id) ?? 0;
       totalPedidosEstorno += totalOrdersByShop.get(id) ?? 0;
       totalEstornosEstorno += totalEstornosByShop.get(id) ?? 0;
       prevTotalPedidosEstorno += prevTotalOrdersByShop.get(id) ?? 0;
       prevTotalEstornosEstorno += prevTotalEstornosByShop.get(id) ?? 0;
     }
-    const lucro = profit({ faturamento: liquido, custoProduto, taxas, anuncios });
-    const prevLucro = profit({ faturamento: prevLiquido, custoProduto: prevCustoProduto, taxas: prevTaxas, anuncios: prevAnuncios });
+    const lucro = profit({ faturamento: liquido, custoProduto, taxas, anuncios }) + fornecedor;
+    const prevLucro = profit({ faturamento: prevLiquido, custoProduto: prevCustoProduto, taxas: prevTaxas, anuncios: prevAnuncios }) + prevFornecedor;
     const chargebacks = shopIds.reduce((s, id) => s + (chargebacksByShop.get(id) ?? 0), 0);
     const prevChargebacks = shopIds.reduce((s, id) => s + (prevChargebacksByShop.get(id) ?? 0), 0);
     const taxaEstorno = totalPedidosEstorno > 0 ? totalEstornosEstorno / totalPedidosEstorno : 0;
@@ -885,10 +889,11 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
     for (const d of adsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of refundsByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
     for (const d of chargebacksByDate.keys()) if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
+    const supByDate = new Map<string, number>();
     for (const r of refundsAndChargebacks as any[]) {
       for (const [d, amt] of Object.entries(r.supByDate ?? {})) {
-        const cur = byDate.get(d) ?? { faturamento: 0, custo: 0 };
-        byDate.set(d, { ...cur, custo: cur.custo - (amt as number) });
+        supByDate.set(d, (supByDate.get(d) ?? 0) + (amt as number));
+        if (!byDate.has(d)) byDate.set(d, { faturamento: 0, custo: 0 });
       }
     }
 
@@ -905,7 +910,7 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
           faturamento: Math.round(v.faturamento * 100) / 100,
           anuncios: Math.round(dayAnuncios * 100) / 100,
           custo: Math.round(v.custo * 100) / 100,
-          lucro: Math.round((dayLiquido - v.custo - dayTaxas - dayAnuncios) * 100) / 100,
+          lucro: Math.round((dayLiquido - v.custo - dayTaxas - dayAnuncios + (supByDate.get(date) ?? 0)) * 100) / 100,
           chargebacks: Math.round(dayChargebacks * 100) / 100,
         };
       });
@@ -936,6 +941,8 @@ async function computeDashboardOverviewImpl(ownerId: string, fromArg?: string, t
         // Descontados do lucro (não do faturamento) — o card do Lucro mostra quanto foi.
         reembolsos:  shopIds.reduce((s, id) => s + (reembolsosByShop.get(id) ?? 0), 0),
         chargebacks,
+        // Reembolso do fornecedor confirmado no período — soma no lucro.
+        fornecedor,
         // Chave "sem chargebacks" do card do Lucro: o mesmo lucro somando de volta os chargebacks.
         lucroSemCb: lucro + chargebacks,
         lucroSemCbDelta: dashboardDelta(lucro + chargebacks, prevLucro + prevChargebacks),
