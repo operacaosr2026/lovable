@@ -38,6 +38,8 @@ export type ChargebackRow = {
   orderSource: "sistema" | "shopify" | "sem_acesso" | "sem_pedido";
   // Análise de fraude da Shopify do pedido (LOW/MEDIUM/HIGH) e os motivos.
   riskLevel: string | null; riskRecommendation: string | null; riskFacts: { description: string; sentiment: string }[];
+  // Reembolso do fornecedor marcado no pedido (Atendimento › Reembolso).
+  supplierRefund: { status: "pendente" | "confirmado"; amount: number } | null;
 };
 
 // Risco de fraude (Shopify) × o que aconteceu com o pedido, por nível.
@@ -129,13 +131,19 @@ export const getChargebacks = createServerFn({ method: "GET" })
     const orderBy = new Map((orders ?? []).map((o: any) => [`${o.shop_id}:${o.external_id}`, o]));
 
     const orderIds = (orders ?? []).map((o: any) => o.id as string);
-    const [{ data: tracking }, { data: settings }] = await Promise.all([
+    const [{ data: tracking }, { data: settings }, { data: supRefunds }] = await Promise.all([
       orderIds.length
         ? selectAllIn<{ order_id: string; last_event_label: string | null; last_event_at: string | null }>(orderIds, (c) =>
             supabaseAdmin.from("shop_order_tracking").select("order_id,last_event_label,last_event_at").in("order_id", c))
         : Promise.resolve({ data: [] as { order_id: string; last_event_label: string | null; last_event_at: string | null }[] }),
       supabaseAdmin.from("shop_order_settings").select("shop_id,shopify_store_id").eq("user_id", ownerId).in("shop_id", shopIds),
+      // supplier_refunds ainda não está nos tipos gerados do Supabase.
+      orderIds.length
+        ? selectAllIn<{ order_id: string; status: "pendente" | "confirmado"; amount: number | string }>(orderIds, (c) =>
+            (supabaseAdmin as any).from("supplier_refunds").select("order_id,status,amount").eq("owner_id", ownerId).in("order_id", c))
+        : Promise.resolve({ data: [] as { order_id: string; status: "pendente" | "confirmado"; amount: number | string }[] }),
     ]);
+    const supRefundBy = new Map((supRefunds ?? []).map((x) => [x.order_id, { status: x.status, amount: Number(x.amount ?? 0) }]));
     const trackBy = new Map((tracking ?? []).map((t) => [t.order_id, t]));
 
     // Link do pedido no admin da Shopify.
@@ -290,6 +298,7 @@ export const getChargebacks = createServerFn({ method: "GET" })
         orderSource: !d.order_external_id ? "sem_pedido" : o ? (o.fromShopify ? "shopify" : "sistema") : snap?.unavailable ? "sem_acesso" : "sem_pedido",
         riskLevel: risk?.risk_level ?? null, riskRecommendation: risk?.recommendation ?? null,
         riskFacts: Array.isArray(risk?.facts) ? risk!.facts : [],
+        supplierRefund: o?.id ? supRefundBy.get(o.id) ?? null : null,
       };
     });
     const shops = allShops.filter((s) => shopIds.includes(s.id));

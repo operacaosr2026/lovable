@@ -369,7 +369,7 @@ function ChargebacksPage() {
                 {list.map((r) => <MobileItem key={r.id} r={r} onOpen={() => setDetail(r)} />)}
               </div>
               <div className="hidden md:block overflow-x-auto -mx-2">
-                <table className="w-full text-sm min-w-[1100px]">
+                <table className="w-full text-sm min-w-[1220px]">
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b border-border text-left">
                       <th className="font-medium py-2.5 px-2">Pedido</th>
@@ -381,6 +381,7 @@ function ChargebacksPage() {
                       <th className="font-medium py-2.5 px-2 text-center">Prazo</th>
                       <th className="font-medium py-2.5 px-2 text-center">Entrega</th>
                       <th className="font-medium py-2.5 px-2 text-center">Suporte</th>
+                      <th className="font-medium py-2.5 px-2 text-center" title="Reembolso do fornecedor (Atendimento › Reembolso)">Reemb. fornecedor</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -445,6 +446,7 @@ function ChargebacksPage() {
                               : r.orderNumber ? <Pill cls="bg-rose-500/10 text-rose-700 dark:text-rose-400">Não</Pill>
                               : <span className="text-muted-foreground">—</span>}
                           </td>
+                          <td className="py-3 px-2 text-center"><SupplierRefundPill r={r} /></td>
                         </tr>
                       );
                     })}
@@ -649,16 +651,26 @@ function MobileItem({ r, onOpen }: { r: ChargebackRow; onOpen: () => void }) {
           ? <a href={r.trackingUrl} target="_blank" rel="noreferrer" className="text-[11px] font-mono text-primary inline-flex items-center gap-1">{r.trackingCode}<ExternalLink className="size-3" /></a>
           : <span className="text-[11px] font-mono text-muted-foreground">{r.trackingCode}</span>)}
       </div>
-      {(left != null || r.orderNumber) && (
+      {(left != null || r.orderNumber || r.supplierRefund) && (
         <div className="flex items-center justify-between text-xs">
           {left != null
             ? <span className={`font-medium ${left <= 2 ? "text-rose-600" : left <= 5 ? "text-amber-600" : ""}`}>Prazo: {fmtDate(r.evidenceDueBy)} · {left < 0 ? "vencido" : left === 0 ? "hoje" : `${left}d`}</span>
             : <span />}
+          {r.supplierRefund && <span className="text-muted-foreground">Fornecedor: <SupplierRefundPill r={r} /></span>}
           {r.orderNumber && <span className="text-muted-foreground">Suporte: <span className={r.conversationId ? "text-emerald-600 font-medium" : "text-rose-600 font-medium"}>{r.conversationId ? "Sim" : "Não"}</span></span>}
         </div>
       )}
     </div>
   );
+}
+
+// Reembolso do fornecedor do pedido: pendente (aguardando ele pagar) ou confirmado.
+function SupplierRefundPill({ r }: { r: ChargebackRow }) {
+  const sr = r.supplierRefund;
+  if (!sr) return <span className="text-muted-foreground">—</span>;
+  return sr.status === "confirmado"
+    ? <span title="Fornecedor já reembolsou"><Pill cls="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" icon={CircleCheck}>{money(sr.amount)}</Pill></span>
+    : <span title="Pedido ao fornecedor, aguardando o reembolso"><Pill cls="bg-amber-500/10 text-amber-700 dark:text-amber-400" icon={Hourglass}>{money(sr.amount)}</Pill></span>;
 }
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: readonly (readonly [T, string])[]; onChange: (v: T) => void }) {
@@ -998,6 +1010,7 @@ function DetailSheet({ row: r, onClose }: { row: ChargebackRow | null; onClose: 
                 ) : "—")}
                 {line("Último evento", r.lastEvent ? `${r.lastEvent}${r.lastEventAt ? ` · ${fmtDate(r.lastEventAt)}` : ""}` : "—")}
                 {line("Falou com o suporte", supportLabel(r))}
+                {line("Reembolso do fornecedor", <SupplierRefundPill r={r} />)}
               </div>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Risco de fraude (Shopify)</p>
