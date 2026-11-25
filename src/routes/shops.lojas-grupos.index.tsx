@@ -174,9 +174,11 @@ function LgCardItem({ card, onEdit, onDelete }: { card: any; onEdit: () => void;
     enabled:  shops.length > 0,
     staleTime: 5 * 60 * 1000,
   });
-  // Com a tabela de Estorno/Repasse (que já lista as lojas), a caixa "Lojas"
-  // some pra não repetir os nomes; enquanto carrega fica o esqueleto.
-  const showTable = !!metrics && (metrics.totalPedidos > 0 || metrics.payoutLag.some((p: any) => p.days != null));
+  // Sempre a tabela de Estorno/Repasse (que já lista as lojas) — loja nova,
+  // sem pedido nem repasse ainda, aparece com "—" igual às outras (antes caía
+  // numa caixa "Loja" diferente, ex.: Reino Unido com a Loja 8, 24/11/2026).
+  // A caixa "Lojas" só fica se as métricas não vierem.
+  const showTable = !!metrics;
   const showShopList = shops.length > 0 && !loadingMetrics && !showTable;
 
   return (
