@@ -25,7 +25,7 @@ const TAB_SECTION: Record<Tab, Section> = {
 };
 
 const COUNTRIES: Record<string, string> = {
-  US: "🇺🇸", CA: "🇨🇦", GB: "🇬🇧", BE: "🇧🇪", CH: "🇨🇭", AU: "🇦🇺",
+  US: "🇺🇸", CA: "🇨🇦", GB: "🇬🇧", BE: "🇧🇪", CH: "🇨🇭", AU: "🇦🇺", DE: "🇩🇪", IE: "🇮🇪",
 };
 
 export const Route = createFileRoute("/shops/lojas-grupos/$cardId")({

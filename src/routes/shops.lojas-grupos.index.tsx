@@ -32,6 +32,8 @@ const COUNTRIES = [
   { code: "BE", label: "Bélgica",        flag: "🇧🇪" },
   { code: "CH", label: "Suíça",          flag: "🇨🇭" },
   { code: "AU", label: "Austrália",      flag: "🇦🇺" },
+  { code: "DE", label: "Alemanha",       flag: "🇩🇪" },
+  { code: "IE", label: "Irlanda",        flag: "🇮🇪" },
 ];
 
 function LojasGruposIndex() {
