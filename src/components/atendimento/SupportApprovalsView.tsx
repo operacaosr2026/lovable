@@ -225,7 +225,11 @@ export function SupportApprovalsView({ onOpenConversation }: { onOpenConversatio
                           <p className="text-[11px] text-muted-foreground">há {ago(i.created_at)}</p>
                         </td>
                         <td className="px-2 py-2.5"><StatusBadge status={i.status} /></td>
-                        {!compact && <td className="px-2 py-2.5"><SupplierRefundCell r={i.supplierRefund ?? null} /></td>}
+                        {!compact && <td className="px-2 py-2.5">
+                          {i.kind === "troca" && i.fault === "fornecedor" && !i.supplierRefund
+                            ? <SupplierResendCell i={i} />
+                            : <SupplierRefundCell r={i.supplierRefund ?? null} />}
+                        </td>}
                         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <RowActions i={i} canApprove={canApprove} actions={actions} compact={compact} onOpen={() => setOpenId(i.id)} onOpenConversation={onOpenConversation} />
                         </td>
@@ -394,6 +398,20 @@ function SupplierRefundCell({ r }: { r: Item["supplierRefund"] | null }) {
         {ok ? <Check className="size-3" /> : <Clock className="size-3" />}{ok ? "Reembolsado" : "Pendente"} {formatMoney(r.amount, "USD")}
       </span>
       <p className="text-[11px] text-muted-foreground mt-0.5">{day(r.date)}</p>
+    </div>
+  );
+}
+
+// Troca por erro do fornecedor: ele reenvia de graça (custo $0) — mostra o pedido gerado.
+function SupplierResendCell({ i }: { i: ExchangeReq }) {
+  return (
+    <div className="whitespace-nowrap" title="Erro do fornecedor: ele reenvia sem custo">
+      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+        <Repeat className="size-3" />Reenvio grátis · custo $0
+      </span>
+      <p className="text-[11px] text-muted-foreground mt-0.5">
+        {i.new_order_name ? <>Pedido <span className="font-semibold text-foreground">{i.new_order_name}</span></> : "Pedido gerado ao aprovar"}
+      </p>
     </div>
   );
 }
