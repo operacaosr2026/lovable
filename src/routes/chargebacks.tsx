@@ -369,13 +369,12 @@ function ChargebacksPage() {
                 {list.map((r) => <MobileItem key={r.id} r={r} onOpen={() => setDetail(r)} />)}
               </div>
               <div className="hidden md:block overflow-x-auto -mx-2">
-                <table className="w-full text-sm min-w-[1220px]">
+                <table className="w-full text-sm min-w-[1120px]">
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b border-border text-left">
                       <th className="font-medium py-2.5 px-2">Pedido</th>
                       <th className="font-medium py-2.5 px-2">Produto</th>
                       <th className="font-medium py-2.5 px-2">Motivo</th>
-                      <th className="font-medium py-2.5 px-2 text-center">Valor</th>
                       <th className="font-medium py-2.5 px-2 text-center">Status</th>
                       <th className="font-medium py-2.5 px-2 text-center">Aberto em</th>
                       <th className="font-medium py-2.5 px-2 text-center">Prazo</th>
@@ -410,7 +409,6 @@ function ChargebacksPage() {
                             </div>
                           </td>
                           <td className="py-3 px-2">{reasonLabel(r.reason)}</td>
-                          <td className="py-3 px-2 text-center tabular-nums font-semibold whitespace-nowrap">{money(r.amount)}</td>
                           <td className="py-3 px-2 text-center">
                             {/* "Aguardando resposta" em duas linhas, pra coluna não ficar larga. */}
                             {r.status === "needs_response" ? (
