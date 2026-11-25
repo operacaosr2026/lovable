@@ -242,8 +242,10 @@ export const listAllOrders = createServerFn({ method: "GET" })
       let kind: AttentionKind | null = null;
       if (attention) {
         if (status === "pending_shipment") {
-          const n = businessDaysSince(postingFrom, nowMs, cal);
-          why = resentAt ? `Reenvio sem postagem há ${n} dias úteis (prazo: 3)` : `Sem postagem há ${n} dias úteis do pagamento ao fornecedor (prazo: 3)`;
+          const n = businessDaysSince(postingFrom ?? clockFrom, nowMs, cal);
+          why = resentAt ? `Reenvio sem postagem há ${n} dias úteis (prazo: 3)`
+            : postingFrom ? `Sem postagem há ${n} dias úteis do pagamento ao fornecedor (prazo: 3)`
+            : `Não pago ao fornecedor e sem postagem há ${n} dias úteis da compra`;
           kind = "sem_postagem";
         } else if (status === "problem") {
           why = `Problema no rastreio${o.logistics_note ? `: ${o.logistics_note}` : t?.last_event_label ? `: ${cleanLabel(t.last_event_label)}` : ""}`;
@@ -257,7 +259,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
       }
       return {
         id: o.id, date: o.order_date ?? "", created: o.created_at_shopify ?? "", status: status ?? "pending_shipment", refunded,
-        deadline: logistic && status === "pending_shipment" && postingFrom ? addBusinessDays(postingFrom, 3, cal) : null,
+        deadline: logistic && status === "pending_shipment" && (postingFrom ?? clockFrom) ? addBusinessDays((postingFrom ?? clockFrom)!, 3, cal) : null,
         attention, why, kind,
         cb: disputeBy.has(`${o.shop_id}:${o.external_id}`), sup: supplierRefunded.has(o.id), fin: o.shopify_financial_status ?? null,
       };

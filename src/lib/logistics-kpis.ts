@@ -82,10 +82,11 @@ export function attentionReason(o: any, nowMs: number): string | null {
 // precisa aparecer aqui ainda. Feriados (Configurações → Feriados) não contam
 // nesses 3 dias — senão a Golden Week acusava todo pedido como parado.
 // Início do prazo de postagem: posting_from (pagamento ao fornecedor ou
-// reenvio — posting-clock.server.ts) quando a linha traz; null = ainda não
-// pago ao fornecedor, relógio não começou. Sem o campo: compra/reenvio.
+// reenvio — posting-clock.server.ts) quando a linha traz. Ainda não pago ao
+// fornecedor (posting_from null): conta da compra — pedido parado sem nem ter
+// sido pago não pode sumir do radar. Sem o campo: compra/reenvio.
 export function postingClockFrom(o: any): string | null {
-  return "posting_from" in o ? o.posting_from ?? null : o.clock_from ?? o.order_date ?? null;
+  return ("posting_from" in o ? o.posting_from : null) ?? o.clock_from ?? o.order_date ?? null;
 }
 export function needsAttention(o: any, nowMs: number, cal?: PostingCalendar): boolean {
   const status = o.delivery_status ?? "pending_shipment";

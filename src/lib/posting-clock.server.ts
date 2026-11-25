@@ -6,8 +6,8 @@ import { isoDateUS } from "@/lib/timezone";
 // FORNECEDOR — data do lote (a que se ajusta em "Alterar data de pagamento"),
 // senão paid_at —, não da compra. Reenvio conta da troca do código (o
 // fornecedor reenvia sem novo pagamento). Pedido ainda não pago ao fornecedor:
-// null = relógio não começou (sem alerta de postagem; o não pago tem alerta
-// próprio no Gerencial). Colunas necessárias no select: POSTING_CLOCK_COLS.
+// null — needsAttention conta da compra (aviso "Não pago ao fornecedor").
+// Colunas necessárias no select: POSTING_CLOCK_COLS.
 export const POSTING_CLOCK_COLS = "payment_status,payment_batch_id,paid_at,tracking_code_history,tracking_code_manual_at";
 
 export async function withPostingFrom<T extends Record<string, any>>(rows: T[]): Promise<(T & { posting_from: string | null })[]> {
