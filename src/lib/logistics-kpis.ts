@@ -81,9 +81,15 @@ export function attentionReason(o: any, nowMs: number): string | null {
 // está com a loja. Pendente de envio recente (até 3 dias úteis) é normal, não
 // precisa aparecer aqui ainda. Feriados (Configurações → Feriados) não contam
 // nesses 3 dias — senão a Golden Week acusava todo pedido como parado.
+// Início do prazo de postagem: posting_from (pagamento ao fornecedor ou
+// reenvio — posting-clock.server.ts) quando a linha traz; null = ainda não
+// pago ao fornecedor, relógio não começou. Sem o campo: compra/reenvio.
+export function postingClockFrom(o: any): string | null {
+  return "posting_from" in o ? o.posting_from ?? null : o.clock_from ?? o.order_date ?? null;
+}
 export function needsAttention(o: any, nowMs: number, cal?: PostingCalendar): boolean {
   const status = o.delivery_status ?? "pending_shipment";
-  if (status === "pending_shipment") return businessDaysSince(o.clock_from ?? o.order_date, nowMs, cal) > 3;
+  if (status === "pending_shipment") { const from = postingClockFrom(o); return !!from && businessDaysSince(from, nowMs, cal) > 3; }
   return status === "problem" || attentionReason(o, nowMs) != null;
 }
 

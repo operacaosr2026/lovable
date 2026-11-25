@@ -8,6 +8,7 @@ import { localLegOf } from "@/lib/local-carriers";
 import { refundedResendIds } from "@/lib/refunded-resends.server";
 import { supplierRefundedIds } from "@/lib/supplier-refunds.server";
 import { supplierReplyAlertKey, supplierReplyTitle } from "@/lib/supplier-replies";
+import { withPostingFrom } from "@/lib/posting-clock.server";
 
 // Situações de rastreio que viram alerta no Gerencial (e a lista de pedidos da
 // gaveta "Ver rastreio"). Olha TODO pedido em aberto das lojas (até 180 dias),
@@ -74,7 +75,7 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   const empty: Situations = { entrega: [], naoPostado: new Map(), cliente: [], repassado: [], reenvioEntregue: [], fornecedor: new Map(), semFase: [], transportadoraNova: new Map(), semEvento: [], statusDiverge: [], localNova: [], resolved: new Map() };
   if (!shopIds.length) return empty;
   const since = new Date(nowMs - WINDOW_DAYS * DAY).toISOString().slice(0, 10);
-  const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,shopify_financial_status,cancelled:raw->>cancelled_at";
+  const sel = "id,shop_id,order_number,order_date,delivery_status,shipped_at,delivered_at,tracking_code,tracking_url,customer_notified_at,tracking_code_history,tracking_code_manual_at,shopify_financial_status,payment_status,payment_batch_id,paid_at,cancelled:raw->>cancelled_at";
   const [openRes, phaseRows, notices] = await Promise.all([
     selectAll<any>(supabaseAdmin.from("shop_orders").select(sel).eq("user_id", ownerId).in("shop_id", shopIds)
       .gte("order_date", since).or("delivery_status.is.null,delivery_status.not.in.(delivered,waiting_customer,shipment_cancelled)")),
@@ -93,7 +94,8 @@ export async function trackingSituations(ownerId: string, shopIds: string[], now
   const refundedResends = await refundedResendIds(ownerId, notRefunded.map((o) => o.id as string));
   // Já reembolsado pelo fornecedor (e não entregue): também sai.
   const supRefunded = await supplierRefundedIds(ownerId, notRefunded.map((o) => o.id as string));
-  const open = notRefunded.filter((o) => !refundedResends.has(o.id) && (!supRefunded.has(o.id) || !!o.delivered_at || o.delivery_status === "delivered"));
+  // posting_from: prazo de postagem conta do pagamento ao fornecedor (posting-clock.server.ts).
+  const open = await withPostingFrom(notRefunded.filter((o) => !refundedResends.has(o.id) && (!supRefunded.has(o.id) || !!o.delivered_at || o.delivery_status === "delivered")));
   const phaseOf = phaseResolver(new Map(((phaseRows.data ?? []) as any[]).map((r) => [r.text_key as string, r.phase as Phase])));
 
   const tracks = await selectAllIn<any>(open.map((o) => o.id as string), (c) => supabaseAdmin.from("shop_order_tracking")

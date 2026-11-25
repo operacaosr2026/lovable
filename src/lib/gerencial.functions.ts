@@ -12,6 +12,7 @@ import { personNames } from "@/lib/support-approval.server";
 import { needsAttention } from "@/lib/logistics-kpis";
 import { refundReasonLabel } from "@/lib/refund-reasons";
 import { HANDOFF_DAYS, NOT_POSTED_DAYS, situationCarrierLabel, trackingSituations } from "@/lib/tracking-situations.server";
+import { withPostingFrom } from "@/lib/posting-clock.server";
 
 // Gerencial › Resultado e Alertas: a operação do mês, com as mesmas contas de
 // Metas, Dashboard, Análise de reembolsos, Chargebacks e Rastreamento:
@@ -162,7 +163,7 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
             .in("shop_id", shopIds).eq("status", "needs_response")
         : empty,
       shopIds.length
-        ? selectAll<any>(supabaseAdmin.from("shop_orders").select("shop_id,order_date,delivery_status,shipped_at,delivered_at,kpi_excluded")
+        ? selectAll<any>(supabaseAdmin.from("shop_orders").select("shop_id,order_date,delivery_status,shipped_at,delivered_at,kpi_excluded,payment_status,payment_batch_id,paid_at,tracking_code_history,tracking_code_manual_at")
             .eq("user_id", ownerId).in("shop_id", shopIds).gte("order_date", from).lte("order_date", to))
         : empty,
       selectAll<any>(supabaseAdmin.from("tasks").select("id,title,status,due_date,assignee_id,completed_at").eq("user_id", ownerId)),
@@ -249,7 +250,8 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
 
     // ── 3. Entrega ──────────────────────────────────────────────
     const now = Date.now();
-    const orders = (ordersRes.data ?? []) as any[];
+    // posting_from: prazo de postagem conta do pagamento ao fornecedor.
+    const orders = await withPostingFrom((ordersRes.data ?? []) as any[]);
     const delivered = orders.filter((o) => o.delivery_status === "delivered" && o.delivered_at && !o.kpi_excluded);
     const daysToDeliver = delivered.map((o) => (Date.parse(o.delivered_at) - Date.parse(`${o.order_date}T12:00:00Z`)) / DAY).filter((d) => d >= 0);
     const entrega = {

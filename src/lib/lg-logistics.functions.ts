@@ -9,6 +9,7 @@ import { firstCarrierEventDateUS } from "@/lib/tracking-rules.server";
 import { updateFulfillmentTrackingNumber } from "@/lib/shopify-fulfillment-status.server";
 import { refundedResendIds } from "@/lib/refunded-resends.server";
 import { supplierRefundedIds } from "@/lib/supplier-refunds.server";
+import { withPostingFrom } from "@/lib/posting-clock.server";
 
 export const listLogisticsOrders = createServerFn({ method: "POST" })
   .middleware([requireOwnerContext])
@@ -35,7 +36,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
   // do KPI" manual). "voided" cobre cancelamento antes da cobrança.
   const { data: rows, error } = await selectAll(supabaseAdmin
     .from("shop_orders")
-    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,tracking_code_manual_at,tracking_code_history,kpi_excluded,customer_notified_at")
+    .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,tracking_code_manual_at,tracking_code_history,kpi_excluded,customer_notified_at,payment_status,payment_batch_id,paid_at")
     .eq("user_id", ownerId)
     .in("shop_id", data.shop_ids)
     .gte("order_date", data.from)
@@ -54,7 +55,7 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     const floor = new Date(new Date(`${data.from}T00:00:00Z`).getTime() - 180 * 86_400_000).toISOString().slice(0, 10);
     const { data: older, error: olderErr } = await selectAll(supabaseAdmin
       .from("shop_orders")
-      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,tracking_code_manual_at,tracking_code_history,kpi_excluded,customer_notified_at")
+      .select("id,order_number,order_date,shop_id,items_count,carrier,tracking_code,tracking_url,delivery_status,shipped_at,delivered_at,problem_at,logistics_note,notice_note,tracking_code_manual_at,tracking_code_history,kpi_excluded,customer_notified_at,payment_status,payment_batch_id,paid_at")
       .eq("user_id", ownerId)
       .in("shop_id", data.shop_ids)
       .lt("order_date", data.from)
@@ -165,7 +166,8 @@ async function loadLogisticsOrders(ownerId: string, data: { shop_ids: string[]; 
     return { ...o, clock_from: clockFrom, resent_at: resentAt, resent_posted_at: resentPostedMap.get(o.id) ?? null, delivery_status: status, shipped_at: shippedAt, logistics_note: o.logistics_note, last_event_at: lastEventMap.get(o.id) ?? null, tracking_checked_at: checkedAtMap.get(o.id) ?? null };
   });
 
-  return withEffectiveStatus;
+  // Prazo de postagem conta do pagamento ao fornecedor (posting-clock.server.ts).
+  return withPostingFrom(withEffectiveStatus);
 }
 
 export const updateOrderLogistics = createServerFn({ method: "POST" })

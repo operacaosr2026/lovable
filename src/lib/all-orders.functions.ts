@@ -14,6 +14,7 @@ import { isoDateUS, isoTodayUS } from "@/lib/timezone";
 import { parseEvents } from "@/lib/carrier-stats";
 import { phaseResolver } from "@/lib/tracking-phases";
 import { effectiveLocalNumber, localCarrierLabel, localLegOf, localNumberDisplay, localNumberOrZero, localTrackingUrl } from "@/lib/local-carriers";
+import { withPostingFrom } from "@/lib/posting-clock.server";
 
 // Aba Pedidos (menu principal): todos os pedidos de todas as lojas num lugar
 // só, com busca — antes só dava pra achar um pedido pelo Atendimento. A lista
@@ -52,7 +53,7 @@ export type OrderListRow = {
   supplierName: string | null; trackingCode: string | null; trackingUrl: string | null; lastEvent: string | null; lastEventAt: string | null;
   // Transportadora local dos EUA (GOFO, USPS…) e o código dela — mesma regra do Atendimento.
   local: { label: string; number: string | null; url: string | null } | null;
-  // Prazo de postagem (3 dias úteis da compra/reenvio), só pra quem ainda vai ser enviado.
+  // Prazo de postagem (3 dias úteis do pagamento ao fornecedor/reenvio), só pra quem ainda vai ser enviado.
   deadline: string | null; attention: boolean; attentionWhy: string | null; adminUrl: string | null;
   // Nota da equipe (a mesma do Rastreamento e da aba Notificações).
   note: string | null;
@@ -192,7 +193,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
     // 1) Todos os pedidos da busca/loja, só com as colunas leves — pra contar
     //    cada aba e aplicar o status efetivo/atenção, que não dá pra filtrar no banco.
     let base = supabaseAdmin.from("shop_orders")
-      .select("id,shop_id,external_id,order_date,created_at_shopify,delivery_status,shipped_at,delivered_at,problem_at,shopify_financial_status,tracking_code_history,tracking_code_manual_at,logistics_note,cancelled:raw->>cancelled_at")
+      .select("id,shop_id,external_id,order_date,created_at_shopify,delivery_status,shipped_at,delivered_at,problem_at,shopify_financial_status,tracking_code_history,tracking_code_manual_at,logistics_note,payment_status,payment_batch_id,paid_at,cancelled:raw->>cancelled_at")
       .eq("user_id", ownerId);
     if (data.shopId) base = base.eq("shop_id", data.shopId);
     if (buried.size) base = base.not("shop_id", "in", `(${[...buried].join(",")})`);
@@ -208,8 +209,10 @@ export const listAllOrders = createServerFn({ method: "GET" })
       if (parts.length >= 2) ors.push(`and(raw->customer->>first_name.ilike.*${parts[0]}*,raw->customer->>last_name.ilike.*${parts.slice(1).join(" ")}*)`);
       base = base.or(ors.join(","));
     }
-    const { data: slim, error } = await selectAll<any>(base.order("id"));
+    const { data: slimRaw, error } = await selectAll<any>(base.order("id"));
     if (error) throw new Error(error.message);
+    // Prazo de postagem conta do pagamento ao fornecedor (posting-clock.server.ts).
+    const slim = await withPostingFrom(slimRaw ?? []);
 
     type Slim = { id: string; date: string; created: string; status: string; refunded: boolean; deadline: string | null; attention: boolean; why: string | null; kind: AttentionKind | null; cb: boolean; sup: boolean; fin: string | null };
     const all: Slim[] = (slim ?? []).map((o: any) => {
@@ -231,15 +234,16 @@ export const listAllOrders = createServerFn({ method: "GET" })
       // de envio: não conta em A enviar/Em trânsito/Com problema nem na atenção.
       const supRefunded = supplierRefunded.has(o.id);
       const logistic = !refunded && !supRefunded;
-      const row = { delivery_status: status, order_date: o.order_date, clock_from: clockFrom, shipped_at: o.shipped_at, last_event_at: t?.last_event_at ?? null };
+      const postingFrom: string | null = o.posting_from;
+      const row = { delivery_status: status, order_date: o.order_date, clock_from: clockFrom, posting_from: postingFrom, shipped_at: o.shipped_at, last_event_at: t?.last_event_at ?? null };
       const attention = logistic && needsAttention(row, nowMs, cal);
       // O que está errado (mostrado ao passar o mouse no aviso).
       let why: string | null = null;
       let kind: AttentionKind | null = null;
       if (attention) {
         if (status === "pending_shipment") {
-          const n = businessDaysSince(clockFrom, nowMs, cal);
-          why = `${resentAt ? "Reenvio" : "Pedido"} sem postagem há ${n} dias úteis (prazo: 3)`;
+          const n = businessDaysSince(postingFrom, nowMs, cal);
+          why = resentAt ? `Reenvio sem postagem há ${n} dias úteis (prazo: 3)` : `Sem postagem há ${n} dias úteis do pagamento ao fornecedor (prazo: 3)`;
           kind = "sem_postagem";
         } else if (status === "problem") {
           why = `Problema no rastreio${o.logistics_note ? `: ${o.logistics_note}` : t?.last_event_label ? `: ${cleanLabel(t.last_event_label)}` : ""}`;
@@ -253,7 +257,7 @@ export const listAllOrders = createServerFn({ method: "GET" })
       }
       return {
         id: o.id, date: o.order_date ?? "", created: o.created_at_shopify ?? "", status: status ?? "pending_shipment", refunded,
-        deadline: logistic && status === "pending_shipment" && clockFrom ? addBusinessDays(clockFrom, 3, cal) : null,
+        deadline: logistic && status === "pending_shipment" && postingFrom ? addBusinessDays(postingFrom, 3, cal) : null,
         attention, why, kind,
         cb: disputeBy.has(`${o.shop_id}:${o.external_id}`), sup: supplierRefunded.has(o.id), fin: o.shopify_financial_status ?? null,
       };
