@@ -1,3 +1,4 @@
+import { isoDateUS } from "@/lib/timezone";
 // Regras dos indicadores de logística — usadas pela aba Rastreamento
 // (LgLogistica) e pelo Dashboard, pra os dois mostrarem sempre os mesmos
 // números a partir dos mesmos pedidos (listLogisticsOrders).
@@ -20,7 +21,9 @@ export function daysSince(iso: string | null | undefined, nowMs: number): number
 // pedido em si, só os dias que já se passaram desde então.
 export function businessDaysSince(iso: string | null | undefined, nowMs: number, cal?: PostingCalendar): number {
   if (!iso) return 0;
-  return businessDaysBetween(iso, new Date(nowMs).toISOString(), cal);
+  // "Hoje" no fuso de NY: em UTC o dia vira às 19h/20h de NY e contava um dia
+  // útil a mais à noite (#L6-1445 aparecia "4 dias" no 3º dia útil, 24/11/2026).
+  return businessDaysBetween(iso, isoDateUS(nowMs), cal);
 }
 // Feriados do TM Postagem (Configurações → Feriados): `holidays` = dia de
 // semana que não conta; `workdays` = sábado/domingo que conta (compensação
