@@ -1298,13 +1298,12 @@ function Dashboard() {
             </button>
           }
           stats={[
-            { label: "Margem de lucro", value: fmtPct(totals.faturamento > 0 ? lucroShown / totals.faturamento : 0) },
             { label: "Média diária", value: fmtMoney(lucroShown / nDias) },
+            // Somado ao lucro (o Gasto com pedidos fica cheio).
+            { label: "Reemb. fornecedor", value: fmtMoney((totals as { fornecedor?: number }).fornecedor ?? 0) },
             // Descontados do lucro (o faturamento é o bruto).
             { label: "Reembolsos", value: fmtMoney(totals.reembolsos ?? 0) },
             { label: "Chargebacks", value: fmtMoney(totals.chargebacks ?? 0) },
-            // Somado ao lucro (o Gasto com pedidos fica cheio).
-            { label: "Reemb. fornecedor", value: fmtMoney((totals as { fornecedor?: number }).fornecedor ?? 0) },
           ]}
         />
         {/* Estorno é sempre janela rolante de 90 dias (lg-cards.functions), comparada com os 90 antes. */}
