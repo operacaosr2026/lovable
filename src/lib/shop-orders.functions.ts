@@ -31,6 +31,9 @@ function hourInTz(iso: string): number {
 }
 
 export const COST_CATEGORY = "Fornecedor";
+// Previsão no Caixa do que vai ser pago ao fornecedor (custo dos pedidos
+// pendentes em D+N). Desligada: o fornecedor é pago diariamente.
+const SUPPLIER_FORECAST = false;
 const PROCESSING_DELAY_DAYS = 7;
 
 // ---------- Helpers ----------
@@ -1591,6 +1594,17 @@ async function recomputeForShop(context: any, shopId: string, processingDate: st
         .eq("id", existing.id).eq("user_id", context.ownerId);
     }
     return { skippedByCutoff: true };
+  }
+
+  // Previsão de fornecedor desligada: o fornecedor é pago todo dia, e a saída
+  // real entra no Caixa pelo lote. Some com a previsão automática do dia; a que
+  // a pessoa editou (data/valor travados) fica.
+  if (!SUPPLIER_FORECAST) {
+    if (existing && !existing.amount_locked && !existing.date_locked) {
+      await context.supabase.from("shop_cash_entries").delete()
+        .eq("id", existing.id).eq("user_id", context.ownerId);
+    }
+    return { forecastOff: true };
   }
 
   // sum items for orderDate — apenas pedidos pendentes (pagos já saíram via lote).
