@@ -10,16 +10,16 @@ import { getCampaignAudience, type AudienceRow, type AudienceSegment } from "@/l
 // personalizado / semelhante) ou usar no e-mail. O CSV sai com as colunas
 // que a Meta reconhece sozinha (email, phone, fn, ln, ct, st, zip, country, value).
 
-type Seg = { key: AudienceSegment; label: string; hint: string; use: string; icon: any; tone: string; ring: string };
+type Seg = { key: AudienceSegment; label: string; hint: string; use: string; icon: any; tone: string };
 const SEGMENTS: Seg[] = [
   { key: "compradores", label: "Compradores", hint: "Compraram pelo menos uma vez", use: "Base de semelhante e exclusão em campanha de aquisição",
-    icon: Users, tone: "bg-primary/10 text-primary", ring: "ring-primary" },
+    icon: Users, tone: "bg-primary/10 text-primary" },
   { key: "recompra", label: "Recompra", hint: "Compraram 2 ou mais vezes", use: "A melhor base pro público semelhante",
-    icon: Repeat, tone: "bg-sky-500/10 text-sky-600", ring: "ring-sky-500" },
+    icon: Repeat, tone: "bg-sky-500/10 text-sky-600" },
   { key: "top", label: "Top 20%", hint: "Os que mais gastaram", use: "Base pro semelhante por valor",
-    icon: Crown, tone: "bg-amber-500/10 text-amber-600", ring: "ring-amber-500" },
+    icon: Crown, tone: "bg-amber-500/10 text-amber-600" },
   { key: "problema", label: "Exclusão", hint: "Tiveram reembolso ou chargeback", use: "Tire esse público dos anúncios e do semelhante",
-    icon: ShieldAlert, tone: "bg-rose-500/10 text-rose-600", ring: "ring-rose-500" },
+    icon: ShieldAlert, tone: "bg-rose-500/10 text-rose-600" },
 ];
 const PERIODS: [number | null, string][] = [[null, "Desde o começo"], [30, "Últimos 30 dias"], [90, "Últimos 90 dias"], [180, "Últimos 180 dias"], [365, "Últimos 12 meses"]];
 
@@ -133,18 +133,15 @@ export function AudiencesView() {
       </div>
 
       {/* Segmentos, com quantas pessoas cada um tem nos filtros atuais */}
-      <div className="grid gap-2 sm:gap-3 grid-cols-2 xl:grid-cols-4">
+      <div className="flex items-center gap-1 p-1 rounded-2xl bg-muted w-full sm:w-fit max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {SEGMENTS.map((x) => {
           const active = x.key === segment;
           return (
-            <button key={x.key} onClick={() => setSegment(x.key)}
-              className={`text-left rounded-2xl border bg-card p-3 sm:p-4 transition-all ${active ? `border-transparent ring-2 ${x.ring} shadow-sm` : "border-border hover:border-primary/40"}`}>
-              <div className="flex items-start justify-between gap-2">
-                <span className={`size-9 rounded-xl grid place-items-center shrink-0 ${x.tone}`}><x.icon className="size-4" /></span>
-                <span className="text-lg sm:text-xl font-semibold tabular-nums">{int(d.counts[x.key])}</span>
-              </div>
-              <p className="text-sm font-semibold mt-3">{x.label}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{x.hint}</p>
+            <button key={x.key} onClick={() => setSegment(x.key)} title={`${x.hint} — ${x.use}`}
+              className={`h-9 pl-1.5 pr-2.5 rounded-xl text-xs font-medium whitespace-nowrap inline-flex items-center gap-2 transition-colors ${active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              <span className={`size-6 rounded-lg grid place-items-center shrink-0 ${x.tone}`}><x.icon className="size-3.5" /></span>
+              {x.label}
+              <span className={`min-w-5 h-5 px-1.5 rounded-full grid place-items-center text-[10px] font-semibold tabular-nums ${active ? x.tone : "bg-background/70"}`}>{int(d.counts[x.key])}</span>
             </button>
           );
         })}
