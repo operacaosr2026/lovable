@@ -37,12 +37,13 @@ function guideOf(a: Alert): string {
   if (k.startsWith("fora:lojas:")) return "Deixe a loja igual nos dois lugares: coluna Ativas no Banco de Lojas e card ativo em Lojas e Grupos.";
   if (k === "rastreio:sem_fase") return "Escolha aqui a fase de cada texto — os prazos e a alfândega das transportadoras passam a contar certo.";
   if (k === "tarefa") return "Conclua aqui as que já foram feitas; as outras, cobre o responsável.";
+  if (k.startsWith("sazonal:")) return "Data sazonal chegando: abra o Planejamento e monte o plano da data (produtos que já vende ou produto novo). O alerta some quando o plano estiver montado.";
   if (k === "atendimento") return "Cliente esperando resposta há mais de 36h — o caminho mais curto pro chargeback. Clique na conversa pra responder.";
   return "Abra a tela indicada e corrija. Se não for com você, crie uma tarefa pra quem resolve.";
 }
 const AREA_OF: [RegExp, (typeof TASK_AREAS)[number]][] = [
   [/^(meta|prejuizo)/, "gestao"], [/^chargeback/, "atendimento"], [/^(produto|reembolso)/, "produtos"],
-  [/^fora:sem_pagamento/, "fornecedores"], [/^fora:lojas/, "lojas"], [/^rastreio/, "pedidos"], [/^atendimento/, "atendimento"],
+  [/^fora:sem_pagamento/, "fornecedores"], [/^fora:lojas/, "lojas"], [/^rastreio/, "pedidos"], [/^atendimento/, "atendimento"], [/^sazonal/, "marketing"],
   [/^meta_/, "marketing"], [/^(shopify|system)/, "sistema"],
 ];
 

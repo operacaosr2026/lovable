@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSeasonPlan, nthWeekday, seasonStatus, seasonsOf, upcomingSeasons, type Baseline } from "./strategy-plan";
+import { buildSeasonPlan, nthWeekday, seasonStatus, seasonsOf, seasonsToPrepare, upcomingSeasons, type Baseline } from "./strategy-plan";
 
 const base: Baseline = {
   today: "2026-11-27", revenue30: 66_000, orders30: 650, ticket: 100, dailyRevenue: 2_200, refundRate: 0.08,
@@ -19,7 +19,8 @@ describe("datas sazonais (EUA)", () => {
   });
   it("data com a campanha já começada sai da lista (Black Friday e Natal em 27/11)", () => {
     const keys = upcomingSeasons("2026-11-27").map((s) => s.key);
-    expect(keys.slice(0, 3)).toEqual(["valentines-2027", "maes-2027", "memorial-2027"]);
+    expect(keys.slice(0, 3)).toEqual(["valentines-2027", "maes-2027", "pais-2027"]);
+    expect(keys.some((k) => k.startsWith("memorial") || k.startsWith("labor"))).toBe(false);
     expect(upcomingSeasons("2026-11-19")[0].key).toBe("bfcm-2026"); // campanha da BF começa 20/11
   });
   it("limite de entrega do Natal = data − 80% do prazo", () => {
@@ -48,5 +49,14 @@ describe("datas sazonais (EUA)", () => {
     expect(JSON.stringify(p.initiatives)).not.toContain("mais vendem");
     const semMeta = buildSeasonPlan(val, base, null, { mode: "novo" });
     expect(semMeta.krs.some((k) => k.unit === "usd")).toBe(false);
+  });
+  it("alerta de preparo: Father's Day 2027 avisa a partir de 22/03 e para quando a campanha abre", () => {
+    const has = (today: string, planned = new Set<string>()) => seasonsToPrepare(today, planned).some((x) => x.season.key === "pais-2027");
+    expect(has("2027-03-21")).toBe(false);
+    expect(has("2027-03-22")).toBe(true);
+    expect(seasonsToPrepare("2027-03-22", new Set()).find((x) => x.season.key === "pais-2027")?.daysSincePrep).toBe(0);
+    expect(has("2027-05-29")).toBe(true);   // campanha (21 dias) abre 30/05
+    expect(has("2027-05-30")).toBe(false);
+    expect(has("2027-04-01", new Set(["pais-2027"]))).toBe(false); // plano montado
   });
 });

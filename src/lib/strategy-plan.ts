@@ -48,6 +48,7 @@ export function nthWeekday(y: number, m: number, wd: number, n: number) {
 }
 export const quarterOf = (k: string) => `${k.slice(0, 4)}-T${Math.floor((Number(k.slice(5, 7)) - 1) / 3) + 1}`;
 
+// Memorial Day e Labor Day ficaram de fora a pedido (não trabalham essas datas).
 export function seasonsOf(y: number): Season[] {
   const thanksgiving = nthWeekday(y, 11, 4, 4);
   const bf = addDays(thanksgiving, 1);
@@ -56,16 +57,12 @@ export function seasonsOf(y: number): Season[] {
       tip: "Presente pra casal: joias, acessórios, kits. Oferta de kit e embalagem de presente." },
     { key: `maes-${y}`, label: "Mother's Day", date: nthWeekday(y, 5, 0, 2), gift: true, windowDays: 21, uplift: 1.5,
       tip: "Uma das maiores datas de presente nos EUA. Criativo emocional, kit presente." },
-    { key: `memorial-${y}`, label: "Memorial Day", date: nthWeekday(y, 5, 1, -1), gift: false, windowDays: 5, uplift: 1.2,
-      tip: "Liquidação de início de verão. Desconto direto funciona melhor que kit." },
     { key: `pais-${y}`, label: "Father's Day", date: nthWeekday(y, 6, 0, 3), gift: true, windowDays: 21, uplift: 1.3,
       tip: "Presente prático pra homem. Prazo de entrega pesa: comunique a data limite." },
     { key: `july4-${y}`, label: "4th of July", date: iso(y, 7, 4), gift: false, windowDays: 7, uplift: 1.2,
       tip: "Liquidação de feriado. Tema patriótico no criativo." },
     { key: `bts-${y}`, label: "Back to School", date: iso(y, 8, 15), gift: false, windowDays: 30, uplift: 1.2,
       tip: "Volta às aulas: compra longa, de meados de julho ao começo de setembro." },
-    { key: `labor-${y}`, label: "Labor Day", date: nthWeekday(y, 9, 1, 1), gift: false, windowDays: 5, uplift: 1.15,
-      tip: "Liquidação de fim de verão. Bom pra girar o que sobrou." },
     { key: `halloween-${y}`, label: "Halloween", date: iso(y, 10, 31), gift: true, windowDays: 21, uplift: 1.2,
       tip: "Fantasia e decoração precisam chegar antes: a data limite manda." },
     { key: `bfcm-${y}`, label: "Black Friday + Cyber Monday", date: bf, end: addDays(bf, 3), gift: false, windowDays: 7, uplift: 2.5,
@@ -89,6 +86,18 @@ export function upcomingSeasons(today: string, count = 8): Season[] {
 const PREP_DAYS = 90;
 // Dias que 80% dos pedidos levam pra chegar (sem dado: 21, o que o sistema mede hoje).
 const transit = (b: Baseline | null) => Math.ceil(b?.deliveryP80 ?? 21);
+
+// Datas no período de preparo (de 90 dias antes até a campanha abrir) ainda
+// sem plano montado — viram alerta no Gerencial. Ex.: Father's Day 20/06/2027
+// avisa a partir de 22/03/2027.
+export function seasonsToPrepare(today: string, plannedKeys: Set<string>) {
+  const y = Number(today.slice(0, 4));
+  return [...seasonsOf(y), ...seasonsOf(y + 1)].flatMap((s) => {
+    const prepStart = addDays(s.date, -PREP_DAYS), campaignStart = addDays(s.date, -s.windowDays);
+    if (today < prepStart || today >= campaignStart || plannedKeys.has(s.key)) return [];
+    return [{ season: s, prepStart, campaignStart, daysToCampaign: daysBetween(today, campaignStart), daysSincePrep: daysBetween(prepStart, today) }];
+  });
+}
 
 export type SeasonPhase = "planejar" | "preparar" | "campanha" | "ultimos_dias" | "pos";
 export function seasonStatus(s: Season, b: Baseline | null, today: string) {

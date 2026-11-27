@@ -239,7 +239,7 @@ const Empty = ({ text = "Nada no período." }: { text?: string }) => <p classNam
 const ALERT_ICON: Record<Data["alerts"][number]["kind"], any> = {
   meta: Target, prejuizo: TrendingDown, chargeback: ShieldAlert, produto: Package,
   reembolso: Hourglass, entrega: Truck, tarefa: CheckSquare, atendimento: MessageSquare, inteligencia: Brain,
-  alfandega: Landmark, lote: PackageX, sistema: Wrench,
+  alfandega: Landmark, lote: PackageX, sistema: Wrench, sazonal: CalendarDays,
 };
 const LEVEL = {
   critico: { label: "Crítico", icon: "bg-rose-500/10 text-rose-600", bar: "bg-rose-500", metric: "text-rose-600", btn: "bg-rose-600 text-white hover:bg-rose-700" },

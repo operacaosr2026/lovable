@@ -13,6 +13,7 @@ import { needsAttention } from "@/lib/logistics-kpis";
 import { refundReasonLabel } from "@/lib/refund-reasons";
 import { HANDOFF_DAYS, NOT_POSTED_DAYS, situationCarrierLabel, trackingSituations } from "@/lib/tracking-situations.server";
 import { withPostingFrom } from "@/lib/posting-clock.server";
+import { seasonsToPrepare } from "@/lib/strategy-plan";
 
 // Gerencial › Resultado e Alertas: a operação do mês, com as mesmas contas de
 // Metas, Dashboard, Análise de reembolsos, Chargebacks e Rastreamento:
@@ -100,7 +101,7 @@ function noticeLink(key: string, link: string | null, c: NoticeCtx): string {
 // vale no mês escolhido pra toda a equipe).
 export type GerencialAlert = {
   key: string;
-  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia" | "alfandega" | "lote" | "sistema";
+  kind: "meta" | "prejuizo" | "chargeback" | "produto" | "reembolso" | "entrega" | "tarefa" | "atendimento" | "inteligencia" | "alfandega" | "lote" | "sistema" | "sazonal";
   level: "critico" | "atencao"; title: string; detail: string; link: string; action: string; metric: string; metricLabel: string;
   /** Dica da Inteligência: índice dela na análise — "Ver análise" abre a gaveta ali mesmo. */
   tipIndex?: number;
@@ -484,6 +485,24 @@ const buildGerencial = createServerOnlyFn(async (ctx: Ctx, data: { month: string
       alerts.push({ key: "atendimento", kind: "atendimento", level: "atencao", title: "Cliente sem resposta há mais de 36h", link: "/atendimento", action: "Abrir Atendimento",
         detail: "Cliente esperando é o caminho mais curto pro chargeback.",
         metric: String(n), metricLabel: pl(n, "conversa", "conversas") });
+    }
+
+    // Data sazonal: 90 dias antes começa o preparo. Avisa do dia de início até a
+    // janela de campanha abrir (depois não dá mais tempo de montar campanha);
+    // some quando o plano da data é montado no Planejamento.
+    {
+      const { data: planned } = await (supabaseAdmin as any).from("strategy_objectives").select("plan_key").eq("user_id", ownerId).not("plan_key", "is", null);
+      const plannedKeys = new Set(((planned ?? []) as any[]).map((r) => String(r.plan_key)));
+      for (const { season: s, prepStart, campaignStart, daysToCampaign: toCampaign, daysSincePrep: late } of seasonsToPrepare(isoTodayUS(), plannedKeys)) {
+        const dm = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
+        alerts.push({
+          key: `sazonal:${s.key}`, kind: "sazonal", level: toCampaign <= 21 ? "critico" : "atencao",
+          title: `Começar o preparo de ${s.label} (${dm(s.date)})`,
+          detail: `${late === 0 ? "O preparo começa hoje" : `O preparo começou em ${dm(prepStart)}`} (90 dias antes). A campanha abre em ${dm(campaignStart)}: faltam ${toCampaign} dias pra montar criativos, testes e públicos.`,
+          link: "/gerencial?tab=planejamento", action: "Montar plano",
+          metric: String(toCampaign), metricLabel: "dias pra campanha",
+        });
+      }
     }
 
     // Rastreio: cada aviso aberto de alfândega / lote parado vira um alerta
