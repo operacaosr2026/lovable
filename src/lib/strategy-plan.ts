@@ -114,7 +114,6 @@ export type PlanTemplate = {
   initiatives: { title: string; notes: string; due_date: string | null }[];
 };
 
-const usd0 = (v: number) => `US$ ${Math.round(v).toLocaleString("pt-BR")}`;
 const dm = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
 const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}` : xs[0] ?? "");
 
@@ -156,8 +155,6 @@ export function buildSeasonPlan(s: Season, b: Baseline | null, f: Finance, opts:
       notes: "3 a 5 criativos por produto. Fique com os que derem CPA abaixo do atual." },
     { title: "Montar os públicos", due_date: D(-40),
       notes: "Gerencial › Públicos: Compradores e Recompra como base do semelhante; Exclusão (reembolso/chargeback) fora." },
-    { title: "Reservar caixa pro orçamento", due_date: D(-30),
-      notes: fc.budget ? `Anúncio estimado: ${usd0(fc.budget)} na campanha (CPA atual × pedidos projetados).` : "Separe o orçamento de anúncio da campanha." },
     { title: "Começar a campanha principal", due_date: st.campaignStart,
       notes: `Escalar os vencedores dos testes. Janela de ${fc.days} dias, até ${dm(campaignEnd)}.` },
   ];
@@ -208,8 +205,6 @@ function buildNewProductPlan(s: Season, b: Baseline | null, revenueTarget: numbe
       notes: "Só segue o que vendeu no teste com custo por pedido que deixa margem. Se não vendeu, troque agora: ainda dá tempo." },
     { title: "Montar os públicos", due_date: D(-30),
       notes: "Gerencial › Públicos: Compradores como base do semelhante; Exclusão (reembolso/chargeback) fora." },
-    { title: "Reservar caixa pro orçamento", due_date: D(-30),
-      notes: "Orçamento pelo custo por pedido do teste × pedidos que você quer na campanha." },
     { title: "Começar a campanha principal", due_date: st.campaignStart,
       notes: `Escalar o produto validado. Janela de ${days} dias, até ${dm(campaignEnd)}.` },
   ];
