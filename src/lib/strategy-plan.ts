@@ -131,6 +131,8 @@ export function seasonForecast(s: Season, b: Baseline | null, f: Finance) {
 // meta pela venda diária). novo: produto sazonal que ainda não vendo — sem
 // histórico de produto: pesquisar, achar fornecedor, testar e validar antes de
 // escalar; a meta é a que a pessoa informar (ou sai do teste).
+// Estoque é infinito (o fornecedor envia direto) e os dois fornecedores já são
+// de confiança: o plano não tem passo de estoque nem de achar fornecedor — só cotar preço.
 export type PlanMode = "atuais" | "novo";
 export type PlanOptions = { mode: PlanMode; revenueTarget?: number | null };
 
@@ -146,8 +148,8 @@ export function buildSeasonPlan(s: Season, b: Baseline | null, f: Finance, opts:
   const initiatives: PlanTemplate["initiatives"] = [
     { title: "Escolher os produtos da data", due_date: D(-90),
       notes: [top.length ? `Comece pelos que mais vendem: ${list(top)}.` : "", risky.length ? `Evite ou corrija antes: ${list(risky)}.` : "", s.tip].filter(Boolean).join(" ") },
-    { title: "Validar fornecedor pro volume", due_date: D(-75),
-      notes: `Estoque pra ~${Math.ceil(fc.orders * 1.2)} pedidos (projeção + 20%), postagem em até 3 dias úteis e custo fechado.` },
+    { title: "Cotar preço com os fornecedores", due_date: D(-75),
+      notes: `Pedir o preço pro pico (~${Math.ceil(fc.orders)} pedidos na campanha) aos dois fornecedores e fechar o melhor.` },
     { title: "Produzir criativos e a oferta da data", due_date: D(-60),
       notes: "Vídeos e imagens com o tema, oferta (kit, frete grátis acima de X, desconto progressivo) e página do produto revisada." },
     { title: "Testar criativos e produtos com orçamento baixo", due_date: D(-45),
@@ -194,8 +196,8 @@ function buildNewProductPlan(s: Season, b: Baseline | null, revenueTarget: numbe
   const initiatives: PlanTemplate["initiatives"] = [
     { title: "Pesquisar o produto da data", due_date: D(-90),
       notes: `${s.tip} Veja o que os concorrentes anunciaram nessa data (aba Concorrentes) e escolha 2 ou 3 candidatos.` },
-    { title: "Achar fornecedor e pedir amostra", due_date: D(-80),
-      notes: "Confira qualidade, custo e prazo de postagem (até 3 dias úteis). Sem amostra boa, troque o produto." },
+    { title: "Cotar preço com os fornecedores", due_date: D(-80),
+      notes: "Pedir o preço dos candidatos aos dois fornecedores e ficar com o que deixa margem." },
     { title: "Montar a página e a oferta", due_date: D(-70),
       notes: "Fotos reais, tabela de medidas, prazo de entrega claro e oferta (kit, frete grátis acima de X)." },
     { title: "Produzir os criativos", due_date: D(-60),
@@ -204,8 +206,6 @@ function buildNewProductPlan(s: Season, b: Baseline | null, revenueTarget: numbe
       notes: "É a validação: sem histórico, o teste mostra se vende e quanto custa cada pedido." },
     { title: "Decidir: escalar ou trocar de produto", due_date: D(-40),
       notes: "Só segue o que vendeu no teste com custo por pedido que deixa margem. Se não vendeu, troque agora: ainda dá tempo." },
-    { title: "Fechar estoque com o fornecedor", due_date: D(-35),
-      notes: "Volume pelo resultado do teste, com folga de 20%." },
     { title: "Montar os públicos", due_date: D(-30),
       notes: "Gerencial › Públicos: Compradores como base do semelhante; Exclusão (reembolso/chargeback) fora." },
     { title: "Reservar caixa pro orçamento", due_date: D(-30),
@@ -216,9 +216,9 @@ function buildNewProductPlan(s: Season, b: Baseline | null, revenueTarget: numbe
   if (st.cutoff) {
     initiatives.push(
       { title: "Avisar a data limite de entrega", due_date: addDays(st.cutoff, -7),
-        notes: `No site e nos anúncios: "peça até ${dm(st.cutoff)} pra chegar antes de ${dm(s.date)}". Confirme o prazo com o fornecedor novo.` },
+        notes: `No site e nos anúncios: "peça até ${dm(st.cutoff)} pra chegar antes de ${dm(s.date)}".` },
       { title: "Último dia de pedido com entrega a tempo", due_date: st.cutoff,
-        notes: `Pelo prazo atual das suas entregas (80% em até ${transit(b)} dias). Fornecedor novo pode ter outro prazo.` },
+        notes: `80% dos pedidos chegam em até ${transit(b)} dias. Depois desse dia, troque a mensagem (vale-presente / chega depois da data) e baixe o orçamento.` },
     );
   }
   initiatives.push({ title: "Pós-data: análise e próximo ano", due_date: addDays(s.end ?? s.date, 3),
