@@ -1051,7 +1051,7 @@ function MobileOpsTile({ icon: Icon, accent, label, value, trend, loading, onCli
   );
 }
 
-// Saldo do Caixa Geral (US$) e da Wise (R$) no cabeçalho; clique abre a aba.
+// Saldo total do Caixa Geral (US$, saldo atual + a receber) e da Wise (R$) no cabeçalho; clique abre a aba.
 // Sem acesso ao Caixa, não aparece.
 function BalanceChips() {
   const fn = useServerFn(getDashboardBalances);

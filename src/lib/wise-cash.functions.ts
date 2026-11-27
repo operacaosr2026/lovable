@@ -205,6 +205,11 @@ export const getDashboardBalances = createServerFn({ method: "GET" })
         if (date > today) continue;
         s += e.kind === "income" ? Number(e.amount) : -Number(e.amount);
       }
+      // Saldo total = saldo atual (conciliado) + A receber (saldo Shopify Payments),
+      // mesma conta do card "Saldo Total" do Caixa Geral.
+      const { computeShopsReceivable } = await import("@/lib/shop-orders.functions");
+      const rec = await computeShopsReceivable(supabaseAdmin, ctx.ownerId, shopIds);
+      if (rec.connected) s += rec.perShop.reduce((a, p) => a + Number(p.amount ?? 0), 0);
       caixa = Math.round(s * 100) / 100;
     }
 
