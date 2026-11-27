@@ -26,7 +26,6 @@ const PERIODS: [number | null, string][] = [[null, "Desde o começo"], [30, "Úl
 const usd = (v: number) => `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const int = (v: number) => v.toLocaleString("pt-BR");
 const PREVIEW = 100;
-const AVATAR = ["bg-emerald-500/15 text-emerald-700", "bg-sky-500/15 text-sky-700", "bg-violet-500/15 text-violet-700", "bg-amber-500/15 text-amber-700", "bg-rose-500/15 text-rose-700"];
 
 function toCsv(rows: AudienceRow[]) {
   const cols = ["email", "phone", "fn", "ln", "ct", "st", "zip", "country", "value"] as const;
@@ -201,13 +200,11 @@ export function AudiencesView() {
               <tbody>
                 {visible.slice(0, PREVIEW).map((r, i) => {
                   const name = [r.fn, r.ln].filter(Boolean).join(" ");
-                  const initials = (name || r.email || "?").split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
                   return (
                     <tr key={r.email ?? r.phone ?? i} className="border-t border-border/60 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
                       <td className="px-2 py-2.5">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className={`size-8 shrink-0 rounded-full grid place-items-center text-[10px] font-bold ${AVATAR[i % AVATAR.length]}`}>{initials}</span>
+                        <div className="min-w-0">
                           <div className="min-w-0">
                             <p className="font-medium truncate max-w-[220px] flex items-center gap-1.5">
                               {name || "Sem nome"}
