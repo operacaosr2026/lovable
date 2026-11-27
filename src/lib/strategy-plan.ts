@@ -75,11 +75,12 @@ export function seasonsOf(y: number): Season[] {
   ];
 }
 
-// Próximas datas a partir de hoje (inclui as que estão acontecendo).
+// Próximas datas: quando a campanha da data começa ela sai da lista — já não
+// dá pra preparar (ex.: em 27/11, Black Friday e Natal já foram).
 export function upcomingSeasons(today: string, count = 8): Season[] {
   const y = Number(today.slice(0, 4));
-  return [...seasonsOf(y), ...seasonsOf(y + 1)]
-    .filter((s) => (s.end ?? s.date) >= today)
+  return [...seasonsOf(y), ...seasonsOf(y + 1), ...seasonsOf(y + 2)]
+    .filter((s) => addDays(s.date, -s.windowDays) > today)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, count);
 }

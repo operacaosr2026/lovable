@@ -17,9 +17,10 @@ describe("datas sazonais (EUA)", () => {
     const bf = seasonsOf(2026).find((s) => s.key === "bfcm-2026")!;
     expect([bf.date, bf.end]).toEqual(["2026-11-27", "2026-11-30"]);
   });
-  it("próximas datas incluem a que está acontecendo", () => {
+  it("data com a campanha já começada sai da lista (Black Friday e Natal em 27/11)", () => {
     const keys = upcomingSeasons("2026-11-27").map((s) => s.key);
-    expect(keys.slice(0, 3)).toEqual(["bfcm-2026", "natal-2026", "valentines-2027"]);
+    expect(keys.slice(0, 3)).toEqual(["valentines-2027", "maes-2027", "memorial-2027"]);
+    expect(upcomingSeasons("2026-11-19")[0].key).toBe("bfcm-2026"); // campanha da BF começa 20/11
   });
   it("limite de entrega do Natal = data − 80% do prazo", () => {
     const natal = seasonsOf(2026).find((s) => s.key === "natal-2026")!;
