@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Bell, Brain, ClipboardList, Headphones, Layers, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Compass, Bell, Brain, ClipboardList, Headphones, Layers, CalendarDays, CheckSquare, ChevronRight, CircleCheck, Hourglass, Landmark, Loader2, MessageSquare,
   Package, PackageX, RotateCcw, Wrench, ShieldAlert, Target, TrendingDown, TrendingUp, Truck, Undo2, Users, X,
 } from "lucide-react";
 import { PageShell, PageHeader } from "@/components/PageHeader";
@@ -22,12 +22,13 @@ import { CarriersView, CARRIER_PERIODS } from "@/components/gerencial/CarriersVi
 import { AlertOrdersSheet } from "@/components/gerencial/AlertOrdersSheet";
 import { AlertActionSheet } from "@/components/gerencial/AlertActionSheet";
 import { AudiencesView } from "@/components/gerencial/AudiencesView";
+import { StrategyView } from "@/components/gerencial/StrategyView";
 
 // Gerencial: a operação do mês numa tela (contas em gerencial.functions.ts),
 // mais o KPI do Atendimento, as Aprovações de troca/reembolso (fila e análise),
 // Metas e Projetos, que eram abas próprias, e Transportadoras (prazo/alfândega).
 // ?tab=aprovacoes / ?tab=reembolsos abre direto nelas (links das notificações).
-const TAB_KEYS = ["alertas", "transportadoras", "resultado", "aprovacoes", "reembolsos", "kpi", "metas", "projetos", "publicos"] as const;
+const TAB_KEYS = ["alertas", "transportadoras", "resultado", "aprovacoes", "reembolsos", "kpi", "planejamento", "metas", "projetos", "publicos"] as const;
 type Tab = (typeof TAB_KEYS)[number];
 
 export const Route = createFileRoute("/gerencial")({
@@ -57,10 +58,10 @@ function lastMonths(n: number) {
 const TABS: [Tab, string, any][] = [
   ["alertas", "Alertas", Bell], ["transportadoras", "Transportadoras", Truck], ["resultado", "Resultado", BarChart3],
   ["aprovacoes", "Fila de aprovação", ClipboardList], ["reembolsos", "Análise de reembolsos", Undo2],
-  ["kpi", "KPI Atendimento", Headphones], ["metas", "Metas", Target], ["projetos", "Projetos", Layers], ["publicos", "Públicos", Users],
+  ["kpi", "KPI Atendimento", Headphones], ["planejamento", "Planejamento", Compass], ["metas", "Metas", Target], ["projetos", "Projetos", Layers], ["publicos", "Públicos", Users],
 ];
 // Abas com filtro próprio (o mês do topo some nelas).
-const OWN_FILTER_TABS: Tab[] = ["aprovacoes", "reembolsos", "metas", "projetos", "publicos"];
+const OWN_FILTER_TABS: Tab[] = ["aprovacoes", "reembolsos", "planejamento", "metas", "projetos", "publicos"];
 
 function GerencialPage() {
   const months = useMemo(() => lastMonths(6), []);
@@ -126,6 +127,7 @@ function GerencialPage() {
           )}
         </div>
         {tab === "kpi" ? <SupportKpisView month={month} />
+          : tab === "planejamento" ? <StrategyView />
           : tab === "metas" ? <CompanyGoals />
           : tab === "projetos" ? <ProjectsBoard />
           : tab === "publicos" ? <AudiencesView />
