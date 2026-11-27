@@ -17,7 +17,7 @@ import {
 } from "@/lib/strategy.functions";
 import {
   buildDiagnosis, buildSeasonPlan, daysBetween, PHASE_LABEL, quarterOf, seasonForecast, seasonStatus, upcomingSeasons,
-  type Baseline, type Finance, type PlanTemplate, type Season, type SeasonPhase,
+  type Baseline, type Finance, type PlanMode, type PlanOptions, type PlanTemplate, type Season, type SeasonPhase,
 } from "@/lib/strategy-plan";
 
 // Gerencial › Planejamento: plano estratégico quase pronto.
@@ -276,11 +276,12 @@ function SeasonPanel({ season: s, b, finance, saldo, today, plan, loadingBase, o
   const st = seasonStatus(s, b, today);
   const fc = seasonForecast(s, b, finance);
   const tpl = buildSeasonPlan(s, b, finance);
+  const [asking, setAsking] = useState(false);
   const facts: { icon: any; label: string; value: string; sub?: string; warn?: boolean }[] = [
     { icon: CalendarClock, label: "Data", value: dmw(s.date) + (s.end ? ` a ${dm(s.end)}` : ""), sub: rel(st.daysToDate) },
     { icon: Sparkles, label: "Começar o preparo", value: dm(st.prepStart), sub: rel(st.daysToPrep), warn: st.daysToPrep < 0 && st.phase === "preparar" },
     ...(st.cutoff ? [{ icon: Truck, label: "Último pedido pra chegar a tempo", value: dmw(st.cutoff), sub: `${rel(daysBetween(today, st.cutoff))} · 80% chega em ${Math.ceil(b?.deliveryP80 ?? 21)} dias`, warn: st.cutoff >= today && daysBetween(today, st.cutoff) <= 10 }] : []),
-    { icon: Target, label: `Meta (${fc.days} dias de campanha)`, value: usd(fc.revenue), sub: `~${Math.round(fc.orders)} pedidos · ${s.uplift.toLocaleString("pt-BR")}× a venda diária` },
+    { icon: Target, label: `Meta com o que já vendo (${fc.days} dias)`, value: usd(fc.revenue), sub: `~${Math.round(fc.orders)} pedidos · ${s.uplift.toLocaleString("pt-BR")}× a venda diária` },
     ...(fc.budget != null ? [{ icon: Gift, label: "Orçamento de anúncio", value: usd(fc.budget), sub: saldo != null ? `Saldo total hoje: ${usd(saldo)}` : `CPA US$ ${finance?.cpa?.toFixed(2)}`, warn: saldo != null && fc.budget > saldo }] : []),
   ];
 
@@ -319,8 +320,8 @@ function SeasonPanel({ season: s, b, finance, saldo, today, plan, loadingBase, o
           ) : (
             <>
               <div className="flex items-center gap-2 mb-2">
-                <p className="text-xs font-semibold flex items-center gap-1.5"><Layers className="size-3.5 text-primary" /> Plano sugerido</p>
-                <button onClick={() => onCreate(tpl)} disabled={creating || loadingBase}
+                <p className="text-xs font-semibold flex items-center gap-1.5"><Layers className="size-3.5 text-primary" /> Prévia do plano <span className="font-normal text-muted-foreground">· produtos que já vendo</span></p>
+                <button onClick={() => setAsking(true)} disabled={creating || loadingBase}
                   className="ml-auto h-8 px-3 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 inline-flex items-center gap-1.5">
                   {creating ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />} Montar plano
                 </button>
@@ -339,8 +340,13 @@ function SeasonPanel({ season: s, b, finance, saldo, today, plan, loadingBase, o
                   );
                 })}
               </ol>
-              <p className="text-[10px] text-muted-foreground mt-3">Ao montar, vira um objetivo do {quarterLabel(tpl.quarter)} com faturamento e pedidos da campanha medidos sozinhos.</p>
+              <p className="text-[10px] text-muted-foreground mt-3">Ao montar, você escolhe entre produtos que já vende ou produto sazonal novo, e vira um objetivo do {quarterLabel(tpl.quarter)}.</p>
             </>
+          )}
+          {asking && (
+            <PlanModeDialog season={s} hasHistory={!!b && b.orders30 > 0}
+              onClose={() => setAsking(false)}
+              onConfirm={(opts) => { setAsking(false); onCreate(buildSeasonPlan(s, b, finance, opts)); }} />
           )}
         </div>
       </div>
@@ -383,8 +389,8 @@ function ObjectiveBody({ o, ...card }: CardProps & { o: StrategyObjective }) {
       <div className="flex items-center gap-3">
         <Ring value={p} size={40} />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold">Plano montado · {o.initiatives.filter((i) => i.status === "concluida").length}/{o.initiatives.length} etapas</p>
-          <p className="text-[11px] text-muted-foreground">Faturamento e pedidos da campanha são medidos sozinhos.</p>
+          <p className="text-xs font-semibold">{o.title} · {o.initiatives.filter((i) => i.status === "concluida").length}/{o.initiatives.length} etapas</p>
+          <p className="text-[11px] text-muted-foreground">{o.krs.some((k) => k.auto) ? "Faturamento e pedidos da campanha são medidos sozinhos." : "Produto novo: atualize os resultados-chave conforme o teste."}</p>
         </div>
         <button onClick={() => card.onRemove("objective", o.id, "plano")} className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10" title="Desfazer plano"><Trash2 className="size-3.5" /></button>
       </div>
@@ -463,6 +469,56 @@ function InitiativeList({ o, ...card }: CardProps & { o: StrategyObjective }) {
       </div>
       <button onClick={() => card.onEdit({ kind: "initiative", objectiveId: o.id })} className="mt-2 text-xs font-medium text-primary inline-flex items-center gap-1 hover:underline"><Plus className="size-3.5" /> Iniciativa</button>
     </div>
+  );
+}
+
+// Pergunta antes de montar o plano: produtos que já vendo (usa o histórico)
+// ou produto sazonal novo (sem histórico: testar e validar; meta informada).
+function PlanModeDialog({ season, hasHistory, onClose, onConfirm }: {
+  season: Season; hasHistory: boolean; onClose: () => void; onConfirm: (o: PlanOptions) => void;
+}) {
+  const [mode, setMode] = useState<PlanMode>(hasHistory ? "atuais" : "novo");
+  const [target, setTarget] = useState("");
+  const opts: { key: PlanMode; title: string; body: string; disabled?: boolean }[] = [
+    { key: "atuais", title: "Produtos que já vendo",
+      body: "Usa o histórico: mais vendidos, reembolso por produto e meta pela sua venda diária. Faturamento e pedidos da campanha são medidos sozinhos.",
+      disabled: !hasHistory },
+    { key: "novo", title: "Produto sazonal novo",
+      body: "Sem histórico de produto: o plano é pesquisar, achar fornecedor, testar e validar antes de escalar. A meta é a que você informar (ou sai do teste)." },
+  ];
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Plano de {season.label}</DialogTitle></DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">Vai vender produto que já vende ou um produto novo pra data?</p>
+        <div className="space-y-2">
+          {opts.map((o) => (
+            <button key={o.key} type="button" disabled={o.disabled} onClick={() => setMode(o.key)}
+              className={`w-full text-left rounded-xl border p-3 transition-colors disabled:opacity-50 ${mode === o.key ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
+              <div className="flex items-center gap-2">
+                <span className={`size-4 rounded-full border-2 grid place-items-center ${mode === o.key ? "border-primary" : "border-muted-foreground/40"}`}>
+                  {mode === o.key && <span className="size-2 rounded-full bg-primary" />}
+                </span>
+                <p className="text-sm font-semibold">{o.title}</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1 pl-6">{o.disabled ? "Sem vendas recentes pra usar de histórico." : o.body}</p>
+            </button>
+          ))}
+        </div>
+        {mode === "novo" && (
+          <Field label="Meta de faturamento do produto na campanha (opcional)">
+            <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="decimal" placeholder="Ex.: 15000" className={inputCls} />
+          </Field>
+        )}
+        <DialogFooter className="pt-1">
+          <button type="button" onClick={onClose} className="h-9 px-4 rounded-xl text-xs font-medium bg-muted hover:bg-muted/70">Cancelar</button>
+          <button type="button" onClick={() => onConfirm({ mode, revenueTarget: mode === "novo" && target.trim() ? Number(target.replace(/\./g, "").replace(",", ".")) || null : null })}
+            className="h-9 px-4 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5">
+            <Wand2 className="size-3.5" /> Montar plano
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

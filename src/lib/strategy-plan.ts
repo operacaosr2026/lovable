@@ -127,7 +127,15 @@ export function seasonForecast(s: Season, b: Baseline | null, f: Finance) {
   return { days, revenue, orders, budget };
 }
 
-export function buildSeasonPlan(s: Season, b: Baseline | null, f: Finance): PlanTemplate {
+// atuais: produtos que já vendo — usa o histórico (mais vendidos, reembolso,
+// meta pela venda diária). novo: produto sazonal que ainda não vendo — sem
+// histórico de produto: pesquisar, achar fornecedor, testar e validar antes de
+// escalar; a meta é a que a pessoa informar (ou sai do teste).
+export type PlanMode = "atuais" | "novo";
+export type PlanOptions = { mode: PlanMode; revenueTarget?: number | null };
+
+export function buildSeasonPlan(s: Season, b: Baseline | null, f: Finance, opts: PlanOptions = { mode: "atuais" }): PlanTemplate {
+  if (opts.mode === "novo") return buildNewProductPlan(s, b, opts.revenueTarget ?? null);
   const st = seasonStatus(s, b, b?.today ?? s.date);
   const fc = seasonForecast(s, b, f);
   const D = (n: number) => addDays(s.date, n);
@@ -174,6 +182,59 @@ export function buildSeasonPlan(s: Season, b: Baseline | null, f: Finance): Plan
   return {
     plan_key: s.key, quarter: quarterOf(s.date), title: `${s.label} ${s.date.slice(0, 4)}`,
     description: `Data: ${dm(s.date)}${s.end ? ` a ${dm(s.end)}` : ""}. Preparo a partir de ${dm(st.prepStart)}${st.cutoff ? `; último pedido pra chegar a tempo: ${dm(st.cutoff)}` : ""}. Meta = venda diária dos últimos 30 dias × ${s.uplift.toLocaleString("pt-BR")} (alta típica da data) × ${fc.days} dias.`,
+    krs, initiatives,
+  };
+}
+
+function buildNewProductPlan(s: Season, b: Baseline | null, revenueTarget: number | null): PlanTemplate {
+  const st = seasonStatus(s, b, b?.today ?? s.date);
+  const D = (n: number) => addDays(s.date, n);
+  const days = s.windowDays + (s.end ? daysBetween(s.date, s.end) : 0);
+  const campaignEnd = s.end ?? (st.cutoff ?? s.date);
+  const initiatives: PlanTemplate["initiatives"] = [
+    { title: "Pesquisar o produto da data", due_date: D(-90),
+      notes: `${s.tip} Veja o que os concorrentes anunciaram nessa data (aba Concorrentes) e escolha 2 ou 3 candidatos.` },
+    { title: "Achar fornecedor e pedir amostra", due_date: D(-80),
+      notes: "Confira qualidade, custo e prazo de postagem (até 3 dias úteis). Sem amostra boa, troque o produto." },
+    { title: "Montar a página e a oferta", due_date: D(-70),
+      notes: "Fotos reais, tabela de medidas, prazo de entrega claro e oferta (kit, frete grátis acima de X)." },
+    { title: "Produzir os criativos", due_date: D(-60),
+      notes: "3 a 5 criativos por produto, com o tema da data." },
+    { title: "Testar o produto com orçamento baixo", due_date: D(-50),
+      notes: "É a validação: sem histórico, o teste mostra se vende e quanto custa cada pedido." },
+    { title: "Decidir: escalar ou trocar de produto", due_date: D(-40),
+      notes: "Só segue o que vendeu no teste com custo por pedido que deixa margem. Se não vendeu, troque agora: ainda dá tempo." },
+    { title: "Fechar estoque com o fornecedor", due_date: D(-35),
+      notes: "Volume pelo resultado do teste, com folga de 20%." },
+    { title: "Montar os públicos", due_date: D(-30),
+      notes: "Gerencial › Públicos: Compradores como base do semelhante; Exclusão (reembolso/chargeback) fora." },
+    { title: "Reservar caixa pro orçamento", due_date: D(-30),
+      notes: "Orçamento pelo custo por pedido do teste × pedidos que você quer na campanha." },
+    { title: "Começar a campanha principal", due_date: st.campaignStart,
+      notes: `Escalar o produto validado. Janela de ${days} dias, até ${dm(campaignEnd)}.` },
+  ];
+  if (st.cutoff) {
+    initiatives.push(
+      { title: "Avisar a data limite de entrega", due_date: addDays(st.cutoff, -7),
+        notes: `No site e nos anúncios: "peça até ${dm(st.cutoff)} pra chegar antes de ${dm(s.date)}". Confirme o prazo com o fornecedor novo.` },
+      { title: "Último dia de pedido com entrega a tempo", due_date: st.cutoff,
+        notes: `Pelo prazo atual das suas entregas (80% em até ${transit(b)} dias). Fornecedor novo pode ter outro prazo.` },
+    );
+  }
+  initiatives.push({ title: "Pós-data: análise e próximo ano", due_date: addDays(s.end ?? s.date, 3),
+    notes: "Anotar se o produto vale manter no catálogo ou guardar pra mesma data no ano que vem." });
+  initiatives.sort((a, b2) => (a.due_date ?? "").localeCompare(b2.due_date ?? ""));
+
+  const krs: PlanTemplate["krs"] = [
+    { title: "Produtos testados antes da campanha", unit: "numero", start_value: 0, target_value: 3 },
+    { title: "Produtos validados pra escalar", unit: "numero", start_value: 0, target_value: 1 },
+  ];
+  if (revenueTarget && revenueTarget > 0) {
+    krs.push({ title: "Faturamento do produto na campanha", unit: "usd", start_value: 0, target_value: Math.round(revenueTarget) });
+  }
+  return {
+    plan_key: s.key, quarter: quarterOf(s.date), title: `${s.label} ${s.date.slice(0, 4)} · produto novo`,
+    description: `Produto sazonal novo (sem histórico de venda). Data: ${dm(s.date)}${s.end ? ` a ${dm(s.end)}` : ""}. Preparo a partir de ${dm(st.prepStart)}${st.cutoff ? `; último pedido pra chegar a tempo: ${dm(st.cutoff)}` : ""}. ${revenueTarget ? "Meta informada por você." : "A meta sai do teste."}`,
     krs, initiatives,
   };
 }

@@ -37,4 +37,16 @@ describe("datas sazonais (EUA)", () => {
     expect(p.initiatives.map((i) => i.due_date)).toEqual([...p.initiatives.map((i) => i.due_date)].sort());
     expect(p.initiatives.some((i) => i.due_date === "2026-12-03")).toBe(true);
   });
+  it("produto sazonal novo: sem histórico de produto nem meta automática", () => {
+    const val = seasonsOf(2027).find((s) => s.key === "valentines-2027")!;
+    const p = buildSeasonPlan(val, { ...base, today: "2026-11-27" }, null, { mode: "novo", revenueTarget: 15000 });
+    expect(p.plan_key).toBe("valentines-2027");
+    expect(p.krs.every((k) => !k.metric)).toBe(true);
+    expect(p.krs.find((k) => k.unit === "usd")?.target_value).toBe(15000);
+    expect(p.initiatives.some((i) => i.notes.includes("A"))).toBe(true);
+    expect(p.initiatives.map((i) => i.title)).toContain("Testar o produto com orçamento baixo");
+    expect(JSON.stringify(p.initiatives)).not.toContain("mais vendem");
+    const semMeta = buildSeasonPlan(val, base, null, { mode: "novo" });
+    expect(semMeta.krs.some((k) => k.unit === "usd")).toBe(false);
+  });
 });
