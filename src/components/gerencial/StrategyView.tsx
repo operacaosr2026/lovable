@@ -3,14 +3,13 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
-  CalendarClock, Check, ChevronLeft, ChevronRight, Circle, CircleDot, Flag, Gift, Layers, Lightbulb, Loader2, Pencil, Plus, Sparkles, Target, Trash2, Truck, User, Wand2,
+  CalendarClock, Check, ChevronLeft, ChevronRight, Circle, CircleDot, Flag, Layers, Lightbulb, Loader2, Pencil, Plus, Sparkles, Target, Trash2, Truck, User, Wand2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { isoTodayUS } from "@/lib/timezone";
 import { listTaskAssignees } from "@/lib/tasks.functions";
 import { getGerencial } from "@/lib/gerencial.functions";
-import { getDashboardBalances } from "@/lib/wise-cash.functions";
 import {
   deleteStrategyItem, getStrategy, getStrategyBaseline, saveInitiative, saveKeyResult, saveObjective, saveStrategyPlan, setInitiativeStatus, setKeyResultValue,
   type InitiativeStatus, type KrUnit, type StrategyInitiative, type StrategyKr, type StrategyObjective,
@@ -109,13 +108,11 @@ export function StrategyView() {
   const fn = useServerFn(getStrategy);
   const baseFn = useServerFn(getStrategyBaseline);
   const gerFn = useServerFn(getGerencial);
-  const balFn = useServerFn(getDashboardBalances);
   const membersFn = useServerFn(listTaskAssignees);
   const q = useQuery({ queryKey: ["strategy", quarter], queryFn: () => fn({ data: { quarter } }), placeholderData: keepPreviousData });
   const base = useQuery({ queryKey: ["strategy-baseline"], queryFn: () => baseFn(), staleTime: 30 * 60_000 });
   const month = today.slice(0, 7);
   const ger = useQuery({ queryKey: ["gerencial", month], queryFn: () => gerFn({ data: { month } }), staleTime: 5 * 60_000 });
-  const bal = useQuery({ queryKey: ["dashboard-balances"], queryFn: () => balFn(), staleTime: 60_000 });
   const members = useQuery({ queryKey: ["task-assignees"], queryFn: () => membersFn(), staleTime: 10 * 60_000 });
   const nameOf = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m.name])), [members.data]);
   const refresh = () => qc.invalidateQueries({ queryKey: ["strategy"] });
@@ -191,7 +188,7 @@ export function StrategyView() {
           })}
         </div>
         {season && (
-          <SeasonPanel season={season} b={b} finance={finance} saldo={bal.data?.caixa ?? null}
+          <SeasonPanel season={season} b={b} finance={finance}
             plan={planByKey.get(season.key) ?? null} loadingBase={base.isLoading}
             onCreate={(p) => createPlan.mutate(p)} creating={createPlan.isPending} {...cardProps} />
         )}
@@ -269,20 +266,28 @@ type CardProps = {
 };
 
 // Painel da data escolhida: números, meta e o checklist (do plano montado ou a prévia).
-function SeasonPanel({ season: s, b, finance, saldo, today, plan, loadingBase, onCreate, creating, ...card }: CardProps & {
-  season: Season; b: Baseline | null; finance: Finance; saldo: number | null; today: string; plan: StrategyObjective | null;
+function SeasonPanel({ season: s, b, finance, today, plan, loadingBase, onCreate, creating, ...card }: CardProps & {
+  season: Season; b: Baseline | null; finance: Finance; today: string; plan: StrategyObjective | null;
   loadingBase: boolean; onCreate: (p: PlanTemplate) => void; creating: boolean;
 }) {
   const st = seasonStatus(s, b, today);
   const fc = seasonForecast(s, b, finance);
   const tpl = buildSeasonPlan(s, b, finance);
   const [asking, setAsking] = useState(false);
+  // Meta: com o plano montado, a do plano (a que a pessoa informou, no produto
+  // novo); sem plano, a projeção pelo que já vende.
+  const planRevenue = plan?.krs.find((k) => k.unit === "usd" && k.target_value > 0) ?? null;
+  const isNew = !!plan && !plan.krs.some((k) => k.auto);
+  const metaFact = plan
+    ? planRevenue
+      ? { icon: Target, label: isNew ? "Meta do produto novo" : `Meta da campanha (${fc.days} dias)`, value: usd(planRevenue.target_value), sub: isNew ? "Informada por você" : `~${Math.round(fc.orders)} pedidos · ${s.uplift.toLocaleString("pt-BR")}× a venda diária` }
+      : { icon: Target, label: "Meta do produto novo", value: "Sai do teste", sub: "Atualize o resultado-chave depois do teste" }
+    : { icon: Target, label: `Meta com o que já vendo (${fc.days} dias)`, value: usd(fc.revenue), sub: `~${Math.round(fc.orders)} pedidos · ${s.uplift.toLocaleString("pt-BR")}× a venda diária` };
   const facts: { icon: any; label: string; value: string; sub?: string; warn?: boolean }[] = [
     { icon: CalendarClock, label: "Data", value: dmw(s.date) + (s.end ? ` a ${dm(s.end)}` : ""), sub: rel(st.daysToDate) },
     { icon: Sparkles, label: "Começar o preparo", value: dm(st.prepStart), sub: rel(st.daysToPrep), warn: st.daysToPrep < 0 && st.phase === "preparar" },
     ...(st.cutoff ? [{ icon: Truck, label: "Último pedido pra chegar a tempo", value: dmw(st.cutoff), sub: `${rel(daysBetween(today, st.cutoff))} · 80% chega em ${Math.ceil(b?.deliveryP80 ?? 21)} dias`, warn: st.cutoff >= today && daysBetween(today, st.cutoff) <= 10 }] : []),
-    { icon: Target, label: `Meta com o que já vendo (${fc.days} dias)`, value: usd(fc.revenue), sub: `~${Math.round(fc.orders)} pedidos · ${s.uplift.toLocaleString("pt-BR")}× a venda diária` },
-    ...(fc.budget != null ? [{ icon: Gift, label: "Orçamento de anúncio", value: usd(fc.budget), sub: saldo != null ? `Saldo total hoje: ${usd(saldo)}` : `CPA US$ ${finance?.cpa?.toFixed(2)}`, warn: saldo != null && fc.budget > saldo }] : []),
+    metaFact,
   ];
 
   return (
