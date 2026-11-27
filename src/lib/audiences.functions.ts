@@ -106,20 +106,20 @@ export const getCampaignAudience = createServerFn({ method: "GET" })
 
     const all = [...people.values()].map(({ _shops, ...p }) => ({ ...p, value: Math.round(p.value * 100) / 100, shops: [..._shops] }));
     const problem = (p: AudienceRow) => p.refund || p.chargeback;
-    let rows: AudienceRow[];
-    if (data.segment === "problema") rows = all.filter(problem);
-    else {
-      rows = all.filter((p) => p.orders > 0 && (!data.excludeProblems || !problem(p)));
-      if (data.segment === "recompra") rows = rows.filter((p) => p.orders >= 2);
-      if (data.segment === "top") {
-        // 20% que mais gastaram (mínimo 1 pessoa).
-        rows = [...rows].sort((a, b) => b.value - a.value).slice(0, Math.max(1, Math.ceil(rows.length * 0.2)));
-      }
-    }
-    rows.sort((a, b) => b.value - a.value || b.lastOrder.localeCompare(a.lastOrder));
+    const buyers = all.filter((p) => p.orders > 0 && (!data.excludeProblems || !problem(p)));
+    const bySegment: Record<AudienceSegment, AudienceRow[]> = {
+      compradores: buyers,
+      recompra: buyers.filter((p) => p.orders >= 2),
+      // 20% que mais gastaram (mínimo 1 pessoa).
+      top: buyers.length ? [...buyers].sort((a, b) => b.value - a.value).slice(0, Math.max(1, Math.ceil(buyers.length * 0.2))) : [],
+      problema: all.filter(problem),
+    };
+    const counts = Object.fromEntries(SEGMENTS.map((s) => [s, bySegment[s].length])) as Record<AudienceSegment, number>;
+    const rows = [...bySegment[data.segment]].sort((a, b) => b.value - a.value || b.lastOrder.localeCompare(a.lastOrder));
 
     return {
       rows,
+      counts,
       stats: {
         people: rows.length,
         value: Math.round(rows.reduce((s, p) => s + p.value, 0) * 100) / 100,
