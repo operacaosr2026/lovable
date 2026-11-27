@@ -2,10 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOwnerContext, type WorkspacePermission, type WorkspaceRole } from "@/integrations/supabase/workspace-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { computeBaseline, measureKeyResults } from "@/lib/strategy-data.server";
 
 // Gerencial › Planejamento: objetivos do trimestre (OKR), cada um com
 // resultados-chave medidos e as iniciativas que fazem ele andar. Iniciativa
 // pode apontar pra um Projeto — aí o progresso dela vem das tarefas do projeto.
+// Plano pronto (data sazonal ou diagnóstico) entra com plan_key, e os
+// resultados-chave com metric são medidos pelo sistema.
 // Não exportar valores/funções comuns daqui (só server fns e tipos): o arquivo
 // importa client.server e quebraria o build da Vercel no cliente.
 
@@ -18,18 +21,65 @@ const db = (t: string) => (supabaseAdmin as any).from(t);
 
 export type KrUnit = "numero" | "pct" | "usd";
 export type InitiativeStatus = "a_fazer" | "em_andamento" | "concluida";
-export type StrategyKr = { id: string; title: string; unit: KrUnit; start_value: number; target_value: number; current_value: number };
+// auto: medido pelo sistema — o valor atual não se edita à mão.
+export type StrategyKr = { id: string; title: string; unit: KrUnit; start_value: number; target_value: number; current_value: number; auto: boolean };
 export type StrategyInitiative = {
-  id: string; title: string; owner_id: string | null; due_date: string | null; status: InitiativeStatus;
+  id: string; title: string; notes: string | null; owner_id: string | null; due_date: string | null; status: InitiativeStatus;
   project: { id: string; name: string; progress: number } | null;
 };
 export type StrategyObjective = {
-  id: string; quarter: string; title: string; description: string | null; owner_id: string | null;
+  id: string; quarter: string; title: string; description: string | null; owner_id: string | null; plan_key: string | null;
   krs: StrategyKr[]; initiatives: StrategyInitiative[];
 };
 
 const QUARTER = z.string().regex(/^\d{4}-T[1-4]$/);
+const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+async function loadObjectives(ownerId: string, objs: any[], projects: any[]): Promise<StrategyObjective[]> {
+  const ids = objs.map((o) => o.id as string);
+  const [{ data: krs }, { data: inits }] = ids.length
+    ? await Promise.all([
+        db("strategy_key_results").select("id,objective_id,title,unit,start_value,target_value,current_value,metric,metric_from,metric_to,position,created_at")
+          .in("objective_id", ids).order("position").order("created_at"),
+        db("strategy_initiatives").select("id,objective_id,title,notes,owner_id,due_date,status,project_id,position,created_at")
+          .in("objective_id", ids).order("due_date", { nullsFirst: false }).order("position").order("created_at"),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const measured = await measureKeyResults(ownerId, (krs ?? []) as any[]);
+
+  // Progresso dos projetos ligados = tarefas concluídas / total.
+  const projIds = [...new Set(((inits ?? []) as any[]).map((i) => i.project_id).filter(Boolean))] as string[];
+  const { data: tasks } = projIds.length
+    ? await supabaseAdmin.from("project_tasks").select("project_id,status").in("project_id", projIds)
+    : { data: [] as any[] };
+  const tally = new Map<string, { t: number; d: number }>();
+  for (const t of (tasks ?? []) as any[]) {
+    const c = tally.get(t.project_id) ?? { t: 0, d: 0 };
+    c.t++; if (t.status === "done") c.d++;
+    tally.set(t.project_id, c);
+  }
+  const projName = new Map(projects.map((p) => [p.id as string, p.name as string]));
+
+  return objs.map((o) => ({
+    id: o.id, quarter: o.quarter, title: o.title, description: o.description, owner_id: o.owner_id, plan_key: o.plan_key ?? null,
+    krs: ((krs ?? []) as any[]).filter((k) => k.objective_id === o.id).map((k) => ({
+      id: k.id, title: k.title, unit: k.unit, start_value: Number(k.start_value), target_value: Number(k.target_value),
+      current_value: measured.has(k.id) ? measured.get(k.id)! : Number(k.metric ? k.start_value : k.current_value), auto: !!k.metric,
+    })),
+    initiatives: ((inits ?? []) as any[]).filter((i) => i.objective_id === o.id).map((i) => {
+      const c = i.project_id ? tally.get(i.project_id) : null;
+      return {
+        id: i.id, title: i.title, notes: i.notes ?? null, owner_id: i.owner_id, due_date: i.due_date, status: i.status,
+        project: i.project_id && projName.has(i.project_id)
+          ? { id: i.project_id, name: projName.get(i.project_id)!, progress: c?.t ? Math.round((c.d / c.t) * 100) : 0 }
+          : null,
+      };
+    }),
+  }));
+}
+
+// Objetivos do trimestre + todos os planos montados (datas e diagnósticos),
+// pra tela saber o que já foi montado e mostrar o checklist da data.
 export const getStrategy = createServerFn({ method: "GET" })
   .middleware([requireOwnerContext])
   .inputValidator((d) => z.object({ quarter: QUARTER }).parse(d))
@@ -37,51 +87,76 @@ export const getStrategy = createServerFn({ method: "GET" })
     const ctx = context as unknown as Ctx;
     assertAccess(ctx);
     const { ownerId } = ctx;
-    const [{ data: objs, error }, { data: projects }] = await Promise.all([
-      db("strategy_objectives").select("id,quarter,title,description,owner_id,position,created_at")
-        .eq("user_id", ownerId).eq("quarter", data.quarter).order("position").order("created_at"),
+    const cols = "id,quarter,title,description,owner_id,plan_key,position,created_at";
+    const [{ data: objs, error }, { data: plans }, { data: projects }] = await Promise.all([
+      db("strategy_objectives").select(cols).eq("user_id", ownerId).eq("quarter", data.quarter).order("position").order("created_at"),
+      db("strategy_objectives").select(cols).eq("user_id", ownerId).not("plan_key", "is", null).neq("quarter", data.quarter),
       supabaseAdmin.from("projects").select("id,name").eq("user_id", ownerId).eq("archived", false).order("name"),
     ]);
     if (error) throw new Error(error.message);
-    const ids = ((objs ?? []) as any[]).map((o) => o.id as string);
-    const [{ data: krs }, { data: inits }] = ids.length
-      ? await Promise.all([
-          db("strategy_key_results").select("id,objective_id,title,unit,start_value,target_value,current_value,position,created_at")
-            .in("objective_id", ids).order("position").order("created_at"),
-          db("strategy_initiatives").select("id,objective_id,title,owner_id,due_date,status,project_id,position,created_at")
-            .in("objective_id", ids).order("position").order("created_at"),
-        ])
-      : [{ data: [] }, { data: [] }];
+    const all = await loadObjectives(ownerId, [...((objs ?? []) as any[]), ...((plans ?? []) as any[])], (projects ?? []) as any[]);
+    const inQuarter = new Set(((objs ?? []) as any[]).map((o) => o.id as string));
+    return {
+      objectives: all.filter((o) => inQuarter.has(o.id)),
+      plans: all.filter((o) => o.plan_key),
+      projects: ((projects ?? []) as any[]).map((p) => ({ id: p.id as string, name: p.name as string })),
+    };
+  });
 
-    // Progresso dos projetos ligados = tarefas concluídas / total.
-    const projIds = [...new Set(((inits ?? []) as any[]).map((i) => i.project_id).filter(Boolean))] as string[];
-    const { data: tasks } = projIds.length
-      ? await supabaseAdmin.from("project_tasks").select("project_id,status").in("project_id", projIds)
-      : { data: [] as any[] };
-    const tally = new Map<string, { t: number; d: number }>();
-    for (const t of (tasks ?? []) as any[]) {
-      const c = tally.get(t.project_id) ?? { t: 0, d: 0 };
-      c.t++; if (t.status === "done") c.d++;
-      tally.set(t.project_id, c);
-    }
-    const projName = new Map(((projects ?? []) as any[]).map((p) => [p.id as string, p.name as string]));
+// Números de base do sistema pro plano pronto (lojas ativas).
+export const getStrategyBaseline = createServerFn({ method: "GET" })
+  .middleware([requireOwnerContext])
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    assertAccess(ctx);
+    return computeBaseline(ctx.ownerId);
+  });
 
-    const objectives: StrategyObjective[] = ((objs ?? []) as any[]).map((o) => ({
-      id: o.id, quarter: o.quarter, title: o.title, description: o.description, owner_id: o.owner_id,
-      krs: ((krs ?? []) as any[]).filter((k) => k.objective_id === o.id).map((k) => ({
-        id: k.id, title: k.title, unit: k.unit, start_value: Number(k.start_value), target_value: Number(k.target_value), current_value: Number(k.current_value),
-      })),
-      initiatives: ((inits ?? []) as any[]).filter((i) => i.objective_id === o.id).map((i) => {
-        const c = i.project_id ? tally.get(i.project_id) : null;
-        return {
-          id: i.id, title: i.title, owner_id: i.owner_id, due_date: i.due_date, status: i.status,
-          project: i.project_id && projName.has(i.project_id)
-            ? { id: i.project_id, name: projName.get(i.project_id)!, progress: c?.t ? Math.round((c.d / c.t) * 100) : 0 }
-            : null,
-        };
-      }),
+// Monta um plano pronto (data sazonal ou diagnóstico) de uma vez.
+export const saveStrategyPlan = createServerFn({ method: "POST" })
+  .middleware([requireOwnerContext])
+  .inputValidator((d) => z.object({
+    plan_key: z.string().min(3).max(80),
+    quarter: QUARTER,
+    title: z.string().trim().min(1).max(160),
+    description: z.string().max(1000),
+    krs: z.array(z.object({
+      title: z.string().trim().min(1).max(160), unit: z.enum(["numero", "pct", "usd"]),
+      start_value: z.number().finite(), target_value: z.number().finite(),
+      metric: z.enum(["revenue", "orders", "refund_rate", "repeat_rate", "delivery_days"]).optional(),
+      metric_from: DATE.optional(), metric_to: DATE.optional(),
+    })).max(10),
+    initiatives: z.array(z.object({
+      title: z.string().trim().min(1).max(160), notes: z.string().max(1000), due_date: DATE.nullable(),
+    })).max(20),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const ctx = context as unknown as Ctx;
+    assertAccess(ctx);
+    const { data: exists } = await db("strategy_objectives").select("id").eq("user_id", ctx.ownerId).eq("plan_key", data.plan_key).maybeSingle();
+    if (exists) throw new Error("Esse plano já foi montado");
+    const { count } = await db("strategy_objectives").select("id", { count: "exact", head: true }).eq("user_id", ctx.ownerId).eq("quarter", data.quarter);
+    const { data: obj, error } = await db("strategy_objectives").insert({
+      user_id: ctx.ownerId, quarter: data.quarter, title: data.title, description: data.description, plan_key: data.plan_key, position: count ?? 0,
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    const oid = obj.id as string;
+    const krRows = data.krs.map((k, i) => ({
+      user_id: ctx.ownerId, objective_id: oid, title: k.title, unit: k.unit, start_value: k.start_value, target_value: k.target_value,
+      current_value: k.start_value, metric: k.metric ?? null, metric_from: k.metric_from ?? null, metric_to: k.metric_to ?? null, position: i,
     }));
-    return { objectives, projects: ((projects ?? []) as any[]).map((p) => ({ id: p.id as string, name: p.name as string })) };
+    const initRows = data.initiatives.map((x, i) => ({
+      user_id: ctx.ownerId, objective_id: oid, title: x.title, notes: x.notes || null, due_date: x.due_date, status: "a_fazer", position: i,
+    }));
+    const [r1, r2] = await Promise.all([
+      krRows.length ? db("strategy_key_results").insert(krRows) : Promise.resolve({ error: null }),
+      initRows.length ? db("strategy_initiatives").insert(initRows) : Promise.resolve({ error: null }),
+    ]);
+    if (r1.error || r2.error) {
+      await db("strategy_objectives").delete().eq("id", oid);
+      throw new Error((r1.error ?? r2.error).message);
+    }
+    return { id: oid };
   });
 
 // Confere que o registro pai é do mesmo dono antes de mexer.
@@ -158,8 +233,9 @@ export const saveInitiative = createServerFn({ method: "POST" })
     id: z.string().uuid().optional(),
     objective_id: z.string().uuid(),
     title: z.string().trim().min(1).max(160),
+    notes: z.string().max(1000).nullable().optional(),
     owner_id: z.string().uuid().nullable().optional(),
-    due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    due_date: DATE.nullable().optional(),
     status: z.enum(["a_fazer", "em_andamento", "concluida"]).default("a_fazer"),
     project_id: z.string().uuid().nullable().optional(),
   }).parse(d))
@@ -172,7 +248,7 @@ export const saveInitiative = createServerFn({ method: "POST" })
       if (!p) throw new Error("Projeto não encontrado");
     }
     const { id, ...rest } = data;
-    const row = { ...rest, owner_id: rest.owner_id ?? null, due_date: rest.due_date || null, project_id: rest.project_id ?? null };
+    const row = { ...rest, notes: rest.notes || null, owner_id: rest.owner_id ?? null, due_date: rest.due_date || null, project_id: rest.project_id ?? null };
     if (id) {
       const { error } = await db("strategy_initiatives").update(row).eq("id", id).eq("user_id", ctx.ownerId);
       if (error) throw new Error(error.message);
