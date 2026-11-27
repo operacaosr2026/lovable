@@ -75,8 +75,9 @@ export function seasonsOf(y: number): Season[] {
   ];
 }
 
-// Próximas datas: quando a campanha da data começa ela sai da lista — já não
-// dá pra preparar (ex.: em 27/11, Black Friday e Natal já foram).
+// Próximas datas: quando a janela de campanha da data começa ela sai da lista —
+// não dá mais tempo de montar campanha (criativo, teste, público). Ex.: em
+// 27/11, Black Friday e Natal ficam de fora; a lista começa no Valentine's.
 export function upcomingSeasons(today: string, count = 8): Season[] {
   const y = Number(today.slice(0, 4));
   return [...seasonsOf(y), ...seasonsOf(y + 1), ...seasonsOf(y + 2)]
